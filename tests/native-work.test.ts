@@ -231,10 +231,13 @@ describe('member thread to real adapter glue', () => {
       await vi.waitFor(() =>
         expect(fake.client.calls.some((call) => call.method === 'turn/start')).toBe(true),
       );
-      expect(fake.createClient).toHaveBeenCalledExactlyOnceWith({
-        ...nativeEnvironment(),
-        [identity.tokenEnv]: identity.token,
-      });
+      expect(fake.createClient).toHaveBeenCalledExactlyOnceWith(
+        {
+          ...nativeEnvironment(),
+          [identity.tokenEnv]: identity.token,
+        },
+        { 'features.code_mode_host': true },
+      );
       expect(process.env[identity.tokenEnv]).toBe(identity.token);
       const config = fake.client.calls.find((call) => call.method === 'thread/start')?.params
         .config;

@@ -158,10 +158,13 @@ describe('opt-in Diomedes team boundary', () => {
       ).resolves.toMatchObject({
         text: 'A native answer.',
       });
-      expect(integration.createClient).toHaveBeenCalledWith({
-        ...nativeEnvironment(),
-        [team.tokenEnv]: 'synthetic-member-secret',
-      });
+      expect(integration.createClient).toHaveBeenCalledWith(
+        {
+          ...nativeEnvironment(),
+          [team.tokenEnv]: 'synthetic-member-secret',
+        },
+        { 'features.code_mode_host': true },
+      );
       const start = integration.client.calls.find((call) => call.method === 'thread/start')!.params;
       expect(start.config).toMatchObject({
         mcp_servers: {
@@ -180,9 +183,9 @@ describe('opt-in Diomedes team boundary', () => {
         'features.apps': false,
         'features.plugins': false,
         'features.multi_agent': false,
-        // Enabling the gateway remains blocked by the proof gap in QUESTIONS.md.
+        // The tool host is on for team runs only; the model-writes-code feature stays off.
         'features.code_mode': false,
-        'features.code_mode_host': false,
+        'features.code_mode_host': true,
         'features.browser_use': false,
         'features.browser_use_external': false,
         'features.computer_use': false,

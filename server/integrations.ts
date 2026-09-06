@@ -31,7 +31,7 @@ export interface NativeTeamOptions {
 
 export const nativeWorkDisclosure = (team?: NativeTeamOptions): string =>
   team
-    ? 'This run can talk to the Diomedes team service and no other MCP service. Native filesystem, shell, and browser tools remain disabled. Diomedes applies file proposals only after your approval.'
+    ? 'This run can talk to the Diomedes team service and no other MCP service. The tool host is on for that service only; native filesystem, shell, and browser tools remain disabled. Diomedes applies file proposals only after your approval.'
     : 'Ask and Plan return text. Online Work proposes file changes that Diomedes applies only after your approval. Native filesystem, shell, browser, and MCP tools remain disabled.';
 
 const object = (value: unknown): JsonObject =>
@@ -144,8 +144,18 @@ function toml(value: unknown): string {
       .join(',')}}`;
   return JSON.stringify(value);
 }
-const configArgs = () =>
-  Object.entries(SAFE_CONFIG).flatMap(([key, value]) => ['-c', `${key}=${toml(value)}`]);
+// A team run needs the tool host, which is how this Codex build routes MCP tool calls
+// (without it the model sees "code-mode host is disabled"). The model-writes-code
+// feature stays off; the only enabled MCP server is diomedes_team, and every native
+// tool feature above stays false. Evidence from the real binary is recorded in the
+// build log; this is not a proof that the host exposes nothing else.
+const TEAM_CONFIG: JsonObject = { 'features.code_mode_host': true };
+
+const configArgs = (extra: JsonObject = {}) =>
+  Object.entries({ ...SAFE_CONFIG, ...extra }).flatMap(([key, value]) => [
+    '-c',
+    `${key}=${toml(value)}`,
+  ]);
 
 async function killOwnedProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return;
@@ -316,7 +326,7 @@ export function createRpcClient(
   };
 }
 
-async function startNative(env?: NodeJS.ProcessEnv): Promise<NativeRpc> {
+async function startNative(env?: NodeJS.ProcessEnv, extra?: JsonObject): Promise<NativeRpc> {
   await fs.mkdir(CODEX_WORKSPACE, { recursive: true });
   await fs.access(CODEX_EXECUTABLE).catch(() => {
     throw new IntegrationError(
@@ -324,7 +334,7 @@ async function startNative(env?: NodeJS.ProcessEnv): Promise<NativeRpc> {
       'The matched native Codex runtime has not been prepared for Diomedes.',
     );
   });
-  const child = spawn(CODEX_EXECUTABLE, ['app-server', '--listen', 'stdio://', ...configArgs()], {
+  const child = spawn(CODEX_EXECUTABLE, ['app-server', '--listen', 'stdio://', ...configArgs(extra)], {
     cwd: CODEX_WORKSPACE,
     env: env ?? nativeEnvironment(),
     windowsHide: true,
@@ -413,7 +423,7 @@ async function verifyWindowsSandbox(): Promise<void> {
 }
 
 interface IntegrationDependencies {
-  createClient: (env?: NodeJS.ProcessEnv) => Promise<NativeRpc>;
+  createClient: (env?: NodeJS.ProcessEnv, extra?: JsonObject) => Promise<NativeRpc>;
   verifySandbox: () => Promise<void>;
   fetch: typeof globalThis.fetch;
   turnTimeoutMs: number;
@@ -612,7 +622,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       await dependencies.verifySandbox();
       if (input.signal?.aborted) throw abortError();
       client = input.team
-        ? await dependencies.createClient(teamEnvironment(input.team))
+        ? await dependencies.createClient(teamEnvironment(input.team), TEAM_CONFIG)
         : await dependencies.createClient();
       if (input.signal?.aborted) throw abortError();
       const ownedClient = client;
@@ -632,6 +642,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       );
       const threadConfig: JsonObject = {
         ...SAFE_CONFIG,
+        ...(input.team ? TEAM_CONFIG : {}),
         mcp_servers: Object.fromEntries(
           Object.keys(object(effective.mcp_servers)).map((name) => [name, { enabled: false }]),
         ),
@@ -645,12 +656,19 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
             'MCP_NOT_ISOLATED',
             'An inherited diomedes_team configuration prevents isolation. No thread was started.',
           );
+        // The team service polices its own tools (bearer token, slot role), so its calls
+        // need no per-call approval. Without this the default "auto" mode asks approval
+        // for every tool that lacks a read-only hint, which "approval_policy=never" turns
+        // into a failed call ("MCP tool call requires approval, but approval policy is never").
+        // Key and values (auto | prompt | writes | approve) are in the pinned binary's
+        // schema (AppToolApproval) and codex-rs/config mcp_types_tests.
         object(threadConfig.mcp_servers).diomedes_team = {
           url: input.team.url,
           bearer_token_env_var: input.team.tokenEnv,
           enabled: true,
           http_headers: { 'X-Slot-Id': input.team.slotId },
           required: true,
+          default_tools_approval_mode: 'approve',
         };
         // Documented session instruction config, separate from turn user input:
         // https://developers.openai.com/codex/config-reference/#developer_instructions
