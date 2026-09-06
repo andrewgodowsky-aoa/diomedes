@@ -69,6 +69,7 @@ test.beforeAll(async () => {
   original = await fs.readFile(path.join(project.folder, 'Reopening plan.md'), 'utf8');
   await api('/settings', 'PUT', {
     detail: 'guided',
+    surface: 'book',
     services: { codex: true },
     onboarding: { work: 'business', detail: 'guided', familiarity: 'new', resumeAt: 'done', completedAt: new Date().toISOString() },
     lastPage: { [project.id]: 'tasks' },
@@ -87,6 +88,8 @@ test('Native UI: consent, exact proposal preview, approval, Review and History w
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(baseURL);
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'book');
+  await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
   await page.locator('.task-card').first().locator('.task-title').click();
   await page.getByRole('dialog').getByRole('combobox', { name: 'Work service' }).selectOption('codex');
   await page.getByRole('dialog').getByRole('button', { name: 'Do this for me', exact: true }).click();
