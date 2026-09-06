@@ -111,9 +111,11 @@ export interface Need {
   allowForTask: boolean;
   preview?: Change[];
 }
+export type ThreadPermission = 'show-first' | 'task';
 export interface Session {
   id: string;
   taskId: string;
+  permission?: ThreadPermission;
   state: 'queued' | 'working' | 'waiting' | 'done' | 'stopped' | 'failed';
   startedAt: string;
   endedAt: string | null;
@@ -189,6 +191,7 @@ export interface Conversation {
   updatedAt?: string;
   taskId?: string | null;
   helper?: { engine: string; model: string | null } | null;
+  permission?: ThreadPermission;
 }
 export interface ProjectState {
   project: Project;

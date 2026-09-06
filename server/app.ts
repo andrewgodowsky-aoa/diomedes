@@ -2,7 +2,16 @@ import express, { type ErrorRequestHandler, type Request, type Response } from '
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import type { Conversation, Owner, Page, Settings, TaskState, Turn } from '../shared/types.js';
+import type {
+  Conversation,
+  Owner,
+  Page,
+  Session,
+  Settings,
+  TaskState,
+  ThreadPermission,
+  Turn,
+} from '../shared/types.js';
 import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
 import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText } from './store.js';
 import { WorkService } from './work.js';
@@ -30,6 +39,13 @@ const choice = <const T extends string>(value: unknown, values: readonly T[], na
     throw new ApiError(400, `Choose a valid ${name}.`);
   return value as T;
 };
+const THREAD_PERMISSIONS: readonly ThreadPermission[] = ['show-first', 'task'];
+const PERMISSION_UNAVAILABLE = 'That permission mode is not available in this version.';
+function parseThreadPermission(value: unknown): ThreadPermission {
+  if (typeof value !== 'string' || !THREAD_PERMISSIONS.includes(value as ThreadPermission))
+    throw new ApiError(400, PERMISSION_UNAVAILABLE);
+  return value as ThreadPermission;
+}
 function plain(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new ApiError(400, 'Provide an object.');
@@ -669,6 +685,17 @@ export async function createApp(options: AppOptions) {
     '/api/projects/:id/work/start',
     route(async (req) => {
       const b = body(req);
+      const projectId = id(req);
+      const threadId =
+        b.threadId === undefined || b.threadId === null
+          ? undefined
+          : asString(b.threadId, 'a thread', 100);
+      let threadPermission: ThreadPermission = 'show-first';
+      if (threadId !== undefined) {
+        const thread = store.state(projectId).conversations.find((c) => c.id === threadId);
+        if (!thread) throw new ApiError(404, 'This thread was not found.');
+        threadPermission = thread.permission ?? 'show-first';
+      }
       const selectedRoute =
         b.route === undefined ? 'sample' : choice(b.route, ['sample', 'codex'], 'service');
       if (selectedRoute === 'codex') {
@@ -683,7 +710,7 @@ export async function createApp(options: AppOptions) {
             400,
             'Provide the explicitly selected source documents, or an empty list to propose new files.',
           );
-        return nativeWork.start(id(req), asString(b.taskId, 'a task', 100), {
+        const started = await nativeWork.start(projectId, asString(b.taskId, 'a task', 100), {
           instruction:
             b.instruction === undefined
               ? undefined
@@ -691,13 +718,21 @@ export async function createApp(options: AppOptions) {
           sources: b.sources.map(relativeName),
           consent: true,
         });
+        const stored = store.state(projectId).sessions.find((s) => s.id === started.id)!;
+        stored.permission = threadPermission;
+        await store.persist(store.state(projectId));
+        return stored;
       }
-      return work.start(
-        id(req),
+      const started = await work.start(
+        projectId,
         asString(b.taskId, 'a task', 100),
         typeof b.instruction === 'string' ? b.instruction : '',
         b.demo === 'fault',
       );
+      const stored = store.state(projectId).sessions.find((s) => s.id === started.id)!;
+      stored.permission = threadPermission;
+      await store.persist(store.state(projectId));
+      return stored;
     }),
   );
   app.post(
@@ -855,6 +890,8 @@ export async function createApp(options: AppOptions) {
             : undefined;
         name = task ? `Thread for ${task.name}` : 'New thread';
       }
+      const permission: ThreadPermission =
+        b.permission === undefined ? 'show-first' : parseThreadPermission(b.permission);
       const stamped = now();
       const conversation: Conversation = {
         id: identifier('C'),
@@ -865,6 +902,7 @@ export async function createApp(options: AppOptions) {
         updatedAt: stamped,
         taskId,
         helper: null,
+        permission,
       };
       state.conversations.push(conversation);
       await store.persist(state);
@@ -878,10 +916,16 @@ export async function createApp(options: AppOptions) {
       const state = store.state(id(req)),
         conversation = state.conversations.find((c) => c.id === req.params.threadId);
       if (!conversation) throw new ApiError(404, 'This thread was not found.');
-      const name = body(req).name;
-      if (typeof name !== 'string' || !name.trim() || name.trim().length > 120)
-        throw new ApiError(400, 'Give this thread a name of up to 120 characters.');
-      conversation.name = name.trim();
+      const b = body(req);
+      if (b.name === undefined && b.permission === undefined)
+        throw new ApiError(400, 'Provide a thread name or permission mode.');
+      if (b.name !== undefined) {
+        if (typeof b.name !== 'string' || !b.name.trim() || b.name.trim().length > 120)
+          throw new ApiError(400, 'Give this thread a name of up to 120 characters.');
+        conversation.name = b.name.trim();
+      }
+      if (b.permission !== undefined)
+        conversation.permission = parseThreadPermission(b.permission);
       await store.persist(state);
       return conversation;
     }),
@@ -970,6 +1014,7 @@ export async function createApp(options: AppOptions) {
               updatedAt: stamped,
               taskId: attachedTo.kind === 'task' ? attachedTo.ref : null,
               helper: null,
+              permission: 'show-first',
             };
             state.conversations.push(conversation);
           }
@@ -990,6 +1035,10 @@ export async function createApp(options: AppOptions) {
             sources,
             consent: b.consent === true,
           });
+          const storedSession = store
+            .state(projectId)
+            .sessions.find((item) => item.id === session.id)!;
+          storedSession.permission = conversation.permission ?? 'show-first';
           const turn: Turn = {
             id: identifier('U'),
             role: 'diomedes',
@@ -1002,7 +1051,11 @@ export async function createApp(options: AppOptions) {
           conversation.turns.push(turn);
           touchThread(conversation, turn.at, state.tasks);
           await store.persist(store.state(projectId));
-          return { turn, conversation, session };
+          return {
+            turn,
+            conversation,
+            session: store.state(projectId).sessions.find((item) => item.id === session.id)!,
+          };
         });
       const prepared = await store.locked(async () => {
         const state = store.state(projectId);
@@ -1024,6 +1077,7 @@ export async function createApp(options: AppOptions) {
             updatedAt: stamped,
             taskId: attachedTo.kind === 'task' ? attachedTo.ref : null,
             helper: null,
+            permission: 'show-first',
           };
           state.conversations.push(conversation);
         }
@@ -1077,7 +1131,7 @@ export async function createApp(options: AppOptions) {
       return store.locked(async () => {
         let state = store.state(projectId);
         let document: string | undefined;
-        let session;
+        let session: Session | undefined;
         let createdTaskId: string | null = null;
         if (mode === 'plan') {
           const safeTitle =
@@ -1119,6 +1173,12 @@ export async function createApp(options: AppOptions) {
         }
         const conversation = state.conversations.find((c) => c.id === prepared.conversationId)!;
         if (createdTaskId && !conversation.taskId) conversation.taskId = createdTaskId;
+        if (session) {
+          const sessionId = session.id;
+          const stored = state.sessions.find((item) => item.id === sessionId)!;
+          stored.permission = conversation.permission ?? 'show-first';
+          session = stored;
+        }
         const turn: Turn = {
           id: identifier('U'),
           role: 'diomedes',

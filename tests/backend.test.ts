@@ -628,6 +628,87 @@ describe('threads are first-class conversations', () => {
     expect(work.data.conversation.id).toBe(workThread.id);
     expect(work.data.conversation.taskId).toBeTruthy();
   });
+  test('threads default to show-first, PUT sets task, and full is rejected', async () => {
+    const id = await sample();
+    const created = await request(`/projects/${id}/threads`, 'POST', {});
+    expect(created.status).toBe(201);
+    expect(created.data.permission).toBe('show-first');
+    const explicit = await request(`/projects/${id}/threads`, 'POST', { permission: 'task' });
+    expect(explicit.status).toBe(201);
+    expect(explicit.data.permission).toBe('task');
+    const updated = await request(`/projects/${id}/threads/${created.data.id}`, 'PUT', {
+      permission: 'task',
+    });
+    expect(updated.status).toBe(200);
+    expect(updated.data.permission).toBe('task');
+    expect(updated.data.id).toBe(created.data.id);
+    const rejected = await request(`/projects/${id}/threads/${created.data.id}`, 'PUT', {
+      permission: 'full',
+    });
+    expect(rejected.status).toBe(400);
+    expect(rejected.data.error).toBe('That permission mode is not available in this version.');
+    const rejectedPost = await request(`/projects/${id}/threads`, 'POST', {
+      permission: 'full',
+    });
+    expect(rejectedPost.status).toBe(400);
+    expect(rejectedPost.data.error).toBe('That permission mode is not available in this version.');
+    const listed = await request(`/projects/${id}/threads`);
+    expect(listed.status).toBe(200);
+    for (const thread of listed.data.threads) expect(thread.permission).toBeDefined();
+    const current = await state(id);
+    for (const conversation of current.conversations)
+      expect(conversation.permission).toBeDefined();
+  });
+  test('migration fills missing thread permission with show-first and stays stable', async () => {
+    const id = await sample();
+    const statePath = path.join(temp, 'data', 'projects', id, 'state.json');
+    const raw = JSON.parse(await fs.readFile(statePath, 'utf8'));
+    raw.conversations = [
+      { id: 'Cperm1', attachedTo: { kind: 'project', ref: id }, turns: [] },
+    ];
+    await fs.writeFile(statePath, JSON.stringify(raw));
+    const reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
+    await reloaded.init();
+    expect(reloaded.state(id).conversations[0].permission).toBe('show-first');
+    const snapshot = JSON.stringify(reloaded.state(id).conversations);
+    const reloadedAgain = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
+    await reloadedAgain.init();
+    expect(JSON.stringify(reloadedAgain.state(id).conversations)).toBe(snapshot);
+  });
+  test('work sessions carry the thread permission, defaulting to show-first', async () => {
+    const id = await sample();
+    const thread = (
+      await request(`/projects/${id}/threads`, 'POST', { permission: 'task' })
+    ).data;
+    const task = (await request(`/projects/${id}/tasks`, 'POST', { name: 'Thread work' })).data;
+    const started = await request(`/projects/${id}/work/start`, 'POST', {
+      taskId: task.id,
+      threadId: thread.id,
+    });
+    expect(started.status).toBe(200);
+    expect(started.data.permission).toBe('task');
+    expect((await state(id)).sessions[0].permission).toBe('task');
+    const other = await sample();
+    const otherTask = (
+      await request(`/projects/${other}/tasks`, 'POST', { name: 'No thread work' })
+    ).data;
+    const plain = await request(`/projects/${other}/work/start`, 'POST', {
+      taskId: otherTask.id,
+    });
+    expect(plain.status).toBe(200);
+    expect(plain.data.permission).toBe('show-first');
+    const askProject = await sample();
+    const askThread = (
+      await request(`/projects/${askProject}/threads`, 'POST', { permission: 'task' })
+    ).data;
+    const askWork = await request(`/projects/${askProject}/ask`, 'POST', {
+      mode: 'work',
+      text: 'Do ask work from a task thread',
+      threadId: askThread.id,
+    });
+    expect(askWork.status).toBe(200);
+    expect(askWork.data.session.permission).toBe('task');
+  });
 });
 
 describe('request and filesystem boundaries (continued)', () => {

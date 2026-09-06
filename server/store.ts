@@ -52,6 +52,7 @@ export function migrateConversation(
     conversation.taskId =
       conversation.attachedTo.kind === 'task' ? conversation.attachedTo.ref : null;
   if (conversation.helper === undefined) conversation.helper = null;
+  if (conversation.permission === undefined) conversation.permission = 'show-first';
   if (conversation.createdAt === undefined) {
     conversation.createdAt = conversation.turns[0]?.at ?? loadTime;
   }
