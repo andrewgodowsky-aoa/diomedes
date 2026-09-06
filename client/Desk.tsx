@@ -1056,8 +1056,8 @@ function Pane({
               </button>
             ))}
             {member && (
-              <button className={toTeam ? 'active' : ''} onClick={() => setToTeam(true)}>
-                Team message
+              <button className={toTeam ? 'active' : ''} onClick={() => setToTeam(true)} title="Send a team message through the Diomedes team service">
+                Team
               </button>
             )}
           </div>
