@@ -298,7 +298,8 @@ test('F17, F20-F22: surface switches preserve data; visible pages meet copy and 
   for (const name of ['Ask a question', 'Get something done', 'Make a plan', 'Look over what changed'])
     await expect(intents.getByRole('button', { name: new RegExp(`^${name}\\b`) })).toBeVisible();
   await intents.getByRole('button', { name: /^Get something done\b/ }).click();
-  await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
+  // The Work page's heading is the task name once a session exists; the rail shows which page is active.
+  await expect(page.getByRole('navigation', { name: 'Project pages' }).getByRole('button', { name: /^Work/ })).toHaveClass(/active/);
   const workComposer = page.getByRole('region', { name: 'Ask box', exact: true });
   await expect(workComposer).toBeVisible();
   await expect(workComposer.getByRole('button', { name: 'Work', exact: true })).toHaveClass(/active/);
