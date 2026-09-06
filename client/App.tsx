@@ -121,13 +121,16 @@ export function App() {
       setShowSettings(false);
       setPage('home');
       const s = settingsRef.current;
-      if (s)
-        void api<Settings>('/settings', 'PUT', {
+      if (s) {
+        // Update the local copy first so a navigation that follows at once builds on this order, not the old one.
+        const next = {
           ...s,
           openProjects: [...s.openProjects.filter((id) => id !== project.id), project.id].slice(-6),
-        })
-          .then(setSettings)
-          .catch(report);
+        };
+        settingsRef.current = next;
+        setSettings(next);
+        void api<Settings>('/settings', 'PUT', next).catch(report);
+      }
     },
     [report],
   );
@@ -136,10 +139,12 @@ export function App() {
       setPage(p);
       setShowSettings(false);
       const s = settingsRef.current;
-      if (s && selected)
-        void api<Settings>('/settings', 'PUT', { ...s, lastPage: { ...s.lastPage, [selected]: p } })
-          .then(setSettings)
-          .catch(report);
+      if (s && selected) {
+        const next = { ...s, lastPage: { ...s.lastPage, [selected]: p } };
+        settingsRef.current = next;
+        setSettings(next);
+        void api<Settings>('/settings', 'PUT', next).catch(report);
+      }
     },
     [report, selected],
   );
