@@ -53,8 +53,6 @@ try {
   });
   await page.reload();
   await expect(page.locator('.task-card')).toHaveCount(found.length);
-  await page.evaluate(() => document.fonts.ready);
-  expect(await page.evaluate(() => typeof window.require)).toBe('undefined');
   const sizes = () =>
     page.evaluate(() =>
       Object.fromEntries(
@@ -72,7 +70,10 @@ try {
     animations: 'disabled',
   });
   const settings = await api('/settings');
-  await api('/settings', 'PUT', { appearance: { ...settings.appearance, interfaceScale: 1.24 } });
+  await api('/settings', 'PUT', {
+    ...settings,
+    appearance: { ...settings.appearance, interfaceScale: 1.24 },
+  });
   await page.reload();
   await expect(page.locator('.task-card')).toHaveCount(found.length);
   const after = await sizes();
@@ -81,6 +82,55 @@ try {
     path: path.resolve('evidence/screenshots/desktop-tasks-large.png'),
     animations: 'disabled',
   });
+
+  const deskSettings = await api('/settings');
+  await api('/settings', 'PUT', { ...deskSettings, surface: 'desk' });
+  await page.reload();
+  await expect(page.locator('html[data-surface="desk"]')).toHaveCount(1);
+  await expect(page.locator('.desk')).toBeVisible();
+  await expect(page.locator('.desk-team')).toBeVisible();
+
+  const thread = await api(`/projects/${project.id}/threads`, 'POST', {
+    name: 'Desktop smoke thread',
+  });
+  await page.reload();
+  await expect(page.locator('.desk-pane').filter({ hasText: thread.name })).toBeVisible();
+
+  const helperResult = await api(`/projects/${project.id}/team/members`, 'POST', {
+    name: 'Helper',
+    role: 'member',
+    engine: 'sample',
+  });
+  await page.reload();
+  await expect(page.locator('.desk-member').filter({ hasText: 'Helper' })).toBeVisible();
+  const helperPane = page.locator('.desk-pane').filter({ hasText: 'Helper' });
+  await expect(helperPane).toBeVisible();
+  const teamMessage = 'Desktop smoke team message';
+  await api(`/projects/${project.id}/team/messages`, 'POST', {
+    to: helperResult.member.slotId,
+    content: teamMessage,
+  });
+  await page.reload();
+  await expect(helperPane.locator('.turn.team').filter({ hasText: teamMessage })).toBeVisible();
+
+  const bookSettings = await api('/settings');
+  await api('/settings', 'PUT', {
+    ...bookSettings,
+    surface: 'book',
+    lastPage: { ...bookSettings.lastPage, [project.id]: 'home' },
+  });
+  await page.reload();
+  await expect(page.locator('html[data-surface="book"]')).toHaveCount(1);
+  await expect(page.locator('.intents')).toBeVisible();
+
+  // Keep the original restart check on the task page after proving the Book home surface.
+  const restartSettings = await api('/settings');
+  await api('/settings', 'PUT', {
+    ...restartSettings,
+    lastPage: { ...restartSettings.lastPage, [project.id]: 'tasks' },
+  });
+  await page.evaluate(() => document.fonts.ready);
+  expect(await page.evaluate(() => typeof window.require)).toBe('undefined');
   const startup = JSON.parse(
     await fs.readFile(path.join(root, 'data/desktop-startup.json'), 'utf8'),
   );
@@ -132,8 +182,12 @@ try {
     ),
   );
   console.log(
-    'PASS: packaged desktop, task board, font scaling, renderer isolation, shutdown, and restart persistence.',
+    'PASS: packaged desktop, task board, font scaling, Book and Desk surfaces, team threads and messages, renderer isolation, shutdown, and restart persistence.',
   );
+} catch (error) {
+  const message = error instanceof Error ? error.message.split(/\r?\n/, 1)[0] : String(error);
+  console.error(`FAIL: ${message.endsWith('.') ? message : `${message}.`}`);
+  process.exitCode = 1;
 } finally {
   if (desktop) await desktop.close();
 }
