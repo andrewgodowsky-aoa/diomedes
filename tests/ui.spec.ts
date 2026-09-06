@@ -113,7 +113,11 @@ test('F04, F06: sample project opens and a plan edit survives reload with Histor
   expect(toBook.ok()).toBe(true);
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'book');
-  await page.getByRole('button', { name: 'Open sample project', exact: true }).click();
+  // The first-run test already opened the sample project; reuse it rather than creating a second one.
+  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  const existing = page.getByRole('button', { name: /^Harbor Street restaurants/ }).first();
+  if (await existing.count()) await existing.click();
+  else await page.getByRole('button', { name: 'Open sample project', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Harbor Street restaurants', exact: true })).toBeVisible();
   const { projects }: { projects: Project[] } = await (await page.request.get('/api/projects')).json();
   const project = projects.find(item => item.name.includes('Harbor Street'));
