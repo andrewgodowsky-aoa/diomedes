@@ -108,7 +108,8 @@ test('F04, F06: sample project opens and a plan edit survives reload with Histor
   // The first-run test leaves the settings on the Desk; this one and the rest read the Book.
   const toBook = await page.request.put('/api/settings', {
     headers: { 'X-Diomedes-Client': '1' },
-    data: { surface: 'book', detail: 'guided' },
+    // The every-day answer also relaxed the permissions in question 3; the Book tests expect approvals.
+    data: { surface: 'book', detail: 'guided', permissions: { changingFiles: true } },
   });
   expect(toBook.ok()).toBe(true);
   await page.goto('/');
