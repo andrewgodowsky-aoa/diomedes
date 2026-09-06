@@ -12,6 +12,7 @@ import type {
   Settings,
   Task,
   TaskState,
+  ThreadPermission,
 } from '../shared/types';
 import { api } from './api';
 import {
@@ -47,7 +48,6 @@ type RightTab = 'board' | 'changes' | 'files';
 const MAX_PANES = 3;
 
 /** Shapes from planning/2026-09-06-v6-two-views/05-team-service-v0-spec.md; replaced by shared/types once the service lands. */
-type ThreadPermission = 'show-first' | 'task';
 type Slot = string;
 interface TeamMember {
   slotId: Slot;
@@ -79,7 +79,7 @@ interface TeamState {
   messages: MailboxMessage[];
   runs: { id: string; slotId: Slot; sessionId: string | null; status: string }[];
 }
-type ThreadWithPermission = Conversation & { permission?: ThreadPermission };
+type ThreadWithPermission = Conversation;
 const engineNames: Record<TeamMember['engine'], string> = {
   codex: 'Codex',
   'claude-code': 'Claude Code',
