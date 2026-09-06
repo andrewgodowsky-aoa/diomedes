@@ -147,10 +147,8 @@ export function Desk({
   async function newThread(taskId?: string) {
     await perform(async () => {
       try {
-        const c = await api<Conversation>(`${base}/threads`, 'POST', {
-          name: 'New thread',
-          ...(taskId ? { taskId } : {}),
-        });
+        // No name: the service names task threads after their task and the rest 'New thread'.
+        const c = await api<Conversation>(`${base}/threads`, 'POST', taskId ? { taskId } : {});
         await load();
         openPane(c.id);
       } catch (e) {
