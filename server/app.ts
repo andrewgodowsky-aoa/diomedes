@@ -4,7 +4,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type { Conversation, Owner, Page, Settings, TaskState, Turn } from '../shared/types.js';
 import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
-import { defaults, findTasks, hash, identifier, now, Store } from './store.js';
+import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText } from './store.js';
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
 import { askCodex, getIntegrationStatuses } from './integrations.js';
@@ -792,6 +792,101 @@ export async function createApp(options: AppOptions) {
     '/api/projects/:id/conversations',
     route(async (req) => ({ conversations: store.state(id(req)).conversations })),
   );
+  const touchThread = (
+    conversation: Conversation,
+    at: string,
+    tasks: { id: string; name: string }[] = [],
+  ) => {
+    conversation.updatedAt = at;
+    if (conversation.name === 'New thread') {
+      const firstYou = conversation.turns.find((t) => t.role === 'you');
+      if (firstYou) conversation.name = threadNameFromText(firstYou.text);
+      else if (conversation.attachedTo.kind === 'task') {
+        const task = tasks.find((t) => t.id === conversation.attachedTo.ref);
+        if (task) conversation.name = `Thread for ${task.name}`;
+      }
+    }
+  };
+  app.get(
+    '/api/projects/:id/threads',
+    route(async (req) => {
+      const threads = [...store.state(id(req)).conversations].sort((a, b) =>
+        (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''),
+      );
+      return { threads };
+    }),
+  );
+  app.post(
+    '/api/projects/:id/threads',
+    route(async (req, res) => {
+      const b = body(req),
+        projectId = id(req),
+        state = store.state(projectId);
+      let attachedTo: Conversation['attachedTo'] = { kind: 'project', ref: projectId };
+      if (b.attachedTo !== undefined) {
+        const attached = plain(b.attachedTo);
+        attachedTo = {
+          kind: choice(
+            attached.kind,
+            ['project', 'document', 'plan', 'task', 'review'],
+            'attachment type',
+          ),
+          ref: asString(attached.ref, 'an attachment', 1000),
+        };
+      }
+      let taskId: string | null =
+        attachedTo.kind === 'task' ? attachedTo.ref : null;
+      if (b.taskId !== undefined && b.taskId !== null) {
+        const given = asString(b.taskId, 'a task', 100);
+        const task = state.tasks.find((t) => t.id === given);
+        if (task) {
+          attachedTo = { kind: 'task', ref: task.id };
+          taskId = task.id;
+        }
+      }
+      let name: string;
+      if (b.name !== undefined) {
+        if (typeof b.name !== 'string' || !b.name.trim() || b.name.trim().length > 120)
+          throw new ApiError(400, 'Give this thread a name of up to 120 characters.');
+        name = b.name.trim();
+      } else {
+        const task =
+          attachedTo.kind === 'task'
+            ? state.tasks.find((t) => t.id === attachedTo.ref)
+            : undefined;
+        name = task ? `Thread for ${task.name}` : 'New thread';
+      }
+      const stamped = now();
+      const conversation: Conversation = {
+        id: identifier('C'),
+        attachedTo,
+        turns: [],
+        name,
+        createdAt: stamped,
+        updatedAt: stamped,
+        taskId,
+        helper: null,
+      };
+      state.conversations.push(conversation);
+      await store.persist(state);
+      res.status(201).json(conversation);
+      return undefined;
+    }),
+  );
+  app.put(
+    '/api/projects/:id/threads/:threadId',
+    route(async (req) => {
+      const state = store.state(id(req)),
+        conversation = state.conversations.find((c) => c.id === req.params.threadId);
+      if (!conversation) throw new ApiError(404, 'This thread was not found.');
+      const name = body(req).name;
+      if (typeof name !== 'string' || !name.trim() || name.trim().length > 120)
+        throw new ApiError(400, 'Give this thread a name of up to 120 characters.');
+      conversation.name = name.trim();
+      await store.persist(state);
+      return conversation;
+    }),
+  );
   app.post(
     '/api/projects/:id/ask',
     route(async (req) => {
@@ -811,6 +906,15 @@ export async function createApp(options: AppOptions) {
         ),
         ref: asString(attached.ref, 'an attachment', 1000),
       };
+      const threadId =
+        b.threadId === undefined || b.threadId === null
+          ? undefined
+          : asString(b.threadId, 'a thread', 100);
+      if (
+        threadId !== undefined &&
+        !store.state(projectId).conversations.some((c) => c.id === threadId)
+      )
+        throw new ApiError(404, 'This thread was not found.');
       if (serviceRoute === 'codex' && !store.settings.services?.codex)
         throw new ApiError(409, 'Turn Codex on in Settings before using it.');
       if (
@@ -848,15 +952,30 @@ export async function createApp(options: AppOptions) {
             description: text,
             owner: 'diomedes-with-ok',
           });
-          let conversation = state.conversations.find(
-            (item) =>
-              item.attachedTo.kind === attachedTo.kind && item.attachedTo.ref === attachedTo.ref,
-          );
+          let conversation =
+            threadId !== undefined
+              ? state.conversations.find((item) => item.id === threadId)!
+              : state.conversations.find(
+                  (item) =>
+                    item.attachedTo.kind === attachedTo.kind &&
+                    item.attachedTo.ref === attachedTo.ref,
+                );
           if (!conversation) {
-            conversation = { id: identifier('C'), attachedTo, turns: [] };
+            const stamped = now();
+            conversation = {
+              id: identifier('C'),
+              attachedTo,
+              turns: [],
+              name: 'New thread',
+              createdAt: stamped,
+              updatedAt: stamped,
+              taskId: attachedTo.kind === 'task' ? attachedTo.ref : null,
+              helper: null,
+            };
             state.conversations.push(conversation);
           }
-          conversation.turns.push({
+          if (!conversation.taskId) conversation.taskId = task.id;
+          const youTurn: Turn = {
             id: identifier('U'),
             role: 'you',
             mode,
@@ -864,7 +983,9 @@ export async function createApp(options: AppOptions) {
             at: now(),
             sources,
             route: 'codex',
-          });
+          };
+          conversation.turns.push(youTurn);
+          touchThread(conversation, youTurn.at, state.tasks);
           const session = await nativeWork.start(projectId, task.id, {
             instruction: text,
             sources,
@@ -880,16 +1001,31 @@ export async function createApp(options: AppOptions) {
             route: 'codex',
           };
           conversation.turns.push(turn);
+          touchThread(conversation, turn.at, state.tasks);
           await store.persist(store.state(projectId));
           return { turn, conversation, session };
         });
       const prepared = await store.locked(async () => {
         const state = store.state(projectId);
-        let conversation = state.conversations.find(
-          (c) => c.attachedTo.kind === attachedTo.kind && c.attachedTo.ref === attachedTo.ref,
-        );
+        let conversation =
+          threadId !== undefined
+            ? state.conversations.find((c) => c.id === threadId)!
+            : state.conversations.find(
+                (c) =>
+                  c.attachedTo.kind === attachedTo.kind && c.attachedTo.ref === attachedTo.ref,
+              );
         if (!conversation) {
-          conversation = { id: identifier('C'), attachedTo, turns: [] };
+          const stamped = now();
+          conversation = {
+            id: identifier('C'),
+            attachedTo,
+            turns: [],
+            name: 'New thread',
+            createdAt: stamped,
+            updatedAt: stamped,
+            taskId: attachedTo.kind === 'task' ? attachedTo.ref : null,
+            helper: null,
+          };
           state.conversations.push(conversation);
         }
         const documents = await Promise.all(
@@ -900,7 +1036,7 @@ export async function createApp(options: AppOptions) {
         );
         if (documents.reduce((total, d) => total + Buffer.byteLength(d.text), 0) > 128000)
           throw new ApiError(413, 'Choose less than 128 KB of source text for this request.');
-        conversation.turns.push({
+        const youTurn: Turn = {
           id: identifier('U'),
           role: 'you',
           mode,
@@ -908,7 +1044,9 @@ export async function createApp(options: AppOptions) {
           at: now(),
           sources,
           route: serviceRoute,
-        });
+        };
+        conversation.turns.push(youTurn);
+        touchThread(conversation, youTurn.at, state.tasks);
         await store.persist(state);
         return { conversationId: conversation.id, documents };
       });
@@ -941,6 +1079,7 @@ export async function createApp(options: AppOptions) {
         let state = store.state(projectId);
         let document: string | undefined;
         let session;
+        let createdTaskId: string | null = null;
         if (mode === 'plan') {
           const safeTitle =
             text
@@ -974,11 +1113,13 @@ export async function createApp(options: AppOptions) {
             description: text,
             owner: 'diomedes-with-ok',
           });
+          createdTaskId = task.id;
           await store.persist(state);
           session = await work.start(projectId, task.id, text);
           state = store.state(projectId);
         }
         const conversation = state.conversations.find((c) => c.id === prepared.conversationId)!;
+        if (createdTaskId && !conversation.taskId) conversation.taskId = createdTaskId;
         const turn: Turn = {
           id: identifier('U'),
           role: 'diomedes',
@@ -989,6 +1130,7 @@ export async function createApp(options: AppOptions) {
           route: serviceRoute,
         };
         conversation.turns.push(turn);
+        touchThread(conversation, turn.at, state.tasks);
         await store.persist(state);
         return { turn, conversation, document, session };
       });
@@ -1005,7 +1147,16 @@ export async function createApp(options: AppOptions) {
     const listener = (projectId: string) => {
       const state = store.state(projectId);
       send('state', { projectId, state });
-      for (const event of ['project', 'tasks', 'needs', 'history', 'review', 'session', 'status'])
+      for (const event of [
+        'project',
+        'tasks',
+        'needs',
+        'history',
+        'review',
+        'session',
+        'status',
+        'conversations',
+      ])
         send(event, {
           projectId,
           data:
@@ -1017,7 +1168,7 @@ export async function createApp(options: AppOptions) {
                   ? state.sessions
                   : event === 'status'
                     ? state.project.status
-                    : state[event as 'tasks' | 'needs' | 'history'],
+                    : state[event as 'tasks' | 'needs' | 'history' | 'conversations'],
         });
       send('projects', { projects: [state.project] });
     };

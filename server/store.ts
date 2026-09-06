@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events';
 import { diffLines } from 'diff';
 import type {
   Change,
+  Conversation,
   DocumentInfo,
   HistoryEntry,
   Owner,
@@ -31,9 +32,55 @@ export const now = () => new Date().toISOString();
 export const hash = (text: string | null) =>
   text === null ? null : createHash('sha256').update(text).digest('hex');
 export const identifier = (prefix = '') => prefix + randomBytes(6).toString('hex');
+/** Trim conversation text to a 60-character thread name at a word boundary. */
+export function threadNameFromText(text: string): string {
+  const collapsed = text.trim().replaceAll(/\s+/g, ' ');
+  if (!collapsed) return 'New thread';
+  if (collapsed.length <= 60) return collapsed;
+  const slice = collapsed.slice(0, 60);
+  const boundary = slice.lastIndexOf(' ');
+  const trimmed = (boundary > 0 ? slice.slice(0, boundary) : slice).trim();
+  return trimmed || 'New thread';
+}
+
+export function migrateConversation(
+  conversation: Conversation,
+  tasks: Task[],
+  loadTime: string,
+): void {
+  if (conversation.taskId === undefined)
+    conversation.taskId =
+      conversation.attachedTo.kind === 'task' ? conversation.attachedTo.ref : null;
+  if (conversation.helper === undefined) conversation.helper = null;
+  if (conversation.createdAt === undefined) {
+    conversation.createdAt = conversation.turns[0]?.at ?? loadTime;
+  }
+  if (conversation.updatedAt === undefined) {
+    conversation.updatedAt =
+      conversation.turns[conversation.turns.length - 1]?.at ?? conversation.createdAt;
+  }
+  if (conversation.name === undefined || conversation.name === '') {
+    const attachedTask =
+      conversation.attachedTo.kind === 'task'
+        ? tasks.find((t) => t.id === conversation.attachedTo.ref)
+        : undefined;
+    if (attachedTask) conversation.name = `Thread for ${attachedTask.name}`;
+    else {
+      const firstYou = conversation.turns.find((t) => t.role === 'you');
+      conversation.name = firstYou ? threadNameFromText(firstYou.text) : 'New thread';
+    }
+  }
+}
+
+export function migrateSettings(settings: Settings): void {
+  if (settings.surface === undefined)
+    settings.surface = settings.detail === 'technical' ? 'desk' : 'book';
+}
+
 export const defaults = (): Settings => ({
   version: 1,
   detail: 'guided',
+  surface: 'book',
   onboarding: {
     work: null,
     detail: null,
@@ -133,11 +180,15 @@ export class Store extends EventEmitter {
     await safeAbsolute(this.projectRoot);
     await fs.mkdir(path.join(this.dataDir, 'pending'), { recursive: true });
     this.settings = await readJson(path.join(this.dataDir, 'settings.json'), defaults);
+    migrateSettings(this.settings);
     this.registry = await readJson(path.join(this.dataDir, 'registry.json'), () => []);
     for (const project of this.registry) {
       const state = await readJson<StoredState>(this.statePath(project.id), () => {
         throw new Error(`Project state is missing for ${project.id}.`);
       });
+      const loadTime = now();
+      for (const conversation of state.conversations ?? [])
+        migrateConversation(conversation, state.tasks ?? [], loadTime);
       this.states.set(project.id, state);
     }
     await this.recover();
@@ -184,9 +235,15 @@ export class Store extends EventEmitter {
         // Discard metadata mutations from a rejected request and settle any prepared
         // filesystem operation before admitting another writer.
         await this.recover();
-        for (const id of this.states.keys())
-          this.states.set(id, await readJson(this.statePath(id), () => this.state(id)));
+        for (const id of this.states.keys()) {
+          const fresh = await readJson(this.statePath(id), () => this.state(id));
+          const loadTime = now();
+          for (const conversation of (fresh as StoredState).conversations ?? [])
+            migrateConversation(conversation, (fresh as StoredState).tasks ?? [], loadTime);
+          this.states.set(id, fresh as StoredState);
+        }
         this.settings = await readJson(path.join(this.dataDir, 'settings.json'), defaults);
+        migrateSettings(this.settings);
         throw error;
       }
     });

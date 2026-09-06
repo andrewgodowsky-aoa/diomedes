@@ -455,7 +455,184 @@ describe('request and filesystem boundaries', () => {
     expect(restarted.settings.onboarding.resumeAt).toBe('q2');
     expect((await request('/settings', 'PUT', { detail: 'invented' })).status).toBe(400);
   });
+});
+
+describe('threads are first-class conversations', () => {
+  test('old state without thread fields loads with fields filled and stays stable', async () => {
+    const id = await sample();
+    const task = (
+      await request(`/projects/${id}/tasks`, 'POST', { name: 'Fix patio' })
+    ).data;
+    const statePath = path.join(temp, 'data', 'projects', id, 'state.json');
+    const raw = JSON.parse(await fs.readFile(statePath, 'utf8'));
+    const longText =
+      'Hello world this is a very long first message that should be trimmed at a word boundary properly for the thread name';
+    raw.conversations = [
+      {
+        id: 'Clegacy1',
+        attachedTo: { kind: 'project', ref: id },
+        turns: [
+          {
+            id: 'U1',
+            role: 'you',
+            mode: 'ask',
+            text: longText,
+            at: '2026-01-01T00:00:00.000Z',
+            sources: [],
+          },
+          {
+            id: 'U2',
+            role: 'diomedes',
+            mode: 'ask',
+            text: 'reply',
+            at: '2026-01-02T00:00:00.000Z',
+            sources: [],
+          },
+        ],
+      },
+      { id: 'Clegacy2', attachedTo: { kind: 'project', ref: id }, turns: [] },
+      {
+        id: 'Clegacy3',
+        attachedTo: { kind: 'task', ref: task.id },
+        turns: [
+          {
+            id: 'U3',
+            role: 'you',
+            mode: 'ask',
+            text: 'task question',
+            at: '2026-01-03T00:00:00.000Z',
+            sources: [],
+          },
+        ],
+      },
+    ];
+    await fs.writeFile(statePath, JSON.stringify(raw));
+    const reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
+    await reloaded.init();
+    const byId = new Map(reloaded.state(id).conversations.map((c) => [c.id, c]));
+    const first = byId.get('Clegacy1')!;
+    expect(first.name!.length).toBeLessThanOrEqual(60);
+    expect(longText.startsWith(first.name!)).toBe(true);
+    expect(first.createdAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(first.updatedAt).toBe('2026-01-02T00:00:00.000Z');
+    expect(first.taskId).toBeNull();
+    expect(first.helper).toBeNull();
+    const empty = byId.get('Clegacy2')!;
+    expect(empty.name).toBe('New thread');
+    expect(typeof empty.createdAt).toBe('string');
+    expect(empty.updatedAt).toBe(empty.createdAt);
+    expect(empty.taskId).toBeNull();
+    expect(empty.helper).toBeNull();
+    const taskThread = byId.get('Clegacy3')!;
+    expect(taskThread.name).toBe('Thread for Fix patio');
+    expect(taskThread.taskId).toBe(task.id);
+    expect(taskThread.createdAt).toBe('2026-01-03T00:00:00.000Z');
+    expect(taskThread.updatedAt).toBe('2026-01-03T00:00:00.000Z');
+    const snapshot = JSON.stringify(reloaded.state(id).conversations);
+    const reloadedAgain = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
+    await reloadedAgain.init();
+    expect(JSON.stringify(reloadedAgain.state(id).conversations)).toBe(snapshot);
+  });
+  test("settings without surface get 'book' (standard) and 'desk' (technical)", async () => {
+    const settingsPath = path.join(temp, 'data', 'settings.json');
+    await request('/settings', 'PUT', { detail: 'standard' });
+    let raw = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
+    delete raw.surface;
+    raw.detail = 'standard';
+    await fs.writeFile(settingsPath, JSON.stringify(raw));
+    let reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
+    await reloaded.init();
+    expect(reloaded.settings.detail).toBe('standard');
+    expect(reloaded.settings.surface).toBe('book');
+    raw = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
+    delete raw.surface;
+    raw.detail = 'technical';
+    await fs.writeFile(settingsPath, JSON.stringify(raw));
+    reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
+    await reloaded.init();
+    expect(reloaded.settings.detail).toBe('technical');
+    expect(reloaded.settings.surface).toBe('desk');
+  });
+  test('POST /threads creates, PUT renames, GET lists newest-updated first', async () => {
+    const id = await sample();
+    const first = await request(`/projects/${id}/threads`, 'POST', { name: 'First thread' });
+    expect(first.status).toBe(201);
+    expect(first.data.name).toBe('First thread');
+    expect(first.data.turns).toEqual([]);
+    expect(first.data.attachedTo).toEqual({ kind: 'project', ref: id });
+    expect(first.data.taskId).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    const task = (await request(`/projects/${id}/tasks`, 'POST', { name: 'Patio task' })).data;
+    const forTask = await request(`/projects/${id}/threads`, 'POST', { taskId: task.id });
+    expect(forTask.status).toBe(201);
+    expect(forTask.data.attachedTo).toEqual({ kind: 'task', ref: task.id });
+    expect(forTask.data.name).toBe('Thread for Patio task');
+    const renamed = await request(`/projects/${id}/threads/${first.data.id}`, 'PUT', {
+      name: 'Renamed thread',
+    });
+    expect(renamed.status).toBe(200);
+    expect(renamed.data.name).toBe('Renamed thread');
+    expect((await request(`/projects/${id}/threads/${first.data.id}`, 'PUT', { name: '   ' })).status).toBe(
+      400,
+    );
+    expect((await request(`/projects/${id}/threads/Cmissing`, 'PUT', { name: 'Nope' })).status).toBe(
+      404,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'ask',
+      text: 'Bump the first thread',
+      threadId: first.data.id,
+    });
+    const listed = await request(`/projects/${id}/threads`);
+    expect(listed.status).toBe(200);
+    expect(listed.data.threads.map((t: { id: string }) => t.id)).toEqual([
+      first.data.id,
+      forTask.data.id,
+    ]);
+  });
+  test('POST /ask with threadId appends to that thread and bumps updatedAt', async () => {
+    const id = await sample();
+    const created = await request(`/projects/${id}/threads`, 'POST', {});
+    expect(created.status).toBe(201);
+    expect(created.data.name).toBe('New thread');
+    const before = created.data.updatedAt as string;
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    const answer = await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'ask',
+      text: 'Hello from the thread test',
+      threadId: created.data.id,
+    });
+    expect(answer.status).toBe(200);
+    expect(answer.data.conversation.id).toBe(created.data.id);
+    expect(answer.data.conversation.turns).toHaveLength(2);
+    expect(answer.data.conversation.attachedTo).toEqual({ kind: 'project', ref: id });
+    expect(answer.data.conversation.name).toBe('Hello from the thread test');
+    expect(answer.data.conversation.updatedAt > before).toBe(true);
+    expect(
+      (
+        await request(`/projects/${id}/ask`, 'POST', {
+          mode: 'ask',
+          text: 'missing thread',
+          threadId: 'Cmissing',
+        })
+      ).status,
+    ).toBe(404);
+    const workThread = (await request(`/projects/${id}/threads`, 'POST', {})).data;
+    const work = await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'work',
+      text: 'Do some thread work',
+      threadId: workThread.id,
+    });
+    expect(work.status).toBe(200);
+    expect(work.data.conversation.id).toBe(workThread.id);
+    expect(work.data.conversation.taskId).toBeTruthy();
+  });
+});
+
+describe('request and filesystem boundaries (continued)', () => {
   test('sample Ask is honest, sample Plan writes a real file, and Codex requires explicit settings and consent', async () => {
+
     const id = await sample();
     const answer = await request(`/projects/${id}/ask`, 'POST', {
       mode: 'ask',
