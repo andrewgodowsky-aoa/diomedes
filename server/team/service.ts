@@ -116,6 +116,10 @@ export class TeamService {
   acceptRun(projectId: string, slotId: Slot, sessionId: string): TeamRun {
     const team = this.teamState(projectId);
     this.setMemberStatus(projectId, slotId, 'working');
+    // One run per session: the native adapter records the run when the session starts and
+    // a wake records it again after the starter returns. The second call finds the first.
+    const existing = team.runs.find((item) => item.sessionId === sessionId);
+    if (existing) return existing;
     const run: TeamRun = {
       id: identifier('R'),
       slotId,

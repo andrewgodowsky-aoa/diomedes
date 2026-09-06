@@ -1035,7 +1035,9 @@ export async function createApp(options: AppOptions) {
           ? state.tasks.find((item) => item.id === taskId && !item.deletedAt)
           : undefined) ??
         store.createTask(state, {
-          name: taskNameFromText(text),
+          // A wake's text opens with the sender line; the task is named for the ask itself.
+          name: taskNameFromText(wake ? text.replace(/^From [^:
+]{1,80}: /, '') : text),
           description: text,
           owner: 'diomedes-with-ok',
         });

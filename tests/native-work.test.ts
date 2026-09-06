@@ -982,10 +982,12 @@ describe('team wake through the adapter', () => {
     fake.client.finish();
     current = await until((value) => value.sessions[0].state === 'done');
     expect(current.team?.members[0].status).toBe('idle');
+    expect(current.team?.runs).toHaveLength(1);
     expect(current.team?.runs[0]).toMatchObject({
       sessionId: current.sessions[0].id,
       status: 'completed',
     });
+    expect(current.tasks.map((item) => item.name)).toContain('Please draft the patio note.');
     await assertPrivate(identity.token);
   });
 
