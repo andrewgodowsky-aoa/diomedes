@@ -13,6 +13,10 @@ import type {
   Task,
   TaskState,
   ThreadPermission,
+  MailboxMessage,
+  Slot,
+  TeamMember,
+  TeamState,
 } from '../shared/types';
 import { api } from './api';
 import {
@@ -47,38 +51,6 @@ type RightTab = 'board' | 'changes' | 'files';
 
 const MAX_PANES = 3;
 
-/** Shapes from planning/2026-09-06-v6-two-views/05-team-service-v0-spec.md; replaced by shared/types once the service lands. */
-type Slot = string;
-interface TeamMember {
-  slotId: Slot;
-  name: string;
-  role: 'lead' | 'member';
-  engine: 'codex' | 'claude-code' | 'opencode' | 'oh-my-pi' | 'sample' | 'probe';
-  model: string | null;
-  status: 'idle' | 'working' | 'waiting' | 'stopped' | 'error';
-  threadId: string | null;
-  createdAt: string;
-  lastSeenAt: string | null;
-}
-interface MailboxMessage {
-  id: string;
-  to: Slot;
-  from: Slot;
-  type: 'message' | 'idle_notification' | 'shutdown_request';
-  content: string;
-  summary?: string;
-  files?: string[];
-  read: boolean;
-  createdAt: string;
-  threadId: string | null;
-  runId: string | null;
-  approvalId: string | null;
-}
-interface TeamState {
-  members: TeamMember[];
-  messages: MailboxMessage[];
-  runs: { id: string; slotId: Slot; sessionId: string | null; status: string }[];
-}
 type ThreadWithPermission = Conversation;
 const engineNames: Record<TeamMember['engine'], string> = {
   codex: 'Codex',
