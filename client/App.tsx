@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IntegrationStatus, Page, Project, Settings, Surface } from '../shared/types';
 import { api } from './api';
-import { Brand, Button, Empty, Icon, Mark, Modal, date, titleCase } from './components';
+import { Brand, Button, Empty, Icon, Mark, Modal, date, surfaceOf, titleCase } from './components';
 import { Desk } from './Desk';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
 import { Workspace } from './Workspace';
-
-/** Older settings have no surface; 'technical' detail meant the audience the Desk now serves. */
-function surfaceOf(settings: Settings): Surface {
-  return settings.surface ?? (settings.detail === 'technical' ? 'desk' : 'book');
-}
 
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
