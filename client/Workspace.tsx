@@ -471,7 +471,7 @@ export function Workspace({
   const selectedThread =
     (threadId ? allThreads.find((c) => c.id === threadId) : undefined) ?? pageThreads[0] ?? null;
   const selectedThreadId = selectedThread?.id ?? null;
-  const recentThreads = allThreads.slice(0, 3);
+  const recentThreads = allThreads.filter((c) => c.turns.length > 0).slice(0, 3);
   function openThread(id: string) {
     setThreadId(id);
     go('ask');
@@ -870,6 +870,82 @@ export function Workspace({
       </div>
     </article>
   );
+  /** Changed today, one row per task: its current state, the files it touched, and a way back. */
+  function todayRows() {
+    if (!state) return [];
+    const today = new Date().toDateString();
+    const entries = [...state.history]
+      .reverse()
+      .filter((e) => new Date(e.time).toDateString() === today);
+    const rows: ReactNode[] = [];
+    const seen = new Set<string>();
+    for (const entry of entries) {
+      if (rows.length >= 4) break;
+      const group = entry.taskId ? entries.filter((e) => e.taskId === entry.taskId) : [entry];
+      if (entry.taskId) {
+        if (seen.has(entry.taskId)) continue;
+        seen.add(entry.taskId);
+      }
+      const task = state.tasks.find((t) => t.id === entry.taskId);
+      const files = [...new Set(group.flatMap((e) => e.files.map((f) => f.path)))];
+      const latestWithFiles = group.find((e) => e.files.length > 0);
+      const parts = [
+        task ? stateNames[task.state] : null,
+        files.length ? `${files.length} ${files.length === 1 ? 'file' : 'files'} changed` : null,
+      ].filter(Boolean);
+      rows.push(
+        <div key={entry.taskId ?? entry.id} className="history-entry compact">
+          <time dateTime={entry.time}>{time(entry.time)}</time>
+          <div className="entry-body">
+            <span>{task?.name ?? entry.sentence}</span>
+            {parts.length > 0 && (
+              <p className="caption">
+                {parts.join(', ')}
+                {files.length ? `: ${files.join(', ')}` : ''}
+              </p>
+            )}
+          </div>
+          <div className="actions">
+            {latestWithFiles && (
+              <>
+                <Button onClick={() => void viewEntry(latestWithFiles)}>View changes</Button>
+                <Button onClick={() => setRestore({ entry: latestWithFiles })}>Restore</Button>
+              </>
+            )}
+          </div>
+        </div>,
+      );
+    }
+    return rows;
+  }
+  const codex = integrations.find((i) => i.id === 'codex');
+  const helperLine = (
+    <p className="caption helper-line">
+      {settings.services?.codex && codex?.available ? (
+        <span>
+          Codex is on. Your messages and attached documents go to OpenAI through your ChatGPT
+          account.
+        </span>
+      ) : codex?.available ? (
+        <>
+          <span>Codex is signed in but turned off, so Diomedes uses sample work.</span>
+          <button
+            className="text-button"
+            onClick={() =>
+              void saveSettings({ ...settings, services: { ...settings.services, codex: true } })
+            }
+          >
+            Turn Codex on
+          </button>
+          <span>
+            Your messages and attached documents will go to OpenAI through your ChatGPT account.
+          </span>
+        </>
+      ) : (
+        <span>Sample work, on this computer. No online service is connected.</span>
+      )}
+    </p>
+  );
   function historyRow(entry: HistoryEntry) {
     return (
       <div key={entry.id} className="history-entry">
@@ -1041,7 +1117,7 @@ export function Workspace({
               </div>
             ) : (
               <div
-                className={`book-layout ${running.some((s) => s.state === 'working') ? 'working' : ''}`}
+                className={`book-layout ${running.some((s) => s.state === 'working') ? 'working' : ''} ${page === 'home' ? 'home' : ''}`}
               >
                 <div className="reading" key={`${projectId}:${page}`}>
                   {page === 'home' && (
@@ -1089,6 +1165,7 @@ export function Workspace({
                             </button>
                           ))}
                         </div>
+                        {helperLine}
                       </section>
                       {!!recentThreads.length && (
                         <section className="block">
@@ -1123,15 +1200,9 @@ export function Workspace({
                       {state.history.some(
                         (e) => new Date(e.time).toDateString() === new Date().toDateString(),
                       ) && (
-                        <section className="block">
+                        <section className="block changed-today">
                           <h3 className="section-title">Changed today</h3>
-                          {[...state.history]
-                            .reverse()
-                            .filter(
-                              (e) => new Date(e.time).toDateString() === new Date().toDateString(),
-                            )
-                            .slice(0, 4)
-                            .map(historyRow)}
+                          {todayRows()}
                         </section>
                       )}
                       {!!state.documents.length && (
@@ -1825,7 +1896,7 @@ export function Workspace({
                       </details>
                     </section>
                   )}
-                  {composer}
+                  {page !== 'home' && composer}
                   {(detail !== 'guided' || showMore) && state.project.references.length > 0 && (
                     <section className="block">
                       <h3>References</h3>

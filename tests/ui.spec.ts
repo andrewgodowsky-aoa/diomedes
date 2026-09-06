@@ -185,6 +185,12 @@ test('F11-F13: work asks twice, decline skips creation, and the remaining change
   await page.screenshot({ path: testInfo.outputPath('work-approval.png'), fullPage: true, animations: 'disabled' });
   await navigate(page, 'Home');
   await expect(notice).toBeVisible();
+  // Home is the door: no Ask box, one right edge, and one row per task in Changed today.
+  await expect(page.getByRole('region', { name: 'Ask box', exact: true })).toHaveCount(0);
+  const waitingTask = (await projectState(page)).tasks.find(task => task.state === 'waiting')!;
+  await expect(page.locator('.changed-today .history-entry', { hasText: waitingTask.name })).toHaveCount(1);
+  const edges = await page.evaluate(() => [document.querySelector('.intent-rail'), document.querySelector('.changed-today')].map(element => element!.getBoundingClientRect().right));
+  expect(Math.abs(edges[0] - edges[1])).toBeLessThan(1.5);
   await expect(page.getByRole('navigation', { name: 'Open projects' }).getByRole('button', { name: /Harbor Street/ }).locator('.mark.waiting')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Project pages' }).getByRole('button', { name: /^Tasks\b/ }).locator('.rail-count')).toHaveText('1');
   await page.screenshot({ path: testInfo.outputPath('home-guided-needs.png'), fullPage: true, animations: 'disabled' });
@@ -295,6 +301,8 @@ test('F17, F20-F22: surface switches preserve data; visible pages meet copy and 
   await navigate(page, 'Home');
   const intents = page.locator('.intents');
   await expect(intents).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Ask box', exact: true })).toHaveCount(0);
+  await expect(intents.locator('.helper-line')).toContainText(/Sample work/);
   for (const name of ['Ask a question', 'Get something done', 'Make a plan', 'Look over what changed'])
     await expect(intents.getByRole('button', { name: new RegExp(`^${name}\\b`) })).toBeVisible();
   await intents.getByRole('button', { name: /^Get something done\b/ }).click();

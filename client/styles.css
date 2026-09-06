@@ -2395,3 +2395,48 @@ html[data-motion='reduced'] *::after {
 .desk-composer-modes {
   align-items: center;
 }
+
+/* ---- Home: one column, one right edge, a reading face on the section titles ---- */
+.book-layout.home {
+  grid-template-columns: minmax(0, 1fr);
+}
+.book-layout.home > .margin {
+  display: none;
+}
+.book-layout.home .reading {
+  max-width: 844px;
+}
+.book-layout.home .reading > * {
+  max-width: 760px;
+}
+.book-layout.home .section-title {
+  font: 500 calc(19px * var(--dm-read-scale)) / 1.4 var(--dm-font-read);
+  color: var(--dm-text-1);
+  margin-bottom: 10px;
+}
+.helper-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  margin: 14px 0 0;
+  color: var(--dm-text-3);
+}
+.helper-line .text-button {
+  font-size: inherit;
+}
+.history-entry.compact {
+  min-height: 52px;
+  padding: 10px 0;
+}
+.history-entry.compact .entry-body > span {
+  font-weight: 500;
+}
+@media (min-width: 1550px) {
+  .book-layout.home .reading {
+    max-width: 964px;
+  }
+  .book-layout.home .reading > * {
+    max-width: 880px;
+  }
+}
