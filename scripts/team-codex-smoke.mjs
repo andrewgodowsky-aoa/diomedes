@@ -66,7 +66,9 @@ async function main() {
   const hasForbiddenLog =
     session?.log.some((entry) => {
       const sentence = entry.sentence.toLowerCase();
-      return sentence.includes('could not call') || sentence.includes('disabled');
+      // The disclosure line legitimately says native tools "remain disabled"; the failure
+      // signatures are the host refusal and a tool the model could not reach.
+      return sentence.includes('could not call') || sentence.includes('code-mode host is disabled');
     }) ?? false;
   if (session?.state === 'done' && hasTask && !hasForbiddenLog) {
     console.log('PASS: real Codex team session completed and created the patio reopening task.');
