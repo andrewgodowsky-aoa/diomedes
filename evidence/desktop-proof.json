@@ -1,12 +1,12 @@
 {
-  "checkedAt": "2026-09-06T08:04:52.372Z",
+  "checkedAt": "2026-09-06T09:14:22.052Z",
   "executablePath": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
   "startup": {
     "version": "0.1.0",
     "executable": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
-    "pid": 22040,
-    "url": "http://127.0.0.1:53647",
-    "startedAt": "2026-09-06T08:04:50.360Z",
+    "pid": 27860,
+    "url": "http://127.0.0.1:51975",
+    "startedAt": "2026-09-06T09:14:19.387Z",
     "packaged": true
   },
   "taskCount": 4,
