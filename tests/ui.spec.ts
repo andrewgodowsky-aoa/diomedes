@@ -105,7 +105,14 @@ test('F01-F02: first run resumes, chooses a surface, and opens the selected surf
 });
 
 test('F04, F06: sample project opens and a plan edit survives reload with History', async ({ page }, testInfo) => {
+  // The first-run test leaves the settings on the Desk; this one and the rest read the Book.
+  const toBook = await page.request.put('/api/settings', {
+    headers: { 'X-Diomedes-Client': '1' },
+    data: { surface: 'book', detail: 'guided' },
+  });
+  expect(toBook.ok()).toBe(true);
   await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'book');
   await page.getByRole('button', { name: 'Open sample project', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Harbor Street restaurants', exact: true })).toBeVisible();
   const { projects }: { projects: Project[] } = await (await page.request.get('/api/projects')).json();
