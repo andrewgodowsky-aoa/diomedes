@@ -1039,7 +1039,9 @@ export function Workspace({
                           ))}
                         </section>
                       )}
-                      {!!state.history.length && (
+                      {state.history.some(
+                        (e) => new Date(e.time).toDateString() === new Date().toDateString(),
+                      ) && (
                         <section className="block">
                           <h3 className="section-title">Changed today</h3>
                           {[...state.history]
@@ -1118,6 +1120,18 @@ export function Workspace({
                         <p className="prose capability">
                           In this project Diomedes can read and change supported text files, write
                           plans, keep tasks up to date, and restore the changes it recorded.
+                        </p>
+                      )}
+                      {detail === 'standard' && (
+                        <p className="caption open-desk">
+                          <button
+                            className="text-button"
+                            onClick={() => void saveSettings({ ...settings, surface: 'desk' })}
+                          >
+                            Open the Desk
+                          </button>
+                          {' '}
+                          to see every thread, every helper and every change at once.
                         </p>
                       )}
                     </>

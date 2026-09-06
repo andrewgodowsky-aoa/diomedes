@@ -106,6 +106,14 @@ body {
   color: var(--dm-text-1);
   font: calc(16px * var(--dm-ui-scale)) / 1.5 var(--dm-font-ui);
   font-synthesis: none;
+}
+/* Tabular figures only where numbers line up; in running text they widen the punctuation. */
+time,
+.rail-count,
+.task-column > header .caption,
+.desk-column > header .caption,
+.work-log time,
+.document-row > .caption {
   font-variant-numeric: tabular-nums;
 }
 button,
@@ -2321,4 +2329,17 @@ html[data-motion='reduced'] *::after {
   .desk-right {
     display: none;
   }
+}
+
+.open-desk {
+  margin-top: 24px;
+}
+.text-button {
+  padding: 0;
+  color: var(--dm-glacier);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.text-button:hover {
+  color: var(--dm-text-1);
 }
