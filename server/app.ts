@@ -36,6 +36,14 @@ const asString = (value: unknown, name: string, max = 10000): string => {
     throw new ApiError(400, `Provide ${name} of up to ${max} characters.`);
   return value;
 };
+function taskNameFromText(text: string): string {
+  const firstLine = text.split('\n')[0].trim();
+  if (firstLine.length <= 80) return firstLine;
+  const shortened = firstLine.slice(0, 80);
+  if (/\s/.test(firstLine[80])) return shortened.trimEnd();
+  const boundary = shortened.search(/\s+\S*$/);
+  return (boundary > 0 ? shortened.slice(0, boundary) : shortened).trimEnd();
+}
 const choice = <const T extends string>(value: unknown, values: readonly T[], name: string): T => {
   if (typeof value !== 'string' || !values.includes(value as T))
     throw new ApiError(400, `Choose a valid ${name}.`);
@@ -1018,7 +1026,7 @@ export async function createApp(options: AppOptions) {
           )
             throw new ApiError(409, 'This project already has work in progress.');
           const task = store.createTask(state, {
-            name: text.split('\n')[0].slice(0, 200),
+            name: taskNameFromText(text),
             description: text,
             owner: 'diomedes-with-ok',
           });
@@ -1190,7 +1198,7 @@ export async function createApp(options: AppOptions) {
           )
             throw new ApiError(409, 'This project already has work in progress.');
           const task = store.createTask(state, {
-            name: text.split('\n')[0].slice(0, 200),
+            name: taskNameFromText(text),
             description: text,
             owner: 'diomedes-with-ok',
           });

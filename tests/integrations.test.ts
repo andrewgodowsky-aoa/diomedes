@@ -180,6 +180,17 @@ describe('opt-in Diomedes team boundary', () => {
         'features.apps': false,
         'features.plugins': false,
         'features.multi_agent': false,
+        // Enabling the gateway remains blocked by the proof gap in QUESTIONS.md.
+        'features.code_mode': false,
+        'features.code_mode_host': false,
+        'features.browser_use': false,
+        'features.browser_use_external': false,
+        'features.computer_use': false,
+        'features.workspace_dependencies': false,
+        'features.skill_mcp_dependency_install': false,
+        'features.skill_search': false,
+        'features.skip_host_skill_discovery': true,
+        'skills.include_instructions': false,
         web_search: 'disabled',
       });
       expect(start).toMatchObject({
@@ -387,6 +398,21 @@ describe('native integration boundary', () => {
     });
     expect(start.config).toMatchObject({
       mcp_servers: { inherited: { enabled: false }, 'server.with.dot': { enabled: false } },
+      'features.code_mode': false,
+      'features.code_mode_host': false,
+      'features.shell_tool': false,
+      'features.apps': false,
+      'features.plugins': false,
+      'features.multi_agent': false,
+      'features.browser_use': false,
+      'features.browser_use_external': false,
+      'features.computer_use': false,
+      'features.workspace_dependencies': false,
+      'features.skill_mcp_dependency_install': false,
+      'features.skill_search': false,
+      'features.skip_host_skill_discovery': true,
+      'skills.include_instructions': false,
+      web_search: 'disabled',
     });
     const turn = integration.client.calls.find((call) => call.method === 'turn/start')!.params;
     expect(turn).toMatchObject({
