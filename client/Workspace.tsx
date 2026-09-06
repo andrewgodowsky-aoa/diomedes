@@ -478,7 +478,7 @@ export function Workspace({
   }
   async function newThread() {
     await perform(async () => {
-      const c = await api<Conversation>(`${base}/threads`, 'POST', {});
+      const c = await api<Conversation>(`${base}/threads`, 'POST', attached ? { attachedTo: { kind: 'document', ref: attached } } : {});
       await load();
       setThreadId(c.id);
       say('New thread started.');
