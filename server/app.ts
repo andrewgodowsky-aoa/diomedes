@@ -17,6 +17,7 @@ import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText }
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
 import { askCodex, getIntegrationStatuses } from './integrations.js';
+import { mountTeamRoutes } from './team/routes.js';
 
 interface AppOptions {
   dataDir: string;
@@ -218,6 +219,7 @@ export async function createApp(options: AppOptions) {
   const origins = new Set([`http://127.0.0.1:${port}`, `http://127.0.0.1:${clientPort}`]);
   app.disable('x-powered-by');
   app.use((req, res, next) => {
+    if (req.path.startsWith('/mcp/team/')) return next();
     const origin = req.headers.origin;
     const host = req.headers.host;
     if (!host || !/^127\.0\.0\.1:\d+$/.test(host))
@@ -239,6 +241,7 @@ export async function createApp(options: AppOptions) {
     next();
   });
   app.use(express.json({ limit: '9mb' }));
+  mountTeamRoutes(app, store);
   const route =
     (action: (req: Request, res: Response) => Promise<unknown>, locked = true) =>
     async (req: Request, res: Response, next: express.NextFunction) => {
@@ -1215,6 +1218,7 @@ export async function createApp(options: AppOptions) {
         'session',
         'status',
         'conversations',
+        'team',
       ])
         send(event, {
           projectId,
@@ -1227,7 +1231,9 @@ export async function createApp(options: AppOptions) {
                   ? state.sessions
                   : event === 'status'
                     ? state.project.status
-                    : state[event as 'tasks' | 'needs' | 'history' | 'conversations'],
+                    : event === 'team'
+                      ? (state.team ?? { members: [], messages: [], runs: [] })
+                      : state[event as 'tasks' | 'needs' | 'history' | 'conversations'],
         });
       send('projects', { projects: [state.project] });
     };
