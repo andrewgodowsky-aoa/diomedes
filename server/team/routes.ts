@@ -98,6 +98,10 @@ export function mountTeamRoutes(app: Express, store: Store, existing?: TeamServi
     route(async (req) => service.stopMember(String(req.params.id), String(req.params.slot))),
   );
   app.post(
+    '/api/projects/:id/team/members/:slot/wake',
+    route(async (req) => service.wakeMember(String(req.params.id), String(req.params.slot))),
+  );
+  app.post(
     '/api/projects/:id/team/messages',
     route(async (req) => {
       const b = plain(req.body);
@@ -107,5 +111,6 @@ export function mountTeamRoutes(app: Express, store: Store, existing?: TeamServi
     }),
   );
 
+  app.locals.teamService = service;
   return service;
 }

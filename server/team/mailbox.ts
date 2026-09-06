@@ -33,6 +33,10 @@ export function deliverMessage(messages: MailboxMessage[], input: SendMailboxInp
   return message;
 }
 
+export function unreadForSlot(messages: MailboxMessage[], slotId: Slot): MailboxMessage[] {
+  return messages.filter((m) => m.to === slotId && !m.read);
+}
+
 export function peekForSlot(
   messages: MailboxMessage[],
   slotId: Slot,

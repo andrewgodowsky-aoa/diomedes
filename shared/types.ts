@@ -240,6 +240,8 @@ export interface TeamMember {
   threadId: string | null;
   createdAt: string;
   lastSeenAt: string | null;
+  /** Count of unread mailbox messages to this slot; filled by TeamService.teamState(). */
+  unread?: number;
 }
 export interface MailboxMessage {
   id: string;

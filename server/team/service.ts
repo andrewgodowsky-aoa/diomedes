@@ -16,6 +16,7 @@ import {
   deliverMessage,
   hasPendingShutdown,
   peekForSlot,
+  unreadForSlot,
 } from './mailbox.js';
 import {
   checkCompletionAllowed,
@@ -57,11 +58,51 @@ function findMember(team: TeamState, slotId: Slot): TeamMember {
   return member;
 }
 
+export interface RunStarterInput {
+  projectId: string;
+  member: TeamMember;
+  threadId: string;
+  text: string;
+}
+
+export type RunStarter = (input: RunStarterInput) => Promise<{ sessionId: string }>;
+
+/** At most this many automatic wakes per slot inside AUTO_WAKE_WINDOW_MS. */
+const AUTO_WAKE_LIMIT = 5;
+const AUTO_WAKE_WINDOW_MS = 10 * 60 * 1000;
+
+function senderDisplayName(team: TeamState, from: Slot): string {
+  if (from === 'owner') return 'Owner';
+  return team.members.find((m) => m.slotId === from)?.name ?? from;
+}
+
+function renderWakeText(team: TeamState, unread: MailboxMessage[]): string {
+  return unread.map((m) => `From ${senderDisplayName(team, m.from)}: ${m.content}`).join('\n\n');
+}
+
 export class TeamService {
+  private runStarter: RunStarter | null = null;
+  private wakeLog = new Map<string, number[]>();
+  private clock: () => number = () => Date.now();
+
   constructor(private store: Store) {}
 
+  /** Wire the app's run starter later; until then wakes park as 'waiting' and never fail a send. */
+  setRunStarter(fn: RunStarter): void {
+    this.runStarter = fn;
+  }
+
+  /** Test seam for the auto-wake budget clock (avoids fake timers around network tests). */
+  setClock(fn: () => number): void {
+    this.clock = fn;
+  }
+
   teamState(projectId: string): TeamState {
-    return migrateTeam(this.store.state(projectId));
+    const team = migrateTeam(this.store.state(projectId));
+    for (const member of team.members) {
+      member.unread = unreadForSlot(team.messages, member.slotId).length;
+    }
+    return team;
   }
 
   // The run controller persists these mutations with the corresponding Session
@@ -186,9 +227,97 @@ export class TeamService {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
     const member = findMember(team, slotId);
-    member.status = 'stopped';
+    this.setMemberStatus(projectId, slotId, 'stopped');
     await this.store.persist(state);
     return structuredClone(member);
+  }
+
+  /** Owner-started wake for a parked helper: runs the starter over all unread messages. */
+  async wakeMember(
+    projectId: string,
+    slotId: Slot,
+  ): Promise<{ member: TeamMember; sessionId: string }> {
+    const state = this.store.state(projectId);
+    const team = migrateTeam(state);
+    const member = findMember(team, slotId);
+    const waiting = unreadForSlot(team.messages, slotId);
+    if (waiting.length === 0)
+      throw new ApiError(400, 'Nothing is waiting for this helper.');
+    if (!member.threadId) throw new ApiError(400, 'This helper has no thread to wake.');
+    if (!this.runStarter) throw new ApiError(503, 'Runs are not available here.');
+    const { sessionId } = await this.runStarter({
+      projectId,
+      member: structuredClone(member),
+      threadId: member.threadId,
+      text: renderWakeText(team, waiting),
+    });
+    this.acceptRun(projectId, slotId, sessionId);
+    acknowledge(
+      team.messages,
+      waiting.map((m) => m.id),
+    );
+    member.unread = 0;
+    await this.store.persist(state);
+    return { member: structuredClone(member), sessionId };
+  }
+
+  private async maybeWake(projectId: string, to: Slot, from: Slot): Promise<void> {
+    if (to === 'owner' || to === from) return;
+    const state = this.store.state(projectId);
+    const team = migrateTeam(state);
+    const recipient = team.members.find((m) => m.slotId === to);
+    if (!recipient || !recipient.threadId) return;
+    if (recipient.status === 'working' || recipient.status === 'stopped') return;
+    const conversation = state.conversations.find((c) => c.id === recipient.threadId);
+    const permission = conversation?.permission ?? 'show-first';
+    if (permission !== 'task') {
+      this.setMemberStatus(projectId, to, 'waiting');
+      await this.store.persist(state);
+      return;
+    }
+    const waiting = unreadForSlot(team.messages, to);
+    if (waiting.length === 0 || !this.runStarter) {
+      this.setMemberStatus(projectId, to, 'waiting');
+      await this.store.persist(state);
+      return;
+    }
+    const key = `${projectId}:${to}`;
+    const moment = this.clock();
+    const recent = (this.wakeLog.get(key) ?? []).filter(
+      (at) => moment - at < AUTO_WAKE_WINDOW_MS,
+    );
+    if (recent.length >= AUTO_WAKE_LIMIT) {
+      this.wakeLog.set(key, recent);
+      this.setMemberStatus(projectId, to, 'waiting');
+      this.store.addEntry(state, {
+        kind: 'team-wake',
+        sentence: `${memberAttribution(recipient)} has waiting messages; automatic wake paused for 10 minutes (budget reached)`,
+        actor: 'diomedes',
+      });
+      await this.store.persist(state);
+      return;
+    }
+    let sessionId: string;
+    try {
+      const started = await this.runStarter({
+        projectId,
+        member: structuredClone(recipient),
+        threadId: recipient.threadId,
+        text: renderWakeText(team, waiting),
+      });
+      sessionId = started.sessionId;
+    } catch {
+      this.setMemberStatus(projectId, to, 'waiting');
+      await this.store.persist(state);
+      return;
+    }
+    this.acceptRun(projectId, to, sessionId);
+    acknowledge(
+      team.messages,
+      waiting.map((m) => m.id),
+    );
+    this.wakeLog.set(key, [...recent, this.clock()]);
+    await this.store.persist(state);
   }
 
   async ownerSendMessage(projectId: string, to: Slot, content: string): Promise<MailboxMessage> {
@@ -211,7 +340,9 @@ export class TeamService {
       approvalId: null,
     });
     await this.store.persist(state);
-    return structuredClone(message);
+    const stored = structuredClone(message);
+    await this.maybeWake(projectId, to, 'owner');
+    return stored;
   }
 
   async sendAsMember(
@@ -257,10 +388,12 @@ export class TeamService {
       pendingShutdown &&
       (summary === 'shutdown_approved' || (content as string) === 'shutdown_approved')
     ) {
-      live.status = 'stopped';
+      this.setMemberStatus(projectId, live.slotId, 'stopped');
     }
     await this.store.persist(state);
-    return structuredClone(message);
+    const stored = structuredClone(message);
+    await this.maybeWake(projectId, to, live.slotId);
+    return stored;
   }
 
   async readAsMember(
@@ -522,7 +655,7 @@ export class TeamService {
       runId: null,
       approvalId: null,
     });
-    if (target.status === 'idle') target.status = 'stopped';
+    if (target.status === 'idle') this.setMemberStatus(projectId, target.slotId, 'stopped');
     await this.store.persist(state);
     return { message: structuredClone(outgoing), member: structuredClone(target) };
   }
