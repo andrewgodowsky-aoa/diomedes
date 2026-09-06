@@ -44,17 +44,19 @@ async function openProject(page: Page) {
   await expect(page.getByRole('navigation', { name: 'Project pages', exact: true })).toBeVisible();
 }
 
-test('F01-F02: first run resumes, saves Guided answers, and opens Projects', async ({ page }) => {
+test('F01-F02: first run resumes, chooses a surface, and opens the selected surface', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('radio', { name: 'Business', exact: true }).click();
   await expect(page.getByRole('radio', { name: 'Business', exact: true })).toBeChecked();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'How much technical detail would you like to see?' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'How do you want to work?', exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'How much technical detail would you like to see?' })).toBeVisible();
-  await page.getByRole('radio', { name: /^Keep it simple/ }).click();
-  await expect(page.getByRole('radio', { name: /^Keep it simple/ })).toBeChecked();
+  await expect(page.getByRole('heading', { name: 'How do you want to work?', exact: true })).toBeVisible();
+  for (const name of [/^I'm new to this\b/, /^I've used tools like this\b/, /^I work with these tools every day\b/])
+    await expect(page.getByRole('radio', { name })).toBeVisible();
+  await page.getByRole('radio', { name: /^I'm new to this\b/ }).click();
+  await expect(page.getByRole('radio', { name: /^I'm new to this\b/ })).toBeChecked();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('radio', { name: /^New to this/ }).click();
   await expect(page.getByRole('radio', { name: /^New to this/ })).toBeChecked();
@@ -65,9 +67,41 @@ test('F01-F02: first run resumes, saves Guided answers, and opens Projects', asy
   await expect(page.getByText(/a project for a restaurant's menus, suppliers and schedules/)).toBeVisible();
   const settings: Settings = await (await page.request.get('/api/settings')).json();
   expect(settings.detail).toBe('guided');
+  expect(settings.surface).toBe('book');
   expect(settings.permissions.changingFiles).toBe(true);
   expect(settings.explanations).toBe('persistent');
   expect(settings.onboarding.completedAt).toBeTruthy();
+
+  const resume = await page.request.put('/api/settings', {
+    headers: { 'X-Diomedes-Client': '1' },
+    data: { onboarding: { resumeAt: 'q2', completedAt: null } },
+  });
+  expect(resume.ok()).toBe(true);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'How do you want to work?', exact: true })).toBeVisible();
+  await page.getByRole('radio', { name: 'I work with these tools every day', exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'I work with these tools every day', exact: true })).toBeChecked();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('radio', { name: /^Very comfortable/ })).toBeChecked();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Ready.', exact: true })).toBeVisible();
+  await expect(page.getByText(/You'll use The Desk/)).toBeVisible();
+  await page.getByRole('button', { name: 'Open Diomedes' }).click();
+  await page.getByRole('button', { name: 'Open sample project', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'desk');
+  await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
+  await expect(page.getByRole('heading', { name: 'Harbor Street restaurants', exact: true })).toBeVisible();
+  const comfortableSettings: Settings = await (await page.request.get('/api/settings')).json();
+  expect(comfortableSettings.surface).toBe('desk');
+  expect(comfortableSettings.detail).toBe('standard');
+
+  await page.getByRole('button', { name: 'Interface detail menu' }).click();
+  await page.getByRole('button', { name: 'The Book', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'book');
+  await expect(page.locator('html')).toHaveAttribute('data-detail', 'standard');
+  await page.getByRole('button', { name: 'Interface detail menu' }).click();
+  await page.getByRole('button', { name: 'Guided', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
 });
 
 test('F04, F06: sample project opens and a plan edit survives reload with History', async ({ page }, testInfo) => {
@@ -233,7 +267,7 @@ test('F14: Stop settles a started sample promptly and expires its approval', asy
   expect(state.history.some(entry => entry.kind === 'stop' && entry.sessionId === latest!.id)).toBe(true);
 });
 
-test('F17, F20-F22: detail switches preserve data; visible pages meet copy and layout checks', async ({ page }, testInfo) => {
+test('F17, F20-F22: surface switches preserve data; visible pages meet copy and layout checks', async ({ page }, testInfo) => {
   await openProject(page);
   const before = await projectState(page);
   const banned = /\b(?:kanban|git|github|repo|repository|branch|commit|agent|agentic|worker|model|llm|context window|tokens|mcp|patch|diff|prompt|pipeline|orchestration|autonomous|copilot|AI-powered|intelligent|supercharge|unlock|next-generation|revolutionary|magic|harness)\b/gi;
@@ -246,17 +280,61 @@ test('F17, F20-F22: detail switches preserve data; visible pages meet copy and l
       expect((await page.locator('body').innerText()).match(banned) ?? [], `Forbidden words on ${detail} ${name}`).toEqual([]);
     }
   }
+  await navigate(page, 'Home');
+  const intents = page.locator('.intents');
+  await expect(intents).toBeVisible();
+  for (const name of ['Ask a question', 'Get something done', 'Make a plan', 'Look over what changed'])
+    await expect(intents.getByRole('button', { name: new RegExp(`^${name}\\b`) })).toBeVisible();
+  await intents.getByRole('button', { name: /^Get something done\b/ }).click();
+  await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
+  const workComposer = page.getByRole('region', { name: 'Ask box', exact: true });
+  await expect(workComposer).toBeVisible();
+  await expect(workComposer.getByRole('button', { name: 'Work', exact: true })).toHaveClass(/active/);
+
+  await navigate(page, 'Ask');
+  const threads = page.getByRole('region', { name: 'Threads', exact: true });
+  await expect(threads).toBeVisible();
+  const beforeAsk = await projectState(page);
+  const beforeProjectThreads = beforeAsk.conversations.filter(thread => thread.attachedTo.kind === 'project');
+  const askText = 'How should I organize the restaurant menu work?';
+  const askComposer = page.getByRole('region', { name: 'Ask box', exact: true });
+  await askComposer.getByRole('button', { name: 'Ask', exact: true }).click();
+  await expect(askComposer.getByRole('button', { name: 'Ask', exact: true })).toHaveClass(/active/);
+  await askComposer.getByRole('textbox', { name: 'Ask, plan, or say what to do' }).fill(askText);
+  await askComposer.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect.poll(async () => {
+    const state = await projectState(page);
+    return state.conversations.some(thread =>
+      thread.attachedTo.kind === 'project' && thread.turns.some(turn => turn.role === 'you' && turn.text === askText),
+    );
+  }).toBe(true);
+  const afterAsk = await projectState(page);
+  const afterProjectThreads = afterAsk.conversations.filter(thread => thread.attachedTo.kind === 'project');
+  expect(
+    afterProjectThreads.length > beforeProjectThreads.length ||
+      afterProjectThreads.some(thread => {
+        const beforeThread = beforeProjectThreads.find(candidate => candidate.id === thread.id);
+        return beforeThread !== undefined && thread.turns.length > beforeThread.turns.length;
+      }),
+  ).toBe(true);
+  await expect(threads.locator('.desk-thread')).toHaveCount(afterProjectThreads.length);
+
   let reloads = 0;
   page.on('framenavigated', frame => { if (frame === page.mainFrame()) reloads += 1; });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('radio', { name: /^Technical/ }).click();
+  await page.getByRole('radio', { name: /^The Desk\b/ }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'desk');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
   await page.getByRole('navigation', { name: 'Open projects' }).getByRole('button', { name: /Harbor Street/ }).click();
-  await navigate(page, 'Work');
-  await expect(page.getByRole('checkbox', { name: 'Show log', exact: true }).first()).toBeVisible();
+  await expect(page.locator('.desk')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Threads', exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('desk.png'), fullPage: true, animations: 'disabled' });
   await page.screenshot({ path: testInfo.outputPath('work-technical.png'), fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('radio', { name: /^Guided/ }).click();
+  await page.getByRole('radio', { name: /^The Book\b/ }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'book');
+  await expect(page.getByRole('radio', { name: /^Standard\b/ })).toBeChecked();
+  await page.getByRole('radio', { name: /^Guided\b/ }).click();
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
   await page.getByRole('navigation', { name: 'Open projects' }).getByRole('button', { name: /Harbor Street/ }).click();
   const after = await projectState(page);
@@ -322,9 +400,16 @@ test('Draft recovery: Settings, reload and same-named files in separate projects
   await editor.fill(draftA);
   await expect(page.getByText('Unsaved changes', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('radio', { name: /^Technical/ }).click();
+  await page.getByRole('radio', { name: /^The Desk\b/ }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'desk');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
   await tabs.getByRole('button', { name: first.name, exact: true }).click();
+  await expect(page.locator('.desk')).toBeVisible();
+  await page.getByRole('button', { name: 'Interface detail menu' }).click();
+  await page.getByRole('button', { name: 'The Book', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'book');
+  await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
+  await expect(editor).toBeVisible();
   await expect(editor).toHaveValue(draftA);
   await expect(page.getByText('Recovered your unsaved writing.', { exact: true })).toBeVisible();
 
