@@ -1,5 +1,11 @@
 import type { Settings } from '../shared/types';
-import { Brand, Button, detailDescriptions, titleCase } from './components';
+import { Brand, Button, detailDescriptions, surfaceOf, titleCase } from './components';
+
+const workPreferences = {
+  new: { detail: 'guided', surface: 'book' },
+  some: { detail: 'standard', surface: 'book' },
+  comfortable: { detail: 'standard', surface: 'desk' },
+} as const;
 
 export function Setup({
   settings,
@@ -13,19 +19,26 @@ export function Setup({
   const step = settings.onboarding.resumeAt;
   const order = ['welcome', 'q1', 'q2', 'q3', 'ready', 'done'] as const;
   const index = order.indexOf(step);
+  const surface = surfaceOf(settings);
   const update = (patch: Partial<Settings['onboarding']>) =>
     save({ ...settings, onboarding: { ...settings.onboarding, ...patch } });
   async function next(skip = false) {
     const ob = { ...settings.onboarding };
     if (step === 'q1' && (!ob.work || skip)) ob.work = 'mix';
-    if (step === 'q2' && (!ob.detail || skip)) ob.detail = 'standard';
+    if (step === 'q2' && (!ob.familiarity || skip)) {
+      ob.familiarity = 'some';
+      ob.detail = 'standard';
+    }
     if (step === 'q3' && (!ob.familiarity || skip)) ob.familiarity = 'some';
+    const preference = workPreferences[ob.familiarity ?? 'some'];
+    ob.detail = preference.detail;
     ob.resumeAt = order[index + 1];
     if (ob.resumeAt === 'done') ob.completedAt = new Date().toISOString();
     await save({
       ...settings,
       onboarding: ob,
       detail: ob.detail ?? 'standard',
+      surface: preference.surface,
       permissions: { ...settings.permissions, changingFiles: ob.familiarity === 'new' },
       explanations:
         ob.familiarity === 'new' ? 'persistent' : ob.familiarity === 'comfortable' ? 'off' : 'once',
@@ -54,7 +67,8 @@ export function Setup({
           <>
             <h1>Ready.</h1>
             <p className="prose intro">
-              You'll see <strong>{titleCase(settings.detail)}</strong> detail:{' '}
+              You'll use <strong>The {titleCase(surface)}</strong> with{' '}
+              <strong>{titleCase(settings.detail)}</strong> detail:{' '}
               {detailDescriptions[settings.detail].toLowerCase()} Diomedes asks before{' '}
               {settings.permissions.changingFiles ? 'changing files, ' : ''}deleting, sending
               anything outside this computer, or working outside a project. Change either in
@@ -76,14 +90,18 @@ export function Setup({
               {step === 'q1'
                 ? 'What are you here to work on?'
                 : step === 'q2'
-                  ? 'How much technical detail would you like to see?'
+                  ? 'How do you want to work?'
                   : 'How familiar are you with software that can edit files or complete tasks for you?'}
             </h1>
             <div
               className="radio-list"
               role="radiogroup"
               aria-label={
-                step === 'q1' ? 'Kind of work' : step === 'q2' ? 'Interface detail' : 'Familiarity'
+                step === 'q1'
+                  ? 'Kind of work'
+                  : step === 'q2'
+                    ? 'How you want to work'
+                    : 'Familiarity'
               }
             >
               {step === 'q1' &&
@@ -112,24 +130,28 @@ export function Setup({
               {step === 'q2' &&
                 (
                   [
-                    ['guided', 'Keep it simple'],
-                    ['standard', 'Show useful details'],
-                    ['technical', 'Show technical controls'],
+                    ['new', "I'm new to this"],
+                    ['some', "I've used tools like this"],
+                    ['comfortable', 'I work with these tools every day'],
                   ] as const
                 ).map(([value, label]) => (
                   <label
-                    className={`radio-row ${settings.onboarding.detail === value ? 'selected' : ''}`}
+                    className={`radio-row ${settings.onboarding.familiarity === value ? 'selected' : ''}`}
                     key={value}
                   >
                     <input
                       type="radio"
-                      name="detail"
-                      checked={settings.onboarding.detail === value}
-                      onChange={() => void update({ detail: value })}
+                      name="familiarity"
+                      checked={settings.onboarding.familiarity === value}
+                      onChange={() =>
+                        void update({ familiarity: value, detail: workPreferences[value].detail })
+                      }
                     />
                     <span>
                       <strong>{label}</strong>
-                      <span className="caption">{detailDescriptions[value]}</span>
+                      <span className="caption">
+                        {detailDescriptions[workPreferences[value].detail]}
+                      </span>
                     </span>
                   </label>
                 ))}
@@ -157,7 +179,9 @@ export function Setup({
                       type="radio"
                       name="familiarity"
                       checked={settings.onboarding.familiarity === value}
-                      onChange={() => void update({ familiarity: value })}
+                      onChange={() =>
+                        void update({ familiarity: value, detail: workPreferences[value].detail })
+                      }
                     />
                     <span>
                       <strong>{label}</strong>

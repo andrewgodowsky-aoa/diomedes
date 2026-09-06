@@ -1,5 +1,5 @@
 import { Children, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import type { Change, Detail, Need, Session, TaskState } from '../shared/types';
+import type { Change, Detail, Need, Session, Settings, Surface, TaskState } from '../shared/types';
 
 export const pages = [
   'home',
@@ -22,6 +22,16 @@ export const detailDescriptions = {
   standard: 'Plain words, plus counts, times and which kind of service did the work.',
   technical: 'Engines, models, logs, version ids, and developer tools where they apply.',
 };
+export const surfaceDescriptions = {
+  book: 'One page at a time. Ask, plan, work and review, and Diomedes asks before anything that matters.',
+  desk: 'Every thread, every helper and every change on one screen. For people who work with these tools every day.',
+};
+export function surfaceOf(settings: Settings): Surface {
+  return settings.surface === 'desk' ||
+    (settings.surface === undefined && settings.detail === 'technical')
+    ? 'desk'
+    : 'book';
+}
 export function titleCase(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

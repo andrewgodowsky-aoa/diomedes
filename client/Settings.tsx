@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import type { IntegrationStatus, Settings as SettingsModel } from '../shared/types';
-import { Button, Mark, Modal, detailDescriptions, titleCase } from './components';
+import {
+  Button,
+  Mark,
+  Modal,
+  detailDescriptions,
+  surfaceDescriptions,
+  surfaceOf,
+  titleCase,
+} from './components';
 
 export function SettingsPage({
   settings,
@@ -15,6 +23,8 @@ export function SettingsPage({
 }) {
   const [section, setSection] = useState('Interface detail');
   const [disclosure, setDisclosure] = useState<IntegrationStatus | null>(null);
+  const surface = surfaceOf(settings);
+  const isDesk = surface === 'desk';
   const sections = [
     'Interface detail',
     'Services',
@@ -22,7 +32,7 @@ export function SettingsPage({
     'History',
     'Appearance',
     'About',
-    ...(settings.detail === 'technical' ? ['Engines', 'Connections', 'Rules', 'Developer'] : []),
+    ...(isDesk ? ['Engines', 'Connections', 'Rules', 'Developer'] : []),
   ];
   return (
     <div className="settings-layout">
@@ -47,30 +57,59 @@ export function SettingsPage({
             {section === 'Interface detail' && (
               <>
                 <p className="prose">
-                  You're using {titleCase(settings.detail)} detail. The work stays the same at every
-                  level. Choose how much of the machinery you want to see.
+                  Choose how Diomedes lays out your work and how much detail the Book shows.
                 </p>
+                <h2>Surface</h2>
                 <div className="radio-list">
-                  {(['guided', 'standard', 'technical'] as const).map((d) => (
-                    <label
-                      key={d}
-                      className={`radio-row ${settings.detail === d ? 'selected' : ''}`}
-                    >
+                  {(['book', 'desk'] as const).map((s) => (
+                    <label key={s} className={`radio-row ${surface === s ? 'selected' : ''}`}>
                       <input
                         type="radio"
-                        name="settings-detail"
-                        checked={settings.detail === d}
-                        onChange={() => void save({ ...settings, detail: d })}
+                        name="settings-surface"
+                        checked={surface === s}
+                        onChange={() =>
+                          void save({
+                            ...settings,
+                            surface: s,
+                            ...(s === 'book' && settings.detail === 'technical'
+                              ? { detail: 'standard' }
+                              : {}),
+                          })
+                        }
                       />
                       <span>
-                        <strong>{titleCase(d)}</strong>
-                        <span className="caption">{detailDescriptions[d]}</span>
+                        <strong>The {titleCase(s)}</strong>
+                        <span className="caption">{surfaceDescriptions[s]}</span>
                       </span>
                     </label>
                   ))}
                 </div>
+                {surface === 'book' && (
+                  <>
+                    <h2>Detail</h2>
+                    <div className="radio-list">
+                      {(['guided', 'standard'] as const).map((d) => (
+                        <label
+                          key={d}
+                          className={`radio-row ${settings.detail === d ? 'selected' : ''}`}
+                        >
+                          <input
+                            type="radio"
+                            name="settings-detail"
+                            checked={settings.detail === d}
+                            onChange={() => void save({ ...settings, detail: d, surface: 'book' })}
+                          />
+                          <span>
+                            <strong>{titleCase(d)}</strong>
+                            <span className="caption">{detailDescriptions[d]}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
                 <section className="block">
-                  <h3>Same work, three ways</h3>
+                  <h3>Same work, two surfaces</h3>
                   <p className="prose">
                     Documents, tasks, approvals and History stay in place when you switch. Every
                     decision is still yours.
@@ -90,7 +129,7 @@ export function SettingsPage({
                       <div className="row">
                         <h3>
                           <Mark state={s.available ? 'done' : 'todo'} />
-                          {settings.detail === 'technical'
+                          {isDesk
                             ? s.name
                             : s.kind === 'online'
                               ? 'Online service'
@@ -101,7 +140,7 @@ export function SettingsPage({
                         <span className="caption push-right">{s.status}</span>
                       </div>
                       <p>{s.detail}</p>
-                      {settings.detail === 'technical' && (
+                      {isDesk && (
                         <p className="code caption">
                           {s.version ?? 'Version not reported'}
                           <br />
@@ -328,11 +367,7 @@ export function SettingsPage({
                   <div className="reference-row" key={s.id}>
                     <Mark state={s.available ? 'done' : 'todo'} />
                     <span>
-                      {settings.detail === 'technical'
-                        ? s.name
-                        : s.kind === 'sample'
-                          ? 'Sample work'
-                          : 'Online service'}
+                      {isDesk ? s.name : s.kind === 'sample' ? 'Sample work' : 'Online service'}
                     </span>
                     <span className="caption push-right">
                       {s.available ? 'Available' : 'Unavailable'}
