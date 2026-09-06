@@ -2343,3 +2343,55 @@ html[data-motion='reduced'] *::after {
 .text-button:hover {
   color: var(--dm-text-1);
 }
+
+/* Desk: permission per thread, team roster, team messages */
+.desk-permission {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 10px;
+}
+.desk-permission .segmented {
+  min-height: 30px;
+}
+.desk-permission .segmented button {
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: calc(14px * var(--dm-ui-scale));
+}
+.desk-permission .segmented button:disabled {
+  color: var(--dm-text-4);
+  opacity: 1;
+}
+.desk-member {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 20px 10px;
+  border-left: 2px solid transparent;
+}
+.desk-member .desk-helper-line .caption {
+  margin-left: auto;
+}
+.desk-member-actions {
+  margin-top: 4px;
+  gap: 4px;
+}
+.desk-side-sub {
+  font-size: calc(13px * var(--dm-ui-scale));
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--dm-text-3);
+  margin: 16px 20px 4px;
+}
+.turn.team {
+  border-left: 2px dashed var(--dm-rule);
+  padding-left: 14px;
+}
+.turn.team.you {
+  border-left-style: solid;
+}
+.desk-composer-modes {
+  align-items: center;
+}
