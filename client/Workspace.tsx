@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   Change,
+  Conversation,
   DocumentContent,
   HistoryEntry,
   IntegrationStatus,
@@ -83,6 +84,8 @@ export function Workspace({
   const [filter, setFilter] = useState('All');
   const [feedback, setFeedback] = useState<{ text: string; undo?: () => void } | null>(null);
   const [taskDetail, setTaskDetail] = useState<Task | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [logDetails, setLogDetails] = useState(false);
   const [editorConflict, setEditorConflict] = useState(false);
   const [sessionNote, setSessionNote] = useState('');
@@ -120,6 +123,8 @@ export function Workspace({
     setBuffer('');
     setEditing(false);
     setHistoryView(null);
+    setThreadId(null);
+    setRenaming(null);
     openedDraft.current = false;
     void load().catch(report);
   }, [load, report]);
@@ -453,6 +458,44 @@ export function Workspace({
       say(action === 'keep' ? 'Kept all changes.' : 'Undid all changes.');
     });
   }
+  const allThreads = [...(state?.conversations ?? [])].sort((a, b) =>
+    threadTime(b).localeCompare(threadTime(a)),
+  );
+  const pageThreads = allThreads.filter(
+    (c) =>
+      c.attachedTo.kind === 'project' ||
+      (attached &&
+        (c.attachedTo.kind === 'document' || c.attachedTo.kind === 'plan') &&
+        c.attachedTo.ref === attached),
+  );
+  const selectedThread =
+    (threadId ? allThreads.find((c) => c.id === threadId) : undefined) ?? pageThreads[0] ?? null;
+  const selectedThreadId = selectedThread?.id ?? null;
+  const recentThreads = allThreads.slice(0, 3);
+  function openThread(id: string) {
+    setThreadId(id);
+    go('ask');
+  }
+  async function newThread() {
+    await perform(async () => {
+      const c = await api<Conversation>(`${base}/threads`, 'POST', attached ? { attachedTo: { kind: 'document', ref: attached } } : {});
+      await load();
+      setThreadId(c.id);
+      say('New thread started.');
+    });
+  }
+  async function renameThread() {
+    if (!renaming) return;
+    const next = renaming.name.trim();
+    if (!next) return;
+    const id = renaming.id;
+    await perform(async () => {
+      await api(`${base}/threads/${id}`, 'PUT', { name: next });
+      await load();
+      setRenaming(null);
+      say('Thread renamed.');
+    });
+  }
   async function send(consent = false) {
     if (!prompt.trim()) return;
     if (
@@ -467,12 +510,14 @@ export function Workspace({
       report(new Error('Save your plan before asking for a new version.'));
       return;
     }
+    const sentThreadId = selectedThreadId;
     await perform(async () => {
       const result = await api<{ document?: string; session?: unknown }>(`${base}/ask`, 'POST', {
         mode,
         text: prompt.trim(),
         route,
         consent,
+        ...(sentThreadId ? { threadId: sentThreadId } : {}),
         attachedTo: {
           kind: attached ? 'document' : page === 'plan' && path ? 'plan' : 'project',
           ref: attached || (page === 'plan' ? path : projectId),
@@ -483,7 +528,22 @@ export function Workspace({
       setPendingOnline(false);
       if (route === 'codex' && !settings.seen.onlineServiceNotice)
         await saveSettings({ ...settings, seen: { ...settings.seen, onlineServiceNotice: true } });
-      await load();
+      if (!sentThreadId && !result.document) {
+        const data = await api<ProjectState>(`/projects/${projectId}/state`);
+        if (currentId.current === projectId) {
+          setState(data);
+          const newest = [...data.conversations]
+            .filter(
+              (c) =>
+                c.attachedTo.kind === 'project' ||
+                (attached &&
+                  (c.attachedTo.kind === 'document' || c.attachedTo.kind === 'plan') &&
+                  c.attachedTo.ref === attached),
+            )
+            .sort((a, b) => threadTime(b).localeCompare(threadTime(a)))[0];
+          setThreadId(newest?.id ?? null);
+        }
+      } else await load();
       if (result.document) {
         await openDocument(result.document, 'plan');
       } else navigate(mode === 'work' ? 'work' : 'ask');
@@ -503,6 +563,11 @@ export function Workspace({
   const workTask = state?.tasks.find((t) => t.id === workSession?.taskId);
   const reviewTask = state?.tasks.find((t) => t.id === changes[0]?.taskId);
   const reviewSession = state?.sessions.find((s) => s.id === changes[0]?.sessionId);
+  const workThread =
+    workTask ? (state?.conversations.find((c) => c.taskId === workTask.id) ?? null) : null;
+  const taskDetailThread = taskDetail
+    ? (state?.conversations.find((c) => c.taskId === taskDetail.id) ?? null)
+    : null;
   const contentTitle =
     page === 'work' && workTask
       ? workTask.name
@@ -1025,6 +1090,22 @@ export function Workspace({
                           ))}
                         </div>
                       </section>
+                      {!!recentThreads.length && (
+                        <section className="block">
+                          <h3 className="section-title">Recent threads</h3>
+                          {recentThreads.map((c) => (
+                            <button
+                              key={c.id}
+                              className="document-row"
+                              onClick={() => openThread(c.id)}
+                            >
+                              <span>{threadName(c, state)}</span>
+                              <span className="dotted-leader" />
+                              <span className="caption">{threadMeta(c)}</span>
+                            </button>
+                          ))}
+                        </section>
+                      )}
                       {!!running.length && (
                         <section className="block">
                           <h3 className="section-title">Now</h3>
@@ -1138,19 +1219,59 @@ export function Workspace({
                   )}
                   {page === 'ask' && (
                     <>
-                      {!state.conversations.some((c) => c.turns.length) ? (
+                      <section className="desk-threads" aria-label="Threads">
+                        <header className="desk-side-header">
+                          <h2>Threads</h2>
+                          <Button tone="quiet" disabled={busy} onClick={() => void newThread()}>
+                            New thread
+                          </Button>
+                        </header>
+                        {pageThreads.map((c) => (
+                          <button
+                            key={c.id}
+                            className={`desk-thread ${c.id === selectedThreadId ? 'open' : ''}`}
+                            onClick={() => setThreadId(c.id)}
+                          >
+                            <span className="desk-thread-name">{threadName(c, state)}</span>
+                            <span className="caption">{threadMeta(c)}</span>
+                          </button>
+                        ))}
+                      </section>
+                      {!selectedThread ? (
                         <Empty title="Ask about this project">
                           <p>
                             This is for questions and thinking out loud. Nothing in the project
-                            changes here. Your conversation stays with this project as a thread.
+                            changes here. Your threads stay with this project.
                           </p>
                           <p>To have Diomedes do something, switch the box below to Work.</p>
                         </Empty>
                       ) : (
-                        state.conversations.map((c) => (
-                          <section key={c.id} className="conversation">
-                            {c.turns.map((t, i) => (
-                              <div className={`turn ${t.role}`} key={t.id || `${c.id}:${i}`}>
+                        <section key={selectedThread.id} className="conversation">
+                          <div className="row">
+                            <button
+                              className="text-button"
+                              title="Rename thread"
+                              onClick={() =>
+                                setRenaming({
+                                  id: selectedThread.id,
+                                  name: threadName(selectedThread, state),
+                                })
+                              }
+                            >
+                              {threadName(selectedThread, state)}
+                            </button>
+                            <span className="caption push-right">
+                              {threadMeta(selectedThread)}
+                            </span>
+                          </div>
+                          {!selectedThread.turns.length ? (
+                            <p className="caption">Nothing here yet.</p>
+                          ) : (
+                            selectedThread.turns.map((t, i) => (
+                              <div
+                                className={`turn ${t.role}`}
+                                key={t.id || `${selectedThread.id}:${i}`}
+                              >
                                 <p className="caption turn-meta">
                                   {t.role === 'you'
                                     ? 'You'
@@ -1166,9 +1287,9 @@ export function Workspace({
                                   <p className="caption">Sources: {t.sources.join(', ')}</p>
                                 )}
                               </div>
-                            ))}
-                          </section>
-                        ))
+                            ))
+                          )}
+                        </section>
                       )}
                     </>
                   )}
@@ -1558,6 +1679,13 @@ export function Workspace({
                               : titleCase(workSession.state)}
                           . {workSession.sample ? 'Sample work.' : 'Diomedes, with your OK.'}
                         </p>
+                        {workThread && (
+                          <div className="actions">
+                            <Button tone="quiet" onClick={() => openThread(workThread.id)}>
+                              Open thread
+                            </Button>
+                          </div>
+                        )}
                         {detail === 'technical' && (
                           <p className="code caption">
                             {workSession.engine.name}, session {workSession.id}
@@ -1838,6 +1966,33 @@ export function Workspace({
           {!state?.documents.length && <p>No documents yet.</p>}
         </Modal>
       )}
+      {renaming && (
+        <Modal title="Rename thread" onClose={() => setRenaming(null)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void renameThread();
+            }}
+          >
+            <label className="field">
+              Name
+              <input
+                autoFocus
+                value={renaming.name}
+                onChange={(e) => setRenaming({ ...renaming, name: e.target.value })}
+                maxLength={120}
+                required
+              />
+            </label>
+            <div className="dialog-actions">
+              <Button onClick={() => setRenaming(null)}>Cancel</Button>
+              <Button type="submit" tone="primary" disabled={busy}>
+                Rename
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
       {pendingTask && (
         <Modal title="Use an online service for this task?" onClose={() => setPendingTask(null)}>
           <p className="prose">
@@ -2039,6 +2194,18 @@ export function Workspace({
           )}
           <div className="dialog-actions">
             <Button onClick={() => setTaskDetail(null)}>Close</Button>
+            {taskDetailThread && (
+              <Button
+                tone="quiet"
+                onClick={() => {
+                  const id = taskDetailThread.id;
+                  setTaskDetail(null);
+                  openThread(id);
+                }}
+              >
+                Open thread
+              </Button>
+            )}
             {taskDetail.state === 'todo' && (
               <Button
                 tone="primary"
@@ -2109,6 +2276,25 @@ export function Workspace({
       )}
     </div>
   );
+}
+
+function threadTime(c: Conversation) {
+  return c.updatedAt ?? c.turns.at(-1)?.at ?? c.createdAt ?? '';
+}
+function threadName(c: Conversation, state: ProjectState | null) {
+  if (c.name) return c.name;
+  const first = c.turns.find((t) => t.role === 'you')?.text.trim();
+  if (first) return first.length > 60 ? `${first.slice(0, 57).trimEnd()}...` : first;
+  if (c.attachedTo.kind === 'task')
+    return `Thread for ${state?.tasks.find((t) => t.id === c.attachedTo.ref)?.name ?? 'a task'}`;
+  return c.attachedTo.kind === 'project'
+    ? 'Project thread'
+    : `${titleCase(c.attachedTo.kind)}: ${c.attachedTo.ref}`;
+}
+function threadMeta(c: Conversation) {
+  const turns = `${c.turns.length} ${c.turns.length === 1 ? 'turn' : 'turns'}`;
+  const at = threadTime(c);
+  return at ? `${turns} · ${time(at)}` : turns;
 }
 
 function Markdown({ text }: { text: string }) {

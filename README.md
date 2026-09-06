@@ -1,6 +1,6 @@
 # Diomedes
 
-A local working book for projects, documents, plans, tasks, approvals, and reversible file history. The interface follows the live v5 Diomedes artifacts under `../planning/2026-09-05-v5-diomedes-design/design/`.
+A local working book for projects, documents, plans, tasks, approvals, and reversible file history. The interface follows the live v5 Diomedes artifacts under `../planning/2026-09-05-v5-diomedes-design/design/` and the two-views work under `../planning/2026-09-06-v6-two-views/`; its tokens match the Diomedes Systems site.
 
 ## Run
 
@@ -65,7 +65,20 @@ Complete the three setup questions, then create a project or choose **Open sampl
 4. Respond to **Needs your OK**, then inspect **Review**. Keep accepts the current file; Undo records and applies its previous contents.
 5. Open **History** to inspect changes, save named versions, or restore. A restore is itself reversible. Newer content produces explicit conflict choices.
 
-Change Guided, Standard, or Technical in Settings or the top-right detail menu. Presentation changes do not grant permissions. Unsaved text is backed up in this browser and recovered when reopening the document.
+Presentation changes do not grant permissions. Unsaved text is backed up in this browser and recovered when reopening the document.
+
+## Two surfaces
+
+Diomedes has two surfaces over the same project. Switch in the top-right menu or in Settings > Interface.
+
+- **The Book**: one page at a time (Home, Ask, Plan, Work, Review, Tasks, Documents, History) with Guided or Standard detail. Home leads with "What do you want to do?" and four intents: Ask a question, Get something done, Make a plan, Look over what changed.
+- **The Desk**: every thread, every helper and every change on one screen. Project, threads and team on the left; up to three panes in the middle, one per thread, each with its helper, its permission mode and its messages; Board, Changes and Files on the right. "Technical" is no longer a detail level; settings saved with it open the Desk.
+
+First-run question 2 picks the surface: new to this opens the Guided Book, some experience the Standard Book, every-day users the Desk.
+
+**Threads** are named conversations that belong to a project and, optionally, to a task. The Book shows the threads of the page it is on; the Desk shows all of them. Each thread has a permission mode: *Show me first* (every change waits for your OK) or *Go ahead for this task* (the first OK in a task covers the rest of it). Nothing runs without that first OK; *Full access* is not in this version.
+
+**Team** (in progress): a Diomedes-owned team service exposes the project to helpers as an MCP server on loopback, with the AionCore tool names (`team_members`, `team_send_message`, `team_task_create`, ...) and Diomedes' identities on every message. The board stays the one authoritative task list. AionCore and AionUi are not installed, linked or spawned; see `../planning/2026-09-06-v6-two-views/`.
 
 ## Integrations
 

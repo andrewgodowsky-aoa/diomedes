@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   Change,
   Conversation,
@@ -12,6 +12,11 @@ import type {
   Settings,
   Task,
   TaskState,
+  ThreadPermission,
+  MailboxMessage,
+  Slot,
+  TeamMember,
+  TeamState,
 } from '../shared/types';
 import { api } from './api';
 import {
@@ -46,6 +51,17 @@ type RightTab = 'board' | 'changes' | 'files';
 
 const MAX_PANES = 3;
 
+type ThreadWithPermission = Conversation;
+const engineNames: Record<TeamMember['engine'], string> = {
+  codex: 'Codex',
+  'claude-code': 'Claude Code',
+  opencode: 'OpenCode',
+  'oh-my-pi': 'oh-my-pi',
+  sample: 'Sample work',
+  probe: 'Probe',
+};
+const emptyTeam: TeamState = { members: [], messages: [], runs: [] };
+
 export function Desk({
   projectId,
   settings,
@@ -62,6 +78,9 @@ export function Desk({
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
   const [pendingOnline, setPendingOnline] = useState<null | (() => Promise<void>)>(null);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  const [team, setTeam] = useState<TeamState>(emptyTeam);
+  const [teamAvailable, setTeamAvailable] = useState(false);
+  const [adding, setAdding] = useState<null | { name: string; role: 'lead' | 'member'; engine: 'codex' | 'sample'; model: string }>(null);
   const currentId = useRef(projectId);
   currentId.current = projectId;
   const base = `/projects/${projectId}`;
@@ -69,6 +88,17 @@ export function Desk({
   const load = useCallback(async () => {
     const data = await api<ProjectState>(`/projects/${projectId}/state`);
     if (currentId.current === projectId) setState(data);
+    try {
+      const t = await api<TeamState>(`/projects/${projectId}/team`);
+      if (currentId.current === projectId) {
+        setTeam({ members: t.members ?? [], messages: t.messages ?? [], runs: t.runs ?? [] });
+        setTeamAvailable(true);
+      }
+    } catch (e) {
+      // A service without the team routes yet: the roster stays empty and says so.
+      if (!isMissingRoute(e)) throw e;
+      if (currentId.current === projectId) setTeamAvailable(false);
+    }
   }, [projectId]);
   const perform = useCallback(
     async (fn: () => Promise<void>) => {
@@ -95,7 +125,7 @@ export function Desk({
       clearTimeout(timer);
       timer = setTimeout(() => void load().catch(report), 70);
     };
-    ['state', 'project', 'tasks', 'needs', 'session', 'history', 'review', 'status', 'conversations']
+    ['state', 'project', 'tasks', 'needs', 'session', 'history', 'review', 'status', 'conversations', 'team']
       .forEach((n) => es.addEventListener(n, update));
     return () => {
       clearTimeout(timer);
@@ -169,6 +199,38 @@ export function Desk({
       await api(`${base}/threads/${renaming.id}`, 'PUT', { name });
       await load();
       setRenaming(null);
+    });
+  }
+  async function setPermission(thread: Conversation, permission: ThreadPermission) {
+    await perform(async () => {
+      await api(`${base}/threads/${thread.id}`, 'PUT', { permission });
+      await load();
+    });
+  }
+  async function addMember() {
+    if (!adding || !adding.name.trim()) return;
+    await perform(async () => {
+      const result = await api<{ member: TeamMember; token?: string }>(`${base}/team/members`, 'POST', {
+        name: adding.name.trim(),
+        role: adding.role,
+        engine: adding.engine,
+        ...(adding.model.trim() ? { model: adding.model.trim() } : {}),
+      });
+      setAdding(null);
+      await load();
+      if (result.member?.threadId) openPane(result.member.threadId);
+    });
+  }
+  async function stopMember(member: TeamMember) {
+    await perform(async () => {
+      await api(`${base}/team/members/${encodeURIComponent(member.slotId)}/stop`, 'POST', {});
+      await load();
+    });
+  }
+  async function messageMember(member: TeamMember, content: string) {
+    await perform(async () => {
+      await api(`${base}/team/messages`, 'POST', { to: member.slotId, content });
+      await load();
     });
   }
   async function resolveNeed(need: Need, resolution: 'go-ahead' | 'declined', allowForTask = false) {
@@ -294,7 +356,74 @@ export function Desk({
         <section className="desk-team">
           <header className="desk-side-header">
             <h2>Team</h2>
+            {teamAvailable && (
+              <Button
+                tone="quiet"
+                disabled={busy}
+                onClick={() =>
+                  setAdding({
+                    name: '',
+                    role: team.members.some((m) => m.role === 'lead') ? 'member' : 'lead',
+                    engine: helpers.find((h) => h.id === 'codex')?.available ? 'codex' : 'sample',
+                    model: '',
+                  })
+                }
+              >
+                Add
+              </Button>
+            )}
           </header>
+          {team.members.map((m) => (
+            <div key={m.slotId} className="desk-member">
+              <span className="desk-helper-line">
+                <Mark
+                  state={
+                    m.status === 'working'
+                      ? 'working'
+                      : m.status === 'waiting'
+                        ? 'waiting'
+                        : m.status === 'error'
+                          ? 'fault'
+                          : m.status === 'stopped'
+                            ? 'todo'
+                            : 'done'
+                  }
+                />
+                <strong>{m.name}</strong>
+                <span className="caption">{m.role === 'lead' ? 'Leader' : 'Member'}</span>
+              </span>
+              <span className="caption">
+                {engineNames[m.engine]}
+                {m.model ? `, ${m.model}` : ''}
+                {' · '}
+                {m.status === 'idle'
+                  ? 'Idle'
+                  : m.status === 'working'
+                    ? 'Working'
+                    : m.status === 'waiting'
+                      ? 'Waiting for you'
+                      : m.status === 'stopped'
+                        ? 'Stopped'
+                        : 'Something went wrong'}
+              </span>
+              <span className="actions desk-member-actions">
+                {m.threadId && (
+                  <Button tone="quiet" onClick={() => openPane(m.threadId!)}>
+                    Thread
+                  </Button>
+                )}
+                {m.status !== 'stopped' && (
+                  <Button tone="quiet" disabled={busy} onClick={() => void stopMember(m)}>
+                    Stop
+                  </Button>
+                )}
+              </span>
+            </div>
+          ))}
+          {teamAvailable && !team.members.length && (
+            <p className="caption desk-honest">No team yet. Add a leader, then members.</p>
+          )}
+          <h3 className="desk-side-sub">Helpers available</h3>
           {helpers.map((h) => (
             <div key={h.id} className="desk-helper">
               <span className="desk-helper-line">
@@ -306,8 +435,9 @@ export function Desk({
             </div>
           ))}
           <p className="caption desk-honest">
-            One helper works at a time in this version. A leader with members over the team
-            service is next; see the plan in the project notes.
+            {teamAvailable
+              ? 'Members talk through the Diomedes team service. One engine run at a time in this version; the leader cannot spawn members yet.'
+              : 'One helper works at a time in this version. The team service is being built; see the plan in the project notes.'}
           </p>
         </section>
       </aside>
@@ -339,9 +469,17 @@ export function Desk({
               online={online}
               waiting={waiting.filter((n) => threadOwnsNeed(thread, n, state))}
               running={running.filter((s) => s.taskId && s.taskId === thread.taskId)}
+              member={team.members.find((m) => m.threadId === id) ?? null}
+              mail={team.messages.filter((m) => {
+                const member = team.members.find((x) => x.threadId === id);
+                return member ? m.to === member.slotId || m.from === member.slotId : m.threadId === id;
+              })}
+              members={team.members}
               close={() => closePane(id)}
               rename={() => setRenaming({ id, name: threadName(thread, state) })}
               send={(mode, text, route) => void send(thread, mode, text, route)}
+              message={(member, text) => void messageMember(member, text)}
+              setPermission={(perm) => void setPermission(thread, perm)}
               decide={(n, r, a) => void resolveNeed(n, r, a)}
               show={setPreviewNeed}
               stop={(sid) => void stopSession(sid)}
@@ -616,6 +754,69 @@ export function Desk({
           </div>
         </Modal>
       )}
+      {adding && (
+        <Modal title="Add a helper to the team" onClose={() => setAdding(null)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void addMember();
+            }}
+          >
+            <label className="field">
+              Name
+              <input
+                autoFocus
+                value={adding.name}
+                onChange={(e) => setAdding({ ...adding, name: e.target.value })}
+                placeholder="Luna, Codex lead, Reviewer..."
+                maxLength={60}
+                required
+              />
+            </label>
+            <label className="field">
+              Role
+              <select
+                value={adding.role}
+                onChange={(e) => setAdding({ ...adding, role: e.target.value as 'lead' | 'member' })}
+              >
+                <option value="lead">Leader: plans and hands out tasks</option>
+                <option value="member">Member: takes direction</option>
+              </select>
+            </label>
+            <label className="field">
+              Engine
+              <select
+                value={adding.engine}
+                onChange={(e) => setAdding({ ...adding, engine: e.target.value as 'codex' | 'sample' })}
+              >
+                {helpers.map((h) => (
+                  <option key={h.id} value={h.id} disabled={!h.available}>
+                    {h.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Model (optional)
+              <input
+                value={adding.model}
+                onChange={(e) => setAdding({ ...adding, model: e.target.value })}
+                placeholder="Leave empty for the engine's default"
+              />
+            </label>
+            <p className="caption">
+              The helper gets its own thread. It talks to the team through the Diomedes team
+              service and asks before anything that matters.
+            </p>
+            <div className="dialog-actions">
+              <Button onClick={() => setAdding(null)}>Cancel</Button>
+              <Button type="submit" tone="primary" disabled={busy || !adding.name.trim()}>
+                Add to the team
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
       {renaming && (
         <Modal title="Rename thread" onClose={() => setRenaming(null)}>
           <form
@@ -656,14 +857,19 @@ function Pane({
   online,
   waiting,
   running,
+  member,
+  mail,
+  members,
   close,
   rename,
   send,
+  message,
+  setPermission,
   decide,
   show,
   stop,
 }: {
-  thread: Conversation;
+  thread: ThreadWithPermission;
   state: ProjectState;
   settings: Settings;
   helpers: { id: Route; name: string; available: boolean }[];
@@ -671,9 +877,14 @@ function Pane({
   online: boolean;
   waiting: Need[];
   running: Session[];
+  member: TeamMember | null;
+  mail: MailboxMessage[];
+  members: TeamMember[];
   close: () => void;
   rename: () => void;
   send: (mode: Mode, text: string, route: Route) => void;
+  message: (member: TeamMember, text: string) => void;
+  setPermission: (permission: ThreadPermission) => void;
   decide: (need: Need, resolution: 'go-ahead' | 'declined', allow?: boolean) => void;
   show: (need: Need) => void;
   stop: (sessionId: string) => void;
@@ -683,6 +894,47 @@ function Pane({
   const [route, setRoute] = useState<Route>(lastHelper?.route ?? 'sample');
   const [text, setText] = useState('');
   const [details, setDetails] = useState(false);
+  const [toTeam, setToTeam] = useState(false);
+  const permission: ThreadPermission = thread.permission ?? 'show-first';
+  const nameOf = (slot: Slot) =>
+    slot === 'owner' ? 'You' : (members.find((m) => m.slotId === slot)?.name ?? slot);
+  const timeline: { at: string; node: ReactNode }[] = [
+    ...thread.turns.map((t, i) => ({
+      at: t.at,
+      node: (
+        <div className={`turn ${t.role}`} key={t.id || `${thread.id}:${i}`}>
+          <p className="caption turn-meta">
+            {t.role === 'you' ? 'You' : t.route === 'codex' ? 'Codex' : 'Diomedes, sample work'}
+            {t.mode !== 'ask' ? ` · ${titleCase(t.mode)}` : ''}
+            <time>{time(t.at)}</time>
+          </p>
+          <p className="desk-turn-text">{t.text}</p>
+        </div>
+      ),
+    })),
+    ...mail.map((m) => ({
+      at: m.createdAt,
+      node: (
+        <div className={`turn team ${m.from === 'owner' ? 'you' : ''}`} key={m.id}>
+          <p className="caption turn-meta">
+            <span>
+              {nameOf(m.from)} to {nameOf(m.to)}
+              {m.type === 'shutdown_request'
+                ? ' · asked to stop'
+                : m.type === 'idle_notification'
+                  ? ' · idle'
+                  : m.summary === 'interrupt'
+                    ? ' · interrupt'
+                    : ' · team message'}
+            </span>
+            <time>{time(m.createdAt)}</time>
+          </p>
+          <p className="desk-turn-text">{m.content}</p>
+          {m.files && m.files.length > 0 && <p className="caption">Files: {m.files.join(', ')}</p>}
+        </div>
+      ),
+    })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
     body.current?.scrollTo({ top: body.current.scrollHeight });
@@ -690,11 +942,11 @@ function Pane({
   const task = thread.taskId ? state.tasks.find((t) => t.id === thread.taskId) : null;
   const helperName = lastHelper?.route === 'codex' ? 'Codex' : lastHelper ? 'Sample work' : 'No helper yet';
   const live = running[0];
-  const permission = settings.permissions.changingFiles ? 'Show me first' : 'Go ahead for this task';
   const submit = () => {
     const value = text.trim();
     if (!value) return;
-    send(mode, value, route);
+    if (toTeam && member) message(member, value);
+    else send(mode, value, route);
     setText('');
   };
   return (
@@ -707,13 +959,37 @@ function Pane({
           </button>
         </div>
         <p className="caption desk-pane-meta">
-          {helperName}
-          {live?.engine.model ? `, ${live.engine.model}` : ''}
-          {' · '}
-          {permission}
+          {member ? `${member.name}, ${member.role === 'lead' ? 'leader' : 'member'} on ${engineNames[member.engine]}` : helperName}
+          {live?.engine.model ? `, ${live.engine.model}` : member?.model ? `, ${member.model}` : ''}
           {task ? ` · Task: ${task.name}` : ''}
           {live?.engine.context != null ? ` · Context ${Math.round(live.engine.context)}%` : ''}
         </p>
+        <div className="desk-permission" role="group" aria-label="Permission for this thread">
+          <div className="segmented compact">
+            <button
+              className={permission === 'show-first' ? 'active' : ''}
+              disabled={busy}
+              onClick={() => permission !== 'show-first' && setPermission('show-first')}
+            >
+              Show me first
+            </button>
+            <button
+              className={permission === 'task' ? 'active' : ''}
+              disabled={busy}
+              onClick={() => permission !== 'task' && setPermission('task')}
+            >
+              Go ahead for this task
+            </button>
+            <button disabled title="Not in this version">
+              Full access
+            </button>
+          </div>
+          <span className="caption">
+            {permission === 'task'
+              ? 'The first OK in a task covers the rest of it. Nothing runs without that first OK.'
+              : 'Every change waits for your OK.'}
+          </span>
+        </div>
         <div className="actions desk-pane-actions">
           {live && (
             <Button tone="quiet" data-stop onClick={() => stop(live.id)}>
@@ -727,7 +1003,12 @@ function Pane({
       </header>
       <div className="desk-pane-body" ref={body}>
         {waiting.map((n) => (
-          <Notice key={n.id} need={n} decide={(r, a) => decide(n, r, a)} show={() => show(n)} />
+          <Notice
+            key={n.id}
+            need={n}
+            decide={(r, a) => decide(n, r, a ?? (r === 'go-ahead' && permission === 'task'))}
+            show={() => show(n)}
+          />
         ))}
         {!thread.turns.length && !live && (
           <p className="prose small muted">
@@ -738,16 +1019,7 @@ function Pane({
                 : 'Give Diomedes a job. It does the work and asks before anything that matters.'}
           </p>
         )}
-        {thread.turns.map((t, i) => (
-          <div className={`turn ${t.role}`} key={t.id || `${thread.id}:${i}`}>
-            <p className="caption turn-meta">
-              {t.role === 'you' ? 'You' : t.route === 'codex' ? 'Codex' : 'Diomedes, sample work'}
-              {t.mode !== 'ask' ? ` · ${titleCase(t.mode)}` : ''}
-              <time>{time(t.at)}</time>
-            </p>
-            <p className="desk-turn-text">{t.text}</p>
-          </div>
-        ))}
+        {timeline.map((entry) => entry.node)}
         {live && (
           <section className="work-session compact">
             <SessionStatus session={live} detail="technical" name={task?.name} stop={() => stop(live.id)} />
@@ -769,17 +1041,37 @@ function Pane({
         )}
       </div>
       <footer className="desk-pane-composer">
-        <div className="segmented compact" role="group" aria-label="Mode">
-          {(['ask', 'plan', 'work'] as const).map((m) => (
-            <button key={m} className={mode === m ? 'active' : ''} onClick={() => setMode(m)}>
-              {titleCase(m)}
-            </button>
-          ))}
+        <div className="row desk-composer-modes">
+          <div className="segmented compact" role="group" aria-label="Mode">
+            {(['ask', 'plan', 'work'] as const).map((m) => (
+              <button
+                key={m}
+                className={mode === m && !toTeam ? 'active' : ''}
+                onClick={() => {
+                  setMode(m);
+                  setToTeam(false);
+                }}
+              >
+                {titleCase(m)}
+              </button>
+            ))}
+            {member && (
+              <button className={toTeam ? 'active' : ''} onClick={() => setToTeam(true)} title="Send a team message through the Diomedes team service">
+                Team
+              </button>
+            )}
+          </div>
         </div>
         <textarea
           aria-label="Message this thread"
           placeholder={
-            mode === 'ask' ? 'Ask or think out loud...' : mode === 'plan' ? 'What should the plan cover?' : 'What should be done?'
+            toTeam && member
+              ? `Message ${member.name} through the team service...`
+              : mode === 'ask'
+                ? 'Ask or think out loud...'
+                : mode === 'plan'
+                  ? 'What should the plan cover?'
+                  : 'What should be done?'
           }
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -792,13 +1084,15 @@ function Pane({
           rows={2}
         />
         <div className="row desk-pane-send">
-          <select aria-label="Helper" value={route} onChange={(e) => setRoute(e.target.value as Route)}>
-            {helpers.map((h) => (
-              <option key={h.id} value={h.id} disabled={!h.available}>
-                {h.name}
-              </option>
-            ))}
-          </select>
+          {!toTeam && (
+            <select aria-label="Helper" value={route} onChange={(e) => setRoute(e.target.value as Route)}>
+              {helpers.map((h) => (
+                <option key={h.id} value={h.id} disabled={!h.available}>
+                  {h.name}
+                </option>
+              ))}
+            </select>
+          )}
           <Button tone="primary push-right" disabled={busy || !online || !text.trim()} onClick={submit}>
             {busy ? 'Working...' : 'Send'}
           </Button>
