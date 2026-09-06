@@ -1,0 +1,154 @@
+import { app, BrowserWindow, dialog, Menu } from 'electron';
+import { createServer } from 'node:http';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.dirname(fileURLToPath(import.meta.url));
+app.setName('Diomedes');
+if (process.env.DIOMEDES_DESKTOP_PROFILE)
+  app.setPath('userData', process.env.DIOMEDES_DESKTOP_PROFILE);
+const dataDir = process.env.DIOMEDES_DATA_DIR ?? path.join(app.getPath('userData'), 'data');
+process.env.DIOMEDES_DATA_DIR = dataDir;
+process.env.DIOMEDES_RUNTIME_DIR ??= path.join(process.resourcesPath, 'native-runtime');
+let window;
+let server;
+let service;
+let shuttingDown = false;
+let lockPath;
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (window?.isMinimized()) window.restore();
+    window?.show();
+    window?.focus();
+  });
+  app.on('window-all-closed', () => app.quit());
+  app.on('before-quit', (event) => {
+    if (shuttingDown || !service) return;
+    event.preventDefault();
+    shuttingDown = true;
+    void service.locals
+      .close()
+      .then(() => {
+        server.closeAllConnections();
+        server.close(() => {
+          void fs
+            .unlink(lockPath)
+            .then(() => app.quit())
+            .catch((error) => {
+              dialog.showErrorBox('Diomedes could not release its data folder', error.message);
+              app.exit(1);
+            });
+        });
+      })
+      .catch((error) => {
+        dialog.showErrorBox('Diomedes could not close cleanly', error.message);
+        app.exit(1);
+      });
+  });
+  void app
+    .whenReady()
+    .then(async () => {
+      await fs.mkdir(dataDir, { recursive: true });
+      lockPath = path.join(dataDir, 'service.lock');
+      try {
+        const existing = JSON.parse(await fs.readFile(lockPath, 'utf8'));
+        try {
+          process.kill(existing.pid, 0);
+        } catch (error) {
+          if (error.code !== 'ESRCH') throw error;
+          await fs.unlink(lockPath);
+        }
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+      await fs.writeFile(lockPath, JSON.stringify({ pid: process.pid }), { flag: 'wx' });
+      const { createApp, serveClient } = await import('./server/app.mjs');
+      // Bind an available loopback port before configuring the origin checks.
+      server = createServer();
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', resolve);
+      });
+      const port = server.address().port;
+      service = await createApp({
+        dataDir,
+        projectRoot:
+          process.env.DIOMEDES_PROJECTS_DIR ?? path.join(app.getPath('documents'), 'Diomedes'),
+        port,
+        clientPort: port,
+      });
+      serveClient(service, path.join(root, 'dist'));
+      server.on('request', service);
+      const url = `http://127.0.0.1:${port}`;
+      window = new BrowserWindow({
+        width: 1440,
+        height: 960,
+        minWidth: 800,
+        minHeight: 600,
+        title: 'Diomedes',
+        backgroundColor: '#222d39',
+        show: false,
+        webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
+      });
+      Menu.setApplicationMenu(
+        Menu.buildFromTemplate([
+          { label: 'File', submenu: [{ role: 'quit' }] },
+          {
+            label: 'Edit',
+            submenu: [
+              { role: 'undo' },
+              { role: 'redo' },
+              { type: 'separator' },
+              { role: 'cut' },
+              { role: 'copy' },
+              { role: 'paste' },
+              { role: 'selectAll' },
+            ],
+          },
+          {
+            label: 'View',
+            submenu: [
+              { role: 'zoomIn' },
+              { role: 'zoomOut' },
+              { role: 'resetZoom' },
+              { type: 'separator' },
+              { role: 'togglefullscreen' },
+            ],
+          },
+        ]),
+      );
+      window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      window.webContents.on('will-navigate', (event, destination) => {
+        if (new URL(destination).origin !== url) event.preventDefault();
+      });
+      window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) =>
+        callback(false),
+      );
+      window.once('ready-to-show', () => window.show());
+      await window.loadURL(url);
+      await fs.mkdir(dataDir, { recursive: true });
+      await fs.writeFile(
+        path.join(dataDir, 'desktop-startup.json'),
+        JSON.stringify(
+          {
+            version: app.getVersion(),
+            executable: process.execPath,
+            pid: process.pid,
+            url,
+            startedAt: new Date().toISOString(),
+            packaged: app.isPackaged,
+          },
+          null,
+          2,
+        ),
+      );
+    })
+    .catch((error) => {
+      dialog.showErrorBox('Diomedes could not start', error.message);
+      app.exit(1);
+    });
+}

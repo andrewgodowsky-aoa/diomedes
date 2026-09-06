@@ -1,0 +1,43 @@
+{
+  "startedAt": "2026-09-05T08:36:06.996Z",
+  "passed": true,
+  "nativeGenerationRequests": 1,
+  "scope": "One synthetic native file proposal, preview, explicit approval, recorded write, review, and restore through the local HTTP API.",
+  "projectFolder": "F:\\Achilles\\diomedes\\test-results\\native-work-smoke-2026-09-05T08-36-06-995Z\\project",
+  "appData": "F:\\Achilles\\diomedes\\.data\\native-work-smoke-2026-09-05T08-36-06-995Z",
+  "port": 47633,
+  "limitations": [
+    "This flow proposes text files; the native engine has no filesystem, shell, browser, or MCP tools.",
+    "Diomedes applies the approved fixed proposal using its recorded write service.",
+    "No model fallback, local inference, external sending, or build command was performed."
+  ],
+  "projectId": "4ec2c6cfbb2a",
+  "taskId": "T1",
+  "sessionId": "S1c41c5272b9c",
+  "beforeApproval": {
+    "checkedAt": "2026-09-05T08:36:15.204Z",
+    "fileUnchanged": true,
+    "needId": "Nccf405aa85a1",
+    "previewFiles": 1,
+    "sha256": "d359422d94ff64f54a3420d8fc1bb32c9bc54f8ba36d1bd6fbd1df02059a0e9e"
+  },
+  "afterApproval": {
+    "checkedAt": "2026-09-05T08:36:15.287Z",
+    "fileMatchesPreview": true,
+    "model": "gpt-6-astra",
+    "historyEntryId": "E1ad93c507faf",
+    "reviewChangeId": "E1ad93c507faf:0",
+    "sha256": "f32c0ce399866bcd7b6ba9f30c0338400e021e2077df2ad4c5f29455221bf87c",
+    "sessionSample": false
+  },
+  "restore": {
+    "checkedAt": "2026-09-05T08:36:15.334Z",
+    "originalBytesRestored": true,
+    "displacedVersionPreserved": true,
+    "historyEntryId": "E6cdf45eefb29",
+    "sha256": "d359422d94ff64f54a3420d8fc1bb32c9bc54f8ba36d1bd6fbd1df02059a0e9e",
+    "reviewState": "undone"
+  },
+  "ownedServerClosed": true,
+  "completedAt": "2026-09-05T08:36:15.335Z"
+}

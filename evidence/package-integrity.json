@@ -1,0 +1,741 @@
+{
+  "verifiedAt": "2026-09-05T08:03:25.601298+00:00",
+  "source": "C:\\Users\\andre\\Downloads\\Achilles_Astra_Package_2026-09-05.zip",
+  "archiveSha256": "d571dfc6da7cb469e3ca045b2fc14359050a522aa868b7922f1839c65b519543",
+  "archiveBytes": 4012585,
+  "method": "Python 3.12 zipfile reads in memory; SHA-256 compared against every manifest row. No source files extracted or overwritten.",
+  "archiveFileCount": 122,
+  "manifestEntryCount": 121,
+  "matchingEntryCount": 121,
+  "unlistedFiles": [],
+  "duplicateArchiveEntries": [],
+  "passed": true,
+  "files": [
+    {
+      "path": "00_START_HERE.md",
+      "expectedSha256": "219e2f21b222906083b3554a4048d4ef88a79539ad2eae4408c7e628e286ef1a",
+      "actualSha256": "219e2f21b222906083b3554a4048d4ef88a79539ad2eae4408c7e628e286ef1a",
+      "match": true
+    },
+    {
+      "path": "01_ASTRA_PROMPT.md",
+      "expectedSha256": "f00e950f25d24e4948dd77034909193fdd83fb419cad5b4b3f7137915dd1e831",
+      "actualSha256": "f00e950f25d24e4948dd77034909193fdd83fb419cad5b4b3f7137915dd1e831",
+      "match": true
+    },
+    {
+      "path": "02_HANDOFF_PRECEDENCE.md",
+      "expectedSha256": "c5d4cda0219b65f5b2e95c9594c8f63e68f64c0c57f33f8e2c7133e1c85a1bb6",
+      "actualSha256": "c5d4cda0219b65f5b2e95c9594c8f63e68f64c0c57f33f8e2c7133e1c85a1bb6",
+      "match": true
+    },
+    {
+      "path": "03_SOURCE_STATUS.md",
+      "expectedSha256": "4c4e57f94a7e47f67116f6b790c0193e212830eede6afe58bf7f6d30f2a2818e",
+      "actualSha256": "4c4e57f94a7e47f67116f6b790c0193e212830eede6afe58bf7f6d30f2a2818e",
+      "match": true
+    },
+    {
+      "path": "04_FILE_GUIDE.md",
+      "expectedSha256": "1221b9d51582c5b43fa374a0cc87797928d87a0e884ef3efd0f52f5142d15eb3",
+      "actualSha256": "1221b9d51582c5b43fa374a0cc87797928d87a0e884ef3efd0f52f5142d15eb3",
+      "match": true
+    },
+    {
+      "path": "05_RECONCILIATION_QUEUE.md",
+      "expectedSha256": "8528049822dc1235caa2c87b3e1928586e8b053fbd8be4adaca2574cfc6fc946",
+      "actualSha256": "8528049822dc1235caa2c87b3e1928586e8b053fbd8be4adaca2574cfc6fc946",
+      "match": true
+    },
+    {
+      "path": "assets/original-devin-hermes-comparison.png",
+      "expectedSha256": "e3dd06093ba89a570432bba505d400b752e22327836a1b55da4fe007c1c03629",
+      "actualSha256": "e3dd06093ba89a570432bba505d400b752e22327836a1b55da4fe007c1c03629",
+      "match": true
+    },
+    {
+      "path": "assets/original-six-view-design-overview.png",
+      "expectedSha256": "f6504379a4dbb05111e8ba39a89264c4be702efec6a4c8a80f24b477159b99e6",
+      "actualSha256": "f6504379a4dbb05111e8ba39a89264c4be702efec6a4c8a80f24b477159b99e6",
+      "match": true
+    },
+    {
+      "path": "assets/v3-design-previews/Chat.png",
+      "expectedSha256": "91648e157671d8c61bbc63487ff39a015fba9ce6126f11ccf7daf1fada24065a",
+      "actualSha256": "91648e157671d8c61bbc63487ff39a015fba9ce6126f11ccf7daf1fada24065a",
+      "match": true
+    },
+    {
+      "path": "assets/v3-design-previews/Home.png",
+      "expectedSha256": "e07cc84cb2ca6625bf6a4d395c3a6a9ecda80d882d91bccd80acdfe50cc2e4d5",
+      "actualSha256": "e07cc84cb2ca6625bf6a4d395c3a6a9ecda80d882d91bccd80acdfe50cc2e4d5",
+      "match": true
+    },
+    {
+      "path": "assets/v3-design-previews/directions-layout.png",
+      "expectedSha256": "80fbbbc68a3ca363fca03c8ea15271b0fe27ee79b233cb975aff5412e91017df",
+      "actualSha256": "80fbbbc68a3ca363fca03c8ea15271b0fe27ee79b233cb975aff5412e91017df",
+      "match": true
+    },
+    {
+      "path": "context/Fable_latest_reply_verbatim.md",
+      "expectedSha256": "57777ae81f9256ca5fc175655c4feff9c8bced79cc230651c0f36a7a1b5b0e27",
+      "actualSha256": "57777ae81f9256ca5fc175655c4feff9c8bced79cc230651c0f36a7a1b5b0e27",
+      "match": true
+    },
+    {
+      "path": "context/README.md",
+      "expectedSha256": "09d48774d399bc0be514da83318b952fa9ff3b17c6df9f51b9cb770650ddf071",
+      "actualSha256": "09d48774d399bc0be514da83318b952fa9ff3b17c6df9f51b9cb770650ddf071",
+      "match": true
+    },
+    {
+      "path": "context/earlier-aionui-nimbalyst-reply.md",
+      "expectedSha256": "5c365d8277da4d5faee9abff120aa37bfc8965d6f9d5208b11e3fa1ef4341d74",
+      "actualSha256": "5c365d8277da4d5faee9abff120aa37bfc8965d6f9d5208b11e3fa1ef4341d74",
+      "match": true
+    },
+    {
+      "path": "history/chatgpt-v3-amendment/00-original-plan-review.md",
+      "expectedSha256": "a8b3c57e295e50f17260d876a1c2c4079bf73214cf57b7f62b6f6ea4970eb64b",
+      "actualSha256": "a8b3c57e295e50f17260d876a1c2c4079bf73214cf57b7f62b6f6ea4970eb64b",
+      "match": true
+    },
+    {
+      "path": "history/chatgpt-v3-amendment/01-amended-product-and-harness-plan.md",
+      "expectedSha256": "ed1eb52620315fa3246d6cac1bb41bbdfbd0cf5f187aa012d60be3875f2bc415",
+      "actualSha256": "ed1eb52620315fa3246d6cac1bb41bbdfbd0cf5f187aa012d60be3875f2bc415",
+      "match": true
+    },
+    {
+      "path": "history/chatgpt-v3-amendment/02-visual-and-interaction-brief.md",
+      "expectedSha256": "c21aa96257228d03a2ba2cdade507f11bff017be76db55e5a3b42d60a44dd5bc",
+      "actualSha256": "c21aa96257228d03a2ba2cdade507f11bff017be76db55e5a3b42d60a44dd5bc",
+      "match": true
+    },
+    {
+      "path": "history/chatgpt-v3-amendment/03-roadmap-decisions-and-tests.md",
+      "expectedSha256": "f6bf145f57a73347a4d3d5bffd07ceb133d0ed790dc93cfffe6182c1e2ffdc35",
+      "actualSha256": "f6bf145f57a73347a4d3d5bffd07ceb133d0ed790dc93cfffe6182c1e2ffdc35",
+      "match": true
+    },
+    {
+      "path": "history/chatgpt-v3-amendment/04-evidence-and-research.md",
+      "expectedSha256": "67f5edf7327aaebbcc4ee738cda69f5b11ddf388aee7488e8dd8b0bec51e7a5e",
+      "actualSha256": "67f5edf7327aaebbcc4ee738cda69f5b11ddf388aee7488e8dd8b0bec51e7a5e",
+      "match": true
+    },
+    {
+      "path": "history/chatgpt-v3-amendment/05-fable-replanning-prompt.md",
+      "expectedSha256": "adcf0e5e125e80c039708b6d17d4a00c5d213c4f516a674d54ef429cae252372",
+      "actualSha256": "adcf0e5e125e80c039708b6d17d4a00c5d213c4f516a674d54ef429cae252372",
+      "match": true
+    },
+    {
+      "path": "history/chatgpt-v3-amendment/README.md",
+      "expectedSha256": "69cd5451624cd6f3de5d8fb118e663859257eb606c977160cbb519a0fc08a682",
+      "actualSha256": "69cd5451624cd6f3de5d8fb118e663859257eb606c977160cbb519a0fc08a682",
+      "match": true
+    },
+    {
+      "path": "history/chatgpt-v3-amendment/source_manifest.json",
+      "expectedSha256": "8b329e05f47890e996f674eacbd124a876fde82214ea268985d354d8776ddfa5",
+      "actualSha256": "8b329e05f47890e996f674eacbd124a876fde82214ea268985d354d8776ddfa5",
+      "match": true
+    },
+    {
+      "path": "history/earlier-prompts/Achilles_Fable_Master_Planning_Prompt.md",
+      "expectedSha256": "41fd001b8c18c86319082955a44e56a07f1e4bbebda9facf3759530299ee29af",
+      "actualSha256": "41fd001b8c18c86319082955a44e56a07f1e4bbebda9facf3759530299ee29af",
+      "match": true
+    },
+    {
+      "path": "history/earlier-prompts/Achilles_Fable_Master_Planning_Prompt_v2.md",
+      "expectedSha256": "2f3a267b0a682718f38973127526cec79b96da0810a2bc20424f4bca444ad3ba",
+      "actualSha256": "2f3a267b0a682718f38973127526cec79b96da0810a2bc20424f4bca444ad3ba",
+      "match": true
+    },
+    {
+      "path": "history/earlier-prompts/Achilles_Fable_Replanning_Prompt_v3.md",
+      "expectedSha256": "adcf0e5e125e80c039708b6d17d4a00c5d213c4f516a674d54ef429cae252372",
+      "actualSha256": "adcf0e5e125e80c039708b6d17d4a00c5d213c4f516a674d54ef429cae252372",
+      "match": true
+    },
+    {
+      "path": "history/earlier-prompts/Achilles_Hermes_Discovery_Prompt.md",
+      "expectedSha256": "cb3bbaf7b8952d8478412ee8c3cef1f302d5cf684101ef21589df40ef179f998",
+      "actualSha256": "cb3bbaf7b8952d8478412ee8c3cef1f302d5cf684101ef21589df40ef179f998",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/00-executive-recommendation.md",
+      "expectedSha256": "a8d655d56154a563d51e4c5eede1f0212eec6877a3108ae7c971629290244c6d",
+      "actualSha256": "a8d655d56154a563d51e4c5eede1f0212eec6877a3108ae7c971629290244c6d",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/01-verified-installation-report.md",
+      "expectedSha256": "345b81d4e911d3c13d985137bda4d296f35488677b894a8f53e58c14db9a3912",
+      "actualSha256": "345b81d4e911d3c13d985137bda4d296f35488677b894a8f53e58c14db9a3912",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/02-ux-specification.md",
+      "expectedSha256": "e0166ffc9b9f8d5b6bcf2b614c7a86e10a7ad16dfe5d1ca73f2cc370ca101321",
+      "actualSha256": "e0166ffc9b9f8d5b6bcf2b614c7a86e10a7ad16dfe5d1ca73f2cc370ca101321",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/03-architecture-and-capability-matrix.md",
+      "expectedSha256": "b421b5ae0ec812c70429d6ed66dc0cedd78b21be344af740a1e260209b28d33b",
+      "actualSha256": "b421b5ae0ec812c70429d6ed66dc0cedd78b21be344af740a1e260209b28d33b",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/04-decision-gap-register.md",
+      "expectedSha256": "b20b932e4a4b7c12e358ccd36a8e5e6af145e132e8d271cd28ded52486736735",
+      "actualSha256": "b20b932e4a4b7c12e358ccd36a8e5e6af145e132e8d271cd28ded52486736735",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/05-phased-roadmap-and-evaluation.md",
+      "expectedSha256": "13fa6f593beae6a3e0dc64e72daec568716a3ddb0ef9f7ecceb67f9b7d49b41e",
+      "actualSha256": "13fa6f593beae6a3e0dc64e72daec568716a3ddb0ef9f7ecceb67f9b7d49b41e",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/06-astra-handoff.md",
+      "expectedSha256": "1861a006949bc98d0872fa88fc0df278d2246b92ea018959d17e3547a8c36058",
+      "actualSha256": "1861a006949bc98d0872fa88fc0df278d2246b92ea018959d17e3547a8c36058",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/README.md",
+      "expectedSha256": "bd5b7ffe0149cfb21af6e495af6505bbc5ae0a55d3c1c149942ea782c16f2575",
+      "actualSha256": "bd5b7ffe0149cfb21af6e495af6505bbc5ae0a55d3c1c149942ea782c16f2575",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/design/Agent.dc.html",
+      "expectedSha256": "f0934b9dd4601b1748b48a192f43fe78b6fd83c3b5f413691ea6b5540f8780b0",
+      "actualSha256": "f0934b9dd4601b1748b48a192f43fe78b6fd83c3b5f413691ea6b5540f8780b0",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/design/Canvas.dc.html",
+      "expectedSha256": "649c68e34b130a6cdc0dbe9a137e246771a0253f279a26a8314befa1dbef5b43",
+      "actualSha256": "649c68e34b130a6cdc0dbe9a137e246771a0253f279a26a8314befa1dbef5b43",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/design/Components.dc.html",
+      "expectedSha256": "5c074cfa82ee0d455c74bba366283f637baa3e8042582ac33ba4e88ca33bdbff",
+      "actualSha256": "5c074cfa82ee0d455c74bba366283f637baa3e8042582ac33ba4e88ca33bdbff",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/design/DESIGN_LANGUAGE.md",
+      "expectedSha256": "1a4d85b915d16dc05bf4961690113cffbc11b93b2ffcb7de3a013ffcf03515ee",
+      "actualSha256": "1a4d85b915d16dc05bf4961690113cffbc11b93b2ffcb7de3a013ffcf03515ee",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/design/DirectionB.dc.html",
+      "expectedSha256": "06a32dc09beb7dbe3dca01acdc50a89433383a972a39af4743493d3beb96526c",
+      "actualSha256": "06a32dc09beb7dbe3dca01acdc50a89433383a972a39af4743493d3beb96526c",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/design/DirectionC.dc.html",
+      "expectedSha256": "6b707b6b9d2d9508a84694d1d35eb51d482ef491a407c68cc69ba2c82759c1d2",
+      "actualSha256": "6b707b6b9d2d9508a84694d1d35eb51d482ef491a407c68cc69ba2c82759c1d2",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/design/MOCKUP_NOTES.md",
+      "expectedSha256": "389967d5f639155b705622ec4e4d0c7ef06bc76fe51b4f77dab08af705e600e1",
+      "actualSha256": "389967d5f639155b705622ec4e4d0c7ef06bc76fe51b4f77dab08af705e600e1",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/design/Main.dc.html",
+      "expectedSha256": "87e3c5967b2a5eb2ba9e53341ea7686ac60a1475571e5eb25d9a4c7347a5771d",
+      "actualSha256": "87e3c5967b2a5eb2ba9e53341ea7686ac60a1475571e5eb25d9a4c7347a5771d",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/design/Plan.dc.html",
+      "expectedSha256": "8370c2bfaeb0729cb95da9493f3b423e333e82deae815be481d07e8e7fca8095",
+      "actualSha256": "8370c2bfaeb0729cb95da9493f3b423e333e82deae815be481d07e8e7fca8095",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/design/Review.dc.html",
+      "expectedSha256": "6c3f26a5737a52d5110965535166baf2c93b40f9675f92f330b9394fe7f3fa2f",
+      "actualSha256": "6c3f26a5737a52d5110965535166baf2c93b40f9675f92f330b9394fe7f3fa2f",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/design/Skills.dc.html",
+      "expectedSha256": "d751870b896d9f157d9b2189253da2075ad966c0dbbe392367c7f6fd5c884743",
+      "actualSha256": "d751870b896d9f157d9b2189253da2075ad966c0dbbe392367c7f6fd5c884743",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/design/Tokens.dc.html",
+      "expectedSha256": "db3fa1263da79a56f8126edd6d3576168247d2a19977e29643c92c3072d1c119",
+      "actualSha256": "db3fa1263da79a56f8126edd6d3576168247d2a19977e29643c92c3072d1c119",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/design/achilles-design-canvas.html",
+      "expectedSha256": "a944e0555164432aa9edb44ca935411a3ad3cea28d153361c121bf4f7ee5c29a",
+      "actualSha256": "a944e0555164432aa9edb44ca935411a3ad3cea28d153361c121bf4f7ee5c29a",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/design/canvas.json",
+      "expectedSha256": "c152b61e431cbc026d9943957964def23a1c23a9fedd13e0d0bbe7fdef7236e6",
+      "actualSha256": "c152b61e431cbc026d9943957964def23a1c23a9fedd13e0d0bbe7fdef7236e6",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/evidence/commands-executed.md",
+      "expectedSha256": "a0fccf33f44449ecd5687fd76b82931e1fe389d159b4c28cd7fe7da0091cf135",
+      "actualSha256": "a0fccf33f44449ecd5687fd76b82931e1fe389d159b4c28cd7fe7da0091cf135",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-04-master-plan/research/official-docs-memo.md",
+      "expectedSha256": "442626c4f8009ac113e9aff6b90a34727ebf1354cb46ed1321e2c5a9f100d72c",
+      "actualSha256": "442626c4f8009ac113e9aff6b90a34727ebf1354cb46ed1321e2c5a9f100d72c",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/00-executive-recommendation.md",
+      "expectedSha256": "e7bea771840fa136709610945bb73f964d5ea94fceed0e91969adaa7cc5d9599",
+      "actualSha256": "e7bea771840fa136709610945bb73f964d5ea94fceed0e91969adaa7cc5d9599",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/01a-recheck-2026-09-05.md",
+      "expectedSha256": "367a2c88402e1b45e01516b60c7411fce9330f4934d6f3c0cb8a9f614bf3c4f3",
+      "actualSha256": "367a2c88402e1b45e01516b60c7411fce9330f4934d6f3c0cb8a9f614bf3c4f3",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/02-contracts-modes-host-remote-local-liveedit.md",
+      "expectedSha256": "f27c835bc8dd70ba60165fa492a8593b9c51e33048c505f9dfe35b681912a82f",
+      "actualSha256": "f27c835bc8dd70ba60165fa492a8593b9c51e33048c505f9dfe35b681912a82f",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/03-architecture-and-reuse-matrix.md",
+      "expectedSha256": "698ffda48ba64e1b47d5e44909f37b1aef3c079a5d4e27fe7ebb2c7e0efd7d98",
+      "actualSha256": "698ffda48ba64e1b47d5e44909f37b1aef3c079a5d4e27fe7ebb2c7e0efd7d98",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/04-decision-gap-register.md",
+      "expectedSha256": "ab308d64e7e6d1cac4b8f776f8249b7beae86bf3663e637454c3cba4e8a2c6ec",
+      "actualSha256": "ab308d64e7e6d1cac4b8f776f8249b7beae86bf3663e637454c3cba4e8a2c6ec",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/05-roadmap-and-acceptance-matrix.md",
+      "expectedSha256": "b81badb3753f6bdd7217f0c5c4063ed184b295b517c59e0a1cf676a386cf9b12",
+      "actualSha256": "b81badb3753f6bdd7217f0c5c4063ed184b295b517c59e0a1cf676a386cf9b12",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/06-astra-handoff-v3.md",
+      "expectedSha256": "9d18d0cc3c2e61e2f1b593fcd9887097be380d49a4822c540e5b9cb80d8b9b93",
+      "actualSha256": "9d18d0cc3c2e61e2f1b593fcd9887097be380d49a4822c540e5b9cb80d8b9b93",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/07-commercialization-note.md",
+      "expectedSha256": "19a00d050373766fded1e11ae00468b2b839807f0ee6cddd587b5b1f315a1878",
+      "actualSha256": "19a00d050373766fded1e11ae00468b2b839807f0ee6cddd587b5b1f315a1878",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/README.md",
+      "expectedSha256": "733172f7483982976ecb18fd9dc1c39046366c011d7c149f638495b1e60727be",
+      "actualSha256": "733172f7483982976ecb18fd9dc1c39046366c011d7c149f638495b1e60727be",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/Agent.dc.html",
+      "expectedSha256": "0a80785ff600ce18e958c8e288a3a9b97ff8ae01d7e048bf52da63be60e074cf",
+      "actualSha256": "0a80785ff600ce18e958c8e288a3a9b97ff8ae01d7e048bf52da63be60e074cf",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/Chat.dc.html",
+      "expectedSha256": "e84d1499a70872dbd6f0a5c4a39be0146b710422e97e4a3c3ab3bc913e704d7d",
+      "actualSha256": "e84d1499a70872dbd6f0a5c4a39be0146b710422e97e4a3c3ab3bc913e704d7d",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/DESIGN_STUDIES.md",
+      "expectedSha256": "1823b148a90a97c29999389af81f245d3124335a8a92cbbac6ec4d8ffd7f56e4",
+      "actualSha256": "1823b148a90a97c29999389af81f245d3124335a8a92cbbac6ec4d8ffd7f56e4",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/FieldbookChat.dc.html",
+      "expectedSha256": "a2e7e33c140e498b15c277d34daa91424ee1c1dd555b7f89ce9a767f40b8064b",
+      "actualSha256": "a2e7e33c140e498b15c277d34daa91424ee1c1dd555b7f89ce9a767f40b8064b",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/FieldbookHome.dc.html",
+      "expectedSha256": "fea1cc03baf92d05681c6371ce86391cb04cc4e86f74ac8ca8adea3c5a387fd3",
+      "actualSha256": "fea1cc03baf92d05681c6371ce86391cb04cc4e86f74ac8ca8adea3c5a387fd3",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/Home.dc.html",
+      "expectedSha256": "8bbaa280a4e50b4d19a762462268ddbac55c2316851391f8edeccc830eda4c2c",
+      "actualSha256": "8bbaa280a4e50b4d19a762462268ddbac55c2316851391f8edeccc830eda4c2c",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/Main.dc.html",
+      "expectedSha256": "990c57d3c61d47bc1e079a7e521f7a45ce624183b776c27ad65ecd3cdef69413",
+      "actualSha256": "990c57d3c61d47bc1e079a7e521f7a45ce624183b776c27ad65ecd3cdef69413",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/Phone.dc.html",
+      "expectedSha256": "0a30291a9c473f528bc157a2c4930e42a9e44a8071f6faadbbf26246e7e9f571",
+      "actualSha256": "0a30291a9c473f528bc157a2c4930e42a9e44a8071f6faadbbf26246e7e9f571",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/Plan.dc.html",
+      "expectedSha256": "9bdc6c152f57b50be65c593fb505d0e74aa686f32b453778b255de8921dd88cb",
+      "actualSha256": "9bdc6c152f57b50be65c593fb505d0e74aa686f32b453778b255de8921dd88cb",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/PlanBoard.dc.html",
+      "expectedSha256": "205f521e6bd8d47901fa9bb8857260158bd8198c58488a1d09d1c50cedf44b37",
+      "actualSha256": "205f521e6bd8d47901fa9bb8857260158bd8198c58488a1d09d1c50cedf44b37",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/Review.dc.html",
+      "expectedSha256": "21b9c6fb09f9ec87bed97aeee93c35679fcfab725895f5ba5f891eb29c55832a",
+      "actualSha256": "21b9c6fb09f9ec87bed97aeee93c35679fcfab725895f5ba5f891eb29c55832a",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/SignalChat.dc.html",
+      "expectedSha256": "e80fc287d727fdd4dedab8104055c4b68c62fd55113a65de5ae6c4acefa7f95d",
+      "actualSha256": "e80fc287d727fdd4dedab8104055c4b68c62fd55113a65de5ae6c4acefa7f95d",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/SignalHome.dc.html",
+      "expectedSha256": "4fe2664ef16036d3222fccbe56a11d6a0d795625aceb29b5d86086850450b714",
+      "actualSha256": "4fe2664ef16036d3222fccbe56a11d6a0d795625aceb29b5d86086850450b714",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/Skills.dc.html",
+      "expectedSha256": "8bef56605c2657705a99dacfaf1ee0389f81a8e962d258cea6a65f856cc5470d",
+      "actualSha256": "8bef56605c2657705a99dacfaf1ee0389f81a8e962d258cea6a65f856cc5470d",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/TypeTest.dc.html",
+      "expectedSha256": "c120d6aeab85c49c660c2c0c7e9afa31704b956632157b506a0d552a1bf37fc6",
+      "actualSha256": "c120d6aeab85c49c660c2c0c7e9afa31704b956632157b506a0d552a1bf37fc6",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/achilles-design-studies.html",
+      "expectedSha256": "a1e6c01c1fbffbde440b82f983d7233e94843e49889c171e779f0820e42d0c84",
+      "actualSha256": "a1e6c01c1fbffbde440b82f983d7233e94843e49889c171e779f0820e42d0c84",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/design/canvas.json",
+      "expectedSha256": "fe261dd6d6607f358b1bdba07ee06ecfdd50c0fa8f91fb374981e2db3fbd36d8",
+      "actualSha256": "fe261dd6d6607f358b1bdba07ee06ecfdd50c0fa8f91fb374981e2db3fbd36d8",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/evidence/commands-executed-2026-09-05.md",
+      "expectedSha256": "538df587d0e3ddb6ff0c036b0b2bd52b00d18597d6dc736fc38c565aee0301a8",
+      "actualSha256": "538df587d0e3ddb6ff0c036b0b2bd52b00d18597d6dc736fc38c565aee0301a8",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/research/source-inspection-2026-09-05.md",
+      "expectedSha256": "9a564978c0c876ed5467d8fefc9a68d2d7019632adee8f578360d1ed518d1419",
+      "actualSha256": "9a564978c0c876ed5467d8fefc9a68d2d7019632adee8f578360d1ed518d1419",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/retained-2026-09-04/01-verified-installation-report.md",
+      "expectedSha256": "345b81d4e911d3c13d985137bda4d296f35488677b894a8f53e58c14db9a3912",
+      "actualSha256": "345b81d4e911d3c13d985137bda4d296f35488677b894a8f53e58c14db9a3912",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/retained-2026-09-04/06-astra-handoff-SUPERSEDED.md",
+      "expectedSha256": "1861a006949bc98d0872fa88fc0df278d2246b92ea018959d17e3547a8c36058",
+      "actualSha256": "1861a006949bc98d0872fa88fc0df278d2246b92ea018959d17e3547a8c36058",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/retained-2026-09-04/DESIGN_LANGUAGE-stele.md",
+      "expectedSha256": "1a4d85b915d16dc05bf4961690113cffbc11b93b2ffcb7de3a013ffcf03515ee",
+      "actualSha256": "1a4d85b915d16dc05bf4961690113cffbc11b93b2ffcb7de3a013ffcf03515ee",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/retained-2026-09-04/MOCKUP_NOTES-stele.md",
+      "expectedSha256": "389967d5f639155b705622ec4e4d0c7ef06bc76fe51b4f77dab08af705e600e1",
+      "actualSha256": "389967d5f639155b705622ec4e4d0c7ef06bc76fe51b4f77dab08af705e600e1",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/retained-2026-09-04/amendment-source_manifest.json",
+      "expectedSha256": "8b329e05f47890e996f674eacbd124a876fde82214ea268985d354d8776ddfa5",
+      "actualSha256": "8b329e05f47890e996f674eacbd124a876fde82214ea268985d354d8776ddfa5",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/retained-2026-09-04/commands-executed.md",
+      "expectedSha256": "a0fccf33f44449ecd5687fd76b82931e1fe389d159b4c28cd7fe7da0091cf135",
+      "actualSha256": "a0fccf33f44449ecd5687fd76b82931e1fe389d159b4c28cd7fe7da0091cf135",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v3-replan/retained-2026-09-04/official-docs-memo.md",
+      "expectedSha256": "442626c4f8009ac113e9aff6b90a34727ebf1354cb46ed1321e2c5a9f100d72c",
+      "actualSha256": "442626c4f8009ac113e9aff6b90a34727ebf1354cb46ed1321e2c5a9f100d72c",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v4-business/08-business-architecture-and-workspace.md",
+      "expectedSha256": "b3f701b9e6228ee177df18dbcebf1ad303ae5dd01f39998c5a85ef6abe853d80",
+      "actualSha256": "b3f701b9e6228ee177df18dbcebf1ad303ae5dd01f39998c5a85ef6abe853d80",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v4-business/09-restaurant-pilot-implementation-plan.md",
+      "expectedSha256": "952f8c6af231c119095812dc97b45cbaba8b2c4dc092bfe930363ce85a88214b",
+      "actualSha256": "952f8c6af231c119095812dc97b45cbaba8b2c4dc092bfe930363ce85a88214b",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v4-business/10-consulting-offers-and-gtm-plan.md",
+      "expectedSha256": "ad858f2e901b4c9d0fbc4742e62181e09bb97be1d10ed0201a2f82ea95c79d43",
+      "actualSha256": "ad858f2e901b4c9d0fbc4742e62181e09bb97be1d10ed0201a2f82ea95c79d43",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v4-business/11-decision-gap-register-v4-addendum.md",
+      "expectedSha256": "308e0e8a04539607acedfdea0fb88f1105ab17e30725cb65a2142908cada69db",
+      "actualSha256": "308e0e8a04539607acedfdea0fb88f1105ab17e30725cb65a2142908cada69db",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v4-business/12-roadmap-business-track.md",
+      "expectedSha256": "97e3a8d1781e84e1fb1353877df117d643b50d7eab9f3da56a2fed9b152b5f42",
+      "actualSha256": "97e3a8d1781e84e1fb1353877df117d643b50d7eab9f3da56a2fed9b152b5f42",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v4-business/README.md",
+      "expectedSha256": "3324070f9d1c16793d357602e5f3e80eef92be5ae80e6a1432cfef6cc941f974",
+      "actualSha256": "3324070f9d1c16793d357602e5f3e80eef92be5ae80e6a1432cfef6cc941f974",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v4-business/_PACKAGING_STATUS.md",
+      "expectedSha256": "0c5867894f102e70b7ac993b030f503a211820eb19bd5be0460ba6ee48f38311",
+      "actualSha256": "0c5867894f102e70b7ac993b030f503a211820eb19bd5be0460ba6ee48f38311",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v4-business/source/Achilles_3_Restaurant_Pilot.md",
+      "expectedSha256": "d961379cc32d60e5ba3b684add9d545c506346bc42b9181e3b1efb22ee566746",
+      "actualSha256": "d961379cc32d60e5ba3b684add9d545c506346bc42b9181e3b1efb22ee566746",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v4-business/source/Achilles_v4_Business_GTM_Strategy.md",
+      "expectedSha256": "b5ebcd1acd66f024f794474ee6e787e432ad8afd2eac93815d6eef1ebd6f8274",
+      "actualSha256": "b5ebcd1acd66f024f794474ee6e787e432ad8afd2eac93815d6eef1ebd6f8274",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v4-business/source/Achilles_v4_Fable_Business_Addendum.md",
+      "expectedSha256": "03a70574656b75cb2bb1a26df57a0f354c6d9c1a0af5c1945755a62d04fac9cc",
+      "actualSha256": "03a70574656b75cb2bb1a26df57a0f354c6d9c1a0af5c1945755a62d04fac9cc",
+      "match": true
+    },
+    {
+      "path": "planning/2026-09-05-v4-business/source/source_sha256.txt",
+      "expectedSha256": "d5ee1b3c6ea672187d659887a0492590c7bd4d367c72bcf83968137449778a4c",
+      "actualSha256": "d5ee1b3c6ea672187d659887a0492590c7bd4d367c72bcf83968137449778a4c",
+      "match": true
+    },
+    {
+      "path": "provenance/COPY_MAP.json",
+      "expectedSha256": "d4084b779a27f567e44838096c788373d1e9eb5d14086c79cc48ec46bc7cfc16",
+      "actualSha256": "d4084b779a27f567e44838096c788373d1e9eb5d14086c79cc48ec46bc7cfc16",
+      "match": true
+    },
+    {
+      "path": "provenance/INPUT_INVENTORY.json",
+      "expectedSha256": "a9c2b40768125c348758042e92558a76d4c2af157a1b7cf4c5628c21160423e1",
+      "actualSha256": "a9c2b40768125c348758042e92558a76d4c2af157a1b7cf4c5628c21160423e1",
+      "match": true
+    },
+    {
+      "path": "provenance/PACKAGE_VALIDATION.json",
+      "expectedSha256": "746f29d4b783ce3d7c7c4aa8f64c0db931c5c136149acee383306a915785a07b",
+      "actualSha256": "746f29d4b783ce3d7c7c4aa8f64c0db931c5c136149acee383306a915785a07b",
+      "match": true
+    },
+    {
+      "path": "provenance/SOURCE_CHECKSUM_VERIFICATION.json",
+      "expectedSha256": "3ad7b9ed2c2598146ce84c5fcfd7f2724df51d262e6b035c6c61206277e670ea",
+      "actualSha256": "3ad7b9ed2c2598146ce84c5fcfd7f2724df51d262e6b035c6c61206277e670ea",
+      "match": true
+    },
+    {
+      "path": "review/00-Review-and-recommended-decisions.md",
+      "expectedSha256": "42467bc6260e72fbb725663173bba43670be8799a374eeab3b5fa5142cd204e5",
+      "actualSha256": "42467bc6260e72fbb725663173bba43670be8799a374eeab3b5fa5142cd204e5",
+      "match": true
+    },
+    {
+      "path": "review/01-Astra-foundation-proof-prompt.md",
+      "expectedSha256": "4a2d0e9c726fffc1506669a7adb574d8879d790908fdafe11baf6e78ca1dd939",
+      "actualSha256": "4a2d0e9c726fffc1506669a7adb574d8879d790908fdafe11baf6e78ca1dd939",
+      "match": true
+    },
+    {
+      "path": "review/02-Fable-v4-integration-note.md",
+      "expectedSha256": "e7774a0f05a98714902191fe9cd9ed653a4b70c0896b182b6e7d5d0a7d337203",
+      "actualSha256": "e7774a0f05a98714902191fe9cd9ed653a4b70c0896b182b6e7d5d0a7d337203",
+      "match": true
+    },
+    {
+      "path": "review/README.md",
+      "expectedSha256": "ded8d0f008ef9cc7ed49e0b640a73a90aefd73c04f9cc0c6ad02eb45a16a2d17",
+      "actualSha256": "ded8d0f008ef9cc7ed49e0b640a73a90aefd73c04f9cc0c6ad02eb45a16a2d17",
+      "match": true
+    },
+    {
+      "path": "review/source-manifest.json",
+      "expectedSha256": "7a5d650513c1e9ac8a79727f03caa89c037d9e0330ec1d41bafa7b7ba8776a73",
+      "actualSha256": "7a5d650513c1e9ac8a79727f03caa89c037d9e0330ec1d41bafa7b7ba8776a73",
+      "match": true
+    },
+    {
+      "path": "review/sources/fable-v2/03-architecture-and-capability-matrix.md",
+      "expectedSha256": "b421b5ae0ec812c70429d6ed66dc0cedd78b21be344af740a1e260209b28d33b",
+      "actualSha256": "b421b5ae0ec812c70429d6ed66dc0cedd78b21be344af740a1e260209b28d33b",
+      "match": true
+    },
+    {
+      "path": "review/sources/fable-v2/05-phased-roadmap-and-evaluation.md",
+      "expectedSha256": "13fa6f593beae6a3e0dc64e72daec568716a3ddb0ef9f7ecceb67f9b7d49b41e",
+      "actualSha256": "13fa6f593beae6a3e0dc64e72daec568716a3ddb0ef9f7ecceb67f9b7d49b41e",
+      "match": true
+    },
+    {
+      "path": "review/sources/fable-v3/00-executive-recommendation.md",
+      "expectedSha256": "e7bea771840fa136709610945bb73f964d5ea94fceed0e91969adaa7cc5d9599",
+      "actualSha256": "e7bea771840fa136709610945bb73f964d5ea94fceed0e91969adaa7cc5d9599",
+      "match": true
+    },
+    {
+      "path": "review/sources/fable-v3/01a-recheck-2026-09-05.md",
+      "expectedSha256": "367a2c88402e1b45e01516b60c7411fce9330f4934d6f3c0cb8a9f614bf3c4f3",
+      "actualSha256": "367a2c88402e1b45e01516b60c7411fce9330f4934d6f3c0cb8a9f614bf3c4f3",
+      "match": true
+    },
+    {
+      "path": "review/sources/fable-v3/02-contracts-modes-host-remote-local-liveedit.md",
+      "expectedSha256": "f27c835bc8dd70ba60165fa492a8593b9c51e33048c505f9dfe35b681912a82f",
+      "actualSha256": "f27c835bc8dd70ba60165fa492a8593b9c51e33048c505f9dfe35b681912a82f",
+      "match": true
+    },
+    {
+      "path": "review/sources/fable-v3/03-architecture-and-reuse-matrix.md",
+      "expectedSha256": "698ffda48ba64e1b47d5e44909f37b1aef3c079a5d4e27fe7ebb2c7e0efd7d98",
+      "actualSha256": "698ffda48ba64e1b47d5e44909f37b1aef3c079a5d4e27fe7ebb2c7e0efd7d98",
+      "match": true
+    },
+    {
+      "path": "review/sources/fable-v3/04-decision-gap-register.md",
+      "expectedSha256": "ab308d64e7e6d1cac4b8f776f8249b7beae86bf3663e637454c3cba4e8a2c6ec",
+      "actualSha256": "ab308d64e7e6d1cac4b8f776f8249b7beae86bf3663e637454c3cba4e8a2c6ec",
+      "match": true
+    },
+    {
+      "path": "review/sources/fable-v3/05-roadmap-and-acceptance-matrix.md",
+      "expectedSha256": "b81badb3753f6bdd7217f0c5c4063ed184b295b517c59e0a1cf676a386cf9b12",
+      "actualSha256": "b81badb3753f6bdd7217f0c5c4063ed184b295b517c59e0a1cf676a386cf9b12",
+      "match": true
+    },
+    {
+      "path": "review/sources/fable-v3/06-astra-handoff-v3.md",
+      "expectedSha256": "9d18d0cc3c2e61e2f1b593fcd9887097be380d49a4822c540e5b9cb80d8b9b93",
+      "actualSha256": "9d18d0cc3c2e61e2f1b593fcd9887097be380d49a4822c540e5b9cb80d8b9b93",
+      "match": true
+    },
+    {
+      "path": "review/sources/fable-v3/07-commercialization-note.md",
+      "expectedSha256": "19a00d050373766fded1e11ae00468b2b839807f0ee6cddd587b5b1f315a1878",
+      "actualSha256": "19a00d050373766fded1e11ae00468b2b839807f0ee6cddd587b5b1f315a1878",
+      "match": true
+    },
+    {
+      "path": "review/sources/fable-v3/README.md",
+      "expectedSha256": "733172f7483982976ecb18fd9dc1c39046366c011d7c149f638495b1e60727be",
+      "actualSha256": "733172f7483982976ecb18fd9dc1c39046366c011d7c149f638495b1e60727be",
+      "match": true
+    },
+    {
+      "path": "review/sources/fable-v3/design/DESIGN_STUDIES.md",
+      "expectedSha256": "1823b148a90a97c29999389af81f245d3124335a8a92cbbac6ec4d8ffd7f56e4",
+      "actualSha256": "1823b148a90a97c29999389af81f245d3124335a8a92cbbac6ec4d8ffd7f56e4",
+      "match": true
+    },
+    {
+      "path": "review/sources/fable-v3/research/source-inspection-2026-09-05.md",
+      "expectedSha256": "9a564978c0c876ed5467d8fefc9a68d2d7019632adee8f578360d1ed518d1419",
+      "actualSha256": "9a564978c0c876ed5467d8fefc9a68d2d7019632adee8f578360d1ed518d1419",
+      "match": true
+    },
+    {
+      "path": "review/sources/v4-business/Achilles_3_Restaurant_Pilot.md",
+      "expectedSha256": "d961379cc32d60e5ba3b684add9d545c506346bc42b9181e3b1efb22ee566746",
+      "actualSha256": "d961379cc32d60e5ba3b684add9d545c506346bc42b9181e3b1efb22ee566746",
+      "match": true
+    },
+    {
+      "path": "review/sources/v4-business/Achilles_v4_Business_GTM_Strategy.md",
+      "expectedSha256": "b5ebcd1acd66f024f794474ee6e787e432ad8afd2eac93815d6eef1ebd6f8274",
+      "actualSha256": "b5ebcd1acd66f024f794474ee6e787e432ad8afd2eac93815d6eef1ebd6f8274",
+      "match": true
+    },
+    {
+      "path": "review/sources/v4-business/Achilles_v4_Fable_Business_Addendum.md",
+      "expectedSha256": "03a70574656b75cb2bb1a26df57a0f354c6d9c1a0af5c1945755a62d04fac9cc",
+      "actualSha256": "03a70574656b75cb2bb1a26df57a0f354c6d9c1a0af5c1945755a62d04fac9cc",
+      "match": true
+    }
+  ]
+}

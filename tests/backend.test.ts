@@ -1,0 +1,489 @@
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { request as httpRequest, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { createApp } from '../server/app.js';
+import { findTasks, hash, Store } from '../server/store.js';
+import type { ProjectState } from '../shared/types.js';
+
+let server: Server, app: Awaited<ReturnType<typeof createApp>>, temp: string, url: string;
+const jsonHeaders = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
+async function request(
+  route: string,
+  method = 'GET',
+  body?: unknown,
+  headers: Record<string, string> = jsonHeaders,
+) {
+  const response = await fetch(`${url}/api${route}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return { status: response.status, data: await response.json() };
+}
+async function sample() {
+  const result = await request('/projects/sample', 'POST', {});
+  expect(result.status).toBe(200);
+  return result.data.id as string;
+}
+async function state(id: string): Promise<ProjectState> {
+  return (await request(`/projects/${id}/state`)).data;
+}
+async function until(id: string, predicate: (state: ProjectState) => boolean) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const current = await state(id);
+    if (predicate(current)) return current;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('The sample worker did not reach its expected state.');
+}
+beforeEach(async () => {
+  await fs.mkdir(path.join(process.cwd(), 'test-results'), { recursive: true });
+  temp = await fs.mkdtemp(path.join(process.cwd(), 'test-results', 'backend-'));
+  app = await createApp({
+    dataDir: path.join(temp, 'data'),
+    projectRoot: path.join(temp, 'projects'),
+    stepMs: 20,
+  });
+  server = app.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+afterEach(async () => {
+  await app.locals.close();
+  server.closeAllConnections();
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
+});
+
+describe('real project files and durable history', () => {
+  test('starts empty and creates three sample documents only when requested', async () => {
+    expect((await request('/projects')).data.projects).toEqual([]);
+    const id = await sample();
+    const result = await state(id);
+    expect(result.documents).toHaveLength(3);
+    expect(result.history[0].sample).toBe(true);
+    expect(await fs.readFile(path.join(result.project.folder, 'Fall menu.md'), 'utf8')).toContain(
+      'Mushroom risotto',
+    );
+  });
+  test('editor writes require the opened version, merge, restore, and undo a restore', async () => {
+    const id = await sample();
+    const document = (await request(`/projects/${id}/documents/read?path=Fall%20menu.md`)).data;
+    const first = await request(`/projects/${id}/documents/write`, 'POST', {
+      path: document.path,
+      text: 'first',
+      baseSha: document.sha,
+    });
+    expect(first.status).toBe(200);
+    const stale = await request(`/projects/${id}/documents/write`, 'POST', {
+      path: document.path,
+      text: 'stale',
+      baseSha: document.sha,
+    });
+    expect(stale.status).toBe(409);
+    const second = await request(`/projects/${id}/documents/write`, 'POST', {
+      path: document.path,
+      text: 'second',
+      baseSha: first.data.sha,
+    });
+    expect(second.data.entryId).toBe(first.data.entryId);
+    const restored = await request(
+      `/projects/${id}/history/${first.data.entryId}/restore`,
+      'POST',
+      {},
+    );
+    expect(restored.status).toBe(200);
+    expect((await request(`/projects/${id}/documents/read?path=Fall%20menu.md`)).data.text).toBe(
+      document.text,
+    );
+    const undone = await request(
+      `/projects/${id}/history/${restored.data.entryId}/restore`,
+      'POST',
+      {},
+    );
+    expect(undone.status).toBe(200);
+    expect((await request(`/projects/${id}/documents/read?path=Fall%20menu.md`)).data.text).toBe(
+      'second',
+    );
+  });
+  test('empty files are distinct from absent files across restore and redo', async () => {
+    const id = await sample();
+    const created = await request(`/projects/${id}/documents/create`, 'POST', {
+      path: 'Empty.txt',
+      text: '',
+    });
+    expect(created.status).toBe(200);
+    expect(created.data.files[0].before).toBeNull();
+    expect(created.data.files[0].after).toBe(hash(''));
+    const restored = await request(
+      `/projects/${id}/history/${created.data.id}/restore`,
+      'POST',
+      {},
+    );
+    expect(restored.status).toBe(200);
+    expect((await request(`/projects/${id}/documents/read?path=Empty.txt`)).status).toBe(404);
+    expect(
+      (await request(`/projects/${id}/history/${restored.data.entryId}/restore`, 'POST', {}))
+        .status,
+    ).toBe(200);
+    expect((await request(`/projects/${id}/documents/read?path=Empty.txt`)).data.text).toBe('');
+  });
+  test('preserves exact UTF-8 BOM and CRLF bytes through read, edit, and restore', async () => {
+    const id = await sample(),
+      current = await state(id),
+      target = path.join(current.project.folder, 'BOM-and-CRLF.md');
+    const original = Buffer.concat([
+      Buffer.from([0xef, 0xbb, 0xbf]),
+      Buffer.from('# Original\r\n\r\nTwo lines.\r\n', 'utf8'),
+    ]);
+    await fs.writeFile(target, original);
+    const read = await request(`/projects/${id}/documents/read?path=BOM-and-CRLF.md`);
+    expect(read.status).toBe(200);
+    expect(read.data.text.charCodeAt(0)).toBe(0xfeff);
+    expect(Buffer.from(read.data.text, 'utf8').equals(original)).toBe(true);
+    const edited = await request(`/projects/${id}/documents/write`, 'POST', {
+      path: 'BOM-and-CRLF.md',
+      text: '# Edited\nChanged.\n',
+      baseSha: read.data.sha,
+    });
+    expect(edited.status).toBe(200);
+    expect(
+      (await request(`/projects/${id}/history/${edited.data.entryId}/restore`, 'POST', {})).status,
+    ).toBe(200);
+    expect((await fs.readFile(target)).equals(original)).toBe(true);
+  });
+  test('detects outside changes and preserves overwritten contents before a forced restore', async () => {
+    const id = await sample(),
+      result = await state(id);
+    const original = result.history[0];
+    await fs.writeFile(path.join(result.project.folder, 'Fall menu.md'), 'outside work');
+    const read = await request(`/projects/${id}/documents/read?path=Fall%20menu.md`);
+    expect(read.data.outsideChange.kind).toBe('outside');
+    const conflict = await request(`/projects/${id}/history/${original.id}/restore`, 'POST', {
+      files: ['Fall menu.md'],
+    });
+    expect(conflict.status).toBe(409);
+    expect(conflict.data.conflicts[0].path).toBe('Fall menu.md');
+    const restore = await request(`/projects/${id}/history/${original.id}/restore`, 'POST', {
+      files: ['Fall menu.md'],
+      mode: 'all',
+    });
+    expect(restore.status).toBe(200);
+    const history = (await state(id)).history;
+    const saved = history.find((e) => e.kind === 'replaced-by-restore')!;
+    const store: Store = app.locals.store;
+    expect(await store.object(id, saved.files[0].before)).toBe('outside work');
+  });
+  test('restores copies without modifying newer files', async () => {
+    const id = await sample();
+    const first = (await request(`/projects/${id}/documents/read?path=Fall%20menu.md`)).data;
+    const edited = await request(`/projects/${id}/documents/write`, 'POST', {
+      path: first.path,
+      baseSha: first.sha,
+      text: 'new menu',
+    });
+    const copy = await request(`/projects/${id}/history/${edited.data.entryId}/restore`, 'POST', {
+      mode: 'copies',
+    });
+    expect(copy.status).toBe(200);
+    expect((await request(`/projects/${id}/documents/read?path=Fall%20menu.md`)).data.text).toBe(
+      'new menu',
+    );
+    const name = copy.data.entry.files[0].path;
+    expect(
+      (await request(`/projects/${id}/documents/read?path=${encodeURIComponent(name)}`)).data.text,
+    ).toBe(first.text);
+  });
+  test('concurrent stale saves admit one winner', async () => {
+    const id = await sample(),
+      first = (await request(`/projects/${id}/documents/read?path=Fall%20menu.md`)).data;
+    const results = await Promise.all(
+      ['one', 'two'].map((text) =>
+        request(`/projects/${id}/documents/write`, 'POST', {
+          path: first.path,
+          baseSha: first.sha,
+          text,
+        }),
+      ),
+    );
+    expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+  });
+  test('a saved version restores the whole folder and later file removal can be undone', async () => {
+    const id = await sample();
+    const saved = await request(`/projects/${id}/history/label`, 'POST', {
+      label: 'Before adding a document',
+    });
+    await request(`/projects/${id}/documents/create`, 'POST', {
+      path: 'Later.md',
+      text: 'Later work',
+      kind: 'plan',
+    });
+    expect((await state(id)).project.plans).toContain('Later.md');
+    expect(
+      (await request(`/projects/${id}/history/${saved.data.id}/restore`, 'POST', {})).status,
+    ).toBe(409);
+    const restore = await request(`/projects/${id}/history/${saved.data.id}/restore`, 'POST', {
+      mode: 'all',
+    });
+    expect(restore.status).toBe(200);
+    expect((await request(`/projects/${id}/documents/read?path=Later.md`)).status).toBe(404);
+    expect(
+      (await request(`/projects/${id}/history/${restore.data.entryId}/restore`, 'POST', {})).status,
+    ).toBe(200);
+    expect((await request(`/projects/${id}/documents/read?path=Later.md`)).data.text).toBe(
+      'Later work',
+    );
+  });
+  test('rejects invalid task edits without leaving changes in memory', async () => {
+    const id = await sample(),
+      task = (await request(`/projects/${id}/tasks`, 'POST', { name: 'Original name' })).data;
+    expect(
+      (
+        await request(`/projects/${id}/tasks/${task.id}`, 'PUT', {
+          name: 'Must not survive',
+          owner: 'invalid',
+        })
+      ).status,
+    ).toBe(400);
+    expect((await state(id)).tasks[0].name).toBe('Original name');
+  });
+  test('recovers a durable interrupted write and complete intended history on startup', async () => {
+    const id = await sample(),
+      store: Store = app.locals.store;
+    const intended = structuredClone(store.state(id));
+    const target = 'Recovered.txt',
+      text = 'Recovered after interrupted save',
+      sha = hash(text)!;
+    const entry = store.addEntry(intended, { kind: 'edited', sentence: 'Recovery test' });
+    entry.files.push({
+      path: target,
+      op: 'created',
+      before: null,
+      after: sha,
+      recorded: true,
+      reason: null,
+    });
+    await fs.writeFile(store.objectPath(id, sha), text);
+    await fs.writeFile(
+      path.join(temp, 'data', 'pending', 'test-recovery.json'),
+      JSON.stringify({
+        id: 'test-recovery',
+        projectId: id,
+        writes: [{ path: target, before: null, after: sha }],
+        state: intended,
+      }),
+    );
+    const restarted = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
+    await restarted.init();
+    expect(await restarted.current(id, target)).toBe(text);
+    expect(restarted.state(id).history.at(-1)?.id).toBe(entry.id);
+    expect(await fs.readdir(path.join(temp, 'data', 'pending'))).toEqual([]);
+  });
+});
+
+describe('task, approval, sample worker, and review flow', () => {
+  test('parser skips done tasks and code blocks and retains person ownership', () => {
+    expect(
+      findTasks(
+        '1. update menu\n- [ ] call supplier\n- [x] done\n* Tagged task T4\n```\n- not a task\n```',
+      ),
+    ).toEqual([
+      { line: 1, name: 'Update menu', owner: 'diomedes-with-ok' },
+      { line: 2, name: 'Call supplier', owner: 'you' },
+    ]);
+  });
+  test('finds real plan tasks, adds suffixes, and prevents duplicate tasks', async () => {
+    const id = await sample();
+    const found = (
+      await request(`/projects/${id}/plans/find-tasks`, 'POST', { path: 'Reopening plan.md' })
+    ).data.found;
+    expect(found).toHaveLength(4);
+    const added = await request(`/projects/${id}/plans/add-tasks`, 'POST', {
+      path: 'Reopening plan.md',
+      items: found,
+    });
+    expect(added.data.tasks).toHaveLength(4);
+    expect(
+      (await request(`/projects/${id}/plans/find-tasks`, 'POST', { path: 'Reopening plan.md' }))
+        .data.found,
+    ).toEqual([]);
+  });
+  test('approval propagates, disallows concurrent sessions, finishes real writes, and Keep all completes task', async () => {
+    const id = await sample(),
+      task = (await request(`/projects/${id}/tasks`, 'POST', { name: 'Update the menu' })).data;
+    const started = await request(`/projects/${id}/work/start`, 'POST', { taskId: task.id });
+    expect(started.data.state).toBe('waiting');
+    expect((await request(`/projects/${id}/work/start`, 'POST', { taskId: task.id })).status).toBe(
+      409,
+    );
+    let current = await state(id);
+    const initial = current.needs.find((n) => n.state === 'open')!;
+    expect(current.project.status.needsYou).toBe(1);
+    expect(current.tasks[0].needId).toBe(initial.id);
+    expect(
+      (
+        await request(`/projects/${id}/needs/${initial.id}/resolve`, 'POST', {
+          resolution: 'go-ahead',
+          allowForTask: true,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request(`/projects/${id}/needs/${initial.id}/resolve`, 'POST', {
+          resolution: 'go-ahead',
+        })
+      ).status,
+    ).toBe(409);
+    current = await until(id, (s) => s.sessions[0].state === 'done');
+    expect(current.changes).toHaveLength(2);
+    expect(current.changes.every((c) => c.changedSince === null)).toBe(true);
+    expect(current.project.status.needsYou).toBe(0);
+    expect(
+      (
+        await request(`/projects/${id}/review/all`, 'POST', {
+          action: 'keep',
+          sessionId: started.data.id,
+        })
+      ).status,
+    ).toBe(200);
+    expect((await state(id)).tasks[0].state).toBe('done');
+  });
+  test('declines file creation while continuing the recorded plan update', async () => {
+    await request('/settings', 'PUT', { permissions: { changingFiles: false } });
+    const id = await sample(),
+      task = (await request(`/projects/${id}/tasks`, 'POST', { name: 'Update plan' })).data;
+    await request(`/projects/${id}/work/start`, 'POST', { taskId: task.id });
+    let current = await until(id, (s) => s.needs.some((n) => n.state === 'open'));
+    const need = current.needs.find((n) => n.state === 'open')!;
+    await request(`/projects/${id}/needs/${need.id}/resolve`, 'POST', { resolution: 'declined' });
+    current = await until(id, (s) => s.sessions[0].state === 'done');
+    expect(current.changes).toHaveLength(1);
+    expect(current.documents.some((d) => d.path === 'Sample work notes.md')).toBe(false);
+  });
+  test('stop expires needs immediately and fault preserves its partial changes', async () => {
+    const id = await sample(),
+      task = (await request(`/projects/${id}/tasks`, 'POST', { name: 'Fault sample' })).data;
+    const stopped = await request(`/projects/${id}/work/start`, 'POST', { taskId: task.id });
+    await request(`/projects/${id}/work/${stopped.data.id}/stop`, 'POST', {});
+    expect((await state(id)).needs[0].state).toBe('expired');
+    const started = await request(`/projects/${id}/work/start`, 'POST', {
+      taskId: task.id,
+      demo: 'fault',
+    });
+    const need = (await state(id)).needs.find((n) => n.state === 'open')!;
+    await request(`/projects/${id}/needs/${need.id}/resolve`, 'POST', {
+      resolution: 'go-ahead',
+      allowForTask: true,
+    });
+    const current = await until(
+      id,
+      (s) => s.sessions.find((session) => session.id === started.data.id)?.state === 'failed',
+    );
+    expect(current.changes).toHaveLength(1);
+    expect(current.tasks[0].reason).toBe('went-wrong');
+  });
+});
+
+describe('request and filesystem boundaries', () => {
+  test('rejects foreign/null origins, missing custom headers, and DNS-rebinding hosts', async () => {
+    expect(
+      (
+        await request(
+          '/settings',
+          'PUT',
+          { detail: 'standard' },
+          { 'Content-Type': 'application/json', 'X-Diomedes-Client': '' },
+        )
+      ).status,
+    ).toBe(403);
+    for (const origin of ['null', 'http://evil.example', 'http://127.0.0.1.evil.example:5173'])
+      expect(
+        (await request('/settings', 'GET', undefined, { ...jsonHeaders, Origin: origin })).status,
+      ).toBe(403);
+    const status = await new Promise<number | undefined>((resolve, reject) => {
+      const req = httpRequest(
+        `${url}/api/settings`,
+        { headers: { Host: 'evil.example' } },
+        (response) => {
+          response.resume();
+          resolve(response.statusCode);
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+    expect(status).toBe(403);
+  });
+  test('rejects path traversal, credential stores, junctions, and reserved names', async () => {
+    const id = await sample(),
+      result = await state(id);
+    for (const name of ['../escape.txt', '.git/config', '.codex/auth.json', '.env', 'CON.txt'])
+      expect(
+        (await request(`/projects/${id}/documents/create`, 'POST', { path: name, text: 'bad' }))
+          .status,
+      ).toBeGreaterThanOrEqual(400);
+    const outside = path.join(temp, 'outside');
+    await fs.mkdir(outside);
+    await fs.symlink(
+      outside,
+      path.join(result.project.folder, 'linked'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    expect(
+      (
+        await request(`/projects/${id}/documents/create`, 'POST', {
+          path: 'linked/escape.txt',
+          text: 'bad',
+        })
+      ).status,
+    ).toBe(403);
+    expect(await fs.readdir(outside)).toEqual([]);
+  });
+  test('settings survive restart and every supported appearance validates', async () => {
+    for (const name of ['deep-field', 'cobalt', 'graphite', 'verdigris', 'paper'])
+      expect((await request('/settings', 'PUT', { appearance: { package: name } })).status).toBe(
+        200,
+      );
+    await request('/settings', 'PUT', { detail: 'technical', onboarding: { resumeAt: 'q2' } });
+    const restarted = new Store(path.join(temp, 'data'));
+    await restarted.init();
+    expect(restarted.settings.detail).toBe('technical');
+    expect(restarted.settings.onboarding.resumeAt).toBe('q2');
+    expect((await request('/settings', 'PUT', { detail: 'invented' })).status).toBe(400);
+  });
+  test('sample Ask is honest, sample Plan writes a real file, and Codex requires explicit settings and consent', async () => {
+    const id = await sample();
+    const answer = await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'ask',
+      text: 'What should we do?',
+    });
+    expect(answer.data.turn.text).toContain('cannot answer yet');
+    const plan = await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'plan',
+      text: 'Reopen the patio',
+    });
+    expect(plan.data.document).toBe('Reopen the patio.md');
+    expect(
+      (await request(`/projects/${id}/documents/read?path=Reopen%20the%20patio.md`)).data.text,
+    ).toContain('Sample plan written without a service');
+    expect(
+      (await request(`/projects/${id}/ask`, 'POST', { route: 'codex', mode: 'ask', text: 'test' }))
+        .status,
+    ).toBe(409);
+    await request('/settings', 'PUT', { services: { codex: true } });
+    const consent = await request(`/projects/${id}/ask`, 'POST', {
+      route: 'codex',
+      mode: 'ask',
+      text: 'test',
+    });
+    expect(consent.data.consentRequired).toBe(true);
+    expect(
+      (await request(`/projects/${id}/work/start`, 'POST', { route: 'codex', taskId: 'T1' }))
+        .status,
+    ).toBe(409);
+  });
+});

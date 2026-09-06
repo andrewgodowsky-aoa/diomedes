@@ -1,0 +1,81 @@
+{
+  "started": "2026-09-05T08:21:28.963Z",
+  "protocolVersion": "0.153.4",
+  "nativeAccountType": "chatgpt",
+  "modelTurnAttempts": 3,
+  "previousAttempts": [
+    {
+      "attempt": 1,
+      "outcome": "Native TURN_FAILED without answer; error details were initially generic. Same explicit API-endpoint override as attempt 2."
+    },
+    {
+      "attempt": 2,
+      "outcome": "401 authorization failure before generation; explicit API endpoint override identified and removed"
+    }
+  ],
+  "promptContent": "Synthetic fixture only; no personal or project content.",
+  "readOnlyProbe": "WRITE_DENIED",
+  "routing": "Native authenticated ChatGPT route selected by Codex. No OPENAI_API_KEY, API endpoint override, or provider fallback.",
+  "policy": {
+    "sandbox": "readOnly",
+    "networkAccess": false,
+    "approvalPolicy": "never",
+    "environments": [],
+    "runtimeWorkspaceRoots": [],
+    "selectedCapabilityRoots": [],
+    "activeMcpStatusEntries": 0,
+    "allConfiguredMcpRuntimeStatus": "disabled"
+  },
+  "limitations": [
+    "Native tool-using Work remains disabled.",
+    "LocalAI integration is observational GET status only.",
+    "This is a text-only Ask/Plan smoke, not complete foundation P1-P5."
+  ],
+  "completed": "2026-09-05T08:21:39.990Z",
+  "turnSucceeded": true,
+  "model": "gpt-6-astra",
+  "threadId": "01a070a8-8dc4-7261-8e28-11ee3446e071",
+  "response": "Filesystem, shell, network, and MCP tools are not available for this task.\n\nDIOMEDES_NATIVE_READONLY_OK",
+  "runtimeFiles": [
+    {
+      "name": "codex.exe",
+      "sha256": "a1cf6360ca71918d5466bc3a32d9f18b7044c9128756d1949e715d277b88c9b6"
+    },
+    {
+      "name": "codex-command-runner.exe",
+      "sha256": "08b56828cca57c83d14f03eb9ec62c73a2cd6648248cc731ae8fedd5fa3ae566"
+    },
+    {
+      "name": "codex-windows-sandbox-setup.exe",
+      "sha256": "682cf7b351a871f3479b78fe3b7ea7348554de655bd98b0f322cef2d006a8d62"
+    },
+    {
+      "name": "codex-code-mode-host.exe",
+      "sha256": "452894330b2a93717ac965f404fc134ab859a52d39ee790a69a7d2faa5284db4"
+    }
+  ],
+  "localAiObservation": {
+    "observedAt": "2026-09-05T08:23:03.581Z",
+    "id": "localai",
+    "name": "LocalAI supervisor",
+    "kind": "local",
+    "available": true,
+    "enabled": true,
+    "status": "Observing",
+    "detail": "Supervisor state: idle_unloaded. No resident model readiness is confirmed. Generation is not connected.",
+    "capabilities": [
+      "observe-status"
+    ],
+    "disclosure": [
+      "Only GET /localai/status on 127.0.0.1:8080 is used.",
+      "Diomedes does not generate, load, unload, pin, or change any local model or Hermes service."
+    ]
+  },
+  "runtimeProvenance": {
+    "source": "C:/Users/andre/AppData/Local/OpenAI/Codex/bin/27d6a192e9c98618",
+    "destination": ".data/native-runtime",
+    "allSourceAndDestinationSha256Matched": true,
+    "originalsModified": false,
+    "reason": "PATH runtime 0.153.4 had an older command runner; matching already-installed helper fixed unsupported protocol version 6."
+  }
+}

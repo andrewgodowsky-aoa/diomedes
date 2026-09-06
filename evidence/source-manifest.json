@@ -1,0 +1,302 @@
+{
+  "createdAt": "2026-09-05T08:54:57.1806758Z",
+  "root": "F:\\Achilles\\diomedes",
+  "proposedCommit": "feat: build Diomedes workspace from v5 designs with recorded edits and native Codex proposals",
+  "fileCount": 57,
+  "excludes": [
+    "source-manifest.json itself",
+    "generated dist",
+    "node_modules",
+    "runtime .data",
+    "caches",
+    "test-results",
+    "fixtures/projects"
+  ],
+  "files": [
+    {
+      "path": ".gitignore",
+      "bytes": 118,
+      "sha256": "94507cc8fdbe1452747b1ace516b67ae9591450fd2709137a2acd17c9a8faaa6"
+    },
+    {
+      "path": ".prettierrc.json",
+      "bytes": 73,
+      "sha256": "d7fa1c1dee12b930b45e1f8c465b07da95fa519cfd9e3e503c76dc762617b1fb"
+    },
+    {
+      "path": "client/api.ts",
+      "bytes": 834,
+      "sha256": "76ffd3b442dc84a83a58664f3786b300bf1bcbb3a31e74f8b9d83b4ba3221468"
+    },
+    {
+      "path": "client/App.tsx",
+      "bytes": 20793,
+      "sha256": "b6dcef0a060bcc48c7275e863dc58373547416c9b313538df46ceaeae87fd7c8"
+    },
+    {
+      "path": "client/components.tsx",
+      "bytes": 9577,
+      "sha256": "68252502bac41805f5a9b698bc76b15ac5261ec711c0e096b1333a1289fa3bc0"
+    },
+    {
+      "path": "client/main.tsx",
+      "bytes": 547,
+      "sha256": "5ef8e1fab1e801648b4336144c776066eede24ed189cdcf15d0d8d50c9579363"
+    },
+    {
+      "path": "client/Settings.tsx",
+      "bytes": 14729,
+      "sha256": "305e3696e684b566894a2016fe41b23be4b0a4ec1a095e2e0eaef82eaf39ee61"
+    },
+    {
+      "path": "client/Setup.tsx",
+      "bytes": 7458,
+      "sha256": "a3448abb37705ec1d9f64bd1fd94ffe13a9543263a5260f9fbaf430b260543e7"
+    },
+    {
+      "path": "client/styles.css",
+      "bytes": 35826,
+      "sha256": "757b50243e7a346c7c3b81b09c95869aeec7138276b9d6c6528ff804c451613c"
+    },
+    {
+      "path": "client/Workspace.tsx",
+      "bytes": 81185,
+      "sha256": "92afc3662f39e870545e3a4ced37f60231f807161cbf7988d8ca99880a5ed63a"
+    },
+    {
+      "path": "evidence/BUILD-REPORT.md",
+      "bytes": 9819,
+      "sha256": "bfb34deb5af2784d276a1d9ffaaff9efa1b64be4362e33ba107b97bab8de5424"
+    },
+    {
+      "path": "evidence/integration-proof.json",
+      "bytes": 3016,
+      "sha256": "731e7eea88cce6a9da9f30600e16f70760c1549da493724787d480fa5dde4d3a"
+    },
+    {
+      "path": "evidence/launcher-proof.json",
+      "bytes": 797,
+      "sha256": "a4706ac49845bfbdaea81d2b1f0a51284cedd3ab33b2e06e1d84bed58f875a22"
+    },
+    {
+      "path": "evidence/native-runtime-manifest.json",
+      "bytes": 1302,
+      "sha256": "1913f994004782ce9467e592629ac46b7470389744c729c7b91f46d0e5dd7c5a"
+    },
+    {
+      "path": "evidence/native-work-proof.json",
+      "bytes": 1762,
+      "sha256": "9753c9c0627f7e5b06a2379dac53448dee354921bb8de0387733a74116b5f6ff"
+    },
+    {
+      "path": "evidence/package-integrity.json",
+      "bytes": 35985,
+      "sha256": "36dd8e489e603c57b6b62abf0a59c75ccdb529ca448d24566a910e69ea487a78"
+    },
+    {
+      "path": "evidence/screenshots/home-guided.png",
+      "bytes": 159037,
+      "sha256": "92a9350ac46ab2351445463db3fbb91fe5bfa1e39b09daf27ecc8a06732f15e6"
+    },
+    {
+      "path": "evidence/screenshots/native-proposal-preview.png",
+      "bytes": 110642,
+      "sha256": "ad9e44c44399748291c761186918f3eb94826453853a6e369252bc9c58fca03d"
+    },
+    {
+      "path": "evidence/screenshots/review-guided.png",
+      "bytes": 139335,
+      "sha256": "f4c23a8253bed1ad50688e4ee043a7d12a9f02a3b8271cb94590f399c0281b57"
+    },
+    {
+      "path": "evidence/screenshots/work-approval.png",
+      "bytes": 153864,
+      "sha256": "b327cc1c937e821b244db78b67850f666b485cf434106a2fa58357404eb1ef27"
+    },
+    {
+      "path": "evidence/SOURCE-DECISIONS.md",
+      "bytes": 2933,
+      "sha256": "ce42d9e1d701da738d053ede85f5738e078a02cdefc771f3502855f54cf8460d"
+    },
+    {
+      "path": "evidence/unit-tests.json",
+      "bytes": 21453,
+      "sha256": "dea6f15b123c11a7fd7876761d2c206fac70498b3fbdb8db18c18c9708a5e1fb"
+    },
+    {
+      "path": "evidence/validation-notes.md",
+      "bytes": 11537,
+      "sha256": "635c6f04814c7b85ac94c2dc50f6a3e8d951ba28f0d20994ccfe3568d2766111"
+    },
+    {
+      "path": "index.html",
+      "bytes": 361,
+      "sha256": "c6433cbf8074c248e4c12c76a4d5643f880a17d70a61d92059b9c433102051f0"
+    },
+    {
+      "path": "licenses/big-shoulders-display.txt",
+      "bytes": 4314,
+      "sha256": "18aabf190848725e2576eefb5c29ba06aac1029d02132252a7f312eac2e50cf3"
+    },
+    {
+      "path": "licenses/ibm-plex-mono.txt",
+      "bytes": 5299,
+      "sha256": "23b0a9d0c6d3f140a0b77e483c5cfa6bba574325ef5cb189ed9f2fec4884533f"
+    },
+    {
+      "path": "licenses/ibm-plex-serif.txt",
+      "bytes": 5312,
+      "sha256": "b9e9c867b084f43f2bf0284808dbf394b5a027200577c246f2ac4fe2711da416"
+    },
+    {
+      "path": "licenses/schibsted-grotesk.txt",
+      "bytes": 4541,
+      "sha256": "15222412a95d70042e66e79bfb3b985653e0693e4d41703bc131bee9c5aa1aa7"
+    },
+    {
+      "path": "package-lock.json",
+      "bytes": 116465,
+      "sha256": "9820eb1699f433b74d12111abff4c751b78229d2d9c71ea1c5d570ddcedb2fb7"
+    },
+    {
+      "path": "package.json",
+      "bytes": 1242,
+      "sha256": "ac3c1d9b002f6a2de3b8ddcefa5d52fb749f1e3200d71be7c7c6fb394d6c525c"
+    },
+    {
+      "path": "playwright.config.ts",
+      "bytes": 1396,
+      "sha256": "45e9afd463d730257acb22078bf1e1efa4911b7a12c8cba03b82825021f5e895"
+    },
+    {
+      "path": "README.md",
+      "bytes": 5664,
+      "sha256": "b8d34dedb910ff702d817db25fa2a19502a7dc5057e10eaa4efe080e1f1e73fb"
+    },
+    {
+      "path": "reference/00-Review-and-recommended-decisions.md",
+      "bytes": 23028,
+      "sha256": "42467bc6260e72fbb725663173bba43670be8799a374eeab3b5fa5142cd204e5"
+    },
+    {
+      "path": "reference/01-Astra-foundation-proof-prompt.md",
+      "bytes": 14564,
+      "sha256": "4a2d0e9c726fffc1506669a7adb574d8879d790908fdafe11baf6e78ca1dd939"
+    },
+    {
+      "path": "reference/04_FILE_GUIDE.md",
+      "bytes": 2178,
+      "sha256": "1221b9d51582c5b43fa374a0cc87797928d87a0e884ef3efd0f52f5142d15eb3"
+    },
+    {
+      "path": "scripts/dev.mjs",
+      "bytes": 2455,
+      "sha256": "da596a509426c84a7fdb69f1ce0b7e15df83a5fde2206d19a04853e1db4ec146"
+    },
+    {
+      "path": "scripts/fixtures.ts",
+      "bytes": 722,
+      "sha256": "396438a0e9383d2c5639978e1a6c3462c6e116d79d6e0406dec5ea1648096ca7"
+    },
+    {
+      "path": "scripts/native-work-smoke.ts",
+      "bytes": 9115,
+      "sha256": "6a655b5f89a640d8dfb98dfe22af45755f7eef6a0663c1c91ae5bd9ee130cdf8"
+    },
+    {
+      "path": "scripts/prepare-native.ts",
+      "bytes": 6370,
+      "sha256": "925a921bcd2be909e5cd4398d7bfc87a497f1f7ba6459f78cb322261e7d645e2"
+    },
+    {
+      "path": "server/app.ts",
+      "bytes": 40186,
+      "sha256": "c9a02964fcfcebe9ec16e03689780c3dc37b50994e19c829d72edfac2348b035"
+    },
+    {
+      "path": "server/index.ts",
+      "bytes": 2911,
+      "sha256": "3cafdbd856e3ce5585b1e3f9dec7d2853258bdca70c375fd8a186cd9ba8ac987"
+    },
+    {
+      "path": "server/integrations.ts",
+      "bytes": 28536,
+      "sha256": "04b1d9f90397cd4ece940f25b74084cace984ca7341fa564c62a31d9bf89ec04"
+    },
+    {
+      "path": "server/native-work.ts",
+      "bytes": 21819,
+      "sha256": "8f7a0e626e5924bfb6abceaa966d05030a6ddc3c75b59dd532d32c5158a4da03"
+    },
+    {
+      "path": "server/paths.ts",
+      "bytes": 4408,
+      "sha256": "faeb820ed84bf81584119a921cc52096b0e24514c71ce5acd7b2d05f8df00761"
+    },
+    {
+      "path": "server/store.ts",
+      "bytes": 31506,
+      "sha256": "847c14e8d541d7d4855c6f981c0c44453af9aa4b96a82a5a8643731d14434f99"
+    },
+    {
+      "path": "server/work.ts",
+      "bytes": 14565,
+      "sha256": "d37f89d2c66d5ab19df5bcd2c3ab706306ada152db4bd7447313128bf5ac2198"
+    },
+    {
+      "path": "shared/types.ts",
+      "bytes": 5376,
+      "sha256": "58a196767f33b862d12d6fed957f54e014dab902fb1965e0da336a0d47a3a9c6"
+    },
+    {
+      "path": "Start-Diomedes.ps1",
+      "bytes": 2117,
+      "sha256": "872a6d1f8425f401bcbacf17a8b33f5f5b48d98252ac1607faa649c205357562"
+    },
+    {
+      "path": "Stop-Diomedes.ps1",
+      "bytes": 1259,
+      "sha256": "405c7c7f376f25e4ee5b6833a5a18919bab724a88a8142f75f0e6f1388007c3d"
+    },
+    {
+      "path": "tests/backend.test.ts",
+      "bytes": 19931,
+      "sha256": "c95f892a2eacedb0fd16d27ed087edc552cec34614eedbad9e4fcb8decf5bf5d"
+    },
+    {
+      "path": "tests/integrations.test.ts",
+      "bytes": 12655,
+      "sha256": "cc801132b83d4df9b7aee189771240d819bfc4cd8d221f2ad8f4e056e36a60fb"
+    },
+    {
+      "path": "tests/native-ui.spec.ts",
+      "bytes": 7234,
+      "sha256": "4f3ff71a94ee791ff72d31bb21f9ce80b3373ff0fe0e764f7d0be2847ec4b87e"
+    },
+    {
+      "path": "tests/native-work.test.ts",
+      "bytes": 19120,
+      "sha256": "4a7ea35f91e0efbc94f87de61d67c5e3272175507704dddd5225b9197fd1b49d"
+    },
+    {
+      "path": "tests/ui.spec.ts",
+      "bytes": 24838,
+      "sha256": "7110e1783ee57e6c911cd91b1baf5715ffc301ade3a8c532bab8fdd89aa4eaa7"
+    },
+    {
+      "path": "tsconfig.json",
+      "bytes": 430,
+      "sha256": "192c8c5bec39ebf182d5e45d0778392a9d5f441906d915520379796534205d9e"
+    },
+    {
+      "path": "vite.config.ts",
+      "bytes": 367,
+      "sha256": "faf31790cd0bee683cdee1d9ea4d32d0ca0835ed801b80f4d8e3c6040a66fe7c"
+    },
+    {
+      "path": "vitest.config.ts",
+      "bytes": 183,
+      "sha256": "203acffc22cf151d3356dc0f12c62fba9bcfbac49e0f87ea6916a73f1cfc4bfc"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "verifiedAt": "2026-09-05T08:49:31.9460941Z",
+  "health": {
+    "ok": true,
+    "name": "Diomedes",
+    "version": "0.1.0",
+    "dataDir": "F:\\Achilles\\diomedes\\.data",
+    "projectRoot": "F:\\Achilles\\diomedes\\fixtures\\projects",
+    "service": "local",
+    "port": 47631
+  },
+  "launch": {
+    "startTimeUtc": "2026-09-05T08:46:54.902915Z",
+    "entry": "F:\\Achilles\\diomedes\\server\\index.ts",
+    "pid": 44048,
+    "executable": "F:\\LocalAI\\hermes-home\\node\\node.exe"
+  },
+  "listener": {
+    "address": "127.0.0.1",
+    "pid": 44048
+  },
+  "startStopRestartPassed": true,
+  "incorrectStartTimeRejected": true,
+  "productionHtmlServed": true,
+  "productionUiObserved": "Welcome screen in Codex in-app browser",
+  "browserMutationPerformed": false
+}
