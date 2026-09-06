@@ -16,8 +16,9 @@ import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
 import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText } from './store.js';
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
-import { askCodex, getIntegrationStatuses } from './integrations.js';
+import { askCodex, getIntegrationStatuses, type NativeTeamOptions } from './integrations.js';
 import { mountTeamRoutes } from './team/routes.js';
+import { roleInstructions } from './team/prompts.js';
 
 interface AppOptions {
   dataDir: string;
@@ -209,6 +210,28 @@ export async function createApp(options: AppOptions) {
   const work = new WorkService(store, options.stepMs);
   const nativeWork = new NativeWorkService(store, options.nativeGenerator);
   const app = express();
+  const teamForThread = (
+    req: Request,
+    projectId: string,
+    threadId: string | undefined,
+  ): NativeTeamOptions | undefined => {
+    if (!threadId) return undefined;
+    const state = store.state(projectId);
+    const member = state.team?.members.find(
+      (item) => item.threadId === threadId && item.engine === 'codex',
+    );
+    if (!member) return undefined;
+    // The socket is the listening service, even when listen(0) selected the port.
+    const listeningPort = req.socket.localPort;
+    if (!listeningPort) throw new ApiError(503, 'The team service listening port is unavailable.');
+    return {
+      url: `http://127.0.0.1:${listeningPort}/mcp/team/${projectId}`,
+      tokenEnv: `DIOMEDES_TEAM_${member.slotId.toUpperCase().replace(/[^A-Z0-9]/g, '')}`,
+      slotId: member.slotId,
+      role: member.role,
+      roleInstructions: roleInstructions(member.role, member, state.project),
+    };
+  };
   const serviceFor = (projectId: string, sessionId: string) => {
     const session = store.state(projectId).sessions.find((item) => item.id === sessionId);
     if (!session) throw new ApiError(404, 'This work session was not found.');
@@ -720,6 +743,7 @@ export async function createApp(options: AppOptions) {
               : asString(b.instruction, 'an instruction', 16000),
           sources: b.sources.map(relativeName),
           consent: true,
+          team: teamForThread(req, projectId, threadId),
         });
         const stored = store.state(projectId).sessions.find((s) => s.id === started.id)!;
         stored.permission = threadPermission;
@@ -1037,6 +1061,7 @@ export async function createApp(options: AppOptions) {
             instruction: text,
             sources,
             consent: b.consent === true,
+            team: teamForThread(req, projectId, threadId),
           });
           const storedSession = store
             .state(projectId)

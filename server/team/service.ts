@@ -5,6 +5,7 @@ import type {
   MailboxMessage,
   Slot,
   TeamMember,
+  TeamRun,
   TeamState,
 } from '../../shared/types.js';
 import { ApiError } from '../paths.js';
@@ -61,6 +62,48 @@ export class TeamService {
 
   teamState(projectId: string): TeamState {
     return migrateTeam(this.store.state(projectId));
+  }
+
+  // The run controller persists these mutations with the corresponding Session
+  // and Need changes, so clients see a consistent team and work state.
+  setMemberStatus(projectId: string, slotId: Slot, status: TeamMember['status']): void {
+    const member = findMember(this.teamState(projectId), slotId);
+    member.status = status;
+    member.lastSeenAt = now();
+  }
+
+  acceptRun(projectId: string, slotId: Slot, sessionId: string): TeamRun {
+    const team = this.teamState(projectId);
+    this.setMemberStatus(projectId, slotId, 'working');
+    const run: TeamRun = {
+      id: identifier('R'),
+      slotId,
+      sessionId,
+      status: 'accepted',
+      startedAt: now(),
+      endedAt: null,
+      summary: null,
+    };
+    team.runs.push(run);
+    return run;
+  }
+
+  updateRun(
+    projectId: string,
+    runId: string,
+    status: 'running' | 'completed' | 'failed' | 'cancelled',
+    summary: string | null = null,
+  ): void {
+    const run = this.teamState(projectId).runs.find((item) => item.id === runId);
+    if (!run) throw new Error('The team work run is missing.');
+    run.status = status;
+    run.summary = summary;
+    run.endedAt = status === 'running' ? null : now();
+    this.setMemberStatus(
+      projectId,
+      run.slotId,
+      status === 'running' ? 'working' : status === 'failed' ? 'error' : 'idle',
+    );
   }
 
   async authenticate(projectId: string, slotId: string | null, token: string | null): Promise<TeamMember> {

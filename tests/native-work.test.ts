@@ -3,9 +3,17 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { ProjectState } from '../shared/types.js';
+import type { ProjectState, TeamMember } from '../shared/types.js';
 import { createApp } from '../server/app.js';
 import type { NativeGenerator } from '../server/native-work.js';
+import {
+  createIntegrations,
+  IntegrationError,
+  nativeEnvironment,
+  type NativeRpc,
+  type NativeTeamOptions,
+} from '../server/integrations.js';
+import { roleInstructions } from '../server/team/prompts.js';
 
 type NativeResult = Awaited<ReturnType<NativeGenerator>>;
 function deferred() {
@@ -55,6 +63,22 @@ const start = (sources = ['Fall menu.md']) =>
     consent: true,
     sources,
   });
+const team: NativeTeamOptions = {
+  url: 'http://127.0.0.1:4321/mcp/team/test-project',
+  tokenEnv: 'DIOMEDES_TEAM_TEST_TOKEN',
+  slotId: 'test-member',
+  role: 'member',
+  roleInstructions: 'Report progress to the lead through team_send_message.',
+};
+// Standalone adapter callers may still manage their own team options.
+const startTeam = (options: NativeTeamOptions = team) =>
+  app.locals.store.locked(() =>
+    app.locals.nativeWork.start(projectId, taskId, {
+      sources: ['Fall menu.md'],
+      consent: true,
+      team: options,
+    }),
+  );
 async function until(predicate: (state: ProjectState) => boolean) {
   for (let attempt = 0; attempt < 100; attempt++) {
     const result = await state();
@@ -66,6 +90,380 @@ async function until(predicate: (state: ProjectState) => boolean) {
 const waiting = () => until((result) => result.needs.some((need) => need.state === 'open'));
 const decision = (needId: string, resolution: 'go-ahead' | 'declined', allowForTask = false) =>
   request(`/projects/${projectId}/needs/${needId}/resolve`, 'POST', { resolution, allowForTask });
+
+// Protocol fake: exercises the real adapter without launching Codex.
+class TeamAppServer implements NativeRpc {
+  calls: { method: string; params: Record<string, unknown> }[] = [];
+  listeners = new Set<(method: string, params: Record<string, unknown>) => void>();
+  teamEnabled = false;
+  async request(method: string, params: Record<string, unknown>): Promise<unknown> {
+    this.calls.push({ method, params });
+    switch (method) {
+      case 'initialize':
+        return { userAgent: 'diomedes/0.153.4 (Windows 10)' };
+      case 'account/read':
+        return { requiresOpenaiAuth: true, account: { type: 'chatgpt' } };
+      case 'config/read':
+        return {
+          config: {
+            mcp_servers: {
+              inherited: { command: 'never-run' },
+              'server.with.dot': { url: 'https://example.invalid' },
+            },
+          },
+        };
+      case 'thread/start':
+        this.teamEnabled = JSON.stringify(params.config).includes('diomedes_team');
+        return {
+          thread: { id: 'fake-member-thread' },
+          model: 'fake-model',
+          modelProvider: 'openai',
+          sandbox: { type: 'readOnly', networkAccess: false },
+          approvalPolicy: 'never',
+        };
+      case 'mcpServerStatus/list':
+        return {
+          data: [
+            ...['inherited', 'server.with.dot'].map((name) => ({
+              name,
+              runtimeStatus: 'disabled',
+              tools: {},
+              resources: [],
+              resourceTemplates: [],
+            })),
+            ...(this.teamEnabled
+              ? [
+                  {
+                    name: 'diomedes_team',
+                    runtimeStatus: 'connected',
+                    tools: { team_members: { name: 'team_members' } },
+                  },
+                ]
+              : []),
+          ],
+          nextCursor: null,
+        };
+      case 'turn/start':
+        return { turn: { id: 'fake-member-turn' } };
+      default:
+        throw new Error(`Unexpected fake request: ${method}`);
+    }
+  }
+  notify() {}
+  onNotification(listener: (method: string, params: Record<string, unknown>) => void) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+  emit(method: string, params: Record<string, unknown>) {
+    for (const listener of this.listeners) listener(method, params);
+  }
+  finish(result = proposal([])) {
+    this.emit('item/completed', {
+      threadId: 'fake-member-thread',
+      item: { type: 'agentMessage', text: result.text },
+    });
+    this.emit('turn/completed', { threadId: 'fake-member-thread', turn: { status: 'completed' } });
+  }
+  async close() {
+    this.emit('diomedes/error', { message: 'Fake app-server closed.' });
+  }
+}
+
+function fakeAdapter() {
+  const client = new TeamAppServer();
+  const createClient = vi.fn(async (_env?: NodeJS.ProcessEnv) => client);
+  invoke = createIntegrations({
+    createClient,
+    verifySandbox: async () => {},
+    turnTimeoutMs: 10000,
+  }).askCodex;
+  return { client, createClient };
+}
+async function member(engine: TeamMember['engine'] = 'codex', role: TeamMember['role'] = 'lead') {
+  const result = await request(`/projects/${projectId}/team/members`, 'POST', {
+    name: 'Astra',
+    role,
+    engine,
+  });
+  expect(result.status).toBe(200);
+  const value: { member: TeamMember; token: string } = result.data;
+  return {
+    ...value,
+    tokenEnv: `DIOMEDES_TEAM_${value.member.slotId.toUpperCase().replace(/[^A-Z0-9]/g, '')}`,
+  };
+}
+async function startMember(threadId: string | null, route: 'ask' | 'work/start' = 'work/start') {
+  return request(`/projects/${projectId}/${route}`, 'POST', {
+    taskId,
+    threadId,
+    route: 'codex',
+    mode: 'work',
+    text: 'Coordinate the reopening proposal.',
+    consent: true,
+    sources: [],
+  });
+}
+async function assertPrivate(token: string) {
+  const current = await state();
+  expect(JSON.stringify(current)).not.toContain(token);
+  expect(JSON.stringify((await request(`/projects/${projectId}/team`)).data)).not.toContain(token);
+  expect(JSON.stringify(current.sessions.map((session) => session.log))).not.toContain(token);
+  expect(JSON.stringify(current.history)).not.toContain(token);
+}
+
+describe('member thread to real adapter glue', () => {
+  test.each(['ask', 'work/start'] as const)(
+    '%s forwards team config and tracks completion',
+    async (route) => {
+      const identity = await member();
+      const fake = fakeAdapter();
+      const transitions: { member: string; run: string }[] = [];
+      app.locals.store.on('change', (id: string) => {
+        if (id !== projectId) return;
+        const team = app.locals.store.state(id).team;
+        if (team.runs[0])
+          transitions.push({ member: team.members[0].status, run: team.runs[0].status });
+      });
+      const response = await startMember(identity.member.threadId, route);
+      expect(response.status).toBe(200);
+      const session = route === 'ask' ? response.data.session : response.data;
+      expect(session.slotId).toBe(identity.member.slotId);
+      await vi.waitFor(() =>
+        expect(fake.client.calls.some((call) => call.method === 'turn/start')).toBe(true),
+      );
+      expect(fake.createClient).toHaveBeenCalledExactlyOnceWith({
+        ...nativeEnvironment(),
+        [identity.tokenEnv]: identity.token,
+      });
+      expect(process.env[identity.tokenEnv]).toBe(identity.token);
+      const config = fake.client.calls.find((call) => call.method === 'thread/start')?.params
+        .config;
+      expect(config).toMatchObject({
+        mcp_servers: {
+          inherited: { enabled: false },
+          'server.with.dot': { enabled: false },
+          diomedes_team: {
+            url: `${url}/mcp/team/${projectId}`,
+            bearer_token_env_var: identity.tokenEnv,
+            enabled: true,
+            http_headers: { 'X-Slot-Id': identity.member.slotId },
+            required: true,
+          },
+        },
+        developer_instructions: roleInstructions('lead', identity.member, (await state()).project),
+      });
+      expect(JSON.stringify(config)).toContain('You are Astra, the leader');
+      expect(JSON.stringify(config)).not.toContain(identity.token);
+      const observedTeam = generator.mock.calls[0][0].team!;
+      const roster = await fetch(observedTeam.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+          Authorization: `Bearer ${fake.createClient.mock.calls[0][0]?.[observedTeam.tokenEnv]}`,
+          'X-Slot-Id': observedTeam.slotId,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'team_members', arguments: {} },
+        }),
+      });
+      expect(roster.status).toBe(200);
+      const rosterText = await roster.text();
+      expect(rosterText).toContain('Astra');
+      expect(rosterText).not.toContain(identity.token);
+      // Record only public configuration for the integration handoff evidence.
+      if (route === 'work/start')
+        console.info('Fake app-server team configuration:', JSON.stringify(observedTeam));
+      await assertPrivate(identity.token);
+      fake.client.emit('item/completed', {
+        threadId: 'fake-member-thread',
+        item: {
+          type: 'mcpToolCall',
+          server: 'diomedes_team',
+          tool: 'team_members',
+          arguments: { secret: identity.token },
+          result: identity.token,
+        },
+      });
+      fake.client.finish();
+      const completed = await until((current) => current.sessions[0].state === 'done');
+      expect(completed.team?.members[0]).toMatchObject({
+        status: 'idle',
+        lastSeenAt: expect.any(String),
+      });
+      expect(completed.team?.runs).toEqual([
+        expect.objectContaining({
+          slotId: identity.member.slotId,
+          sessionId: session.id,
+          status: 'completed',
+          startedAt: expect.any(String),
+          endedAt: expect.any(String),
+          summary: expect.any(String),
+        }),
+      ]);
+      expect(transitions).toEqual(
+        expect.arrayContaining([
+          { member: 'working', run: 'accepted' },
+          { member: 'working', run: 'running' },
+          { member: 'idle', run: 'completed' },
+        ]),
+      );
+      expect(process.env[identity.tokenEnv]).toBeUndefined();
+      await assertPrivate(identity.token);
+    },
+  );
+
+  test.each(['unowned', 'other-engine'] as const)(
+    '%s thread keeps all MCP disabled',
+    async (kind) => {
+      const identity = await member('claude-code');
+      const threadId =
+        kind === 'other-engine'
+          ? identity.member.threadId
+          : (await request(`/projects/${projectId}/threads`, 'POST', { name: 'Ordinary thread' }))
+              .data.id;
+      const fake = fakeAdapter();
+      const response = await startMember(threadId);
+      expect(response.status).toBe(200);
+      await vi.waitFor(() =>
+        expect(fake.client.calls.some((call) => call.method === 'turn/start')).toBe(true),
+      );
+      expect(generator.mock.calls[0][0]).not.toHaveProperty('team');
+      expect(fake.createClient).toHaveBeenCalledExactlyOnceWith();
+      expect(
+        fake.client.calls.find((call) => call.method === 'thread/start')?.params.config,
+      ).toMatchObject({
+        mcp_servers: { inherited: { enabled: false }, 'server.with.dot': { enabled: false } },
+      });
+      expect(fake.client.teamEnabled).toBe(false);
+      expect(process.env[identity.tokenEnv]).toBeUndefined();
+      fake.client.finish();
+      const completed = await until((current) => current.sessions[0].state === 'done');
+      expect(completed.sessions[0]).not.toHaveProperty('slotId');
+      expect(completed.team?.runs).toEqual([]);
+      expect(completed.team?.members[0].status).toBe('idle');
+    },
+  );
+
+  test.each(['go-ahead', 'declined'] as const)(
+    'waits for approval, then handles %s and releases token',
+    async (resolution) => {
+      const identity = await member('codex', 'member');
+      const gate = deferred();
+      invoke = () => gate.promise;
+      await startMember(identity.member.threadId);
+      expect(generator.mock.calls[0][0].team?.roleInstructions).toContain(
+        'Never mark a task completed while an approval is still open.',
+      );
+      gate.resolve(proposal([created]));
+      const ready = await waiting();
+      expect(ready.team?.members[0]).toMatchObject({
+        status: 'waiting',
+        lastSeenAt: expect.any(String),
+      });
+      expect(ready.team?.runs[0]).toMatchObject({ status: 'running', endedAt: null });
+      expect(process.env[identity.tokenEnv]).toBe(identity.token);
+      expect((await decision(ready.needs[0].id, resolution)).status).toBe(200);
+      const completed = await state();
+      expect(completed.team?.members[0].status).toBe('idle');
+      expect(completed.team?.runs[0].status).toBe(
+        resolution === 'go-ahead' ? 'completed' : 'cancelled',
+      );
+      expect(process.env[identity.tokenEnv]).toBeUndefined();
+      await assertPrivate(identity.token);
+    },
+  );
+
+  test('failed generation redacts token echoes and records failure', async () => {
+    const identity = await member();
+    invoke = async () => {
+      throw new Error(`Synthetic failure ${identity.token}`);
+    };
+    await startMember(identity.member.threadId);
+    const failed = await until((current) => current.sessions[0].state === 'failed');
+    expect(failed.team?.members[0].status).toBe('error');
+    expect(failed.team?.runs[0]).toMatchObject({ status: 'failed', endedAt: expect.any(String) });
+    expect(process.env[identity.tokenEnv]).toBeUndefined();
+    await assertPrivate(identity.token);
+  });
+
+  test('redacts token echoes in proposal text and decoded JSON before persistence', async () => {
+    const identity = await member();
+    const escapedToken = [...identity.token]
+      .map((char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`)
+      .join('');
+    invoke = async () => ({
+      text: `{"summary":"${escapedToken}","changes":[]}`,
+      model: identity.token,
+    });
+    await startMember(identity.member.threadId);
+    const completed = await until((current) => current.sessions[0].state === 'done');
+    expect(completed.team?.runs[0].summary).toBe('[redacted]');
+    expect(completed.sessions[0].engine.model).toBe('[redacted]');
+    expect(process.env[identity.tokenEnv]).toBeUndefined();
+    await assertPrivate(identity.token);
+  });
+
+  test('missing secrets reject before generation or creating a run', async () => {
+    const identity = await member();
+    await app.locals.store.writeTeamSecrets(projectId, {});
+    const result = await startMember(identity.member.threadId);
+    expect(result.status).toBe(409);
+    expect(generator).not.toHaveBeenCalled();
+    expect(process.env[identity.tokenEnv]).toBeUndefined();
+    const current = await state();
+    expect(current.sessions).toEqual([]);
+    expect(current.team?.runs).toEqual([]);
+  });
+
+  test('an occupied environment is preserved and blocks a second lease', async () => {
+    const identity = await member();
+    process.env[identity.tokenEnv] = 'occupied-test-environment';
+    try {
+      expect((await startMember(identity.member.threadId)).status).toBe(409);
+      expect(generator).not.toHaveBeenCalled();
+      expect(process.env[identity.tokenEnv]).toBe('occupied-test-environment');
+      expect((await state()).team?.runs).toEqual([]);
+    } finally {
+      delete process.env[identity.tokenEnv];
+    }
+  });
+
+  test('service close cancels live member work and releases its environment', async () => {
+    const identity = await member();
+    const fake = fakeAdapter();
+    await startMember(identity.member.threadId);
+    await vi.waitFor(() =>
+      expect(fake.client.calls.some((call) => call.method === 'turn/start')).toBe(true),
+    );
+    await app.locals.close();
+    expect(process.env[identity.tokenEnv]).toBeUndefined();
+    const current = await state();
+    expect(current.team?.members[0].status).toBe('idle');
+    expect(current.team?.runs[0].status).toBe('cancelled');
+  });
+
+  test('stop releases the token and ignores late results; a rejected second start preserves the live token', async () => {
+    const identity = await member();
+    const gate = deferred();
+    invoke = () => gate.promise;
+    const started = await startMember(identity.member.threadId);
+    expect((await startMember(identity.member.threadId)).status).toBe(409);
+    expect(process.env[identity.tokenEnv]).toBe(identity.token);
+    expect(
+      (await request(`/projects/${projectId}/work/${started.data.id}/stop`, 'POST', {})).status,
+    ).toBe(200);
+    expect(process.env[identity.tokenEnv]).toBeUndefined();
+    gate.resolve(proposal([]));
+    const stopped = await state();
+    expect(stopped.team?.members[0].status).toBe('idle');
+    expect(stopped.team?.runs).toHaveLength(1);
+    expect(stopped.team?.runs[0].status).toBe('cancelled');
+  });
+});
 beforeEach(async () => {
   await fs.mkdir(path.join(process.cwd(), 'test-results'), { recursive: true });
   temp = await fs.mkdtemp(path.join(process.cwd(), 'test-results', 'native-work-'));
@@ -400,6 +798,105 @@ describe('guarded native file proposals', () => {
     expect(finished.needs).toEqual([]);
     expect(finished.tasks[0].state).toBe('done');
   });
+});
+
+describe('team native work requests', () => {
+  test('forwards a private copy of team options and records technical tool calls before approval', async () => {
+    const gate = deferred();
+    invoke = () => gate.promise;
+    const options = { ...team };
+    await startTeam(options);
+    const input = generator.mock.calls[0][0];
+    expect(input.team).toEqual(team);
+    expect(input.team).not.toBe(options);
+    options.roleInstructions = 'Mutated after start';
+    expect(input.team?.roleInstructions).toBe(team.roleInstructions);
+    expect(input.prompt).not.toContain(team.roleInstructions);
+    expect(input.prompt).not.toContain('Do not call tools');
+    expect(input.prompt).toContain('inspect and approve the exact proposal');
+    input.onTeamToolCall?.('team_members');
+    input.onTeamToolCall?.('team_send_message');
+    gate.resolve(proposal([update]));
+    const ready = await waiting();
+    const session = ready.sessions[0];
+    expect(session.log).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sentence: 'Diomedes team tool: team_members.',
+          level: 'technical',
+        }),
+        expect.objectContaining({
+          sentence: 'Diomedes team tool: team_send_message.',
+          level: 'technical',
+        }),
+        expect.objectContaining({
+          sentence: expect.stringContaining('Diomedes team service and no other MCP service'),
+          level: 'technical',
+        }),
+      ]),
+    );
+    expect(session.engine.events).toBe(session.log.length);
+    expect(JSON.stringify(ready)).not.toContain(team.tokenEnv);
+    expect(JSON.stringify(ready)).not.toContain(team.roleInstructions);
+    expect(await fs.readFile(path.join(ready.project.folder, update.path), 'utf8')).not.toBe(
+      update.text,
+    );
+    expect(ready.needs[0].state).toBe('open');
+    expect((await decision(ready.needs[0].id, 'go-ahead')).status).toBe(200);
+    const applied = await state();
+    expect(await fs.readFile(path.join(applied.project.folder, update.path), 'utf8')).toBe(
+      update.text,
+    );
+    expect(
+      applied.history.some(
+        (entry) => entry.actor === 'diomedes-with-ok' && entry.kind === 'changed',
+      ),
+    ).toBe(true);
+  });
+
+  test('does not add team fields or callbacks to ordinary requests', async () => {
+    await start();
+    await waiting();
+    const input = generator.mock.calls[0][0];
+    expect(input).not.toHaveProperty('team');
+    expect(input).not.toHaveProperty('onTeamToolCall');
+    expect(input.prompt).toContain('Do not call tools');
+    expect(
+      (await state()).sessions[0].log.some((entry) => entry.sentence.includes('team service')),
+    ).toBe(false);
+  });
+
+  test('ignores late team logs and results after the session stops', async () => {
+    const gate = deferred();
+    invoke = () => gate.promise;
+    const started = await startTeam();
+    const input = generator.mock.calls[0][0];
+    await request(`/projects/${projectId}/work/${started.id}/stop`, 'POST', {});
+    input.onTeamToolCall?.('team_send_message');
+    gate.resolve(proposal([update]));
+    await app.locals.nativeWork.close();
+    const stopped = await state();
+    expect(stopped.sessions[0].state).toBe('stopped');
+    expect(
+      stopped.sessions[0].log.some((entry) => entry.sentence.includes('team_send_message')),
+    ).toBe(false);
+    expect(stopped.needs).toEqual([]);
+    expect(stopped.changes).toEqual([]);
+  });
+
+  test.each(['TEAM_SERVER_MISSING', 'MCP_NOT_ISOLATED'])(
+    'surfaces %s as failed work without a proposal',
+    async (code) => {
+      invoke = async () => {
+        throw new IntegrationError(code, 'Team isolation failed.');
+      };
+      await startTeam();
+      const failed = await until((result) => result.sessions[0].state === 'failed');
+      expect(failed.sessions[0].log.at(-1)?.sentence).toContain('Team isolation failed.');
+      expect(failed.needs).toEqual([]);
+      expect(failed.changes).toEqual([]);
+    },
+  );
 });
 
 describe('untrusted generated proposal validation', () => {
