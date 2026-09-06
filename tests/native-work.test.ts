@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net';
 import type { ProjectState } from '../shared/types.js';
 import { createApp } from '../server/app.js';
 import type { NativeGenerator } from '../server/native-work.js';
+import { IntegrationError, type NativeTeamOptions } from '../server/integrations.js';
 
 type NativeResult = Awaited<ReturnType<NativeGenerator>>;
 function deferred() {
@@ -55,6 +56,23 @@ const start = (sources = ['Fall menu.md']) =>
     consent: true,
     sources,
   });
+const team: NativeTeamOptions = {
+  url: 'http://127.0.0.1:4321/mcp/team/test-project',
+  tokenEnv: 'DIOMEDES_TEAM_TEST_TOKEN',
+  slotId: 'test-member',
+  role: 'member',
+  roleInstructions: 'Report progress to the lead through team_send_message.',
+};
+// Team orchestration calls the controller directly; HTTP route wiring is
+// intentionally outside this adapter task's allowed files.
+const startTeam = (options: NativeTeamOptions = team) =>
+  app.locals.store.locked(() =>
+    app.locals.nativeWork.start(projectId, taskId, {
+      sources: ['Fall menu.md'],
+      consent: true,
+      team: options,
+    }),
+  );
 async function until(predicate: (state: ProjectState) => boolean) {
   for (let attempt = 0; attempt < 100; attempt++) {
     const result = await state();
@@ -400,6 +418,105 @@ describe('guarded native file proposals', () => {
     expect(finished.needs).toEqual([]);
     expect(finished.tasks[0].state).toBe('done');
   });
+});
+
+describe('team native work requests', () => {
+  test('forwards a private copy of team options and records technical tool calls before approval', async () => {
+    const gate = deferred();
+    invoke = () => gate.promise;
+    const options = { ...team };
+    await startTeam(options);
+    const input = generator.mock.calls[0][0];
+    expect(input.team).toEqual(team);
+    expect(input.team).not.toBe(options);
+    options.roleInstructions = 'Mutated after start';
+    expect(input.team?.roleInstructions).toBe(team.roleInstructions);
+    expect(input.prompt).not.toContain(team.roleInstructions);
+    expect(input.prompt).not.toContain('Do not call tools');
+    expect(input.prompt).toContain('inspect and approve the exact proposal');
+    input.onTeamToolCall?.('team_members');
+    input.onTeamToolCall?.('team_send_message');
+    gate.resolve(proposal([update]));
+    const ready = await waiting();
+    const session = ready.sessions[0];
+    expect(session.log).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sentence: 'Diomedes team tool: team_members.',
+          level: 'technical',
+        }),
+        expect.objectContaining({
+          sentence: 'Diomedes team tool: team_send_message.',
+          level: 'technical',
+        }),
+        expect.objectContaining({
+          sentence: expect.stringContaining('Diomedes team service and no other MCP service'),
+          level: 'technical',
+        }),
+      ]),
+    );
+    expect(session.engine.events).toBe(session.log.length);
+    expect(JSON.stringify(ready)).not.toContain(team.tokenEnv);
+    expect(JSON.stringify(ready)).not.toContain(team.roleInstructions);
+    expect(await fs.readFile(path.join(ready.project.folder, update.path), 'utf8')).not.toBe(
+      update.text,
+    );
+    expect(ready.needs[0].state).toBe('open');
+    expect((await decision(ready.needs[0].id, 'go-ahead')).status).toBe(200);
+    const applied = await state();
+    expect(await fs.readFile(path.join(applied.project.folder, update.path), 'utf8')).toBe(
+      update.text,
+    );
+    expect(
+      applied.history.some(
+        (entry) => entry.actor === 'diomedes-with-ok' && entry.kind === 'changed',
+      ),
+    ).toBe(true);
+  });
+
+  test('does not add team fields or callbacks to ordinary requests', async () => {
+    await start();
+    await waiting();
+    const input = generator.mock.calls[0][0];
+    expect(input).not.toHaveProperty('team');
+    expect(input).not.toHaveProperty('onTeamToolCall');
+    expect(input.prompt).toContain('Do not call tools');
+    expect(
+      (await state()).sessions[0].log.some((entry) => entry.sentence.includes('team service')),
+    ).toBe(false);
+  });
+
+  test('ignores late team logs and results after the session stops', async () => {
+    const gate = deferred();
+    invoke = () => gate.promise;
+    const started = await startTeam();
+    const input = generator.mock.calls[0][0];
+    await request(`/projects/${projectId}/work/${started.id}/stop`, 'POST', {});
+    input.onTeamToolCall?.('team_send_message');
+    gate.resolve(proposal([update]));
+    await app.locals.nativeWork.close();
+    const stopped = await state();
+    expect(stopped.sessions[0].state).toBe('stopped');
+    expect(
+      stopped.sessions[0].log.some((entry) => entry.sentence.includes('team_send_message')),
+    ).toBe(false);
+    expect(stopped.needs).toEqual([]);
+    expect(stopped.changes).toEqual([]);
+  });
+
+  test.each(['TEAM_SERVER_MISSING', 'MCP_NOT_ISOLATED'])(
+    'surfaces %s as failed work without a proposal',
+    async (code) => {
+      invoke = async () => {
+        throw new IntegrationError(code, 'Team isolation failed.');
+      };
+      await startTeam();
+      const failed = await until((result) => result.sessions[0].state === 'failed');
+      expect(failed.sessions[0].log.at(-1)?.sentence).toContain('Team isolation failed.');
+      expect(failed.needs).toEqual([]);
+      expect(failed.changes).toEqual([]);
+    },
+  );
 });
 
 describe('untrusted generated proposal validation', () => {

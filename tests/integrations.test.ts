@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn } from 'node:child_process';
 import {
   CODEX_WORKSPACE,
@@ -6,6 +6,8 @@ import {
   createRpcClient,
   IntegrationError,
   nativeEnvironment,
+  nativeWorkDisclosure,
+  type NativeTeamOptions,
   type NativeRpc,
 } from '../server/integrations.js';
 
@@ -21,6 +23,9 @@ class FakeNative implements NativeRpc {
   turnStatus = 'completed';
   customProvider = false;
   apiEndpoint: string | null = null;
+  inheritedTeam: Params | undefined;
+  nextCursor: string | null = null;
+  items: Params[] = [];
   request = vi.fn(async (method: string, params: Params): Promise<unknown> => {
     this.calls.push({ method, params });
     switch (method) {
@@ -39,6 +44,7 @@ class FakeNative implements NativeRpc {
             mcp_servers: {
               inherited: { command: 'should-not-run' },
               'server.with.dot': { command: 'also-disabled' },
+              ...(this.inheritedTeam ? { diomedes_team: this.inheritedTeam } : {}),
             },
             model_providers: this.customProvider
               ? { openai: { base_url: 'https://example.invalid' } }
@@ -55,10 +61,12 @@ class FakeNative implements NativeRpc {
           approvalPolicy: 'never',
         };
       case 'mcpServerStatus/list':
-        return { data: this.mcp, nextCursor: null };
+        return { data: this.mcp, nextCursor: this.nextCursor };
       case 'turn/start':
         if (this.complete)
           setTimeout(() => {
+            for (const item of this.items)
+              this.emit('item/completed', { threadId: 'synthetic-thread', item });
             this.emit('item/completed', {
               threadId: 'synthetic-thread',
               item: { type: 'agentMessage', text: 'A native answer.' },
@@ -106,6 +114,216 @@ const request = {
   prompt: 'Summarize the selected document.',
   documents: [{ path: 'plan.md', text: 'A synthetic project plan.' }],
 };
+const team: NativeTeamOptions = {
+  url: 'http://127.0.0.1:4321/mcp/team/project-1',
+  tokenEnv: 'DIOMEDES_TEAM_TEST_TOKEN',
+  slotId: 'slot-1',
+  role: 'member',
+  roleInstructions: 'Report your assigned work to the lead through the team service.',
+};
+const disabledServer = {
+  name: 'inherited',
+  runtimeStatus: 'disabled',
+  tools: {},
+  resources: [],
+  resourceTemplates: [],
+};
+// Public docs do not define runtimeStatus's ready enum. This fixture models
+// the documented inventory after required:true startup, without that field.
+const teamServer = {
+  name: 'diomedes_team',
+  tools: { team_members: { name: 'team_members' } },
+  resources: [],
+  resourceTemplates: [],
+  authStatus: 'bearerToken',
+};
+function setupTeam() {
+  vi.stubEnv(team.tokenEnv, 'synthetic-member-secret');
+  const integration = setup();
+  integration.client.mcp = [disabledServer, teamServer];
+  return integration;
+}
+afterEach(() => vi.unstubAllEnvs());
+
+describe('opt-in Diomedes team boundary', () => {
+  it.each(['lead', 'member'] as const)(
+    'isolates the %s config and forwards only its token',
+    async (role) => {
+      const integration = setupTeam();
+      vi.stubEnv('OPENAI_API_KEY', 'must-not-inherit');
+      vi.stubEnv('HTTPS_PROXY', 'must-not-inherit');
+      vi.stubEnv('DIOMEDES_TEAM_OTHER_TOKEN', 'other-member-secret');
+      await expect(
+        integration.askCodex({ ...request, team: { ...team, role } }),
+      ).resolves.toMatchObject({
+        text: 'A native answer.',
+      });
+      expect(integration.createClient).toHaveBeenCalledWith({
+        ...nativeEnvironment(),
+        [team.tokenEnv]: 'synthetic-member-secret',
+      });
+      const start = integration.client.calls.find((call) => call.method === 'thread/start')!.params;
+      expect(start.config).toMatchObject({
+        mcp_servers: {
+          inherited: { enabled: false },
+          'server.with.dot': { enabled: false },
+          diomedes_team: {
+            url: team.url,
+            bearer_token_env_var: team.tokenEnv,
+            enabled: true,
+            http_headers: { 'X-Slot-Id': team.slotId },
+            required: true,
+          },
+        },
+        developer_instructions: team.roleInstructions,
+        'features.shell_tool': false,
+        'features.apps': false,
+        'features.plugins': false,
+        'features.multi_agent': false,
+        web_search: 'disabled',
+      });
+      expect(start).toMatchObject({
+        sandbox: 'read-only',
+        approvalPolicy: 'never',
+        environments: [],
+        dynamicTools: [],
+      });
+      const turn = integration.client.calls.find((call) => call.method === 'turn/start')!.params;
+      expect(turn).toMatchObject({
+        approvalPolicy: 'never',
+        sandboxPolicy: { type: 'readOnly', networkAccess: false },
+        environments: [],
+      });
+      expect(JSON.stringify(turn.input)).not.toContain(team.roleInstructions);
+      expect(JSON.stringify(integration.client.calls)).not.toContain('synthetic-member-secret');
+      expect(integration.verifySandbox).toHaveBeenCalledOnce();
+      expect(integration.client.closed).toBe(true);
+    },
+  );
+
+  it.each([
+    [],
+    [disabledServer],
+    [{ ...teamServer, runtimeStatus: 'disabled' }],
+    [{ ...teamServer, enabled: false }],
+  ])('reports an absent or disabled team without sending a turn (%j)', async (...inventory) => {
+    const integration = setupTeam();
+    integration.client.mcp = inventory;
+    await expect(integration.askCodex({ ...request, team })).rejects.toMatchObject({
+      code: 'TEAM_SERVER_MISSING',
+    });
+    expect(integration.client.calls.some((call) => call.method === 'turn/start')).toBe(false);
+    expect(integration.client.closed).toBe(true);
+  });
+
+  it.each([
+    [teamServer, { name: 'foreign', tools: { steal: {} } }],
+    [teamServer, { ...disabledServer, tools: { leaked: {} } }],
+    [teamServer, { ...disabledServer, resources: [{}] }],
+    [teamServer, { ...disabledServer, resourceTemplates: [{}] }],
+    [teamServer, teamServer],
+    [{ ...teamServer, tools: {} }],
+    [{ ...teamServer, runtimeStatus: 'unknown-state' }],
+    [{ ...teamServer, runtimeStatus: 'failed' }],
+  ])('fails closed for unproven inventories (%j)', async (...inventory) => {
+    const integration = setupTeam();
+    integration.client.mcp = inventory;
+    await expect(integration.askCodex({ ...request, team })).rejects.toMatchObject({
+      code: 'MCP_NOT_ISOLATED',
+    });
+    expect(integration.client.calls.some((call) => call.method === 'turn/start')).toBe(false);
+  });
+
+  it('refuses incomplete status pages and inherited trusted-name collisions', async () => {
+    const paged = setupTeam();
+    paged.client.nextCursor = 'more';
+    await expect(paged.askCodex({ ...request, team })).rejects.toMatchObject({
+      code: 'MCP_NOT_ISOLATED',
+    });
+    const collision = setupTeam();
+    collision.client.inheritedTeam = {
+      command: 'foreign-command',
+      http_headers: { Authorization: 'wrong-token' },
+    };
+    await expect(collision.askCodex({ ...request, team })).rejects.toMatchObject({
+      code: 'MCP_NOT_ISOLATED',
+    });
+    expect(collision.client.calls.some((call) => call.method === 'thread/start')).toBe(false);
+  });
+
+  it('accepts and reports only Diomedes team calls without logging arguments or results', async () => {
+    const integration = setupTeam();
+    const onTeamToolCall = vi.fn();
+    integration.client.items = [
+      {
+        id: 'call-1',
+        type: 'mcpToolCall',
+        server: 'diomedes_team',
+        tool: 'team_members',
+        status: 'completed',
+        arguments: { private: 'secret' },
+        result: { private: 'secret' },
+      },
+    ];
+    await expect(integration.askCodex({ ...request, team, onTeamToolCall })).resolves.toMatchObject(
+      { text: 'A native answer.' },
+    );
+    expect(onTeamToolCall).toHaveBeenCalledExactlyOnceWith('team_members');
+  });
+
+  it.each([
+    { type: 'mcpToolCall', server: 'foreign', tool: 'team_members' },
+    { type: 'mcpToolCall', server: 'diomedes_team_extra', tool: 'team_members' },
+    { type: 'mcpToolCall', tool: 'diomedes_team__team_members' },
+    { type: 'mcpToolCall', server: 'diomedes_team', tool: 'bad\nlog' },
+    { type: 'commandExecution' },
+    { type: 'fileChange' },
+    { type: 'dynamicToolCall' },
+    { type: 'webSearch' },
+  ])('still refuses tools outside the team boundary (%j)', async (item) => {
+    const integration = setupTeam();
+    const onTeamToolCall = vi.fn();
+    integration.client.items = [item];
+    await expect(integration.askCodex({ ...request, team, onTeamToolCall })).rejects.toMatchObject({
+      code: 'UNEXPECTED_TOOL',
+    });
+    expect(onTeamToolCall).not.toHaveBeenCalled();
+    expect(integration.client.closed).toBe(true);
+  });
+
+  it('never allows the team server implicitly, and preserves the default disclosure', async () => {
+    const integration = setup();
+    integration.client.items = [
+      { type: 'mcpToolCall', server: 'diomedes_team', tool: 'team_members' },
+    ];
+    await expect(integration.askCodex(request)).rejects.toMatchObject({ code: 'UNEXPECTED_TOOL' });
+    expect(integration.createClient).toHaveBeenCalledWith();
+    expect(nativeWorkDisclosure()).toBe(
+      'Ask and Plan return text. Online Work proposes file changes that Diomedes applies only after your approval. Native filesystem, shell, browser, and MCP tools remain disabled.',
+    );
+    expect(nativeWorkDisclosure(team)).toContain('Diomedes team service and no other MCP service');
+  });
+
+  it.each([
+    { url: 'https://external.example/mcp/team/project-1' },
+    { url: 'http://127.0.0.1.example/mcp/team/project-1' },
+    { url: 'http://user:password@127.0.0.1/mcp/team/project-1' },
+    { url: `${team.url}?token=secret` },
+    { url: 'not a URL' },
+    { tokenEnv: 'OPENAI_API_KEY' },
+    { tokenEnv: 'NODE_OPTIONS' },
+    { tokenEnv: 'DIOMEDES_TEAM_MISSING_TOKEN' },
+    { slotId: 'owner' },
+    { slotId: 'bad\r\nHeader: value' },
+    { roleInstructions: '' },
+  ])('refuses unsafe or incomplete team options before launching (%j)', async (override) => {
+    const integration = setupTeam();
+    await expect(
+      integration.askCodex({ ...request, team: { ...team, ...override } }),
+    ).rejects.toMatchObject({ code: 'TEAM_CONFIG_INVALID' });
+    expect(integration.createClient).not.toHaveBeenCalled();
+  });
+});
 
 describe('native integration boundary', () => {
   it('uses selected content, native account, no environment tools, and denies inherited MCP entries before a turn', async () => {
