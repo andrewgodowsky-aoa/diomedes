@@ -117,6 +117,7 @@ export type ThreadPermission = 'show-first' | 'task';
 export interface Session {
   id: string;
   taskId: string;
+  slotId?: Slot;
   permission?: ThreadPermission;
   state: 'queued' | 'working' | 'waiting' | 'done' | 'stopped' | 'failed';
   startedAt: string;

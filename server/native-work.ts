@@ -4,6 +4,7 @@ import type { Change, Need, Session } from '../shared/types.js';
 import { askCodex, nativeWorkDisclosure, type NativeTeamOptions } from './integrations.js';
 import { absent, ApiError, projectFile, relativeName, textKind } from './paths.js';
 import { hash, identifier, now, Store, type WriteInput } from './store.js';
+import { TeamService } from './team/service.js';
 
 export type NativeGenerator = (input: {
   prompt: string;
@@ -36,6 +37,9 @@ interface NativeRun {
   team?: NativeTeamOptions;
   proposal?: Proposal;
   writes?: WriteInput[];
+  teamRunId?: string;
+  releaseToken?: () => void;
+  redact?: (text: string) => string;
 }
 const MAX_FILES = 8;
 const MAX_BYTES = 128_000;
@@ -132,6 +136,18 @@ export class NativeWorkService {
     session.engine.events += 1;
     session.log.push({ time: now(), sentence, level });
   }
+  private finishTeam(
+    run: NativeRun,
+    status: 'completed' | 'failed' | 'cancelled',
+    summary: string,
+  ) {
+    try {
+      if (run.teamRunId)
+        new TeamService(this.store).updateRun(run.projectId, run.teamRunId, status, summary);
+    } finally {
+      run.releaseToken?.();
+    }
+  }
   async start(
     projectId: string,
     taskId: string,
@@ -173,6 +189,38 @@ export class NativeWorkService {
       if (bytes > MAX_BYTES) throw new ApiError(413, 'Select no more than 128 KB of source text.');
       sources.push({ path: document.path, text: document.text, sha: document.sha });
     }
+    const team = input.team;
+    const member = team
+      ? state.team?.members.find((item) => item.slotId === team.slotId)
+      : undefined;
+    let tokenLease: Pick<NativeRun, 'releaseToken' | 'redact'> = {};
+    if (member && input.team) {
+      const tokenEnv = `DIOMEDES_TEAM_${member.slotId.toUpperCase().replace(/[^A-Z0-9]/g, '')}`;
+      if (
+        input.team.tokenEnv !== tokenEnv ||
+        member.engine !== 'codex' ||
+        input.team.role !== member.role
+      )
+        throw new ApiError(400, 'The team run configuration does not match this member.');
+      const token = (await this.store.readTeamSecrets(projectId))[member.slotId];
+      if (!token) throw new ApiError(409, 'This team member has no stored token.');
+      if (process.env[tokenEnv] !== undefined)
+        throw new ApiError(409, 'This team member already has a token environment in use.');
+      // Validation and secret reads yield; another start may have claimed the
+      // project in the meantime. Do not lease its environment or add a session.
+      if (state.sessions.some(active) || this.runs.has(projectId))
+        throw new ApiError(409, 'This project already has work in progress.');
+      process.env[tokenEnv] = token;
+      let released = false;
+      tokenLease = {
+        releaseToken: () => {
+          if (released) return;
+          released = true;
+          if (process.env[tokenEnv] === token) delete process.env[tokenEnv];
+        },
+        redact: (text) => text.split(token).join('[redacted]'),
+      };
+    }
     const session: Session = {
       id: identifier('S'),
       taskId,
@@ -183,6 +231,7 @@ export class NativeWorkService {
       log: [],
       entryIds: [],
       needId: null,
+      ...(member ? { slotId: member.slotId } : {}),
       engine: {
         name: 'Codex, guarded file proposals',
         model: null,
@@ -232,12 +281,23 @@ export class NativeWorkService {
       sources,
       instruction,
       ...(input.team ? { team: { ...input.team } } : {}),
+      ...tokenLease,
     };
     this.runs.set(projectId, run);
     try {
+      if (member)
+        run.teamRunId = new TeamService(this.store).acceptRun(
+          projectId,
+          member.slotId,
+          session.id,
+        ).id;
       await this.store.persist(state);
+      if (run.teamRunId) {
+        new TeamService(this.store).updateRun(projectId, run.teamRunId, 'running');
+        await this.store.persist(state);
+      }
     } catch (error) {
-      this.runs.delete(projectId);
+      await this.fail(run, error);
       throw error;
     }
     // The network request is deliberately not awaited while holding Store.locked.
@@ -246,7 +306,11 @@ export class NativeWorkService {
     void job
       .finally(() => this.jobs.delete(job))
       .catch((error) => {
-        console.error('Could not persist the native work result:', error);
+        const message = error instanceof Error ? error.message : 'Unknown persistence error.';
+        console.error(
+          'Could not persist the native work result:',
+          run.redact?.(message) ?? message,
+        );
       });
     return structuredClone(session);
   }
@@ -272,7 +336,11 @@ export class NativeWorkService {
               team: run.team,
               onTeamToolCall: (tool: string) => {
                 if (this.runs.get(run.projectId) !== run || run.controller.signal.aborted) return;
-                this.log(this.session(run), `Diomedes team tool: ${tool}.`, 'technical');
+                this.log(
+                  this.session(run),
+                  `Diomedes team tool: ${run.redact?.(tool) ?? tool}.`,
+                  'technical',
+                );
               },
             }
           : {}),
@@ -280,10 +348,18 @@ export class NativeWorkService {
       await this.store.locked(async () => {
         if (this.runs.get(run.projectId) !== run || run.controller.signal.aborted) return;
         const proposal = parseProposal(result.text);
+        if (run.redact) {
+          proposal.summary = run.redact(proposal.summary);
+          for (const change of proposal.changes) {
+            change.path = run.redact(change.path);
+            change.summary = run.redact(change.summary);
+            if (change.text !== null) change.text = run.redact(change.text);
+          }
+        }
         const state = this.store.state(run.projectId),
           session = this.session(run),
           task = state.tasks.find((item) => item.id === run.taskId)!;
-        session.engine.model = result.model ?? null;
+        session.engine.model = result.model ? (run.redact?.(result.model) ?? result.model) : null;
         const writes: WriteInput[] = [],
           previews: Change[] = [];
         const needId = identifier('N');
@@ -346,6 +422,7 @@ export class NativeWorkService {
           session.endedAt = now();
           this.store.moveTask(state, task, 'done', 'diomedes');
           this.runs.delete(run.projectId);
+          this.finishTeam(run, 'completed', proposal.summary);
           await this.store.persist(state);
           return;
         }
@@ -368,6 +445,8 @@ export class NativeWorkService {
         state.needs.push(need);
         session.needId = need.id;
         session.state = 'waiting';
+        if (run.teamRunId && run.team)
+          new TeamService(this.store).setMemberStatus(run.projectId, run.team.slotId, 'waiting');
         task.needId = need.id;
         task.reason = 'needs-ok';
         this.store.moveTask(state, task, 'waiting', 'diomedes');
@@ -420,6 +499,11 @@ export class NativeWorkService {
       this.log(session, 'You declined the proposal. No project files were changed.');
       this.store.moveTask(state, task, 'todo', 'diomedes');
       this.runs.delete(projectId);
+      this.finishTeam(
+        run,
+        'cancelled',
+        'The person declined the proposal. No project files were changed.',
+      );
       await this.store.persist(state);
       return need;
     }
@@ -447,6 +531,8 @@ export class NativeWorkService {
       need.decidedAt = now();
       need.allowForTask = allowForTask;
       session.state = 'working';
+      if (run.teamRunId && run.team)
+        new TeamService(this.store).setMemberStatus(projectId, run.team.slotId, 'working');
       session.needId = null;
       task.needId = null;
       task.reason = null;
@@ -480,6 +566,7 @@ export class NativeWorkService {
       this.store.moveTask(fresh, completedTask, 'waiting', 'diomedes');
       completedTask.reason = 'changes-ready';
       this.runs.delete(projectId);
+      this.finishTeam(run, 'completed', run.proposal?.summary ?? 'Applied the approved proposal.');
       await this.store.persist(fresh);
       return fresh.needs.find((item) => item.id === needId)!;
     } catch (error) {
@@ -494,7 +581,8 @@ export class NativeWorkService {
     const count = state.history
       .filter((entry) => entry.sessionId === session.id && entry.kind === 'changed')
       .reduce((total, entry) => total + entry.files.length, 0);
-    const reason = error instanceof Error ? error.message : 'The proposal could not be completed.';
+    const detail = error instanceof Error ? error.message : 'The proposal could not be completed.';
+    const reason = run.redact?.(detail) ?? detail;
     const sentence = `Work stopped: ${reason} ${count ? `${count} recorded files changed; their versions are in History.` : 'No project files were changed.'}`;
     session.state = 'failed';
     session.endedAt = now();
@@ -511,6 +599,7 @@ export class NativeWorkService {
     this.store.moveTask(state, task, 'waiting', 'diomedes');
     this.store.addEntry(state, { kind: 'fault', sentence, sessionId: session.id, taskId: task.id });
     this.runs.delete(run.projectId);
+    this.finishTeam(run, 'failed', sentence);
     await this.store.persist(state);
   }
   async stop(projectId: string, sessionId: string) {
@@ -523,6 +612,11 @@ export class NativeWorkService {
     if (run?.sessionId === sessionId) {
       run.controller.abort();
       this.runs.delete(projectId);
+      this.finishTeam(
+        run,
+        'cancelled',
+        'Stopped the proposal. No unapproved changes were written.',
+      );
     }
     const task = state.tasks.find((item) => item.id === session.taskId)!;
     session.state = 'stopped';

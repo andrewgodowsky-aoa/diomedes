@@ -711,49 +711,60 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           'Codex did not acknowledge the required read-only native ChatGPT policy. No turn was sent.',
         );
       }
-      const mcp = object(await client.request('mcpServerStatus/list', { threadId }));
-      const teamCount = Array.isArray(mcp.data)
-        ? mcp.data.filter((value) => object(value).name === 'diomedes_team').length
-        : 0;
-      if (input.team && Array.isArray(mcp.data)) {
-        const teamEntries = mcp.data.map(object).filter((entry) => entry.name === 'diomedes_team');
-        if (
-          teamEntries.length === 0 ||
-          teamEntries.some((entry) => entry.runtimeStatus === 'disabled' || entry.enabled === false)
-        )
-          throw new IntegrationError(
-            'TEAM_SERVER_MISSING',
-            'The requested Diomedes team service is absent or disabled. No model turn was sent.',
-          );
-      }
-      const disabledInventory =
-        Array.isArray(mcp.data) &&
-        mcp.data.every((value) => {
-          const entry = object(value);
-          if (input.team && entry.name === 'diomedes_team') {
-            // required:true proves initialization before thread/start succeeds.
-            // The public docs omit runtimeStatus's enabled/healthy enum. Until
-            // that contract is supplied (QUESTIONS.md), unknown states fail closed.
-            return (
-              entry.runtimeStatus === undefined &&
-              Object.keys(object(entry.tools)).length > 0 &&
-              teamCount === 1
+      for (let retry = 0; ; retry++) {
+        if (input.signal?.aborted) throw abortError();
+        const mcp = object(await client.request('mcpServerStatus/list', { threadId }));
+        const teamCount = Array.isArray(mcp.data)
+          ? mcp.data.filter((value) => object(value).name === 'diomedes_team').length
+          : 0;
+        if (input.team && Array.isArray(mcp.data)) {
+          const teamEntries = mcp.data
+            .map(object)
+            .filter((entry) => entry.name === 'diomedes_team');
+          if (
+            teamEntries.length === 0 ||
+            teamEntries.some(
+              (entry) => entry.runtimeStatus === 'disabled' || entry.enabled === false,
+            )
+          )
+            throw new IntegrationError(
+              'TEAM_SERVER_MISSING',
+              'The requested Diomedes team service is absent or disabled. No model turn was sent.',
             );
-          }
-          return (
-            entry.runtimeStatus === 'disabled' &&
-            Object.keys(object(entry.tools)).length === 0 &&
-            Array.isArray(entry.resources) &&
-            entry.resources.length === 0 &&
-            Array.isArray(entry.resourceTemplates) &&
-            entry.resourceTemplates.length === 0
+        }
+        let teamStarting = false;
+        const disabledInventory =
+          Array.isArray(mcp.data) &&
+          mcp.data.every((value) => {
+            const entry = object(value);
+            if (input.team && entry.name === 'diomedes_team') {
+              // The pinned 0.153.4 schema defines connected as the runtime-ready
+              // state. Starting permits only a bounded re-list, never a turn.
+              teamStarting = entry.runtimeStatus === 'starting';
+              return (
+                teamCount === 1 &&
+                (teamStarting ||
+                  (entry.runtimeStatus === 'connected' &&
+                    Object.hasOwn(object(entry.tools), 'team_members')))
+              );
+            }
+            return (
+              entry.runtimeStatus === 'disabled' &&
+              Object.keys(object(entry.tools)).length === 0 &&
+              Array.isArray(entry.resources) &&
+              entry.resources.length === 0 &&
+              Array.isArray(entry.resourceTemplates) &&
+              entry.resourceTemplates.length === 0
+            );
+          });
+        if (!disabledInventory || mcp.nextCursor || (teamStarting && retry === 5)) {
+          throw new IntegrationError(
+            'MCP_NOT_ISOLATED',
+            'Native MCP tools remain available. No model turn was sent.',
           );
-        });
-      if (!disabledInventory || mcp.nextCursor) {
-        throw new IntegrationError(
-          'MCP_NOT_ISOLATED',
-          'Native MCP tools remain available. No model turn was sent.',
-        );
+        }
+        if (!teamStarting) break;
+        await new Promise<void>((resolve) => setTimeout(resolve, 200));
       }
       let answer = '';
       const completed = new Promise<string>((resolve, reject) => {

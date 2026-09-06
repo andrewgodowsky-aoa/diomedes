@@ -19,6 +19,7 @@ class FakeNative implements NativeRpc {
   account: string | null = 'chatgpt';
   sandbox = { type: 'readOnly', networkAccess: false };
   mcp: unknown[] = [];
+  mcpSequence: unknown[][] = [];
   complete = true;
   turnStatus = 'completed';
   customProvider = false;
@@ -61,7 +62,7 @@ class FakeNative implements NativeRpc {
           approvalPolicy: 'never',
         };
       case 'mcpServerStatus/list':
-        return { data: this.mcp, nextCursor: this.nextCursor };
+        return { data: this.mcpSequence.shift() ?? this.mcp, nextCursor: this.nextCursor };
       case 'turn/start':
         if (this.complete)
           setTimeout(() => {
@@ -128,10 +129,9 @@ const disabledServer = {
   resources: [],
   resourceTemplates: [],
 };
-// Public docs do not define runtimeStatus's ready enum. This fixture models
-// the documented inventory after required:true startup, without that field.
 const teamServer = {
   name: 'diomedes_team',
+  runtimeStatus: 'connected',
   tools: { team_members: { name: 'team_members' } },
   resources: [],
   resourceTemplates: [],
@@ -223,8 +223,14 @@ describe('opt-in Diomedes team boundary', () => {
     [teamServer, { ...disabledServer, resourceTemplates: [{}] }],
     [teamServer, teamServer],
     [{ ...teamServer, tools: {} }],
+    [{ ...teamServer, tools: { another_tool: { name: 'another_tool' } } }],
+    [{ ...teamServer, runtimeStatus: null }],
+    [{ ...teamServer, runtimeStatus: undefined }],
     [{ ...teamServer, runtimeStatus: 'unknown-state' }],
+    [{ ...teamServer, runtimeStatus: 'notStarted' }],
+    [{ ...teamServer, runtimeStatus: 'authenticationRequired' }],
     [{ ...teamServer, runtimeStatus: 'failed' }],
+    [{ ...teamServer, runtimeStatus: 'cancelled' }],
   ])('fails closed for unproven inventories (%j)', async (...inventory) => {
     const integration = setupTeam();
     integration.client.mcp = inventory;
@@ -232,6 +238,38 @@ describe('opt-in Diomedes team boundary', () => {
       code: 'MCP_NOT_ISOLATED',
     });
     expect(integration.client.calls.some((call) => call.method === 'turn/start')).toBe(false);
+  });
+
+  it('re-lists a starting team until it connects before sending the turn', async () => {
+    const integration = setupTeam();
+    integration.client.mcpSequence = [
+      [disabledServer, { ...teamServer, runtimeStatus: 'starting', tools: {} }],
+    ];
+    const startedAt = Date.now();
+    await expect(integration.askCodex({ ...request, team })).resolves.toMatchObject({
+      text: 'A native answer.',
+    });
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(190);
+    expect(
+      integration.client.calls.filter((call) => call.method === 'mcpServerStatus/list'),
+    ).toHaveLength(2);
+    const methods = integration.client.calls.map((call) => call.method);
+    expect(methods.indexOf('turn/start')).toBeGreaterThan(
+      methods.lastIndexOf('mcpServerStatus/list'),
+    );
+  });
+
+  it('stops after five re-lists if the team stays starting', async () => {
+    const integration = setupTeam();
+    integration.client.mcp = [disabledServer, { ...teamServer, runtimeStatus: 'starting' }];
+    await expect(integration.askCodex({ ...request, team })).rejects.toMatchObject({
+      code: 'MCP_NOT_ISOLATED',
+    });
+    expect(
+      integration.client.calls.filter((call) => call.method === 'mcpServerStatus/list'),
+    ).toHaveLength(6);
+    expect(integration.client.calls.some((call) => call.method === 'turn/start')).toBe(false);
+    expect(integration.client.closed).toBe(true);
   });
 
   it('refuses incomplete status pages and inherited trusted-name collisions', async () => {
