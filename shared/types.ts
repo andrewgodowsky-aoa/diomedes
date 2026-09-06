@@ -1,4 +1,8 @@
 export type Detail = 'guided' | 'standard' | 'technical';
+/** The two surfaces. The Book is one page at a time; the Desk is every thread, helper and change at once. */
+export type Surface = 'book' | 'desk';
+/** The four things a person can want to do; the Book's Home leads with these. */
+export type Intent = 'ask' | 'work' | 'plan' | 'review';
 export type Page = 'home' | 'ask' | 'plan' | 'work' | 'review' | 'tasks' | 'documents' | 'history';
 export type Mode = 'ask' | 'plan' | 'work';
 export type TaskState = 'todo' | 'working' | 'waiting' | 'done';
@@ -7,6 +11,8 @@ export type Route = 'sample' | 'codex';
 export interface Settings {
   version: 1;
   detail: Detail;
+  /** Missing on settings written before 2026-09-06; the server fills it: 'technical' detail becomes the Desk. */
+  surface?: Surface;
   onboarding: {
     work: 'business' | 'school' | 'software' | 'personal' | 'mix' | null;
     detail: Detail | null;
@@ -172,10 +178,17 @@ export interface Turn {
   sources: string[];
   route?: Route;
 }
+/** A thread: a named conversation that belongs to a project and, optionally, to a task. */
 export interface Conversation {
   id: string;
   attachedTo: { kind: 'project' | 'document' | 'plan' | 'task' | 'review'; ref: string };
   turns: Turn[];
+  /** Fields below are missing on state written before 2026-09-06; the store fills them on load. */
+  name?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  taskId?: string | null;
+  helper?: { engine: string; model: string | null } | null;
 }
 export interface ProjectState {
   project: Project;
