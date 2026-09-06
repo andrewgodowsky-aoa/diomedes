@@ -115,4 +115,6 @@ npm run test:ui
 
 Browser tests use installed Microsoft Edge and isolated data/ports; no browser download is needed. `npm run verify:native-work` is a separate **subscription-backed** synthetic integration check, not part of the normal test suite. It requires native runtime setup and ChatGPT sign-in. It creates only its own test project, verifies preview/approval/write/history/restore, and closes its own service.
 
+`npm run smoke:team-codex` checks a real Codex team session against a running Diomedes service. It requires Codex to be signed in and spends ChatGPT usage; set `DIOMEDES_API` to override the default `http://127.0.0.1:47631/api` base.
+
 See `evidence/BUILD-REPORT.md` for exact verification results, known limits, and source precedence. Original planning documents are preserved. Font license texts are in `licenses/`.

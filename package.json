@@ -16,6 +16,7 @@
     "prepare-native": "tsx scripts/prepare-native.ts",
     "test:ui": "playwright test",
     "verify:native-work": "tsx scripts/native-work-smoke.ts",
+    "smoke:team-codex": "node scripts/team-codex-smoke.mjs",
     "package:desktop": "npm run build && node scripts/package-desktop.mjs",
     "test:desktop": "node scripts/desktop-smoke.mjs"
   },
