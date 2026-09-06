@@ -15,6 +15,7 @@ import type {
   Task,
   TaskCandidate,
   TaskState,
+  TeamState,
 } from '../shared/types.js';
 import {
   ApiError,
@@ -77,6 +78,22 @@ export function migrateSettings(settings: Settings): void {
     settings.surface = settings.detail === 'technical' ? 'desk' : 'book';
 }
 
+export const emptyTeam = (): TeamState => ({ members: [], messages: [], runs: [] });
+
+export function migrateTeam(state: ProjectState): TeamState {
+  if (!state.team) state.team = emptyTeam();
+  state.team.members ??= [];
+  state.team.messages ??= [];
+  state.team.runs ??= [];
+  return state.team;
+}
+
+export interface TeamMeta {
+  idempotency: Record<string, string>;
+  blockedBy: Record<string, string[]>;
+}
+export const emptyTeamMeta = (): TeamMeta => ({ idempotency: {}, blockedBy: {} });
+
 export const defaults = (): Settings => ({
   version: 1,
   detail: 'guided',
@@ -130,6 +147,7 @@ async function readJson<T>(target: string, initial: () => T): Promise<T> {
 
 interface StoredState extends ProjectState {
   autoUpdate: boolean;
+  teamMeta?: TeamMeta;
 }
 interface PendingWrite {
   path: string;
@@ -189,6 +207,10 @@ export class Store extends EventEmitter {
       const loadTime = now();
       for (const conversation of state.conversations ?? [])
         migrateConversation(conversation, state.tasks ?? [], loadTime);
+      migrateTeam(state);
+      state.teamMeta ??= emptyTeamMeta();
+      state.teamMeta.idempotency ??= {};
+      state.teamMeta.blockedBy ??= {};
       this.states.set(project.id, state);
     }
     await this.recover();
@@ -240,6 +262,8 @@ export class Store extends EventEmitter {
           const loadTime = now();
           for (const conversation of (fresh as StoredState).conversations ?? [])
             migrateConversation(conversation, (fresh as StoredState).tasks ?? [], loadTime);
+          migrateTeam(fresh as StoredState);
+          (fresh as StoredState).teamMeta ??= emptyTeamMeta();
           this.states.set(id, fresh as StoredState);
         }
         this.settings = await readJson(path.join(this.dataDir, 'settings.json'), defaults);
@@ -255,6 +279,25 @@ export class Store extends EventEmitter {
   }
   statePath(id: string) {
     return path.join(this.dataDir, 'projects', id, 'state.json');
+  }
+  teamSecretsPath(id: string) {
+    return path.join(this.dataDir, 'projects', id, 'team-secrets.json');
+  }
+  async readTeamSecrets(id: string): Promise<Record<string, string>> {
+    return readJson<Record<string, string>>(this.teamSecretsPath(id), () => ({}));
+  }
+  async writeTeamSecrets(id: string, secrets: Record<string, string>) {
+    await jsonWrite(this.teamSecretsPath(id), secrets);
+  }
+  team(id: string) {
+    return migrateTeam(this.state(id));
+  }
+  teamMeta(id: string): TeamMeta {
+    const state = this.state(id);
+    state.teamMeta ??= emptyTeamMeta();
+    state.teamMeta.idempotency ??= {};
+    state.teamMeta.blockedBy ??= {};
+    return state.teamMeta;
   }
   objectPath(id: string, sha: string) {
     return path.join(this.dataDir, 'projects', id, 'history', 'objects', sha);
@@ -273,6 +316,8 @@ export class Store extends EventEmitter {
     return sha;
   }
   async persist(state: StoredState) {
+    migrateTeam(state);
+    state.teamMeta ??= emptyTeamMeta();
     this.refreshCounts(state);
     await jsonWrite(this.statePath(state.project.id), state);
     this.states.set(state.project.id, state);
@@ -353,6 +398,8 @@ export class Store extends EventEmitter {
       changes: [],
       conversations: [],
       autoUpdate: false,
+      team: emptyTeam(),
+      teamMeta: emptyTeamMeta(),
     };
     await this.persist(state);
     this.registry.push(project);
@@ -912,7 +959,10 @@ export class Store extends EventEmitter {
                 at: latest?.entry.time ?? now(),
               };
       }
-    return structuredClone(state);
+    migrateTeam(state);
+    const clone = structuredClone(state) as StoredState;
+    delete (clone as Partial<StoredState>).teamMeta;
+    return clone;
   }
 }
 

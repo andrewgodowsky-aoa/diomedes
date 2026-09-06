@@ -87,6 +87,8 @@ export interface Task {
   changeIds: string[];
   createdBy: Owner;
   createdAt: string;
+  assignedTo?: Slot | null;
+  deletedAt?: string | null;
   moves: {
     at: string;
     by: Owner;
@@ -199,6 +201,7 @@ export interface ProjectState {
   history: HistoryEntry[];
   changes: Change[];
   conversations: Conversation[];
+  team?: TeamState;
 }
 export interface IntegrationStatus {
   id: string;
@@ -221,4 +224,44 @@ export interface RestoreConflict {
   path: string;
   actor: string;
   at: string;
+}
+export type Slot = string;
+export interface TeamMember {
+  slotId: Slot;
+  name: string;
+  role: 'lead' | 'member';
+  engine: 'codex' | 'claude-code' | 'opencode' | 'oh-my-pi' | 'sample' | 'probe';
+  model: string | null;
+  status: 'idle' | 'working' | 'waiting' | 'stopped' | 'error';
+  threadId: string | null;
+  createdAt: string;
+  lastSeenAt: string | null;
+}
+export interface MailboxMessage {
+  id: string;
+  to: Slot;
+  from: Slot;
+  type: 'message' | 'idle_notification' | 'shutdown_request';
+  content: string;
+  summary?: string;
+  files?: string[];
+  read: boolean;
+  createdAt: string;
+  threadId: string | null;
+  runId: string | null;
+  approvalId: string | null;
+}
+export interface TeamRun {
+  id: string;
+  slotId: Slot;
+  sessionId: string | null;
+  status: 'accepted' | 'running' | 'cancelling' | 'completed' | 'cancelled' | 'failed';
+  startedAt: string;
+  endedAt: string | null;
+  summary: string | null;
+}
+export interface TeamState {
+  members: TeamMember[];
+  messages: MailboxMessage[];
+  runs: TeamRun[];
 }
