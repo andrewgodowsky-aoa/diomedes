@@ -40,11 +40,14 @@ function validateSettings(current: Settings, body: unknown): Settings {
   const supplied = plain(body);
   const result = structuredClone(current);
   for (const key of Object.keys(supplied))
-    if (!Object.hasOwn(defaults(), key)) throw new ApiError(400, `Unknown setting: ${key}`);
+    if (!Object.hasOwn(defaults(), key) && key !== 'surface')
+      throw new ApiError(400, `Unknown setting: ${key}`);
   if (supplied.version !== undefined && supplied.version !== 1)
     throw new ApiError(400, 'This settings version is unsupported.');
   if (supplied.detail !== undefined)
     result.detail = choice(supplied.detail, ['guided', 'standard', 'technical'], 'detail level');
+  if (supplied.surface !== undefined)
+    result.surface = choice(supplied.surface, ['book', 'desk'], 'surface');
   if (supplied.explanations !== undefined)
     result.explanations = choice(
       supplied.explanations,

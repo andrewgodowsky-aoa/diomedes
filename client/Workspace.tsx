@@ -987,6 +987,44 @@ export function Workspace({
                           {waiting.map(needCard)}
                         </section>
                       )}
+                      <section className="intents" aria-label="What do you want to do?">
+                        <h2>What do you want to do?</h2>
+                        <div className="intent-rail">
+                          {(
+                            [
+                              ['ask', 'Ask a question', 'Talk it through. Nothing in the project changes.'],
+                              ['work', 'Get something done', 'Give Diomedes a job. It asks before anything that matters.'],
+                              ['plan', 'Make a plan', 'Write down what should happen, in order, before any work.'],
+                              ['review', 'Look over what changed', 'See every change waiting for you. Keep it or undo it.'],
+                            ] as const
+                          ).map(([intent, title, line]) => (
+                            <button
+                              key={intent}
+                              className="intent"
+                              onClick={() => {
+                                if (intent !== 'review') setMode(intent);
+                                go(intent);
+                              }}
+                            >
+                              <span className="square" aria-hidden="true" />
+                              <span>
+                                <strong>{title}</strong>
+                                <span>{line}</span>
+                                {intent === 'review' && changes.length > 0 && (
+                                  <span className="caption signal-text">
+                                    {changes.length} {changes.length === 1 ? 'change' : 'changes'} waiting
+                                  </span>
+                                )}
+                                {intent === 'work' && running.length > 0 && (
+                                  <span className="caption">
+                                    Working on {running.length} {running.length === 1 ? 'task' : 'tasks'} now
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
                       {!!running.length && (
                         <section className="block">
                           <h3 className="section-title">Now</h3>
@@ -1089,9 +1127,10 @@ export function Workspace({
                       {!state.conversations.some((c) => c.turns.length) ? (
                         <Empty title="Ask about this project">
                           <p>
-                            Attach a document or start with a question. Your conversation stays with
-                            this project.
+                            This is for questions and thinking out loud. Nothing in the project
+                            changes here. Your conversation stays with this project as a thread.
                           </p>
+                          <p>To have Diomedes do something, switch the box below to Work.</p>
                         </Empty>
                       ) : (
                         state.conversations.map((c) => (
@@ -1218,7 +1257,11 @@ export function Workspace({
                           title="Nothing is running"
                           action={<Button onClick={() => go('tasks')}>Open Tasks</Button>}
                         >
-                          <p>Start a task from Tasks, or ask for something in the Ask box.</p>
+                          <p>
+                            Give Diomedes a job in the box below. It writes down what it will do,
+                            does the work, and asks before anything that matters. Or start a task
+                            from Tasks.
+                          </p>
                         </Empty>
                       ) : (
                         [...state.sessions]

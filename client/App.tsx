@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { IntegrationStatus, Page, Project, Settings } from '../shared/types';
+import type { IntegrationStatus, Page, Project, Settings, Surface } from '../shared/types';
 import { api } from './api';
 import { Brand, Button, Empty, Icon, Mark, Modal, date, titleCase } from './components';
+import { Desk } from './Desk';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
 import { Workspace } from './Workspace';
+
+/** Older settings have no surface; 'technical' detail meant the audience the Desk now serves. */
+function surfaceOf(settings: Settings): Surface {
+  return settings.surface ?? (settings.detail === 'technical' ? 'desk' : 'book');
+}
 
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -101,7 +107,10 @@ export function App() {
   useEffect(() => {
     if (!settings) return;
     const root = document.documentElement;
-    root.dataset.detail = settings.detail;
+    const surface = surfaceOf(settings);
+    root.dataset.surface = surface;
+    // The Desk shows the machinery; components that gate on 'technical' follow it.
+    root.dataset.detail = surface === 'desk' ? 'technical' : settings.detail;
     root.dataset.package = settings.appearance.package;
     root.dataset.motion = settings.appearance.motion;
     for (const [name, value] of Object.entries({
@@ -202,6 +211,7 @@ export function App() {
     }
   }
   const current = projects.find((p) => p.id === selected);
+  const surface: Surface = settings ? surfaceOf(settings) : 'book';
   const needs = projects.reduce((n, p) => n + (p.status?.needsYou ?? 0), 0);
   const running = projects.reduce((n, p) => n + (p.status?.working ?? 0), 0);
   const shownProjects = projects.filter((p) => settings?.openProjects.includes(p.id));
@@ -291,19 +301,43 @@ export function App() {
                   </Button>
                   {account && (
                     <div className="account-menu">
-                      <p className="caption">Interface detail</p>
-                      {(['guided', 'standard', 'technical'] as const).map((d) => (
+                      <p className="caption">Surface</p>
+                      {(['book', 'desk'] as const).map((s) => (
                         <button
-                          key={d}
+                          key={s}
                           onClick={() => {
-                            void saveSettings({ ...settings, detail: d });
+                            void saveSettings({
+                              ...settings,
+                              surface: s,
+                              detail:
+                                s === 'book' && settings.detail === 'technical'
+                                  ? 'standard'
+                                  : settings.detail,
+                            });
                             setAccount(false);
                           }}
                         >
-                          <Mark state={d === settings.detail ? 'working' : 'todo'} />
-                          {titleCase(d)}
+                          <Mark state={s === surface ? 'working' : 'todo'} />
+                          {s === 'book' ? 'The Book' : 'The Desk'}
                         </button>
                       ))}
+                      {surface === 'book' && (
+                        <>
+                          <p className="caption">Detail</p>
+                          {(['guided', 'standard'] as const).map((d) => (
+                            <button
+                              key={d}
+                              onClick={() => {
+                                void saveSettings({ ...settings, detail: d });
+                                setAccount(false);
+                              }}
+                            >
+                              <Mark state={d === settings.detail ? 'working' : 'todo'} />
+                              {titleCase(d)}
+                            </button>
+                          ))}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -318,6 +352,24 @@ export function App() {
                   save={saveSettings}
                   integrations={integrations}
                   refresh={() => void refreshIntegrations()}
+                />
+              ) : selected && surface === 'desk' ? (
+                <Desk
+                  key={`desk:${selected}`}
+                  projectId={selected}
+                  settings={settings}
+                  integrations={integrations}
+                  saveSettings={saveSettings}
+                  openInBook={(p) => {
+                    void saveSettings({
+                      ...settings,
+                      surface: 'book',
+                      detail: settings.detail === 'technical' ? 'standard' : settings.detail,
+                    });
+                    navigate(p);
+                  }}
+                  report={report}
+                  online={online}
                 />
               ) : selected ? (
                 <Workspace
