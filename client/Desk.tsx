@@ -227,6 +227,14 @@ export function Desk({
       await load();
     });
   }
+  // A helper parked on "Show me first" waits for the person to start it on its messages.
+  async function wakeMember(member: TeamMember) {
+    await perform(async () => {
+      await api(`${base}/team/members/${encodeURIComponent(member.slotId)}/wake`, 'POST', {});
+      await load();
+      if (member.threadId) openPane(member.threadId);
+    });
+  }
   async function messageMember(member: TeamMember, content: string) {
     await perform(async () => {
       await api(`${base}/team/messages`, 'POST', { to: member.slotId, content });
@@ -401,7 +409,9 @@ export function Desk({
                   : m.status === 'working'
                     ? 'Working'
                     : m.status === 'waiting'
-                      ? 'Waiting for you'
+                      ? m.unread
+                        ? `${m.unread === 1 ? '1 message' : `${m.unread} messages`} waiting`
+                        : 'Waiting for you'
                       : m.status === 'stopped'
                         ? 'Stopped'
                         : 'Something went wrong'}
@@ -410,6 +420,11 @@ export function Desk({
                 {m.threadId && (
                   <Button tone="quiet" onClick={() => openPane(m.threadId!)}>
                     Thread
+                  </Button>
+                )}
+                {m.status === 'waiting' && !!m.unread && m.threadId && (
+                  <Button disabled={busy} onClick={() => void wakeMember(m)}>
+                    Start
                   </Button>
                 )}
                 {m.status !== 'stopped' && (

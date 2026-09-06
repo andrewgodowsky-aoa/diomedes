@@ -944,3 +944,77 @@ describe('untrusted generated proposal validation', () => {
     expect(failed.tasks[0].reason).toBe('went-wrong');
   });
 });
+
+describe('team wake through the adapter', () => {
+  test('a message to a member whose thread allows the task starts its run', async () => {
+    const identity = await member('codex', 'member');
+    const fake = fakeAdapter();
+    const allowed = await request(
+      `/projects/${projectId}/threads/${identity.member.threadId}`,
+      'PUT',
+      { permission: 'task' },
+    );
+    expect(allowed.status).toBe(200);
+    const sent = await request(`/projects/${projectId}/team/messages`, 'POST', {
+      to: identity.member.slotId,
+      content: 'Please draft the patio note.',
+    });
+    expect(sent.status).toBe(200);
+    await vi.waitFor(() =>
+      expect(fake.client.calls.some((call) => call.method === 'turn/start')).toBe(true),
+    );
+    const turn = fake.client.calls.find((call) => call.method === 'turn/start')!.params;
+    expect(JSON.stringify(turn)).toContain('From Owner: Please draft the patio note.');
+    const config = fake.client.calls.find((call) => call.method === 'thread/start')?.params
+      .config;
+    expect(config).toMatchObject({
+      mcp_servers: { diomedes_team: { http_headers: { 'X-Slot-Id': identity.member.slotId } } },
+    });
+    let current = await state();
+    expect(current.team?.members[0]).toMatchObject({ status: 'working', unread: 0 });
+    expect(current.sessions[0]).toMatchObject({
+      slotId: identity.member.slotId,
+      permission: 'task',
+    });
+    const thread = current.conversations.find((item) => item.id === identity.member.threadId)!;
+    expect(thread.turns.map((item) => item.role)).toEqual(['diomedes']);
+    expect(thread.turns[0].text).toContain('Picked up a message from the team');
+    fake.client.finish();
+    current = await until((value) => value.sessions[0].state === 'done');
+    expect(current.team?.members[0].status).toBe('idle');
+    expect(current.team?.runs[0]).toMatchObject({
+      sessionId: current.sessions[0].id,
+      status: 'completed',
+    });
+    await assertPrivate(identity.token);
+  });
+
+  test('a message to a member whose thread shows first parks it until the owner wakes it', async () => {
+    const identity = await member('codex', 'member');
+    const fake = fakeAdapter();
+    const sent = await request(`/projects/${projectId}/team/messages`, 'POST', {
+      to: identity.member.slotId,
+      content: 'Please draft the patio note.',
+    });
+    expect(sent.status).toBe(200);
+    let current = await state();
+    expect(current.team?.members[0]).toMatchObject({ status: 'waiting', unread: 1 });
+    expect(fake.client.calls.some((call) => call.method === 'turn/start')).toBe(false);
+    const woke = await request(
+      `/projects/${projectId}/team/members/${identity.member.slotId}/wake`,
+      'POST',
+      {},
+    );
+    expect(woke.status).toBe(200);
+    await vi.waitFor(() =>
+      expect(fake.client.calls.some((call) => call.method === 'turn/start')).toBe(true),
+    );
+    current = await state();
+    expect(current.team?.members[0]).toMatchObject({ status: 'working', unread: 0 });
+    expect(current.sessions[0].permission).toBe('show-first');
+    fake.client.finish();
+    current = await until((value) => value.sessions[0].state === 'done');
+    expect(current.team?.members[0].status).toBe('idle');
+    await assertPrivate(identity.token);
+  });
+});

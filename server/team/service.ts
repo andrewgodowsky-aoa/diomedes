@@ -270,6 +270,7 @@ export class TeamService {
     if (recipient.status === 'working' || recipient.status === 'stopped') return;
     const conversation = state.conversations.find((c) => c.id === recipient.threadId);
     const permission = conversation?.permission ?? 'show-first';
+    recipient.unread = unreadForSlot(team.messages, to).length;
     if (permission !== 'task') {
       this.setMemberStatus(projectId, to, 'waiting');
       await this.store.persist(state);
@@ -316,6 +317,7 @@ export class TeamService {
       team.messages,
       waiting.map((m) => m.id),
     );
+    recipient.unread = 0;
     this.wakeLog.set(key, [...recent, this.clock()]);
     await this.store.persist(state);
   }

@@ -11,6 +11,7 @@ import type {
   TaskState,
   ThreadPermission,
   Turn,
+  TeamMember,
 } from '../shared/types.js';
 import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
 import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText } from './store.js';
@@ -218,6 +219,23 @@ export async function createApp(options: AppOptions) {
   const work = new WorkService(store, options.stepMs);
   const nativeWork = new NativeWorkService(store, options.nativeGenerator);
   const app = express();
+  // The port this service listens on, learned from the first request's socket (listen(0)
+  // in tests picks it late). A wake has no request of its own, so it uses the remembered one.
+  let listeningPort: number | undefined;
+  const teamForMember = (
+    projectId: string,
+    member: TeamMember,
+    port: number | undefined,
+  ): NativeTeamOptions => {
+    if (!port) throw new ApiError(503, 'The team service listening port is unavailable.');
+    return {
+      url: `http://127.0.0.1:${port}/mcp/team/${projectId}`,
+      tokenEnv: `DIOMEDES_TEAM_${member.slotId.toUpperCase().replace(/[^A-Z0-9]/g, '')}`,
+      slotId: member.slotId,
+      role: member.role,
+      roleInstructions: roleInstructions(member.role, member, store.state(projectId).project),
+    };
+  };
   const teamForThread = (
     req: Request,
     projectId: string,
@@ -230,15 +248,7 @@ export async function createApp(options: AppOptions) {
     );
     if (!member) return undefined;
     // The socket is the listening service, even when listen(0) selected the port.
-    const listeningPort = req.socket.localPort;
-    if (!listeningPort) throw new ApiError(503, 'The team service listening port is unavailable.');
-    return {
-      url: `http://127.0.0.1:${listeningPort}/mcp/team/${projectId}`,
-      tokenEnv: `DIOMEDES_TEAM_${member.slotId.toUpperCase().replace(/[^A-Z0-9]/g, '')}`,
-      slotId: member.slotId,
-      role: member.role,
-      roleInstructions: roleInstructions(member.role, member, state.project),
-    };
+    return teamForMember(projectId, member, req.socket.localPort);
   };
   const serviceFor = (projectId: string, sessionId: string) => {
     const session = store.state(projectId).sessions.find((item) => item.id === sessionId);
@@ -250,6 +260,7 @@ export async function createApp(options: AppOptions) {
   const origins = new Set([`http://127.0.0.1:${port}`, `http://127.0.0.1:${clientPort}`]);
   app.disable('x-powered-by');
   app.use((req, res, next) => {
+    if (req.socket.localPort) listeningPort = req.socket.localPort;
     if (req.path.startsWith('/mcp/team/')) return next();
     const origin = req.headers.origin;
     const host = req.headers.host;
@@ -272,7 +283,32 @@ export async function createApp(options: AppOptions) {
     next();
   });
   app.use(express.json({ limit: '9mb' }));
-  mountTeamRoutes(app, store);
+  const teamService = mountTeamRoutes(app, store);
+  // A member wakes on team mail (see server/team/service.ts): the run is the same Codex Work
+  // run a person starts from the thread, on the member's open task when it has one. Only
+  // Codex members run; other engines park as waiting until they exist.
+  teamService.setRunStarter(async ({ projectId, member, threadId, text }) => {
+    if (member.engine !== 'codex') throw new ApiError(409, 'This helper cannot run here yet.');
+    const state = store.state(projectId);
+    const openTask = state.tasks.find(
+      (item) => item.assignedTo === member.slotId && !item.deletedAt && item.state !== 'done',
+    );
+    const started = await startCodexWork(
+      {
+        projectId,
+        threadId,
+        attachedTo: { kind: 'project', ref: projectId },
+        text,
+        sources: [],
+        consent: true,
+        team: teamForMember(projectId, member, listeningPort),
+        taskId: openTask?.id,
+        wake: true,
+      },
+      true,
+    );
+    return { sessionId: started.session.id };
+  });
   const route =
     (action: (req: Request, res: Response) => Promise<unknown>, locked = true) =>
     async (req: Request, res: Response, next: express.NextFunction) => {
@@ -965,6 +1001,115 @@ export async function createApp(options: AppOptions) {
       return conversation;
     }),
   );
+  /**
+   * A Codex Work run from a thread: a task from the text (or the given task), the person's
+   * turn, the native run with any team options, and the reply turn. `held` says the caller
+   * already holds the store lock (the lock is a queue, not reentrant): the team service's
+   * wake runs inside a locked route, the /ask route does not.
+   */
+  const startCodexWork = async (
+    input: {
+      projectId: string;
+      threadId: string | undefined;
+      attachedTo: Conversation['attachedTo'];
+      text: string;
+      sources: string[];
+      consent: boolean;
+      team: NativeTeamOptions | undefined;
+      taskId?: string;
+      wake?: boolean;
+    },
+    held = false,
+  ) => {
+    const { projectId, threadId, attachedTo, text, sources, consent, team, taskId, wake } = input;
+    const run = async () => {
+      const state = store.state(projectId);
+      if (
+        state.sessions.some((session) =>
+          ['queued', 'working', 'waiting'].includes(session.state),
+        )
+      )
+        throw new ApiError(409, 'This project already has work in progress.');
+      const task =
+        (taskId !== undefined
+          ? state.tasks.find((item) => item.id === taskId && !item.deletedAt)
+          : undefined) ??
+        store.createTask(state, {
+          name: taskNameFromText(text),
+          description: text,
+          owner: 'diomedes-with-ok',
+        });
+      let conversation =
+        threadId !== undefined
+          ? state.conversations.find((item) => item.id === threadId)!
+          : state.conversations.find(
+              (item) =>
+                item.attachedTo.kind === attachedTo.kind &&
+                item.attachedTo.ref === attachedTo.ref,
+            );
+      if (!conversation) {
+        const stamped = now();
+        conversation = {
+          id: identifier('C'),
+          attachedTo,
+          turns: [],
+          name: 'New thread',
+          createdAt: stamped,
+          updatedAt: stamped,
+          taskId: attachedTo.kind === 'task' ? attachedTo.ref : null,
+          helper: null,
+          permission: 'show-first',
+        };
+        state.conversations.push(conversation);
+      }
+      if (!conversation.taskId) conversation.taskId = task.id;
+      if (!wake) {
+        // A wake carries team mail that the thread already shows; only a person's own
+        // message becomes a turn of theirs.
+        const youTurn: Turn = {
+          id: identifier('U'),
+          role: 'you',
+          mode: 'work',
+          text,
+          at: now(),
+          sources,
+          route: 'codex',
+        };
+        conversation.turns.push(youTurn);
+        touchThread(conversation, youTurn.at, state.tasks);
+      }
+      const session = await nativeWork.start(projectId, task.id, {
+        instruction: text,
+        sources,
+        consent: consent,
+        team: team,
+      });
+      const storedSession = store
+        .state(projectId)
+        .sessions.find((item) => item.id === session.id)!;
+      storedSession.permission = conversation.permission ?? 'show-first';
+      const turn: Turn = {
+        id: identifier('U'),
+        role: 'diomedes',
+        mode: 'work',
+        text: wake
+          ? 'Picked up a message from the team. Anything Codex proposes waits for your go-ahead.'
+          : 'Codex is preparing a file proposal. Review each proposed change before saying go ahead. No project files have been changed.',
+        at: now(),
+        sources,
+        route: 'codex',
+      };
+      conversation.turns.push(turn);
+      touchThread(conversation, turn.at, state.tasks);
+      await store.persist(store.state(projectId));
+      return {
+        turn,
+        conversation,
+        session: store.state(projectId).sessions.find((item) => item.id === session.id)!,
+      };
+    };
+    return held ? run() : store.locked(run);
+  };
   app.post(
     '/api/projects/:id/ask',
     route(async (req) => {
@@ -1017,81 +1162,14 @@ export async function createApp(options: AppOptions) {
       if (sources.length > 8)
         throw new ApiError(400, 'Select no more than eight source documents.');
       if (mode === 'work' && serviceRoute === 'codex')
-        return store.locked(async () => {
-          const state = store.state(projectId);
-          if (
-            state.sessions.some((session) =>
-              ['queued', 'working', 'waiting'].includes(session.state),
-            )
-          )
-            throw new ApiError(409, 'This project already has work in progress.');
-          const task = store.createTask(state, {
-            name: taskNameFromText(text),
-            description: text,
-            owner: 'diomedes-with-ok',
-          });
-          let conversation =
-            threadId !== undefined
-              ? state.conversations.find((item) => item.id === threadId)!
-              : state.conversations.find(
-                  (item) =>
-                    item.attachedTo.kind === attachedTo.kind &&
-                    item.attachedTo.ref === attachedTo.ref,
-                );
-          if (!conversation) {
-            const stamped = now();
-            conversation = {
-              id: identifier('C'),
-              attachedTo,
-              turns: [],
-              name: 'New thread',
-              createdAt: stamped,
-              updatedAt: stamped,
-              taskId: attachedTo.kind === 'task' ? attachedTo.ref : null,
-              helper: null,
-              permission: 'show-first',
-            };
-            state.conversations.push(conversation);
-          }
-          if (!conversation.taskId) conversation.taskId = task.id;
-          const youTurn: Turn = {
-            id: identifier('U'),
-            role: 'you',
-            mode,
-            text,
-            at: now(),
-            sources,
-            route: 'codex',
-          };
-          conversation.turns.push(youTurn);
-          touchThread(conversation, youTurn.at, state.tasks);
-          const session = await nativeWork.start(projectId, task.id, {
-            instruction: text,
-            sources,
-            consent: b.consent === true,
-            team: teamForThread(req, projectId, threadId),
-          });
-          const storedSession = store
-            .state(projectId)
-            .sessions.find((item) => item.id === session.id)!;
-          storedSession.permission = conversation.permission ?? 'show-first';
-          const turn: Turn = {
-            id: identifier('U'),
-            role: 'diomedes',
-            mode,
-            text: 'Codex is preparing a file proposal. Review each proposed change before saying go ahead. No project files have been changed.',
-            at: now(),
-            sources,
-            route: 'codex',
-          };
-          conversation.turns.push(turn);
-          touchThread(conversation, turn.at, state.tasks);
-          await store.persist(store.state(projectId));
-          return {
-            turn,
-            conversation,
-            session: store.state(projectId).sessions.find((item) => item.id === session.id)!,
-          };
+        return startCodexWork({
+          projectId,
+          threadId,
+          attachedTo,
+          text,
+          sources,
+          consent: b.consent === true,
+          team: teamForThread(req, projectId, threadId),
         });
       const prepared = await store.locked(async () => {
         const state = store.state(projectId);

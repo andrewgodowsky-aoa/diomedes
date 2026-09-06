@@ -632,7 +632,7 @@ describe('team wake', () => {
     ).toContain('budget');
   });
 
-  test('wake with nothing waiting is 400, wake without a starter is 503', async () => {
+  test('wake with nothing waiting is 400, wake of a helper that cannot run here is 409', async () => {
     const id = await createProject();
     const helper = await createMember(id, { name: 'Helper', role: 'member', engine: 'probe' });
     const empty = await request(
@@ -653,8 +653,9 @@ describe('team wake', () => {
       'POST',
       {},
     );
-    expect(unavailable.status).toBe(503);
-    expect(unavailable.data.error).toBe('Runs are not available here.');
+    // The app wires a run starter for Codex members only; other engines cannot run yet.
+    expect(unavailable.status).toBe(409);
+    expect(unavailable.data.error).toBe('This helper cannot run here yet.');
   });
 });
 
