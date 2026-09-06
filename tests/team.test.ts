@@ -7,6 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createApp } from '../server/app.js';
 import { Store } from '../server/store.js';
+import type { TeamService } from '../server/team/service.js';
 
 let server: Server, app: Awaited<ReturnType<typeof createApp>>, temp: string, url: string;
 const jsonHeaders = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
@@ -436,7 +437,228 @@ describe('team MCP endpoint', () => {
       await busyMcp.close();
     }
   });
+});
 
+describe('team wake', () => {
+  interface StarterCall {
+    projectId: string;
+    member: any;
+    threadId: string;
+    text: string;
+  }
+
+  function service(): TeamService {
+    return app.locals.teamService as TeamService;
+  }
+
+  function installStarter(): StarterCall[] {
+    const calls: StarterCall[] = [];
+    let n = 0;
+    service().setRunStarter(async (input) => {
+      calls.push({ ...input });
+      n += 1;
+      return { sessionId: `SESS-${n}` };
+    });
+    return calls;
+  }
+
+  async function setPermission(projectId: string, threadId: string, permission: string) {
+    const store: Store = app.locals.store;
+    await store.locked(async () => {
+      const state = store.state(projectId);
+      state.conversations.find((c) => c.id === threadId)!.permission =
+        permission as 'task' | 'show-first';
+      await store.persist(state);
+    });
+  }
+
+  async function setStatus(projectId: string, slotId: string, status: string) {
+    const store: Store = app.locals.store;
+    await store.locked(async () => {
+      const state = store.state(projectId);
+      state.team!.members.find((m) => m.slotId === slotId)!.status = status as any;
+      await store.persist(state);
+    });
+  }
+
+  async function teamOf(projectId: string) {
+    return (await request(`/projects/${projectId}/team`)).data as any;
+  }
+
+  function memberOf(team: any, slotId: string) {
+    return team.members.find((m: any) => m.slotId === slotId);
+  }
+
+  test('lead message to a task-permission thread starts a run', async () => {
+    const id = await createProject();
+    const lead = await createMember(id, { name: 'Lead', role: 'lead', engine: 'codex' });
+    const helper = await createMember(id, { name: 'Helper', role: 'member', engine: 'probe' });
+    await setPermission(id, helper.member.threadId, 'task');
+    const calls = installStarter();
+    const leadMcp = await mcpHelper(id, lead.member.slotId, lead.token);
+    try {
+      const send = await leadMcp.call('team_send_message', {
+        to: helper.member.slotId,
+        message: 'Please check the patio',
+      });
+      expect(send.ok).toBe(true);
+    } finally {
+      await leadMcp.close();
+    }
+    expect(calls).toHaveLength(1);
+    expect(calls[0].member.slotId).toBe(helper.member.slotId);
+    expect(calls[0].threadId).toBe(helper.member.threadId);
+    expect(calls[0].text.startsWith('From Lead: ')).toBe(true);
+    const team = await teamOf(id);
+    expect(memberOf(team, helper.member.slotId).status).toBe('working');
+    expect(memberOf(team, helper.member.slotId).unread).toBe(0);
+    expect(
+      team.messages.find((m: any) => m.content === 'Please check the patio')?.read,
+    ).toBe(true);
+  });
+
+  test('show-first parks the member as waiting until the owner wakes it', async () => {
+    const id = await createProject();
+    const lead = await createMember(id, { name: 'Lead', role: 'lead', engine: 'codex' });
+    const helper = await createMember(id, { name: 'Helper', role: 'member', engine: 'probe' });
+    const calls = installStarter();
+    const leadMcp = await mcpHelper(id, lead.member.slotId, lead.token);
+    try {
+      const send = await leadMcp.call('team_send_message', {
+        to: helper.member.slotId,
+        message: 'Look at the chairs when ready',
+      });
+      expect(send.ok).toBe(true);
+    } finally {
+      await leadMcp.close();
+    }
+    expect(calls).toHaveLength(0);
+    let team = await teamOf(id);
+    expect(memberOf(team, helper.member.slotId).status).toBe('waiting');
+    expect(memberOf(team, helper.member.slotId).unread).toBe(1);
+
+    const wake = await request(
+      `/projects/${id}/team/members/${helper.member.slotId}/wake`,
+      'POST',
+      {},
+    );
+    expect(wake.status).toBe(200);
+    expect(wake.data.sessionId).toBeTruthy();
+    expect(wake.data.member.slotId).toBe(helper.member.slotId);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].threadId).toBe(helper.member.threadId);
+    expect(calls[0].text).toContain('From Lead: Look at the chairs when ready');
+    team = await teamOf(id);
+    expect(memberOf(team, helper.member.slotId).status).toBe('working');
+    expect(memberOf(team, helper.member.slotId).unread).toBe(0);
+  });
+
+  test('delivery without a starter parks the member and never fails the send', async () => {
+    const id = await createProject();
+    const lead = await createMember(id, { name: 'Lead', role: 'lead', engine: 'codex' });
+    const helper = await createMember(id, { name: 'Helper', role: 'member', engine: 'probe' });
+    await setPermission(id, helper.member.threadId, 'task');
+    const leadMcp = await mcpHelper(id, lead.member.slotId, lead.token);
+    try {
+      const send = await leadMcp.call('team_send_message', {
+        to: helper.member.slotId,
+        message: 'Nobody is listening yet',
+      });
+      expect(send.ok).toBe(true);
+    } finally {
+      await leadMcp.close();
+    }
+    const team = await teamOf(id);
+    expect(memberOf(team, helper.member.slotId).status).toBe('waiting');
+    expect(memberOf(team, helper.member.slotId).unread).toBe(1);
+  });
+
+  test('a stopped recipient never wakes', async () => {
+    const id = await createProject();
+    const lead = await createMember(id, { name: 'Lead', role: 'lead', engine: 'codex' });
+    const helper = await createMember(id, { name: 'Helper', role: 'member', engine: 'probe' });
+    await setPermission(id, helper.member.threadId, 'task');
+    const calls = installStarter();
+    const stopped = await request(
+      `/projects/${id}/team/members/${helper.member.slotId}/stop`,
+      'POST',
+      {},
+    );
+    expect(stopped.status).toBe(200);
+    const leadMcp = await mcpHelper(id, lead.member.slotId, lead.token);
+    try {
+      const send = await leadMcp.call('team_send_message', {
+        to: helper.member.slotId,
+        message: 'Are you there',
+      });
+      expect(send.ok).toBe(true);
+    } finally {
+      await leadMcp.close();
+    }
+    expect(calls).toHaveLength(0);
+    const team = await teamOf(id);
+    expect(memberOf(team, helper.member.slotId).status).toBe('stopped');
+  });
+
+  test('the sixth automatic wake inside ten minutes parks instead of starting', async () => {
+    const id = await createProject();
+    const helper = await createMember(id, { name: 'Helper', role: 'member', engine: 'probe' });
+    await setPermission(id, helper.member.threadId, 'task');
+    const calls = installStarter();
+    let moment = 1_000_000;
+    service().setClock(() => moment);
+    for (let i = 0; i < 5; i += 1) {
+      const sent = await request(`/projects/${id}/team/messages`, 'POST', {
+        to: helper.member.slotId,
+        content: `Task ${i}`,
+      });
+      expect(sent.status).toBe(200);
+      await setStatus(id, helper.member.slotId, 'idle');
+      moment += 60_000;
+    }
+    expect(calls).toHaveLength(5);
+    const sixth = await request(`/projects/${id}/team/messages`, 'POST', {
+      to: helper.member.slotId,
+      content: 'Task 5',
+    });
+    expect(sixth.status).toBe(200);
+    expect(calls).toHaveLength(5);
+    const team = await teamOf(id);
+    expect(memberOf(team, helper.member.slotId).status).toBe('waiting');
+    expect(memberOf(team, helper.member.slotId).unread).toBe(1);
+    const state = (await request(`/projects/${id}/state`)).data;
+    expect(
+      (state.history as any[]).map((h) => h.sentence).join('\n'),
+    ).toContain('budget');
+  });
+
+  test('wake with nothing waiting is 400, wake without a starter is 503', async () => {
+    const id = await createProject();
+    const helper = await createMember(id, { name: 'Helper', role: 'member', engine: 'probe' });
+    const empty = await request(
+      `/projects/${id}/team/members/${helper.member.slotId}/wake`,
+      'POST',
+      {},
+    );
+    expect(empty.status).toBe(400);
+    expect(empty.data.error).toBe('Nothing is waiting for this helper.');
+
+    const sent = await request(`/projects/${id}/team/messages`, 'POST', {
+      to: helper.member.slotId,
+      content: 'Hello',
+    });
+    expect(sent.status).toBe(200);
+    const unavailable = await request(
+      `/projects/${id}/team/members/${helper.member.slotId}/wake`,
+      'POST',
+      {},
+    );
+    expect(unavailable.status).toBe(503);
+    expect(unavailable.data.error).toBe('Runs are not available here.');
+  });
+});
+
+describe('team persistence', () => {
   test('team persists across reload and tokens never leak', async () => {
     const id = await createProject();
     const lead = await createMember(id, { name: 'Luna', role: 'lead', engine: 'codex' });
