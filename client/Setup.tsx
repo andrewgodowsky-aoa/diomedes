@@ -1,5 +1,5 @@
 import type { Settings } from '../shared/types';
-import { Brand, Button, detailDescriptions, surfaceOf, titleCase } from './components';
+import { Brand, Button, detailDescriptions, surfaceDescriptions, surfaceOf, titleCase } from './components';
 
 const workPreferences = {
   new: { detail: 'guided', surface: 'book' },
@@ -150,7 +150,9 @@ export function Setup({
                     <span>
                       <strong>{label}</strong>
                       <span className="caption">
-                        {detailDescriptions[workPreferences[value].detail]}
+                        {workPreferences[value].surface === 'desk'
+                          ? surfaceDescriptions.desk
+                          : detailDescriptions[workPreferences[value].detail]}
                       </span>
                     </span>
                   </label>

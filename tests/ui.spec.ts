@@ -79,8 +79,8 @@ test('F01-F02: first run resumes, chooses a surface, and opens the selected surf
   expect(resume.ok()).toBe(true);
   await page.reload();
   await expect(page.getByRole('heading', { name: 'How do you want to work?', exact: true })).toBeVisible();
-  await page.getByRole('radio', { name: 'I work with these tools every day', exact: true }).click();
-  await expect(page.getByRole('radio', { name: 'I work with these tools every day', exact: true })).toBeChecked();
+  await page.getByRole('radio', { name: /^I work with these tools every day/ }).click();
+  await expect(page.getByRole('radio', { name: /^I work with these tools every day/ })).toBeChecked();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('radio', { name: /^Very comfortable/ })).toBeChecked();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
