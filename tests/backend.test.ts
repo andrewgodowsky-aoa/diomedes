@@ -628,6 +628,32 @@ describe('threads are first-class conversations', () => {
     expect(work.data.conversation.id).toBe(workThread.id);
     expect(work.data.conversation.taskId).toBeTruthy();
   });
+  test('Work task names use the trimmed first line at an 80-character word boundary', async () => {
+    const cases = [
+      {
+        firstLine: `  ${'Plan '.repeat(15)}finishing touches  `,
+        name: 'Plan '.repeat(15).trim(),
+      },
+      { firstLine: `  ${'Plan '.repeat(15)}steps follow  `, name: `${'Plan '.repeat(15)}steps` },
+      { firstLine: '  Short task name  ', name: 'Short task name' },
+    ];
+    for (const { firstLine, name } of cases) {
+      const id = await sample();
+      const thread = (await request(`/projects/${id}/threads`, 'POST', {})).data;
+      const text = `${firstLine}\r\nKeep every detail in the task description.\nIncluding this line.`;
+      const work = await request(`/projects/${id}/ask`, 'POST', {
+        mode: 'work',
+        text,
+        threadId: thread.id,
+      });
+      expect(work.status).toBe(200);
+      const task = (await state(id)).tasks.find(
+        (item) => item.id === work.data.conversation.taskId,
+      );
+      expect(task?.name).toBe(name);
+      expect(task?.description).toBe(text);
+    }
+  });
   test('threads default to show-first, PUT sets task, and full is rejected', async () => {
     const id = await sample();
     const created = await request(`/projects/${id}/threads`, 'POST', {});
