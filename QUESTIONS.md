@@ -422,3 +422,89 @@ The implementation keeps going with the pick; overturning one is a small, local 
   Home/Tasks/Settings/Desk scrollbar sweep, modal coverage check and the two
   new assertions have not been executed here. The zoom/viewport behaviour in
   (1) was verified with a standalone Chromium probe instead.
+# Projects landing — open questions (muse/landing, 2026-09-07)
+
+Unsettled points from the landing task, each with options and the pick I implemented.
+The implementation keeps going with the pick; overturning one is a small, local change.
+
+## 1. One-column width: reuse Home rules or add a landing class?
+
+- Options: (a) give the wrapper `book-layout home` so the existing Home column
+  rules apply; (b) add a `landing` class with duplicated caps.
+- Pick: (a). The wrapper is `book-layout home`, so the 760px cap (880px at
+  ≥1550px) and the hidden margin come from the existing Home rules. The appended
+  Landing CSS only styles the ask box row.
+
+## 2. Where does the landing ask state and send handler live?
+
+- Options: (a) `useState` hooks at the top of `App` plus a small `sendLandingAsk`
+  handler in the component body, kept out of the scale effect; (b) everything
+  inline in the JSX.
+- Pick: (a). `landingText` / `landingProjectId` sit with the other `useState`
+  hooks, and `sendLandingAsk(text, project)` sits just above `const current`,
+  with a comment noting it belongs to the projects-page block below. Hooks cannot
+  live inside the JSX ternary, and the scale effect is untouched.
+
+## 3. What orders the picker and the rows?
+
+- Options: (a) picker by last opened (`lastOpenedAt || createdAt`, newest first),
+  rows by `needsYou` first then last opened; (b) picker and rows both follow
+  `settings.openProjects` order.
+- Pick: (a), per the task. The select defaults to the newest by that key via
+  `landingProjectId ?? sorted[0]?.id`; rows use the needs-first comparator and
+  keep the existing row markup, status text and marks.
+
+## 4. How is "none is the sample" detected?
+
+- Options: (a) a flag on `Project`; (b) a name match, since the server creates
+  the sample as "Harbor Street restaurants" and `shared/types.ts` is frozen.
+- Pick: (b). The caption button hides when any project name includes
+  "harbor street" (case-insensitive). If the sample is ever renamed or flagged,
+  this one line changes.
+
+## 5. Landing placeholder variants?
+
+- Options: (a) one fixed placeholder; (b) vary by `settings.onboarding.work`.
+- Pick: (b), exactly as specified: business "Ask about a supplier, plan a
+  schedule, or say what to do"; school "Ask about a reading, plan the week, or
+  say what to do"; software "Ask about the code, plan a change, or say what to
+  do"; personal "Ask a question, plan something, or say what to do"; mix and
+  undefined fall back to "Ask, plan, or say what to do". The textarea keeps a
+  constant `aria-label` so tests do not depend on the variant.
+
+## 6. Closing caption in the empty state?
+
+- Options: (a) caption only when projects exist; (b) caption in both states.
+- Pick: (b). Both states end with "Projects are ordinary folders on this
+  computer." The "Try the sample project." text-button is appended on the same
+  line only when projects exist and none matches the sample.
+
+## 7. Carried draft: key format and who clears it?
+
+- Options: (a) a new `askDraftKey(projectId)` helper returning
+  `diomedes.ask-draft.${projectId}`, read once by the composer initializer which
+  removes it; (b) reuse the document-draft keys.
+- Pick: (a) in `components.tsx`. `Workspace` initialises `prompt` from
+  `localStorage.getItem(askDraftKey(projectId)) ?? ''` inside try/catch and
+  removes the key right after reading. `mode` initialises to `ask` with an
+  explicit check for a carried draft (it runs before the prompt initializer
+  consumes the key), so a carried draft always lands in Ask.
+
+## 8. `HelperLine` props and matching Home behaviour?
+
+- Options: (a) `(integrations, settings, saveSettings)` with the exact Home
+  markup, classes and three sentences; (b) a slimmer landing-only line.
+- Pick: (a) in `components.tsx`. Same `caption helper-line` / `text-button`
+  classes, same "is on" / "signed in but turned off" / "Sample work, on this
+  computer" sentences, first ready non-sample engine in roster order. Both Home
+  (via `Workspace`) and the landing page render this component, so the Home test
+  looking for `.helper-line` containing "Sample work" stays green.
+
+## 9. Empty-state test without a fresh data dir?
+
+- Options: (a) spin up a fresh data dir; (b) skip with a reason, since this spec
+  has no fresh-dir helper and projects cannot be deleted via the API.
+- Pick: (b). The new UI test covers the sample-present path end to end (ask box
+  visible, select defaults to last opened, Send carries "Which suppliers are
+  late?" into the Workspace Ask box with the rail Ask entry active) and states
+  in a comment why the no-projects cards are not asserted in this run.

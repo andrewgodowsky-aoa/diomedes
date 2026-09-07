@@ -2443,3 +2443,48 @@ html[data-motion='reduced'] *::after {
     max-width: 880px;
   }
 }
+
+/* ---- Landing ---- */
+.landing-ask > textarea {
+  width: 100%;
+  min-height: 64px;
+  font: 400 calc(17px * var(--dm-read-scale)) / 1.6 var(--dm-font-read);
+  background: transparent;
+  padding: 12px 14px;
+}
+.landing-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.landing-project {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 220px;
+  color: var(--dm-text-2);
+}
+.landing-project select {
+  width: 100%;
+}
+.landing-row .button {
+  flex: none;
+}
+.projects-page .project-list {
+  margin-top: 8px;
+}
+.projects-page .reading > .caption {
+  margin-top: 20px;
+}
+@media (max-width: 600px) {
+  .landing-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .landing-row .button {
+    width: 100%;
+  }
+}

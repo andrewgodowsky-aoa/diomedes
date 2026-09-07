@@ -579,3 +579,43 @@ test('Services roster: every reported engine listed with switch discipline; Guid
   const toBook = await page.request.put('/api/settings', { headers, data: { surface: 'book', detail: 'guided' } });
   expect(toBook.ok()).toBe(true);
 });
+
+test('Landing: ask box carries a draft into the chosen project', async ({ page }) => {
+  const headers = { 'X-Diomedes-Client': '1' };
+  const setup = await page.request.put('/api/settings', { headers, data: {
+    surface: 'book',
+    detail: 'guided',
+    onboarding: { work: 'business', detail: 'guided', familiarity: 'new', resumeAt: 'done', completedAt: new Date().toISOString() },
+  } });
+  expect(setup.ok()).toBe(true);
+  let { projects }: { projects: Project[] } = await (await page.request.get('/api/projects')).json();
+  if (!projects.some(item => item.name.includes('Harbor Street'))) {
+    const created = await page.request.post('/api/projects/sample', { headers, data: {} });
+    expect(created.ok()).toBe(true);
+    ({ projects } = await (await page.request.get('/api/projects')).json());
+  }
+  expect(projects.length).toBeGreaterThan(0);
+  const sorted = [...projects].sort((a, b) =>
+    (b.lastOpenedAt || b.createdAt).localeCompare(a.lastOpenedAt || a.createdAt),
+  );
+  const latest = sorted[0];
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
+  const startHere = page.getByRole('region', { name: 'Start here' });
+  await expect(startHere).toBeVisible();
+  await expect(startHere.getByRole('heading', { name: 'What do you want to do?' })).toBeVisible();
+  const projectSelect = page.getByLabel('In project');
+  await expect(projectSelect).toBeVisible();
+  await expect(projectSelect).toHaveValue(latest.id);
+  const askText = 'Which suppliers are late?';
+  await startHere.getByRole('textbox').fill(askText);
+  await startHere.getByRole('button', { name: 'Send', exact: true }).click();
+  const askBox = page.getByRole('region', { name: 'Ask box' });
+  await expect(askBox).toBeVisible();
+  await expect(askBox.getByRole('textbox', { name: 'Ask, plan, or say what to do' })).toHaveValue(askText);
+  await expect(page.getByRole('navigation', { name: 'Project pages' }).getByRole('button', { name: /^Ask/ })).toHaveClass(/active/);
+  // Empty state (three cards with no projects): skipped. There is no existing
+  // helper for a fresh data dir in this spec and projects cannot be deleted
+  // via the API, so the no-projects cards cannot be reached in this run.
+});
