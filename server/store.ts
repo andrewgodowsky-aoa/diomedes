@@ -49,11 +49,22 @@ export function migrateConversation(
   tasks: Task[],
   loadTime: string,
 ): void {
+  // The retired 'work' mode becomes 'build' on every stored turn.
+  for (const turn of conversation.turns ?? []) {
+    if ((turn as { mode?: unknown }).mode === 'work')
+      (turn as { mode?: unknown }).mode = 'build';
+  }
   if (conversation.taskId === undefined)
     conversation.taskId =
       conversation.attachedTo.kind === 'task' ? conversation.attachedTo.ref : null;
   if (conversation.helper === undefined) conversation.helper = null;
   if (conversation.permission === undefined) conversation.permission = 'show-first';
+  if (conversation.mode === undefined || (conversation.mode as unknown) === 'work') {
+    const last = [...(conversation.turns ?? [])].reverse().find((t) => t.mode);
+    const raw = (last?.mode as unknown) === 'work' ? 'build' : last?.mode;
+    conversation.mode =
+      raw === 'ask' || raw === 'plan' || raw === 'build' || raw === 'fix' ? raw : 'ask';
+  }
   if (conversation.createdAt === undefined) {
     conversation.createdAt = conversation.turns[0]?.at ?? loadTime;
   }

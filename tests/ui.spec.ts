@@ -322,7 +322,7 @@ test('F17, F20-F22: surface switches preserve data; visible pages meet copy and 
   await expect(page.getByRole('navigation', { name: 'Project pages' }).getByRole('button', { name: /^Work/ })).toHaveClass(/active/);
   const workComposer = page.getByRole('region', { name: 'Ask box', exact: true });
   await expect(workComposer).toBeVisible();
-  await expect(workComposer.getByRole('button', { name: 'Work', exact: true })).toHaveClass(/active/);
+  await expect(workComposer.getByRole('button', { name: 'Build', exact: true })).toHaveClass(/active/);
 
   await navigate(page, 'Ask');
   const threads = page.getByRole('region', { name: 'Threads', exact: true });
@@ -678,4 +678,27 @@ test('Verified helper: a helper turn shows its runtime caption', async ({ page }
   await askBox.getByRole('button', { name: 'Send', exact: true }).click();
   const helperTurn = page.locator('.turn.diomedes').last();
   await expect(helperTurn.locator('.helper-caption')).toContainText('Sample work, on this computer');
+});
+
+test('Modes: the Book composer shows four modes and Fix needs what is failing', async ({ page }) => {
+  await openProject(page);
+  await navigate(page, 'Ask');
+  const composer = page.getByRole('region', { name: 'Ask box', exact: true });
+  for (const name of ['Ask', 'Plan', 'Build', 'Fix'])
+    await expect(composer.getByRole('button', { name, exact: true })).toBeVisible();
+  await composer.getByRole('button', { name: 'Fix', exact: true }).click();
+  await expect(composer.getByRole('button', { name: 'Fix', exact: true })).toHaveClass(/active/);
+  await expect(composer.getByLabel('What is failing')).toBeVisible();
+  const send = composer.getByRole('button', { name: 'Send', exact: true });
+  await expect(send).toBeDisabled();
+  await composer.getByRole('textbox', { name: 'Ask, plan, or say what to do' }).fill('Fix the patio list');
+  await expect(send).toBeDisabled();
+  await composer.getByLabel('Paste what went wrong').fill('The list shows the wrong day.');
+  await expect(send).toBeEnabled();
+  await send.click();
+  const openThread = page.getByRole('button', { name: 'Open thread', exact: true });
+  if (await openThread.count()) await openThread.first().click();
+  else await navigate(page, 'Ask');
+  const helperTurn = page.locator('.turn.diomedes').last();
+  await expect(helperTurn.locator('.mode-chip')).toContainText('Fix, try 1 of 3');
 });

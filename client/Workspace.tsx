@@ -26,6 +26,7 @@ import {
   Icon,
   Mark,
   Modal,
+  ModeChip,
   Notice,
   SessionStatus,
   UsageBar,
@@ -37,6 +38,20 @@ import {
   time,
   titleCase,
 } from './components';
+
+const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
+const BOOK_CAPTIONS: Record<Mode, string> = {
+  ask: 'Diomedes answers. Nothing in the project changes.',
+  plan: 'Diomedes writes a plan for you to read before work begins.',
+  build: 'Diomedes proposes changes. Nothing is written until you say go ahead.',
+  fix: 'Point at what is wrong. Diomedes changes as little as it can, up to three tries.',
+};
+const BOOK_PLACEHOLDERS: Record<Mode, string> = {
+  ask: 'Ask a question about this project...',
+  plan: 'What should the plan cover?...',
+  build: 'What should be done?...',
+  fix: 'What should be fixed?...',
+};
 
 type RestoreRequest = {
   entry: HistoryEntry;
@@ -93,6 +108,8 @@ export function Workspace({
   });
   const [route, setRoute] = useState<Route>('sample');
   const [attached, setAttached] = useState('');
+  const [failingDocument, setFailingDocument] = useState('');
+  const [failingText, setFailingText] = useState('');
   const [pendingOnline, setPendingOnline] = useState(false);
   const [modal, setModal] = useState<
     'document' | 'plan' | 'task' | 'snapshot' | 'folder' | 'attach' | null
@@ -496,13 +513,36 @@ export function Workspace({
     (threadId ? allThreads.find((c) => c.id === threadId) : undefined) ?? pageThreads[0] ?? null;
   const selectedThreadId = selectedThread?.id ?? null;
   const recentThreads = allThreads.filter((c) => c.turns.length > 0).slice(0, 3);
+  const selectedThreadMode = selectedThread?.mode;
+  useEffect(() => {
+    if (selectedThreadMode) setMode(selectedThreadMode);
+  }, [selectedThreadId, selectedThreadMode]);
+  useEffect(() => {
+    if (failingDocument && failingDocument !== attached) setFailingDocument('');
+  }, [attached, failingDocument]);
+  function changeMode(next: Mode) {
+    setMode(next);
+    if (next !== 'fix') {
+      setFailingDocument('');
+      setFailingText('');
+    }
+    if (selectedThreadId) {
+      void api(`${base}/threads/${selectedThreadId}`, 'PUT', { mode: next })
+        .then(() => load().catch(report))
+        .catch(report);
+    }
+  }
   function openThread(id: string) {
     setThreadId(id);
     go('ask');
   }
   async function newThread() {
     await perform(async () => {
-      const c = await api<Conversation>(`${base}/threads`, 'POST', attached ? { attachedTo: { kind: 'document', ref: attached } } : {});
+      const c = await api<Conversation>(
+        `${base}/threads`,
+        'POST',
+        attached ? { attachedTo: { kind: 'document', ref: attached }, mode } : { mode },
+      );
       await load();
       setThreadId(c.id);
       say('New thread started.');
@@ -520,8 +560,11 @@ export function Workspace({
       say('Thread renamed.');
     });
   }
+  const fixReady =
+    mode !== 'fix' || failingDocument.trim() !== '' || failingText.trim() !== '';
   async function send(consent = false) {
     if (!prompt.trim()) return;
+    if (mode === 'fix' && !fixReady) return;
     if (
       route === 'codex' &&
       !consent &&
@@ -535,6 +578,8 @@ export function Workspace({
       return;
     }
     const sentThreadId = selectedThreadId;
+    const sentFailingDocument = failingDocument.trim();
+    const sentFailingText = failingText.trim();
     await perform(async () => {
       const result = await api<{ document?: string; session?: unknown }>(`${base}/ask`, 'POST', {
         mode,
@@ -547,8 +592,18 @@ export function Workspace({
           ref: attached || (page === 'plan' ? path : projectId),
         },
         ...(attached ? { sources: [attached] } : {}),
+        ...(mode === 'fix'
+          ? {
+              failing: {
+                ...(sentFailingDocument ? { document: sentFailingDocument } : {}),
+                ...(sentFailingText ? { text: sentFailingText } : {}),
+              },
+            }
+          : {}),
       });
       setPrompt('');
+      setFailingDocument('');
+      setFailingText('');
       setPendingOnline(false);
       if (route === 'codex' && !settings.seen.onlineServiceNotice)
         await saveSettings({ ...settings, seen: { ...settings.seen, onlineServiceNotice: true } });
@@ -570,7 +625,7 @@ export function Workspace({
       } else await load();
       if (result.document) {
         await openDocument(result.document, 'plan');
-      } else navigate(mode === 'work' ? 'work' : 'ask');
+      } else navigate(mode === 'build' || mode === 'fix' ? 'work' : 'ask');
     });
   }
   const newDialog = (m: typeof modal) => {
@@ -605,19 +660,13 @@ export function Workspace({
   const composer = (
     <section className="composer" aria-label="Ask box">
       <div className="segmented" role="group" aria-label="Work mode">
-        {(['ask', 'plan', 'work'] as const).map((m) => (
-          <button key={m} className={mode === m ? 'active' : ''} onClick={() => setMode(m)}>
+        {MODE_ORDER.map((m) => (
+          <button key={m} className={mode === m ? 'active' : ''} onClick={() => changeMode(m)}>
             {titleCase(m)}
           </button>
         ))}
       </div>
-      <p className="caption mode-line">
-        {mode === 'ask'
-          ? 'Diomedes answers. Nothing in the project changes.'
-          : mode === 'plan'
-            ? 'Diomedes writes a plan for you to read before work begins.'
-            : 'Diomedes makes the changes. Everything is recorded in History.'}
-      </p>
+      <p className="caption mode-line">{BOOK_CAPTIONS[mode]}</p>
       {attached && (
         <div className="attachment">
           <span>{attached}</span>
@@ -628,7 +677,7 @@ export function Workspace({
       )}
       <textarea
         aria-label="Ask, plan, or say what to do"
-        placeholder="Ask, plan, or say what to do..."
+        placeholder={BOOK_PLACEHOLDERS[mode]}
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         onKeyDown={(e) => {
@@ -639,13 +688,41 @@ export function Workspace({
         }}
         rows={2}
       />
+      {mode === 'fix' && (
+        <div className="failing-row">
+          <label className="field">
+            What is failing
+            <select
+              aria-label="What is failing"
+              value={failingDocument}
+              onChange={(e) => setFailingDocument(e.target.value)}
+            >
+              <option value="">Not a document</option>
+              {attached ? <option value={attached}>{attached}</option> : null}
+            </select>
+          </label>
+          <label className="field">
+            Paste what went wrong
+            <textarea
+              aria-label="Paste what went wrong"
+              placeholder="Paste what went wrong..."
+              value={failingText}
+              onChange={(e) => setFailingText(e.target.value)}
+              rows={2}
+            />
+          </label>
+          {!fixReady && (
+            <p className="caption">Pick the document or paste what went wrong to send.</p>
+          )}
+        </div>
+      )}
       <div className="actions composer-actions">
         <Button tone="quiet" onClick={() => setModal('attach')}>
           Attach a document
         </Button>
         <Button
           tone="primary push-right"
-          disabled={busy || !online || !prompt.trim()}
+          disabled={busy || !online || !prompt.trim() || !fixReady}
           onClick={() => void send()}
         >
           {busy ? 'Working...' : 'Send'}
@@ -1170,8 +1247,9 @@ export function Workspace({
                               key={intent}
                               className="intent"
                               onClick={() => {
-                                if (intent !== 'review') setMode(intent);
-                                go(intent);
+                                if (intent === 'work') changeMode('build');
+                                else if (intent !== 'review') changeMode(intent);
+                                go(intent as Page);
                               }}
                             >
                               <span className="square" aria-hidden="true" />
@@ -1208,6 +1286,7 @@ export function Workspace({
                               onClick={() => openThread(c.id)}
                             >
                               <span>{threadName(c, state)}</span>
+                              <ModeChip mode={c.mode ?? 'ask'} />
                               <span className="dotted-leader" />
                               <span className="caption">{threadMeta(c)}</span>
                             </button>
@@ -1335,6 +1414,7 @@ export function Workspace({
                             onClick={() => setThreadId(c.id)}
                           >
                             <span className="desk-thread-name">{threadName(c, state)}</span>
+                            <ModeChip mode={c.mode ?? 'ask'} />
                             <span className="caption">{threadMeta(c)}</span>
                           </button>
                         ))}
@@ -1345,7 +1425,7 @@ export function Workspace({
                             This is for questions and thinking out loud. Nothing in the project
                             changes here. Your threads stay with this project.
                           </p>
-                          <p>To have Diomedes do something, switch the box below to Work.</p>
+                          <p>To have Diomedes do something, switch the box below to Build.</p>
                         </Empty>
                       ) : (
                         <section key={selectedThread.id} className="conversation">
@@ -1382,6 +1462,7 @@ export function Workspace({
                                         ? 'Codex'
                                         : 'Online service'
                                       : 'Diomedes, sample work'}
+                                  <ModeChip mode={t.mode} attempt={t.attempt} />
                                   <time>{time(t.at)}</time>
                                 </p>
                                 {t.role === 'you' ? <p>{t.text}</p> : <Markdown text={t.text} />}
