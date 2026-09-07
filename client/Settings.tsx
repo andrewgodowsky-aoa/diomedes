@@ -1,5 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import type { IntegrationStatus, Settings as SettingsModel, UsageSnapshot } from '../shared/types';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  EngineCatalog,
+  IntegrationStatus,
+  Settings as SettingsModel,
+  UsageSnapshot,
+} from '../shared/types';
+import { api } from './api';
 import {
   Button,
   Mark,
@@ -13,6 +19,16 @@ import {
   surfaceOf,
   titleCase,
 } from './components';
+
+/** The runtime's own effort ids read badly title-cased ('Xhigh'), so name them. */
+const effortNames: Record<string, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra high',
+  max: 'Max',
+  ultra: 'Ultra',
+};
 
 function resetLine(resetsAt: string | null): string {
   if (!resetsAt) return 'No reset time reported.';
@@ -53,6 +69,45 @@ export function SettingsPage({
       refresh();
     }
   }, [helpersOpen, integrations, refresh]);
+  // What each engine says it can run. Only engines with a ready adapter are
+  // asked, and the key is the id list so an unchanged roster does not refetch.
+  const [catalogs, setCatalogs] = useState<Record<string, EngineCatalog>>({});
+  const catalogKey = useMemo(
+    () =>
+      integrations
+        .filter((s) => s.adapter === 'ready' && s.kind !== 'sample')
+        .map((s) => s.id)
+        .join(','),
+    [integrations],
+  );
+  useEffect(() => {
+    let live = true;
+    const ids = catalogKey ? catalogKey.split(',') : [];
+    void Promise.all(
+      ids.map(async (engine) => {
+        try {
+          return [engine, await api<EngineCatalog>(`/engines/${engine}/models`)] as const;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((rows) => {
+      if (!live) return;
+      setCatalogs(Object.fromEntries(rows.filter((r) => r !== null)));
+    });
+    return () => {
+      live = false;
+    };
+  }, [catalogKey]);
+  const chosenText = (key: string): string => {
+    const raw = settings.services?.[key];
+    return typeof raw === 'string' ? raw : '';
+  };
+  const saveChoice = (model: string, effort: string) =>
+    void save({
+      ...settings,
+      services: { ...settings.services, codexModel: model, codexEffort: effort },
+    });
   const surface = surfaceOf(settings);
   const isDesk = surface === 'desk';
   const helpersSection = isDesk ? 'Engines' : 'Helpers on this computer';
@@ -229,12 +284,59 @@ export function SettingsPage({
                           {s.capabilities.join(', ') || 'No execution capabilities'}
                         </p>
                       )}
+                      {settings.services?.[s.id] === true &&
+                        (catalogs[s.id]?.models.length ?? 0) > 0 &&
+                        (() => {
+                          const models = catalogs[s.id].models;
+                          const chosen = models.find((m) => m.slug === chosenText('codexModel'));
+                          const efforts = chosen?.efforts ?? [];
+                          const effort = efforts.some((e) => e.id === chosenText('codexEffort'))
+                            ? chosenText('codexEffort')
+                            : (chosen?.defaultEffort ?? '');
+                          return (
+                            <div className="row choice-row">
+                              <span className="caption">Default</span>
+                              <select
+                                aria-label="Default choice"
+                                value={chosen?.slug ?? ''}
+                                onChange={(e) => {
+                                  const picked = models.find((m) => m.slug === e.target.value);
+                                  // A new choice brings its own level: the
+                                  // ladders are not the same from one to the next.
+                                  saveChoice(picked?.slug ?? '', picked?.defaultEffort ?? '');
+                                }}
+                              >
+                                <option value="">Whatever Codex uses</option>
+                                {models.map((m) => (
+                                  <option key={m.slug} value={m.slug} title={m.description}>
+                                    {m.name}
+                                  </option>
+                                ))}
+                              </select>
+                              {efforts.length > 0 && (
+                                <select
+                                  aria-label="Default reasoning level"
+                                  value={effort}
+                                  onChange={(e) =>
+                                    saveChoice(chosen?.slug ?? '', e.target.value)
+                                  }
+                                >
+                                  {efforts.map((e) => (
+                                    <option key={e.id} value={e.id} title={e.description}>
+                                      {effortNames[e.id] ?? titleCase(e.id)}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+                          );
+                        })()}
                       <div className="actions">
                         {s.adapter === 'ready' && s.kind !== 'sample' && (
                           <label className="switch">
                             <input
                               type="checkbox"
-                              checked={settings.services?.[s.id] ?? false}
+                              checked={settings.services?.[s.id] === true}
                               disabled={!s.available}
                               onChange={(e) =>
                                 void save({

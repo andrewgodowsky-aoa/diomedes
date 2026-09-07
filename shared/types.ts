@@ -44,8 +44,13 @@ export interface Settings {
   openProjects: string[];
   lastPage: Record<string, Page>;
   tasksView: Record<string, 'board' | 'list'>;
-  /** Which helpers are switched on, by engine id. Only engines whose adapter is ready can be on. */
-  services?: Record<string, boolean>;
+  /**
+   * Which helpers are switched on, by engine id; only engines whose adapter is
+   * ready can be on. A few keys are choices rather than switches, and hold a
+   * string: `codexModel` and `codexEffort` are the default Codex runs use when
+   * a thread has made no choice of its own.
+   */
+  services?: Record<string, boolean | string>;
 }
 export interface Project {
   id: string;
@@ -210,8 +215,31 @@ export interface Conversation {
   createdAt?: string;
   updatedAt?: string;
   taskId?: string | null;
+  /** What actually ran, reported by the runtime. Never set from a person's choice. */
   helper?: { engine: string; model: string | null } | null;
   permission?: ThreadPermission;
+  /**
+   * What the person chose for this thread, which is not the same claim as
+   * `helper`: this is the request, that is the runtime's answer. Null means
+   * follow the saved default, and the default in turn may be null for the
+   * engine's own default.
+   */
+  requested?: { model: string | null; effort: string | null } | null;
+}
+
+/** One model an engine offers, with the reasoning ladder that model supports. */
+export interface EngineModel {
+  slug: string;
+  name: string;
+  description: string;
+  /** The engine's own default, guaranteed to appear in `efforts` when not null. */
+  defaultEffort: string | null;
+  efforts: { id: string; description: string }[];
+}
+export interface EngineCatalog {
+  engine: string; // integration id
+  models: EngineModel[]; // empty when the engine reports no choices
+  detail: string; // one plain sentence for where the list came from, or why it is empty
 }
 export interface ProjectState {
   project: Project;

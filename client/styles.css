@@ -2208,6 +2208,18 @@ html[data-motion='reduced'] *::after {
 .desk-side-action {
   padding: 10px 20px 0;
 }
+.choice-row {
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.choice-row > .caption {
+  flex: none;
+}
+.desk-pane-send select {
+  max-width: 190px;
+}
 .desk-honest {
   padding: 8px 20px 0;
   color: var(--dm-text-3);

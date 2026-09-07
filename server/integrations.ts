@@ -686,6 +686,11 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
      * `settings.services.codexModel` when present.
      */
     model?: string;
+    /**
+     * Reasoning level for that model, from the model's own ladder. Passed as
+     * `model_reasoning_effort` in the same thread config as the model.
+     */
+    effort?: string;
   }): Promise<{ text: string; model?: string; threadId?: string; version?: string }> {
     if (!input.prompt.trim())
       throw new IntegrationError('EMPTY_PROMPT', 'Enter a question or planning request.');
@@ -742,6 +747,13 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           ? input.model.trim()
           : undefined;
       if (requestedModel) threadConfig.model = requestedModel;
+      const requestedEffort =
+        typeof input.effort === 'string' && input.effort.trim() && input.effort.length <= 40
+          ? input.effort.trim()
+          : undefined;
+      // Only meaningful alongside a model: the ladders differ per model, so an
+      // effort without one could name a level the runtime default has not got.
+      if (requestedModel && requestedEffort) threadConfig.model_reasoning_effort = requestedEffort;
       if (input.team) {
         // HTTP transport/auth/header fields: https://developers.openai.com/codex/mcp/
         // Reject a name collision: TOML tables merge, so inherited commands,

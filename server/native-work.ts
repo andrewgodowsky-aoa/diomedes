@@ -14,6 +14,8 @@ export type NativeGenerator = (input: {
   onTeamToolCall?: (tool: string) => void;
   /** Explicit model selection, passed in the `thread/start` config when set. */
   model?: string;
+  /** Reasoning level for that model, passed in the same config. Ignored without a model. */
+  effort?: string;
 }) => Promise<{ text: string; model?: string; version?: string; threadId?: string }>;
 interface Source {
   path: string;
@@ -39,6 +41,8 @@ interface NativeRun {
   sources: Source[];
   instruction: string;
   team?: NativeTeamOptions;
+  /** The helper choice resolved for this run's thread, already checked against the engine's list. */
+  requested?: { model?: string; effort?: string };
   proposal?: Proposal;
   writes?: WriteInput[];
   teamRunId?: string;
@@ -161,6 +165,7 @@ export class NativeWorkService {
       consent: boolean;
       team?: NativeTeamOptions;
       turnId?: string;
+      requested?: { model?: string; effort?: string };
     },
   ) {
     if (!this.store.settings.services?.codex)
@@ -295,6 +300,7 @@ export class NativeWorkService {
       sources,
       instruction,
       ...(input.team ? { team: { ...input.team } } : {}),
+      ...(input.requested ? { requested: { ...input.requested } } : {}),
       ...tokenLease,
     };
     this.runs.set(projectId, run);
@@ -331,16 +337,10 @@ export class NativeWorkService {
   private async prepare(run: NativeRun) {
     try {
       // An explicit selection rides in the thread config, never in prompt text.
-      const settingsModel = (this.store.settings.services as Record<string, unknown> | undefined)
-        ?.codexModel;
-      const requestedModel =
-        typeof settingsModel === 'string' &&
-        settingsModel.trim() &&
-        settingsModel.length <= 120
-          ? settingsModel.trim()
-          : undefined;
+      // The caller resolved it from the thread and the saved default; without
+      // one, the runtime's own default applies.
       const result = await this.generate({
-        ...(requestedModel ? { model: requestedModel } : {}),
+        ...(run.requested ?? {}),
         prompt: [
           'Return STRICT JSON only, with exactly this structure:',
           '{"summary":"Short explanation","changes":[{"path":"relative/file.md","text":"COMPLETE new UTF-8 file content, or null to remove an existing selected file","summary":"What changes and why"}]}',

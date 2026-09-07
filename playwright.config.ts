@@ -1,8 +1,54 @@
 import { defineConfig } from '@playwright/test';
+import fs from 'node:fs';
 import path from 'node:path';
 
 const runRoot = path.resolve('test-results', `app-data-${Date.now()}-${process.pid}`);
 const clientPort = 5174;
+
+/**
+ * A fixed engine catalogue for the suite. The server reads the engine's own
+ * cache from CODEX_HOME, so pointing that at a written fixture gives the same
+ * list on every machine without a test branch in the server. The two entries
+ * have deliberately different reasoning ladders: the picker must rederive them
+ * when the choice changes.
+ */
+const codexHome = path.join(runRoot, 'codex');
+fs.mkdirSync(codexHome, { recursive: true });
+fs.writeFileSync(
+  path.join(codexHome, 'models_cache.json'),
+  JSON.stringify({
+    models: [
+      {
+        slug: 'gpt-6-astra',
+        display_name: 'GPT-6-Astra',
+        description: 'Our most capable choice for demanding work.',
+        default_reasoning_level: 'medium',
+        supported_reasoning_levels: [
+          { effort: 'low', description: 'Fast' },
+          { effort: 'medium', description: 'Balanced' },
+          { effort: 'xhigh', description: 'Deeper' },
+          { effort: 'ultra', description: 'Deepest' },
+        ],
+        visibility: 'list',
+        priority: 1,
+      },
+      {
+        slug: 'gpt-5.5',
+        display_name: 'GPT-5.5',
+        description: 'A fast everyday choice.',
+        default_reasoning_level: 'low',
+        supported_reasoning_levels: [
+          { effort: 'low', description: 'Fast' },
+          { effort: 'medium', description: 'Balanced' },
+        ],
+        visibility: 'list',
+        priority: 12,
+      },
+      { slug: 'internal-only', display_name: 'Internal', visibility: 'hidden', priority: 2 },
+    ],
+  }),
+  'utf8',
+);
 
 export default defineConfig({
   testDir: './tests',
@@ -36,6 +82,7 @@ export default defineConfig({
       DIOMEDES_DATA_DIR: path.join(runRoot, 'data'),
       DIOMEDES_PROJECTS_DIR: path.join(runRoot, 'projects'),
       DIOMEDES_TEST_MODE: '1',
+      CODEX_HOME: codexHome,
     },
     stdout: 'pipe',
     stderr: 'pipe',

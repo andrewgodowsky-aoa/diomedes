@@ -19,6 +19,7 @@ import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
 import { askCodex, getIntegrationStatuses, type NativeTeamOptions } from './integrations.js';
 import { fakeCodexSnapshot, usageService } from './usage.js';
+import { engineCatalog, isKnownChoice } from './models.js';
 import type { UsageSnapshot } from '../shared/types.js';
 import { mountTeamRoutes } from './team/routes.js';
 import { roleInstructions } from './team/prompts.js';
@@ -58,6 +59,28 @@ function parseThreadPermission(value: unknown): ThreadPermission {
   if (typeof value !== 'string' || !THREAD_PERMISSIONS.includes(value as ThreadPermission))
     throw new ApiError(400, PERMISSION_UNAVAILABLE);
   return value as ThreadPermission;
+}
+/**
+ * A thread's helper choice. Null clears it, so the thread follows the saved
+ * default again. The pair is checked against the engine's own list, which keeps
+ * a choice that has since been withdrawn from reaching `thread/start`.
+ */
+function parseRequested(value: unknown): Conversation['requested'] {
+  if (value === null) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new ApiError(400, 'Provide a helper choice, or null to use the default.');
+  const v = value as Record<string, unknown>;
+  const model = v.model === null || v.model === undefined ? null : v.model;
+  const effort = v.effort === null || v.effort === undefined ? null : v.effort;
+  if (model === null) return null;
+  if (typeof model !== 'string' || !model.trim() || model.length > 120)
+    throw new ApiError(400, 'That is not a helper choice.');
+  if (effort !== null && (typeof effort !== 'string' || !effort.trim() || effort.length > 40))
+    throw new ApiError(400, 'That is not a reasoning level.');
+  const chosen = { model: model.trim(), effort: effort === null ? null : String(effort).trim() };
+  if (!isKnownChoice('codex', chosen.model, chosen.effort))
+    throw new ApiError(400, 'That helper choice is not one this computer offers.');
+  return chosen;
 }
 function plain(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -158,7 +181,7 @@ function validateSettings(current: Settings, body: unknown): Settings {
     for (const [key, on] of Object.entries(value)) {
       // The Codex selection is a name, not a switch; it only ever reaches
       // `thread/start` config, never the answer text.
-      if (key === 'codexModel') {
+      if (key === 'codexModel' || key === 'codexEffort') {
         if (typeof on !== 'string' || !on.trim() || on.length > 120)
           throw new ApiError(400, 'The Codex helper choice must be up to 120 characters.');
         services[key] = on.trim();
@@ -485,6 +508,19 @@ export async function createApp(options: AppOptions) {
   app.get(
     '/api/projects/:id/state',
     route(async (req) => store.projectState(id(req))),
+  );
+  /**
+   * What an engine can be asked to run. Read from the engine's own list on this
+   * computer, so the choices follow the account rather than a Diomedes release.
+   */
+  app.get(
+    '/api/engines/:engineId/models',
+    route(async (req) => {
+      const engine = String(req.params.engineId);
+      if (!/^[a-z][a-z0-9-]{0,39}$/.test(engine))
+        throw new ApiError(400, 'That is not an engine name.');
+      return engineCatalog(engine);
+    }),
   );
   app.get(
     '/api/projects/:id',
@@ -1023,8 +1059,8 @@ export async function createApp(options: AppOptions) {
         conversation = state.conversations.find((c) => c.id === req.params.threadId);
       if (!conversation) throw new ApiError(404, 'This thread was not found.');
       const b = body(req);
-      if (b.name === undefined && b.permission === undefined)
-        throw new ApiError(400, 'Provide a thread name or permission mode.');
+      if (b.name === undefined && b.permission === undefined && b.requested === undefined)
+        throw new ApiError(400, 'Provide a thread name, permission mode or helper choice.');
       if (b.name !== undefined) {
         if (typeof b.name !== 'string' || !b.name.trim() || b.name.trim().length > 120)
           throw new ApiError(400, 'Give this thread a name of up to 120 characters.');
@@ -1032,6 +1068,7 @@ export async function createApp(options: AppOptions) {
       }
       if (b.permission !== undefined)
         conversation.permission = parseThreadPermission(b.permission);
+      if (b.requested !== undefined) conversation.requested = parseRequested(b.requested);
       await store.persist(state);
       return conversation;
     }),
@@ -1044,6 +1081,22 @@ export async function createApp(options: AppOptions) {
   const codexModelSetting = (): string | undefined => {
     const raw = (store.settings.services as Record<string, unknown> | undefined)?.codexModel;
     return typeof raw === 'string' && raw.trim() && raw.length <= 120 ? raw.trim() : undefined;
+  };
+  const codexEffortSetting = (): string | undefined => {
+    const raw = (store.settings.services as Record<string, unknown> | undefined)?.codexEffort;
+    return typeof raw === 'string' && raw.trim() && raw.length <= 40 ? raw.trim() : undefined;
+  };
+  /**
+   * What to ask Codex to run: the thread's own choice first, then the saved
+   * default, then nothing, which leaves the runtime's default in place. A pair
+   * the engine no longer offers is dropped rather than sent.
+   */
+  const codexChoice = (conversation?: Conversation | null): { model?: string; effort?: string } => {
+    const chosen = conversation?.requested;
+    const model = chosen?.model ?? codexModelSetting();
+    const effort = chosen?.model ? (chosen.effort ?? undefined) : codexEffortSetting();
+    if (!model || !isKnownChoice('codex', model, effort ?? null)) return {};
+    return { model, ...(effort ? { effort } : {}) };
   };
   const codexHelper = (result: {
     model?: string;
@@ -1145,6 +1198,7 @@ export async function createApp(options: AppOptions) {
         consent: consent,
         team: team,
         turnId,
+        requested: codexChoice(conversation),
       });
       const storedSession = store
         .state(projectId)
@@ -1162,7 +1216,7 @@ export async function createApp(options: AppOptions) {
         route: 'codex',
         helper: {
           engine: 'codex',
-          model: codexModelSetting() ?? null,
+          model: codexChoice(conversation).model ?? null,
           version: null,
           verified: false,
         },
@@ -1287,7 +1341,10 @@ export async function createApp(options: AppOptions) {
       });
       let answer: string;
       let helper: NonNullable<Turn['helper']>;
-      const requestedModel = codexModelSetting();
+      const runChoice = codexChoice(
+        store.state(projectId).conversations.find((c) => c.id === prepared.conversationId),
+      );
+      const requestedModel = runChoice.model;
       if (serviceRoute === 'codex') {
         try {
           const result = await askCodex({
@@ -1296,7 +1353,7 @@ export async function createApp(options: AppOptions) {
                 ? `Write a practical Markdown plan for the following request. Use numbered actionable steps.\n\n${text}`
                 : text,
             documents: prepared.documents,
-            ...(requestedModel ? { model: requestedModel } : {}),
+            ...runChoice,
           });
           answer = result.text;
           helper = codexHelper(result);

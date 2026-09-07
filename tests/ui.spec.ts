@@ -680,3 +680,86 @@ test('Verified helper: a helper turn shows its runtime caption', async ({ page }
   const helperTurn = page.locator('.turn.diomedes').last();
   await expect(helperTurn.locator('.helper-caption')).toContainText('Sample work, on this computer');
 });
+
+test('Engine choices: the list comes from the engine, and the levels follow the choice', async ({
+  page,
+}) => {
+  const headers = { 'X-Diomedes-Client': '1' };
+  // The catalogue comes from the engine's own cache (CODEX_HOME, written by the
+  // Playwright config), so what is offered here is what the engine reports.
+  const listed = await page.request.get('/api/engines/codex/models');
+  expect(listed.ok()).toBe(true);
+  const catalog: { models: { slug: string }[] } = await listed.json();
+  expect(catalog.models.map((m) => m.slug)).toEqual(['gpt-6-astra', 'gpt-5.5']);
+  // An engine with no list says so rather than offering an invented one.
+  const none: { models: unknown[]; detail: string } = await (
+    await page.request.get('/api/engines/claude-code/models')
+  ).json();
+  expect(none.models).toEqual([]);
+  expect(none.detail).toMatch(/does not report its choices/);
+
+  const on = await page.request.put('/api/settings', {
+    headers,
+    data: { services: { codex: true }, surface: 'desk' },
+  });
+  expect(on.ok()).toBe(true);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page
+    .getByRole('navigation', { name: 'Settings', exact: true })
+    .getByRole('button', { name: 'Engines', exact: true })
+    .click();
+
+  // Choosing brings that choice's own level with it, and its own ladder.
+  const choice = page.getByLabel('Default choice');
+  await expect(choice).toBeVisible();
+  await choice.selectOption('gpt-6-astra');
+  const level = page.getByLabel('Default reasoning level');
+  await expect(level).toHaveValue('medium');
+  await expect(level.locator('option')).toHaveCount(4);
+  // The runtime's own id reads badly title-cased, so the level is named.
+  await expect(level).toContainText('Extra high');
+  await choice.selectOption('gpt-5.5');
+  // Four rungs down to two, and the level resets to the new choice's default.
+  await expect(level.locator('option')).toHaveCount(2);
+  await expect(level).toHaveValue('low');
+  const saved: Settings = await (await page.request.get('/api/settings')).json();
+  expect(saved.services).toMatchObject({ codexModel: 'gpt-5.5', codexEffort: 'low' });
+
+  // A thread overrides the default. What it asked for is kept apart from what
+  // the runtime reported: this is a request, that is a claim about what ran.
+  const state: ProjectState = await projectState(page);
+  const thread = state.conversations[0];
+  expect(thread).toBeTruthy();
+  const chose = await page.request.put(`/api/projects/${projectId}/threads/${thread.id}`, {
+    headers,
+    data: { requested: { model: 'gpt-6-astra', effort: 'ultra' } },
+  });
+  expect(chose.ok()).toBe(true);
+  const after: ProjectState = await projectState(page);
+  const chosen = after.conversations.find((c) => c.id === thread.id);
+  expect(chosen?.requested).toEqual({ model: 'gpt-6-astra', effort: 'ultra' });
+  expect(chosen?.helper?.model).not.toBe('gpt-6-astra');
+
+  // A level the chosen one does not offer is refused rather than sent on.
+  const bad = await page.request.put(`/api/projects/${projectId}/threads/${thread.id}`, {
+    headers,
+    data: { requested: { model: 'gpt-5.5', effort: 'ultra' } },
+  });
+  expect(bad.status()).toBe(400);
+  // Clearing it puts the thread back on the saved default.
+  const cleared = await page.request.put(`/api/projects/${projectId}/threads/${thread.id}`, {
+    headers,
+    data: { requested: null },
+  });
+  expect(cleared.ok()).toBe(true);
+  expect((await projectState(page)).conversations.find((c) => c.id === thread.id)?.requested).toBe(
+    null,
+  );
+
+  const off = await page.request.put('/api/settings', {
+    headers,
+    data: { services: { codex: false }, surface: 'book' },
+  });
+  expect(off.ok()).toBe(true);
+});

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type {
   Change,
   Conversation,
+  EngineCatalog,
   IntegrationStatus,
   Mode,
   Need,
@@ -67,6 +68,36 @@ const engineNames: Record<TeamMember['engine'], string> = {
   probe: 'Probe',
 };
 const emptyTeam: TeamState = { members: [], messages: [], runs: [] };
+/** The runtime's own effort ids read badly title-cased ('Xhigh'), so name them. */
+const effortNames: Record<string, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra high',
+  max: 'Max',
+  ultra: 'Ultra',
+};
+
+/**
+ * What the chosen engine can be asked to run. Refetched when the engine
+ * changes, because the list and the reasoning ladders belong to the engine, not
+ * to Diomedes. Null while it is being read; an engine with nothing to offer
+ * comes back as an empty list rather than an error.
+ */
+function useEngineModels(engine: string): EngineCatalog | null {
+  const [catalog, setCatalog] = useState<EngineCatalog | null>(null);
+  useEffect(() => {
+    let live = true;
+    setCatalog(null);
+    api<EngineCatalog>(`/engines/${engine}/models`)
+      .then((c) => live && setCatalog(c))
+      .catch(() => live && setCatalog({ engine, models: [], detail: '' }));
+    return () => {
+      live = false;
+    };
+  }, [engine]);
+  return catalog;
+}
 
 export function Desk({
   projectId,
@@ -213,6 +244,12 @@ export function Desk({
       await api(`${base}/threads/${renaming.id}`, 'PUT', { name });
       await load();
       setRenaming(null);
+    });
+  }
+  async function setRequested(thread: Conversation, requested: Conversation['requested']) {
+    await perform(async () => {
+      await api(`${base}/threads/${thread.id}`, 'PUT', { requested });
+      await load();
     });
   }
   async function setPermission(thread: Conversation, permission: ThreadPermission) {
@@ -517,6 +554,7 @@ export function Desk({
               send={(mode, text, route) => void send(thread, mode, text, route)}
               message={(member, text) => void messageMember(member, text)}
               setPermission={(perm) => void setPermission(thread, perm)}
+              setRequested={(requested) => void setRequested(thread, requested)}
               decide={(n, r, a) => void resolveNeed(n, r, a)}
               show={setPreviewNeed}
               stop={(sid) => void stopSession(sid)}
@@ -909,6 +947,7 @@ function Pane({
   send,
   message,
   setPermission,
+  setRequested,
   decide,
   show,
   stop,
@@ -930,6 +969,7 @@ function Pane({
   send: (mode: Mode, text: string, route: Route) => void;
   message: (member: TeamMember, text: string) => void;
   setPermission: (permission: ThreadPermission) => void;
+  setRequested: (requested: Conversation['requested']) => void;
   decide: (need: Need, resolution: 'go-ahead' | 'declined', allow?: boolean) => void;
   show: (need: Need) => void;
   stop: (sessionId: string) => void;
@@ -941,6 +981,13 @@ function Pane({
   const [details, setDetails] = useState(false);
   const [toTeam, setToTeam] = useState(false);
   const permission: ThreadPermission = thread.permission ?? 'show-first';
+  // The chosen engine's own list. The thread's saved choice fills the pickers;
+  // an empty value means the thread follows the default set in Settings.
+  const catalog = useEngineModels(route);
+  const chosenModel = thread.requested?.model ?? '';
+  const efforts = catalog?.models.find((m) => m.slug === chosenModel)?.efforts ?? [];
+  const saved = thread.requested?.effort ?? '';
+  const chosenEffort = efforts.some((e) => e.id === saved) ? saved : (efforts[0]?.id ?? '');
   const nameOf = (slot: Slot) =>
     slot === 'owner' ? 'You' : (members.find((m) => m.slotId === slot)?.name ?? slot);
   const timeline: { at: string; node: ReactNode }[] = [
@@ -996,6 +1043,9 @@ function Pane({
     detail: '',
   });
   const live = running[0];
+  // A run reads its choice when it starts, so changing it underneath would
+  // describe the answer wrongly. The pickers wait until this thread is idle.
+  const locked = busy || Boolean(live);
   const submit = () => {
     const value = text.trim();
     if (!value) return;
@@ -1163,6 +1213,49 @@ function Pane({
                   </option>
                 ))}
             </select>
+          )}
+          {!toTeam && catalog !== null && catalog.models.length > 0 && (
+            <>
+              <select
+                aria-label="Model"
+                value={chosenModel}
+                disabled={locked}
+                title={
+                  catalog.models.find((m) => m.slug === chosenModel)?.description || catalog.detail
+                }
+                onChange={(e) => {
+                  const slug = e.target.value;
+                  const picked = catalog.models.find((m) => m.slug === slug);
+                  // Clearing goes back to the saved default, and a new model
+                  // brings its own default level: the ladders are not the same.
+                  setRequested(picked ? { model: slug, effort: picked.defaultEffort } : null);
+                }}
+              >
+                <option value="">Default</option>
+                {catalog.models.map((m) => (
+                  <option key={m.slug} value={m.slug} title={m.description}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+              {efforts.length > 0 && (
+                <select
+                  aria-label="Reasoning"
+                  value={chosenEffort}
+                  disabled={locked}
+                  title={efforts.find((e) => e.id === chosenEffort)?.description ?? ''}
+                  onChange={(e) =>
+                    setRequested({ model: chosenModel, effort: e.target.value || null })
+                  }
+                >
+                  {efforts.map((e) => (
+                    <option key={e.id} value={e.id} title={e.description}>
+                      {effortNames[e.id] ?? titleCase(e.id)}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </>
           )}
           <Button tone="primary push-right" disabled={busy || !online || !text.trim()} onClick={submit}>
             {busy ? 'Working...' : 'Send'}
