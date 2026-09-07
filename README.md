@@ -32,7 +32,7 @@ permission mode and its messages; Board, Changes and Files on the right.
 `detail: 'technical'` are read as "open the Desk".
 
 The three first-run questions pick the starting point: *I'm new to this* opens the
-Guided Book, *I have some experience* the Standard Book, *I work with these tools every
+Guided Book, *I've used tools like this* the Standard Book, *I work with these tools every
 day* the Desk.
 
 ## Threads and permission
