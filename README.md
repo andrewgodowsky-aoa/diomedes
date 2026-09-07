@@ -19,7 +19,15 @@ The included, hash-checked native Codex runtime still requires your existing Cha
 sign-in; no credentials or project data are packaged. Subscription-backed generation
 was not rerun for this desktop release.
 
-This local release is unsigned and has no installer or automatic updater.
+The **Diomedes** desktop shortcut opens this same executable after every rebuild.
+`npm run build` now automatically packages the desktop app at this stable path;
+`npm run package:desktop` is an alias for that complete build. Close Diomedes before
+building, then reopen it to use the update. Source edits alone do not update the app.
+When finishing changes, run the build and `npm run test:desktop` so the desktop
+release is current and verified. Keep the release folder at its existing location
+so the shortcut continues to work.
+
+This local release is unsigned and has no installer or remote update service.
 To build and verify it from source:
 
 ```powershell

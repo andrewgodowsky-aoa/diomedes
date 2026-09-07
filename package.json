@@ -8,6 +8,7 @@
     "service": "tsx server/index.ts",
     "client": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "build": "tsc --noEmit && vite build",
+    "postbuild": "node --use-system-ca scripts/package-desktop.mjs",
     "start": "tsx server/index.ts --production",
     "test": "vitest run",
     "check": "tsc --noEmit",
@@ -17,7 +18,7 @@
     "test:ui": "playwright test",
     "verify:native-work": "tsx scripts/native-work-smoke.ts",
     "smoke:team-codex": "node scripts/team-codex-smoke.mjs",
-    "package:desktop": "npm run build && node scripts/package-desktop.mjs",
+    "package:desktop": "npm run build",
     "test:desktop": "node scripts/desktop-smoke.mjs"
   },
   "dependencies": {
