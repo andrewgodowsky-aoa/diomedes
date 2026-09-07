@@ -56,8 +56,9 @@ try {
   const sizes = () =>
     page.evaluate(() =>
       Object.fromEntries(
-        // Under the root zoom the body stays viewport-bound; measure things that scale.
-        ['.task-title', '.task-card .button', '.caption'].map((selector) => [
+        // Under the root zoom the body stays viewport-bound and fluid text wraps
+        // differently, so measure short, fixed-width things that only scale.
+        ['.rail-link', '.task-card .button', '.task-card .caption.owner'].map((selector) => [
           selector,
           document.querySelector(selector).getBoundingClientRect().height,
         ]),
@@ -88,7 +89,11 @@ try {
   await page.reload();
   await expect(page.locator('.task-card')).toHaveCount(found.length);
   const after = await sizes();
-  for (const key of Object.keys(before)) expect(after[key] / before[key]).toBeCloseTo(1.24, 2);
+  for (const key of Object.keys(before))
+    expect(
+      after[key] / before[key],
+      `${key} measured ${before[key]} at scale 1 and ${after[key]} at scale 1.24`,
+    ).toBeCloseTo(1.24, 2);
   await page.screenshot({
     path: path.resolve('evidence/screenshots/desktop-tasks-large.png'),
     animations: 'disabled',

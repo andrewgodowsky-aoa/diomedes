@@ -1,27 +1,25 @@
 {
-  "checkedAt": "2026-09-07T00:32:54.860Z",
+  "checkedAt": "2026-09-07T02:02:32.942Z",
   "executablePath": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
   "startup": {
     "version": "0.1.0",
     "executable": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
-    "pid": 4696,
-    "url": "http://127.0.0.1:63856",
-    "startedAt": "2026-09-07T00:32:52.538Z",
+    "pid": 2060,
+    "url": "http://127.0.0.1:64086",
+    "startedAt": "2026-09-07T02:02:29.752Z",
     "packaged": true
   },
   "taskCount": 4,
   "fontSizes": {
     "before": {
-      "body": 16,
-      ".task-title": 18,
-      ".task-card .button": 15,
-      ".caption": 15
+      ".rail-link": 36.5,
+      ".task-card .button": 36,
+      ".task-card .caption.owner": 21
     },
     "after": {
-      "body": 19.84,
-      ".task-title": 22.32,
-      ".task-card .button": 18.6,
-      ".caption": 18.6
+      ".rail-link": 45.234375,
+      ".task-card .button": 44.625,
+      ".task-card .caption.owner": 26.03125
     }
   },
   "rendererNodeDisabled": true,
