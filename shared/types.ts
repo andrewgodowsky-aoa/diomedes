@@ -4,7 +4,7 @@ export type Surface = 'book' | 'desk';
 /** The four things a person can want to do; the Book's Home leads with these. */
 export type Intent = 'ask' | 'work' | 'plan' | 'review';
 export type Page = 'home' | 'ask' | 'plan' | 'work' | 'review' | 'tasks' | 'documents' | 'history';
-export type Mode = 'ask' | 'plan' | 'work';
+export type Mode = 'ask' | 'plan' | 'build' | 'fix';
 export type TaskState = 'todo' | 'working' | 'waiting' | 'done';
 export type Owner = 'you' | 'diomedes' | 'diomedes-with-ok';
 export type Route = 'sample' | 'codex';
@@ -187,6 +187,8 @@ export interface Turn {
   at: string;
   sources: string[];
   route?: Route;
+  /** Fix attempts only: which try this turn belongs to. */
+  attempt?: { n: number; of: number };
   /**
    * Which helper answered. `verified` is true only when the value came from the
    * runtime (Codex `thread/start` or `turn/completed` metadata), never from the
@@ -212,6 +214,8 @@ export interface Conversation {
   taskId?: string | null;
   helper?: { engine: string; model: string | null } | null;
   permission?: ThreadPermission;
+  /** The thread's current mode. Missing on state written before modes; the store fills it. */
+  mode?: Mode;
 }
 export interface ProjectState {
   project: Project;

@@ -649,3 +649,31 @@ describe('owned native JSON-line process transport', () => {
     }
   });
 });
+
+describe('per-mode harness values', () => {
+  it("sends instructions and effort when given, else today's values", async () => {
+    const integration = setup();
+    integration.client.mcp = [disabledServer];
+    await integration.askCodex({ ...request, instructions: 'X', effort: 'medium' });
+    const start = integration.client.calls.find((call) => call.method === 'thread/start')!.params;
+    expect(start.baseInstructions).toBe('X');
+    const turn = integration.client.calls.find((call) => call.method === 'turn/start')!.params;
+    expect(turn.effort).toBe('medium');
+    const plain = setup();
+    plain.client.mcp = [disabledServer];
+    await plain.askCodex(request);
+    const plainStart = plain.client.calls.find((call) => call.method === 'thread/start')!.params;
+    expect(plainStart.baseInstructions).toContain('Answer using only the request');
+    const plainTurn = plain.client.calls.find((call) => call.method === 'turn/start')!.params;
+    expect(plainTurn.effort).toBe('low');
+  });
+  it('leaves a team run unchanged', async () => {
+    const integration = setupTeam();
+    await integration.askCodex({ ...request, team, instructions: 'X', effort: 'medium' });
+    const start = integration.client.calls.find((call) => call.method === 'thread/start')!.params;
+    expect(start.baseInstructions).toContain('Only the Diomedes team service is available');
+    expect(start.baseInstructions).not.toBe('X');
+    const turn = integration.client.calls.find((call) => call.method === 'turn/start')!.params;
+    expect(turn.effort).toBe('low');
+  });
+});

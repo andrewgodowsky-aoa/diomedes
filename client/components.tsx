@@ -3,6 +3,7 @@ import type {
   Change,
   Detail,
   IntegrationStatus,
+  Mode,
   Need,
   Session,
   Settings,
@@ -46,6 +47,15 @@ export function surfaceOf(settings: Settings): Surface {
 }
 export function titleCase(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+export function ModeChip({ mode, attempt }: { mode: Mode; attempt?: { n: number; of: number } }) {
+  const label =
+    attempt && mode === 'fix' ? `Fix, try ${attempt.n} of ${attempt.of}` : titleCase(mode);
+  return (
+    <span className="mode-chip" data-mode={mode}>
+      {label}
+    </span>
+  );
 }
 export function time(s: string) {
   return new Date(s).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });

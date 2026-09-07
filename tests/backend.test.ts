@@ -1009,3 +1009,148 @@ describe('verified helper is stored with every turn and session', () => {
     });
   });
 });
+
+describe('modes belong to the thread and every turn', () => {
+  test("a stored state with 'work' turns loads as 'build' and the thread gets mode", async () => {
+    const id = await sample();
+    const statePath = path.join(temp, 'data', 'projects', id, 'state.json');
+    const raw = JSON.parse(await fs.readFile(statePath, 'utf8'));
+    raw.conversations = [
+      {
+        id: 'Cmodes1',
+        attachedTo: { kind: 'project', ref: id },
+        turns: [
+          {
+            id: 'U1',
+            role: 'you',
+            mode: 'work',
+            text: 'Do work',
+            at: '2026-01-01T00:00:00.000Z',
+            sources: [],
+          },
+          {
+            id: 'U2',
+            role: 'diomedes',
+            mode: 'work',
+            text: 'reply',
+            at: '2026-01-02T00:00:00.000Z',
+            sources: [],
+          },
+        ],
+      },
+    ];
+    await fs.writeFile(statePath, JSON.stringify(raw));
+    const reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
+    await reloaded.init();
+    const conversation = reloaded.state(id).conversations.find((c) => c.id === 'Cmodes1')!;
+    expect(conversation.turns.map((t) => t.mode)).toEqual(['build', 'build']);
+    expect(conversation.mode).toBe('build');
+  });
+  test("PUT /threads/:id { mode: 'fix' } persists and { mode: 'x' } is 400", async () => {
+    const id = await sample();
+    const created = await request(`/projects/${id}/threads`, 'POST', {});
+    expect(created.data.mode).toBe('ask');
+    const updated = await request(`/projects/${id}/threads/${created.data.id}`, 'PUT', {
+      mode: 'fix',
+    });
+    expect(updated.status).toBe(200);
+    expect(updated.data.mode).toBe('fix');
+    expect(
+      (await request(`/projects/${id}/threads/${created.data.id}`, 'PUT', { mode: 'x' })).status,
+    ).toBe(400);
+  });
+  test("POST /ask with mode: 'fix' and no failing is 400", async () => {
+    const id = await sample();
+    const thread = (await request(`/projects/${id}/threads`, 'POST', {})).data;
+    const missing = await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'fix',
+      text: 'Fix it',
+      threadId: thread.id,
+    });
+    expect(missing.status).toBe(400);
+    expect(missing.data.error).toContain('Say what is failing');
+  });
+  test('fix with failing.document in sources on the sample route carries attempt 1 of 3', async () => {
+    const id = await sample();
+    const thread = (await request(`/projects/${id}/threads`, 'POST', {})).data;
+    const answer = await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'fix',
+      text: 'Fix the menu',
+      threadId: thread.id,
+      sources: ['Fall menu.md'],
+      failing: { document: 'Fall menu.md' },
+    });
+    expect(answer.status).toBe(200);
+    expect(answer.data.conversation.taskId).toBeTruthy();
+    expect(answer.data.conversation.mode).toBe('fix');
+    const turns = answer.data.conversation.turns.slice(-2);
+    expect(turns).toHaveLength(2);
+    expect(turns[0].mode).toBe('fix');
+    expect(turns[1].mode).toBe('fix');
+    expect(turns[0].attempt).toEqual({ n: 1, of: 3 });
+    expect(turns[1].attempt).toEqual({ n: 1, of: 3 });
+    expect(answer.data.turn.text).toContain('sample fix');
+  });
+  test('the fourth fix in the same thread is 409', async () => {
+    const id = await sample();
+    const thread = (await request(`/projects/${id}/threads`, 'POST', {})).data;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const answer = await request(`/projects/${id}/ask`, 'POST', {
+        mode: 'fix',
+        text: `Fix attempt ${attempt}`,
+        threadId: thread.id,
+        failing: { text: `Something broke ${attempt}` },
+      });
+      expect(answer.status).toBe(200);
+      expect(answer.data.turn.attempt).toEqual({ n: attempt, of: 3 });
+      const current = await state(id);
+      const session = current.sessions.at(-1)!;
+      if (['queued', 'working', 'waiting'].includes(session.state))
+        await request(`/projects/${id}/work/${session.id}/stop`, 'POST', {});
+    }
+    const fourth = await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'fix',
+      text: 'Fix attempt 4',
+      threadId: thread.id,
+      failing: { text: 'Still broken' },
+    });
+    expect(fourth.status).toBe(409);
+    expect(fourth.data.error).toContain('Three tries have not fixed this');
+  });
+  test('ask and plan turns record their mode', async () => {
+    const id = await sample();
+    const thread = (await request(`/projects/${id}/threads`, 'POST', {})).data;
+    const ask = await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'ask',
+      text: 'What is on the menu?',
+      threadId: thread.id,
+    });
+    expect(ask.status).toBe(200);
+    expect(ask.data.turn.mode).toBe('ask');
+    expect(ask.data.conversation.mode).toBe('ask');
+    const plan = await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'plan',
+      text: 'Plan the reopening',
+      threadId: thread.id,
+    });
+    expect(plan.status).toBe(200);
+    expect(plan.data.turn.mode).toBe('plan');
+    expect(plan.data.conversation.mode).toBe('plan');
+  });
+  test("mode: 'work' is accepted and stored as 'build'", async () => {
+    const id = await sample();
+    const thread = (await request(`/projects/${id}/threads`, 'POST', {})).data;
+    const answer = await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'work',
+      text: 'Do some work',
+      threadId: thread.id,
+    });
+    expect(answer.status).toBe(200);
+    expect(answer.data.turn.mode).toBe('build');
+    expect(answer.data.conversation.mode).toBe('build');
+    expect(answer.data.conversation.turns.map((t: { mode: string }) => t.mode)).toEqual([
+      'build',
+      'build',
+    ]);
+  });
+});

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { diffLines } from 'diff';
 import type { Change, Need, Session } from '../shared/types.js';
 import { askCodex, nativeWorkDisclosure, type NativeTeamOptions } from './integrations.js';
+import { MODES } from './modes.js';
 import { absent, ApiError, projectFile, relativeName, textKind } from './paths.js';
 import { hash, identifier, now, Store, type WriteInput } from './store.js';
 import { TeamService } from './team/service.js';
@@ -14,6 +15,10 @@ export type NativeGenerator = (input: {
   onTeamToolCall?: (tool: string) => void;
   /** Explicit model selection, passed in the `thread/start` config when set. */
   model?: string;
+  /** Per-mode system text, used as `baseInstructions` by the Codex adapter. */
+  instructions?: string;
+  /** Per-mode turn effort. */
+  effort?: 'low' | 'medium' | 'high';
 }) => Promise<{ text: string; model?: string; version?: string; threadId?: string }>;
 interface Source {
   path: string;
@@ -38,6 +43,7 @@ interface NativeRun {
   controller: AbortController;
   sources: Source[];
   instruction: string;
+  mode: 'build' | 'fix';
   team?: NativeTeamOptions;
   proposal?: Proposal;
   writes?: WriteInput[];
@@ -161,6 +167,7 @@ export class NativeWorkService {
       consent: boolean;
       team?: NativeTeamOptions;
       turnId?: string;
+      mode?: 'build' | 'fix';
     },
   ) {
     if (!this.store.settings.services?.codex)
@@ -294,6 +301,7 @@ export class NativeWorkService {
       controller: new AbortController(),
       sources,
       instruction,
+      mode: input.mode ?? 'build',
       ...(input.team ? { team: { ...input.team } } : {}),
       ...tokenLease,
     };
@@ -339,8 +347,11 @@ export class NativeWorkService {
         settingsModel.length <= 120
           ? settingsModel.trim()
           : undefined;
+      const modeDef = MODES[run.mode] ?? MODES.build;
       const result = await this.generate({
         ...(requestedModel ? { model: requestedModel } : {}),
+        instructions: modeDef.instructions,
+        effort: modeDef.effort,
         prompt: [
           'Return STRICT JSON only, with exactly this structure:',
           '{"summary":"Short explanation","changes":[{"path":"relative/file.md","text":"COMPLETE new UTF-8 file content, or null to remove an existing selected file","summary":"What changes and why"}]}',

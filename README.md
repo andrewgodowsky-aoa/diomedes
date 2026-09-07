@@ -136,7 +136,7 @@ The roster, in order:
 | Engine | What Diomedes does with it |
 | --- | --- |
 | Sample work | Deterministic local demonstration. No AI engine is called. |
-| Codex (native ChatGPT) | The one working adapter. Ask, Plan, Work and team runs. |
+| Codex (native ChatGPT) | The one working adapter. Ask, Plan, Build, Fix and team runs. |
 | Claude Code, OpenCode, oh-my-pi | Found and reported. No adapter yet; Diomedes cannot run them. |
 | Cursor | Reported as installed without being run (its launcher starts an interpreter). |
 | Hermes | Loopback check on `http://127.0.0.1:8642/` only. |
@@ -151,9 +151,14 @@ does not copy credentials. Your existing ChatGPT sign-in is required. The adapte
 Windows write denial, disables inherited MCP entries and verifies that they are disabled,
 selects no environments and no tools, and requires native account status. There is no
 API-key fallback, no environment-tool access, no command execution and no provider
-fallback. Ask returns text. Plan saves the returned text through History. Work prepares
-an explicit file proposal — at most eight files and 128 KB — which is applied only after
-approval.
+fallback.
+
+Modes shape every send. Ask answers from the selected documents and changes nothing.
+Plan writes a plan document for you to read before work begins. Build proposes changes
+to the selected documents — at most eight files and 128 KB — which are applied only
+after approval. Fix is a Build bound to one failing thing: pick the document or paste
+what went wrong, and Diomedes changes as little as it can, up to three tries in a
+thread. The mode belongs to the thread and is shown on every turn.
 
 If another Codex version is on PATH, Diomedes says so and still uses its own proven copy.
 
