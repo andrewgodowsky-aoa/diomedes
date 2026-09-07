@@ -21,11 +21,13 @@ import {
   Button,
   ChangeCard,
   Empty,
+  HelperLine,
   Icon,
   Mark,
   Modal,
   Notice,
   SessionStatus,
+  askDraftKey,
   date,
   pages,
   stateNames,
@@ -65,8 +67,25 @@ export function Workspace({
   const [buffer, setBuffer] = useState('');
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<Mode>('ask');
-  const [prompt, setPrompt] = useState('');
+  const [mode, setMode] = useState<Mode>(() => {
+    try {
+      return localStorage.getItem(askDraftKey(projectId)) ? 'ask' : 'ask';
+    } catch {
+      return 'ask';
+    }
+  });
+  const [prompt, setPrompt] = useState(() => {
+    try {
+      const carried = localStorage.getItem(askDraftKey(projectId));
+      if (carried != null) {
+        localStorage.removeItem(askDraftKey(projectId));
+        return carried;
+      }
+    } catch {
+      // Storage is unavailable; start with an empty box.
+    }
+    return '';
+  });
   const [route, setRoute] = useState<Route>('sample');
   const [attached, setAttached] = useState('');
   const [pendingOnline, setPendingOnline] = useState(false);
@@ -919,38 +938,7 @@ export function Workspace({
     return rows;
   }
   const codex = integrations.find((i) => i.id === 'codex');
-  const helperLine = (() => {
-    const runnable = integrations.filter((i) => i.adapter === 'ready' && i.kind !== 'sample');
-    const switchedOn = runnable.find((i) => i.available && settings.services?.[i.id]);
-    const signedIn = runnable.find((i) => i.available);
-    return (
-      <p className="caption helper-line">
-        {switchedOn ? (
-          <span>
-            {switchedOn.name} is on. {switchedOn.disclosure[0]}
-          </span>
-        ) : signedIn ? (
-          <>
-            <span>{signedIn.name} is signed in but turned off, so Diomedes uses sample work.</span>
-            <button
-              className="text-button"
-              onClick={() =>
-                void saveSettings({
-                  ...settings,
-                  services: { ...settings.services, [signedIn.id]: true },
-                })
-              }
-            >
-              Turn {signedIn.name} on
-            </button>
-            <span>{signedIn.disclosure[0]}</span>
-          </>
-        ) : (
-          <span>Sample work, on this computer. No online service is connected.</span>
-        )}
-      </p>
-    );
-  })();
+  void codex;
   function historyRow(entry: HistoryEntry) {
     return (
       <div key={entry.id} className="history-entry">
@@ -1170,7 +1158,11 @@ export function Workspace({
                             </button>
                           ))}
                         </div>
-                        {helperLine}
+                        <HelperLine
+                          integrations={integrations}
+                          settings={settings}
+                          saveSettings={saveSettings}
+                        />
                       </section>
                       {!!recentThreads.length && (
                         <section className="block">

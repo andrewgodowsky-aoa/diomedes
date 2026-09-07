@@ -1,5 +1,14 @@
 import { Children, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import type { Change, Detail, Need, Session, Settings, Surface, TaskState } from '../shared/types';
+import type {
+  Change,
+  Detail,
+  IntegrationStatus,
+  Need,
+  Session,
+  Settings,
+  Surface,
+  TaskState,
+} from '../shared/types';
 
 export const pages = [
   'home',
@@ -260,6 +269,51 @@ export function SessionStatus({
     </div>
   );
 }
+export function askDraftKey(projectId: string) {
+  return `diomedes.ask-draft.${projectId}`;
+}
+
+export function HelperLine({
+  integrations,
+  settings,
+  saveSettings,
+}: {
+  integrations: IntegrationStatus[];
+  settings: Settings;
+  saveSettings: (s: Settings) => void | Promise<void>;
+}) {
+  const runnable = integrations.filter((i) => i.adapter === 'ready' && i.kind !== 'sample');
+  const switchedOn = runnable.find((i) => i.available && settings.services?.[i.id]);
+  const signedIn = runnable.find((i) => i.available);
+  return (
+    <p className="caption helper-line">
+      {switchedOn ? (
+        <span>
+          {switchedOn.name} is on. {switchedOn.disclosure[0]}
+        </span>
+      ) : signedIn ? (
+        <>
+          <span>{signedIn.name} is signed in but turned off, so Diomedes uses sample work.</span>
+          <button
+            className="text-button"
+            onClick={() =>
+              void saveSettings({
+                ...settings,
+                services: { ...settings.services, [signedIn.id]: true },
+              })
+            }
+          >
+            Turn {signedIn.name} on
+          </button>
+          <span>{signedIn.disclosure[0]}</span>
+        </>
+      ) : (
+        <span>Sample work, on this computer. No online service is connected.</span>
+      )}
+    </p>
+  );
+}
+
 export function ChangeCard({
   change,
   detail,

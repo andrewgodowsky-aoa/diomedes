@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IntegrationStatus, Page, Project, Settings, Surface } from '../shared/types';
 import { api } from './api';
-import { Brand, Button, Empty, Icon, Mark, Modal, date, surfaceOf, titleCase } from './components';
+import {
+  Brand,
+  Button,
+  Empty,
+  HelperLine,
+  Icon,
+  Mark,
+  Modal,
+  askDraftKey,
+  date,
+  surfaceOf,
+  titleCase,
+} from './components';
 import { Desk } from './Desk';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
@@ -28,6 +40,8 @@ export function App() {
   } | null>(null);
   const [search, setSearch] = useState(false);
   const [query, setQuery] = useState('');
+  const [landingText, setLandingText] = useState('');
+  const [landingProjectId, setLandingProjectId] = useState<string | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const report = useCallback(
@@ -212,6 +226,19 @@ export function App() {
       report(e);
     }
   }
+  // Landing ask box handler for the projects-page block below (kept out of the scale effect above).
+  const sendLandingAsk = (text: string, project: Project) => {
+    const value = text.trim();
+    if (!value) return;
+    try {
+      localStorage.setItem(askDraftKey(project.id), value);
+    } catch {
+      // Storage is unavailable; continue without a carried draft.
+    }
+    setLandingText('');
+    openProject(project);
+    navigate('ask');
+  };
   const current = projects.find((p) => p.id === selected);
   const surface: Surface = settings ? surfaceOf(settings) : 'book';
   const needs = projects.reduce((n, p) => n + (p.status?.needsYou ?? 0), 0);
@@ -399,51 +426,181 @@ export function App() {
                       </Button>
                     </div>
                   </header>
-                  <div className="book-layout">
+                  <div className="book-layout home">
                     <div className="reading">
-                      <p className="prose">
-                        Work lives in projects. A project holds its documents, plans, tasks and
-                        history in one place.
-                      </p>
                       {projects.length ? (
-                        <div className="project-list">
-                          {projects.map((p) => (
-                            <button
-                              key={p.id}
-                              className="project-row"
-                              onClick={() => openProject(p)}
-                            >
-                              <div>
-                                <strong>{p.name}</strong>
-                                {settings.detail === 'technical' && (
-                                  <span className="code caption">{p.folder}</span>
-                                )}
-                              </div>
-                              <span className="dotted-leader" />
-                              <span className="project-row-status">
-                                {p.status?.needsYou ? (
-                                  <>
-                                    <Mark state="waiting" />
-                                    Needs your OK
-                                  </>
-                                ) : p.status?.working ? (
-                                  <>
-                                    <Mark state="working" />
-                                    Working on {p.status.working} task
-                                  </>
-                                ) : p.status?.tasksTotal ? (
-                                  `${p.status.tasksDone} of ${p.status.tasksTotal} tasks done`
-                                ) : (
-                                  'Ready to begin'
-                                )}
-                              </span>
-                              <span className="caption">{date(p.lastOpenedAt || p.createdAt)}</span>
-                            </button>
-                          ))}
-                        </div>
+                        <>
+                          <section className="intents landing-ask" aria-label="Start here">
+                            <h2>What do you want to do?</h2>
+                            <textarea
+                              rows={2}
+                              aria-label="Ask, plan, or say what to do"
+                              placeholder={
+                                {
+                                  business:
+                                    'Ask about a supplier, plan a schedule, or say what to do',
+                                  school: 'Ask about a reading, plan the week, or say what to do',
+                                  software: 'Ask about the code, plan a change, or say what to do',
+                                  personal: 'Ask a question, plan something, or say what to do',
+                                  mix: 'Ask, plan, or say what to do',
+                                }[settings.onboarding.work ?? 'mix']
+                              }
+                              value={landingText}
+                              onChange={(e) => setLandingText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.ctrlKey && e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const sorted = [...projects].sort((a, b) =>
+                                    (b.lastOpenedAt || b.createdAt).localeCompare(
+                                      a.lastOpenedAt || a.createdAt,
+                                    ),
+                                  );
+                                  const target =
+                                    sorted.find((p) => p.id === landingProjectId) ?? sorted[0];
+                                  if (target) sendLandingAsk(landingText, target);
+                                }
+                              }}
+                            />
+                            <div className="landing-row">
+                              <label className="landing-project">
+                                <span className="caption">In project</span>
+                                <select
+                                  aria-label="In project"
+                                  value={
+                                    landingProjectId ??
+                                    [...projects].sort((a, b) =>
+                                      (b.lastOpenedAt || b.createdAt).localeCompare(
+                                        a.lastOpenedAt || a.createdAt,
+                                      ),
+                                    )[0]?.id ??
+                                    ''
+                                  }
+                                  onChange={(e) => setLandingProjectId(e.target.value)}
+                                >
+                                  {[...projects]
+                                    .sort((a, b) =>
+                                      (b.lastOpenedAt || b.createdAt).localeCompare(
+                                        a.lastOpenedAt || a.createdAt,
+                                      ),
+                                    )
+                                    .map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.name}
+                                      </option>
+                                    ))}
+                                </select>
+                              </label>
+                              <Button
+                                tone="primary"
+                                disabled={!landingText.trim()}
+                                onClick={() => {
+                                  const sorted = [...projects].sort((a, b) =>
+                                    (b.lastOpenedAt || b.createdAt).localeCompare(
+                                      a.lastOpenedAt || a.createdAt,
+                                    ),
+                                  );
+                                  const target =
+                                    sorted.find((p) => p.id === landingProjectId) ?? sorted[0];
+                                  if (target) sendLandingAsk(landingText, target);
+                                }}
+                              >
+                                Send
+                              </Button>
+                            </div>
+                          </section>
+                          <HelperLine
+                            integrations={integrations}
+                            settings={settings}
+                            saveSettings={saveSettings}
+                          />
+                          <div className="project-list">
+                            {[...projects]
+                              .sort(
+                                (a, b) =>
+                                  (b.status?.needsYou ? 1 : 0) - (a.status?.needsYou ? 1 : 0) ||
+                                  (b.lastOpenedAt || b.createdAt).localeCompare(
+                                    a.lastOpenedAt || a.createdAt,
+                                  ),
+                              )
+                              .map((p) => (
+                                <button
+                                  key={p.id}
+                                  className="project-row"
+                                  onClick={() => openProject(p)}
+                                >
+                                  <div>
+                                    <strong>{p.name}</strong>
+                                    {settings.detail === 'technical' && (
+                                      <span className="code caption">{p.folder}</span>
+                                    )}
+                                  </div>
+                                  <span className="dotted-leader" />
+                                  <span className="project-row-status">
+                                    {p.status?.needsYou ? (
+                                      <>
+                                        <Mark state="waiting" />
+                                        Needs your OK
+                                      </>
+                                    ) : p.status?.working ? (
+                                      <>
+                                        <Mark state="working" />
+                                        Working on {p.status.working} task
+                                      </>
+                                    ) : p.status?.tasksTotal ? (
+                                      `${p.status.tasksDone} of ${p.status.tasksTotal} tasks done`
+                                    ) : (
+                                      'Ready to begin'
+                                    )}
+                                  </span>
+                                  <span className="caption">
+                                    {date(p.lastOpenedAt || p.createdAt)}
+                                  </span>
+                                </button>
+                              ))}
+                          </div>
+                          <p className="caption">
+                            Projects are ordinary folders on this computer.
+                            {!projects.some((p) =>
+                              p.name.toLowerCase().includes('harbor street'),
+                            ) && (
+                              <>
+                                {' '}
+                                <button
+                                  className="text-button"
+                                  onClick={() => void sampleProject()}
+                                >
+                                  Try the sample project.
+                                </button>
+                              </>
+                            )}
+                          </p>
+                        </>
                       ) : (
-                        <Empty title="Start with a project">
-                          <p>
+                        <>
+                          <div className="intent-rail">
+                            <button className="intent" onClick={() => setProjectDialog('new')}>
+                              <span className="square" aria-hidden="true" />
+                              <span>
+                                <strong>New project</strong>
+                                <span>Start from an empty folder.</span>
+                              </span>
+                            </button>
+                            <button className="intent" onClick={() => setProjectDialog('open')}>
+                              <span className="square" aria-hidden="true" />
+                              <span>
+                                <strong>Open a folder as a project</strong>
+                                <span>Use documents you already have.</span>
+                              </span>
+                            </button>
+                            <button className="intent" onClick={() => void sampleProject()}>
+                              <span className="square" aria-hidden="true" />
+                              <span>
+                                <strong>Try the sample project</strong>
+                                <span>Three example documents. Sample work stays on this computer.</span>
+                              </span>
+                            </button>
+                          </div>
+                          <p className="prose">
                             {
                               {
                                 business:
@@ -458,32 +615,12 @@ export function App() {
                               }[settings.onboarding.work ?? 'mix']
                             }
                           </p>
-                        </Empty>
-                      )}
-                      {settings.detail === 'guided' && (
-                        <p className="caption">
-                          Want more detail on screen? Settings &gt; Interface detail.
-                        </p>
+                          <p className="caption">
+                            Projects are ordinary folders on this computer.
+                          </p>
+                        </>
                       )}
                     </div>
-                    <aside className="margin">
-                      <section className="block">
-                        <h3>Try a sample project</h3>
-                        <p className="prose small">
-                          Explore plans, tasks, changes and Restore with three example documents.
-                          Sample work stays on this computer.
-                        </p>
-                        <Button disabled={busy} onClick={() => void sampleProject()}>
-                          Open sample project
-                        </Button>
-                      </section>
-                      <section className="block">
-                        <h3>Your files stay yours</h3>
-                        <p className="caption">
-                          Projects use ordinary folders. No special file format is needed to begin.
-                        </p>
-                      </section>
-                    </aside>
                   </div>
                 </main>
               )}
