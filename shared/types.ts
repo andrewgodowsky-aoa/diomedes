@@ -134,6 +134,10 @@ export interface Session {
     branch: string | null;
     context: number | null;
     events: number;
+    /** Runtime-reported protocol version (Codex) or null. Never parsed from answer text. */
+    version?: string | null;
+    /** True only when model came from the runtime (thread/turn metadata), never from text. */
+    verified?: boolean;
   };
 }
 export interface FileRecord {
@@ -183,6 +187,18 @@ export interface Turn {
   at: string;
   sources: string[];
   route?: Route;
+  /**
+   * Which helper answered. `verified` is true only when the value came from the
+   * runtime (Codex `thread/start` or `turn/completed` metadata), never from the
+   * answer text. Missing on turns written before 2026-09-07; the UI shows no
+   * caption for those.
+   */
+  helper?: {
+    engine: string;
+    model: string | null;
+    version?: string | null;
+    verified: boolean;
+  };
 }
 /** A thread: a named conversation that belongs to a project and, optionally, to a task. */
 export interface Conversation {

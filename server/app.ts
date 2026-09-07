@@ -152,13 +152,21 @@ function validateSettings(current: Settings, body: unknown): Settings {
   }
   if (supplied.services) {
     const value = plain(supplied.services);
-    const services: Record<string, boolean> = {};
+    const services: Record<string, boolean | string> = {};
     for (const [key, on] of Object.entries(value)) {
+      // The Codex selection is a name, not a switch; it only ever reaches
+      // `thread/start` config, never the answer text.
+      if (key === 'codexModel') {
+        if (typeof on !== 'string' || !on.trim() || on.length > 120)
+          throw new ApiError(400, 'The Codex helper choice must be up to 120 characters.');
+        services[key] = on.trim();
+        continue;
+      }
       if (!/^[a-z][a-z0-9-]{0,39}$/.test(key) || typeof on !== 'boolean')
         throw new ApiError(400, 'A helper setting must be true or false.');
       services[key] = on;
     }
-    result.services = services;
+    result.services = services as Settings['services'];
   }
   if (supplied.openProjects) {
     if (
@@ -1008,6 +1016,28 @@ export async function createApp(options: AppOptions) {
     }),
   );
   /**
+   * Verified helper bookkeeping (muse/verified-model). A displayed helper name comes
+   * only from the runtime result, never from answer text. Sample work is
+   * deterministic, so its helper is verified without a runtime call.
+   */
+  const codexModelSetting = (): string | undefined => {
+    const raw = (store.settings.services as Record<string, unknown> | undefined)?.codexModel;
+    return typeof raw === 'string' && raw.trim() && raw.length <= 120 ? raw.trim() : undefined;
+  };
+  const codexHelper = (result: {
+    model?: string;
+    version?: string;
+  }): NonNullable<Turn['helper']> =>
+    result.model
+      ? { engine: 'codex', model: result.model, version: result.version ?? null, verified: true }
+      : { engine: 'codex', model: null, version: result.version ?? null, verified: false };
+  const sampleHelper = (): NonNullable<Turn['helper']> => ({
+    engine: 'sample',
+    model: null,
+    version: null,
+    verified: true,
+  });
+  /**
    * A Codex Work run from a thread: a task from the text (or the given task), the person's
    * turn, the native run with any team options, and the reply turn. `held` says the caller
    * already holds the store lock (the lock is a queue, not reentrant): the team service's
@@ -1085,18 +1115,22 @@ export async function createApp(options: AppOptions) {
         conversation.turns.push(youTurn);
         touchThread(conversation, youTurn.at, state.tasks);
       }
+      // The turn id is fixed before the run so the native worker can mark the
+      // turn verified once the runtime reports its engine.
+      const turnId = identifier('U');
       const session = await nativeWork.start(projectId, task.id, {
         instruction: text,
         sources,
         consent: consent,
         team: team,
+        turnId,
       });
       const storedSession = store
         .state(projectId)
         .sessions.find((item) => item.id === session.id)!;
       storedSession.permission = conversation.permission ?? 'show-first';
       const turn: Turn = {
-        id: identifier('U'),
+        id: turnId,
         role: 'diomedes',
         mode: 'work',
         text: wake
@@ -1105,6 +1139,12 @@ export async function createApp(options: AppOptions) {
         at: now(),
         sources,
         route: 'codex',
+        helper: {
+          engine: 'codex',
+          model: codexModelSetting() ?? null,
+          version: null,
+          verified: false,
+        },
       };
       conversation.turns.push(turn);
       touchThread(conversation, turn.at, state.tasks);
@@ -1225,30 +1265,35 @@ export async function createApp(options: AppOptions) {
         return { conversationId: conversation.id, documents };
       });
       let answer: string;
+      let helper: NonNullable<Turn['helper']>;
+      const requestedModel = codexModelSetting();
       if (serviceRoute === 'codex') {
         try {
-          answer = (
-            await askCodex({
-              prompt:
-                mode === 'plan'
-                  ? `Write a practical Markdown plan for the following request. Use numbered actionable steps.\n\n${text}`
-                  : text,
-              documents: prepared.documents,
-            })
-          ).text;
+          const result = await askCodex({
+            prompt:
+              mode === 'plan'
+                ? `Write a practical Markdown plan for the following request. Use numbered actionable steps.\n\n${text}`
+                : text,
+            documents: prepared.documents,
+            ...(requestedModel ? { model: requestedModel } : {}),
+          });
+          answer = result.text;
+          helper = codexHelper(result);
         } catch (error) {
           throw new ApiError(
             503,
             error instanceof Error ? error.message : 'Codex could not complete this request.',
           );
         }
-      } else
+      } else {
+        helper = sampleHelper();
         answer =
           mode === 'ask'
             ? `No service is connected for this request, so Diomedes cannot answer yet.${sources.length ? ` It would read ${sources.slice(0, 3).join(', ')} to answer.` : ''} Turn a service on in Settings > Services.`
             : mode === 'plan'
               ? `# ${text.split('\n')[0].slice(0, 120)}\n\nSample plan written without a service on ${now()}. Edit it freely.\n\n1. ${text.replaceAll('\n', ' ').slice(0, 240)}\n2. Review what changed\n3. Call anyone who needs to know\n`
               : 'Started clearly labelled sample work. No AI service is involved.';
+      }
       return store.locked(async () => {
         let state = store.state(projectId);
         let document: string | undefined;
@@ -1269,7 +1314,10 @@ export async function createApp(options: AppOptions) {
           await store.writeRecorded(projectId, [{ path: document, text: answer, expected: null }], {
             actor: 'diomedes',
             kind: 'edited',
-            sentence: `Diomedes wrote ${document}`,
+            sentence:
+              helper.verified && helper.model
+                ? `Diomedes, with Codex ${helper.model}, wrote ${document}`
+                : `Diomedes wrote ${document}`,
             sample: serviceRoute === 'sample',
             review: true,
             merge: false,
@@ -1294,10 +1342,15 @@ export async function createApp(options: AppOptions) {
         }
         const conversation = state.conversations.find((c) => c.id === prepared.conversationId)!;
         if (createdTaskId && !conversation.taskId) conversation.taskId = createdTaskId;
+        conversation.helper = { engine: helper.engine, model: helper.model };
         if (session) {
           const sessionId = session.id;
           const stored = state.sessions.find((item) => item.id === sessionId)!;
           stored.permission = conversation.permission ?? 'show-first';
+          if (stored.sample) {
+            stored.engine.verified = true;
+            stored.engine.version = null;
+          }
           session = stored;
         }
         const turn: Turn = {
@@ -1308,6 +1361,7 @@ export async function createApp(options: AppOptions) {
           at: now(),
           sources,
           route: serviceRoute,
+          helper,
         };
         conversation.turns.push(turn);
         touchThread(conversation, turn.at, state.tasks);
