@@ -48,6 +48,7 @@ interface Props {
   usage: UsageSnapshot[];
   saveSettings: (value: Settings) => Promise<void>;
   openInBook: (page: Page) => void;
+  openEngineSettings: () => void;
   report: (e: unknown) => void;
   online: boolean;
 }
@@ -74,6 +75,7 @@ export function Desk({
   usage,
   saveSettings,
   openInBook,
+  openEngineSettings,
   report,
   online,
 }: Props) {
@@ -151,17 +153,32 @@ export function Desk({
   const running =
     state?.sessions.filter((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? [];
   const changes = state?.changes.filter((c) => c.state === 'waiting') ?? [];
-  const helpers: { id: string; name: string; engine: string; status: string; available: boolean }[] =
-    integrations
-      .filter((i) => i.adapter === 'ready' || i.adapter === 'planned')
-      .map((i) => ({
-        id: i.id,
-        name: i.name,
-        engine: i.detail,
-        status: i.status,
-        available:
-          i.kind === 'sample' ? i.available : i.available && settings.services?.[i.id] === true,
-      }));
+  const helpers: {
+    id: string;
+    name: string;
+    engine: string;
+    status: string;
+    available: boolean;
+    connection: string;
+  }[] = integrations
+    .filter((i) => i.adapter === 'ready' || i.adapter === 'planned')
+    .map((i) => {
+      const available =
+        i.kind === 'sample' ? i.available : i.available && settings.services?.[i.id] === true;
+      // One word for the rail. 'Installed' rather than 'Disconnected' when the
+      // adapter is not ready, because no switch on this page would connect it.
+      const connection = available
+        ? 'Connected'
+        : i.adapter !== 'ready'
+          ? 'Installed'
+          : !i.found
+            ? 'Not found'
+            : 'Disconnected';
+      // Short names in a narrow rail: the roster map already has them, and
+      // the full product name stays on the row's title and in Settings.
+      const short = (engineNames as Record<string, string>)[i.id] ?? i.name;
+      return { id: i.id, name: short, engine: i.detail, status: i.status, available, connection };
+    });
   // Only these ids can start work or take a thread; the Route contract has no other engine.
   const routeHelpers = helpers.filter((h) => h.id === 'sample' || h.id === 'codex');
 
@@ -440,17 +457,19 @@ export function Desk({
           {teamAvailable && !team.members.length && (
             <p className="caption desk-honest">No team yet. Add a leader, then members.</p>
           )}
-          <h3 className="desk-side-sub">Helpers available</h3>
+          <h3 className="desk-side-sub">Engines</h3>
           {helpers.map((h) => (
-            <div key={h.id} className="desk-helper">
-              <span className="desk-helper-line">
-                <Mark state={h.available ? 'done' : 'todo'} />
-                <strong>{h.name}</strong>
+            <div key={h.id} className="desk-engine">
+              <Mark state={h.available ? 'done' : 'todo'} />
+              <span className="desk-engine-name" title={h.status}>
+                {h.name}
               </span>
-              <span className="caption">{h.engine}</span>
-              <span className="caption">{h.status}</span>
+              <span className="caption">{h.connection}</span>
             </div>
           ))}
+          <div className="desk-side-action">
+            <Button onClick={openEngineSettings}>Go to engine settings</Button>
+          </div>
           <p className="caption desk-honest">
             {teamAvailable
               ? 'Members talk through the Diomedes team service. One engine run at a time in this version; the leader cannot spawn members yet.'

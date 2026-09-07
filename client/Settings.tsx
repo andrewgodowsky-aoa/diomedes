@@ -471,9 +471,11 @@ export function SettingsPage({
                 .filter((s) => s.kind !== 'local' || s.available)
                 .slice(0, 3)
                 .map((s) => (
-                  <div className="reference-row" key={s.id}>
-                    <Mark state={s.available ? 'done' : 'todo'} />
-                    <span>
+                  <div className="reference-row metered" key={s.id}>
+                    <span className="engine-meter" aria-hidden="true">
+                      <span className={`engine-meter-fill${s.available ? ' on' : ''}`} />
+                    </span>
+                    <span className="engine-row-name">
                       {isDesk ? s.name : s.kind === 'sample' ? 'Sample work' : 'Online service'}
                     </span>
                     <span className="caption push-right">

@@ -451,6 +451,10 @@ export function App() {
                     });
                     navigate(p);
                   }}
+                  openEngineSettings={() => {
+                    setShowSettings(true);
+                    setHelpersRequest((n) => n + 1);
+                  }}
                   report={report}
                   online={online}
                 />

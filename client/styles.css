@@ -735,8 +735,37 @@ a {
   text-align: right;
   max-width: 155px;
 }
-.reference-row > span:first-child {
+.reference-row:not(.metered) > span:first-child {
   flex: 1;
+}
+/* Metered rows put a fixed-size meter first, so the label grows instead.
+   Without the :not() above, .mark and .engine-meter match span:first-child
+   and lose their own flex: none on specificity. */
+.reference-row.metered {
+  gap: 10px;
+}
+.engine-meter {
+  flex: 0 0 clamp(44px, 26%, 132px);
+  height: 8px;
+  background: var(--dm-well);
+  border: 1px solid var(--dm-rule-2);
+  overflow: hidden;
+}
+.engine-meter-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--dm-done);
+}
+.engine-meter-fill.on {
+  width: 100%;
+}
+.engine-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .document-row > .caption {
   flex: none;
@@ -2153,6 +2182,26 @@ html[data-motion='reduced'] *::after {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.desk-engine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 20px;
+  min-height: 28px;
+}
+.desk-engine-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.desk-engine > .caption {
+  flex: none;
+}
+.desk-side-action {
+  padding: 10px 20px 0;
 }
 .desk-honest {
   padding: 8px 20px 0;
