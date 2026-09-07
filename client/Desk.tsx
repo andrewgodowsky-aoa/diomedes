@@ -293,7 +293,15 @@ export function Desk({
     failing?: { document?: string; text?: string },
     sources?: string[],
   ) {
-    if (route === 'codex' && !consent && (settings.permissions.sending || !settings.seen.onlineServiceNotice)) {
+    // Build and Fix on Codex always confirm, matching the service's rule.
+    if (
+      route === 'codex' &&
+      !consent &&
+      (mode === 'build' ||
+        mode === 'fix' ||
+        settings.permissions.sending ||
+        !settings.seen.onlineServiceNotice)
+    ) {
       setPendingOnline(() => () => send(thread, mode, text, route, true, failing, sources));
       return;
     }
