@@ -2644,3 +2644,30 @@ button.usage-chip:hover {
 .desk-member .usage-chip {
   font-size: 14px;
 }
+
+/* ---- Modes ---- */
+.mode-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--dm-rule);
+  color: var(--dm-text-2);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.mode-chip[data-mode='fix'] {
+  border-color: var(--dm-signal-edge);
+  color: var(--dm-signal);
+}
+.failing-row {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.failing-row .field {
+  margin-bottom: 0;
+}
+.failing-row textarea {
+  min-height: 56px;
+}

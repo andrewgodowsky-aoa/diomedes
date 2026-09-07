@@ -203,6 +203,8 @@ export class TeamService {
         updatedAt: stamped,
         taskId: null,
         helper: { engine, model },
+        // A member's thread runs Build; the person can switch it on the Desk.
+        mode: 'build',
       };
       state.conversations.push(conversation);
       threadId = conversation.id;

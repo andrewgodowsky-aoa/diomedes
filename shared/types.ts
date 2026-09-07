@@ -4,7 +4,7 @@ export type Surface = 'book' | 'desk';
 /** The four things a person can want to do; the Book's Home leads with these. */
 export type Intent = 'ask' | 'work' | 'plan' | 'review';
 export type Page = 'home' | 'ask' | 'plan' | 'work' | 'review' | 'tasks' | 'documents' | 'history';
-export type Mode = 'ask' | 'plan' | 'work';
+export type Mode = 'ask' | 'plan' | 'build' | 'fix';
 export type TaskState = 'todo' | 'working' | 'waiting' | 'done';
 export type Owner = 'you' | 'diomedes' | 'diomedes-with-ok';
 export type Route = 'sample' | 'codex';
@@ -192,6 +192,8 @@ export interface Turn {
   at: string;
   sources: string[];
   route?: Route;
+  /** Fix attempts only: which try this turn belongs to. */
+  attempt?: { n: number; of: number };
   /**
    * Which helper answered. `verified` is true only when the value came from the
    * runtime (Codex `thread/start` or `turn/completed` metadata), never from the
@@ -222,9 +224,11 @@ export interface Conversation {
    * What the person chose for this thread, which is not the same claim as
    * `helper`: this is the request, that is the runtime's answer. Null means
    * follow the saved default, and the default in turn may be null for the
-   * engine's own default.
+   * engine's own default. An explicit level here outranks the mode's own.
    */
   requested?: { model: string | null; effort: string | null } | null;
+  /** The thread's current mode. State written before modes lacks it; the store fills it on load. */
+  mode: Mode;
 }
 
 /** One model an engine offers, with the reasoning ladder that model supports. */

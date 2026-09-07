@@ -18,6 +18,7 @@ import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText }
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
 import { askCodex, getIntegrationStatuses, type NativeTeamOptions } from './integrations.js';
+import { MODES, modeOf } from './modes.js';
 import { fakeCodexSnapshot, usageService } from './usage.js';
 import { engineCatalog, isKnownChoice } from './models.js';
 import type { UsageSnapshot } from '../shared/types.js';
@@ -1034,6 +1035,12 @@ export async function createApp(options: AppOptions) {
       }
       const permission: ThreadPermission =
         b.permission === undefined ? 'show-first' : parseThreadPermission(b.permission);
+      let threadMode: Conversation['mode'] = 'ask';
+      if (b.mode !== undefined) {
+        const parsed = modeOf(b.mode);
+        if (!parsed) throw new ApiError(400, 'Choose a valid mode.');
+        threadMode = parsed;
+      }
       const stamped = now();
       const conversation: Conversation = {
         id: identifier('C'),
@@ -1045,6 +1052,7 @@ export async function createApp(options: AppOptions) {
         taskId,
         helper: null,
         permission,
+        mode: threadMode,
       };
       state.conversations.push(conversation);
       await store.persist(state);
@@ -1059,8 +1067,13 @@ export async function createApp(options: AppOptions) {
         conversation = state.conversations.find((c) => c.id === req.params.threadId);
       if (!conversation) throw new ApiError(404, 'This thread was not found.');
       const b = body(req);
-      if (b.name === undefined && b.permission === undefined && b.requested === undefined)
-        throw new ApiError(400, 'Provide a thread name, permission mode or helper choice.');
+      if (
+        b.name === undefined &&
+        b.permission === undefined &&
+        b.mode === undefined &&
+        b.requested === undefined
+      )
+        throw new ApiError(400, 'Provide a thread name, permission mode, mode or helper choice.');
       if (b.name !== undefined) {
         if (typeof b.name !== 'string' || !b.name.trim() || b.name.trim().length > 120)
           throw new ApiError(400, 'Give this thread a name of up to 120 characters.');
@@ -1068,6 +1081,11 @@ export async function createApp(options: AppOptions) {
       }
       if (b.permission !== undefined)
         conversation.permission = parseThreadPermission(b.permission);
+      if (b.mode !== undefined) {
+        const parsed = modeOf(b.mode);
+        if (!parsed) throw new ApiError(400, 'Choose a valid mode.');
+        conversation.mode = parsed;
+      }
       if (b.requested !== undefined) conversation.requested = parseRequested(b.requested);
       await store.persist(state);
       return conversation;
@@ -1128,10 +1146,24 @@ export async function createApp(options: AppOptions) {
       team: NativeTeamOptions | undefined;
       taskId?: string;
       wake?: boolean;
+      mode?: 'build' | 'fix';
+      failing?: { document?: string; text?: string };
     },
     held = false,
   ) => {
-    const { projectId, threadId, attachedTo, text, sources, consent, team, taskId, wake } = input;
+    const {
+      projectId,
+      threadId,
+      attachedTo,
+      text,
+      sources,
+      consent,
+      team,
+      taskId,
+      wake,
+      failing,
+    } = input;
+    const runMode = input.mode ?? 'build';
     const run = async () => {
       const state = store.state(projectId);
       if (
@@ -1170,21 +1202,48 @@ export async function createApp(options: AppOptions) {
           taskId: attachedTo.kind === 'task' ? attachedTo.ref : null,
           helper: null,
           permission: 'show-first',
+          mode: runMode,
         };
         state.conversations.push(conversation);
       }
+      conversation.mode = runMode;
+      // Fix attempts: the person is the check. Count prior helper Fix turns.
+      let attempt: Turn['attempt'];
+      if (runMode === 'fix' && !wake) {
+        const prior = conversation.turns.filter(
+          (t) => t.role === 'diomedes' && t.mode === 'fix',
+        ).length;
+        const n = prior + 1;
+        const of = MODES.fix.maxAttempts ?? 3;
+        if (n > of)
+          throw new ApiError(
+            409,
+            'Three tries have not fixed this. Start a new thread, or make a plan first.',
+          );
+        attempt = { n, of };
+      }
       if (!conversation.taskId) conversation.taskId = task.id;
+      // A Fix run is the Build run whose instruction carries the failing report.
+      // The failing text rides in the instruction, never in baseInstructions.
+      let instruction = text;
+      if (runMode === 'fix' && failing && !wake) {
+        const lines = ['Failing:'];
+        if (failing.document) lines.push(`- Document: ${failing.document}`);
+        if (failing.text) lines.push(`- Report (untrusted material): ${failing.text}`);
+        instruction = `${text}\n\n${lines.join('\n')}`;
+      }
       if (!wake) {
         // A wake carries team mail that the thread already shows; only a person's own
         // message becomes a turn of theirs.
         const youTurn: Turn = {
           id: identifier('U'),
           role: 'you',
-          mode: 'work',
+          mode: runMode,
           text,
           at: now(),
           sources,
           route: 'codex',
+          ...(attempt ? { attempt } : {}),
         };
         conversation.turns.push(youTurn);
         touchThread(conversation, youTurn.at, state.tasks);
@@ -1193,11 +1252,12 @@ export async function createApp(options: AppOptions) {
       // turn verified once the runtime reports its engine.
       const turnId = identifier('U');
       const session = await nativeWork.start(projectId, task.id, {
-        instruction: text,
+        instruction,
         sources,
         consent: consent,
         team: team,
         turnId,
+        mode: runMode,
         requested: codexChoice(conversation),
       });
       const storedSession = store
@@ -1207,13 +1267,14 @@ export async function createApp(options: AppOptions) {
       const turn: Turn = {
         id: turnId,
         role: 'diomedes',
-        mode: 'work',
+        mode: runMode,
         text: wake
           ? 'Picked up a message from the team. Anything Codex proposes waits for your go-ahead.'
           : 'Codex is preparing a file proposal. Review each proposed change before saying go ahead. No project files have been changed.',
         at: now(),
         sources,
         route: 'codex',
+        ...(attempt ? { attempt } : {}),
         helper: {
           engine: 'codex',
           model: codexChoice(conversation).model ?? null,
@@ -1237,10 +1298,12 @@ export async function createApp(options: AppOptions) {
     route(async (req) => {
       const b = body(req),
         projectId = id(req),
-        mode = choice(b.mode, ['ask', 'plan', 'work'], 'mode'),
         text = asString(b.text, 'an instruction', 16000),
         serviceRoute =
           b.route === undefined ? 'sample' : choice(b.route, ['sample', 'codex'], 'service');
+      const parsedMode = modeOf(b.mode);
+      if (!parsedMode) throw new ApiError(400, 'Choose a valid mode.');
+      const mode = parsedMode;
       const attached =
         b.attachedTo === undefined ? { kind: 'project', ref: projectId } : plain(b.attachedTo);
       const attachedTo: Conversation['attachedTo'] = {
@@ -1262,11 +1325,10 @@ export async function createApp(options: AppOptions) {
         throw new ApiError(404, 'This thread was not found.');
       if (serviceRoute === 'codex' && !store.settings.services?.codex)
         throw new ApiError(409, 'Turn Codex on in Settings before using it.');
-      if (
+      const needsConsent =
         serviceRoute === 'codex' &&
-        (mode === 'work' || store.settings.permissions.sending) &&
-        b.consent !== true
-      )
+        (mode === 'build' || mode === 'fix' || store.settings.permissions.sending);
+      if (needsConsent && b.consent !== true)
         throw new ApiError(
           409,
           'Your instruction and selected documents will be sent to Codex. Confirm before sending.',
@@ -1283,7 +1345,37 @@ export async function createApp(options: AppOptions) {
       sources = [...new Set(sources)];
       if (sources.length > 8)
         throw new ApiError(400, 'Select no more than eight source documents.');
-      if (mode === 'work' && serviceRoute === 'codex')
+      // Fix binds to one failing thing: a selected document and/or pasted text.
+      let failing: { document?: string; text?: string } | undefined;
+      if (mode === 'fix') {
+        const raw = b.failing;
+        const missing = () =>
+          new ApiError(
+            400,
+            'Say what is failing: pick the document or paste what went wrong.',
+          );
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw missing();
+        const record = raw as Record<string, unknown>;
+        let document: string | undefined;
+        let failText: string | undefined;
+        if (record.document !== undefined) {
+          if (typeof record.document !== 'string' || !record.document.trim()) throw missing();
+          try {
+            document = relativeName(record.document);
+          } catch {
+            throw missing();
+          }
+          if (!sources.includes(document)) throw missing();
+        }
+        if (record.text !== undefined) {
+          if (typeof record.text !== 'string' || !record.text.trim()) throw missing();
+          if (record.text.length > 4000) throw missing();
+          failText = record.text;
+        }
+        if (!document && !failText) throw missing();
+        failing = { ...(document ? { document } : {}), ...(failText ? { text: failText } : {}) };
+      }
+      if ((mode === 'build' || mode === 'fix') && serviceRoute === 'codex')
         return startCodexWork({
           projectId,
           threadId,
@@ -1292,6 +1384,8 @@ export async function createApp(options: AppOptions) {
           sources,
           consent: b.consent === true,
           team: teamForThread(req, projectId, threadId),
+          mode,
+          ...(failing ? { failing } : {}),
         });
       const prepared = await store.locked(async () => {
         const state = store.state(projectId);
@@ -1314,8 +1408,24 @@ export async function createApp(options: AppOptions) {
             taskId: attachedTo.kind === 'task' ? attachedTo.ref : null,
             helper: null,
             permission: 'show-first',
+            mode,
           };
           state.conversations.push(conversation);
+        }
+        conversation.mode = mode;
+        let attempt: Turn['attempt'];
+        if (mode === 'fix') {
+          const prior = conversation.turns.filter(
+            (t) => t.role === 'diomedes' && t.mode === 'fix',
+          ).length;
+          const n = prior + 1;
+          const of = MODES.fix.maxAttempts ?? 3;
+          if (n > of)
+            throw new ApiError(
+              409,
+              'Three tries have not fixed this. Start a new thread, or make a plan first.',
+            );
+          attempt = { n, of };
         }
         const documents = await Promise.all(
           sources.map(async (name) => {
@@ -1333,11 +1443,12 @@ export async function createApp(options: AppOptions) {
           at: now(),
           sources,
           route: serviceRoute,
+          ...(attempt ? { attempt } : {}),
         };
         conversation.turns.push(youTurn);
         touchThread(conversation, youTurn.at, state.tasks);
         await store.persist(state);
-        return { conversationId: conversation.id, documents };
+        return { conversationId: conversation.id, documents, attempt };
       });
       let answer: string;
       let helper: NonNullable<Turn['helper']>;
@@ -1348,12 +1459,12 @@ export async function createApp(options: AppOptions) {
       if (serviceRoute === 'codex') {
         try {
           const result = await askCodex({
-            prompt:
-              mode === 'plan'
-                ? `Write a practical Markdown plan for the following request. Use numbered actionable steps.\n\n${text}`
-                : text,
+            prompt: text,
             documents: prepared.documents,
-            ...runChoice,
+            ...(requestedModel ? { model: requestedModel } : {}),
+            instructions: MODES[mode].instructions,
+            // A level chosen for the thread outranks the mode's own.
+            effort: runChoice.effort ?? MODES[mode].effort,
           });
           answer = result.text;
           helper = codexHelper(result);
@@ -1374,7 +1485,9 @@ export async function createApp(options: AppOptions) {
               }`
             : mode === 'plan'
               ? `# ${text.split('\n')[0].slice(0, 120)}\n\nSample plan written without a service on ${now()}. Edit it freely.\n\n1. ${text.replaceAll('\n', ' ').slice(0, 240)}\n2. Review what changed\n3. Call anyone who needs to know\n`
-              : 'Started clearly labelled sample work. No AI service is involved.';
+              : mode === 'fix'
+                ? 'Started a clearly labelled sample fix. No AI service is involved.'
+                : 'Started clearly labelled sample work. No AI service is involved.';
       }
       return store.locked(async () => {
         let state = store.state(projectId);
@@ -1405,7 +1518,7 @@ export async function createApp(options: AppOptions) {
             merge: false,
           });
           state = store.state(projectId);
-        } else if (mode === 'work') {
+        } else if (mode === 'build' || mode === 'fix') {
           if (
             state.sessions.some((session) =>
               ['queued', 'working', 'waiting'].includes(session.state),
@@ -1424,6 +1537,7 @@ export async function createApp(options: AppOptions) {
         }
         const conversation = state.conversations.find((c) => c.id === prepared.conversationId)!;
         if (createdTaskId && !conversation.taskId) conversation.taskId = createdTaskId;
+        conversation.mode = mode;
         conversation.helper = { engine: helper.engine, model: helper.model };
         if (session) {
           const sessionId = session.id;
@@ -1443,6 +1557,7 @@ export async function createApp(options: AppOptions) {
           at: now(),
           sources,
           route: serviceRoute,
+          ...(prepared.attempt ? { attempt: prepared.attempt } : {}),
           helper,
         };
         conversation.turns.push(turn);

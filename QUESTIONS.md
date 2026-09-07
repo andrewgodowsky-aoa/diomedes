@@ -503,3 +503,140 @@ The implementation keeps going with the pick; overturning one is a small, local 
 - Pick: `meterFromTokenUsage` records `costUsd: null` unless the payload
   states a cost outright. The Settings meter line omits the price when it
   is null.
+
+# Modes (muse/modes)
+
+Unsettled points from slice 1, each with options and the pick I implemented.
+The implementation keeps going with the pick; overturning one is a small, local change.
+
+## 1. The `work` alias
+
+- Options: (a) reject `work` outright; (b) accept `work` as an alias for `build`.
+- Pick: (b). `modeOf()` maps `work` to `build` on `POST /ask`, `POST /threads`
+  and `PUT /threads/:threadId`, and `migrateConversation` maps stored
+  `turn.mode === 'work'` to `'build'`. The alias goes after one release.
+
+## 2. Thread mode default
+
+- Options: (a) leave new threads without a mode; (b) default to `ask`.
+- Pick: (b). `POST /threads` defaults to `ask`; migration fills a missing
+  `Conversation.mode` from the last turn's mode, else `ask`. Every `/ask`
+  sets the thread's mode to the mode actually used.
+
+## 3. Per-mode harness values
+
+- The spec fixes effort, output, writes, consent and `maxAttempts`; no
+  alternative was considered. Ask is low/text/none/sending-setting, Plan is
+  medium/plan/plan/sending-setting, Build is medium/proposal/proposal/always,
+  Fix is Build plus `maxAttempts` 3.
+
+## 4. Instruction wording
+
+- Options: (a) copy Codex-facing sentences from existing prompts; (b) write
+  short plain-English instructions under 900 characters.
+- Pick: (b). Ask answers only from supplied documents, names the document
+  each fact came from and proposes no changes. Plan carries today's
+  "practical Markdown plan, numbered actionable steps" prefix so the
+  person's text is sent unchanged. Build limits proposals to the selected
+  documents, at most eight files, each explained. Fix adds: something
+  specific is failing, change as little as possible, improve nothing else,
+  say what changed and why it fixes the failure. The STRICT JSON contract
+  stays in `native-work.ts` untouched.
+
+## 5. `askCodex` defaults
+
+- Options: (a) require instructions/effort on every call; (b) keep today's
+  values as defaults.
+- Pick: (b). `instructions` replaces `baseInstructions` only on non-team
+  runs when non-empty; team runs keep their team text. `effort` defaults
+  to `low` on `turn/start`, including team runs.
+
+## 6. Native work mode
+
+- Options: (a) separate Build/Fix services; (b) one service with a mode.
+- Pick: (b). `start()` accepts `mode: 'build' | 'fix'` defaulting to
+  `build`; `prepare()` looks up `MODES[mode]` for instructions and effort.
+
+## 7. Fix binding shape
+
+- Options: (a) free-form failing text; (b) bound document and/or text.
+- Pick: (b). `failing: { document?, text? }` needs at least one field;
+  `document` must be one of the request's sources, `text` at most 4000
+  characters, else 400 "Say what is failing: pick the document or paste
+  what went wrong." The run instruction is the person's text plus a
+  `Failing:` block naming the document and/or quoting the pasted text as
+  untrusted material; the failing text never enters `baseInstructions`.
+
+## 8. Attempt counting
+
+- Options: (a) server-side retry loop; (b) count and stop, the person is
+  the check.
+- Pick: (b). Attempt is the thread's prior helper Fix turns plus one; over
+  3 answers 409 "Three tries have not fixed this. Start a new thread, or
+  make a plan first." Both turns carry `attempt: { n, of }`. Nothing
+  re-runs automatically. A named-check registry comes with Fix v1.
+
+## 9. Sample Fix text
+
+- Options: (a) reuse the sample work sentence; (b) label the fix.
+- Pick: (b). Sample Build keeps "Started clearly labelled sample work. No
+  AI service is involved." Sample Fix returns "Started a clearly labelled
+  sample fix. No AI service is involved."
+
+## 10. Composer placeholders and captions
+
+- The four Book captions are the spec sentences verbatim. Placeholders:
+  Book Ask "Ask a question about this project...", Plan "What should the
+  plan cover?...", Build "What should be done?...", Fix "What should be
+  fixed?..."; Desk Ask "Ask or think out loud...", Plan "What should the
+  plan cover?", Build "What should be done?", Fix "What should be fixed?"
+- Pick: these exact strings; all avoid the banned-words list and use
+  sentence case.
+
+## 11. Fix row sources
+
+- Options: (a) pick from every project document; (b) pick from the
+  request's sources.
+- Pick: (b). The Book select lists the attached document plus "Not a
+  document"; the Desk lists the thread's prior turn sources plus "Not a
+  document" and sends the chosen document as its source. Send stays
+  disabled until a document or pasted text is present, with "Pick the
+  document or paste what went wrong to send."
+
+## 12. Chip text and placement
+
+- Options: (a) mode only; (b) mode plus try count for Fix.
+- Pick: (b). `ModeChip({ mode, attempt })` renders "Ask"/"Plan"/"Build"/
+  "Fix" and "Fix, try 2 of 3" when an attempt is present. Shown on every
+  turn in the Book thread and Desk pane, on the Desk pane header next to
+  the helper name, and on the Book's thread rows (recent and page lists).
+
+## 13. Work page and Home intent
+
+- The Book's Work page keeps its name and hosts Build and Fix results.
+  Home "Get something done" sets mode `build` and opens the Work page.
+  The empty Ask thread says "switch the box below to Build." No new words
+  were added to the top bar.
+
+## 14. Two efforts met in the merge, and which one wins
+
+- The modes slice and the engine-choice work each added `effort` to the
+  Codex adapter, meaning different things: a mode's turn effort (Ask low,
+  the rest medium, sent as `turn/start` effort) and the reasoning level a
+  person picks for a thread from the model's own ladder (sent as
+  `model_reasoning_effort` in the thread config). Both call sites read the
+  same `input.effort`, so leaving two fields would have let the two
+  channels disagree, and a mode's medium would have silently overruled a
+  deliberate Astra "ultra" on every run.
+- Options: (a) keep both fields and let each write its own channel;
+  (b) one resolved value, the mode supplying the default and the person's
+  explicit choice outranking it.
+- Pick: (b). The adapter takes one `effort` string, so both channels
+  always carry the same value. Callers resolve it as
+  `thread choice ?? mode default` in `server/app.ts` (Ask and Plan) and
+  `server/native-work.ts` (Build and Fix). The type is a string rather
+  than the mode's `'low' | 'medium'`, because a ladder can reach past
+  'high' and Astra reaches 'ultra'. A team run still keeps the low effort
+  it was proven with.
+- Not settled: whether a mode should be able to cap a choice (a person on
+  "ultra" still gets "ultra" for a Fix). Owner's call.

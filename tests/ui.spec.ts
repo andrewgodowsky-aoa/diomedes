@@ -43,7 +43,12 @@ async function openProject(page: Page) {
   // The app paints once its settings arrive and may reopen the last project then,
   // so wait until it has settled on either the landing card or a project.
   await expect(nav.or(card).first()).toBeVisible();
-  if ((await nav.count()) === 0) await card.click();
+  // The app reopens whichever project was last open, which an earlier test may
+  // have changed. Every helper here reads `projectId`, so land on that project
+  // rather than on whatever was restored.
+  if ((await nav.count()) > 0)
+    await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await card.click();
   await expect(nav).toBeVisible();
 }
 
@@ -322,7 +327,7 @@ test('F17, F20-F22: surface switches preserve data; visible pages meet copy and 
   await expect(page.getByRole('navigation', { name: 'Project pages' }).getByRole('button', { name: /^Work/ })).toHaveClass(/active/);
   const workComposer = page.getByRole('region', { name: 'Ask box', exact: true });
   await expect(workComposer).toBeVisible();
-  await expect(workComposer.getByRole('button', { name: 'Work', exact: true })).toHaveClass(/active/);
+  await expect(workComposer.getByRole('button', { name: 'Build', exact: true })).toHaveClass(/active/);
 
   await navigate(page, 'Ask');
   const threads = page.getByRole('region', { name: 'Threads', exact: true });
@@ -762,4 +767,54 @@ test('Engine choices: the list comes from the engine, and the levels follow the 
     data: { services: { codex: false }, surface: 'book' },
   });
   expect(off.ok()).toBe(true);
+});
+
+test('Modes: the Book composer shows four modes and Fix needs what is failing', async ({ page }) => {
+  const headers = { 'X-Diomedes-Client': '1' };
+  // A project of its own, so no other test's sample work is in progress here.
+  const created = await page.request.post('/api/projects', { headers, data: { name: 'Modes fix' } });
+  expect(created.ok()).toBe(true);
+  const project: Project = await created.json();
+  const setup = await page.request.put('/api/settings', { headers, data: {
+    surface: 'book',
+    detail: 'standard',
+    services: { codex: false },
+    onboarding: { work: 'business', detail: 'standard', familiarity: 'new', resumeAt: 'done', completedAt: new Date().toISOString() },
+    openProjects: [project.id],
+    lastPage: { [project.id]: 'ask' },
+  } });
+  expect(setup.ok()).toBe(true);
+  await page.goto('/');
+  await expect(page.getByRole('navigation', { name: 'Project pages', exact: true })).toBeVisible();
+  await navigate(page, 'Ask');
+  const composer = page.getByRole('region', { name: 'Ask box', exact: true });
+  for (const name of ['Ask', 'Plan', 'Build', 'Fix'])
+    await expect(composer.getByRole('button', { name, exact: true })).toBeVisible();
+  await composer.getByRole('button', { name: 'Fix', exact: true }).click();
+  await expect(composer.getByRole('button', { name: 'Fix', exact: true })).toHaveClass(/active/);
+  await expect(composer.getByLabel('What is failing')).toBeVisible();
+  const send = composer.getByRole('button', { name: 'Send', exact: true });
+  await expect(send).toBeDisabled();
+  await composer.getByRole('textbox', { name: 'Ask, plan, or say what to do' }).fill('Fix the patio list');
+  await expect(send).toBeDisabled();
+  await composer.getByLabel('Paste what went wrong').fill('The list shows the wrong day.');
+  await expect(send).toBeEnabled();
+  await send.click();
+  // The stored turns carry the try; the thread that received them is found by its Fix chip.
+  await expect
+    .poll(async () => {
+      const response = await page.request.get(`/api/projects/${project.id}/state`);
+      const state: ProjectState = await response.json();
+      const thread = state.conversations.find((c) =>
+        c.turns.some((t) => t.role === 'diomedes' && t.mode === 'fix'),
+      );
+      const reply = thread?.turns.filter((t) => t.role === 'diomedes' && t.mode === 'fix').at(-1);
+      return { mode: thread?.mode, attempt: reply?.attempt };
+    })
+    .toEqual({ mode: 'fix', attempt: { n: 1, of: 3 } });
+  await navigate(page, 'Ask');
+  const threads = page.getByRole('region', { name: 'Threads', exact: true });
+  await threads.locator('button', { has: page.locator('.mode-chip[data-mode="fix"]') }).first().click();
+  const helperTurn = page.locator('.turn.diomedes').last();
+  await expect(helperTurn.locator('.mode-chip')).toContainText('Fix, try 1 of 3');
 });

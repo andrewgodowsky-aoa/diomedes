@@ -27,6 +27,7 @@ import {
   Empty,
   Mark,
   Modal,
+  ModeChip,
   Notice,
   SessionStatus,
   UsageBar,
@@ -36,6 +37,14 @@ import {
   time,
   titleCase,
 } from './components';
+
+const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
+const DESK_PLACEHOLDERS: Record<Mode, string> = {
+  ask: 'Ask or think out loud...',
+  plan: 'What should the plan cover?',
+  build: 'What should be done?',
+  fix: 'What should be fixed?',
+};
 
 /**
  * The Desk: every thread, every helper and every change on one screen.
@@ -329,9 +338,25 @@ export function Desk({
       await load();
     });
   }
-  async function send(thread: Conversation, mode: Mode, text: string, route: Route, consent = false) {
-    if (route === 'codex' && !consent && (settings.permissions.sending || !settings.seen.onlineServiceNotice)) {
-      setPendingOnline(() => () => send(thread, mode, text, route, true));
+  async function send(
+    thread: Conversation,
+    mode: Mode,
+    text: string,
+    route: Route,
+    consent = false,
+    failing?: { document?: string; text?: string },
+    sources?: string[],
+  ) {
+    // Build and Fix on Codex always confirm, matching the service's rule.
+    if (
+      route === 'codex' &&
+      !consent &&
+      (mode === 'build' ||
+        mode === 'fix' ||
+        settings.permissions.sending ||
+        !settings.seen.onlineServiceNotice)
+    ) {
+      setPendingOnline(() => () => send(thread, mode, text, route, true, failing, sources));
       return;
     }
     await perform(async () => {
@@ -342,6 +367,8 @@ export function Desk({
         consent,
         threadId: thread.id,
         attachedTo: thread.attachedTo,
+        ...(sources?.length ? { sources } : {}),
+        ...(mode === 'fix' && failing ? { failing } : {}),
       });
       setPendingOnline(null);
       if (route === 'codex' && !settings.seen.onlineServiceNotice)
@@ -551,11 +578,14 @@ export function Desk({
               members={team.members}
               close={() => closePane(id)}
               rename={() => setRenaming({ id, name: threadName(thread, state) })}
-              send={(mode, text, route) => void send(thread, mode, text, route)}
+              send={(mode, text, route, consent, failing, sources) =>
+                void send(thread, mode, text, route, consent, failing, sources)
+              }
               message={(member, text) => void messageMember(member, text)}
               setPermission={(perm) => void setPermission(thread, perm)}
               setRequested={(requested) => void setRequested(thread, requested)}
               decide={(n, r, a) => void resolveNeed(n, r, a)}
+              report={report}
               show={setPreviewNeed}
               stop={(sid) => void stopSession(sid)}
             />
@@ -951,6 +981,7 @@ function Pane({
   decide,
   show,
   stop,
+  report,
 }: {
   thread: ThreadWithPermission;
   state: ProjectState;
@@ -966,18 +997,28 @@ function Pane({
   members: TeamMember[];
   close: () => void;
   rename: () => void;
-  send: (mode: Mode, text: string, route: Route) => void;
+  send: (
+    mode: Mode,
+    text: string,
+    route: Route,
+    consent?: boolean,
+    failing?: { document?: string; text?: string },
+    sources?: string[],
+  ) => void;
   message: (member: TeamMember, text: string) => void;
   setPermission: (permission: ThreadPermission) => void;
   setRequested: (requested: Conversation['requested']) => void;
   decide: (need: Need, resolution: 'go-ahead' | 'declined', allow?: boolean) => void;
   show: (need: Need) => void;
   stop: (sessionId: string) => void;
+  report: (e: unknown) => void;
 }) {
-  const [mode, setMode] = useState<Mode>('ask');
+  const [mode, setMode] = useState<Mode>(thread.mode ?? 'ask');
   const lastHelper = [...thread.turns].reverse().find((t) => t.role === 'diomedes');
   const [route, setRoute] = useState<Route>(lastHelper?.route ?? 'sample');
   const [text, setText] = useState('');
+  const [failingDocument, setFailingDocument] = useState('');
+  const [failingText, setFailingText] = useState('');
   const [details, setDetails] = useState(false);
   const [toTeam, setToTeam] = useState(false);
   const permission: ThreadPermission = thread.permission ?? 'show-first';
@@ -986,8 +1027,30 @@ function Pane({
   const catalog = useEngineModels(route);
   const chosenModel = thread.requested?.model ?? '';
   const efforts = catalog?.models.find((m) => m.slug === chosenModel)?.efforts ?? [];
-  const saved = thread.requested?.effort ?? '';
-  const chosenEffort = efforts.some((e) => e.id === saved) ? saved : (efforts[0]?.id ?? '');
+  const savedEffort = thread.requested?.effort ?? '';
+  const chosenEffort = efforts.some((e) => e.id === savedEffort)
+    ? savedEffort
+    : (efforts[0]?.id ?? '');
+  useEffect(() => {
+    if (thread.mode) setMode(thread.mode);
+  }, [thread.id, thread.mode]);
+  const threadSources = [...new Set(thread.turns.flatMap((t) => t.sources ?? []))];
+  const fixReady =
+    mode !== 'fix' || failingDocument.trim() !== '' || failingText.trim() !== '';
+  function changeMode(next: Mode) {
+    setMode(next);
+    if (next !== 'fix') {
+      setFailingDocument('');
+      setFailingText('');
+    }
+    setToTeam(false);
+    void api(`/projects/${state.project.id}/threads/${thread.id}`, 'PUT', { mode: next }).catch(
+      (e: unknown) => {
+        report(e);
+        setMode(thread.mode ?? 'ask');
+      },
+    );
+  }
   const nameOf = (slot: Slot) =>
     slot === 'owner' ? 'You' : (members.find((m) => m.slotId === slot)?.name ?? slot);
   const timeline: { at: string; node: ReactNode }[] = [
@@ -997,7 +1060,7 @@ function Pane({
         <div className={`turn ${t.role}`} key={t.id || `${thread.id}:${i}`}>
           <p className="caption turn-meta">
             {t.role === 'you' ? 'You' : t.route === 'codex' ? 'Codex' : 'Diomedes, sample work'}
-            {t.mode !== 'ask' ? ` · ${titleCase(t.mode)}` : ''}
+            <ModeChip mode={t.mode} attempt={t.attempt} />
             <time>{time(t.at)}</time>
           </p>
           <p className="desk-turn-text">{t.text}</p>
@@ -1049,9 +1112,24 @@ function Pane({
   const submit = () => {
     const value = text.trim();
     if (!value) return;
-    if (toTeam && member) message(member, value);
-    else send(mode, value, route);
+    if (!toTeam && mode === 'fix' && !fixReady) return;
+    if (toTeam && member) {
+      message(member, value);
+    } else if (mode === 'fix') {
+      const doc = failingDocument.trim();
+      const txt = failingText.trim();
+      send(
+        mode,
+        value,
+        route,
+        false,
+        { ...(doc ? { document: doc } : {}), ...(txt ? { text: txt } : {}) },
+        doc ? [doc] : [],
+      );
+    } else send(mode, value, route);
     setText('');
+    setFailingDocument('');
+    setFailingText('');
   };
   return (
     <article className={`desk-pane ${live ? 'live' : ''} ${waiting.length ? 'needs' : ''}`}>
@@ -1064,6 +1142,7 @@ function Pane({
         </div>
         <p className="caption desk-pane-meta">
           {member ? `${member.name}, ${member.role === 'lead' ? 'leader' : 'member'} on ${engineNames[member.engine]}` : helperName}
+          <ModeChip mode={thread.mode ?? 'ask'} />
           {live?.engine.model ? `, ${live.engine.model}` : member?.model ? `, ${member.model}` : ''}
           {task ? ` · Task: ${task.name}` : ''}
           {live?.engine.context != null ? ` · Context ${Math.round(live.engine.context)}%` : ''}
@@ -1135,7 +1214,9 @@ function Pane({
               ? 'Questions and thinking out loud. Nothing in the project changes here.'
               : mode === 'plan'
                 ? 'Diomedes writes a plan for you to read before work begins.'
-                : 'Give Diomedes a job. It does the work and asks before anything that matters.'}
+                : mode === 'fix'
+                  ? 'Point at what is wrong. Diomedes changes as little as it can, up to three tries.'
+                  : 'Give Diomedes a job. It does the work and asks before anything that matters.'}
           </p>
         )}
         {timeline.map((entry) => entry.node)}
@@ -1162,14 +1243,11 @@ function Pane({
       <footer className="desk-pane-composer">
         <div className="row desk-composer-modes">
           <div className="segmented compact" role="group" aria-label="Mode">
-            {(['ask', 'plan', 'work'] as const).map((m) => (
+            {MODE_ORDER.map((m) => (
               <button
                 key={m}
                 className={mode === m && !toTeam ? 'active' : ''}
-                onClick={() => {
-                  setMode(m);
-                  setToTeam(false);
-                }}
+                onClick={() => changeMode(m)}
               >
                 {titleCase(m)}
               </button>
@@ -1186,11 +1264,7 @@ function Pane({
           placeholder={
             toTeam && member
               ? `Message ${member.name} through the team service...`
-              : mode === 'ask'
-                ? 'Ask or think out loud...'
-                : mode === 'plan'
-                  ? 'What should the plan cover?'
-                  : 'What should be done?'
+              : DESK_PLACEHOLDERS[mode]
           }
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -1202,6 +1276,38 @@ function Pane({
           }}
           rows={2}
         />
+        {mode === 'fix' && !toTeam && (
+          <div className="failing-row">
+            <label className="field">
+              What is failing
+              <select
+                aria-label="What is failing"
+                value={failingDocument}
+                onChange={(e) => setFailingDocument(e.target.value)}
+              >
+                <option value="">Not a document</option>
+                {threadSources.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Paste what went wrong
+              <textarea
+                aria-label="Paste what went wrong"
+                placeholder="Paste what went wrong..."
+                value={failingText}
+                onChange={(e) => setFailingText(e.target.value)}
+                rows={2}
+              />
+            </label>
+            {!fixReady && (
+              <p className="caption">Pick the document or paste what went wrong to send.</p>
+            )}
+          </div>
+        )}
         <div className="row desk-pane-send">
           {!toTeam && (
             <select aria-label="Helper" value={route} onChange={(e) => setRoute(e.target.value as Route)}>
@@ -1257,7 +1363,11 @@ function Pane({
               )}
             </>
           )}
-          <Button tone="primary push-right" disabled={busy || !online || !text.trim()} onClick={submit}>
+          <Button
+            tone="primary push-right"
+            disabled={busy || !online || !text.trim() || (!toTeam && !fixReady)}
+            onClick={submit}
+          >
             {busy ? 'Working...' : 'Send'}
           </Button>
         </div>
