@@ -580,6 +580,53 @@ test('Services roster: every reported engine listed with switch discipline; Guid
   expect(toBook.ok()).toBe(true);
 });
 
+test('Usage: chip, signal bar and Settings bars from the test-mode snapshot', async ({ page }) => {
+  const headers = { 'X-Diomedes-Client': '1' };
+  // The dev server runs with DIOMEDES_TEST_MODE=1, so ?fake=1 returns the
+  // fixed snapshot: Codex at 62 and 91 percent.
+  const faked = await page.request.get('/api/usage?fake=1');
+  expect(faked.ok()).toBe(true);
+  const body: { usage: { engine: string; windows: { usedPercent: number }[] }[] } = await faked.json();
+  const codex = body.usage.find(item => item.engine === 'codex')!;
+  expect(codex.windows.map(w => w.usedPercent).sort((a, b) => a - b)).toEqual([62, 91]);
+  // Nothing shows while no engine is on.
+  const off = await page.request.put('/api/settings', { headers, data: {
+    surface: 'book',
+    detail: 'standard',
+    services: { codex: false },
+    onboarding: { work: 'business', detail: 'standard', familiarity: 'new', resumeAt: 'done', completedAt: new Date().toISOString() },
+  } });
+  expect(off.ok()).toBe(true);
+  await page.goto('/');
+  await expect(page.locator('.usage-chip')).toHaveCount(0);
+  // Turning Codex on reveals the chip with the tightest window.
+  const on = await page.request.put('/api/settings', { headers, data: { services: { codex: true } } });
+  expect(on.ok()).toBe(true);
+  await page.reload();
+  const chip = page.locator('.usage-chip');
+  await expect(chip).toBeVisible();
+  await expect(chip).toContainText(/Codex with ChatGPT, week, 91%/);
+  // Past 80 percent the bar takes the signal colour.
+  await expect(chip.locator('.usage-fill.signal')).toBeVisible();
+  // The chip opens Settings at the helpers section with both bars.
+  await chip.click();
+  await expect(page.getByRole('heading', { name: 'Helpers on this computer', exact: true })).toBeVisible();
+  const codexService = page.locator('.service', { has: page.getByRole('heading', { name: /Codex/ }) });
+  await expect(codexService.locator('.usage-row')).toHaveCount(2);
+  await expect(codexService).toContainText(/5 hours/);
+  await expect(codexService).toContainText(/91%/);
+  await expect(codexService).toContainText(/Resets /);
+  await expect(codexService).toContainText(/Last thread: 12.4k of 200k context, 3.1k written, \$0.04/);
+  await expect(codexService.locator('.usage-fill.signal')).toBeVisible();
+  const banned = /\b(?:kanban|git|github|repo|repository|branch|commit|agent|agentic|worker|model|llm|context window|tokens|mcp|patch|diff|prompt|pipeline|orchestration|autonomous|copilot)\b/gi;
+  expect((await codexService.innerText()).match(banned) ?? [], 'Forbidden words in the usage block').toEqual([]);
+  // Switching Codex back off hides the chip again.
+  const backOff = await page.request.put('/api/settings', { headers, data: { services: { codex: false } } });
+  expect(backOff.ok()).toBe(true);
+  await page.reload();
+  await expect(page.locator('.usage-chip')).toHaveCount(0);
+});
+
 test('Landing: ask box carries a draft into the chosen project', async ({ page }) => {
   const headers = { 'X-Diomedes-Client': '1' };
   const setup = await page.request.put('/api/settings', { headers, data: {

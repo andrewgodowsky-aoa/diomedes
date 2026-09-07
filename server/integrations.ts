@@ -10,6 +10,12 @@ import {
   pendingDiscovery,
   type DiscoveryResult,
 } from './discovery.js';
+import {
+  meterFromTokenUsage,
+  usageService,
+  windowsFromRateLimits,
+  type UsageService,
+} from './usage.js';
 
 // Protocol generated from the installed 0.153.4 CLI. An upgrade needs a new
 // isolation proof, particularly for the experimental empty-environments field.
@@ -434,6 +440,7 @@ interface IntegrationDependencies {
   fetch: typeof globalThis.fetch;
   turnTimeoutMs: number;
   discovery: () => Promise<DiscoveryResult>;
+  usage: UsageService;
 }
 
 async function initialize(client: NativeRpc): Promise<string> {
@@ -469,6 +476,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     fetch: globalThis.fetch,
     turnTimeoutMs: TURN_TIMEOUT_MS,
     discovery: () => createDiscovery({ fetch: dependencies.fetch }).discover(),
+    usage: usageService,
     ...overrides,
   };
   let coreCache:
@@ -503,6 +511,16 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       client = await dependencies.createClient();
       status.version = await initialize(client);
       status.installedVersion = status.version;
+      // The allowance is advisory: a failed read leaves the last snapshot in
+      // place and never changes the outcome of the status check itself.
+      try {
+        const limits = await client.request('account/rateLimits/read', {});
+        const mapped = windowsFromRateLimits(limits);
+        if (mapped.windows.length || mapped.plan || mapped.credits)
+          dependencies.usage.record('codex', { ...mapped, source: 'poll' });
+      } catch {
+        // Keep whatever the service last reported.
+      }
       await requireChatGpt(client);
       status.signIn = 'signed-in';
       status.status = 'Checking read-only boundary';
@@ -868,6 +886,28 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
                 String(params.message || 'The Codex connection closed.'),
               ),
             );
+            return;
+          }
+          // Only these two usage notifications join the accepted set; every
+          // other unknown method keeps the existing behaviour below.
+          if (method === 'account/rateLimits/updated') {
+            try {
+              const mapped = windowsFromRateLimits(params);
+              if (mapped.windows.length || mapped.plan || mapped.credits)
+                dependencies.usage.record('codex', { ...mapped, source: 'push' });
+            } catch {
+              // Keep whatever the service last reported.
+            }
+            return;
+          }
+          if (method === 'thread/tokenUsage/updated') {
+            if (params.threadId && params.threadId !== threadId) return;
+            const mapped = meterFromTokenUsage(params);
+            if (mapped)
+              dependencies.usage.record('codex', {
+                thread: { id: mapped.threadId ?? threadId, meter: mapped.meter },
+                source: 'turn',
+              });
             return;
           }
           if (params.threadId && params.threadId !== threadId) return;

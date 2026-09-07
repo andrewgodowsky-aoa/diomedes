@@ -8,6 +8,9 @@ import type {
   Settings,
   Surface,
   TaskState,
+  UsageMeter,
+  UsageSnapshot,
+  UsageWindow,
 } from '../shared/types';
 
 export const pages = [
@@ -271,6 +274,78 @@ export function SessionStatus({
 }
 export function askDraftKey(projectId: string) {
   return `diomedes.ask-draft.${projectId}`;
+}
+
+/** The window closest to empty: the highest percent used. */
+export function tightestWindow(snapshot: UsageSnapshot): UsageWindow | null {
+  let best: UsageWindow | null = null;
+  for (const window of snapshot.windows)
+    if (!best || window.usedPercent > best.usedPercent) best = window;
+  return best;
+}
+
+/** Compact counts: 12400 becomes 12.4k. */
+export function countK(value: number): string {
+  if (value >= 1000) {
+    const rounded = Math.round(value / 100) / 10;
+    return `${rounded}k`;
+  }
+  return String(Math.round(value));
+}
+
+/** One line for a reported thread meter in the Book. */
+export function meterLine(meter: UsageMeter): string {
+  const written = `${countK(meter.output)} written`;
+  const cost = meter.costUsd !== null ? `, $${meter.costUsd.toFixed(2)}` : '';
+  if (meter.contextWindow !== null)
+    return `Last thread: ${countK(meter.input)} of ${countK(meter.contextWindow)} context, ${written}${cost}`;
+  return `Last thread: ${countK(meter.input)} words used, ${written}${cost}`;
+}
+
+export function UsageBar({ window }: { window: UsageWindow }) {
+  const clamped = Math.min(100, Math.max(0, window.usedPercent));
+  const tone = window.usedPercent >= 100 ? 'fault' : window.usedPercent > 80 ? 'signal' : '';
+  return (
+    <span
+      className="usage-bar"
+      role="img"
+      aria-label={`${window.label}, ${window.usedPercent}% used`}
+      title={`${window.label}, ${window.usedPercent}% used`}
+    >
+      <span className={`usage-fill ${tone}`.trim()} style={{ width: `${clamped}%` }} />
+    </span>
+  );
+}
+
+export function UsageChip({
+  snapshot,
+  name,
+  onOpen,
+}: {
+  snapshot: UsageSnapshot;
+  name: string;
+  onOpen?: () => void;
+}) {
+  const tight = tightestWindow(snapshot);
+  if (!tight) return null;
+  const label = `${name}, ${tight.label}, ${tight.usedPercent}%`;
+  const body = (
+    <>
+      <span>{label}</span>
+      <UsageBar window={tight} />
+    </>
+  );
+  if (!onOpen)
+    return (
+      <span className="usage-chip static" title={label}>
+        {body}
+      </span>
+    );
+  return (
+    <button type="button" className="usage-chip" onClick={onOpen} title="Open Helpers settings">
+      {body}
+    </button>
+  );
 }
 
 export function HelperLine({

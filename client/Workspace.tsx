@@ -15,6 +15,7 @@ import type {
   Task,
   TaskCandidate,
   TaskState,
+  UsageSnapshot,
 } from '../shared/types';
 import { api, ApiError } from './api';
 import {
@@ -27,10 +28,12 @@ import {
   Modal,
   Notice,
   SessionStatus,
+  UsageBar,
   askDraftKey,
   date,
   pages,
   stateNames,
+  tightestWindow,
   time,
   titleCase,
 } from './components';
@@ -47,6 +50,7 @@ interface Props {
   navigate: (page: Page) => void;
   settings: Settings;
   integrations: IntegrationStatus[];
+  usage: UsageSnapshot[];
   saveSettings: (s: Settings) => Promise<void>;
   report: (e: unknown) => void;
   online: boolean;
@@ -57,6 +61,7 @@ export function Workspace({
   navigate,
   settings,
   integrations,
+  usage,
   saveSettings,
   report,
   online,
@@ -663,6 +668,26 @@ export function Workspace({
         ) : (
           <span className="caption">Sample work, on this computer</span>
         )}
+        {(() => {
+          const tight = tightestWindow(
+            usage.find((u) => u.engine === route) ?? {
+              engine: route,
+              at: '',
+              windows: [],
+              source: 'none',
+              detail: '',
+            },
+          );
+          if (!tight) return null;
+          return (
+            <span className="usage-inline">
+              <UsageBar window={tight} />
+              <span className="caption">
+                {tight.label}, {tight.usedPercent}%
+              </span>
+            </span>
+          );
+        })()}
       </div>
     </section>
   );

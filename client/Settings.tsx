@@ -1,24 +1,42 @@
 import { useEffect, useRef, useState } from 'react';
-import type { IntegrationStatus, Settings as SettingsModel } from '../shared/types';
+import type {
+  IntegrationStatus,
+  Settings as SettingsModel,
+  UsageSnapshot,
+} from '../shared/types';
 import {
   Button,
   Mark,
   Modal,
+  UsageBar,
   detailDescriptions,
+  meterLine,
   surfaceDescriptions,
   surfaceOf,
   titleCase,
 } from './components';
 
+function resetLine(resetsAt: string | null): string {
+  if (!resetsAt) return 'No reset time reported.';
+  const at = new Date(resetsAt);
+  const day = at.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const clock = at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `Resets ${day}, ${clock}.`;
+}
+
 export function SettingsPage({
   settings,
   save,
   integrations,
+  usage,
+  openHelpersSignal,
   refresh,
 }: {
   settings: SettingsModel;
   save: (value: SettingsModel) => Promise<void>;
   integrations: IntegrationStatus[];
+  usage: UsageSnapshot[];
+  openHelpersSignal?: number;
   refresh: () => void;
 }) {
   const [section, setSection] = useState('Interface detail');
@@ -39,6 +57,11 @@ export function SettingsPage({
   }, [helpersOpen, integrations, refresh]);
   const surface = surfaceOf(settings);
   const isDesk = surface === 'desk';
+  const helpersSection = isDesk ? 'Engines' : 'Helpers on this computer';
+  // The top-bar chip asks for the helpers section by raising this signal.
+  useEffect(() => {
+    if (openHelpersSignal) setSection(helpersSection);
+  }, [openHelpersSignal, helpersSection]);
   const sections = [
     'Interface detail',
     'Helpers on this computer',
@@ -166,6 +189,29 @@ export function SettingsPage({
                         <span className="caption push-right">{s.status}</span>
                       </div>
                       <p>{s.detail}</p>
+                      {(() => {
+                        const snapshot = usage.find((u) => u.engine === s.id);
+                        if (!snapshot) return null;
+                        return (
+                          <div className="usage-block">
+                            {snapshot.windows.map((w) => (
+                              <div key={w.id}>
+                                <div className="usage-row">
+                                  <span>{w.label}</span>
+                                  <UsageBar window={w} />
+                                  <span>{w.usedPercent}%</span>
+                                </div>
+                                <p className="caption">{resetLine(w.resetsAt)}</p>
+                              </div>
+                            ))}
+                            {snapshot.thread ? (
+                              <p className="caption">{meterLine(snapshot.thread.meter)}</p>
+                            ) : (
+                              <p className="caption">{snapshot.detail}</p>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {isDesk && (
                         <p className="code caption">
                           {s.installedVersion ?? 'Version not reported'}

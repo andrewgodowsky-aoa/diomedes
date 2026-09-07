@@ -288,3 +288,15 @@ export interface TeamState {
   messages: MailboxMessage[];
   runs: TeamRun[];
 }
+export interface UsageWindow { id: string; label: string; usedPercent: number; resetsAt: string | null; durationMins: number | null }
+export interface UsageMeter { input: number; output: number; cached: number; total: number; contextWindow: number | null; costUsd: number | null }
+export interface UsageSnapshot {
+  engine: string;            // integration id
+  at: string;                // ISO time the snapshot was taken
+  windows: UsageWindow[];    // empty when the service reports no allowance
+  plan?: string | null;
+  credits?: { balance: number | null; unlimited: boolean } | null;
+  thread?: { id: string; meter: UsageMeter } | null;   // the most recent thread's meter
+  source: 'push' | 'poll' | 'turn' | 'none';
+  detail: string;            // one plain sentence for what is not reported, or what the numbers mean
+}
