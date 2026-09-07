@@ -11,7 +11,6 @@ import type { AdapterState, IntegrationStatus, SignInState } from '../shared/typ
 const SPAWN_TIMEOUT_MS = 5000;
 const OUTPUT_CAP_CHARS = 4096;
 const FETCH_TIMEOUT_MS = 2500;
-const BODY_CAP_CHARS = 100_000;
 
 export const HERMES_URL = 'http://127.0.0.1:8642/';
 export const OLLAMA_TAGS_URL = 'http://127.0.0.1:11434/api/tags';
@@ -48,7 +47,27 @@ interface SpawnCapture {
   timedOut: boolean;
 }
 
+/**
+ * Windows launcher scripts (.cmd, .bat) cannot be spawned directly without a shell.
+ * Run them through cmd.exe with a fixed argument list; refuse paths that carry
+ * shell metacharacters so nothing from PATH can smuggle a second command.
+ */
+export function commandFor(
+  file: string,
+  args: string[],
+): { file: string; args: string[]; verbatim: boolean } | undefined {
+  if (!/\.(cmd|bat)$/i.test(file)) return { file, args, verbatim: false };
+  if (/["&|<>^%!\r\n]/.test(file) || args.some((arg) => /[\s"&|<>^%!]/.test(arg))) return undefined;
+  return {
+    file: process.env.ComSpec ?? 'cmd.exe',
+    args: ['/d', '/s', '/c', `"${file}" ${args.join(' ')}`],
+    verbatim: true,
+  };
+}
+
 function spawnCapture(file: string, args: string[]): Promise<SpawnCapture> {
+  const command = commandFor(file, args);
+  if (!command) return Promise.resolve({ stdout: '', stderr: '', code: null, timedOut: false });
   return new Promise((resolve) => {
     let settled = false;
     let timedOut = false;
@@ -61,7 +80,11 @@ function spawnCapture(file: string, args: string[]): Promise<SpawnCapture> {
     };
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(file, args, { shell: false, windowsHide: true });
+      child = spawn(command.file, command.args, {
+        shell: false,
+        windowsHide: true,
+        windowsVerbatimArguments: command.verbatim,
+      });
     } catch {
       finish(null);
       return;
@@ -147,7 +170,11 @@ async function resolveBinary(name: string, deps: DiscoveryDeps): Promise<string 
   } catch {
     candidates = [];
   }
-  const hit = candidates.map((line) => line.trim()).find((line) => line.length > 0);
+  const hits = candidates.map((line) => line.trim()).filter((line) => line.length > 0);
+  // `where` lists an extension-less shim before its .cmd twin; prefer what Node can run.
+  const rank = (candidate: string) =>
+    /\.exe$/i.test(candidate) ? 0 : /\.(cmd|bat)$/i.test(candidate) ? 1 : 2;
+  const hit = [...hits].sort((a, b) => rank(a) - rank(b))[0];
   if (hit) return hit;
   for (const folder of knownFolders(deps)) {
     for (const suffix of ['.exe', '.cmd', '']) {
@@ -288,14 +315,12 @@ async function probeBinary(spec: BinarySpec, deps: DiscoveryDeps): Promise<Integ
   return versionedEntry(spec, resolved, version, 'Installed', detail);
 }
 
-async function drainCapped(
-  response: Response,
-): Promise<void> {
+/** The headers already answered; the body is never read, only released. */
+async function drainCapped(response: Response): Promise<void> {
   try {
-    const text = await response.text();
-    void (text.length > BODY_CAP_CHARS);
+    await response.body?.cancel();
   } catch {
-    // The headers already answered; an unreadable body changes nothing.
+    // An unreleasable body changes nothing.
   }
 }
 

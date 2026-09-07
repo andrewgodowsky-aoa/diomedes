@@ -8,6 +8,7 @@ import {
   type DiscoveryDeps,
   type RunResult,
 } from '../server/discovery.js';
+import { commandFor } from '../server/discovery.js';
 import { CODEX_PROTOCOL_VERSION, createIntegrations } from '../server/integrations.js';
 import { createApp } from '../server/app.js';
 
@@ -462,4 +463,41 @@ describe('roster composition', () => {
       await fs.rm(temp, { recursive: true, force: true });
     }
   }, 30_000);
+});
+
+describe('Windows launcher shims', () => {
+  it('prefers an .exe, then a .cmd, over an extension-less shim from where', async () => {
+    const deps = fakeDeps({
+      which: async (name) =>
+        name === 'opencode'
+          ? ['C:\\node\\opencode', 'C:\\node\\opencode.cmd']
+          : name === 'claude'
+            ? ['C:\\bin\\claude', 'C:\\bin\\claude.cmd', 'C:\\bin\\claude.exe']
+            : [],
+      run: async (file) => ({
+        stdout: /\.(exe|cmd)$/i.test(file) ? '9.9.9' : '',
+        stderr: '',
+        code: 0,
+        timedOut: false,
+      }),
+    });
+    const result = await createDiscovery(deps).discover();
+    const opencode = result.engines.find((e) => e.id === 'opencode')!;
+    const claude = result.engines.find((e) => e.id === 'claude-code')!;
+    expect(opencode.location).toBe('C:\\node\\opencode.cmd');
+    expect(opencode.installedVersion).toBe('9.9.9');
+    expect(claude.location).toBe('C:\\bin\\claude.exe');
+  });
+
+  it('runs .cmd launchers through cmd.exe with a fixed argument list and refuses metacharacters', () => {
+    const plain = commandFor('C:\\bin\\claude.exe', ['--version'])!;
+    expect(plain.file).toBe('C:\\bin\\claude.exe');
+    expect(plain.verbatim).toBe(false);
+    const wrapped = commandFor('C:\\a b\\agent.cmd', ['--version'])!;
+    expect(wrapped.file.toLowerCase()).toMatch(/cmd\.exe$/);
+    expect(wrapped.args).toEqual(['/d', '/s', '/c', '"C:\\a b\\agent.cmd" --version']);
+    expect(wrapped.verbatim).toBe(true);
+    expect(commandFor('C:\\x\\a"b & calc\\agent.cmd', ['--version'])).toBeUndefined();
+    expect(commandFor('C:\\x\\agent.cmd', ['--version', '& calc'])).toBeUndefined();
+  });
 });
