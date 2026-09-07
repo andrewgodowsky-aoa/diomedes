@@ -56,7 +56,8 @@ try {
   const sizes = () =>
     page.evaluate(() =>
       Object.fromEntries(
-        ['body', '.task-title', '.task-card .button', '.caption'].map((selector) => [
+        // Under the root zoom the body stays viewport-bound; measure things that scale.
+        ['.task-title', '.task-card .button', '.caption'].map((selector) => [
           selector,
           document.querySelector(selector).getBoundingClientRect().height,
         ]),
