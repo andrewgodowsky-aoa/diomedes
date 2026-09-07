@@ -44,7 +44,8 @@ export interface Settings {
   openProjects: string[];
   lastPage: Record<string, Page>;
   tasksView: Record<string, 'board' | 'list'>;
-  services?: { codex: boolean };
+  /** Which helpers are switched on, by engine id. Only engines whose adapter is ready can be on. */
+  services?: Record<string, boolean>;
 }
 export interface Project {
   id: string;
@@ -207,16 +208,32 @@ export interface ProjectState {
   conversations: Conversation[];
   team?: TeamState;
 }
+/** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */
+export type SignInState = 'signed-in' | 'not-signed-in' | 'unknown' | 'first-use' | 'not-needed';
+/** Whether Diomedes can drive this engine: 'ready' has a proven adapter, 'planned' is in the brief, 'none' is observe-only. */
+export type AdapterState = 'ready' | 'planned' | 'none';
 export interface IntegrationStatus {
   id: string;
   name: string;
   kind: 'online' | 'local' | 'sample';
+  /** The binary or loopback service exists on this computer. */
+  found: boolean;
+  /** Found, and every check an adapter needs has passed. Always false when the adapter is not ready. */
   available: boolean;
   enabled: boolean;
   status: string;
   detail: string;
   capabilities: string[];
+  /** @deprecated use installedVersion; kept for the Desk's version line. */
   version?: string;
+  /** What this computer has. */
+  installedVersion?: string;
+  /** What Diomedes was verified against, when it uses its own pinned copy. */
+  provenVersion?: string;
+  signIn: SignInState;
+  adapter: AdapterState;
+  /** Where the engine was found. Shown on the Desk only. */
+  location?: string;
   disclosure: string[];
 }
 export interface TaskCandidate {

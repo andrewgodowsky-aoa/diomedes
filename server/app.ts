@@ -152,9 +152,13 @@ function validateSettings(current: Settings, body: unknown): Settings {
   }
   if (supplied.services) {
     const value = plain(supplied.services);
-    if (typeof value.codex !== 'boolean')
-      throw new ApiError(400, 'The Codex setting must be true or false.');
-    result.services = { codex: value.codex };
+    const services: Record<string, boolean> = {};
+    for (const [key, on] of Object.entries(value)) {
+      if (!/^[a-z][a-z0-9-]{0,39}$/.test(key) || typeof on !== 'boolean')
+        throw new ApiError(400, 'A helper setting must be true or false.');
+      services[key] = on;
+    }
+    result.services = services;
   }
   if (supplied.openProjects) {
     if (
@@ -345,8 +349,8 @@ export async function createApp(options: AppOptions) {
     route(
       async () => ({
         integrations: (await getIntegrationStatuses()).map((item) =>
-          item.id === 'codex'
-            ? { ...item, enabled: store.settings.services?.codex === true }
+          item.adapter === 'ready' && item.kind !== 'sample'
+            ? { ...item, enabled: store.settings.services?.[item.id] === true }
             : item,
         ),
       }),

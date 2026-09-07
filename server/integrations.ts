@@ -471,8 +471,13 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       id: 'codex',
       name: 'Codex with ChatGPT',
       kind: 'online',
+      found: true,
       available: false,
       enabled: false,
+      signIn: 'unknown',
+      adapter: 'ready',
+      provenVersion: CODEX_PROTOCOL_VERSION,
+      location: CODEX_EXECUTABLE,
       status: 'Disconnected',
       detail: 'Native account and isolation checks have not completed.',
       capabilities: [],
@@ -486,7 +491,9 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     try {
       client = await dependencies.createClient();
       status.version = await initialize(client);
+      status.installedVersion = status.version;
       await requireChatGpt(client);
+      status.signIn = 'signed-in';
       status.status = 'Checking read-only boundary';
       await dependencies.verifySandbox();
       status.available = true;
@@ -511,8 +518,12 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       id: 'localai',
       name: 'LocalAI supervisor',
       kind: 'local',
+      found: false,
       available: false,
       enabled: true,
+      signIn: 'not-needed',
+      adapter: 'none',
+      location: LOCALAI_STATUS_URL,
       status: 'Disconnected',
       detail: 'The loopback supervisor is not responding.',
       capabilities: ['observe-status'],
@@ -546,6 +557,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           'The service did not return the expected supervisor status.',
         );
       const state = payload.state.replace(/[^a-zA-Z0-9 _-]/g, '').slice(0, 80);
+      status.found = true;
       status.available = true;
       status.status = 'Observing';
       status.detail = `Supervisor state: ${state}. ${object(payload.resident).ready === true ? 'A resident model is ready.' : 'No resident model readiness is confirmed.'} Generation is not connected.`;
@@ -565,8 +577,11 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         id: 'sample',
         name: 'Sample work',
         kind: 'sample' as const,
+        found: true,
         available: true,
         enabled: true,
+        signIn: 'not-needed' as const,
+        adapter: 'ready' as const,
         status: 'Ready',
         detail:
           'Deterministic sample work uses Diomedes approvals and history. It does not call an AI engine.',
@@ -579,8 +594,11 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         id: 'aioncore',
         name: 'AionCore',
         kind: 'local' as const,
+        found: false,
         available: false,
         enabled: false,
+        signIn: 'not-needed' as const,
+        adapter: 'none' as const,
         status: 'Not configured',
         detail:
           'The proposed engine host is not installed in Diomedes. The native Codex adapter implements the bounded fallback.',
