@@ -696,9 +696,20 @@ test('Modes: the Book composer shows four modes and Fix needs what is failing', 
   await composer.getByLabel('Paste what went wrong').fill('The list shows the wrong day.');
   await expect(send).toBeEnabled();
   await send.click();
-  const openThread = page.getByRole('button', { name: 'Open thread', exact: true });
-  if (await openThread.count()) await openThread.first().click();
-  else await navigate(page, 'Ask');
+  // The stored turns carry the try; the thread that received them is found by its Fix chip.
+  await expect
+    .poll(async () => {
+      const state = await projectState(page);
+      const thread = state.conversations.find((c) =>
+        c.turns.some((t) => t.role === 'diomedes' && t.mode === 'fix'),
+      );
+      const reply = thread?.turns.filter((t) => t.role === 'diomedes' && t.mode === 'fix').at(-1);
+      return { mode: thread?.mode, attempt: reply?.attempt };
+    })
+    .toEqual({ mode: 'fix', attempt: { n: 1, of: 3 } });
+  await navigate(page, 'Ask');
+  const threads = page.getByRole('region', { name: 'Threads', exact: true });
+  await threads.locator('button', { has: page.locator('.mode-chip[data-mode="fix"]') }).first().click();
   const helperTurn = page.locator('.turn.diomedes').last();
   await expect(helperTurn.locator('.mode-chip')).toContainText('Fix, try 1 of 3');
 });

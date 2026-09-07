@@ -1008,7 +1008,9 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         sandboxPolicy: { type: 'readOnly', networkAccess: false },
         environments: [],
         runtimeWorkspaceRoots: [],
-        effort: input.effort ?? 'low',
+        // Team runs keep the effort they were proven with; a mode's effort applies
+        // to a person's own Ask, Plan, Build and Fix runs only.
+        effort: input.team ? 'low' : (input.effort ?? 'low'),
       });
       return {
         text: await completed,

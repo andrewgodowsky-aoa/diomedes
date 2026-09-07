@@ -674,6 +674,6 @@ describe('per-mode harness values', () => {
     expect(start.baseInstructions).toContain('Only the Diomedes team service is available');
     expect(start.baseInstructions).not.toBe('X');
     const turn = integration.client.calls.find((call) => call.method === 'turn/start')!.params;
-    expect(turn.effort).toBe('medium');
+    expect(turn.effort).toBe('low');
   });
 });

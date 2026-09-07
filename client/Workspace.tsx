@@ -565,10 +565,15 @@ export function Workspace({
   async function send(consent = false) {
     if (!prompt.trim()) return;
     if (mode === 'fix' && !fixReady) return;
+    // Build and Fix on Codex always confirm, matching the service's rule; Ask and
+    // Plan confirm when the setting says so or the notice has not been seen.
     if (
       route === 'codex' &&
       !consent &&
-      (settings.permissions.sending || !settings.seen.onlineServiceNotice)
+      (mode === 'build' ||
+        mode === 'fix' ||
+        settings.permissions.sending ||
+        !settings.seen.onlineServiceNotice)
     ) {
       setPendingOnline(true);
       return;
