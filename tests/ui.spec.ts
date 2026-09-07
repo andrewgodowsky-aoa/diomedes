@@ -87,7 +87,7 @@ test('F01-F02: first run resumes, chooses a surface, and opens the selected surf
   await expect(page.getByRole('heading', { name: 'Ready.', exact: true })).toBeVisible();
   await expect(page.getByText(/You'll use The Desk/)).toBeVisible();
   await page.getByRole('button', { name: 'Open Diomedes' }).click();
-  await page.getByRole('button', { name: 'Open sample project', exact: true }).click();
+  await page.getByRole('button', { name: /^Try the sample project/ }).click();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'desk');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
   await expect(page.getByRole('heading', { name: 'Harbor Street restaurants', exact: true })).toBeVisible();
@@ -127,7 +127,7 @@ test('F04, F06: sample project opens and a plan edit survives reload with Histor
   await page.getByRole('button', { name: 'Projects', exact: true }).click();
   const existing = page.getByRole('button', { name: /^Harbor Street restaurants/ }).first();
   if (await existing.count()) await existing.click();
-  else await page.getByRole('button', { name: 'Open sample project', exact: true }).click();
+  else await page.getByRole('button', { name: /^Try the sample project/ }).click();
   await expect(page.getByRole('heading', { name: 'Harbor Street restaurants', exact: true })).toBeVisible();
   const { projects }: { projects: Project[] } = await (await page.request.get('/api/projects')).json();
   const project = projects.find(item => item.name.includes('Harbor Street'));
