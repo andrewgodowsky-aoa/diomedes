@@ -27,6 +27,7 @@ class FakeNative implements NativeRpc {
   inheritedTeam: Params | undefined;
   nextCursor: string | null = null;
   items: Params[] = [];
+  turnModel: string | null = null;
   request = vi.fn(async (method: string, params: Params): Promise<unknown> => {
     this.calls.push({ method, params });
     switch (method) {
@@ -74,7 +75,10 @@ class FakeNative implements NativeRpc {
             });
             this.emit('turn/completed', {
               threadId: 'synthetic-thread',
-              turn: { status: this.turnStatus },
+              turn: {
+                status: this.turnStatus,
+                ...(this.turnModel ? { model: this.turnModel } : {}),
+              },
             });
           }, 1);
         return { turn: { id: 'synthetic-turn' } };
@@ -384,6 +388,7 @@ describe('native integration boundary', () => {
     expect(answer).toEqual({
       text: 'A native answer.',
       model: 'native-model',
+      version: '0.153.4',
       threadId: 'synthetic-thread',
     });
     const start = integration.client.calls.find((call) => call.method === 'thread/start')!.params;
@@ -425,6 +430,30 @@ describe('native integration boundary', () => {
     });
     expect(JSON.stringify(turn.input)).toContain('A synthetic project plan.');
     expect(integration.verifySandbox).toHaveBeenCalledOnce();
+    expect(integration.client.closed).toBe(true);
+  });
+
+  it('passes an explicit model in thread/start config when given, and leaves the runtime default otherwise', async () => {
+    const integration = setup();
+    await integration.askCodex(request);
+    const plain = integration.client.calls.find((call) => call.method === 'thread/start')!.params;
+    expect(plain.config).not.toHaveProperty('model');
+    const explicit = setup();
+    const answer = await explicit.askCodex({ ...request, model: 'gpt-6-astra' });
+    expect(answer).toMatchObject({ text: 'A native answer.', model: 'native-model' });
+    const start = explicit.client.calls.find((call) => call.method === 'thread/start')!.params;
+    expect(start.config).toMatchObject({ model: 'gpt-6-astra' });
+    expect(explicit.client.closed).toBe(true);
+  });
+
+  it('prefers the turn-reported model when turn/completed carries one', async () => {
+    const integration = setup();
+    integration.client.turnModel = 'turn-reported-model';
+    await expect(integration.askCodex(request)).resolves.toMatchObject({
+      text: 'A native answer.',
+      model: 'turn-reported-model',
+      version: '0.153.4',
+    });
     expect(integration.client.closed).toBe(true);
   });
 

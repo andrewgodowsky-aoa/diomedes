@@ -2493,3 +2493,13 @@ html[data-motion='reduced'] *::after {
 .projects-page .intent-rail {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+
+/* Verified helper caption: the runtime-reported engine under a helper turn. */
+.turn .helper-caption {
+  margin-top: 2px;
+  color: var(--dm-text-2);
+}
+.desk-pane-header .helper-caption {
+  margin-top: 2px;
+  color: var(--dm-text-2);
+}

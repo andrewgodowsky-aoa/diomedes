@@ -619,3 +619,13 @@ test('Landing: ask box carries a draft into the chosen project', async ({ page }
   // helper for a fresh data dir in this spec and projects cannot be deleted
   // via the API, so the no-projects cards cannot be reached in this run.
 });
+
+test('Verified helper: a helper turn shows its runtime caption', async ({ page }) => {
+  await openProject(page);
+  await navigate(page, 'Ask');
+  const askBox = page.getByRole('region', { name: 'Ask box', exact: true });
+  await askBox.getByRole('textbox', { name: 'Ask, plan, or say what to do' }).fill('Which soups are local?');
+  await askBox.getByRole('button', { name: 'Send', exact: true }).click();
+  const helperTurn = page.locator('.turn.diomedes').last();
+  await expect(helperTurn.locator('.helper-caption')).toContainText('Sample work, on this computer');
+});

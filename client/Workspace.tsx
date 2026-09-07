@@ -940,6 +940,14 @@ export function Workspace({
   const codex = integrations.find((i) => i.id === 'codex');
   void codex;
   function historyRow(entry: HistoryEntry) {
+    // The verified helper behind this entry, looked up from its session engine.
+    const entrySession = entry.sessionId
+      ? state?.sessions.find((s) => s.id === entry.sessionId)
+      : undefined;
+    const entryHelper =
+      entrySession?.engine.verified && entrySession.engine.model
+        ? `, Codex, ${entrySession.engine.model}`
+        : '';
     return (
       <div key={entry.id} className="history-entry">
         <time dateTime={entry.time}>{time(entry.time)}</time>
@@ -952,6 +960,7 @@ export function Workspace({
             <p className="code caption">
               {entry.versionId}, {entry.id}
               {entry.commit ? `, maps to commit ${entry.commit}` : ''}
+              {entryHelper}
             </p>
           )}
         </div>
@@ -1351,6 +1360,15 @@ export function Workspace({
                                   <time>{time(t.at)}</time>
                                 </p>
                                 {t.role === 'you' ? <p>{t.text}</p> : <Markdown text={t.text} />}
+                                {t.role === 'diomedes' && t.helper && (
+                                  <p className="caption helper-caption">
+                                    {t.helper.engine === 'codex'
+                                      ? t.helper.verified && t.helper.model
+                                        ? `Codex, ${t.helper.model}`
+                                        : 'Codex, name not reported'
+                                      : 'Sample work, on this computer'}
+                                  </p>
+                                )}
                                 {t.sources?.length > 0 && (
                                   <p className="caption">Sources: {t.sources.join(', ')}</p>
                                 )}

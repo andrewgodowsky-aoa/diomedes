@@ -269,6 +269,47 @@ The implementation keeps going with the pick; overturning one is a small, local 
   new assertions have not been executed here. The zoom/viewport behaviour in
   (1) was verified with a standalone Chromium probe instead.
 
+# Verified helper (muse/verified-model, 2026-09-07)
+
+The Astra finding: a saved conversation showed the helper answering "GPT-5.2 Codex"
+when asked its name. The runtime is Codex CLI 0.153.4 over app-server with a ChatGPT
+account, default `gpt-6-astra`, and no GPT-5.2 among its models. The claim came from the
+helper's prose. The app kept only `askCodex()`'s `.text`, so nothing recorded which
+engine actually answered.
+
+## Which schema field the runtime engine came from
+
+The `thread/start` response's `model` field on the started thread — the value the
+existing adapter already read (`started.model`) and the protocol fakes mirror
+(`model: 'native-model'`, `model: 'fake-model'`). When `turn/completed` carries
+`turn.model` it overrides, since that is the turn that produced the text. `version`
+comes from `initialize` (the `userAgent` check against `CODEX_PROTOCOL_VERSION`).
+The pinned schema dir (`evidence/codex-app-server-0.153.4/`) holds only
+`ListMcpServerStatusResponse.json` plus the README, so there is no pinned
+`ThreadStart`/`TurnCompleted` schema to cite beyond the live binary's behaviour;
+`verified` is true only for these runtime fields, never for anything parsed from text.
+
+## Picks
+
+- Every run passes an explicit selection: `askCodex({ model })` rides in the
+  `thread/start` config (never in prompt text, so the answer cannot rename its own
+  engine), defaulted from `settings.services.codexModel` when present, else the
+  runtime default. The setting is a name, not a switch, so `validateSettings`
+  accepts a ≤120-character string for that one key.
+- Every turn stores `helper: { engine, model, version, verified }`; every session
+  engine carries `version`/`verified` beside its existing fields. Sample work is
+  deterministic, so its helper is `{ engine: 'sample', model: null, verified: true }`.
+- A Plan History sentence names the verified helper when present —
+  `Diomedes, with Codex gpt-6-astra, wrote <plan>` — and falls back to
+  `Diomedes wrote <plan>` when the runtime reported nothing.
+- Captions show the verified value only: `Codex, gpt-6-astra` when verified. The
+  Book never uses the word "model" (a UI test bans it), so an unreported Book
+  helper reads `Codex, name not reported`; the Desk header from a live session
+  reads `Codex, model not reported`. Turns written before this change have no
+  `helper` and show no caption rather than a guessed one.
+- Work turns are created unverified and marked verified by the native worker once
+  the runtime reports; the session engine is set in the same locked step.
+
 # Projects landing — open questions (muse/landing, 2026-09-07)
 
 Unsettled points from the landing task, each with options and the pick I implemented.

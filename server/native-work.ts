@@ -12,7 +12,9 @@ export type NativeGenerator = (input: {
   signal?: AbortSignal;
   team?: NativeTeamOptions;
   onTeamToolCall?: (tool: string) => void;
-}) => Promise<{ text: string; model?: string; threadId?: string }>;
+  /** Explicit model selection, passed in the `thread/start` config when set. */
+  model?: string;
+}) => Promise<{ text: string; model?: string; version?: string; threadId?: string }>;
 interface Source {
   path: string;
   text: string;
@@ -31,6 +33,8 @@ interface NativeRun {
   projectId: string;
   taskId: string;
   sessionId: string;
+  /** The thread turn awaiting this run; marked verified when the runtime reports. */
+  turnId?: string;
   controller: AbortController;
   sources: Source[];
   instruction: string;
@@ -151,7 +155,13 @@ export class NativeWorkService {
   async start(
     projectId: string,
     taskId: string,
-    input: { instruction?: string; sources: string[]; consent: boolean; team?: NativeTeamOptions },
+    input: {
+      instruction?: string;
+      sources: string[];
+      consent: boolean;
+      team?: NativeTeamOptions;
+      turnId?: string;
+    },
   ) {
     if (!this.store.settings.services?.codex)
       throw new ApiError(409, 'Turn Codex on in Settings before using it.');
@@ -239,6 +249,9 @@ export class NativeWorkService {
         branch: null,
         context: bytes,
         events: 0,
+        // Verified once the runtime reports its engine in prepare(); never from text.
+        version: null,
+        verified: false,
       },
     };
     state.sessions.push(session);
@@ -277,6 +290,7 @@ export class NativeWorkService {
       projectId,
       taskId,
       sessionId: session.id,
+      ...(input.turnId ? { turnId: input.turnId } : {}),
       controller: new AbortController(),
       sources,
       instruction,
@@ -316,7 +330,17 @@ export class NativeWorkService {
   }
   private async prepare(run: NativeRun) {
     try {
+      // An explicit selection rides in the thread config, never in prompt text.
+      const settingsModel = (this.store.settings.services as Record<string, unknown> | undefined)
+        ?.codexModel;
+      const requestedModel =
+        typeof settingsModel === 'string' &&
+        settingsModel.trim() &&
+        settingsModel.length <= 120
+          ? settingsModel.trim()
+          : undefined;
       const result = await this.generate({
+        ...(requestedModel ? { model: requestedModel } : {}),
         prompt: [
           'Return STRICT JSON only, with exactly this structure:',
           '{"summary":"Short explanation","changes":[{"path":"relative/file.md","text":"COMPLETE new UTF-8 file content, or null to remove an existing selected file","summary":"What changes and why"}]}',
@@ -359,7 +383,25 @@ export class NativeWorkService {
         const state = this.store.state(run.projectId),
           session = this.session(run),
           task = state.tasks.find((item) => item.id === run.taskId)!;
+        // The runtime-reported engine only; a missing report stays unverified.
         session.engine.model = result.model ? (run.redact?.(result.model) ?? result.model) : null;
+        session.engine.version = result.version ?? null;
+        session.engine.verified = Boolean(result.model);
+        if (run.turnId) {
+          for (const conversation of state.conversations) {
+            const turn = conversation.turns.find((item) => item.id === run.turnId);
+            if (turn?.helper) {
+              turn.helper = {
+                engine: 'codex',
+                model: session.engine.model,
+                version: session.engine.version,
+                verified: session.engine.verified ?? false,
+              };
+              conversation.helper = { engine: 'codex', model: session.engine.model };
+              break;
+            }
+          }
+        }
         const writes: WriteInput[] = [],
           previews: Change[] = [];
         const needId = identifier('N');

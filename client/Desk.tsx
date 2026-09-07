@@ -976,6 +976,15 @@ function Pane({
           {task ? ` · Task: ${task.name}` : ''}
           {live?.engine.context != null ? ` · Context ${Math.round(live.engine.context)}%` : ''}
         </p>
+        {live && (
+          <p className="caption helper-caption">
+            {live.engine.verified && live.engine.model
+              ? `Codex, ${live.engine.model}`
+              : live.engine.name.startsWith('Codex')
+                ? 'Codex, model not reported'
+                : 'Sample work, on this computer'}
+          </p>
+        )}
         <div className="desk-permission" role="group" aria-label="Permission for this thread">
           <div className="segmented compact">
             <button

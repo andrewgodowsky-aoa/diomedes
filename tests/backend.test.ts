@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createServer, request as httpRequest, type Server } from 'node:http';
@@ -18,6 +18,22 @@ import {
 } from '../server/lock.js';
 import { findTasks, hash, Store } from '../server/store.js';
 import type { ProjectState } from '../shared/types.js';
+
+// The Codex runtime is stubbed: no binary launches, no quota is spent. The stub
+// reports a runtime engine the way `thread/start` metadata does, and its text is
+// a valid empty file proposal so Codex Work runs reach `done`.
+vi.mock('../server/integrations.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../server/integrations.js')>();
+  return {
+    ...actual,
+    askCodex: async () => ({
+      text: '{"summary":"A mocked proposal.","changes":[]}',
+      model: 'gpt-6-astra',
+      version: '0.153.4',
+      threadId: 'mock-thread',
+    }),
+  };
+});
 
 let server: Server, app: Awaited<ReturnType<typeof createApp>>, temp: string, url: string;
 const jsonHeaders = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
@@ -899,5 +915,97 @@ describe('the data folder lock tells a live owner from a reused pid', () => {
     expect((await read(file)).pid).toBe(process.pid);
     await claim.release();
     expect(await inspectLock({ pid: 0 })).toEqual({ held: false, reason: 'unreadable' });
+  });
+});
+
+describe('verified helper is stored with every turn and session', () => {
+  test('a Codex Ask turn carries the runtime-reported helper', async () => {
+    await request('/settings', 'PUT', { services: { codex: true } });
+    const id = await sample();
+    const answer = await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'ask',
+      text: 'What should we do?',
+      route: 'codex',
+      consent: true,
+    });
+    expect(answer.status).toBe(200);
+    expect(answer.data.turn.helper).toEqual({
+      engine: 'codex',
+      model: 'gpt-6-astra',
+      version: '0.153.4',
+      verified: true,
+    });
+    expect(answer.data.conversation.helper).toEqual({ engine: 'codex', model: 'gpt-6-astra' });
+  });
+  test('a Codex Plan names the verified helper in its History sentence', async () => {
+    await request('/settings', 'PUT', { services: { codex: true } });
+    const id = await sample();
+    const plan = await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'plan',
+      text: 'Reopen the patio',
+      route: 'codex',
+      consent: true,
+    });
+    expect(plan.status).toBe(200);
+    expect(plan.data.turn.helper).toMatchObject({
+      engine: 'codex',
+      model: 'gpt-6-astra',
+      verified: true,
+    });
+    const current = await state(id);
+    const entry = current.history.find(
+      (item) => item.kind === 'edited' && item.sentence.includes(plan.data.document),
+    );
+    expect(entry?.sentence).toContain('Diomedes, with Codex gpt-6-astra');
+  });
+  test("sample work carries engine 'sample' with verified true on the turn and session", async () => {
+    const id = await sample();
+    const work = await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'work',
+      text: 'Do some sample work',
+    });
+    expect(work.status).toBe(200);
+    expect(work.data.turn.helper).toEqual({
+      engine: 'sample',
+      model: null,
+      version: null,
+      verified: true,
+    });
+    expect(work.data.session.engine).toMatchObject({ verified: true });
+  });
+  test('Codex Work marks the session engine and the thread turn verified once the runtime reports', async () => {
+    await request('/settings', 'PUT', { services: { codex: true } });
+    const id = await sample();
+    const started = await request(`/projects/${id}/ask`, 'POST', {
+      mode: 'work',
+      text: 'Do some Codex work',
+      route: 'codex',
+      consent: true,
+    });
+    expect(started.status).toBe(200);
+    const sessionId = started.data.session.id as string;
+    const turnId = started.data.turn.id as string;
+    const current = await until(
+      id,
+      (candidates) =>
+        ['done', 'failed', 'stopped'].includes(
+          candidates.sessions.find((item) => item.id === sessionId)?.state ?? '',
+        ),
+    );
+    const session = current.sessions.find((item) => item.id === sessionId)!;
+    expect(session.state).toBe('done');
+    expect(session.engine).toMatchObject({
+      model: 'gpt-6-astra',
+      version: '0.153.4',
+      verified: true,
+    });
+    const conversation = current.conversations.find((item) =>
+      item.turns.some((turn) => turn.id === turnId),
+    )!;
+    expect(conversation.turns.find((turn) => turn.id === turnId)?.helper).toMatchObject({
+      engine: 'codex',
+      model: 'gpt-6-astra',
+      verified: true,
+    });
   });
 });

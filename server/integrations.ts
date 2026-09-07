@@ -662,7 +662,13 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     signal?: AbortSignal;
     team?: NativeTeamOptions;
     onTeamToolCall?: (tool: string) => void;
-  }): Promise<{ text: string; model?: string; threadId?: string }> {
+    /**
+     * Explicit model selection. Passed in the `thread/start` config when set;
+     * otherwise the runtime default applies. Callers default it from
+     * `settings.services.codexModel` when present.
+     */
+    model?: string;
+  }): Promise<{ text: string; model?: string; threadId?: string; version?: string }> {
     if (!input.prompt.trim())
       throw new IntegrationError('EMPTY_PROMPT', 'Enter a question or planning request.');
     if (input.signal?.aborted) throw abortError();
@@ -695,7 +701,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         void ownedClient.close().catch(() => {});
       };
       input.signal?.addEventListener('abort', onAbort, { once: true });
-      await initialize(client);
+      const version = await initialize(client);
       await requireChatGpt(client);
 
       // Empty TOML tables merge with native config, so mcp_servers={} is NOT a
@@ -711,6 +717,13 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           Object.keys(object(effective.mcp_servers)).map((name) => [name, { enabled: false }]),
         ),
       };
+      // An explicit selection rides in the thread config, never in the prompt text,
+      // so the answer cannot rename its own engine.
+      const requestedModel =
+        typeof input.model === 'string' && input.model.trim() && input.model.length <= 120
+          ? input.model.trim()
+          : undefined;
+      if (requestedModel) threadConfig.model = requestedModel;
       if (input.team) {
         // HTTP transport/auth/header fields: https://developers.openai.com/codex/mcp/
         // Reject a name collision: TOML tables merge, so inherited commands,
@@ -849,6 +862,10 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         await new Promise<void>((resolve) => setTimeout(resolve, 200));
       }
       let answer = '';
+      // The runtime-reported engine, from the started thread's `model` field
+      // (overridden by `turn.model` on `turn/completed` when the runtime sends
+      // one). Never parsed from the answer text.
+      let reportedModel = typeof started.model === 'string' ? started.model : undefined;
       const completed = new Promise<string>((resolve, reject) => {
         deadline = setTimeout(
           () =>
@@ -908,6 +925,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           }
           if (method === 'turn/completed') {
             const turn = object(params.turn);
+            if (typeof turn.model === 'string' && turn.model) reportedModel = turn.model;
             if (turn.status !== 'completed')
               reject(
                 new IntegrationError(
@@ -948,7 +966,8 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       });
       return {
         text: await completed,
-        model: typeof started.model === 'string' ? started.model : undefined,
+        model: reportedModel,
+        version,
         threadId,
       };
     } catch (error) {
