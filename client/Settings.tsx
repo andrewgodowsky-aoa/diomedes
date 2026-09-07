@@ -27,12 +27,12 @@ export function SettingsPage({
   const isDesk = surface === 'desk';
   const sections = [
     'Interface detail',
-    'Services',
+    'Helpers on this computer',
     'Permissions',
     'History',
     'Appearance',
     'About',
-    ...(isDesk ? ['Engines', 'Connections', 'Rules', 'Developer'] : []),
+    ...(isDesk ? ['Engines', 'Rules', 'Developer'] : []),
   ];
   return (
     <div className="settings-layout">
@@ -117,53 +117,82 @@ export function SettingsPage({
                 </section>
               </>
             )}
-            {(section === 'Services' || section === 'Engines') && (
+            {(section === 'Helpers on this computer' || section === 'Engines') && (
               <>
-                <p className="prose">
-                  Diomedes uses AI services to do work. Here is which ones, and what is sent.
-                </p>
+                {section === 'Engines' ? (
+                  <p className="prose">
+                    Diomedes uses AI services to do work. Here is which ones, and what is sent.
+                  </p>
+                ) : (
+                  <p className="prose">
+                    Diomedes can use these to do work. Here is which ones it found, and what each
+                    one sends.
+                  </p>
+                )}
                 <Button onClick={refresh}>Check connections</Button>
                 <div className="service-list">
-                  {integrations.map((s) => (
+                  {(settings.detail === 'guided' && !isDesk
+                    ? integrations.filter((s) => s.adapter === 'ready')
+                    : integrations
+                  ).map((s) => (
                     <section className="service" key={s.id}>
                       <div className="row">
                         <h3>
-                          <Mark state={s.available ? 'done' : 'todo'} />
-                          {isDesk
-                            ? s.name
-                            : s.kind === 'online'
-                              ? 'Online service'
-                              : s.kind === 'sample'
-                                ? 'Sample work'
-                                : 'Runs on this computer'}
+                          <Mark
+                            state={
+                              s.available && s.enabled
+                                ? 'done'
+                                : s.found && s.adapter === 'ready'
+                                  ? 'waiting'
+                                  : 'todo'
+                            }
+                          />
+                          {s.name}
                         </h3>
                         <span className="caption push-right">{s.status}</span>
                       </div>
                       <p>{s.detail}</p>
                       {isDesk && (
                         <p className="code caption">
-                          {s.version ?? 'Version not reported'}
+                          {s.installedVersion ?? 'Version not reported'}
                           <br />
+                          {s.provenVersion ? (
+                            <>
+                              proven on {s.provenVersion}
+                              <br />
+                            </>
+                          ) : null}
+                          {s.location ? (
+                            <>
+                              {s.location}
+                              <br />
+                            </>
+                          ) : null}
                           {s.capabilities.join(', ') || 'No execution capabilities'}
                         </p>
                       )}
                       <div className="actions">
-                        {s.id === 'codex' && (
+                        {s.adapter === 'ready' && s.kind !== 'sample' && (
                           <label className="switch">
                             <input
                               type="checkbox"
-                              checked={settings.services?.codex ?? false}
+                              checked={settings.services?.[s.id] ?? false}
                               disabled={!s.available}
                               onChange={(e) =>
-                                void save({ ...settings, services: { codex: e.target.checked } })
+                                void save({
+                                  ...settings,
+                                  services: { ...settings.services, [s.id]: e.target.checked },
+                                })
                               }
                             />
-                            {settings.services?.codex ? 'On' : 'Off'}
+                            {settings.services?.[s.id] ? 'On' : 'Off'}
                           </label>
                         )}
-                        <Button tone="quiet" onClick={() => setDisclosure(s)}>
-                          What is sent
-                        </Button>
+                        {s.adapter === 'ready' && (
+                          <Button tone="quiet" onClick={() => setDisclosure(s)}>
+                            What is sent
+                          </Button>
+                        )}
                       </div>
                     </section>
                   ))}
@@ -298,18 +327,6 @@ export function SettingsPage({
                 <p className="caption">
                   Local browser application. Text and Markdown editing. No startup service or remote
                   access.
-                </p>
-              </>
-            )}
-            {section === 'Connections' && (
-              <>
-                <h2>Connected services</h2>
-                <p className="prose">
-                  The local supervisor connection reports availability. It does not start, stop, or
-                  switch services on your computer.
-                </p>
-                <p className="caption">
-                  Additional tool connections are not enabled in this build.
                 </p>
               </>
             )}

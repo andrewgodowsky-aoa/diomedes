@@ -106,6 +106,59 @@ of every foreign call. The requested enabled-host acceptance/refusal proof and
 enabled-host technical session log are blocked, rather than simulated as passing.
 
 
+# Helper roster — open questions (muse/discovery-client, 2026-09-06)
+
+Unsettled points from the helper-roster task, each with options and the pick I implemented.
+The implementation keeps going with the pick; overturning one is a small, local change.
+
+## 1. What does "the section is 'Helpers on this computer'" rename?
+
+- Options: (a) the Settings rail entry (old 'Services') in the Book; (b) a new heading inside the block, keeping the rail entry 'Services'.
+- Pick: (a). The rail entry is now 'Helpers on this computer' in the base list; the Desk keeps its 'Engines' entry. The block renders for either entry. The Desk-only 'Connections' entry and its block are removed.
+
+## 2. What intro does the Desk 'Engines' block show?
+
+- Options: (a) keep the old sentence; (b) reuse the new Book intro.
+- Pick: (a). The task only specifies the Book intro ("Diomedes can use these to do work. Here is which ones it found, and what each one sends."), so the Desk keeps "Diomedes uses AI services to do work. Here is which ones, and what is sent."
+
+## 3. Guided detail on the Desk surface?
+
+- Options: (a) Guided hides non-ready adapters only in the Book; the Desk always shows everything; (b) Guided hides them on both surfaces.
+- Pick: (a), per "Standard and the Desk show everything": the filter applies when `settings.detail === 'guided' && !isDesk`.
+
+## 4. "Entries without a switch show no 'What is sent' button" vs Sample work?
+
+- Options: (a) assert absence only on observe-only entries (localai, aioncore); (b) also hide the button on Sample work.
+- Pick: (a). Sample work has `adapter === 'ready'`, and the button rule is adapter-based, so Sample work keeps its button. The UI test asserts switch/button absence on LocalAI supervisor and AionCore under Standard.
+
+## 5. What does `available` mean on the Desk helpers list?
+
+- Options: (a) the integration's `available` flag gated by the Settings switch (`settings.services[id]`), sample ungated; (b) the raw integration flag.
+- Pick: (a). This preserves the old Start-button behaviour (no "Start with Codex" while its switch is off) and generalises it: any future ready engine becomes startable only after its switch is on.
+
+## 6. Task Start buttons and the thread Helper picker for non-Route engines?
+
+- Options: (a) restrict both to the `Route` union (sample, codex); (b) offer every ready/planned engine.
+- Pick: (a). `shared/types.ts` fixes `Route` to sample/codex, and sending any other route would fail server-side. The "Helpers available" display still lists every ready/planned engine.
+
+## 7. Add-a-helper picker availability: switch-gated or integration flag?
+
+- Options: (a) the integration's `available` flag, per the task wording; (b) switch-gated like the helpers list.
+- Pick: (a). Unavailable options are disabled with the server's `status` in parentheses, e.g. "Claude Code (Installed)".
+
+## 8. `engineNames` extension?
+
+- No change needed: it already names every id in the `TeamMember['engine']` union (codex, claude-code, opencode, oh-my-pi, sample, probe).
+
+## 9. styles.css?
+
+- No new rules were needed; the roster reuses existing `.service`, `.switch`, `.mark`, `.helper-line` and `.text-button` styles.
+
+## 10. Engine ids outside the `TeamMember['engine']` union?
+
+- None added. Discovery-only ids (cursor, hermes, ollama, and any future ones) appear in Settings and the Desk helpers display, but cannot be picked for team membership. If one needs to run work, that is a contract change to `shared/types.ts`, not a client guess.
+
+
 # Team wake — open questions (muse/team-wake, 2026-09-06)
 
 Unsettled points from the wake task, each with options and the pick I implemented.
