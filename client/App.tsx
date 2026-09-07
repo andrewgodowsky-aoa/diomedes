@@ -39,9 +39,11 @@ export function App() {
     const data = await api<{ projects: Project[] }>('/projects');
     setProjects(data.projects);
   }, []);
-  const refreshIntegrations = useCallback(async () => {
+  const refreshIntegrations = useCallback(async (refresh = false) => {
     try {
-      const data = await api<{ integrations: IntegrationStatus[] }>('/integrations');
+      const data = await api<{ integrations: IntegrationStatus[] }>(
+        `/integrations${refresh ? '?refresh=1' : ''}`,
+      );
       setIntegrations(data.integrations);
     } catch (e) {
       report(e);
@@ -351,7 +353,7 @@ export function App() {
                   settings={settings}
                   save={saveSettings}
                   integrations={integrations}
-                  refresh={() => void refreshIntegrations()}
+                  refresh={() => void refreshIntegrations(true)}
                 />
               ) : selected && surface === 'desk' ? (
                 <Desk

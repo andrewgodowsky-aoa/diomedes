@@ -480,3 +480,62 @@ test('Draft recovery: Settings, reload and same-named files in separate projects
   await conflict.getByRole('button', { name: 'Keep editing', exact: true }).click();
   await expect(editor).toHaveValue(staleDraft);
 });
+
+test('Services roster: every reported engine listed with switch discipline; Guided hides non-ready adapters; Desk has no Connections', async ({ page }) => {
+  const headers = { 'X-Diomedes-Client': '1' };
+  const setup = await page.request.put('/api/settings', { headers, data: {
+    surface: 'book',
+    detail: 'guided',
+    services: { codex: false },
+    onboarding: { work: 'business', detail: 'guided', familiarity: 'new', resumeAt: 'done', completedAt: new Date().toISOString() },
+  } });
+  expect(setup.ok()).toBe(true);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const rail = page.getByRole('navigation', { name: 'Settings', exact: true });
+  await rail.getByRole('button', { name: 'Helpers on this computer', exact: true }).click();
+
+  const service = (name: string | RegExp) =>
+    page.locator('.service', { has: page.getByRole('heading', { name }) });
+  // Guided shows only engines Diomedes can run: sample and codex are visible today.
+  await expect(service('Sample work')).toBeVisible();
+  await expect(service(/Codex/)).toBeVisible();
+  await expect(service('LocalAI supervisor')).toHaveCount(0);
+  await expect(service('AionCore')).toHaveCount(0);
+  // The Codex entry has a switch; Sample work has none.
+  await expect(service(/Codex/).locator('input[type="checkbox"]')).toHaveCount(1);
+  await expect(service('Sample work').locator('input[type="checkbox"]')).toHaveCount(0);
+  await expect(service(/Codex/).getByRole('button', { name: 'What is sent' })).toHaveCount(1);
+  // Check connections reaches the server with a refresh request.
+  const [refreshRequest] = await Promise.all([
+    page.waitForRequest(request => request.url().includes('/api/integrations') && request.url().includes('refresh=1')),
+    page.getByRole('button', { name: 'Check connections', exact: true }).click(),
+  ]);
+  expect(refreshRequest.url()).toContain('refresh=1');
+
+  // Standard shows everything, including the observe-only entries.
+  await page.getByRole('button', { name: 'Interface detail menu' }).click();
+  await page.getByRole('button', { name: 'Standard', exact: true }).click();
+  await expect(service('LocalAI supervisor')).toBeVisible();
+  await expect(service('AionCore')).toBeVisible();
+  // Entries without a switch offer no "What is sent" button either.
+  for (const name of ['LocalAI supervisor', 'AionCore']) {
+    await expect(service(name).locator('input[type="checkbox"]')).toHaveCount(0);
+    await expect(service(name).getByRole('button', { name: 'What is sent' })).toHaveCount(0);
+  }
+
+  // The Desk settings keep Engines and no longer list a Connections section.
+  const toDesk = await page.request.put('/api/settings', { headers, data: { surface: 'desk' } });
+  expect(toDesk.ok()).toBe(true);
+  await page.reload();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const deskRail = page.getByRole('navigation', { name: 'Settings', exact: true });
+  await expect(deskRail.getByRole('button', { name: 'Engines', exact: true })).toBeVisible();
+  await expect(deskRail.getByRole('button', { name: 'Connections', exact: true })).toHaveCount(0);
+  await deskRail.getByRole('button', { name: 'Engines', exact: true }).click();
+  await expect(service('Sample work')).toBeVisible();
+  await expect(service(/Codex/)).toBeVisible();
+
+  const toBook = await page.request.put('/api/settings', { headers, data: { surface: 'book', detail: 'guided' } });
+  expect(toBook.ok()).toBe(true);
+});

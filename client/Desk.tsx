@@ -80,7 +80,7 @@ export function Desk({
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [team, setTeam] = useState<TeamState>(emptyTeam);
   const [teamAvailable, setTeamAvailable] = useState(false);
-  const [adding, setAdding] = useState<null | { name: string; role: 'lead' | 'member'; engine: 'codex' | 'sample'; model: string }>(null);
+  const [adding, setAdding] = useState<null | { name: string; role: 'lead' | 'member'; engine: TeamMember['engine']; model: string }>(null);
   const currentId = useRef(projectId);
   currentId.current = projectId;
   const base = `/projects/${projectId}`;
@@ -145,28 +145,19 @@ export function Desk({
   const running =
     state?.sessions.filter((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? [];
   const changes = state?.changes.filter((c) => c.state === 'waiting') ?? [];
-  const codex = integrations.find((i) => i.id === 'codex');
-  const helpers: { id: Route; name: string; engine: string; status: string; available: boolean }[] =
-    [
-      {
-        id: 'sample',
-        name: 'Sample work',
-        engine: 'On this computer, scripted',
-        status: 'Ready',
-        available: true,
-      },
-      {
-        id: 'codex',
-        name: 'Codex',
-        engine: 'ChatGPT subscription, native sign-in',
-        status: !settings.services?.codex
-          ? 'Off. Turn on in Settings > Services.'
-          : codex?.available
-            ? codex.status || 'Ready'
-            : codex?.status || 'Not available',
-        available: !!settings.services?.codex && !!codex?.available,
-      },
-    ];
+  const helpers: { id: string; name: string; engine: string; status: string; available: boolean }[] =
+    integrations
+      .filter((i) => i.adapter === 'ready' || i.adapter === 'planned')
+      .map((i) => ({
+        id: i.id,
+        name: i.name,
+        engine: i.detail,
+        status: i.status,
+        available:
+          i.kind === 'sample' ? i.available : i.available && settings.services?.[i.id] === true,
+      }));
+  // Only these ids can start work or take a thread; the Route contract has no other engine.
+  const routeHelpers = helpers.filter((h) => h.id === 'sample' || h.id === 'codex');
 
   function openPane(id: string) {
     setPanes((p) => (p.includes(id) ? p : [...p, id].slice(-MAX_PANES)));
@@ -575,16 +566,16 @@ export function Desk({
                             </p>
                           )}
                           <div className="actions">
-                            {task.state === 'todo' && (
+                              {task.state === 'todo' && (
                               <>
-                                {helpers
+                                {routeHelpers
                                   .filter((h) => h.available)
                                   .map((h) => (
                                     <Button
                                       key={h.id}
                                       tone={h.id === 'sample' ? 'primary' : ''}
                                       disabled={busy || running.length > 0}
-                                      onClick={() => void startTask(task, h.id)}
+                                      onClick={() => void startTask(task, h.id as Route)}
                                     >
                                       Start with {h.name}
                                     </Button>
@@ -802,13 +793,19 @@ export function Desk({
               Engine
               <select
                 value={adding.engine}
-                onChange={(e) => setAdding({ ...adding, engine: e.target.value as 'codex' | 'sample' })}
+                onChange={(e) => setAdding({ ...adding, engine: e.target.value as TeamMember['engine'] })}
               >
-                {helpers.map((h) => (
-                  <option key={h.id} value={h.id} disabled={!h.available}>
-                    {h.name}
-                  </option>
-                ))}
+                {integrations
+                  .filter((i) =>
+                    (['codex', 'claude-code', 'opencode', 'oh-my-pi', 'sample'] as string[]).includes(
+                      i.id,
+                    ),
+                  )
+                  .map((i) => (
+                    <option key={i.id} value={i.id} disabled={!i.available}>
+                      {i.available ? i.name : `${i.name} (${i.status})`}
+                    </option>
+                  ))}
               </select>
             </label>
             <label className="field">
@@ -887,7 +884,7 @@ function Pane({
   thread: ThreadWithPermission;
   state: ProjectState;
   settings: Settings;
-  helpers: { id: Route; name: string; available: boolean }[];
+  helpers: { id: string; name: string; available: boolean }[];
   busy: boolean;
   online: boolean;
   waiting: Need[];
@@ -1101,11 +1098,13 @@ function Pane({
         <div className="row desk-pane-send">
           {!toTeam && (
             <select aria-label="Helper" value={route} onChange={(e) => setRoute(e.target.value as Route)}>
-              {helpers.map((h) => (
-                <option key={h.id} value={h.id} disabled={!h.available}>
-                  {h.name}
-                </option>
-              ))}
+              {helpers
+                .filter((h) => h.id === 'sample' || h.id === 'codex')
+                .map((h) => (
+                  <option key={h.id} value={h.id} disabled={!h.available}>
+                    {h.name}
+                  </option>
+                ))}
             </select>
           )}
           <Button tone="primary push-right" disabled={busy || !online || !text.trim()} onClick={submit}>

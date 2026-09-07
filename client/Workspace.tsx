@@ -919,33 +919,38 @@ export function Workspace({
     return rows;
   }
   const codex = integrations.find((i) => i.id === 'codex');
-  const helperLine = (
-    <p className="caption helper-line">
-      {settings.services?.codex && codex?.available ? (
-        <span>
-          Codex is on. Your messages and attached documents go to OpenAI through your ChatGPT
-          account.
-        </span>
-      ) : codex?.available ? (
-        <>
-          <span>Codex is signed in but turned off, so Diomedes uses sample work.</span>
-          <button
-            className="text-button"
-            onClick={() =>
-              void saveSettings({ ...settings, services: { ...settings.services, codex: true } })
-            }
-          >
-            Turn Codex on
-          </button>
+  const helperLine = (() => {
+    const runnable = integrations.filter((i) => i.adapter === 'ready' && i.kind !== 'sample');
+    const switchedOn = runnable.find((i) => i.available && settings.services?.[i.id]);
+    const signedIn = runnable.find((i) => i.available);
+    return (
+      <p className="caption helper-line">
+        {switchedOn ? (
           <span>
-            Your messages and attached documents will go to OpenAI through your ChatGPT account.
+            {switchedOn.name} is on. {switchedOn.disclosure[0]}
           </span>
-        </>
-      ) : (
-        <span>Sample work, on this computer. No online service is connected.</span>
-      )}
-    </p>
-  );
+        ) : signedIn ? (
+          <>
+            <span>{signedIn.name} is signed in but turned off, so Diomedes uses sample work.</span>
+            <button
+              className="text-button"
+              onClick={() =>
+                void saveSettings({
+                  ...settings,
+                  services: { ...settings.services, [signedIn.id]: true },
+                })
+              }
+            >
+              Turn {signedIn.name} on
+            </button>
+            <span>{signedIn.disclosure[0]}</span>
+          </>
+        ) : (
+          <span>Sample work, on this computer. No online service is connected.</span>
+        )}
+      </p>
+    );
+  })();
   function historyRow(entry: HistoryEntry) {
     return (
       <div key={entry.id} className="history-entry">
