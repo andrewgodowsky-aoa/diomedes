@@ -528,6 +528,7 @@ export function Desk({
               message={(member, text) => void messageMember(member, text)}
               setPermission={(perm) => void setPermission(thread, perm)}
               decide={(n, r, a) => void resolveNeed(n, r, a)}
+              report={report}
               show={setPreviewNeed}
               stop={(sid) => void stopSession(sid)}
             />
@@ -922,6 +923,7 @@ function Pane({
   decide,
   show,
   stop,
+  report,
 }: {
   thread: ThreadWithPermission;
   state: ProjectState;
@@ -950,6 +952,7 @@ function Pane({
   decide: (need: Need, resolution: 'go-ahead' | 'declined', allow?: boolean) => void;
   show: (need: Need) => void;
   stop: (sessionId: string) => void;
+  report: (e: unknown) => void;
 }) {
   const [mode, setMode] = useState<Mode>(thread.mode ?? 'ask');
   const lastHelper = [...thread.turns].reverse().find((t) => t.role === 'diomedes');
@@ -974,7 +977,10 @@ function Pane({
     }
     setToTeam(false);
     void api(`/projects/${state.project.id}/threads/${thread.id}`, 'PUT', { mode: next }).catch(
-      () => {},
+      (e: unknown) => {
+        report(e);
+        setMode(thread.mode ?? 'ask');
+      },
     );
   }
   const nameOf = (slot: Slot) =>
@@ -1035,7 +1041,7 @@ function Pane({
   const submit = () => {
     const value = text.trim();
     if (!value) return;
-    if (mode === 'fix' && !fixReady) return;
+    if (!toTeam && mode === 'fix' && !fixReady) return;
     if (toTeam && member) {
       message(member, value);
     } else if (mode === 'fix') {

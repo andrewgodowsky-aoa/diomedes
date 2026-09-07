@@ -214,8 +214,8 @@ export interface Conversation {
   taskId?: string | null;
   helper?: { engine: string; model: string | null } | null;
   permission?: ThreadPermission;
-  /** The thread's current mode. Missing on state written before modes; the store fills it. */
-  mode?: Mode;
+  /** The thread's current mode. State written before modes lacks it; the store fills it on load. */
+  mode: Mode;
 }
 export interface ProjectState {
   project: Project;
