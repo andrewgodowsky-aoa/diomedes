@@ -9,6 +9,33 @@ import type { Project, ProjectState, TaskCandidate } from '../shared/types';
 
 // This scenario exercises the native controller and browser plumbing with an
 // injected generator. It never calls a model, uses credentials, or spends quota.
+
+/**
+ * Unlike ui.spec.ts, this file serves the built bundle rather than the dev
+ * server, so it tests whatever was last built. A stale dist does not usually
+ * fail: it passes, against code nobody wrote today, and looks exactly like a
+ * real pass. Refuse to run instead, and say what to do about it.
+ */
+async function expectFreshBundle(dist: string): Promise<void> {
+  const built = (await fs.stat(path.join(dist, 'index.html'))).mtimeMs;
+  let newest = 0;
+  let newestPath = '';
+  for (const dir of ['client', 'shared']) {
+    for (const entry of await fs.readdir(path.resolve(dir), { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const file = path.resolve(dir, entry.name);
+      const { mtimeMs } = await fs.stat(file);
+      if (mtimeMs > newest) {
+        newest = mtimeMs;
+        newestPath = path.relative(process.cwd(), file);
+      }
+    }
+  }
+  expect(
+    built,
+    `dist is older than ${newestPath}, so this spec would test the previous build. Run "npm run build" first.`,
+  ).toBeGreaterThan(newest);
+}
 const port = 47634;
 const baseURL = `http://127.0.0.1:${port}`;
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
@@ -56,6 +83,7 @@ test.beforeAll(async () => {
   });
   const dist = path.resolve('dist');
   await fs.access(path.join(dist, 'index.html'));
+  await expectFreshBundle(dist);
   application.use(express.static(dist));
   application.get('/{*path}', (_request, response) => response.sendFile(path.join(dist, 'index.html')));
   server = application.listen(port, '127.0.0.1');
