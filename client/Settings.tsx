@@ -420,7 +420,7 @@ export function SettingsPage({
           </div>
           <aside className="margin">
             <section className="block">
-              <h3>Services</h3>
+              <h3>{isDesk ? 'Engines' : 'Helpers on this computer'}</h3>
               {integrations
                 .filter((s) => s.kind !== 'local' || s.available)
                 .slice(0, 3)

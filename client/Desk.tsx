@@ -747,7 +747,7 @@ export function Desk({
         <Modal title="Use an online service?" onClose={() => setPendingOnline(null)}>
           <p className="prose">
             Diomedes will use an online service for this. Your instructions are sent to that
-            service. You can change this in Settings &gt; Services.
+            service. You can change this in Settings &gt; Engines.
           </p>
           <p className="caption">
             This uses your existing ChatGPT subscription. There is no paid API fallback.

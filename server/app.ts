@@ -1245,7 +1245,11 @@ export async function createApp(options: AppOptions) {
       } else
         answer =
           mode === 'ask'
-            ? `No service is connected for this request, so Diomedes cannot answer yet.${sources.length ? ` It would read ${sources.slice(0, 3).join(', ')} to answer.` : ''} Turn a service on in Settings > Services.`
+            ? `No service is connected for this request, so Diomedes cannot answer yet.${sources.length ? ` It would read ${sources.slice(0, 3).join(', ')} to answer.` : ''} ${
+                store.settings.surface === 'desk'
+                  ? 'Turn an engine on in Settings > Engines.'
+                  : 'Turn a helper on in Settings > Helpers on this computer.'
+              }`
             : mode === 'plan'
               ? `# ${text.split('\n')[0].slice(0, 120)}\n\nSample plan written without a service on ${now()}. Edit it freely.\n\n1. ${text.replaceAll('\n', ' ').slice(0, 240)}\n2. Review what changed\n3. Call anyone who needs to know\n`
               : 'Started clearly labelled sample work. No AI service is involved.';

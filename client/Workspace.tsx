@@ -2129,7 +2129,7 @@ export function Workspace({
           <p className="prose">
             Diomedes will use an online service for this. Your instructions
             {attached || (page === 'plan' && path) ? ` and ${attached || path}` : ''} are sent to
-            that service. You can change this in Settings &gt; Services.
+            that service. You can change this in Settings &gt; Helpers on this computer.
           </p>
           <p className="caption">
             This uses your existing ChatGPT subscription. There is no paid API fallback.
