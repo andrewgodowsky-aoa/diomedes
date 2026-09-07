@@ -166,20 +166,72 @@ describe('binary engine discovery', () => {
   it('a timing-out --version still yields found with no version', async () => {
     const discovery = createDiscovery(
       fakeDeps({
-        which: async (name) => (name === 'agent' ? ['C:\\tools\\agent.exe'] : []),
+        which: async (name) => (name === 'opencode' ? ['C:\\tools\\opencode.exe'] : []),
         run: async () => ({ stdout: '', stderr: '', code: null, timedOut: true }),
+      }),
+    );
+    const { engines } = await discovery.discover();
+    const opencode = engines.find((entry) => entry.id === 'opencode')!;
+    expect(opencode).toMatchObject({
+      found: true,
+      available: false,
+      status: 'Installed',
+      detail: 'OpenCode is installed. Its version could not be read. Diomedes cannot run it yet.',
+      location: 'C:\\tools\\opencode.exe',
+    });
+    expect(opencode.installedVersion).toBeUndefined();
+  });
+
+  it('reports Cursor as installed without running its launcher', async () => {
+    const ran: string[] = [];
+    const discovery = createDiscovery(
+      fakeDeps({
+        which: async (name) => (name === 'agent' ? ['C:\\tools\\agent.cmd'] : []),
+        run: async (file) => {
+          ran.push(file);
+          return okRun('2026.1.1');
+        },
       }),
     );
     const { engines } = await discovery.discover();
     const cursor = engines.find((entry) => entry.id === 'cursor')!;
     expect(cursor).toMatchObject({
       found: true,
-      available: false,
       status: 'Installed',
-      detail: 'Cursor is installed. Its version could not be read. Diomedes does not use it.',
-      location: 'C:\\tools\\agent.exe',
+      detail: 'Cursor is installed. Diomedes does not use it.',
+      location: 'C:\\tools\\agent.cmd',
     });
     expect(cursor.installedVersion).toBeUndefined();
+    expect(ran).toEqual([]);
+  });
+
+  it('runs one probe at a time', async () => {
+    let active = 0;
+    let peak = 0;
+    const slow = async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+    };
+    const discovery = createDiscovery(
+      fakeDeps({
+        which: async (name) => {
+          await slow();
+          return [`C:\\tools\\${name}.exe`];
+        },
+        run: async () => {
+          await slow();
+          return okRun('1.0.0');
+        },
+        fetch: (async () => {
+          await slow();
+          throw new Error('connection refused');
+        }) as typeof globalThis.fetch,
+      }),
+    );
+    await discovery.discover();
+    expect(peak).toBe(1);
   });
 
   it('a failing --version still yields found with no version', async () => {
@@ -328,7 +380,7 @@ describe('loopback service discovery', () => {
 describe('codex drift notice', () => {
   const driftDetail = (version: string | undefined) =>
     noRuntimeIntegrations((async () => ({ engines: [], codexInstalledVersion: version })) as never)
-      .getIntegrationStatuses()
+      .getIntegrationStatuses({ refresh: true })
       .then((statuses) => statuses.find((entry) => entry.id === 'codex')!.detail);
 
   it('appends the drift sentence when the installed copy differs', async () => {
@@ -361,7 +413,7 @@ describe('roster composition', () => {
       fetch: localAiOkFetch(),
       discovery: (async () => full) as never,
     });
-    return integrations.getIntegrationStatuses();
+    return integrations.getIntegrationStatuses({ refresh: true });
   }
 
   it('returns the roster in order', async () => {
@@ -426,12 +478,26 @@ describe('roster composition', () => {
         return { engines: [], codexInstalledVersion: undefined };
       }) as never,
     });
+    const before = await integrations.getIntegrationStatuses();
     await integrations.getIntegrationStatuses();
+    expect(calls).toBe(0);
+    expect(before.map((entry) => entry.id)).toEqual(ROSTER);
+    const pending = before.filter((entry) => entry.status === 'Not checked');
+    expect(pending.map((entry) => entry.id)).toEqual([
+      'claude-code',
+      'opencode',
+      'oh-my-pi',
+      'cursor',
+      'hermes',
+      'ollama',
+    ]);
+    expect(pending.every((entry) => !entry.found && !entry.available)).toBe(true);
+    expect(pending.every((entry) => !BANNED.test(entry.detail))).toBe(true);
+    await integrations.getIntegrationStatuses({ refresh: true });
+    expect(calls).toBe(1);
     await integrations.getIntegrationStatuses();
     expect(calls).toBe(1);
     await integrations.getIntegrationStatuses({ refresh: true });
-    expect(calls).toBe(2);
-    await integrations.getIntegrationStatuses();
     expect(calls).toBe(2);
   });
 

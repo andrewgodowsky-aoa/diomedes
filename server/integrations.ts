@@ -4,7 +4,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import type { IntegrationStatus } from '../shared/types.js';
-import { createDiscovery, emptyDiscovery, type DiscoveryResult } from './discovery.js';
+import {
+  createDiscovery,
+  emptyDiscovery,
+  pendingDiscovery,
+  type DiscoveryResult,
+} from './discovery.js';
 
 // Protocol generated from the installed 0.153.4 CLI. An upgrade needs a new
 // isolation proof, particularly for the experimental empty-environments field.
@@ -583,7 +588,9 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     if (!coreCache || refresh || Date.now() - coreCache.at >= 30_000) {
       coreCache = { at: Date.now(), result: Promise.all([codexStatus(), localAiStatus()]) };
     }
-    if (!discoveryCache || refresh) {
+    // Discovery starts child processes, so it runs only when someone asks
+    // (Settings > Helpers, or Check connections), never at app start.
+    if (refresh) {
       discoveryCache = {
         result: dependencies.discovery().then(
           (value) => value,
@@ -592,7 +599,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       };
     }
     const core = coreCache.result;
-    const found = discoveryCache.result;
+    const found = discoveryCache?.result ?? Promise.resolve(pendingDiscovery());
     return Promise.all([core, found]).then(([[codex, localai], discovery]) => {
       let codexEntry = codex;
       const extra = discovery.codexInstalledVersion;

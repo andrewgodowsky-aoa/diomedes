@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { IntegrationStatus, Settings as SettingsModel } from '../shared/types';
 import {
   Button,
@@ -23,6 +23,20 @@ export function SettingsPage({
 }) {
   const [section, setSection] = useState('Interface detail');
   const [disclosure, setDisclosure] = useState<IntegrationStatus | null>(null);
+  // Discovery starts only when this page asks for it, once per visit to the helpers section.
+  const askedForHelpers = useRef(false);
+  const helpersOpen = section === 'Helpers on this computer' || section === 'Engines';
+  useEffect(() => {
+    if (!helpersOpen) {
+      askedForHelpers.current = false;
+      return;
+    }
+    if (askedForHelpers.current) return;
+    if (integrations.some((s) => s.status === 'Not checked')) {
+      askedForHelpers.current = true;
+      refresh();
+    }
+  }, [helpersOpen, integrations, refresh]);
   const surface = surfaceOf(settings);
   const isDesk = surface === 'desk';
   const sections = [

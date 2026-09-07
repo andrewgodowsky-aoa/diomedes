@@ -201,13 +201,15 @@ interface BinarySpec {
   kind: 'online' | 'local';
   signIn: SignInState;
   adapter: AdapterState;
+  /** false: report the binary as installed without running it (its launcher starts an interpreter). */
+  probeVersion?: boolean;
 }
 
 const BINARY_SPECS: BinarySpec[] = [
   { id: 'claude-code', name: 'Claude Code', binary: 'claude', kind: 'online', signIn: 'first-use', adapter: 'planned' },
   { id: 'opencode', name: 'OpenCode', binary: 'opencode', kind: 'online', signIn: 'first-use', adapter: 'planned' },
   { id: 'oh-my-pi', name: 'oh-my-pi', binary: 'omp', kind: 'online', signIn: 'first-use', adapter: 'planned' },
-  { id: 'cursor', name: 'Cursor', binary: 'agent', kind: 'online', signIn: 'first-use', adapter: 'none' },
+  { id: 'cursor', name: 'Cursor', binary: 'agent', kind: 'online', signIn: 'first-use', adapter: 'none', probeVersion: false },
 ];
 
 function notFoundEntry(spec: Pick<BinarySpec, 'id' | 'name' | 'kind' | 'signIn' | 'adapter'>): IntegrationStatus {
@@ -297,9 +299,34 @@ function versionedEntry(
   };
 }
 
+/** Roster entries before anyone has asked Diomedes to look: honest, and no process is started. */
+export function pendingDiscovery(): DiscoveryResult {
+  const pending = (spec: Pick<BinarySpec, 'id' | 'name' | 'kind' | 'signIn' | 'adapter'>): IntegrationStatus => ({
+    ...notFoundEntry(spec),
+    status: 'Not checked',
+    detail: `Diomedes has not looked for ${spec.name} yet. Press Check connections.`,
+  });
+  return {
+    engines: [
+      ...BINARY_SPECS.map(pending),
+      { ...hermesDownEntry(), status: 'Not checked', detail: 'Diomedes has not looked for Hermes yet. Press Check connections.' },
+      pending(OLLAMA_SPEC),
+    ],
+    codexInstalledVersion: undefined,
+  };
+}
+
 async function probeBinary(spec: BinarySpec, deps: DiscoveryDeps): Promise<IntegrationStatus> {
   const resolved = await resolveBinary(spec.binary, deps);
   if (!resolved) return notFoundEntry(spec);
+  if (spec.probeVersion === false)
+    return {
+      ...notFoundEntry(spec),
+      found: true,
+      status: 'Installed',
+      detail: `${spec.name} is installed. Diomedes does not use it.`,
+      location: resolved,
+    };
   let version: string | undefined;
   try {
     const result = await deps.run(resolved, ['--version']);
@@ -459,18 +486,16 @@ export function createDiscovery(overrides: Partial<DiscoveryDeps> = {}): {
 } {
   const deps: DiscoveryDeps = { ...defaultDiscoveryDeps(), ...overrides };
 
+  // One probe at a time: never a burst of child processes, and one hanging
+  // probe delays the rest instead of piling up beside them.
   async function discover(): Promise<DiscoveryResult> {
     try {
-      const [binaries, hermes, ollama, codexInstalledVersion] = await Promise.all([
-        Promise.allSettled(BINARY_SPECS.map((spec) => probeBinary(spec, deps))),
-        probeHermes(deps).catch(() => hermesDownEntry()),
-        probeOllama(deps).catch(() => notFoundEntry(OLLAMA_SPEC)),
-        probeCodexVersion(deps).catch(() => undefined),
-      ]);
-      const engines: IntegrationStatus[] = binaries.map((result, index) =>
-        result.status === 'fulfilled' ? result.value : notFoundEntry(BINARY_SPECS[index]),
-      );
-      engines.push(hermes, ollama);
+      const engines: IntegrationStatus[] = [];
+      for (const spec of BINARY_SPECS)
+        engines.push(await probeBinary(spec, deps).catch(() => notFoundEntry(spec)));
+      engines.push(await probeHermes(deps).catch(() => hermesDownEntry()));
+      engines.push(await probeOllama(deps).catch(() => notFoundEntry(OLLAMA_SPEC)));
+      const codexInstalledVersion = await probeCodexVersion(deps).catch(() => undefined);
       return { engines, codexInstalledVersion };
     } catch {
       return emptyDiscovery();
