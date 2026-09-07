@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import type { IntegrationStatus } from '../shared/types.js';
+import { createDiscovery, emptyDiscovery, type DiscoveryResult } from './discovery.js';
 
 // Protocol generated from the installed 0.153.4 CLI. An upgrade needs a new
 // isolation proof, particularly for the experimental empty-environments field.
@@ -427,6 +428,7 @@ interface IntegrationDependencies {
   verifySandbox: () => Promise<void>;
   fetch: typeof globalThis.fetch;
   turnTimeoutMs: number;
+  discovery: () => Promise<DiscoveryResult>;
 }
 
 async function initialize(client: NativeRpc): Promise<string> {
@@ -461,9 +463,13 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     verifySandbox: verifyWindowsSandbox,
     fetch: globalThis.fetch,
     turnTimeoutMs: TURN_TIMEOUT_MS,
+    discovery: () => createDiscovery({ fetch: dependencies.fetch }).discover(),
     ...overrides,
   };
-  let statusCache: { at: number; result: Promise<IntegrationStatus[]> } | undefined;
+  let coreCache:
+    | { at: number; result: Promise<[IntegrationStatus, IntegrationStatus]> }
+    | undefined;
+  let discoveryCache: { result: Promise<DiscoveryResult> } | undefined;
   let activeRequests = 0;
 
   async function codexStatus(): Promise<IntegrationStatus> {
@@ -570,44 +576,77 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     return status;
   }
 
-  function getIntegrationStatuses(): Promise<IntegrationStatus[]> {
-    if (statusCache && Date.now() - statusCache.at < 30_000) return statusCache.result;
-    const result = Promise.all([codexStatus(), localAiStatus()]).then(([codex, localai]) => [
-      {
-        id: 'sample',
-        name: 'Sample work',
-        kind: 'sample' as const,
-        found: true,
-        available: true,
-        enabled: true,
-        signIn: 'not-needed' as const,
-        adapter: 'ready' as const,
-        status: 'Ready',
-        detail:
-          'Deterministic sample work uses Diomedes approvals and history. It does not call an AI engine.',
-        capabilities: ['sample-work'],
-        disclosure: ['Sample output is labeled throughout the app.'],
-      },
-      codex,
-      localai,
-      {
-        id: 'aioncore',
-        name: 'AionCore',
-        kind: 'local' as const,
-        found: false,
-        available: false,
-        enabled: false,
-        signIn: 'not-needed' as const,
-        adapter: 'none' as const,
-        status: 'Not configured',
-        detail:
-          'The proposed engine host is not installed in Diomedes. The native Codex adapter implements the bounded fallback.',
-        capabilities: [],
-        disclosure: ['No AionCore process is launched.'],
-      },
-    ]);
-    statusCache = { at: Date.now(), result };
-    return result;
+  function getIntegrationStatuses(options: { refresh?: boolean } = {}): Promise<
+    IntegrationStatus[]
+  > {
+    const refresh = options.refresh === true;
+    if (!coreCache || refresh || Date.now() - coreCache.at >= 30_000) {
+      coreCache = { at: Date.now(), result: Promise.all([codexStatus(), localAiStatus()]) };
+    }
+    if (!discoveryCache || refresh) {
+      discoveryCache = {
+        result: dependencies.discovery().then(
+          (value) => value,
+          () => emptyDiscovery(),
+        ),
+      };
+    }
+    const core = coreCache.result;
+    const found = discoveryCache.result;
+    return Promise.all([core, found]).then(([[codex, localai], discovery]) => {
+      let codexEntry = codex;
+      const extra = discovery.codexInstalledVersion;
+      if (extra && extra !== CODEX_PROTOCOL_VERSION) {
+        codexEntry = {
+          ...codex,
+          detail: `${codex.detail} Codex ${extra} is also installed on this computer; Diomedes uses its own proven ${CODEX_PROTOCOL_VERSION} copy.`,
+        };
+      }
+      const byId = new Map(discovery.engines.map((entry) => [entry.id, entry]));
+      const fallback = emptyDiscovery().engines;
+      const pick = (id: string): IntegrationStatus =>
+        byId.get(id) ?? fallback.find((entry) => entry.id === id)!;
+      return [
+        {
+          id: 'sample',
+          name: 'Sample work',
+          kind: 'sample' as const,
+          found: true,
+          available: true,
+          enabled: true,
+          signIn: 'not-needed' as const,
+          adapter: 'ready' as const,
+          status: 'Ready',
+          detail:
+            'Deterministic sample work uses Diomedes approvals and history. It does not call an AI engine.',
+          capabilities: ['sample-work'],
+          disclosure: ['Sample output is labeled throughout the app.'],
+        },
+        codexEntry,
+        pick('claude-code'),
+        pick('opencode'),
+        pick('oh-my-pi'),
+        pick('cursor'),
+        pick('hermes'),
+        localai,
+        pick('ollama'),
+        {
+          id: 'aioncore',
+          name: 'AionCore',
+          kind: 'local' as const,
+          found: false,
+          available: false,
+          enabled: false,
+          signIn: 'not-needed' as const,
+          adapter: 'none' as const,
+          status: 'Not configured',
+          detail:
+            'The proposed engine host is not installed in Diomedes. The native Codex adapter implements the bounded fallback.',
+          capabilities: [],
+          disclosure: ['No AionCore process is launched.'],
+        },
+      ];
+    });
   }
 
   async function askCodex(input: {

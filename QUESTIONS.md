@@ -174,3 +174,98 @@ The implementation keeps going with the pick; overturning one is a small, local 
   run under `store.locked`. A real starter that needs the store must not synchronously
   re-enter `store.locked` (it is a queue — re-entering from inside deadlocks). Do the
   store-dependent run setup asynchronously outside the lock, or restructure the call.
+
+
+# Engine discovery — open questions (muse/discovery-server, 2026-09-06)
+
+Every judgment call below lists the options and the pick I implemented.
+`shared/types.ts` needed no change: every new entry fills the existing
+`IntegrationStatus` contract (`available: false` whenever the adapter is not
+`ready`), setting both `version` and `installedVersion` when a version is read
+(the Desk still renders the deprecated `version` line).
+
+## 1. Banned-word test scope vs the pre-existing LocalAI detail
+
+- Options: (a) assert no banned word on every roster entry, which fails today
+  because the untouched `localai` detail says "A resident model is ready";
+  (b) scope the banned-word assertion to the six discovered entries plus the
+  appended Codex drift sentence.
+- Pick: (b). `server/integrations.ts` edits were limited to
+  `getIntegrationStatuses` and its cache, so the existing `localai`/`codex`
+  sentences stay as they are. (The UI banned-word test only visits Home, Ask,
+  Plan, Work, Review, Tasks, Documents and History — not the Services page —
+  so the existing wording does not trip it either.)
+
+## 2. Version-unreadable tail for adapter `none` engines (Cursor, Ollama)
+
+- The brief gives one unreadable sentence ending "...Diomedes cannot run it
+  yet." Options: (a) use it verbatim for every engine; (b) keep the tail
+  adapter-specific — `planned` keeps "cannot run it yet", `none` uses
+  "does not use it", matching the versioned sentences.
+- Pick: (b). Cursor unreadable reads "Cursor is installed. Its version could
+  not be read. Diomedes does not use it." Ollama unreadable omits the version
+  but keeps the running distinction ("Ollama is installed but not running..."
+  / "Ollama is running...").
+
+## 3. Ollama port open but no binary
+
+- Options: (a) `found: false` because the binary is the find rule; (b)
+  `found: true` + Running without a version, since a 200 from
+  `/api/tags` is direct evidence the engine is there.
+- Pick: (b). `found` is binary-found OR tags-200; `location` falls back to the
+  tags URL when no binary resolved.
+
+## 4. `--version` exits non-zero but prints something parseable
+
+- Options: (a) treat any non-zero exit as unreadable; (b) accept the parsed
+  version whenever stdout/stderr parses, and only treat timeout, spawn failure
+  or unparseable output as unreadable.
+- Pick: (b). Some CLIs exit non-zero on `--version`; the version string itself
+  is the evidence. Timeouts always yield unreadable (no partial output is
+  trusted).
+
+## 5. Known-folder lookup details
+
+- Options: (a) platform-specific suffix sets; (b) the same `.exe` / `.cmd` /
+  bare order on every platform, base dir `USERPROFILE ?? HOME`.
+- Pick: (b), exactly the order in the brief. `LOCALAPPDATA\Programs\OpenAI\Codex\bin`
+  is skipped when `LOCALAPPDATA` is unset; the two home folders are skipped
+  when neither `USERPROFILE` nor `HOME` is set.
+
+## 6. PATH lookup timeout or spawn failure
+
+- Options: (a) fail the whole engine probe; (b) treat as "no PATH hit" and
+  fall through to the known folders.
+- Pick: (b). A broken PATH lookup must not hide a folder install; every probe
+  still resolves independently via `Promise.allSettled`-style per-engine
+  catches.
+
+## 7. `createIntegrations` override shape and `getIntegrationStatuses` signature
+
+- Options: (a) inject raw `DiscoveryDeps`; (b) inject a `discovery: () =>
+  Promise<DiscoveryResult>` function, mirroring how `fetch` is injected.
+- Pick: (b). `getIntegrationStatuses(options: { refresh?: boolean } = {})`.
+  The default `discovery` is built from the merged `fetch`, so test fetch
+  mocks also govern the Hermes/Ollama loopback probes.
+
+## 8. What `?refresh=1` refreshes
+
+- Options: (a) only the discovery cache; (b) discovery plus the 30-second
+  codex/localai cache.
+- Pick: (b). A refresh is a user asking for fresh answers, so it bypasses both
+  caches; plain calls reuse discovery indefinitely and codex/localai for
+  30 seconds.
+
+## 9. Hermes body handling
+
+- Options: (a) ignore the body entirely; (b) read and discard it capped at
+  100 KB like `localAiStatus`.
+- Pick: (b). Any HTTP status (even 500) counts as running; an over-cap or
+  unreadable body does not change that — the headers already answered.
+
+## 10. Version source order
+
+- Options: (a) stdout only; (b) stdout then stderr combined, first
+  `\d+\.\d+(\.\d+)?`, sliced to the 4 KB cap before matching.
+- Pick: (b). The slice mirrors the spawn-layer cap, so a version past 4 KB is
+  unreadable rather than trusted.

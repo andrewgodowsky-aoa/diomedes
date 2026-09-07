@@ -347,8 +347,10 @@ export async function createApp(options: AppOptions) {
   app.get(
     '/api/integrations',
     route(
-      async () => ({
-        integrations: (await getIntegrationStatuses()).map((item) =>
+      async (req) => ({
+        integrations: (
+          await getIntegrationStatuses({ refresh: req.query.refresh === '1' })
+        ).map((item) =>
           item.adapter === 'ready' && item.kind !== 'sample'
             ? { ...item, enabled: store.settings.services?.[item.id] === true }
             : item,
