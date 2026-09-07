@@ -3,7 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { createApp } from './app.js';
-import { absent, safeAbsolute } from './paths.js';
+import { claimDataFolder } from './lock.js';
+import { safeAbsolute } from './paths.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = path.resolve(process.env.DIOMEDES_DATA_DIR ?? path.join(root, '.data'));
@@ -16,34 +17,7 @@ if (![port, clientPort].every((p) => Number.isInteger(p) && p >= 1024 && p <= 65
   throw new Error('Diomedes ports must be whole numbers between 1024 and 65535.');
 await safeAbsolute(dataDir);
 await fs.mkdir(dataDir, { recursive: true });
-const lockPath = path.join(dataDir, 'service.lock');
-try {
-  const existing = JSON.parse(await fs.readFile(lockPath, 'utf8')) as { pid: number };
-  let alive = true;
-  try {
-    process.kill(existing.pid, 0);
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') alive = false;
-    else throw error;
-  }
-  if (alive)
-    throw new Error(
-      `Another process (${existing.pid}) holds this Diomedes data folder. Use its service or choose another data folder.`,
-    );
-  await fs.unlink(lockPath);
-} catch (error) {
-  if (!absent(error)) throw error;
-}
-const lock = await fs.open(lockPath, 'wx');
-await lock.writeFile(JSON.stringify({ pid: process.pid, port }));
-await lock.sync();
-await lock.close();
-let closed = false;
-const release = async () => {
-  if (closed) return;
-  closed = true;
-  await fs.unlink(lockPath);
-};
+const { release } = await claimDataFolder(dataDir, { port });
 try {
   const app = await createApp({ dataDir, projectRoot, port, clientPort });
   if (process.argv.includes('--production')) {

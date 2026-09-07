@@ -15,7 +15,7 @@ let window;
 let server;
 let service;
 let shuttingDown = false;
-let lockPath;
+let releaseLock;
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -35,8 +35,7 @@ if (!app.requestSingleInstanceLock()) {
       .then(() => {
         server.closeAllConnections();
         server.close(() => {
-          void fs
-            .unlink(lockPath)
+          void Promise.resolve(releaseLock?.())
             .then(() => app.quit())
             .catch((error) => {
               dialog.showErrorBox('Diomedes could not release its data folder', error.message);
@@ -53,20 +52,7 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       await fs.mkdir(dataDir, { recursive: true });
-      lockPath = path.join(dataDir, 'service.lock');
-      try {
-        const existing = JSON.parse(await fs.readFile(lockPath, 'utf8'));
-        try {
-          process.kill(existing.pid, 0);
-        } catch (error) {
-          if (error.code !== 'ESRCH') throw error;
-          await fs.unlink(lockPath);
-        }
-      } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-      }
-      await fs.writeFile(lockPath, JSON.stringify({ pid: process.pid }), { flag: 'wx' });
-      const { createApp, serveClient } = await import('./server/app.mjs');
+      const { claimDataFolder, createApp, serveClient } = await import('./server/app.mjs');
       // Bind an available loopback port before configuring the origin checks.
       server = createServer();
       await new Promise((resolve, reject) => {
@@ -74,6 +60,9 @@ if (!app.requestSingleInstanceLock()) {
         server.listen(0, '127.0.0.1', resolve);
       });
       const port = server.address().port;
+      // Claim the folder once the port is known: a recorded start time and port
+      // let a later start tell a live Diomedes from a pid the system reused.
+      ({ release: releaseLock } = await claimDataFolder(dataDir, { port }));
       service = await createApp({
         dataDir,
         projectRoot:

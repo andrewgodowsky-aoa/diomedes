@@ -1,9 +1,21 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { request as httpRequest, type Server } from 'node:http';
+import { createServer, request as httpRequest, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { spawn } from 'node:child_process';
 import { createApp } from '../server/app.js';
+import {
+  claimDataFolder,
+  DataFolderInUse,
+  inspectLock,
+  LOCK_NAME,
+  ownStartedAt,
+  portListening,
+  processAlive,
+  processStartedAt,
+  START_TIME_TOLERANCE_MS,
+} from '../server/lock.js';
 import { findTasks, hash, Store } from '../server/store.js';
 import type { ProjectState } from '../shared/types.js';
 
@@ -460,9 +472,7 @@ describe('request and filesystem boundaries', () => {
 describe('threads are first-class conversations', () => {
   test('old state without thread fields loads with fields filled and stays stable', async () => {
     const id = await sample();
-    const task = (
-      await request(`/projects/${id}/tasks`, 'POST', { name: 'Fix patio' })
-    ).data;
+    const task = (await request(`/projects/${id}/tasks`, 'POST', { name: 'Fix patio' })).data;
     const statePath = path.join(temp, 'data', 'projects', id, 'state.json');
     const raw = JSON.parse(await fs.readFile(statePath, 'utf8'));
     const longText =
@@ -572,12 +582,12 @@ describe('threads are first-class conversations', () => {
     });
     expect(renamed.status).toBe(200);
     expect(renamed.data.name).toBe('Renamed thread');
-    expect((await request(`/projects/${id}/threads/${first.data.id}`, 'PUT', { name: '   ' })).status).toBe(
-      400,
-    );
-    expect((await request(`/projects/${id}/threads/Cmissing`, 'PUT', { name: 'Nope' })).status).toBe(
-      404,
-    );
+    expect(
+      (await request(`/projects/${id}/threads/${first.data.id}`, 'PUT', { name: '   ' })).status,
+    ).toBe(400);
+    expect(
+      (await request(`/projects/${id}/threads/Cmissing`, 'PUT', { name: 'Nope' })).status,
+    ).toBe(404);
     await new Promise((resolve) => setTimeout(resolve, 15));
     await request(`/projects/${id}/ask`, 'POST', {
       mode: 'ask',
@@ -682,16 +692,13 @@ describe('threads are first-class conversations', () => {
     expect(listed.status).toBe(200);
     for (const thread of listed.data.threads) expect(thread.permission).toBeDefined();
     const current = await state(id);
-    for (const conversation of current.conversations)
-      expect(conversation.permission).toBeDefined();
+    for (const conversation of current.conversations) expect(conversation.permission).toBeDefined();
   });
   test('migration fills missing thread permission with show-first and stays stable', async () => {
     const id = await sample();
     const statePath = path.join(temp, 'data', 'projects', id, 'state.json');
     const raw = JSON.parse(await fs.readFile(statePath, 'utf8'));
-    raw.conversations = [
-      { id: 'Cperm1', attachedTo: { kind: 'project', ref: id }, turns: [] },
-    ];
+    raw.conversations = [{ id: 'Cperm1', attachedTo: { kind: 'project', ref: id }, turns: [] }];
     await fs.writeFile(statePath, JSON.stringify(raw));
     const reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
     await reloaded.init();
@@ -703,9 +710,7 @@ describe('threads are first-class conversations', () => {
   });
   test('work sessions carry the thread permission, defaulting to show-first', async () => {
     const id = await sample();
-    const thread = (
-      await request(`/projects/${id}/threads`, 'POST', { permission: 'task' })
-    ).data;
+    const thread = (await request(`/projects/${id}/threads`, 'POST', { permission: 'task' })).data;
     const task = (await request(`/projects/${id}/tasks`, 'POST', { name: 'Thread work' })).data;
     const started = await request(`/projects/${id}/work/start`, 'POST', {
       taskId: task.id,
@@ -739,7 +744,6 @@ describe('threads are first-class conversations', () => {
 
 describe('request and filesystem boundaries (continued)', () => {
   test('sample Ask is honest, sample Plan writes a real file, and Codex requires explicit settings and consent', async () => {
-
     const id = await sample();
     const answer = await request(`/projects/${id}/ask`, 'POST', {
       mode: 'ask',
@@ -769,5 +773,131 @@ describe('request and filesystem boundaries (continued)', () => {
       (await request(`/projects/${id}/work/start`, 'POST', { route: 'codex', taskId: 'T1' }))
         .status,
     ).toBe(409);
+  });
+});
+
+describe('the data folder lock tells a live owner from a reused pid', () => {
+  const folder = async () => {
+    const dir = path.join(temp, `lock-${Math.random().toString(36).slice(2, 8)}`);
+    await fs.mkdir(dir, { recursive: true });
+    return dir;
+  };
+  const write = async (dir: string, record: Record<string, unknown>) => {
+    await fs.writeFile(path.join(dir, LOCK_NAME), JSON.stringify(record));
+    return path.join(dir, LOCK_NAME);
+  };
+  const read = async (file: string) => JSON.parse(await fs.readFile(file, 'utf8'));
+  // The suite's own server gives a port that is genuinely accepting connections.
+  const livePort = () => (server.address() as AddressInfo).port;
+  const deadPid = () =>
+    new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore', windowsHide: true });
+      child.once('error', reject);
+      child.once('exit', () => resolve(child.pid as number));
+    });
+
+  test('this platform reports its own start time, and a loopback port is testable', async () => {
+    const measured = await processStartedAt(process.pid);
+    expect(measured).not.toBeNull();
+    expect(Math.abs((measured as number) - ownStartedAt())).toBeLessThanOrEqual(
+      START_TIME_TOLERANCE_MS,
+    );
+    expect(await portListening(livePort())).toBe(true);
+    // Borrow a port, then hand it back, so nothing is listening on it.
+    const spare = createServer();
+    await new Promise<void>((resolve) => spare.listen(0, '127.0.0.1', resolve));
+    const idle = (spare.address() as AddressInfo).port;
+    await new Promise<void>((resolve) => spare.close(() => resolve()));
+    expect(await portListening(idle, 200)).toBe(false);
+  });
+
+  test('a live pid whose start time matches still owns the folder', async () => {
+    const dir = await folder();
+    const file = await write(dir, {
+      pid: process.pid,
+      startedAt: ownStartedAt(),
+      port: livePort(),
+    });
+    expect(await inspectLock(await read(file))).toEqual({
+      held: true,
+      reason: 'start-time-match',
+    });
+    await expect(claimDataFolder(dir)).rejects.toBeInstanceOf(DataFolderInUse);
+    await expect(claimDataFolder(dir)).rejects.toThrow(
+      `Another process (${process.pid}) holds this Diomedes data folder.`,
+    );
+    // A refused claim must leave the owner's lock exactly as it found it.
+    expect((await read(file)).pid).toBe(process.pid);
+  });
+
+  test('a live pid whose start time differs is a reused pid, so the lock is stale', async () => {
+    const dir = await folder();
+    // A listening port as well, to prove the start time settles it on its own.
+    const file = await write(dir, {
+      pid: process.pid,
+      startedAt: ownStartedAt() - 60 * 60 * 1000,
+      port: livePort(),
+    });
+    expect(await inspectLock(await read(file))).toEqual({
+      held: false,
+      reason: 'start-time-mismatch',
+    });
+    const claim = await claimDataFolder(dir, { port: 47631 });
+    const replaced = await read(file);
+    expect(replaced.pid).toBe(process.pid);
+    expect(replaced.port).toBe(47631);
+    expect(typeof replaced.token).toBe('string');
+    expect(Math.abs(replaced.startedAt - ownStartedAt())).toBeLessThanOrEqual(
+      START_TIME_TOLERANCE_MS,
+    );
+    await claim.release();
+    expect(
+      await fs.access(file).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false);
+  });
+
+  test('a dead pid leaves a stale lock that a new start clears', async () => {
+    const dir = await folder();
+    const pid = await deadPid();
+    expect(processAlive(pid)).toBe(false);
+    const file = await write(dir, { pid, startedAt: ownStartedAt(), port: livePort() });
+    expect((await inspectLock(await read(file))).held).toBe(false);
+    const claim = await claimDataFolder(dir);
+    expect((await read(file)).pid).toBe(process.pid);
+    await claim.release();
+  });
+
+  test('an unreadable start time falls back to the recorded port', async () => {
+    const probes = { alive: () => true, startedAt: async () => null };
+    expect(
+      await inspectLock(
+        { pid: 4242, startedAt: 1, port: 47631 },
+        { ...probes, listening: async () => true },
+      ),
+    ).toEqual({ held: true, reason: 'port-active' });
+    expect(
+      await inspectLock(
+        { pid: 4242, startedAt: 1, port: 47631 },
+        { ...probes, listening: async () => false },
+      ),
+    ).toEqual({ held: false, reason: 'port-idle' });
+    // A lock with neither signal is left alone rather than risking two owners.
+    expect(await inspectLock({ pid: 4242 }, probes)).toEqual({
+      held: true,
+      reason: 'unverifiable',
+    });
+  });
+
+  test('a corrupt or pidless lock is cleared instead of blocking a start', async () => {
+    const dir = await folder();
+    const file = path.join(dir, LOCK_NAME);
+    await fs.writeFile(file, 'not json at all');
+    const claim = await claimDataFolder(dir, { port: livePort() });
+    expect((await read(file)).pid).toBe(process.pid);
+    await claim.release();
+    expect(await inspectLock({ pid: 0 })).toEqual({ held: false, reason: 'unreadable' });
   });
 });
