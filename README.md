@@ -157,6 +157,41 @@ approval.
 
 If another Codex version is on PATH, Diomedes says so and still uses its own proven copy.
 
+## Which helper answered
+
+Every answer records which helper produced it, taken from the runtime's own report and
+never from the answer text. A Codex turn keeps the engine, the model name the app-server
+reported for the thread (or for the turn, when `turn/completed` names one) and the
+protocol version from `initialize`. The caption under a helper's turn shows that value,
+"Codex, gpt-6-astra". When the runtime reported nothing the caption says so, "Codex, name
+not reported" in the Book and "Codex, model not reported" on the Desk, rather than
+guessing. Sample work is recorded as sample work. A Codex selection pinned in Settings
+(`services.codexModel`) travels in the thread configuration, never in the text. Turns
+written before 2026-09-07 carry no record and show no caption.
+
+This exists because a saved conversation once showed the helper calling itself
+"GPT-5.2 Codex" while the runtime was `gpt-6-astra`; the name had come from the model's
+own prose.
+
+## Usage
+
+Every helper that reports usage gets a bar. Codex reports its ChatGPT allowance windows
+(`account/rateLimits/read` when its connection is checked, and the
+`account/rateLimits/updated` notification during a turn) and each thread's counts
+(`thread/tokenUsage/updated`). Nothing calls an undocumented endpoint and no number is
+guessed; a helper that reports nothing gets one plain sentence instead.
+
+Where it shows: a chip in the top bar for the helper that is on, with the tightest window
+(the highest percent used) and a 72-pixel bar that takes the signal colour past 80
+percent and the fault colour at 100; every window as a labelled bar with its reset time
+under that helper in Settings; the same bar in each Desk pane header and on each roster
+member. Clicking the chip opens Settings at the helpers section.
+
+The exact rate-limit payload of the pinned Codex 0.153.4 app-server is not captured in
+`evidence/` yet, so the mapping accepts the documented field names defensively and turns
+an unknown shape into "not reported" rather than a number. The first check against a
+signed-in Codex is still to do.
+
 ## Run it
 
 ### Windows desktop

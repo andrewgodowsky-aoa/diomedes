@@ -38,10 +38,13 @@ async function readPlan(page: Page): Promise<DocumentContent> {
 
 async function openProject(page: Page) {
   await page.goto('/');
-  if (await page.getByRole('navigation', { name: 'Project pages', exact: true }).count() === 0) {
-    await page.getByRole('button', { name: /Harbor Street/ }).first().click();
-  }
-  await expect(page.getByRole('navigation', { name: 'Project pages', exact: true })).toBeVisible();
+  const nav = page.getByRole('navigation', { name: 'Project pages', exact: true });
+  const card = page.getByRole('button', { name: /Harbor Street/ }).first();
+  // The app paints once its settings arrive and may reopen the last project then,
+  // so wait until it has settled on either the landing card or a project.
+  await expect(nav.or(card).first()).toBeVisible();
+  if ((await nav.count()) === 0) await card.click();
+  await expect(nav).toBeVisible();
 }
 
 test('F01-F02: first run resumes, chooses a surface, and opens the selected surface', async ({ page }) => {
@@ -610,7 +613,7 @@ test('Usage: chip, signal bar and Settings bars from the test-mode snapshot', as
   await expect(chip.locator('.usage-fill.signal')).toBeVisible();
   // The chip opens Settings at the helpers section with both bars.
   await chip.click();
-  await expect(page.getByRole('heading', { name: 'Helpers on this computer', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Helpers on this computer', exact: true })).toBeVisible();
   const codexService = page.locator('.service', { has: page.getByRole('heading', { name: /Codex/ }) });
   await expect(codexService.locator('.usage-row')).toHaveCount(2);
   await expect(codexService).toContainText(/5 hours/);

@@ -180,8 +180,10 @@ export function App() {
   );
   const navigate = useCallback(
     (p: Page) => {
+      // Only the page moves. Settings replaces the Book and the Desk while it is
+      // open, so a navigate that arrives then comes from a background restore
+      // (a recovered draft, the first plan) and must not close it.
       setPage(p);
-      setShowSettings(false);
       const s = settingsRef.current;
       if (s && selected) {
         const next = { ...s, lastPage: { ...s.lastPage, [selected]: p } };
@@ -200,6 +202,7 @@ export function App() {
       }
       if (e.ctrlKey && /^[1-8]$/.test(e.key) && selected) {
         e.preventDefault();
+        setShowSettings(false);
         navigate(
           (['home', 'ask', 'plan', 'work', 'review', 'tasks', 'documents', 'history'] as Page[])[
             Number(e.key) - 1
