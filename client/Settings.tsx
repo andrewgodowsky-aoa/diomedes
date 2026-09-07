@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type {
-  IntegrationStatus,
-  Settings as SettingsModel,
-  UsageSnapshot,
-} from '../shared/types';
+import type { IntegrationStatus, Settings as SettingsModel, UsageSnapshot } from '../shared/types';
 import {
   Button,
   Mark,
   Modal,
   UsageBar,
+  leftPercent,
+  tightestWindow,
   detailDescriptions,
   meterLine,
   surfaceDescriptions,
@@ -199,7 +197,7 @@ export function SettingsPage({
                                 <div className="usage-row">
                                   <span>{w.label}</span>
                                   <UsageBar window={w} />
-                                  <span>{w.usedPercent}%</span>
+                                  <span>{leftPercent(w)}% left</span>
                                 </div>
                                 <p className="caption">{resetLine(w.resetsAt)}</p>
                               </div>
@@ -379,7 +377,8 @@ export function SettingsPage({
                           {key === 'interfaceScale' ? (
                             <>
                               <option value={0.95}>
-                                Smaller{effectiveInterfaceScale === 0.95 ? ' (default on Desk)' : ''}
+                                Smaller
+                                {effectiveInterfaceScale === 0.95 ? ' (default on Desk)' : ''}
                               </option>
                               <option value={1}>Default</option>
                               <option value={1.1}>
@@ -470,19 +469,29 @@ export function SettingsPage({
               {integrations
                 .filter((s) => s.kind !== 'local' || s.available)
                 .slice(0, 3)
-                .map((s) => (
-                  <div className="reference-row metered" key={s.id}>
-                    <span className="engine-meter" aria-hidden="true">
-                      <span className={`engine-meter-fill${s.available ? ' on' : ''}`} />
-                    </span>
-                    <span className="engine-row-name">
-                      {isDesk ? s.name : s.kind === 'sample' ? 'Sample work' : 'Online service'}
-                    </span>
-                    <span className="caption push-right">
-                      {s.available ? 'Available' : 'Unavailable'}
-                    </span>
-                  </div>
-                ))}
+                .map((s) => {
+                  // The allowance when the engine reports one, otherwise the same
+                  // bar full or empty for whether it can run at all.
+                  const snapshot = usage.find((u) => u.engine === s.id);
+                  const tight = snapshot ? tightestWindow(snapshot) : null;
+                  return (
+                    <div className="reference-row metered" key={s.id}>
+                      {tight ? (
+                        <UsageBar window={tight} />
+                      ) : (
+                        <span className="engine-meter" aria-hidden="true">
+                          <span className={`engine-meter-fill${s.available ? ' on' : ''}`} />
+                        </span>
+                      )}
+                      <span className="engine-row-name">
+                        {isDesk ? s.name : s.kind === 'sample' ? 'Sample work' : 'Online service'}
+                      </span>
+                      <span className="caption push-right">
+                        {s.available ? 'Available' : 'Unavailable'}
+                      </span>
+                    </div>
+                  );
+                })}
             </section>
             <p className="caption">Your settings are saved on this computer.</p>
           </aside>

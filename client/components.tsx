@@ -302,17 +302,23 @@ export function meterLine(meter: UsageMeter): string {
   return `Last thread: ${countK(meter.input)} words used, ${written}${cost}`;
 }
 
+/**
+ * How much of the allowance is still there. The service reports what has been
+ * spent; every bar in the app fills with what is left, so a full bar always
+ * reads as good and an empty one as spent, and an engine with nothing left
+ * looks the same as an engine that cannot run.
+ */
+export function leftPercent(window: UsageWindow) {
+  return Math.round(Math.min(100, Math.max(0, 100 - window.usedPercent)));
+}
+
 export function UsageBar({ window }: { window: UsageWindow }) {
-  const clamped = Math.min(100, Math.max(0, window.usedPercent));
-  const tone = window.usedPercent >= 100 ? 'fault' : window.usedPercent > 80 ? 'signal' : '';
+  const left = leftPercent(window);
+  const tone = left <= 0 ? 'fault' : left < 20 ? 'signal' : '';
+  const text = `${window.label}, ${left}% left`;
   return (
-    <span
-      className="usage-bar"
-      role="img"
-      aria-label={`${window.label}, ${window.usedPercent}% used`}
-      title={`${window.label}, ${window.usedPercent}% used`}
-    >
-      <span className={`usage-fill ${tone}`.trim()} style={{ width: `${clamped}%` }} />
+    <span className="usage-bar" role="img" aria-label={text} title={text}>
+      <span className={`usage-fill ${tone}`.trim()} style={{ width: `${left}%` }} />
     </span>
   );
 }
@@ -328,7 +334,7 @@ export function UsageChip({
 }) {
   const tight = tightestWindow(snapshot);
   if (!tight) return null;
-  const label = `${name}, ${tight.label}, ${tight.usedPercent}%`;
+  const label = `${name}, ${tight.label}, ${leftPercent(tight)}% left`;
   const body = (
     <>
       <span>{label}</span>

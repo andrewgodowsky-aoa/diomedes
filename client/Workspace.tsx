@@ -29,6 +29,7 @@ import {
   Notice,
   SessionStatus,
   UsageBar,
+  leftPercent,
   askDraftKey,
   date,
   pages,
@@ -683,7 +684,7 @@ export function Workspace({
             <span className="usage-inline">
               <UsageBar window={tight} />
               <span className="caption">
-                {tight.label}, {tight.usedPercent}%
+                {tight.label}, {leftPercent(tight)}% left
               </span>
             </span>
           );

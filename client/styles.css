@@ -744,6 +744,11 @@ a {
 .reference-row.metered {
   gap: 10px;
 }
+.reference-row.metered > .usage-bar,
+.reference-row.metered > .engine-meter {
+  flex: 0 0 clamp(44px, 26%, 132px);
+  width: auto;
+}
 .engine-meter {
   flex: 0 0 clamp(44px, 26%, 132px);
   height: 8px;
@@ -755,7 +760,7 @@ a {
   display: block;
   height: 100%;
   width: 0;
-  background: var(--dm-done);
+  background: var(--dm-glacier);
 }
 .engine-meter-fill.on {
   width: 100%;

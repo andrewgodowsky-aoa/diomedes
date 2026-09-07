@@ -608,8 +608,8 @@ test('Usage: chip, signal bar and Settings bars from the test-mode snapshot', as
   await page.reload();
   const chip = page.locator('.usage-chip');
   await expect(chip).toBeVisible();
-  await expect(chip).toContainText(/Codex with ChatGPT, week, 91%/);
-  // Past 80 percent the bar takes the signal colour.
+  await expect(chip).toContainText(/Codex with ChatGPT, week, 9% left/);
+  // Bars fill with what is left; under 20 percent left takes the signal colour.
   await expect(chip.locator('.usage-fill.signal')).toBeVisible();
   // The chip opens Settings at the helpers section with both bars.
   await chip.click();
@@ -617,7 +617,8 @@ test('Usage: chip, signal bar and Settings bars from the test-mode snapshot', as
   const codexService = page.locator('.service', { has: page.getByRole('heading', { name: /Codex/ }) });
   await expect(codexService.locator('.usage-row')).toHaveCount(2);
   await expect(codexService).toContainText(/5 hours/);
-  await expect(codexService).toContainText(/91%/);
+  await expect(codexService).toContainText(/9% left/);
+  await expect(codexService).toContainText(/38% left/);
   await expect(codexService).toContainText(/Resets /);
   await expect(codexService).toContainText(/Last thread: 12.4k of 200k context, 3.1k written, \$0.04/);
   await expect(codexService.locator('.usage-fill.signal')).toBeVisible();
