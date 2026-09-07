@@ -681,7 +681,22 @@ test('Verified helper: a helper turn shows its runtime caption', async ({ page }
 });
 
 test('Modes: the Book composer shows four modes and Fix needs what is failing', async ({ page }) => {
-  await openProject(page);
+  const headers = { 'X-Diomedes-Client': '1' };
+  // A project of its own, so no other test's sample work is in progress here.
+  const created = await page.request.post('/api/projects', { headers, data: { name: 'Modes fix' } });
+  expect(created.ok()).toBe(true);
+  const project: Project = await created.json();
+  const setup = await page.request.put('/api/settings', { headers, data: {
+    surface: 'book',
+    detail: 'standard',
+    services: { codex: false },
+    onboarding: { work: 'business', detail: 'standard', familiarity: 'new', resumeAt: 'done', completedAt: new Date().toISOString() },
+    openProjects: [project.id],
+    lastPage: { [project.id]: 'ask' },
+  } });
+  expect(setup.ok()).toBe(true);
+  await page.goto('/');
+  await expect(page.getByRole('navigation', { name: 'Project pages', exact: true })).toBeVisible();
   await navigate(page, 'Ask');
   const composer = page.getByRole('region', { name: 'Ask box', exact: true });
   for (const name of ['Ask', 'Plan', 'Build', 'Fix'])
@@ -699,7 +714,8 @@ test('Modes: the Book composer shows four modes and Fix needs what is failing', 
   // The stored turns carry the try; the thread that received them is found by its Fix chip.
   await expect
     .poll(async () => {
-      const state = await projectState(page);
+      const response = await page.request.get(`/api/projects/${project.id}/state`);
+      const state: ProjectState = await response.json();
       const thread = state.conversations.find((c) =>
         c.turns.some((t) => t.role === 'diomedes' && t.mode === 'fix'),
       );
