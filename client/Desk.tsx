@@ -21,6 +21,7 @@ import type {
   UsageSnapshot,
 } from '../shared/types';
 import { api } from './api';
+import { effortFor } from '../shared/effort';
 import {
   Button,
   ChangeCard,
@@ -1031,6 +1032,9 @@ function Pane({
   const chosenEffort = efforts.some((e) => e.id === savedEffort)
     ? savedEffort
     : (efforts[0]?.id ?? '');
+  // Fix holds a choice to its ceiling. The person is told rather than quietly
+  // given a shallower run than the one they picked.
+  const runsAt = chosenEffort ? effortFor(mode, chosenEffort, chosenEffort) : '';
   useEffect(() => {
     if (thread.mode) setMode(thread.mode);
   }, [thread.id, thread.mode]);
@@ -1360,6 +1364,11 @@ function Pane({
                     </option>
                   ))}
                 </select>
+              )}
+              {runsAt && runsAt !== chosenEffort && (
+                <span className="caption desk-effort-note">
+                  {titleCase(mode)} runs at {effortNames[runsAt] ?? titleCase(runsAt)}.
+                </span>
               )}
             </>
           )}

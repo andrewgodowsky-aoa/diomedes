@@ -3,6 +3,7 @@ import { diffLines } from 'diff';
 import type { Change, Need, Session } from '../shared/types.js';
 import { askCodex, nativeWorkDisclosure, type NativeTeamOptions } from './integrations.js';
 import { MODES } from './modes.js';
+import { effortFor } from '../shared/effort.js';
 import { absent, ApiError, projectFile, relativeName, textKind } from './paths.js';
 import { hash, identifier, now, Store, type WriteInput } from './store.js';
 import { TeamService } from './team/service.js';
@@ -356,8 +357,9 @@ export class NativeWorkService {
       const result = await this.generate({
         ...(requestedModel ? { model: requestedModel } : {}),
         instructions: modeDef.instructions,
-        // A level chosen for the thread outranks the mode's own.
-        effort: run.requested?.effort ?? modeDef.effort,
+        // A level chosen for the thread outranks the mode's own, but Fix holds
+        // it to its ceiling: the smallest change that works, not a deeper one.
+        effort: effortFor(run.mode ?? 'build', run.requested?.effort, modeDef.effort),
         prompt: [
           'Return STRICT JSON only, with exactly this structure:',
           '{"summary":"Short explanation","changes":[{"path":"relative/file.md","text":"COMPLETE new UTF-8 file content, or null to remove an existing selected file","summary":"What changes and why"}]}',

@@ -21,6 +21,7 @@ import { askCodex, getIntegrationStatuses, type NativeTeamOptions } from './inte
 import { MODES, modeOf } from './modes.js';
 import { fakeCodexSnapshot, usageService } from './usage.js';
 import { engineCatalog, isKnownChoice } from './models.js';
+import { effortFor } from '../shared/effort.js';
 import type { UsageSnapshot } from '../shared/types.js';
 import { mountTeamRoutes } from './team/routes.js';
 import { roleInstructions } from './team/prompts.js';
@@ -1463,8 +1464,9 @@ export async function createApp(options: AppOptions) {
             documents: prepared.documents,
             ...(requestedModel ? { model: requestedModel } : {}),
             instructions: MODES[mode].instructions,
-            // A level chosen for the thread outranks the mode's own.
-            effort: runChoice.effort ?? MODES[mode].effort,
+            // A level chosen for the thread outranks the mode's own, up to the
+            // mode's ceiling; only Fix has one, so Ask and Plan follow the choice.
+            effort: effortFor(mode, runChoice.effort, MODES[mode].effort),
           });
           answer = result.text;
           helper = codexHelper(result);

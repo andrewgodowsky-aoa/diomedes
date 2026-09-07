@@ -2220,6 +2220,10 @@ html[data-motion='reduced'] *::after {
 .desk-pane-send select {
   max-width: 190px;
 }
+.desk-effort-note {
+  flex: none;
+  color: var(--dm-text-3);
+}
 .desk-honest {
   padding: 8px 20px 0;
   color: var(--dm-text-3);
