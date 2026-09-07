@@ -2,6 +2,12 @@
 
 2026-09-05
 
+> **A dated record of the first desktop package.** The desktop release is now produced by
+> `npm run build` (its `postbuild` step) or the `npm run package:desktop` alias, and
+> smoked with `npm run test:desktop`. Since this report the repository became a Git
+> repository, so the "no Git repository" note below is out of date. `../README.md`
+> describes the current product.
+
 ## Delivered
 
 - `release/Diomedes-win32-x64/Diomedes.exe`: portable Windows x64 desktop application.
@@ -44,5 +50,6 @@ model; it is not a remote multi-user service.
 - `package.json`, `package-lock.json`, `tsconfig.json`, `README.md`
 - This report, `desktop-proof.json`, and desktop screenshots
 
-No Git repository exists in this workspace, and nothing was committed or pushed.
-Suggested future commit: `Add Windows desktop release and consistent UI typography`.
+At the time of this report no Git repository existed in this workspace and nothing was
+committed or pushed. The work was later committed; the repository is `main` in this
+directory.
