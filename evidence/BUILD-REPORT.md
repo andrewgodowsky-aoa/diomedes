@@ -1,11 +1,19 @@
 # Diomedes working application
 
-Built 2026-09-05 in `F:/Achilles/diomedes`. The application is running at **http://127.0.0.1:47631**. Its welcome screen was inspected in the Codex browser. Complete setup, then choose **Open sample project** to explore the Harbor Street workflow. The main user profile has not been prepopulated with test results or example projects.
+> **This is a dated record of the 2026-09-05 browser build.** It is kept as evidence of
+> what was verified that day; it is not a description of the current application. Since
+> it was written: the app was packaged as a Windows Electron desktop release (see
+> `DESKTOP-RELEASE.md`), the repository became a Git repository, "Technical" stopped
+> being a detail level in favour of the Book and the Desk, threads became first-class,
+> and an in-house team service and engine discovery were built. `../README.md` describes
+> the current product; `codex-team-real-binary-2026-09-06.md` is the team evidence.
+
+Built 2026-09-05 in `F:/Achilles/diomedes`. The application was running at **http://127.0.0.1:47631** at the time of this report. Its welcome screen was inspected in the Codex browser. Complete setup, then choose **Open sample project** to explore the Harbor Street workflow. The main user profile has not been prepopulated with test results or example projects.
 
 ## What works
 
 - Projects backed by ordinary folders, with explicit sample creation and real File Explorer opening.
-- Guided, Standard, and Technical presentation; three-question onboarding; appearance, typography, motion, permission, and service settings that persist.
+- Guided, Standard, and Technical presentation (Technical was later replaced by the Desk surface); three-question onboarding; appearance, typography, motion, permission, and service settings that persist.
 - Home, Ask, Plan, Work, Review, Tasks, Documents, and History. Plan steps become editable tasks with provenance. Tasks can move between the four specified states.
 - Text and Markdown editing with browser draft recovery, stale-file checks, before/after History, named versions, Review, Undo, and restore conflict choices. Host writes preserve supported UTF-8 bytes, including BOM and CRLF, and journal interrupted writes for startup recovery.
 - A clearly labeled local sample worker exercises start, stop, approvals, file changes, Review, and History. One open decision is shared across Home, Work, the Tasks card, and project indicators.
@@ -46,7 +54,7 @@ The complete F01-F22 acceptance coverage table and unrun cases are in [validatio
 
 ## Remaining scope and limitations
 
-- This is a local browser application with a Node service. An Electron/Tauri desktop shell, packaged installer, remote access, account pairing, and multi-user authentication are not implemented.
+- As of this report, a local browser application with a Node service. An Electron desktop shell was added the same day (`DESKTOP-RELEASE.md`); a packaged installer, remote access, account pairing, and multi-user authentication are still not implemented.
 - The current editor and history operate on valid UTF-8 text up to 8 MB. Word, Excel, PDF, images, binary diffs, and automatic history-retention cleanup are not implemented.
 - Native Work supports selected text plus new-file proposals, at most eight files and 128 KB of output. It has no shell, browser, filesystem, or MCP tools. Diomedes applies the approved proposal; it cannot run arbitrary project builds or perform general autonomous tool work.
 - AionCore remains unconfigured because its proposed host foundation was not established by the supplied material or the completed runtime proof. This build does not claim full foundation P1-P5 acceptance. Claude/OpenCode adapters, Hermes work execution, LocalAI generation, remote pairing, and business-service connections remain outside the proven integration surface.
@@ -69,7 +77,7 @@ The running production listener serves **http://127.0.0.1:47631**. For developme
 
 ## Proposed commit and changed-file scope
 
-No commit was created. Proposed message: `feat: build Diomedes workspace from v5 designs with recorded edits and native Codex proposals`.
+No commit was created at the time of this report; the directory has since become a Git repository and the file list below is no longer the whole source set. Proposed message: `feat: build Diomedes workspace from v5 designs with recorded edits and native Codex proposals`.
 
 All additions are beneath `F:/Achilles/diomedes`; no original planning file belongs in this commit. The following is the reviewable source set, with exact individual files and hashes in [source manifest](source-manifest.json):
 

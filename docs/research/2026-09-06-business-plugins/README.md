@@ -41,7 +41,7 @@ Evidence: [desktop lifecycle](/F:/Achilles/diomedes/desktop/main.mjs:20), [local
 
 The distinction between assistant identities and employee identities is essential. A helper slot authenticated to a project is not a restaurant manager authorized to see payroll or another location's stock. Existing file approvals also do not define the approval semantics of a material issue, customer change, or timesheet correction.
 
-Earlier [business planning](/F:/Achilles/planning/2026-09-05-v4-business/08-business-architecture-and-workspace.md) proposed capability manifests and per-client deployments, but also assumed an AionCore-based foundation and CSV-oriented operations. Current code has an in-house team service. Retain the useful capability and isolation concepts; do not copy the old assumed runtime. This proposal deliberately introduces structured operational storage, which is an expansion beyond those earlier CSV-oriented plans. Original plans remain preserved.
+Earlier [business planning](/F:/Achilles/planning/_archive/2026-09-05-v4-business/08-business-architecture-and-workspace.md) proposed capability manifests and per-client deployments, but also assumed an AionCore-based foundation and CSV-oriented operations. Current code has an in-house team service. Retain the useful capability and isolation concepts; do not copy the old assumed runtime. This proposal deliberately introduces structured operational storage, which is an expansion beyond those earlier CSV-oriented plans. Original plans remain preserved.
 
 ## Product choices and tradeoffs
 

@@ -23,7 +23,7 @@ No client credentials, accounts, databases or job records were accessed. No inte
 | [MCP tools](/F:/Achilles/diomedes/server/team/mcp.ts:28) and [routes](/F:/Achilles/diomedes/server/team/routes.ts:49) | Typed team operations and member bearer authentication | Reusable tool pattern; not evidence of employee/location authorization |
 | [integration implementation](/F:/Achilles/diomedes/server/integrations.ts:129) and [gateway notes](/F:/Achilles/diomedes/QUESTIONS.md) | Default restrictions and team-specific host configuration; investigation documents limits of proving all native tool exposure | Enforce business actions at Diomedes's server boundary and test each adapter |
 | [README](/F:/Achilles/diomedes/README.md) | Documents local prototype, current integration and storage limits | Avoid promising multi-user or arbitrary-provider readiness |
-| [older business proposal](/F:/Achilles/planning/2026-09-05-v4-business/08-business-architecture-and-workspace.md) | Proposed capabilities, isolation and exports-first concepts; an older runtime assumption | Preserve useful ideas while explicitly replacing outdated architectural assumptions in this proposal |
+| [older business proposal](/F:/Achilles/planning/_archive/2026-09-05-v4-business/08-business-architecture-and-workspace.md) | Proposed capabilities, isolation and exports-first concepts; an older runtime assumption | Preserve useful ideas while explicitly replacing outdated architectural assumptions in this proposal |
 
 Repository HEAD observed during research: `284a11a`. The workspace had additional changes. Existing historical test totals were not treated as fresh verification. This report's statements about current implementation come from inspected files, not from a remembered release summary.
 
