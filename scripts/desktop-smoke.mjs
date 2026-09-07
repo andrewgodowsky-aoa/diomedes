@@ -58,13 +58,23 @@ try {
       Object.fromEntries(
         ['body', '.task-title', '.task-card .button', '.caption'].map((selector) => [
           selector,
+          document.querySelector(selector).getBoundingClientRect().height,
+        ]),
+      ),
+    );
+  const fonts = () =>
+    page.evaluate(() =>
+      Object.fromEntries(
+        ['body', '.task-title'].map((selector) => [
+          selector,
           parseFloat(getComputedStyle(document.querySelector(selector)).fontSize),
         ]),
       ),
     );
+  const beforeFonts = await fonts();
+  expect(beforeFonts.body).toBe(15);
+  expect(beforeFonts['.task-title']).toBe(17);
   const before = await sizes();
-  expect(before.body).toBe(16);
-  expect(before['.task-title']).toBe(18);
   await page.screenshot({
     path: path.resolve('evidence/screenshots/desktop-tasks.png'),
     animations: 'disabled',

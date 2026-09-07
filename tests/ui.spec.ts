@@ -102,6 +102,15 @@ test('F01-F02: first run resumes, chooses a surface, and opens the selected surf
   await page.getByRole('button', { name: 'Interface detail menu' }).click();
   await page.getByRole('button', { name: 'Guided', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
+  const guidedSettings: Settings = await (await page.request.get('/api/settings')).json();
+  expect(guidedSettings.appearance.interfaceScale).toBeUndefined();
+  await expect
+    .poll(async () =>
+      page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue('--dm-ui-scale').trim(),
+      ),
+    )
+    .toBe('1.1');
 });
 
 test('F04, F06: sample project opens and a plan edit survives reload with History', async ({ page }, testInfo) => {
@@ -377,6 +386,37 @@ test('F17, F20-F22: surface switches preserve data; visible pages meet copy and 
     return result;
   }));
   expect(violations).toEqual([]);
+  const scaleHeaders = { 'X-Diomedes-Client': '1' };
+  const scaleBefore: Settings = await (await page.request.get('/api/settings')).json();
+  const topBar = page.locator('.top-bar');
+  await expect(topBar).toBeVisible();
+  async function setInterfaceScale(value: number) {
+    const update = await page.request.put('/api/settings', {
+      headers: scaleHeaders,
+      data: {
+        appearance: { ...scaleBefore.appearance, interfaceScale: value },
+      },
+    });
+    expect(update.ok()).toBe(true);
+    await expect
+      .poll(async () =>
+        page.evaluate(() =>
+          getComputedStyle(document.documentElement).getPropertyValue('--dm-ui-scale').trim(),
+        ),
+      )
+      .toBe(String(value));
+  }
+  await setInterfaceScale(1);
+  const topBarAtOne = (await topBar.boundingBox())?.height ?? 0;
+  expect(topBarAtOne).toBeGreaterThan(0);
+  await setInterfaceScale(1.3);
+  const topBarAtLarge = (await topBar.boundingBox())?.height ?? 0;
+  expect(topBarAtLarge / topBarAtOne).toBeCloseTo(1.3, 1);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+    'The page must not overflow horizontally at scale 1.3',
+  ).toBe(true);
+  await setInterfaceScale(1);
   await page.setViewportSize({ width: 390, height: 844 });
   for (const name of ['Home', 'Tasks', 'History']) {
     await navigate(page, name);

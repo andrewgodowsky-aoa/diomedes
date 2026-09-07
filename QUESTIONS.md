@@ -316,9 +316,109 @@ Every judgment call below lists the options and the pick I implemented.
 - Pick: (b). Any HTTP status (even 500) counts as running; an over-cap or
   unreadable body does not change that — the headers already answered.
 
-## 10. Version source order
+ ## 10. Version source order
 
 - Options: (a) stdout only; (b) stdout then stderr combined, first
   `\d+\.\d+(\.\d+)?`, sliced to the 4 KB cap before matching.
 - Pick: (b). The slice mirrors the spawn-layer cap, so a version past 4 KB is
   unreadable rather than trusted.
+
+
+# Interface scale as root zoom — open questions (muse/sizing, 2026-09-07)
+
+Unsettled points from the sizing task, each with options and the pick I implemented.
+The implementation keeps going with the pick; overturning one is a small, local change.
+
+## 1. What `100vh`/`100dvh`/`100vw` do under `html { zoom: var(--dm-ui-scale) }`
+
+- Observed empirically with headless Chromium (standalone probe page, viewport
+  1280x800, scales 0.9 / 1.0 / 1.3; the full app suite could not run — see 8):
+  viewport units resolve against the *unzoomed* viewport and then get zoomed
+  with the layout. With `.app { height: 100dvh }`, the app box measured
+  720 / 800 / 1040 device px at scales 0.9 / 1.0 / 1.3, so at 1.3 the document
+  was 1040px tall in an 800px viewport — a page-level vertical scrollbar.
+  With `.app { height: calc(100dvh / var(--dm-ui-scale)) }` the app box stayed
+  exactly 800 at all three scales (document scrollHeight == innerHeight, no
+  page scrollbar), while the top bar measured 41.39 / 46 / 59.8px — i.e. boxes
+  grow with the scale (59.8/46 = 1.3). Computed `font-size` does not change
+  under zoom, which is why the smoke test now measures box heights.
+- Pick: keep `html { zoom: var(--dm-ui-scale) }` and divide exactly the rules
+  that size against the viewport: `.app` height, `.dialog` max-width/max-height
+  (plus its 600px responsive max-width), `.error-bar`/`.feedback` max-width
+  (plus their responsive max-width). Native `<dialog>` modals still covered
+  the viewport in the probe at all three scales in both variants. The top bar
+  stays at the top (flex column, `flex: none`).
+
+## 2. When nothing is saved and the person is both Guided and on the Desk
+
+- Options: (a) Desk wins (0.95); (b) Guided wins (1.1).
+- Pick: (a). `App.tsx` computes `interfaceScale ?? (surface === 'desk' ? 0.95
+  : detail === 'guided' ? 1.1 : 1)`. Rationale: on the Desk the binding
+  constraint is fitting threads/helpers/changes on one screen; a Guided person
+  on the Desk still gets the reading/code text multipliers untouched. The
+  `Settings.tsx` slider uses the same formula for its displayed value.
+
+## 3. Settings slider option labels for the new effective values
+
+- Options: (a) add 0.95/1.1 options; (b) keep only 1/1.12/1.24 so an effective
+  1.1/0.95 shows blank until touched.
+- Pick: (a). Interface size now offers Smaller (0.95, marked default on Desk),
+  Default (1), Guided (1.1, marked default when Guided), Larger (1.12),
+  Largest (1.24). Reading/Code keep Default/Larger/Largest. Once the person
+  picks anything, the saved number wins everywhere (even picking Default (1)
+  on Guided pins 1 instead of the 1.1 default).
+
+## 4. 13px Desk labels vs the never-below-14 floor
+
+- Options: (a) raise `.desk-side-header h2` / `.desk-side-sub` 13px to 14px;
+  (b) leave at 13px without the multiplier.
+- Pick: (b). They are Desk-only eyebrow labels, not covered by the Book layout
+  check, and raising them would change the Desk's visual character beyond the
+  brief. Everything that was 15px ui-scale is now a flat 14px.
+
+## 5. Responsive sizes that mirrored a changed desktop value
+
+- Options: (a) leave every media-query fixed size alone; (b) move the ones
+  that are clearly the same part (top-bar 52->46 incl. brand-button/top-right
+  heights, project-tabs 44->40, project-tab 42->38, rail/rail-link 44->40,
+  task header 44->40, task-card 130->120, dialog/error-bar viewport calcs).
+- Pick: (b). Page-header mobile padding, setup margins and other
+  context-specific values were left alone. The 21px responsive headings
+  (page-header h1, dialog-heading h2) became 19px and the 24px responsive
+  setup h1 became 22px, following their desktop 22->20 / 28->24 moves.
+
+## 6. Reading-face rules that moved with prose
+
+- Options: (a) only the table rows (prose 16/1.6, prose.small 15);
+  (b) also the rules that are the same reading rhythm.
+- Pick: (b). `.turn.you` 17->16, composer textarea 17->16 (68px box, tighter
+  padding), `.notice .prose` and `.capability` 15.5->15. Markdown document
+  headings (24/28/17 read-scale), desk turn text (16) and the home
+  section-title (19) were left alone as document/desk-specific.
+
+## 7. Desktop smoke evidence key
+
+- The `sizes()` helper now records `getBoundingClientRect().height` for body,
+  `.task-title`, `.task-card .button`, `.caption`, and the 1.24 ratio assertion
+  is unchanged. The old exact assertions (`body 16`, `task-title 18`) became
+  computed-font checks for the new defaults (`body 15`, `task-title 17`).
+  The `fontSizes: { before, after }` evidence field was left named as-is to
+  stay inside the allowed edit area; its values are now box heights, not font
+  sizes.
+
+## 8. Verification status (blocker, not a code question)
+
+- `tsc --noEmit` is clean (exit 0). The UI suite could not run in this
+  worktree: vite fails to transform `client/main.tsx` with
+  `Cannot find package '@babel/core' imported from
+  .../node_modules/@vitejs/plugin-react/dist/index.js`. Installed
+  `@vitejs/plugin-react` is 5.2.0, which requires `@babel/core ^7.29.0`, but
+  `node_modules/@babel` does not exist in the shared tree (junction target
+  `F:/Achilles/diomedes/node_modules`); installed Playwright browsers are
+  1228 (matching @playwright/test 1.55) while node_modules now holds
+  playwright 1.63.0 (which wants headless_shell-1243). Both pre-date this
+  change — the failure happens before any app code loads (no Continue button
+  renders) — and `npm install` is forbidden in this worktree, so the full
+  Home/Tasks/Settings/Desk scrollbar sweep, modal coverage check and the two
+  new assertions have not been executed here. The zoom/viewport behaviour in
+  (1) was verified with a standalone Chromium probe instead.

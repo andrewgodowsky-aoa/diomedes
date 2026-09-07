@@ -110,8 +110,13 @@ export function App() {
     root.dataset.detail = surface === 'desk' ? 'technical' : settings.detail;
     root.dataset.package = settings.appearance.package;
     root.dataset.motion = settings.appearance.motion;
+    // Untouched interface scale follows who the person is: the Desk fits more
+    // at 0.95, Guided reads larger at 1.1, otherwise 1. A saved value wins.
+    const effectiveUiScale =
+      settings.appearance.interfaceScale ??
+      (surface === 'desk' ? 0.95 : settings.detail === 'guided' ? 1.1 : 1);
     for (const [name, value] of Object.entries({
-      'ui-scale': settings.appearance.interfaceScale ?? 1,
+      'ui-scale': effectiveUiScale,
       'read-scale': settings.appearance.readingScale ?? 1,
       'code-scale': settings.appearance.codeScale ?? 1,
     }))

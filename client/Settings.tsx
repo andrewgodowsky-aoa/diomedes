@@ -306,24 +306,54 @@ export function SettingsPage({
                     }
                   />
                 </label>
-                {(['interfaceScale', 'readingScale', 'codeScale'] as const).map((key, i) => (
-                  <label key={key} className="setting-row">
-                    <span>{['Interface size', 'Reading size', 'Code size'][i]}</span>
-                    <select
-                      value={settings.appearance[key] ?? 1}
-                      onChange={(e) =>
-                        void save({
-                          ...settings,
-                          appearance: { ...settings.appearance, [key]: Number(e.target.value) },
-                        })
-                      }
-                    >
-                      <option value={1}>Default</option>
-                      <option value={1.12}>Larger</option>
-                      <option value={1.24}>Largest</option>
-                    </select>
-                  </label>
-                ))}
+                {(() => {
+                  const effectiveInterfaceScale =
+                    settings.appearance.interfaceScale ??
+                    (isDesk ? 0.95 : settings.detail === 'guided' ? 1.1 : 1);
+                  return (['interfaceScale', 'readingScale', 'codeScale'] as const).map(
+                    (key, i) => (
+                      <label key={key} className="setting-row">
+                        <span>{['Interface size', 'Reading size', 'Code size'][i]}</span>
+                        <select
+                          value={
+                            key === 'interfaceScale'
+                              ? (settings.appearance.interfaceScale ?? effectiveInterfaceScale)
+                              : (settings.appearance[key] ?? 1)
+                          }
+                          onChange={(e) =>
+                            void save({
+                              ...settings,
+                              appearance: {
+                                ...settings.appearance,
+                                [key]: Number(e.target.value),
+                              },
+                            })
+                          }
+                        >
+                          {key === 'interfaceScale' ? (
+                            <>
+                              <option value={0.95}>
+                                Smaller{effectiveInterfaceScale === 0.95 ? ' (default on Desk)' : ''}
+                              </option>
+                              <option value={1}>Default</option>
+                              <option value={1.1}>
+                                Guided{effectiveInterfaceScale === 1.1 ? ' (default)' : ''}
+                              </option>
+                              <option value={1.12}>Larger</option>
+                              <option value={1.24}>Largest</option>
+                            </>
+                          ) : (
+                            <>
+                              <option value={1}>Default</option>
+                              <option value={1.12}>Larger</option>
+                              <option value={1.24}>Largest</option>
+                            </>
+                          )}
+                        </select>
+                      </label>
+                    ),
+                  );
+                })()}
               </>
             )}
             {section === 'About' && (
