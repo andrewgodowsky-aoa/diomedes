@@ -75,7 +75,7 @@ test('F01-F02: first run resumes, chooses a surface, and opens the selected surf
   await expect(page.getByText(/a project for a restaurant's menus, suppliers and schedules/)).toBeVisible();
   const settings: Settings = await (await page.request.get('/api/settings')).json();
   expect(settings.detail).toBe('guided');
-  expect(settings.surface).toBe('book');
+  expect(settings.surface).toBe('workbook');
   expect(settings.permissions.changingFiles).toBe(true);
   expect(settings.explanations).toBe('persistent');
   expect(settings.onboarding.completedAt).toBeTruthy();
@@ -93,19 +93,19 @@ test('F01-F02: first run resumes, chooses a surface, and opens the selected surf
   await expect(page.getByRole('radio', { name: /^Very comfortable/ })).toBeChecked();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Ready.', exact: true })).toBeVisible();
-  await expect(page.getByText(/You'll use The Desk/)).toBeVisible();
+  await expect(page.getByText(/You'll use The Console/)).toBeVisible();
   await page.getByRole('button', { name: 'Open Diomedes' }).click();
   await page.getByRole('button', { name: /^Try the sample project/ }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'desk');
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
   await expect(page.getByRole('heading', { name: 'Harbor Street restaurants', exact: true })).toBeVisible();
   const comfortableSettings: Settings = await (await page.request.get('/api/settings')).json();
-  expect(comfortableSettings.surface).toBe('desk');
+  expect(comfortableSettings.surface).toBe('console');
   expect(comfortableSettings.detail).toBe('standard');
 
   await page.getByRole('button', { name: 'Interface detail menu' }).click();
-  await page.getByRole('button', { name: 'The Book', exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'book');
+  await page.getByRole('button', { name: 'The Workbook', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'standard');
   await page.getByRole('button', { name: 'Interface detail menu' }).click();
   await page.getByRole('button', { name: 'Guided', exact: true }).click();
@@ -122,15 +122,15 @@ test('F01-F02: first run resumes, chooses a surface, and opens the selected surf
 });
 
 test('F04, F06: sample project opens and a plan edit survives reload with History', async ({ page }, testInfo) => {
-  // The first-run test leaves the settings on the Desk; this one and the rest read the Book.
+  // The first-run test leaves the settings on the Console; this one and the rest read the Workbook.
   const toBook = await page.request.put('/api/settings', {
     headers: { 'X-Diomedes-Client': '1' },
-    // The every-day answer also relaxed the permissions in question 3; the Book tests expect approvals.
-    data: { surface: 'book', detail: 'guided', permissions: { changingFiles: true } },
+    // The every-day answer also relaxed the permissions in question 3; the Workbook tests expect approvals.
+    data: { surface: 'workbook', detail: 'guided', permissions: { changingFiles: true } },
   });
   expect(toBook.ok()).toBe(true);
   await page.goto('/');
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'book');
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
   // The first-run test already opened the sample project; reuse it rather than creating a second one.
   await page.getByRole('button', { name: 'Projects', exact: true }).click();
   const existing = page.getByRole('button', { name: /^Harbor Street restaurants/ }).first();
@@ -355,22 +355,22 @@ test('F17, F20-F22: surface switches preserve data; visible pages meet copy and 
         return beforeThread !== undefined && thread.turns.length > beforeThread.turns.length;
       }),
   ).toBe(true);
-  await expect(threads.locator('.desk-thread')).toHaveCount(afterProjectThreads.length);
+  await expect(threads.locator('.console-thread')).toHaveCount(afterProjectThreads.length);
 
   let reloads = 0;
   page.on('framenavigated', frame => { if (frame === page.mainFrame()) reloads += 1; });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('radio', { name: /^The Desk\b/ }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'desk');
+  await page.getByRole('radio', { name: /^The Console\b/ }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
   await page.getByRole('navigation', { name: 'Open projects' }).getByRole('button', { name: /Harbor Street/ }).click();
-  await expect(page.locator('.desk')).toBeVisible();
+  await expect(page.locator('.console')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Threads', exact: true })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('desk.png'), fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: testInfo.outputPath('console.png'), fullPage: true, animations: 'disabled' });
   await page.screenshot({ path: testInfo.outputPath('work-technical.png'), fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('radio', { name: /^The Book\b/ }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'book');
+  await page.getByRole('radio', { name: /^The Workbook\b/ }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
   await expect(page.getByRole('radio', { name: /^Standard\b/ })).toBeChecked();
   await page.getByRole('radio', { name: /^Guided\b/ }).click();
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
@@ -469,14 +469,14 @@ test('Draft recovery: Settings, reload and same-named files in separate projects
   await editor.fill(draftA);
   await expect(page.getByText('Unsaved changes', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('radio', { name: /^The Desk\b/ }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'desk');
+  await page.getByRole('radio', { name: /^The Console\b/ }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
   await tabs.getByRole('button', { name: first.name, exact: true }).click();
-  await expect(page.locator('.desk')).toBeVisible();
+  await expect(page.locator('.console')).toBeVisible();
   await page.getByRole('button', { name: 'Interface detail menu' }).click();
-  await page.getByRole('button', { name: 'The Book', exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'book');
+  await page.getByRole('button', { name: 'The Workbook', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
   await expect(editor).toBeVisible();
   await expect(editor).toHaveValue(draftA);
@@ -529,10 +529,10 @@ test('Draft recovery: Settings, reload and same-named files in separate projects
   await expect(editor).toHaveValue(staleDraft);
 });
 
-test('Services roster: every reported engine listed with switch discipline; Guided hides non-ready adapters; Desk has no Connections', async ({ page }) => {
+test('Services roster: every reported engine listed with switch discipline; Guided hides non-ready adapters; Console has no Connections', async ({ page }) => {
   const headers = { 'X-Diomedes-Client': '1' };
   const setup = await page.request.put('/api/settings', { headers, data: {
-    surface: 'book',
+    surface: 'workbook',
     detail: 'guided',
     services: { codex: false },
     onboarding: { work: 'business', detail: 'guided', familiarity: 'new', resumeAt: 'done', completedAt: new Date().toISOString() },
@@ -572,8 +572,8 @@ test('Services roster: every reported engine listed with switch discipline; Guid
     await expect(service(name).getByRole('button', { name: 'What is sent' })).toHaveCount(0);
   }
 
-  // The Desk settings keep Engines and no longer list a Connections section.
-  const toDesk = await page.request.put('/api/settings', { headers, data: { surface: 'desk' } });
+  // The Console settings keep Engines and no longer list a Connections section.
+  const toDesk = await page.request.put('/api/settings', { headers, data: { surface: 'console' } });
   expect(toDesk.ok()).toBe(true);
   await page.reload();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -584,7 +584,7 @@ test('Services roster: every reported engine listed with switch discipline; Guid
   await expect(service('Sample work')).toBeVisible();
   await expect(service(/Codex/)).toBeVisible();
 
-  const toBook = await page.request.put('/api/settings', { headers, data: { surface: 'book', detail: 'guided' } });
+  const toBook = await page.request.put('/api/settings', { headers, data: { surface: 'workbook', detail: 'guided' } });
   expect(toBook.ok()).toBe(true);
 });
 
@@ -599,7 +599,7 @@ test('Usage: chip, signal bar and Settings bars from the test-mode snapshot', as
   expect(codex.windows.map(w => w.usedPercent).sort((a, b) => a - b)).toEqual([62, 91]);
   // Nothing shows while no engine is on.
   const off = await page.request.put('/api/settings', { headers, data: {
-    surface: 'book',
+    surface: 'workbook',
     detail: 'standard',
     services: { codex: false },
     onboarding: { work: 'business', detail: 'standard', familiarity: 'new', resumeAt: 'done', completedAt: new Date().toISOString() },
@@ -639,7 +639,7 @@ test('Usage: chip, signal bar and Settings bars from the test-mode snapshot', as
 test('Landing: ask box carries a draft into the chosen project', async ({ page }) => {
   const headers = { 'X-Diomedes-Client': '1' };
   const setup = await page.request.put('/api/settings', { headers, data: {
-    surface: 'book',
+    surface: 'workbook',
     detail: 'guided',
     onboarding: { work: 'business', detail: 'guided', familiarity: 'new', resumeAt: 'done', completedAt: new Date().toISOString() },
   } });
@@ -705,7 +705,7 @@ test('Engine choices: the list comes from the engine, and the levels follow the 
 
   const on = await page.request.put('/api/settings', {
     headers,
-    data: { services: { codex: true }, surface: 'desk' },
+    data: { services: { codex: true }, surface: 'console' },
   });
   expect(on.ok()).toBe(true);
   await page.goto('/');
@@ -764,19 +764,19 @@ test('Engine choices: the list comes from the engine, and the levels follow the 
 
   const off = await page.request.put('/api/settings', {
     headers,
-    data: { services: { codex: false }, surface: 'book' },
+    data: { services: { codex: false }, surface: 'workbook' },
   });
   expect(off.ok()).toBe(true);
 });
 
-test('Modes: the Book composer shows four modes and Fix needs what is failing', async ({ page }) => {
+test('Modes: the Workbook composer shows four modes and Fix needs what is failing', async ({ page }) => {
   const headers = { 'X-Diomedes-Client': '1' };
   // A project of its own, so no other test's sample work is in progress here.
   const created = await page.request.post('/api/projects', { headers, data: { name: 'Modes fix' } });
   expect(created.ok()).toBe(true);
   const project: Project = await created.json();
   const setup = await page.request.put('/api/settings', { headers, data: {
-    surface: 'book',
+    surface: 'workbook',
     detail: 'standard',
     services: { codex: false },
     onboarding: { work: 'business', detail: 'standard', familiarity: 'new', resumeAt: 'done', completedAt: new Date().toISOString() },

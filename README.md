@@ -17,28 +17,28 @@ Diomedes Systems LLC. Version 0.1.0, a working prototype.
 There is one model underneath and two ways to see it. Switch in the top-right menu or
 in Settings > Interface.
 
-**The Book** shows one page at a time: Home, Ask, Plan, Work, Review, Tasks, Documents
+**The Workbook** shows one page at a time: Home, Ask, Plan, Work, Review, Tasks, Documents
 and History, with a rail down the left. It has two detail levels, Guided and Standard.
 Guided explains more and hides helpers Diomedes cannot actually run. Home is a single
 column: "What do you want to do?" with four intents (Ask a question, Get something
 done, Make a plan, Look over what changed), a line saying whether a helper is switched
 on, recent threads, and "Changed today" grouped one row per task.
 
-**The Desk** shows everything at once: the project, its threads and the team roster on
+**The Console** shows everything at once: the project, its threads and the team roster on
 the left; up to three panes in the middle, one per thread, each with its helper, its
 permission mode and its messages; Board, Changes and Files on the right.
 
 "Technical" is no longer a detail level. Settings written before 2026-09-06 that say
-`detail: 'technical'` are read as "open the Desk".
+`detail: 'technical'` are read as "open the Console".
 
 The three first-run questions pick the starting point: *I'm new to this* opens the
-Guided Book, *I've used tools like this* the Standard Book, *I work with these tools every
-day* the Desk.
+Guided Workbook, *I've used tools like this* the Standard Workbook, *I work with these tools every
+day* the Console.
 
 ## Threads and permission
 
 A thread is a named conversation that belongs to a project and, optionally, to a task.
-The Book shows the threads of the page it is on; the Desk shows all of them. Threads
+The Workbook shows the threads of the page it is on; the Console shows all of them. Threads
 can be renamed, and a thread started with a document attached belongs to that document.
 
 Each thread has a permission mode:
@@ -68,7 +68,7 @@ How it works:
   `team_describe_assistant`, `team_spawn_agent`, `team_rename_agent`,
   `team_interrupt_agent`, `team_shutdown_agent`, `team_clear_agent_context`.
 - The board is the Diomedes task list. There is no second, hidden list: a task a member
-  creates is a task you can see on Tasks and on the Desk's Board, attributed to the
+  creates is a task you can see on Tasks and on the Console's Board, attributed to the
   member that made it.
 - The mailbox is Diomedes'. A message addressed to a member is delivered by Diomedes,
   counted as unread on the roster, and rendered into the wake text as
@@ -76,7 +76,7 @@ How it works:
 - **A member wakes on its mail.** When the owner or another member sends to an idle
   member, Diomedes starts that member's run itself. Automatic wakes are capped at five
   per member per ten minutes; going over that parks the member as waiting and records a
-  History entry instead. The Desk also has an explicit Start for a member with waiting
+  History entry instead. The Console also has an explicit Start for a member with waiting
   mail, which works regardless of the cap.
 - A run is a normal Diomedes Work run. It cannot write files. Anything it proposes
   arrives as a proposal that waits for your approval, and the member's role instructions
@@ -110,7 +110,7 @@ What is *not* proven or not there:
 - `team_spawn_agent`, `team_describe_assistant` and `team_clear_agent_context` are
   registered and answer "not available in this version"; `team_list_assistants` returns
   an empty list. Diomedes never spawns a process for a helper — you add a member
-  yourself, on the Desk.
+  yourself, on the Console.
 - The model's own report lands in the session log for that run, not as a turn in the
   thread. The thread turn says a message from the team was picked up.
 - There is no steering a run in flight, no branching a thread, and no handing a thread
@@ -120,7 +120,7 @@ What is *not* proven or not there:
 
 ## Helpers on this computer
 
-Settings > **Helpers on this computer** (in the Book) or **Engines** (on the Desk) lists
+Settings > **Helpers on this computer** (in the Workbook) or **Engines** (on the Console) lists
 every engine Diomedes knows about, what it found, and what would be sent to it. Nothing
 in that list is contacted until you switch it on.
 
@@ -169,7 +169,7 @@ never from the answer text. A Codex turn keeps the engine, the model name the ap
 reported for the thread (or for the turn, when `turn/completed` names one) and the
 protocol version from `initialize`. The caption under a helper's turn shows that value,
 "Codex, gpt-6-astra". When the runtime reported nothing the caption says so, "Codex, name
-not reported" in the Book and "Codex, model not reported" on the Desk, rather than
+not reported" in the Workbook and "Codex, model not reported" on the Console, rather than
 guessing. Sample work is recorded as sample work. A Codex selection pinned in Settings
 (`services.codexModel`) travels in the thread configuration, never in the text. Turns
 written before 2026-09-07 carry no record and show no caption.
@@ -189,7 +189,7 @@ guessed; a helper that reports nothing gets one plain sentence instead.
 Where it shows: a chip in the top bar for the helper that is on, with the tightest window
 (the highest percent used) and a 72-pixel bar that takes the signal colour past 80
 percent and the fault colour at 100; every window as a labelled bar with its reset time
-under that helper in Settings; the same bar in each Desk pane header and on each roster
+under that helper in Settings; the same bar in each Console pane header and on each roster
 member. Clicking the chip opens Settings at the helpers section.
 
 The exact rate-limit payload of the pinned Codex 0.153.4 app-server is not captured in

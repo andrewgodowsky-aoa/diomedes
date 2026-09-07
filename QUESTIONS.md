@@ -640,3 +640,20 @@ The implementation keeps going with the pick; overturning one is a small, local 
   it was proven with.
 - Not settled: whether a mode should be able to cap a choice (a person on
   "ultra" still gets "ultra" for a Fix). Owner's call.
+
+## 15. The two surfaces are the Workbook and the Console
+
+- The Book and the Desk were renamed on the owner's decision. Notebook was
+  considered and set aside so the word stays free for the scratch surface
+  that is not a project; Notes was the runner-up.
+- Stored values change with them, so `Settings.surface` is now
+  `'workbook' | 'console'`. Old settings are read forever: `migrateSettings`
+  maps `book`, `desk` and the long-retired `technical` onto the new pair,
+  and the settings route accepts the old spellings from an older client
+  while only ever writing the new one. Without that, anyone already running
+  Diomedes would open on a surface they did not choose.
+- The rename went all the way through - component, file, CSS classes and
+  copy - rather than stopping at the visible strings, so the code does not
+  say Desk while the product says Console.
+- This log keeps its older entries as they were written. They describe what
+  was decided at the time, under the names in use then.

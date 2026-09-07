@@ -48,8 +48,8 @@ const DESK_PLACEHOLDERS: Record<Mode, string> = {
 };
 
 /**
- * The Desk: every thread, every helper and every change on one screen.
- * Same project, same objects and the same words as the Book; only the amount on screen differs.
+ * The Console: every thread, every helper and every change on one screen.
+ * Same project, same objects and the same words as the Workbook; only the amount on screen differs.
  * Runs entirely on the existing project API; the thread endpoints are used when the server has them.
  */
 interface Props {
@@ -109,7 +109,7 @@ function useEngineModels(engine: string): EngineCatalog | null {
   return catalog;
 }
 
-export function Desk({
+export function Console({
   projectId,
   settings,
   integrations,
@@ -185,7 +185,7 @@ export function Desk({
   const threads = [...(state?.conversations ?? [])].sort((a, b) =>
     threadTime(b).localeCompare(threadTime(a)),
   );
-  // Open the newest thread by default so the Desk never starts empty for a project with history.
+  // Open the newest thread by default so the Console never starts empty for a project with history.
   useEffect(() => {
     if (state && !panes.length && threads.length) setPanes([threads[0].id]);
   }, [state, panes.length, threads.length]);
@@ -380,16 +380,16 @@ export function Desk({
 
   if (!state)
     return (
-      <div className="desk desk-loading">
-        <p className="caption">Opening the Desk...</p>
+      <div className="console console-loading">
+        <p className="caption">Opening the Console...</p>
       </div>
     );
 
   const project = state.project;
   return (
-    <div className={`desk ${!online ? 'disconnected' : ''}`}>
-      <aside className="desk-side" aria-label="Project, threads and team">
-        <section className="desk-project">
+    <div className={`console ${!online ? 'disconnected' : ''}`}>
+      <aside className="console-side" aria-label="Project, threads and team">
+        <section className="console-project">
           <h1>{project.name}</h1>
           <p className="caption">
             {waiting.length
@@ -402,12 +402,12 @@ export function Desk({
           </p>
           <div className="actions">
             <Button tone="quiet" onClick={() => openInBook('home')}>
-              Open the Book
+              Open the Workbook
             </Button>
           </div>
         </section>
-        <section className="desk-threads">
-          <header className="desk-side-header">
+        <section className="console-threads">
+          <header className="console-side-header">
             <h2>Threads</h2>
             <Button tone="quiet" disabled={busy} onClick={() => void newThread()}>
               New
@@ -421,10 +421,10 @@ export function Desk({
             return (
               <button
                 key={c.id}
-                className={`desk-thread ${panes.includes(c.id) ? 'open' : ''}`}
+                className={`console-thread ${panes.includes(c.id) ? 'open' : ''}`}
                 onClick={() => openPane(c.id)}
               >
-                <span className="desk-thread-name">{threadName(c, state)}</span>
+                <span className="console-thread-name">{threadName(c, state)}</span>
                 <span className="caption">
                   {task
                     ? `Task: ${task.name}`
@@ -440,8 +440,8 @@ export function Desk({
             );
           })}
         </section>
-        <section className="desk-team">
-          <header className="desk-side-header">
+        <section className="console-team">
+          <header className="console-side-header">
             <h2>Team</h2>
             {teamAvailable && (
               <Button
@@ -461,8 +461,8 @@ export function Desk({
             )}
           </header>
           {team.members.map((m) => (
-            <div key={m.slotId} className="desk-member">
-              <span className="desk-helper-line">
+            <div key={m.slotId} className="console-member">
+              <span className="console-helper-line">
                 <Mark
                   state={
                     m.status === 'working'
@@ -500,7 +500,7 @@ export function Desk({
                         ? 'Stopped'
                         : 'Something went wrong'}
               </span>
-              <span className="actions desk-member-actions">
+              <span className="actions console-member-actions">
                 {m.threadId && (
                   <Button tone="quiet" onClick={() => openPane(m.threadId!)}>
                     Thread
@@ -520,22 +520,22 @@ export function Desk({
             </div>
           ))}
           {teamAvailable && !team.members.length && (
-            <p className="caption desk-honest">No team yet. Add a leader, then members.</p>
+            <p className="caption console-honest">No team yet. Add a leader, then members.</p>
           )}
-          <h3 className="desk-side-sub">Engines</h3>
+          <h3 className="console-side-sub">Engines</h3>
           {helpers.map((h) => (
-            <div key={h.id} className="desk-engine">
+            <div key={h.id} className="console-engine">
               <Mark state={h.available ? 'done' : 'todo'} />
-              <span className="desk-engine-name" title={h.status}>
+              <span className="console-engine-name" title={h.status}>
                 {h.name}
               </span>
               <span className="caption">{h.connection}</span>
             </div>
           ))}
-          <div className="desk-side-action">
+          <div className="console-side-action">
             <Button onClick={openEngineSettings}>Go to engine settings</Button>
           </div>
-          <p className="caption desk-honest">
+          <p className="caption console-honest">
             {teamAvailable
               ? 'Members talk through the Diomedes team service. One engine run at a time in this version; the leader cannot spawn members yet.'
               : 'One helper works at a time in this version. The team service is being built; see the plan in the project notes.'}
@@ -543,7 +543,7 @@ export function Desk({
         </section>
       </aside>
 
-      <section className="desk-panes" aria-label="Helper panes">
+      <section className="console-panes" aria-label="Helper panes">
         {!panes.length && (
           <Empty
             title="Open a thread"
@@ -594,8 +594,8 @@ export function Desk({
         })}
       </section>
 
-      <aside className="desk-right" aria-label="Board, changes and files">
-        <div className="segmented desk-tabs" role="tablist">
+      <aside className="console-right" aria-label="Board, changes and files">
+        <div className="segmented console-tabs" role="tablist">
           {(['board', 'changes', 'files'] as RightTab[]).map((t) => (
             <button
               key={t}
@@ -610,13 +610,13 @@ export function Desk({
             </button>
           ))}
         </div>
-        <div className="desk-right-body">
+        <div className="console-right-body">
           {tab === 'board' && (
-            <div className="desk-board">
+            <div className="console-board">
               {(Object.keys(stateNames) as TaskState[]).map((s) => (
                 <section
                   key={s}
-                  className="desk-column"
+                  className="console-column"
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => {
                     e.preventDefault();
@@ -729,7 +729,7 @@ export function Desk({
                     <p className="caption column-empty">
                       {
                         {
-                          todo: 'Add a task in the Book, or make tasks from a plan.',
+                          todo: 'Add a task in the Workbook, or make tasks from a plan.',
                           working: 'Nothing is running.',
                           waiting: 'Nothing needs your attention.',
                           done: 'Finished tasks will appear here.',
@@ -742,7 +742,7 @@ export function Desk({
             </div>
           )}
           {tab === 'changes' && (
-            <div className="desk-changes">
+            <div className="console-changes">
               {!changes.length ? (
                 <Empty title="Nothing waiting">
                   <p>Changes a helper makes are listed here until you keep or undo them.</p>
@@ -762,14 +762,14 @@ export function Desk({
               {changes.length > 0 && (
                 <div className="actions">
                   <Button tone="quiet" onClick={() => openInBook('review')}>
-                    Open Review in the Book
+                    Open Review in the Workbook
                   </Button>
                 </div>
               )}
             </div>
           )}
           {tab === 'files' && (
-            <div className="desk-files">
+            <div className="console-files">
               {!state.documents.length ? (
                 <Empty title="No files yet">
                   <p>Documents and plans in the project folder are listed here.</p>
@@ -790,7 +790,7 @@ export function Desk({
               )}
               <div className="actions">
                 <Button tone="quiet" onClick={() => openInBook('documents')}>
-                  Edit in the Book
+                  Edit in the Workbook
                 </Button>
                 <Button tone="quiet" onClick={() => openInBook('history')}>
                   History
@@ -1067,7 +1067,7 @@ function Pane({
             <ModeChip mode={t.mode} attempt={t.attempt} />
             <time>{time(t.at)}</time>
           </p>
-          <p className="desk-turn-text">{t.text}</p>
+          <p className="console-turn-text">{t.text}</p>
         </div>
       ),
     })),
@@ -1088,7 +1088,7 @@ function Pane({
             </span>
             <time>{time(m.createdAt)}</time>
           </p>
-          <p className="desk-turn-text">{m.content}</p>
+          <p className="console-turn-text">{m.content}</p>
           {m.files && m.files.length > 0 && <p className="caption">Files: {m.files.join(', ')}</p>}
         </div>
       ),
@@ -1136,15 +1136,15 @@ function Pane({
     setFailingText('');
   };
   return (
-    <article className={`desk-pane ${live ? 'live' : ''} ${waiting.length ? 'needs' : ''}`}>
-      <header className="desk-pane-header">
-        <div className="desk-pane-title">
+    <article className={`console-pane ${live ? 'live' : ''} ${waiting.length ? 'needs' : ''}`}>
+      <header className="console-pane-header">
+        <div className="console-pane-title">
           <Mark state={waiting.length ? 'waiting' : live ? 'working' : 'todo'} />
-          <button className="desk-pane-name" onClick={rename} title="Rename thread">
+          <button className="console-pane-name" onClick={rename} title="Rename thread">
             {threadName(thread, state)}
           </button>
         </div>
-        <p className="caption desk-pane-meta">
+        <p className="caption console-pane-meta">
           {member ? `${member.name}, ${member.role === 'lead' ? 'leader' : 'member'} on ${engineNames[member.engine]}` : helperName}
           <ModeChip mode={thread.mode ?? 'ask'} />
           {live?.engine.model ? `, ${live.engine.model}` : member?.model ? `, ${member.model}` : ''}
@@ -1166,7 +1166,7 @@ function Pane({
                 : 'Sample work, on this computer'}
           </p>
         )}
-        <div className="desk-permission" role="group" aria-label="Permission for this thread">
+        <div className="console-permission" role="group" aria-label="Permission for this thread">
           <div className="segmented compact">
             <button
               className={permission === 'show-first' ? 'active' : ''}
@@ -1192,7 +1192,7 @@ function Pane({
               : 'Every change waits for your OK.'}
           </span>
         </div>
-        <div className="actions desk-pane-actions">
+        <div className="actions console-pane-actions">
           {live && (
             <Button tone="quiet" data-stop onClick={() => stop(live.id)}>
               Stop
@@ -1203,7 +1203,7 @@ function Pane({
           </Button>
         </div>
       </header>
-      <div className="desk-pane-body" ref={body}>
+      <div className="console-pane-body" ref={body}>
         {waiting.map((n) => (
           <Notice
             key={n.id}
@@ -1244,8 +1244,8 @@ function Pane({
           </section>
         )}
       </div>
-      <footer className="desk-pane-composer">
-        <div className="row desk-composer-modes">
+      <footer className="console-pane-composer">
+        <div className="row console-composer-modes">
           <div className="segmented compact" role="group" aria-label="Mode">
             {MODE_ORDER.map((m) => (
               <button
@@ -1312,7 +1312,7 @@ function Pane({
             )}
           </div>
         )}
-        <div className="row desk-pane-send">
+        <div className="row console-pane-send">
           {!toTeam && (
             <select aria-label="Helper" value={route} onChange={(e) => setRoute(e.target.value as Route)}>
               {helpers
@@ -1366,7 +1366,7 @@ function Pane({
                 </select>
               )}
               {runsAt && runsAt !== chosenEffort && (
-                <span className="caption desk-effort-note">
+                <span className="caption console-effort-note">
                   {titleCase(mode)} runs at {effortNames[runsAt] ?? titleCase(runsAt)}.
                 </span>
               )}

@@ -559,7 +559,7 @@ describe('threads are first-class conversations', () => {
     await reloadedAgain.init();
     expect(JSON.stringify(reloadedAgain.state(id).conversations)).toBe(snapshot);
   });
-  test("settings without surface get 'book' (standard) and 'desk' (technical)", async () => {
+  test("settings without surface get 'workbook' (standard) and 'console' (technical)", async () => {
     const settingsPath = path.join(temp, 'data', 'settings.json');
     await request('/settings', 'PUT', { detail: 'standard' });
     let raw = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
@@ -569,7 +569,7 @@ describe('threads are first-class conversations', () => {
     let reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
     await reloaded.init();
     expect(reloaded.settings.detail).toBe('standard');
-    expect(reloaded.settings.surface).toBe('book');
+    expect(reloaded.settings.surface).toBe('workbook');
     raw = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
     delete raw.surface;
     raw.detail = 'technical';
@@ -577,7 +577,7 @@ describe('threads are first-class conversations', () => {
     reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
     await reloaded.init();
     expect(reloaded.settings.detail).toBe('technical');
-    expect(reloaded.settings.surface).toBe('desk');
+    expect(reloaded.settings.surface).toBe('console');
   });
   test('POST /threads creates, PUT renames, GET lists newest-updated first', async () => {
     const id = await sample();

@@ -36,14 +36,14 @@ export const detailDescriptions = {
   technical: 'Engines, models, logs, version ids, and developer tools where they apply.',
 };
 export const surfaceDescriptions = {
-  book: 'One page at a time. Ask, plan, work and review, and Diomedes asks before anything that matters.',
-  desk: 'Every thread, every helper and every change on one screen. For people who work with these tools every day.',
+  workbook: 'One page at a time. Ask, plan, work and review, and Diomedes asks before anything that matters.',
+  console: 'Every thread, every helper and every change on one screen. For people who work with these tools every day.',
 };
 export function surfaceOf(settings: Settings): Surface {
-  return settings.surface === 'desk' ||
+  return settings.surface === 'console' ||
     (settings.surface === undefined && settings.detail === 'technical')
-    ? 'desk'
-    : 'book';
+    ? 'console'
+    : 'workbook';
 }
 export function titleCase(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -303,7 +303,7 @@ export function countK(value: number): string {
   return String(Math.round(value));
 }
 
-/** One line for a reported thread meter in the Book. */
+/** One line for a reported thread meter in the Workbook. */
 export function meterLine(meter: UsageMeter): string {
   const written = `${countK(meter.output)} written`;
   const cost = meter.costUsd !== null ? `, $${meter.costUsd.toFixed(2)}` : '';

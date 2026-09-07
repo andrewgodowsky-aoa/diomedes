@@ -99,8 +99,17 @@ function validateSettings(current: Settings, body: unknown): Settings {
     throw new ApiError(400, 'This settings version is unsupported.');
   if (supplied.detail !== undefined)
     result.detail = choice(supplied.detail, ['guided', 'standard', 'technical'], 'detail level');
-  if (supplied.surface !== undefined)
-    result.surface = choice(supplied.surface, ['book', 'desk'], 'surface');
+  if (supplied.surface !== undefined) {
+    // A client from before the rename still says book or desk; accept those and
+    // store the current name, so only one spelling is ever written.
+    const named = choice(
+      supplied.surface,
+      ['workbook', 'console', 'book', 'desk', 'technical'],
+      'surface',
+    );
+    result.surface =
+      named === 'book' ? 'workbook' : named === 'workbook' ? 'workbook' : 'console';
+  }
   if (supplied.explanations !== undefined)
     result.explanations = choice(
       supplied.explanations,
@@ -1481,7 +1490,7 @@ export async function createApp(options: AppOptions) {
         answer =
           mode === 'ask'
             ? `No service is connected for this request, so Diomedes cannot answer yet.${sources.length ? ` It would read ${sources.slice(0, 3).join(', ')} to answer.` : ''} ${
-                store.settings.surface === 'desk'
+                store.settings.surface === 'console'
                   ? 'Turn an engine on in Settings > Engines.'
                   : 'Turn a helper on in Settings > Helpers on this computer.'
               }`

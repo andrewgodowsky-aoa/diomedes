@@ -1,7 +1,7 @@
 export type Detail = 'guided' | 'standard' | 'technical';
-/** The two surfaces. The Book is one page at a time; the Desk is every thread, helper and change at once. */
-export type Surface = 'book' | 'desk';
-/** The four things a person can want to do; the Book's Home leads with these. */
+/** The two surfaces. The Workbook is one page at a time; the Console is every thread, helper and change at once. */
+export type Surface = 'workbook' | 'console';
+/** The four things a person can want to do; the Workbook's Home leads with these. */
 export type Intent = 'ask' | 'work' | 'plan' | 'review';
 export type Page = 'home' | 'ask' | 'plan' | 'work' | 'review' | 'tasks' | 'documents' | 'history';
 export type Mode = 'ask' | 'plan' | 'build' | 'fix';
@@ -11,7 +11,7 @@ export type Route = 'sample' | 'codex';
 export interface Settings {
   version: 1;
   detail: Detail;
-  /** Missing on settings written before 2026-09-06; the server fills it: 'technical' detail becomes the Desk. */
+  /** Missing on settings written before 2026-09-06; the server fills it: 'technical' detail becomes the Console. */
   surface?: Surface;
   onboarding: {
     work: 'business' | 'school' | 'software' | 'personal' | 'mix' | null;
@@ -272,7 +272,7 @@ export interface IntegrationStatus {
   status: string;
   detail: string;
   capabilities: string[];
-  /** @deprecated use installedVersion; kept for the Desk's version line. */
+  /** @deprecated use installedVersion; kept for the Console's version line. */
   version?: string;
   /** What this computer has. */
   installedVersion?: string;
@@ -280,7 +280,7 @@ export interface IntegrationStatus {
   provenVersion?: string;
   signIn: SignInState;
   adapter: AdapterState;
-  /** Where the engine was found. Shown on the Desk only. */
+  /** Where the engine was found. Shown on the Console only. */
   location?: string;
   disclosure: string[];
 }

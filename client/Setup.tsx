@@ -2,9 +2,9 @@ import type { Settings } from '../shared/types';
 import { Brand, Button, detailDescriptions, surfaceDescriptions, surfaceOf, titleCase } from './components';
 
 const workPreferences = {
-  new: { detail: 'guided', surface: 'book' },
-  some: { detail: 'standard', surface: 'book' },
-  comfortable: { detail: 'standard', surface: 'desk' },
+  new: { detail: 'guided', surface: 'workbook' },
+  some: { detail: 'standard', surface: 'workbook' },
+  comfortable: { detail: 'standard', surface: 'console' },
 } as const;
 
 export function Setup({
@@ -150,8 +150,8 @@ export function Setup({
                     <span>
                       <strong>{label}</strong>
                       <span className="caption">
-                        {workPreferences[value].surface === 'desk'
-                          ? surfaceDescriptions.desk
+                        {workPreferences[value].surface === 'console'
+                          ? surfaceDescriptions.console
                           : detailDescriptions[workPreferences[value].detail]}
                       </span>
                     </span>

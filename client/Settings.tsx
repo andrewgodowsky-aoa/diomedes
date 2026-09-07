@@ -109,7 +109,7 @@ export function SettingsPage({
       services: { ...settings.services, codexModel: model, codexEffort: effort },
     });
   const surface = surfaceOf(settings);
-  const isDesk = surface === 'desk';
+  const isDesk = surface === 'console';
   const helpersSection = isDesk ? 'Engines' : 'Helpers on this computer';
   // The top-bar chip asks for the helpers section by raising this signal.
   useEffect(() => {
@@ -142,16 +142,16 @@ export function SettingsPage({
           <h1>{section}</h1>
           <span className="caption">Settings</span>
         </header>
-        <div className="book-layout">
+        <div className="workbook-layout">
           <div className="reading">
             {section === 'Interface detail' && (
               <>
                 <p className="prose">
-                  Choose how Diomedes lays out your work and how much detail the Book shows.
+                  Choose how Diomedes lays out your work and how much detail the Workbook shows.
                 </p>
                 <h2>Surface</h2>
                 <div className="radio-list">
-                  {(['book', 'desk'] as const).map((s) => (
+                  {(['workbook', 'console'] as const).map((s) => (
                     <label key={s} className={`radio-row ${surface === s ? 'selected' : ''}`}>
                       <input
                         type="radio"
@@ -161,7 +161,7 @@ export function SettingsPage({
                           void save({
                             ...settings,
                             surface: s,
-                            ...(s === 'book' && settings.detail === 'technical'
+                            ...(s === 'workbook' && settings.detail === 'technical'
                               ? { detail: 'standard' }
                               : {}),
                           })
@@ -174,7 +174,7 @@ export function SettingsPage({
                     </label>
                   ))}
                 </div>
-                {surface === 'book' && (
+                {surface === 'workbook' && (
                   <>
                     <h2>Detail</h2>
                     <div className="radio-list">
@@ -187,7 +187,7 @@ export function SettingsPage({
                             type="radio"
                             name="settings-detail"
                             checked={settings.detail === d}
-                            onChange={() => void save({ ...settings, detail: d, surface: 'book' })}
+                            onChange={() => void save({ ...settings, detail: d, surface: 'workbook' })}
                           />
                           <span>
                             <strong>{titleCase(d)}</strong>
@@ -480,7 +480,7 @@ export function SettingsPage({
                             <>
                               <option value={0.95}>
                                 Smaller
-                                {effectiveInterfaceScale === 0.95 ? ' (default on Desk)' : ''}
+                                {effectiveInterfaceScale === 0.95 ? ' (default on Console)' : ''}
                               </option>
                               <option value={1}>Default</option>
                               <option value={1.1}>
@@ -508,7 +508,7 @@ export function SettingsPage({
                 <h2>Diomedes</h2>
                 <p className="prose">By Diomedes Systems. Version 0.1.</p>
                 <p className="prose">
-                  A working book for your projects, documents, plans, tasks, and the history of what
+                  A workbook for your projects, documents, plans, tasks, and the history of what
                   changed.
                 </p>
                 <p className="prose">

@@ -86,9 +86,19 @@ export function migrateConversation(
   }
 }
 
+/**
+ * Settings written by an earlier build. The two surfaces were renamed - the
+ * Book became the Workbook and the Desk the Console - and 'technical' detail
+ * had already been retired into the second surface before that. Old values are
+ * read forever and only the current ones are written, so a person who has been
+ * running Diomedes does not land on a surface they did not choose.
+ */
 export function migrateSettings(settings: Settings): void {
+  const stored = settings.surface as string | undefined;
+  if (stored === 'book') settings.surface = 'workbook';
+  else if (stored === 'desk' || stored === 'technical') settings.surface = 'console';
   if (settings.surface === undefined)
-    settings.surface = settings.detail === 'technical' ? 'desk' : 'book';
+    settings.surface = settings.detail === 'technical' ? 'console' : 'workbook';
 }
 
 export const emptyTeam = (): TeamState => ({ members: [], messages: [], runs: [] });
@@ -110,7 +120,7 @@ export const emptyTeamMeta = (): TeamMeta => ({ idempotency: {}, blockedBy: {} }
 export const defaults = (): Settings => ({
   version: 1,
   detail: 'guided',
-  surface: 'book',
+  surface: 'workbook',
   onboarding: {
     work: null,
     detail: null,

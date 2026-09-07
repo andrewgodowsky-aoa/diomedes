@@ -1227,7 +1227,7 @@ export function Workspace({
               </div>
             ) : (
               <div
-                className={`book-layout ${running.some((s) => s.state === 'working') ? 'working' : ''} ${page === 'home' ? 'home' : ''}`}
+                className={`workbook-layout ${running.some((s) => s.state === 'working') ? 'working' : ''} ${page === 'home' ? 'home' : ''}`}
               >
                 <div className="reading" key={`${projectId}:${page}`}>
                   {page === 'home' && (
@@ -1391,12 +1391,12 @@ export function Workspace({
                         </p>
                       )}
                       {detail === 'standard' && (
-                        <p className="caption open-desk">
+                        <p className="caption open-console">
                           <button
                             className="text-button"
-                            onClick={() => void saveSettings({ ...settings, surface: 'desk' })}
+                            onClick={() => void saveSettings({ ...settings, surface: 'console' })}
                           >
-                            Open the Desk
+                            Open the Console
                           </button>
                           {' '}
                           to see every thread, every helper and every change at once.
@@ -1406,8 +1406,8 @@ export function Workspace({
                   )}
                   {page === 'ask' && (
                     <>
-                      <section className="desk-threads" aria-label="Threads">
-                        <header className="desk-side-header">
+                      <section className="console-threads" aria-label="Threads">
+                        <header className="console-side-header">
                           <h2>Threads</h2>
                           <Button tone="quiet" disabled={busy} onClick={() => void newThread()}>
                             New thread
@@ -1416,10 +1416,10 @@ export function Workspace({
                         {pageThreads.map((c) => (
                           <button
                             key={c.id}
-                            className={`desk-thread ${c.id === selectedThreadId ? 'open' : ''}`}
+                            className={`console-thread ${c.id === selectedThreadId ? 'open' : ''}`}
                             onClick={() => setThreadId(c.id)}
                           >
-                            <span className="desk-thread-name">{threadName(c, state)}</span>
+                            <span className="console-thread-name">{threadName(c, state)}</span>
                             <ModeChip mode={c.mode ?? 'ask'} />
                             <span className="caption">{threadMeta(c)}</span>
                           </button>

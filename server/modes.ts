@@ -8,8 +8,8 @@ export type ModeConsent = 'sending-setting' | 'always';
 export interface ModeDefinition {
   id: Mode;
   name: string;
-  book: { caption: string; placeholder: string };
-  desk: { placeholder: string };
+  workbook: { caption: string; placeholder: string };
+  console: { placeholder: string };
   instructions: string;
   effort: ModeEffort;
   output: ModeOutput;
@@ -34,11 +34,11 @@ export const MODES: Record<Mode, ModeDefinition> = {
   ask: {
     id: 'ask',
     name: 'Ask',
-    book: {
+    workbook: {
       caption: 'Diomedes answers. Nothing in the project changes.',
       placeholder: 'Ask a question about this project...',
     },
-    desk: { placeholder: 'Ask or think out loud...' },
+    console: { placeholder: 'Ask or think out loud...' },
     instructions: ASK_INSTRUCTIONS,
     effort: 'low',
     output: 'text',
@@ -48,11 +48,11 @@ export const MODES: Record<Mode, ModeDefinition> = {
   plan: {
     id: 'plan',
     name: 'Plan',
-    book: {
+    workbook: {
       caption: 'Diomedes writes a plan for you to read before work begins.',
       placeholder: 'What should the plan cover?...',
     },
-    desk: { placeholder: 'What should the plan cover?' },
+    console: { placeholder: 'What should the plan cover?' },
     instructions: PLAN_INSTRUCTIONS,
     effort: 'medium',
     output: 'plan',
@@ -62,11 +62,11 @@ export const MODES: Record<Mode, ModeDefinition> = {
   build: {
     id: 'build',
     name: 'Build',
-    book: {
+    workbook: {
       caption: 'Diomedes proposes changes. Nothing is written until you say go ahead.',
       placeholder: 'What should be done?...',
     },
-    desk: { placeholder: 'What should be done?' },
+    console: { placeholder: 'What should be done?' },
     instructions: BUILD_INSTRUCTIONS,
     effort: 'medium',
     output: 'proposal',
@@ -76,11 +76,11 @@ export const MODES: Record<Mode, ModeDefinition> = {
   fix: {
     id: 'fix',
     name: 'Fix',
-    book: {
+    workbook: {
       caption: 'Point at what is wrong. Diomedes changes as little as it can, up to three tries.',
       placeholder: 'What should be fixed?...',
     },
-    desk: { placeholder: 'What should be fixed?' },
+    console: { placeholder: 'What should be fixed?' },
     instructions: FIX_INSTRUCTIONS,
     effort: 'medium',
     output: 'proposal',

@@ -23,7 +23,7 @@ import {
   tightestWindow,
   titleCase,
 } from './components';
-import { Desk } from './Desk';
+import { Console } from './Console';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
 import { Workspace } from './Workspace';
@@ -143,15 +143,15 @@ export function App() {
     const root = document.documentElement;
     const surface = surfaceOf(settings);
     root.dataset.surface = surface;
-    // The Desk shows the machinery; components that gate on 'technical' follow it.
-    root.dataset.detail = surface === 'desk' ? 'technical' : settings.detail;
+    // The Console shows the machinery; components that gate on 'technical' follow it.
+    root.dataset.detail = surface === 'console' ? 'technical' : settings.detail;
     root.dataset.package = settings.appearance.package;
     root.dataset.motion = settings.appearance.motion;
-    // Untouched interface scale follows who the person is: the Desk fits more
+    // Untouched interface scale follows who the person is: the Console fits more
     // at 0.95, Guided reads larger at 1.1, otherwise 1. A saved value wins.
     const effectiveUiScale =
       settings.appearance.interfaceScale ??
-      (surface === 'desk' ? 0.95 : settings.detail === 'guided' ? 1.1 : 1);
+      (surface === 'console' ? 0.95 : settings.detail === 'guided' ? 1.1 : 1);
     for (const [name, value] of Object.entries({
       'ui-scale': effectiveUiScale,
       'read-scale': settings.appearance.readingScale ?? 1,
@@ -180,7 +180,7 @@ export function App() {
   );
   const navigate = useCallback(
     (p: Page) => {
-      // Only the page moves. Settings replaces the Book and the Desk while it is
+      // Only the page moves. Settings replaces the Workbook and the Console while it is
       // open, so a navigate that arrives then comes from a background restore
       // (a recovered draft, the first plan) and must not close it.
       setPage(p);
@@ -271,7 +271,7 @@ export function App() {
     navigate('ask');
   };
   const current = projects.find((p) => p.id === selected);
-  const surface: Surface = settings ? surfaceOf(settings) : 'book';
+  const surface: Surface = settings ? surfaceOf(settings) : 'workbook';
   // The chip follows the helper that is on: the first ready engine whose
   // switch is on. It shows the last reported windows even when that engine
   // is momentarily unreachable; the helpers list carries the live status.
@@ -299,7 +299,7 @@ export function App() {
     return (
       <div className="initial-state">
         <Brand />
-        <p className="prose">{error || 'Opening your working book...'}</p>
+        <p className="prose">{error || 'Opening your workbook...'}</p>
         {error && <Button onClick={() => location.reload()}>Try again</Button>}
       </div>
     );
@@ -382,7 +382,7 @@ export function App() {
                   {account && (
                     <div className="account-menu">
                       <p className="caption">Surface</p>
-                      {(['book', 'desk'] as const).map((s) => (
+                      {(['workbook', 'console'] as const).map((s) => (
                         <button
                           key={s}
                           onClick={() => {
@@ -390,7 +390,7 @@ export function App() {
                               ...settings,
                               surface: s,
                               detail:
-                                s === 'book' && settings.detail === 'technical'
+                                s === 'workbook' && settings.detail === 'technical'
                                   ? 'standard'
                                   : settings.detail,
                             });
@@ -398,10 +398,10 @@ export function App() {
                           }}
                         >
                           <Mark state={s === surface ? 'working' : 'todo'} />
-                          {s === 'book' ? 'The Book' : 'The Desk'}
+                          {s === 'workbook' ? 'The Workbook' : 'The Console'}
                         </button>
                       ))}
-                      {surface === 'book' && (
+                      {surface === 'workbook' && (
                         <>
                           <p className="caption">Detail</p>
                           {(['guided', 'standard'] as const).map((d) => (
@@ -435,9 +435,9 @@ export function App() {
                   openHelpersSignal={helpersRequest}
                   refresh={() => void refreshIntegrations(true)}
                 />
-              ) : selected && surface === 'desk' ? (
-                <Desk
-                  key={`desk:${selected}`}
+              ) : selected && surface === 'console' ? (
+                <Console
+                  key={`console:${selected}`}
                   projectId={selected}
                   settings={settings}
                   integrations={integrations}
@@ -446,7 +446,7 @@ export function App() {
                   openInBook={(p) => {
                     void saveSettings({
                       ...settings,
-                      surface: 'book',
+                      surface: 'workbook',
                       detail: settings.detail === 'technical' ? 'standard' : settings.detail,
                     });
                     navigate(p);
@@ -485,7 +485,7 @@ export function App() {
                       </Button>
                     </div>
                   </header>
-                  <div className="book-layout home">
+                  <div className="workbook-layout home">
                     <div className="reading">
                       {projects.length ? (
                         <>

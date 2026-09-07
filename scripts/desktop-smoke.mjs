@@ -100,17 +100,17 @@ try {
   });
 
   const deskSettings = await api('/settings');
-  await api('/settings', 'PUT', { ...deskSettings, surface: 'desk' });
+  await api('/settings', 'PUT', { ...deskSettings, surface: 'console' });
   await page.reload();
-  await expect(page.locator('html[data-surface="desk"]')).toHaveCount(1);
-  await expect(page.locator('.desk')).toBeVisible();
-  await expect(page.locator('.desk-team')).toBeVisible();
+  await expect(page.locator('html[data-surface="console"]')).toHaveCount(1);
+  await expect(page.locator('.console')).toBeVisible();
+  await expect(page.locator('.console-team')).toBeVisible();
 
   const thread = await api(`/projects/${project.id}/threads`, 'POST', {
     name: 'Desktop smoke thread',
   });
   await page.reload();
-  await expect(page.locator('.desk-pane').filter({ hasText: thread.name })).toBeVisible();
+  await expect(page.locator('.console-pane').filter({ hasText: thread.name })).toBeVisible();
 
   const helperResult = await api(`/projects/${project.id}/team/members`, 'POST', {
     name: 'Helper',
@@ -118,8 +118,8 @@ try {
     engine: 'sample',
   });
   await page.reload();
-  await expect(page.locator('.desk-member').filter({ hasText: 'Helper' })).toBeVisible();
-  const helperPane = page.locator('.desk-pane').filter({ hasText: 'Helper' });
+  await expect(page.locator('.console-member').filter({ hasText: 'Helper' })).toBeVisible();
+  const helperPane = page.locator('.console-pane').filter({ hasText: 'Helper' });
   await expect(helperPane).toBeVisible();
   const teamMessage = 'Desktop smoke team message';
   await api(`/projects/${project.id}/team/messages`, 'POST', {
@@ -132,14 +132,14 @@ try {
   const bookSettings = await api('/settings');
   await api('/settings', 'PUT', {
     ...bookSettings,
-    surface: 'book',
+    surface: 'workbook',
     lastPage: { ...bookSettings.lastPage, [project.id]: 'home' },
   });
   await page.reload();
-  await expect(page.locator('html[data-surface="book"]')).toHaveCount(1);
+  await expect(page.locator('html[data-surface="workbook"]')).toHaveCount(1);
   await expect(page.locator('.intents')).toBeVisible();
 
-  // Keep the original restart check on the task page after proving the Book home surface.
+  // Keep the original restart check on the task page after proving the Workbook home surface.
   const restartSettings = await api('/settings');
   await api('/settings', 'PUT', {
     ...restartSettings,
@@ -198,7 +198,7 @@ try {
     ),
   );
   console.log(
-    'PASS: packaged desktop, task board, font scaling, Book and Desk surfaces, team threads and messages, renderer isolation, shutdown, and restart persistence.',
+    'PASS: packaged desktop, task board, font scaling, Workbook and Console surfaces, team threads and messages, renderer isolation, shutdown, and restart persistence.',
   );
 } catch (error) {
   const message = error instanceof Error ? error.message.split(/\r?\n/, 1)[0] : String(error);
