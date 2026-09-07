@@ -2503,3 +2503,78 @@ html[data-motion='reduced'] *::after {
   margin-top: 2px;
   color: var(--dm-text-2);
 }
+
+/* ---- Usage ---- */
+.usage-bar {
+  display: inline-block;
+  width: 72px;
+  height: 8px;
+  flex: none;
+  background: var(--dm-well);
+  border: 1px solid var(--dm-rule-2);
+  border-radius: 0;
+  vertical-align: middle;
+  overflow: hidden;
+}
+.usage-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--dm-glacier);
+}
+.usage-fill.signal {
+  background: var(--dm-signal);
+}
+.usage-fill.fault {
+  background: var(--dm-fault);
+}
+.usage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--dm-text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 0 8px;
+  min-height: 36px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+button.usage-chip:hover {
+  color: var(--dm-text-1);
+  border-color: var(--dm-rule-2);
+}
+.usage-chip.static {
+  cursor: default;
+  min-height: 0;
+  padding: 0;
+}
+.usage-block {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.usage-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.usage-block .caption {
+  margin: 0;
+}
+.usage-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.desk-pane-meta .usage-bar {
+  margin-left: 2px;
+}
+.desk-member .usage-chip {
+  font-size: 14px;
+}

@@ -396,3 +396,110 @@ The implementation keeps going with the pick; overturning one is a small, local 
   visible, select defaults to last opened, Send carries "Which suppliers are
   late?" into the Workspace Ask box with the rail Ask entry active) and states
   in a comment why the no-projects cards are not asserted in this run.
+
+# Usage bar — open questions (muse/usage, 2026-09-07)
+
+Unsettled points from slice U1, each with options and the pick I implemented.
+The implementation keeps going with the pick; overturning one is a small, local change.
+
+## 1. The pinned evidence has no rate-limit schema
+
+- The spec says to read `evidence/codex-app-server-0.153.4/` for the exact
+  field names (`GetAccountRateLimitsResponse`, `RateLimitSnapshot`,
+  `RateLimitWindow`, `ThreadTokenUsageUpdatedNotification`,
+  `TokenUsageBreakdown`). That folder holds only `README.md` and
+  `ListMcpServerStatusResponse.json` — none of those five types appear
+  anywhere in the tree.
+- Options: (a) block U1 on a fresh schema dump from the pinned binary;
+  (b) map defensively from the spec's field names (`primary`/`secondary`
+  with `usedPercent`, `windowDurationMins`, `resetsAt`; `planType`;
+  `credits`; `last`/`total` breakdowns with `inputTokens`,
+  `cachedInputTokens`, `outputTokens`, `reasoningOutputTokens`,
+  `totalTokens`; `modelContextWindow`), accepting both a bare snapshot and
+  a `{ rateLimits }`-wrapped one, and mapping unknown shapes to empty
+  windows rather than guessed numbers.
+- Pick: (b). The mappers live in `server/usage.ts`
+  (`windowsFromRateLimits`, `meterFromTokenUsage`) with unit tests over
+  spec-shaped fakes. If the real `account/rateLimits/read` shape differs,
+  only those two functions change.
+
+## 2. What "tightest window" means
+
+- Options: (a) highest percent used; (b) soonest reset.
+- Pick: (a). The chip, the Desk pane bar and the roster chips all show the
+  window with the highest `usedPercent`. The spec's chip example names one
+  window, so either reading fits it; highest-used is the one closest to
+  empty, which is what the bar warns about.
+
+## 3. Window labels and reset times from raw fields
+
+- Options: (a) label from `windowDurationMins` (300 → "5 hours",
+  10080 → "week", with generic minute/hour/day fallbacks) and `resetsAt`
+  normalised from unix seconds or ISO strings to ISO; (b) show raw values.
+- Pick: (a), in `server/usage.ts`. An explicit `label` string from the
+  engine wins when present. Unknown durations fall back to
+  "Primary window" / "Secondary window", never a guessed quota.
+
+## 4. A failed allowance read must not fail the status check
+
+- Options: (a) let `account/rateLimits/read` errors flow into
+  `codexStatus()` like any other check; (b) fence the read in its own
+  try/catch so the last snapshot stands and the check outcome is unchanged.
+- Pick: (b). The allowance is advisory. This also keeps the existing
+  integration tests green: their fake native client rejects the unknown
+  method, which is swallowed exactly like a real read failure.
+
+## 5. How the filler reaches the usage service
+
+- Options: (a) `createApp` builds the service and passes it into a fresh
+  `createIntegrations`; (b) a shared `usageService` singleton in
+  `server/usage.ts` is the default `usage` dependency, replaceable through
+  `createIntegrations` overrides like `fetch` and `discovery`.
+- Pick: (b). `server/app.ts` stays within its allowance (route plus SSE
+  broadcast) because it imports the same singleton; tests inject fakes
+  through overrides.
+
+## 6. Test-mode fake: seeded snapshot plus `GET /api/usage?fake=1`
+
+- Options: (a) `?fake=1` only; (b) preseed the shared service when
+  `DIOMEDES_TEST_MODE=1` *and* offer `?fake=1` to reseed deterministically.
+- Pick: (b). The client fetches plain `/api/usage`, so preseeding at
+  `server/usage.ts` import time is what makes the chip and Settings bars
+  appear with no client test hooks. `?fake=1` reseeds and returns the fixed
+  Codex snapshot (62 and 91 percent); outside test mode it is 404.
+  Test-mode seeding lives in `server/usage.ts`, not `server/app.ts`, to
+  keep the app edit to route plus broadcast.
+
+## 7. The chip shows last-reported windows for an unreachable engine
+
+- Options: (a) require the engine to be `available` as well as switched on;
+  (b) show whenever the switch is on and windows were reported.
+- Pick: (b). The spec hides the chip "when no engine is on or no window is
+  reported" — availability is not in that sentence, and the helpers list
+  already carries the live status. In the UI suite Codex is switched on but
+  its binary is absent, so (a) would make the chip untestable there.
+
+## 8. Workspace carries a `usage` prop after all
+
+- The spec allows Workspace to stay untouched unless the chip needs a
+  prop passed through. The chip lives in `App.tsx`, but `App.tsx` is told
+  to pass `usage` to Workspace, Desk and Settings alike.
+- Pick: pass it everywhere, and put it to real use in Workspace: the
+  composer route line shows the selected service's tightest bar and percent
+  (nothing renders for sample work, which reports no allowance). Copy was
+  checked against the banned-words list.
+
+## 9. Clicking the chip opens Settings at the helpers section
+
+- Options: (a) just open Settings wherever it was; (b) raise a signal that
+  moves Settings to "Helpers on this computer" (Book) or "Engines" (Desk).
+- Pick: (b) via an `openHelpersSignal` counter prop. No existing Settings
+  behaviour changed.
+
+## 10. Cost stays null on turn notifications
+
+- The turn notification carries no cost field in the spec; per-thread cost
+  comes from `account/usage/read`, which U1 does not call.
+- Pick: `meterFromTokenUsage` records `costUsd: null` unless the payload
+  states a cost outright. The Settings meter line omits the price when it
+  is null.

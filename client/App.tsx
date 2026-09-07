@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { IntegrationStatus, Page, Project, Settings, Surface } from '../shared/types';
+import type {
+  IntegrationStatus,
+  Page,
+  Project,
+  Settings,
+  Surface,
+  UsageSnapshot,
+} from '../shared/types';
 import { api } from './api';
 import {
   Brand,
@@ -9,9 +16,11 @@ import {
   Icon,
   Mark,
   Modal,
+  UsageChip,
   askDraftKey,
   date,
   surfaceOf,
+  tightestWindow,
   titleCase,
 } from './components';
 import { Desk } from './Desk';
@@ -27,6 +36,8 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [account, setAccount] = useState(false);
   const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
+  const [usage, setUsage] = useState<UsageSnapshot[]>([]);
+  const [helpersRequest, setHelpersRequest] = useState(0);
   const [error, setError] = useState('');
   const [online, setOnline] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -63,6 +74,14 @@ export function App() {
       report(e);
     }
   }, [report]);
+  const refreshUsage = useCallback(async () => {
+    try {
+      const data = await api<{ usage: UsageSnapshot[] }>('/usage');
+      setUsage(data.usage);
+    } catch (e) {
+      report(e);
+    }
+  }, [report]);
   async function saveSettings(value: Settings) {
     setBusy(true);
     try {
@@ -89,12 +108,13 @@ export function App() {
           setPage(s.lastPage[id] ?? 'home');
         }
         void refreshIntegrations();
+        void refreshUsage();
       } catch (e) {
         setOnline(false);
         report(e);
       }
     })();
-  }, [refreshIntegrations, report]);
+  }, [refreshIntegrations, refreshUsage, report]);
   useEffect(() => {
     const es = new EventSource('/api/events');
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -110,11 +130,14 @@ export function App() {
     es.addEventListener('settings', () => {
       void api<Settings>('/settings').then(setSettings).catch(report);
     });
+    es.addEventListener('usage', () => {
+      void refreshUsage().catch(report);
+    });
     return () => {
       clearTimeout(timer);
       es.close();
     };
-  }, [refreshProjects, report]);
+  }, [refreshProjects, refreshUsage, report]);
   useEffect(() => {
     if (!settings) return;
     const root = document.documentElement;
@@ -246,6 +269,16 @@ export function App() {
   };
   const current = projects.find((p) => p.id === selected);
   const surface: Surface = settings ? surfaceOf(settings) : 'book';
+  // The chip follows the helper that is on: the first ready engine whose
+  // switch is on. It shows the last reported windows even when that engine
+  // is momentarily unreachable; the helpers list carries the live status.
+  const activeIntegration = integrations.find(
+    (i) => i.adapter === 'ready' && i.kind !== 'sample' && settings?.services?.[i.id],
+  );
+  const activeUsage = activeIntegration
+    ? (usage.find((u) => u.engine === activeIntegration.id) ?? null)
+    : null;
+  const chipVisible = !!activeUsage && !!tightestWindow(activeUsage);
   const needs = projects.reduce((n, p) => n + (p.status?.needsYou ?? 0), 0);
   const running = projects.reduce((n, p) => n + (p.status?.working ?? 0), 0);
   const shownProjects = projects.filter((p) => settings?.openProjects.includes(p.id));
@@ -318,6 +351,16 @@ export function App() {
                       <span>{status}</span>
                     </>
                   )}
+                  {chipVisible && activeIntegration && activeUsage && (
+                    <UsageChip
+                      snapshot={activeUsage}
+                      name={activeIntegration.name}
+                      onOpen={() => {
+                        setShowSettings(true);
+                        setHelpersRequest((n) => n + 1);
+                      }}
+                    />
+                  )}
                 </div>
                 <Button
                   tone={`quiet ${showSettings ? 'selected' : ''}`}
@@ -385,6 +428,8 @@ export function App() {
                   settings={settings}
                   save={saveSettings}
                   integrations={integrations}
+                  usage={usage}
+                  openHelpersSignal={helpersRequest}
                   refresh={() => void refreshIntegrations(true)}
                 />
               ) : selected && surface === 'desk' ? (
@@ -393,6 +438,7 @@ export function App() {
                   projectId={selected}
                   settings={settings}
                   integrations={integrations}
+                  usage={usage}
                   saveSettings={saveSettings}
                   openInBook={(p) => {
                     void saveSettings({
@@ -413,6 +459,7 @@ export function App() {
                   navigate={navigate}
                   settings={settings}
                   integrations={integrations}
+                  usage={usage}
                   saveSettings={saveSettings}
                   report={report}
                   online={online}

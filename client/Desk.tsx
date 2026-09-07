@@ -17,6 +17,7 @@ import type {
   Slot,
   TeamMember,
   TeamState,
+  UsageSnapshot,
 } from '../shared/types';
 import { api } from './api';
 import {
@@ -27,7 +28,10 @@ import {
   Modal,
   Notice,
   SessionStatus,
+  UsageBar,
+  UsageChip,
   stateNames,
+  tightestWindow,
   time,
   titleCase,
 } from './components';
@@ -41,6 +45,7 @@ interface Props {
   projectId: string;
   settings: Settings;
   integrations: IntegrationStatus[];
+  usage: UsageSnapshot[];
   saveSettings: (value: Settings) => Promise<void>;
   openInBook: (page: Page) => void;
   report: (e: unknown) => void;
@@ -66,6 +71,7 @@ export function Desk({
   projectId,
   settings,
   integrations,
+  usage,
   saveSettings,
   openInBook,
   report,
@@ -391,6 +397,11 @@ export function Desk({
                 <strong>{m.name}</strong>
                 <span className="caption">{m.role === 'lead' ? 'Leader' : 'Member'}</span>
               </span>
+              {(() => {
+                const snapshot = usage.find((u) => u.engine === m.engine);
+                if (!snapshot || !tightestWindow(snapshot)) return null;
+                return <UsageChip snapshot={snapshot} name={engineNames[m.engine]} />;
+              })()}
               <span className="caption">
                 {engineNames[m.engine]}
                 {m.model ? `, ${m.model}` : ''}
@@ -470,6 +481,7 @@ export function Desk({
               thread={thread}
               state={state}
               settings={settings}
+              usage={usage}
               helpers={helpers}
               busy={busy}
               online={online}
@@ -864,6 +876,7 @@ function Pane({
   thread,
   state,
   settings,
+  usage,
   helpers,
   busy,
   online,
@@ -884,6 +897,7 @@ function Pane({
   thread: ThreadWithPermission;
   state: ProjectState;
   settings: Settings;
+  usage: UsageSnapshot[];
   helpers: { id: string; name: string; available: boolean }[];
   busy: boolean;
   online: boolean;
@@ -953,6 +967,15 @@ function Pane({
   }, [thread.turns.length, running.length]);
   const task = thread.taskId ? state.tasks.find((t) => t.id === thread.taskId) : null;
   const helperName = lastHelper?.route === 'codex' ? 'Codex' : lastHelper ? 'Sample work' : 'No helper yet';
+  // The tightest allowance window for this pane's helper, beside the context percent.
+  const paneEngine = member?.engine ?? lastHelper?.route ?? 'sample';
+  const paneTight = tightestWindow(usage.find((u) => u.engine === paneEngine) ?? {
+    engine: paneEngine,
+    at: '',
+    windows: [],
+    source: 'none',
+    detail: '',
+  });
   const live = running[0];
   const submit = () => {
     const value = text.trim();
@@ -975,6 +998,12 @@ function Pane({
           {live?.engine.model ? `, ${live.engine.model}` : member?.model ? `, ${member.model}` : ''}
           {task ? ` · Task: ${task.name}` : ''}
           {live?.engine.context != null ? ` · Context ${Math.round(live.engine.context)}%` : ''}
+          {paneTight ? (
+            <>
+              {' · '}
+              <UsageBar window={paneTight} />
+            </>
+          ) : null}
         </p>
         {live && (
           <p className="caption helper-caption">

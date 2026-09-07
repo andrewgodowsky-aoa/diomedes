@@ -18,6 +18,8 @@ import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText }
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
 import { askCodex, getIntegrationStatuses, type NativeTeamOptions } from './integrations.js';
+import { fakeCodexSnapshot, usageService } from './usage.js';
+import type { UsageSnapshot } from '../shared/types.js';
 import { mountTeamRoutes } from './team/routes.js';
 import { roleInstructions } from './team/prompts.js';
 
@@ -364,6 +366,25 @@ export async function createApp(options: AppOptions) {
             : item,
         ),
       }),
+      false,
+    ),
+  );
+  app.get(
+    '/api/usage',
+    route(
+      async (req) => {
+        if (req.query.fake === '1') {
+          // Test-mode only: a fixed Codex snapshot so the UI suite can assert
+          // the chip, the signal colour and the Settings bars without a real
+          // Codex session.
+          if (process.env.DIOMEDES_TEST_MODE !== '1')
+            throw new ApiError(404, 'This action was not found.');
+          const snapshot = fakeCodexSnapshot();
+          usageService.record('codex', snapshot);
+          return { usage: usageService.all() };
+        }
+        return { usage: usageService.all() };
+      },
       false,
     ),
   );
@@ -1414,8 +1435,11 @@ export async function createApp(options: AppOptions) {
       send('projects', { projects: [state.project] });
     };
     const settingsListener = (settings: Settings) => send('settings', settings);
+    const usageListener = (snapshots: UsageSnapshot[]) => send('usage', { usage: snapshots });
     store.on('change', listener);
     store.on('settings', settingsListener);
+    const offUsage: () => void = usageService.subscribe(usageListener);
+    // The client re-fetches /api/usage on this event, like it does for settings.
     send('ready', { ok: true });
     const heartbeat = setInterval(() => {
       if (!res.destroyed) res.write(': keep-alive\n\n');
@@ -1425,6 +1449,7 @@ export async function createApp(options: AppOptions) {
       clearInterval(heartbeat);
       store.off('change', listener);
       store.off('settings', settingsListener);
+      offUsage();
     });
   });
   app.use('/api', (_req, _res, next) => next(new ApiError(404, 'This action was not found.')));
