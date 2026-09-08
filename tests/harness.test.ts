@@ -9,6 +9,7 @@ import type { CapabilityManifest, HarnessPrincipal, ModelResult } from '../share
 import {
   FileRunStore,
   NativeAgent,
+  presentRun,
   RunService,
   Suspended,
   ToolRegistry,
@@ -285,6 +286,93 @@ describe('durable step boundary', () => {
     // Once the lease has lapsed, a new claim by anyone is a new generation.
     time += 200;
     expect(await service.claim('r', 'host', 100)).toBe(fence + 1);
+  });
+
+  test('cancelling while a step with an effect is in flight parks it for reconciliation', async () => {
+    const { service } = await setup();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const pending = execute(service, def({ effect: 'non-idempotent' }), async () => {
+      await gate;
+      return 'landed anyway';
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    await service.cancel('r', 'the person stopped it', principal);
+    release();
+    await expect(pending).rejects.toThrow(/stale attempt/);
+    const run = await service.get('r');
+    expect(run.state).toBe('cancelled');
+    expect(run.steps[0].state).toBe('reconcile_required');
+    expect(run.events.some((e) => e.type === 'step.reconcile_required')).toBe(true);
+  });
+
+  test('cancelling with a principal from another project is refused', async () => {
+    const { service } = await setup();
+    await expect(
+      service.cancel('r', 'nope', { ...principal, projectId: 'other' }),
+    ).rejects.toThrow(/project/);
+    expect((await service.get('r')).state).toBe('running');
+  });
+
+  test('a run parked for reconciliation cannot be completed or overwritten by a failure', async () => {
+    const { service } = await setup();
+    await expect(
+      execute(service, def({ effect: 'non-idempotent' }), () => {
+        throw new Error('lost after send');
+      }),
+    ).rejects.toThrow(/lost after send/);
+    await expect(service.complete('r', 'host', { text: 'no' })).rejects.toThrow(/reconcil/);
+    await service.fail('r', 'host', new Error('later error'));
+    const run = await service.get('r');
+    expect(run.state).toBe('reconcile_required');
+    expect(run.failure).toBeNull();
+  });
+
+  test('a fresh decision after an identity rotation is consumable under the new generation', async () => {
+    const { service } = await setup();
+    const d = def({ approval: true });
+    await expect(execute(service, d, () => 1)).rejects.toThrow(Suspended);
+    const rotated = { ...principal, identityGeneration: 2 };
+    const approval = await service.decide(
+      { runId: 'r', stepId: 'one', decision: 'approved', decidedBy: 'manager', ttlMs: 100 },
+      rotated,
+    );
+    expect(approval.identityGeneration).toBe(2);
+    expect(await execute(service, d, () => 1, rotated)).toBe(1);
+  });
+
+  test('error messages pass through the host redaction before they are persisted', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-harness-'));
+    cleanups.push(() => fs.rm(dir, { recursive: true, force: true }));
+    const service = new RunService(new FileRunStore(dir), {
+      clock: () => 1000,
+      redact: (text) => text.replaceAll('sk-secret-123', '[redacted]'),
+    });
+    await service.start({ id: 'r', tenantId: 'a', projectId: 'p', capability, principal, budget: budget(5) });
+    await service.claim('r', 'host', 100);
+    await expect(
+      execute(service, def(), () => {
+        throw new Error('provider said sk-secret-123 is invalid');
+      }),
+    ).rejects.toThrow(/sk-secret-123/);
+    await service.fail('r', 'host', new Error('token sk-secret-123 leaked'));
+    const text = await fs.readFile(path.join(dir, 'r.json'), 'utf8');
+    expect(text).not.toContain('sk-secret-123');
+    expect(text).toContain('[redacted]');
+  });
+
+  test('a capability whose tool list is not a list of names cannot start', async () => {
+    const { service } = await setup();
+    await expect(
+      service.start({
+        id: 'r3',
+        tenantId: 'a',
+        projectId: 'p',
+        capability: { ...capability, tools: [42 as unknown as string] },
+        principal,
+        budget: budget(5),
+      }),
+    ).rejects.toThrow(/list of names/);
   });
 
   test('a cancelled run cannot be completed', async () => {
@@ -664,6 +752,42 @@ describe('native loop over an injected model adapter', () => {
       /turn limit/,
     );
     expect((await service.get('r')).state).toBe('failed');
+  });
+
+  test('a tool with an effect that fails inside the loop parks the run, and the loop does not overwrite that', async () => {
+    const { service } = await setup();
+    const tools = registry();
+    tools.register({
+      ...sumTool,
+      name: 'send',
+      permission: 'sum',
+      effect: 'non-idempotent',
+      execute: () => {
+        throw new Error('connection lost after send');
+      },
+    });
+    await service.start({
+      id: 'r2',
+      tenantId: 'a',
+      projectId: 'p',
+      capability: { ...capability, tools: ['send'] },
+      principal,
+      budget: budget(10),
+    });
+    await service.claim('r2', 'host', 100);
+    const agent = new NativeAgent(
+      service,
+      adapter(() => ({ response: { type: 'tool', name: 'send', input: { values: [1] } } })),
+      tools,
+    );
+    await expect(agent.run('r2', 'host', 'send it', principal)).rejects.toThrow(/connection lost/);
+    const run = await service.get('r2');
+    expect(run.state).toBe('reconcile_required');
+    expect(run.failure).toBeNull();
+    const shown = presentRun(run);
+    expect(shown.reason).toBe('went-wrong');
+    expect(shown.uncertain?.stepId).toBe('tool:0');
+    expect(shown.sentence).toMatch(/could not confirm/);
   });
 
   test('a registered tool outside the capability is not offered and cannot be called', async () => {

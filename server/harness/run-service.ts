@@ -114,13 +114,27 @@ export class RunService {
   private controllers = new Map<string, AbortController>();
   private readonly clock: () => number;
   private readonly policyVersion: string;
+  private readonly redact: (text: string) => string;
 
   constructor(
     private readonly store: RunStore,
-    options: { clock?: () => number; policyVersion?: string } = {},
+    options: {
+      clock?: () => number;
+      policyVersion?: string;
+      /** Applied to every error message before it is persisted. The host passes its secret scrubber. */
+      redact?: (text: string) => string;
+    } = {},
   ) {
     this.clock = options.clock ?? Date.now;
     this.policyVersion = options.policyVersion ?? 'diomedes-policy-v1';
+    this.redact = options.redact ?? ((text) => text);
+  }
+
+  private describeError(error: unknown): { name: string; message: string } {
+    return {
+      name: error instanceof Error ? error.name : 'Error',
+      message: this.redact(error instanceof Error ? error.message : String(error)).slice(0, 2000),
+    };
   }
 
   /** Optional hooks run after policy, in order, on deep copies. They cannot allow what policy denied. */
@@ -277,6 +291,11 @@ export class RunService {
     if (budget.wallMs !== null) units(budget.wallMs, 'Budget wallMs');
     if (units(capability.maxTurns, 'Capability maxTurns') === 0)
       throw new HarnessError('invalid_capability', 'A positive turn limit is required.');
+    for (const key of ['tools', 'requestedPermissions'] as const) {
+      const list = capability[key];
+      if (!Array.isArray(list) || !list.every((item) => typeof item === 'string' && item))
+        throw new HarnessError('invalid_capability', `Capability ${key} must be a list of names.`);
+    }
     const missing = capability.requestedPermissions.filter(
       (p) => !input.principal.capabilities.includes(p),
     );
@@ -510,10 +529,7 @@ export class RunService {
           const state = intent.effect === 'non-idempotent' ? 'reconcile_required' : 'retry_wait';
           s.state = state;
           s.endedAt = this.now();
-          s.error = {
-            name: error instanceof Error ? error.name : 'Error',
-            message: error instanceof Error ? error.message : String(error),
-          };
+          s.error = this.describeError(error);
           if (state === 'reconcile_required') run.state = 'reconcile_required';
           this.note(run, `step.${state}`, { errorType: s.error.name }, s.intent.stepId, s.attempt);
           await this.commit(run);
@@ -540,12 +556,16 @@ export class RunService {
       if (!s || s.state !== 'waiting_approval')
         throw new HarnessError('not_waiting', 'Step is not waiting for approval.');
       const now = this.clock();
+      // The approval binds to the authority current at decision time: the
+      // deciding principal's generation. A step consumes it only under that
+      // same generation, so a rotation needs a fresh decision, and a fresh
+      // decision after a rotation is consumable.
       const approval: HarnessApproval = {
         runId: run.id,
         stepId: s.intent.stepId,
         intentHash: s.intentHash,
-        principalId: run.principal.id,
-        identityGeneration: run.principal.identityGeneration,
+        principalId: principal.id,
+        identityGeneration: principal.identityGeneration,
         executionGeneration: run.fence,
         decision: decision.decision,
         decidedBy: decision.decidedBy,
@@ -577,21 +597,35 @@ export class RunService {
     });
   }
 
-  async cancel(runId: string, reason: string): Promise<void> {
+  /**
+   * Stop a run. A step that is running with an effect on the world keeps an
+   * unknown outcome: it is parked for reconciliation, never relabelled as
+   * cancelled, and the presentation says so. The abort signal is advisory; a
+   * handler that ignores it cannot commit afterwards because its step is no
+   * longer `running`.
+   */
+  async cancel(runId: string, reason: string, principal?: HarnessPrincipal): Promise<void> {
     await this.serialize(runId, async () => {
       const run = await this.load(runId);
+      if (principal) this.scope(run, principal);
       if (run.state === 'completed' || run.state === 'cancelled') return;
       run.state = 'cancelled';
       run.cancelReason = reason;
-      for (const s of run.steps)
-        if (['running', 'pending', 'waiting_approval', 'waiting_event', 'retry_wait'].includes(s.state)) {
+      for (const s of run.steps) {
+        if (s.state === 'running' && s.intent.effect === 'non-idempotent') {
+          s.state = 'reconcile_required';
+          s.endedAt = this.now();
+          this.note(run, 'step.reconcile_required', { why: 'cancelled while running' }, s.intent.stepId, s.attempt);
+        } else if (['running', 'pending', 'waiting_approval', 'waiting_event', 'retry_wait'].includes(s.state)) {
           s.state = 'cancelled';
           s.endedAt = this.now();
         }
+      }
       this.note(run, 'run.cancelled', { reason });
       await this.commit(run);
     });
     this.controllers.get(runId)?.abort();
+    this.controllers.delete(runId);
   }
 
   /** Record the run's result and its completion event in one write. Idempotent once completed. */
@@ -601,6 +635,11 @@ export class RunService {
       if (run.state === 'completed') return;
       if (run.state === 'cancelled')
         throw new HarnessError('run_cancelled', 'This run was cancelled and cannot complete.');
+      if (run.state === 'reconcile_required' || run.steps.some((s) => s.state === 'reconcile_required'))
+        throw new HarnessError(
+          'reconcile_required',
+          'A step needs reconciliation before this run can complete.',
+        );
       this.guard(run, owner);
       if (run.steps.some((s) => s.state === 'running'))
         throw new HarnessError('step_running', 'A step is still running.');
@@ -609,21 +648,21 @@ export class RunService {
       this.note(run, 'run.completed', { resultHash: digest(run.result) });
       await this.commit(run);
     });
+    this.controllers.delete(runId);
   }
 
+  /** Record a failure. A run parked for reconciliation keeps that state: the unknown outcome outranks the error. */
   async fail(runId: string, owner: string, error: unknown): Promise<void> {
     await this.serialize(runId, async () => {
       const run = await this.load(runId);
-      if (run.state === 'completed' || run.state === 'cancelled') return;
+      if (['completed', 'cancelled', 'reconcile_required'].includes(run.state)) return;
       this.guard(run, owner);
       run.state = 'failed';
-      run.failure = {
-        name: error instanceof Error ? error.name : 'Error',
-        message: error instanceof Error ? error.message : String(error),
-      };
+      run.failure = this.describeError(error);
       this.note(run, 'run.failed', { errorType: run.failure.name });
       await this.commit(run);
     });
+    this.controllers.delete(runId);
   }
 
   /** Keep a provider's opaque transcript reference apart from the run's portable context. */

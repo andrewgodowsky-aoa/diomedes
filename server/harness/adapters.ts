@@ -81,7 +81,7 @@ export const ADAPTER_CAPABILITIES = {
     cancellability: 'observed',
     checkpointGranularity: 'task',
     notes: [
-      'The fourteen team tools are served by Diomedes\' own loopback MCP host and are mediated there (server/team/mcp.ts); the engine\'s other internal tools are only reported by the model.',
+      'The thirteen team tools are served by Diomedes\' own loopback MCP host and are mediated there (server/team/mcp.ts); the engine\'s other internal tools are only reported by the model.',
       'The member\'s bearer token is leased into one environment variable for the run and redacted from every log and proposal afterwards.',
       'Otherwise as the single Codex route.',
     ],

@@ -44,15 +44,26 @@ export function presentRun(run: HarnessRun): RunPresentation {
     case 'completed':
       return { ...base, taskState: 'done', reason: null, sessionState: 'done', sentence: 'Finished.' };
     case 'failed':
+      // The error text stays on the run record for the Console's technical
+      // lines; a person-facing sentence never carries a raw message.
       return {
         ...base,
         taskState: 'waiting',
         reason: 'went-wrong',
         sessionState: 'failed',
-        sentence: `Stopped because something went wrong${run.failure ? `: ${run.failure.message}` : ''}.`,
+        sentence: 'Stopped because something went wrong. Nothing will be repeated on its own.',
       };
     case 'cancelled':
-      return { ...base, taskState: 'todo', reason: null, sessionState: 'stopped', sentence: `Stopped${run.cancelReason ? `: ${run.cancelReason}` : ''}.` };
+      return uncertainStep
+        ? {
+            ...base,
+            taskState: 'waiting',
+            reason: 'went-wrong',
+            sessionState: 'stopped',
+            sentence:
+              'Stopped. One action may have happened outside Diomedes that it could not confirm. Check before starting again.',
+          }
+        : { ...base, taskState: 'todo', reason: null, sessionState: 'stopped', sentence: `Stopped${run.cancelReason ? `: ${run.cancelReason}` : ''}.` };
   }
 }
 
