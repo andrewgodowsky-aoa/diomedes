@@ -1,12 +1,12 @@
 {
-  "checkedAt": "2026-09-07T10:27:49.719Z",
+  "checkedAt": "2026-09-08T12:49:28.283Z",
   "executablePath": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
   "startup": {
     "version": "0.1.0",
     "executable": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
-    "pid": 32860,
-    "url": "http://127.0.0.1:58641",
-    "startedAt": "2026-09-07T10:27:46.427Z",
+    "pid": 42200,
+    "url": "http://127.0.0.1:54296",
+    "startedAt": "2026-09-08T12:49:24.258Z",
     "packaged": true
   },
   "taskCount": 4,
@@ -26,5 +26,43 @@
   "serviceStopsOnClose": true,
   "dataLockReleased": true,
   "persistedOnRestart": true,
+  "workAdmission": {
+    "lostResponsesRecovered": true,
+    "receiptsRetainedOnRestart": true,
+    "runs": [
+      {
+        "surface": "workbook",
+        "requests": 2,
+        "receipt": {
+          "protocolVersion": 1,
+          "commandId": "9755fdfa-d55b-4683-871e-db60a9e1a86d",
+          "payloadDigest": "sha256:fadcf63690b2b3db42ae6d4235215abcca34c2ec981e85fb099ae14967a4380b",
+          "projectId": "7c17fda7dc24",
+          "taskId": "T1",
+          "sessionId": "S77d5c55ed2c2",
+          "eventId": "Ea80384c56a45",
+          "admittedAt": "2026-09-08T12:49:24.807Z",
+          "route": "sample",
+          "scope": "local-prototype"
+        }
+      },
+      {
+        "surface": "console",
+        "requests": 2,
+        "receipt": {
+          "protocolVersion": 1,
+          "commandId": "fbc3f5fa-f40b-4433-b4c4-595eb6e1c190",
+          "payloadDigest": "sha256:c54fc3a39939f69aa3a84c980ea9f1958fea1384906bab71ed501b1853d707f8",
+          "projectId": "7c17fda7dc24",
+          "taskId": "T1",
+          "sessionId": "Sbe0bea8ad9a9",
+          "eventId": "E0028bd4286b9",
+          "admittedAt": "2026-09-08T12:49:26.348Z",
+          "route": "sample",
+          "scope": "local-prototype"
+        }
+      }
+    ]
+  },
   "pageErrors": []
 }

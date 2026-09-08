@@ -63,7 +63,7 @@ try {
     server!.once('error', reject);
   });
   console.log('Native work smoke: one native ChatGPT request using only synthetic text.');
-  await api('/settings', 'PUT', { services: { codex: true } });
+  await api('/settings', 'PUT', { services: { codex: true, codexModel: 'gpt-5.6-luna', codexEffort: 'low' } });
   const project = await api<Project>('/projects', 'POST', {
     name: 'Native work smoke',
     folder: projectFolder,
@@ -82,12 +82,19 @@ try {
   proof.taskId = task.id;
   assert.equal(await fs.readFile(path.join(projectFolder, 'Brief.md'), 'utf8'), brief);
   proof.nativeGenerationRequests = 1;
-  const started = await api<Session>(`/projects/${project.id}/work/start`, 'POST', {
+  const command = {
+    protocolVersion: 1, commandId: 'native-work-smoke',
     taskId: task.id,
     route: 'codex',
     sources: ['Brief.md'],
     consent: true,
-  });
+  };
+  const started = await api<Session>(`/projects/${project.id}/work/start`, 'POST', command);
+  const retried = await api<Session>(`/projects/${project.id}/work/start`, 'POST', command);
+  assert.ok(started.receipt, 'Native Work must return its durable command receipt.');
+  assert.deepEqual(retried.receipt, started.receipt);
+  assert.equal(retried.id, started.id);
+  proof.commandReceipt = started.receipt;
   assert.equal(started.sample, false);
   proof.sessionId = started.id;
 
@@ -136,7 +143,30 @@ try {
   };
   console.log('Native proposal ready: original file is unchanged and the exact preview passed.');
 
-  await api(`/projects/${project.id}/needs/${need.id}/resolve`, 'POST', { resolution: 'go-ahead' });
+  assert.ok(need.approval, 'The native proposal must carry an exact approval identity.');
+  const approvalCommand = {
+    protocolVersion: 1 as const,
+    commandId: 'native-work-smoke-approval',
+    resolution: 'go-ahead' as const,
+    proposalDigest: need.approval.proposalDigest,
+    actionDigest: need.approval.actionDigest,
+    baseDigest: need.approval.baseDigest,
+  };
+  const decided = await api<import('../shared/types.js').Need>(
+    `/projects/${project.id}/needs/${need.id}/resolve`,
+    'POST',
+    approvalCommand,
+  );
+  const replayed = await api<import('../shared/types.js').Need>(
+    `/projects/${project.id}/needs/${need.id}/resolve`,
+    'POST',
+    approvalCommand,
+  );
+  assert.ok(decided.approvalReceipt, 'Approval must return its durable decision receipt.');
+  assert.deepEqual(replayed.approvalReceipt, decided.approvalReceipt);
+  assert.equal(decided.execution?.state, 'applied');
+  proof.approvalReceipt = decided.approvalReceipt;
+  proof.approvalExecution = decided.execution;
   assert.equal(
     await fs.readFile(path.join(projectFolder, 'Brief.md'), 'utf8'),
     expected,

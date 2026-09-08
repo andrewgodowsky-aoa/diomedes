@@ -18,7 +18,10 @@ import type {
   UsageSnapshot,
 } from '../shared/types';
 import { api, ApiError } from './api';
+import { reconcileWorkStarts, startWork } from './work-start';
+import { decideApproval, reconcileApprovals } from './approval-decisions';
 import {
+  ApprovalStatus,
   Button,
   ChangeCard,
   Empty,
@@ -134,6 +137,7 @@ export function Workspace({
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
   const [showMore, setShowMore] = useState(false);
   const currentId = useRef(projectId);
+  const reconciliationIssue = useRef<string | undefined>(undefined);
   currentId.current = projectId;
   const openedDraft = useRef(false);
   const dirty = !!doc && buffer !== doc.text;
@@ -142,7 +146,14 @@ export function Workspace({
   const load = useCallback(async () => {
     const data = await api<ProjectState>(`/projects/${projectId}/state`);
     if (currentId.current === projectId) setState(data);
-  }, [projectId]);
+    const workIssue = reconcileWorkStarts(projectId, data.sessions);
+    const approvalIssue = reconcileApprovals(projectId, data.needs);
+    const issue = workIssue ?? approvalIssue;
+    if (issue?.message !== reconciliationIssue.current) {
+      reconciliationIssue.current = issue?.message;
+      if (issue) report(issue);
+    }
+  }, [projectId, report]);
   const perform = useCallback(
     async (fn: () => Promise<void>) => {
       setBusy(true);
@@ -374,7 +385,7 @@ export function Workspace({
   async function startTask(task: Task) {
     await perform(async () => {
       const sources = attached ? [attached] : task.from ? [task.from.plan] : [];
-      await api(`${base}/work/start`, 'POST', { taskId: task.id, route, sources, consent: true });
+      await startWork(projectId, { taskId: task.id, route, sources, consent: true });
       setWorkSessionId('');
       navigate('work');
       await load();
@@ -401,9 +412,9 @@ export function Workspace({
     allowForTask = false,
   ) {
     await perform(async () => {
-      await api(`${base}/needs/${need.id}/resolve`, 'POST', { resolution, allowForTask });
+      const decided = await decideApproval(projectId, need, resolution, allowForTask);
       await load();
-      say(resolution === 'go-ahead' ? 'You said go ahead.' : 'That step will not be done.');
+      say(decided.execution?.reason ?? (decided.execution?.state === 'pending' ? 'Decision saved. Execution has not been confirmed.' : resolution === 'go-ahead' ? 'You said go ahead.' : 'That step will not be done.'));
     });
   }
   function showNeed(need: Need) {
@@ -936,7 +947,7 @@ export function Workspace({
               >
                 Go ahead
               </Button>
-              <Button
+              {!state!.needs.find((n) => n.id === task.needId)?.approval && (<Button
                 disabled={busy}
                 onClick={() =>
                   void resolveNeed(
@@ -947,7 +958,7 @@ export function Workspace({
                 }
               >
                 Go ahead for this whole task
-              </Button>
+              </Button>)}
               <Button
                 disabled={busy}
                 onClick={() =>
@@ -1655,6 +1666,7 @@ export function Workspace({
                           <p className="caption">
                             {date(historyView.entry.time)}, {time(historyView.entry.time)}
                           </p>
+                          {state.needs.filter((need) => need.id === historyView.entry.approvalId).map((need) => <ApprovalStatus key={need.id} need={need} />)}
                           {historyView.files.map((c, i) => (
                             <ChangeCard
                               key={`${c.path}:${i}`}
@@ -1858,6 +1870,7 @@ export function Workspace({
                               : titleCase(workSession.state)}
                           . {workSession.sample ? 'Sample work.' : 'Diomedes, with your OK.'}
                         </p>
+                        {state.needs.filter((need) => need.sessionId === workSession.id && need.approvalReceipt).slice(-1).map((need) => <ApprovalStatus key={need.id} need={need} />)}
                         {workThread && (
                           <div className="actions">
                             <Button tone="quiet" onClick={() => openThread(workThread.id)}>
@@ -2177,6 +2190,7 @@ export function Workspace({
           <p className="prose">
             {previewNeed.why} Nothing here has been written to the project yet.
           </p>
+          <ApprovalStatus need={previewNeed} />
           {previewNeed.preview?.map((c) => (
             <ChangeCard key={c.id} change={c} detail={detail}>
               <span className="caption">Proposed</span>
@@ -2191,14 +2205,14 @@ export function Workspace({
             >
               Don't do this
             </Button>
-            <Button
+            {!previewNeed.approval && (<Button
               onClick={() => {
                 void resolveNeed(previewNeed, 'go-ahead', true);
                 setPreviewNeed(null);
               }}
             >
               Go ahead for this whole task
-            </Button>
+            </Button>)}
             <Button
               tone="signal"
               onClick={() => {

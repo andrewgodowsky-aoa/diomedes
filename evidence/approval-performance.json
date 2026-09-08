@@ -1,0 +1,110 @@
+{
+  "checkedAt": "2026-09-08T12:30:19.746Z",
+  "scope": "One Windows host; unchanged installed dependencies, existing deterministic tests and a separate synthetic capacity probe.",
+  "bundle": {
+    "postFable": {
+      "file": "F:\\Achilles\\diomedes-wt\\codex-foundation\\output\\foundation\\bundle-baseline-dist\\assets\\index-CGQo21Lq.js",
+      "bytes": 306872,
+      "gzipBytes": 92198,
+      "sha256": "575efda761913efff8f50544813d9dd2f55a0a0b9c6bc15584c8496b9d3bedbc"
+    },
+    "foundation": {
+      "file": "F:\\Achilles\\diomedes-wt\\codex-foundation\\dist\\assets\\index-BcjwuTd6.js",
+      "bytes": 311395,
+      "gzipBytes": 93873,
+      "sha256": "20b0a0a7d46631498115770fd02c82b59787d349a7a29f32e052ac0118ec55f3"
+    },
+    "current": {
+      "file": "dist\\assets\\index-oAdwbPoU.js",
+      "bytes": 319840,
+      "gzipBytes": 95812,
+      "sha256": "7ad92cd118ac1236a53ddec025cd6c5dbfb118c0c0995823a42fcbd622caeeb3"
+    },
+    "continuationDelta": {
+      "bytes": 8445,
+      "gzipBytes": 1939,
+      "gzipPercent": 2.07
+    },
+    "combinedFoundationDelta": {
+      "bytes": 12968,
+      "gzipBytes": 3614,
+      "gzipPercent": 3.92
+    },
+    "newDependencies": 0
+  },
+  "host": {
+    "cachedState3000FilesMs": 14,
+    "workReplay": {
+      "requests": 50,
+      "totalMs": 111.5,
+      "scans": 0,
+      "documentReads": 0,
+      "statePersists": 0,
+      "additionalAdapterCalls": 0
+    },
+    "approvalReplay": {
+      "checkedAt": "2026-09-08T12:03:55.108Z",
+      "receiptCount": 1024,
+      "requests": 50,
+      "replayMs": 57.246500000001106,
+      "scans": 0,
+      "documentReads": 0,
+      "statePersists": 0,
+      "receiptBytes": 1421150,
+      "sourceBytes": 3225268
+    },
+    "capacityProbe": {
+      "checkedAt": "2026-09-08T12:21:41.890Z",
+      "root": "F:\\Achilles\\diomedes-wt\\codex-approvals\\output\\approvals\\performance-w1dATC",
+      "receiptCount": 1024,
+      "projectCount": 1,
+      "metadataInitializationMs": 107.71209999999996,
+      "rejectedCommands": {
+        "count": 10,
+        "status": 409,
+        "totalMs": 506.46140000000025,
+        "minMs": 45.56090000000006,
+        "maxMs": 76.60950000000003,
+        "meanMs": 50.646140000000024,
+        "projectScans": 0,
+        "documentReads": 0,
+        "statePersists": 0,
+        "note": "Each rejection reloads persisted JSON and validates all receipts; zero document IO does not mean zero metadata IO."
+      },
+      "cachedState": {
+        "count": 10,
+        "totalMs": 626.3675999999998,
+        "minMs": 54.05529999999999,
+        "maxMs": 72.28240000000005,
+        "meanMs": 62.63675999999998,
+        "bytes": 3231009,
+        "note": "Includes receiving and parsing the full HTTP response, with 1024 decisions in one synthetic project."
+      },
+      "modelCalls": 0,
+      "limitations": [
+        "Synthetic one-project local measurement; no multi-project latency SLO or complete CPU/RAM profile.",
+        "Full Need previews and retained receipt metadata remain in routine state; pagination/retention is a remaining scale limit."
+      ]
+    }
+  },
+  "bounds": {
+    "approvalReceiptsPerProject": 1024,
+    "workReceiptsPerProject": 1024,
+    "browserPendingPerFamily": 32,
+    "pendingApprovalRecordCharacters": 4096,
+    "automaticAttemptsPerDecision": 2,
+    "approvalLifetimeMs": 3600000
+  },
+  "lifecycle": {
+    "newTimers": 0,
+    "newBackgroundProcesses": 0,
+    "reconciliationExtraRequests": 0
+  },
+  "limitations": [
+    "These measurements are not a latency SLO or proof that all app interactions became faster.",
+    "Cached state at receipt capacity contains 1024 retained decisions and their existing previews. Pagination and retention remain scale work.",
+    "Rejected locked commands reload and validate all project metadata. The capacity probe covers one project only.",
+    "No complete idle CPU/RAM, large transcript, multi-project or long-running lifecycle profile was performed.",
+    "Timing is affected by other work on the host; full-suite Work replay timing is not a controlled comparison with the older foundation run."
+  ]
+}

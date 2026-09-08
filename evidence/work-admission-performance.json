@@ -1,0 +1,45 @@
+{
+  "checkedAt": "2026-09-08T10:58:32.073Z",
+  "baselineCommit": "218f325",
+  "scope": "Same installed dependencies and production Vite build for the baseline and current client. Synthetic host tests on this Windows machine.",
+  "bundle": {
+    "baseline": {
+      "file": "output\\foundation\\bundle-baseline-dist\\assets\\index-CGQo21Lq.js",
+      "bytes": 306872,
+      "gzipBytes": 92198
+    },
+    "current": {
+      "file": "dist\\assets\\index-BcjwuTd6.js",
+      "bytes": 311395,
+      "gzipBytes": 93873
+    },
+    "addedBytes": 4523,
+    "addedGzipBytes": 1675,
+    "gzipGrowthPercent": 1.82,
+    "newDependencies": 0
+  },
+  "host": {
+    "cachedState3000FilesMs": 11,
+    "receiptReplayCount": 50,
+    "receiptReplayTotalMs": 52.2,
+    "replayFolderScans": 0,
+    "replayDocumentReads": 0,
+    "replayPersistenceWrites": 0,
+    "additionalAdapterCallsOnReplay": 0
+  },
+  "bounds": {
+    "receiptsPerProject": 1024,
+    "browserPendingCommands": 32,
+    "automaticAttemptsPerStart": 2
+  },
+  "lifecycle": {
+    "newTimers": 0,
+    "newBackgroundProcesses": 0,
+    "receiptStateReconciliationExtraRequests": 0
+  },
+  "limitations": [
+    "Timing is one local synthetic run, not a latency SLA or a complete CPU/RAM/disk profile.",
+    "The bundle comparison measures payload growth, not proof that all app interactions are faster.",
+    "Fable performance changes are included; additional client-list and native warm-path work is outside this slice."
+  ]
+}

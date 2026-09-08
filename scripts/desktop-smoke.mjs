@@ -13,6 +13,7 @@ const env = {
 };
 delete env.ELECTRON_RUN_AS_NODE;
 const errors = [];
+const admissionProof = [];
 let desktop;
 let url;
 async function api(route, method = 'GET', data) {
@@ -27,6 +28,7 @@ async function api(route, method = 'GET', data) {
 try {
   desktop = await electron.launch({ executablePath, env });
   const page = await desktop.firstWindow();
+  page.setDefaultTimeout(15_000);
   page.on('pageerror', (error) => errors.push(error.message));
   await page.waitForURL('http://127.0.0.1:*/');
   url = new URL(page.url()).origin;
@@ -99,12 +101,50 @@ try {
     animations: 'disabled',
   });
 
+  async function startWithLostResponse(surface, click) {
+    const before = await api(`/projects/${project.id}/state`);
+    const original = await fs.readFile(path.join(project.folder, 'Reopening plan.md'));
+    const commands = [];
+    let admitted;
+    const endpoint = `**/api/projects/${project.id}/work/start`;
+    await page.route(endpoint, async route => {
+      commands.push(route.request().postDataJSON().commandId);
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      if (commands.length === 1) {
+        admitted = await response.json();
+        await route.abort('connectionreset');
+      } else {
+        await route.fulfill({ response });
+      }
+    });
+    await click();
+    await expect.poll(() => commands.length).toBe(2);
+    expect(commands[0]).toBeTruthy();
+    expect(commands[1]).toBe(commands[0]);
+    await expect.poll(() => page.evaluate(() => Object.keys(sessionStorage)
+      .filter(key => key.startsWith('diomedes.work-start.pending.')).length)).toBe(0);
+    const state = await api(`/projects/${project.id}/state`);
+    expect(state.sessions).toHaveLength(before.sessions.length + 1);
+    const saved = state.sessions.find(session => session.receipt?.commandId === commands[0]);
+    expect(saved.receipt).toEqual(admitted.receipt);
+    expect(await fs.readFile(path.join(project.folder, 'Reopening plan.md'))).toEqual(original);
+    admissionProof.push({ surface, requests: commands.length, receipt: saved.receipt });
+    await page.unroute(endpoint);
+    await api(`/projects/${project.id}/work/${saved.id}/stop`, 'POST', {});
+  }
+  await page.locator('.task-card').first().locator('.task-title').click();
+  await startWithLostResponse('workbook', () => page.getByRole('dialog')
+    .getByRole('button', { name: 'Do this for me', exact: true }).click());
+
   const deskSettings = await api('/settings');
   await api('/settings', 'PUT', { ...deskSettings, surface: 'console' });
   await page.reload();
   await expect(page.locator('html[data-surface="console"]')).toHaveCount(1);
   await expect(page.locator('.console')).toBeVisible();
   await expect(page.locator('.console-team')).toBeVisible();
+  await startWithLostResponse('console', () => page.locator('.console-board')
+    .getByRole('button', { name: 'Start with Sample work', exact: true }).first().click());
 
   const thread = await api(`/projects/${project.id}/threads`, 'POST', {
     name: 'Desktop smoke thread',
@@ -178,6 +218,12 @@ try {
   desktop = await electron.launch({ executablePath, env });
   const reopened = await desktop.firstWindow();
   await expect(reopened.locator('.task-card')).toHaveCount(found.length);
+  url = new URL(reopened.url()).origin;
+  for (const proof of admissionProof) {
+    const saved = await api(`/projects/${project.id}/work/commands/${proof.receipt.commandId}`);
+    expect(saved.receipt).toEqual(proof.receipt);
+    expect(saved.state).toBe('stopped');
+  }
   await fs.writeFile(
     'evidence/desktop-proof.json',
     JSON.stringify(
@@ -191,6 +237,7 @@ try {
         serviceStopsOnClose: true,
         dataLockReleased: true,
         persistedOnRestart: true,
+        workAdmission: { lostResponsesRecovered: true, receiptsRetainedOnRestart: true, runs: admissionProof },
         pageErrors: errors,
       },
       null,
@@ -198,7 +245,7 @@ try {
     ),
   );
   console.log(
-    'PASS: packaged desktop, task board, font scaling, Workbook and Console surfaces, team threads and messages, renderer isolation, shutdown, and restart persistence.',
+    'PASS: packaged desktop, task board, font scaling, Workbook and Console lost-response recovery, team threads and messages, renderer isolation, shutdown, and receipt persistence after restart.',
   );
 } catch (error) {
   const message = error instanceof Error ? error.message.split(/\r?\n/, 1)[0] : String(error);

@@ -1,0 +1,550 @@
+{
+  "checkedAt": "2026-09-08T12:52:31.226Z",
+  "main": "F:\\Achilles\\diomedes",
+  "branch": "main",
+  "head": "218f325d2a902c53b089045dd24496890063a702",
+  "source": "F:\\Achilles\\diomedes-wt\\codex-approvals",
+  "sourceCodeMatches": 67,
+  "preservedPackagingEdit": "f65fb79e0c18cd1c4b1dd2b230d8da42c10752c8a9034297add9994e840d0671",
+  "scope": "The verified Work foundation and exact approvals are integrated into main and its stable executable. Fable worktrees/builds were not modified.",
+  "committed": false,
+  "fableWorktreeWrites": 0,
+  "liveUserDataMigrated": false,
+  "executablePath": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
+  "verifiedDesktopShortcut": "C:\\Users\\andre\\OneDrive\\Desktop\\Diomedes.lnk",
+  "checks": {
+    "buildAndTypecheck": {
+      "passed": true,
+      "exitCode": 0
+    },
+    "deterministic": {
+      "passed": true,
+      "tests": 361,
+      "files": 14,
+      "durationSeconds": 72.44
+    },
+    "builtBrowser": {
+      "passed": true,
+      "tests": 19,
+      "durationSeconds": 26.1,
+      "syntheticServerPort": 47746
+    },
+    "packagedDesktop": {
+      "passed": true,
+      "independentProfile": true,
+      "shutdownAndRestart": true
+    },
+    "packagedApprovalReplay": {
+      "passed": true,
+      "unchangedReceipt": true,
+      "noNewRunOrWrite": true,
+      "restoredBytesPreserved": true,
+      "consoleRecordVisible": true,
+      "newModelCalls": 0
+    },
+    "artifactParity": {
+      "clientMatchesIsolated": true,
+      "packagedClientMatchesBrowserBuild": true,
+      "packagedServerMatchesMainSource": true,
+      "desktopMainMatchesSource": true,
+      "nativeRuntimeMatchesIsolated": true
+    }
+  },
+  "appAsar": {
+    "beforeSha256": "fabd0833d4200afcfb8896e73168ef2bf5dbcb6f74adff52f55136b1c509591c",
+    "afterSha256": "0e8301685a0d24d7234910c981d84d8e57aba6c7935781fc95ceac2ba641ab06",
+    "isolatedSha256": "ef4545c02b49daf888da7357db96b3225b78f4bf9ebd575de2a935c1e63e0882"
+  },
+  "sourceHashes": [
+    {
+      "file": "client/App.tsx",
+      "sha256": "a9470e8e9c22dd4fde26f751756bae06a546bb112a3c711c6a51e8d1ca849b29",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "client/Console.tsx",
+      "sha256": "3b79c3a873ab218d510edfefd4f145a18a5fbcd1ae19664306983bdd9402dce8",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "client/Settings.tsx",
+      "sha256": "e67fd9310d34c71189d23297371b4c983404b8c47fc06179f9e2d09a558c8fd7",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "client/Setup.tsx",
+      "sha256": "29852168f9efc237a43964d67550e894aecc1a2ca1582bcd2cf014c0002e919e",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "client/Workspace.tsx",
+      "sha256": "d0a2f08673cc7907655308449e75afd171b1e3d4702f80a1627036fa8468b765",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "client/api.ts",
+      "sha256": "76ffd3b442dc84a83a58664f3786b300bf1bcbb3a31e74f8b9d83b4ba3221468",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "client/approval-decisions.ts",
+      "sha256": "c51d391b1e91303d408e1f051c65555378d77496337718fd16d9a4da101cc8de",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "client/components.tsx",
+      "sha256": "00c3b9102255de0b7ead09587a6b563346858e05fdd0f7ea31609fd2f6b2fb3c",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "client/main.tsx",
+      "sha256": "76f4d5f925a3ed41585d20a91667e546389dc64f2e7e06ff70a65fbd6ea47e97",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "client/work-start.ts",
+      "sha256": "0e892ba185d011df72be557d97884b423ae168a841b1b69e19e44b5257e29545",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "desktop/main.mjs",
+      "sha256": "21c80463f0851f951150e2b70f190c01fb79738cce3f0592a203eca57dc67a13",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "desktop/service.ts",
+      "sha256": "a13fe0e59533b534b46bb1b4abf4a66cf134ea035e7b2408f251096eed1efbe4",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "package-lock.json",
+      "sha256": "6e23639dc2e91ea4cb6bb1ac3a89ea44b79de0fe580187205c6889a3f423e1de",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "package.json",
+      "sha256": "cf28a53ef5ba78f20833709235cdcdae1da7e58ee727432b4e4c37b0436f0055",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "scripts/approval-desktop-smoke.mjs",
+      "sha256": "6bd1182ac03c27ef534263b3cf81af62c92978d8c18d72820e9ff3153030c26e",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "scripts/build-offline-showcase.mjs",
+      "sha256": "5d5492b4c3801ad222170f5ce0be3c9a8e58fef2ed7da602cf40d8a94be70597",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "scripts/capture-showcase.mjs",
+      "sha256": "61162e3645b04e244e870c50d1c32bf6ce5ba4b406b08946198d7a831aded851",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "scripts/desktop-smoke.mjs",
+      "sha256": "df73f9df92fc645954deb7bf0d54b820f11f240e138566aed3d4d47275ae5a04",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "scripts/dev.mjs",
+      "sha256": "da596a509426c84a7fdb69f1ce0b7e15df83a5fde2206d19a04853e1db4ec146",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "scripts/fixtures.ts",
+      "sha256": "396438a0e9383d2c5639978e1a6c3462c6e116d79d6e0406dec5ea1648096ca7",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "scripts/native-work-smoke.ts",
+      "sha256": "f3590ea2ccacde6937ef8c30a207d009eb80a107743b550ebf4662dd22b4b670",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "scripts/package-desktop.mjs",
+      "sha256": "f65fb79e0c18cd1c4b1dd2b230d8da42c10752c8a9034297add9994e840d0671",
+      "comparison": "byte-identical",
+      "origin": "preserved main edit"
+    },
+    {
+      "file": "scripts/prepare-native.ts",
+      "sha256": "925a921bcd2be909e5cd4398d7bfc87a497f1f7ba6459f78cb322261e7d645e2",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "scripts/team-codex-smoke.mjs",
+      "sha256": "2193e7e098783f9433ef04e50bf1ac5f331fb8ac89d998d16568f98c3ee0f822",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "scripts/team-probe.ts",
+      "sha256": "f97bdac44dd2a67a0249d299b835b65958acad8cca9ba2d523d1b7036335f2ca",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/app.ts",
+      "sha256": "17eee3b80ee32d09e3fc2c3147eb658428b031a190a6fe0b8ca71f2c78d65edd",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/approval-admission.ts",
+      "sha256": "c0564c37fc2af33b0afebab264a9f2c6665c03b8b808e853f328c9c1eb2781f1",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/command-admission.ts",
+      "sha256": "fc99c9419b6dc34f69c34e9b3b9c9463a605f4fddc72c47295349a3b58bc82ea",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/discovery.ts",
+      "sha256": "0e5856c23e810957d68247fa0b419a8ef1600e22a0c35b84335896e1c0d9189b",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/index.ts",
+      "sha256": "85f485c238fee507d9c01e69599066dab260a9a5b51b5e0863cb81d4768c1a44",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/integrations.ts",
+      "sha256": "03ce5a76bbee84cdb5d06f37e1abd6c39af1e18c01caee8f7fcf3e40e220a879",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/lock.ts",
+      "sha256": "dbe2b10785db557f0551c0c81fef7adeaf61e8d4b4764d30f740f9ba900cb23e",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/models.ts",
+      "sha256": "9c9521b361063bb4a972d226735dbcbcff56882334ad4f7bfc4a14b9a274137e",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/modes.ts",
+      "sha256": "697d6b57e4f48adf83a6f1bbdd8d49be4c1b2b0abf65f56275003de308b41476",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/native-work.ts",
+      "sha256": "0ad3b3dbb89d7d7509082a2dc46a9d001d5e63d1fab3c1ed4c2929e294c96cda",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/paths.ts",
+      "sha256": "faeb820ed84bf81584119a921cc52096b0e24514c71ce5acd7b2d05f8df00761",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/store.ts",
+      "sha256": "7a5d8d1cb40b9b9e378ae630df6d1704de091cbc6cecc3581392fb8feade6f06",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/team/board.ts",
+      "sha256": "74b9dee409dfa492eb084b39d26a4d2ea2006aef23bc2171a1c85bc1553d5c97",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/team/mailbox.ts",
+      "sha256": "fe33141f2eb2d7d07dcd73a8e6fe5d218f16668b736f86e3a213b7632f96f51b",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/team/mcp.ts",
+      "sha256": "def302d8a841453c7bc77d5371ea13526e2ebacf46713a03ccd488caedac4a36",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/team/prompts.ts",
+      "sha256": "cd080e70c0002ad78f31c0980da25f1921e2285129ad917d19f8a97820a84d0f",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/team/routes.ts",
+      "sha256": "58a34828f0e0e3a7ebfeb5662d3fcb5ef5214520211a5aebe8c21bdd59f37d7a",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/team/service.ts",
+      "sha256": "efc0f3f08e270925dcc12baaea02fd887aa470718ca2b06910c20480d2557877",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/usage.ts",
+      "sha256": "1c31fe9d483db6849732c83476f26083b815d0e01d724424c1c5916cfe541ab4",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/work-admission.ts",
+      "sha256": "25eab34767c8cbf2f4603696f4a5421d5131d3094a414261c0f3b979ed3750f0",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "server/work.ts",
+      "sha256": "a74f3ec1d496cce62e659ca59efc1967256f5ede285eab1e2c13d936fcce9e62",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "shared/effort.ts",
+      "sha256": "ebd51f2157c4a96cab65e5d9cf82ce1b57d11cd9964d51eff207ebcfb9d664db",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "shared/types.ts",
+      "sha256": "bff42df5b210ef10a4ad251a3e9cd0517fd74e795b8c6a814196b51c7dff1f0e",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/approval-admission.test.ts",
+      "sha256": "fcba4720f57f84562da88e4c900b5101b0c9912a3913e776ab2c5319422dff30",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/approval-crash-child.ts",
+      "sha256": "5fbdecabad02654154a98c37edf9d9a165deab0f71a43fe460fe1ff6537fdfd0",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/approval-decisions-client.test.ts",
+      "sha256": "032279b0ca83b3c43da4f585235e89ea316f96fe34095380612e6a95eb2e66fd",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/backend.test.ts",
+      "sha256": "d9c80cd77df21db6660243957fa3ebbe31c8e13de6531182fd081fcdbbe2615d",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/discovery.test.ts",
+      "sha256": "9de3c3c4c6be81cda08296ce0f298ec16f37b4d5dac15709f228346f75409922",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/effort.test.ts",
+      "sha256": "d1460f28784a5f1ab632951b414b9b02ebe1fbc233b2f55cdbdc69d47afe307a",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/integrations.test.ts",
+      "sha256": "ce9b822ee13fd1370a1c7e43a428c27e593161b065e9330377f5b05c5aa2c5c7",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/models.test.ts",
+      "sha256": "dae66b42cf3b633a5f4b6c74e1748a9170c16b63b9e2bdcc06b51c47dd259eb8",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/modes.test.ts",
+      "sha256": "f6628ac184ed6affde9476c60fba6f018d4fb6591424775430b003c9434c83d6",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/native-ui.spec.ts",
+      "sha256": "7d1b0216d456b4a879b8a2af0b2d2a49ddb3fac9843e6c9eeb75762499f246c1",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/native-work.test.ts",
+      "sha256": "6037e4b46b45b7c896848f8fd2102215d2e79b61e46bfea10ad9562cabbbc9f0",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/surface.test.ts",
+      "sha256": "8b65fe1499cc5d3ddf9846e00244c3ad18381761f3d05b31859a7e6c14be6eb4",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/team.test.ts",
+      "sha256": "039065f15cc064f9647d9c251da27e3583928bf80d5dd8c3dd0bea8837a62bfc",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/ui.spec.ts",
+      "sha256": "4190113eec6105c1a9ea3cc9aabc05ee6f0743d637a8099ef606c68caa0a952a",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/usage.test.ts",
+      "sha256": "6525ebf5fec482d0e99799d30273f7bc6ec4e9faba39a8b2296df0630fd73639",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/work-admission-child.ts",
+      "sha256": "d0c668fa8ef11362f8846a00be0f90b7bd8882ea9e5e60e070b22d356353639b",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/work-admission.test.ts",
+      "sha256": "489e48009aab6a8110d9cf7371db5f6ffd67a379561a681316b8da98a84ddc31",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tests/work-start-client.test.ts",
+      "sha256": "6b0d40652c81c7162b4f1f427639a1bc601f02db7b884a42a8678bc8b985c67e",
+      "comparison": "byte-identical",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "tsconfig.json",
+      "sha256": "ecb3a5fcd0f66bbd4e553197e3a3ae260478f6f23b16abf9435356db51f433dd",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    },
+    {
+      "file": "vite.config.ts",
+      "sha256": "faf31790cd0bee683cdee1d9ea4d32d0ca0835ed801b80f4d8e3c6040a66fe7c",
+      "comparison": "line-endings-only",
+      "origin": "verified isolated source"
+    }
+  ],
+  "evidenceHashes": [
+    {
+      "file": "output\\main-integration-20260908-084506\\build.log",
+      "sha256": "a301b2985116bf7337e93f203a2baf871a65b5dedaed888dc3753e001ddec43f"
+    },
+    {
+      "file": "output\\main-integration-20260908-084506\\tests.log",
+      "sha256": "e5addb78f5d55b20bfd99e25b5daa830abd4d29e1ee25071a2114b5da8e0f0a3"
+    },
+    {
+      "file": "output\\main-integration-20260908-084506\\browser.log",
+      "sha256": "394b04db4b8424a60f03df68364859a7cef20bdcbd5387d3e7ed8a6e5ef3f49a"
+    },
+    {
+      "file": "output\\main-integration-20260908-084506\\desktop.log",
+      "sha256": "f0a5d141e2f7052e63f27dfd038c9b9336706f07fac4a2e3600c83ec479707c8"
+    },
+    {
+      "file": "output\\main-integration-20260908-084506\\approval-replay.log",
+      "sha256": "94ad47df69644fa7d44c0e6f950afd937aae78395130fba29d33a88009b8a178"
+    },
+    {
+      "file": "output\\main-integration-20260908-084506\\integration.log",
+      "sha256": "021ca3ebab983ac93e72808aa0e4c6071d3dfe15db9a4cc056ab2cc52ce25c4d"
+    },
+    {
+      "file": "output\\main-integration-20260908-084506\\before.json",
+      "sha256": "a27950dc11ca489b118bb7daeb7be3868659874e9e71c5b03b2c37502e7c5165"
+    },
+    {
+      "file": "output\\main-integration-20260908-084506\\integrated.json",
+      "sha256": "7c345b672e8388deffcbe5de5ecbe8fc4f1b1be94c5ffc73b7d66b11e28397c3"
+    },
+    {
+      "file": "evidence/desktop-proof.json",
+      "sha256": "0fe166b6698ab3d1a42b6a7aa06c6fa217cfd239544d0f77db6670da8d58b57b"
+    },
+    {
+      "file": "evidence/main-approval-replay-proof.json",
+      "sha256": "1e0681a3c9536566942e7424500d859d3efbcb4ba5a06d2c4713614af24c0b0f"
+    },
+    {
+      "file": "evidence/screenshots/main-approval-replay.png",
+      "sha256": "fb1c4fd77d5aae51ccd5568991f85fdcf0f0ba0ddface14c8df3968e8894a4b8"
+    }
+  ],
+  "packageHashes": [
+    {
+      "file": "release/Diomedes-win32-x64/resources/app.asar",
+      "sha256": "0e8301685a0d24d7234910c981d84d8e57aba6c7935781fc95ceac2ba641ab06"
+    },
+    {
+      "file": "release/Diomedes-win32-x64/Diomedes.exe",
+      "sha256": "55b2d62dae4bea8f7ba1a8c1029056e267707c81b1e2b7a791601352d3016b5b"
+    },
+    {
+      "file": "release/Diomedes-win32-x64/resources/app.asar!/dist\\assets\\index-oAdwbPoU.js",
+      "sha256": "7ad92cd118ac1236a53ddec025cd6c5dbfb118c0c0995823a42fcbd622caeeb3"
+    },
+    {
+      "file": "release/Diomedes-win32-x64/resources/app.asar!/server/app.mjs",
+      "sha256": "1055215cddf23d44b0b9dfce451b40d1a29380e1916a03678657e7522d7ef859"
+    },
+    {
+      "file": "release\\Diomedes-win32-x64\\resources\\native-runtime\\codex.exe",
+      "sha256": "a1cf6360ca71918d5466bc3a32d9f18b7044c9128756d1949e715d277b88c9b6"
+    },
+    {
+      "file": "release\\Diomedes-win32-x64\\resources\\native-runtime\\codex-command-runner.exe",
+      "sha256": "08b56828cca57c83d14f03eb9ec62c73a2cd6648248cc731ae8fedd5fa3ae566"
+    },
+    {
+      "file": "release\\Diomedes-win32-x64\\resources\\native-runtime\\codex-windows-sandbox-setup.exe",
+      "sha256": "682cf7b351a871f3479b78fe3b7ea7348554de655bd98b0f322cef2d006a8d62"
+    }
+  ],
+  "previousReleaseBackup": "F:\\Achilles\\diomedes\\output\\main-integration-20260908-084506\\release-before",
+  "limitations": [
+    "No new real model generation: the prior isolated real Luna approval proof remains applicable to the same integrated source; the main packaged replay is freshly verified.",
+    "Existing approval/work foundation limitations, including incomplete M1, local-prototype identity and retained-state scaling, are unchanged.",
+    "This is working-tree integration and a rebuilt local release, not a Git commit or public deployment."
+  ]
+}
