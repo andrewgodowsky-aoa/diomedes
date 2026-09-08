@@ -1074,7 +1074,8 @@ export class Store extends EventEmitter {
     const state = this.state(id);
     // Never walk on the request path: serve the cached listing and refresh in the background.
     const cached = this.docCache.get(id);
-    if (!cached || Date.now() - cached.at > 20000) {
+    // Ninety seconds: a walk of a 190k-file folder still costs about 11 s of disk time.
+    if (!cached || Date.now() - cached.at > 90000) {
       if (!cached) this.docCache.set(id, { at: 0, documents: [] });
       const entry = this.docCache.get(id)!;
       if (!entry.inFlight) void this.refreshDocuments(id).catch(() => undefined);
