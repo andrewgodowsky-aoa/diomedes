@@ -52,7 +52,7 @@ fs.writeFileSync(
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: ['ui.spec.ts', 'native-ui.spec.ts'],
+  testMatch: ['ui.spec.ts', 'native-ui.spec.ts', 'field.spec.ts'],
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,

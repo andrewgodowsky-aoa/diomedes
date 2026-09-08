@@ -23,10 +23,13 @@ import {
   tightestWindow,
   titleCase,
 } from './components';
-import { Console } from './Console';
+import { Shell } from './console/Shell';
+import { MarkGlyph } from './console/Mark';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
 import { Workspace } from './Workspace';
+import { Wake } from './console/Wake';
+import { useWake } from './console/useWake';
 
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -40,6 +43,7 @@ export function App() {
   const [helpersRequest, setHelpersRequest] = useState(0);
   const [error, setError] = useState('');
   const [online, setOnline] = useState(true);
+  const [initialLoaded, setInitialLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [projectDialog, setProjectDialog] = useState<'new' | 'open' | null>(null);
   const [projectName, setProjectName] = useState('');
@@ -55,6 +59,9 @@ export function App() {
   const [landingProjectId, setLandingProjectId] = useState<string | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  // Opener registered by the console Shell; Ctrl+K on the console surface
+  // opens the console palette instead of the Workbook's project search.
+  const paletteOpen = useRef<(() => void) | null>(null);
   const report = useCallback(
     (e: unknown) =>
       setError(e instanceof Error ? e.message : 'The request could not be completed.'),
@@ -93,28 +100,31 @@ export function App() {
       setBusy(false);
     }
   }
-  useEffect(() => {
-    void (async () => {
-      try {
-        const [s, p] = await Promise.all([
-          api<Settings>('/settings'),
-          api<{ projects: Project[] }>('/projects'),
-        ]);
-        setSettings(s);
-        setProjects(p.projects);
-        const id = s.openProjects.at(-1);
-        if (id && p.projects.some((x) => x.id === id)) {
-          setSelected(id);
-          setPage(s.lastPage[id] ?? 'home');
-        }
-        void refreshIntegrations();
-        void refreshUsage();
-      } catch (e) {
-        setOnline(false);
-        report(e);
+  const loadInitial = useCallback(async () => {
+    try {
+      const [s, p] = await Promise.all([
+        api<Settings>('/settings'),
+        api<{ projects: Project[] }>('/projects'),
+      ]);
+      setSettings(s);
+      setProjects(p.projects);
+      setInitialLoaded(true);
+      setOnline(true);
+      const id = s.openProjects.at(-1);
+      if (id && p.projects.some((x) => x.id === id)) {
+        setSelected(id);
+        setPage(s.lastPage[id] ?? 'home');
       }
-    })();
+      void refreshIntegrations();
+      void refreshUsage();
+    } catch (e) {
+      setOnline(false);
+      report(e);
+    }
   }, [refreshIntegrations, refreshUsage, report]);
+  useEffect(() => {
+    void loadInitial();
+  }, [loadInitial]);
   useEffect(() => {
     const es = new EventSource('/api/events');
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -198,7 +208,10 @@ export function App() {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setSearch(true);
+        const s = settingsRef.current;
+        const onConsole = !!selected && !!s && surfaceOf(s) === 'console' && !showSettings;
+        if (onConsole && paletteOpen.current) paletteOpen.current();
+        else setSearch(true);
       }
       if (e.ctrlKey && /^[1-8]$/.test(e.key) && selected) {
         e.preventDefault();
@@ -216,7 +229,7 @@ export function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selected, navigate]);
+  }, [selected, showSettings, navigate]);
   async function createProject() {
     setBusy(true);
     try {
@@ -272,6 +285,9 @@ export function App() {
   };
   const current = projects.find((p) => p.id === selected);
   const surface: Surface = settings ? surfaceOf(settings) : 'workbook';
+  // The Field shell draws its own top strip; the app bar hides underneath it
+  // so the shell strip is the only one on the console surface.
+  const consoleActive = !!selected && surface === 'console' && !showSettings;
   // The chip follows the helper that is on: the first ready engine whose
   // switch is on. It shows the last reported windows even when that engine
   // is momentarily unreachable; the helpers list carries the live status.
@@ -295,21 +311,49 @@ export function App() {
           ? ''
           : 'Ready when you are.';
 
+  const loaded = settings !== null && initialLoaded;
+  const reduced =
+    settings?.appearance.motion === 'reduced' ||
+    (typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const wake = useWake({ loaded, online, reduced, firstOpen: true });
+  const retryInitial = useCallback(() => {
+    setError('');
+    void loadInitial();
+  }, [loadInitial]);
+  // The wake sits above everything; the team count arrives in a later pass.
+  const wakeLayer = wake.show ? (
+    <Wake
+      short={wake.short}
+      failed={wake.failed}
+      projects={projects.length}
+      reduced={reduced}
+      onDone={wake.done}
+      onRetry={retryInitial}
+    />
+  ) : null;
+
   if (!settings)
     return (
-      <div className="initial-state">
-        <Brand />
-        <p className="prose">{error || 'Opening your workbook...'}</p>
-        {error && <Button onClick={() => location.reload()}>Try again</Button>}
-      </div>
+      <>
+        {wakeLayer}
+        <div className="initial-state">
+          <Brand />
+          <p className="prose">{error || 'Opening your workbook...'}</p>
+          {error && <Button onClick={() => location.reload()}>Try again</Button>}
+        </div>
+      </>
     );
   return (
     <>
+      {wakeLayer}
       <div className="app">
         {settings.onboarding.resumeAt !== 'done' ? (
           <Setup settings={settings} save={saveSettings} busy={busy} />
         ) : (
           <>
+            {!consoleActive && (
             <header className="top-bar">
               <button
                 className="brand-button"
@@ -319,6 +363,7 @@ export function App() {
                 }}
                 aria-label="Diomedes projects"
               >
+                <MarkGlyph size={18} />
                 <Brand />
               </button>
               <nav className="project-tabs" aria-label="Open projects">
@@ -423,6 +468,7 @@ export function App() {
                 </div>
               </div>
             </header>
+            )}
             <div
               className={`page-frame ${needs && current?.status?.needsYou ? 'needs-attention' : ''} ${!online ? 'disconnected' : ''}`}
             >
@@ -436,9 +482,10 @@ export function App() {
                   refresh={() => void refreshIntegrations(true)}
                 />
               ) : selected && surface === 'console' ? (
-                <Console
+                <Shell
                   key={`console:${selected}`}
                   projectId={selected}
+                  projects={shownProjects}
                   settings={settings}
                   integrations={integrations}
                   usage={usage}
@@ -455,8 +502,17 @@ export function App() {
                     setShowSettings(true);
                     setHelpersRequest((n) => n + 1);
                   }}
+                  onOpenProject={openProject}
+                  onShowProjects={() => {
+                    setSelected(null);
+                    setShowSettings(false);
+                  }}
+                  onOpenSettings={() => setShowSettings(true)}
                   report={report}
                   online={online}
+                  onPaletteKey={(open) => {
+                    paletteOpen.current = open;
+                  }}
                 />
               ) : selected ? (
                 <Workspace
@@ -642,21 +698,21 @@ export function App() {
                         <>
                           <div className="intent-rail">
                             <button className="intent" onClick={() => setProjectDialog('new')}>
-                              <span className="square" aria-hidden="true" />
+                              <span className="pt" aria-hidden="true" />
                               <span>
                                 <strong>New project</strong>
                                 <span>Start from an empty folder.</span>
                               </span>
                             </button>
                             <button className="intent" onClick={() => setProjectDialog('open')}>
-                              <span className="square" aria-hidden="true" />
+                              <span className="pt" aria-hidden="true" />
                               <span>
                                 <strong>Open a folder as a project</strong>
                                 <span>Use documents you already have.</span>
                               </span>
                             </button>
                             <button className="intent" onClick={() => void sampleProject()}>
-                              <span className="square" aria-hidden="true" />
+                              <span className="pt" aria-hidden="true" />
                               <span>
                                 <strong>Try the sample project</strong>
                                 <span>Three example documents. Sample work stays on this computer.</span>

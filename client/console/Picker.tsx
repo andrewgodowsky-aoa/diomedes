@@ -1,0 +1,214 @@
+import { useEffect, useRef, useState } from 'react';
+import type {
+  Conversation,
+  EngineCatalog,
+  IntegrationStatus,
+  Mode,
+  Route,
+  Settings,
+} from '../../shared/types';
+import { MODE_CEILING, effortFor } from '../../shared/effort';
+import { api } from '../api';
+
+const ENGINE_IDS = ['codex', 'claude-code', 'opencode'] as const;
+
+interface PickerProps {
+  thread: Conversation;
+  mode: Mode;
+  route: Route;
+  live: boolean;
+  integrations: IntegrationStatus[];
+  settings: Settings;
+  busy: boolean;
+  onPick(requested: Conversation['requested'], engine: string): void;
+}
+
+function available(id: string, integrations: IntegrationStatus[], settings: Settings): boolean {
+  const found = integrations.find((i) => i.id === id);
+  if (!found) return false;
+  if (found.kind === 'sample') return found.available;
+  return found.available && settings.services?.[id] === true;
+}
+
+/**
+ * The mono ENGINE model-id effort control. The menu groups live engine
+ * catalogues (GET /engines/:id/models) plus Sample work; the choice PUTs
+ * `requested` on the thread exactly as the Console did.
+ */
+export function Picker({
+  thread,
+  mode,
+  route,
+  live,
+  integrations,
+  settings,
+  busy,
+  onPick,
+}: PickerProps) {
+  const [open, setOpen] = useState(false);
+  const [catalogs, setCatalogs] = useState<Record<string, EngineCatalog | null>>({});
+  const root = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let alive = true;
+    for (const id of ENGINE_IDS) {
+      if (!available(id, integrations, settings)) continue;
+      api<EngineCatalog>(`/engines/${id}/models`)
+        .then((catalog) => {
+          if (alive) setCatalogs((prev) => ({ ...prev, [id]: catalog }));
+        })
+        .catch(() => {
+          if (alive) setCatalogs((prev) => ({ ...prev, [id]: { engine: id, models: [], detail: '' } }));
+        });
+    }
+    return () => {
+      alive = false;
+    };
+  }, [integrations, settings]);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (!root.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [open ]);
+
+  const savedModel = typeof settings.services?.codexModel === 'string' ? settings.services.codexModel : '';
+  const savedEffort = typeof settings.services?.codexEffort === 'string' ? settings.services.codexEffort : '';
+  const chosenSlug = thread.requested?.model ?? '';
+  const chosen = ENGINE_IDS.flatMap((id) =>
+    (catalogs[id]?.models ?? []).map((m) => ({ engine: id, model: m })),
+  ).find((c) => c.model.slug === chosenSlug);
+  const displayEngine = chosen?.engine ?? route;
+  const engLabel = displayEngine === 'sample'
+    ? 'Sample work'
+    : (integrations.find((i) => i.id === displayEngine)?.name ?? displayEngine);
+  const displayModel = chosenSlug || savedModel || chosen?.model.slug || 'default';
+  const wantedEffort = thread.requested?.effort || savedEffort || chosen?.model.defaultEffort || 'medium';
+  const runsAt = effortFor(mode, wantedEffort, wantedEffort);
+  const capped = runsAt !== wantedEffort;
+  const ceiling = MODE_CEILING[mode];
+
+  function choose(requested: Conversation['requested'], engine: string) {
+    if (live || busy) return;
+    onPick(requested, engine);
+    setOpen(false);
+  }
+
+  return (
+    <div className="picker" ref={root}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Engine, model and reasoning level for this thread"
+        onClick={() => setOpen(!open)}
+      >
+        <span className="eng">{engLabel}</span>
+        <span className="mdl">{displayModel}</span>
+        <span className={`eff ${capped ? 'capped' : ''}`}>
+          {capped ? `${wantedEffort}, runs ${runsAt}` : runsAt}
+        </span>
+      </button>
+      {open && (
+        <div className="pmenu open" role="menu">
+          {live ? (
+            <div className="note">Waiting for the current run to finish</div>
+          ) : (
+            <>
+              {ENGINE_IDS.filter((id) => available(id, integrations, settings)).map((id) => {
+                const integration = integrations.find((i) => i.id === id);
+                const catalog = catalogs[id];
+                return (
+                  <div key={id}>
+                    <h4>
+                      {integration?.name ?? id}
+                      <span>{integration?.location || integration?.status}</span>
+                    </h4>
+                    <button
+                      type="button"
+                      className={`m ${!chosenSlug ? 'on' : ''}`}
+                      role="menuitemradio"
+                      aria-checked={!chosenSlug}
+                      onClick={() => choose(null, id)}
+                    >
+                      <span>Default</span>
+                      <span className="id">default</span>
+                      <small>Follow the saved default in Settings</small>
+                    </button>
+                    {(catalog?.models ?? []).map((m) => (
+                      <button
+                        key={m.slug}
+                        type="button"
+                        className={`m ${m.slug === chosenSlug ? 'on' : ''}`}
+                        role="menuitemradio"
+                        aria-checked={m.slug === chosenSlug}
+                        onClick={() => choose({ model: m.slug, effort: m.defaultEffort }, id)}
+                      >
+                        <span>{m.name}</span>
+                        <span className="id">{m.slug}</span>
+                        <small>{m.description}</small>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+              {available('sample', integrations, settings) && (
+                <div>
+                  <h4>
+                    Sample work<span>on this computer</span>
+                  </h4>
+                  <button
+                    type="button"
+                    className={`m ${route === 'sample' && !chosenSlug ? 'on' : ''}`}
+                    role="menuitemradio"
+                    aria-checked={route === 'sample' && !chosenSlug}
+                    onClick={() => choose(null, 'sample')}
+                  >
+                    <span>Sample work</span>
+                    <span className="id">sample</span>
+                    <small>Stays on this computer</small>
+                  </button>
+                </div>
+              )}
+              {chosen ? (
+                <>
+                  <div className="ladder" role="radiogroup" aria-label="Reasoning level">
+                    {chosen.model.efforts.map((e) => (
+                      <button
+                        key={e.id}
+                        type="button"
+                        title={e.description}
+                        className={`${e.id === wantedEffort ? 'on' : ''} ${ceiling && effortFor(mode, e.id, e.id) !== e.id ? 'capped' : ''}`.trim()}
+                        onClick={() => choose({ model: chosen.model.slug, effort: e.id }, chosen.engine)}
+                      >
+                        {e.id}
+                      </button>
+                    ))}
+                  </div>
+                  {ceiling ? (
+                    <div className="note">
+                      <b>Fix runs at {ceiling}.</b> Your choice still governs Ask, Plan and Build.
+                    </div>
+                  ) : (
+                    <div className="note">Applies to this thread. The default lives in Settings.</div>
+                  )}
+                </>
+              ) : (
+                <div className="note">Applies to this thread. The default lives in Settings.</div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

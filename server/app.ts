@@ -173,7 +173,7 @@ function validateSettings(current: Settings, body: unknown): Settings {
     if (value.package !== undefined)
       result.appearance.package = choice(
         value.package,
-        ['deep-field', 'cobalt', 'graphite', 'verdigris', 'paper'],
+        ['field', 'deep-field', 'graphite', 'verdigris', 'harbor', 'ember', 'moss', 'dusk', 'ink', 'paper', 'cobalt'],
         'appearance package',
       );
     if (value.motion !== undefined)

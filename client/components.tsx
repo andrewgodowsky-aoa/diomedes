@@ -67,7 +67,6 @@ export function Brand() {
   return (
     <span className="brand">
       <span>DIOMEDES</span>
-      <i aria-hidden="true" />
     </span>
   );
 }
@@ -197,7 +196,7 @@ export function ApprovalStatus({ need }: { need: Need }) {
   if (!need.approval) return null;
   const receipt = need.approvalReceipt;
   if (!receipt)
-    return <p className="caption">This OK covers only this proposal. Expires {new Date(need.approval.expiresAt).toLocaleString()}.</p>;
+    return <p className="approval-pending">This OK covers only this proposal. Expires {new Date(need.approval.expiresAt).toLocaleString()}.</p>;
   const outcomes = {
     pending: 'Decision saved. Execution has not been confirmed.',
     applied: 'Approved changes applied. Their versions are in History.',
@@ -205,13 +204,15 @@ export function ApprovalStatus({ need }: { need: Need }) {
     'not-applied': 'Decision saved, but the write was not prepared. Start new work for a new proposal.',
     declined: 'Proposal declined. No changes were applied.',
   };
+  const state = need.execution?.state ?? 'pending';
+  const mark = state === 'conflicted' || state === 'not-applied' ? 'waiting' : state === 'pending' ? 'todo' : 'done';
   return (
-    <div className="approval-status" aria-label="Approval record">
-      <p className="caption">{need.execution ? outcomes[need.execution.state] : 'Decision saved. Execution has not been confirmed.'}</p>
-      <details>
-        <summary className="caption">Decision record</summary>
-        <p className="caption">Recorded by the local service at {new Date(receipt.decidedAt).toLocaleString()}.</p>
-        <dl className="facts code caption" style={{ overflowWrap: 'anywhere' }}>
+    <div className={`approval-status is-${state}`} aria-label="Approval record">
+      <p className="approval-outcome"><Mark state={mark} /><span>{outcomes[state]}</span></p>
+      <details className="approval-record">
+        <summary className="approval-summary">Decision record</summary>
+        <p className="approval-recorded">Recorded by the local service at {new Date(receipt.decidedAt).toLocaleString()}.</p>
+        <dl className="facts approval-facts">
           <dt>Request</dt><dd>{receipt.commandId}</dd>
           <dt>Proposal</dt><dd>{receipt.proposalDigest}</dd>
           <dt>Action</dt><dd>{receipt.actionDigest}</dd>

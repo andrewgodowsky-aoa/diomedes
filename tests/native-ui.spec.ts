@@ -225,11 +225,19 @@ test('Console task Start recovers both lost responses from state without duplica
   });
   await page.goto(baseURL);
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
-  await page.locator('.console-board').getByRole('button', { name: 'Start with Sample work', exact: true }).click();
+  const rail = page.getByRole('navigation', { name: 'Threads and views' });
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  const board = page.locator('.board[aria-label="Board"]');
+  await expect(board).toBeVisible();
+  const row = board.locator('.crow').first();
+  await row.getByRole('button', { name: 'Start', exact: true }).click();
+  const confirm = row.locator('.confirm');
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole('button', { name: 'Start', exact: true }).click();
   await expect.poll(() => commands.length).toBe(2);
   expect(commands[0]).toBeTruthy();
   expect(commands[1]).toBe(commands[0]);
-  await expect(page.locator('.console-board').getByRole('button', { name: 'Go ahead', exact: true })).toBeEnabled();
+  await expect(board.getByRole('radio', { name: 'Go ahead for tasks', exact: true })).toBeEnabled();
   await expect.poll(() => page.evaluate(() => Object.keys(sessionStorage)
     .filter(key => key.startsWith('diomedes.work-start.pending.')).length)).toBe(0);
   await page.reload();
@@ -240,7 +248,8 @@ test('Console task Start recovers both lost responses from state without duplica
   expect(await fs.readFile(path.join(sample.folder, 'Reopening plan.md'))).toEqual(before);
   // No second native generation was hidden behind the sample task flow.
   expect(generationCount).toBe(1);
-  await expect(page.locator('.console-board').getByRole('button', { name: 'Show me first', exact: true })).toBeEnabled();
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  await expect(board.getByRole('radio', { name: 'Show me first', exact: true })).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath('console-admission-recovered.png'), animations: 'disabled', fullPage: true });
   await page.screenshot({ path: 'evidence/screenshots/work-admission-console.png', animations: 'disabled', fullPage: true });
   await api(`/projects/${sample.id}/team/members`, 'POST', {
@@ -248,11 +257,14 @@ test('Console task Start recovers both lost responses from state without duplica
   });
   await page.evaluate(id => sessionStorage.setItem(`diomedes.work-start.pending.${id}|%invalid`, '{broken'), sample.id);
   await page.reload();
-  await expect(page.locator('.console-member').filter({ hasText: 'Receipt test helper' })).toBeVisible();
+  await rail.getByRole('button', { name: /^Team/ }).click();
+  const team = page.locator('.team[aria-label="Team"]');
+  await expect(team.locator('.lane').filter({ hasText: 'Receipt test helper' })).toBeVisible();
   await expect(page.getByRole('alert')).toContainText('A saved Work request could not be checked');
   await page.getByRole('alert').getByRole('button', { name: 'Dismiss', exact: true }).click();
   await api(`/projects/${sample.id}/tasks`, 'POST', { name: 'Check the refreshed board', owner: 'you' });
-  await expect(page.locator('.console-board .task-title').filter({ hasText: 'Check the refreshed board' })).toBeVisible();
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  await expect(board.locator('.crow').filter({ hasText: 'Check the refreshed board' })).toBeVisible();
   await expect(page.getByRole('alert')).not.toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -274,7 +286,10 @@ test('Console exact approval recovers both lost responses from durable state eve
   const expected = ready.preview![0].after;
   await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id] });
   await page.goto(baseURL);
-  const pane = page.locator('.console-pane').filter({ hasText: thread.name });
+  const rail = page.getByRole('navigation', { name: 'Threads and views' });
+  await rail.getByRole('button', { name: /Exact approval thread/ }).click();
+  const pane = page.locator('#scrThread');
+  await expect(pane).toBeVisible();
   const notice = pane.getByRole('region', { name: 'Needs your OK' });
   await expect(notice).toBeVisible();
   await expect(notice.getByRole('button', { name: 'Go ahead for this whole task', exact: true })).toHaveCount(0);
@@ -294,6 +309,7 @@ test('Console exact approval recovers both lost responses from durable state eve
   expect(commands[0]).toEqual(commands[1]);
   expect(commands[0].proposalDigest).toBe(ready.approval!.proposalDigest);
   await page.reload();
+  await rail.getByRole('button', { name: /Exact approval thread/ }).click();
   const record = pane.getByLabel('Approval record');
   await expect(record).toContainText('Approved changes applied');
   await record.getByText('Decision record', { exact: true }).click();
@@ -311,6 +327,7 @@ test('Console exact approval recovers both lost responses from durable state eve
   await page.screenshot({ path: testInfo.outputPath('console-approval-record.png'), animations: 'disabled', fullPage: true });
   await page.evaluate(id => sessionStorage.setItem(`diomedes.approval.pending.${id}|broken`, '{broken'), fixture.id);
   await page.reload();
+  await rail.getByRole('button', { name: /Exact approval thread/ }).click();
   await expect(page.getByRole('alert')).toContainText('A saved approval request could not be checked');
   await expect(pane).toBeVisible();
   expect(errors).toEqual([]);

@@ -5,26 +5,43 @@
 }
 :root {
   color-scheme: dark;
-  /* Deep Field, the same values as diomedes-systems.xziphoz.chatgpt.site (showcase/app/globals.css). */
-  --dm-frame: #0c1723;
-  --dm-page: #17212e;
-  --dm-raised: #222c38;
-  --dm-well: #111b27;
-  --dm-rule: #414f5d;
-  --dm-rule-2: #2b3743;
-  --dm-text-1: #eaeff3;
-  --dm-text-2: #b7c6d3;
-  --dm-text-3: #97a5b1;
-  --dm-text-4: #6a7784;
-  --dm-glacier: #36dcec;
-  --dm-glacier-ink: #001a22;
-  --dm-signal: oklch(0.88 0.16 98);
-  --dm-signal-edge: var(--dm-signal);
-  --dm-signal-ink: oklch(0.25 0.06 98);
-  --dm-done: oklch(0.8 0.14 165);
-  --dm-fault: oklch(0.7 0.19 20);
-  --dm-second: oklch(0.78 0.12 300);
-  --dm-font-brand: 'Big Shoulders Display', 'Bahnschrift', 'Segoe UI', sans-serif;
+  --chrome: #121417;
+  --surface: #16191d;
+  --raised: #1c2025;
+  --hair: rgba(255, 255, 255, 0.07);
+  --hair-2: rgba(255, 255, 255, 0.12);
+  --t1: #e6e9ed;
+  --t2: #a4acb6;
+  --t3: #808b97;
+  --light: #3fd6df;
+  --attn: #e0a94a;
+  --fail: #e06c6c;
+  --ui: var(--dm-font-ui);
+  --mono: var(--dm-font-code);
+  --r: 6px;
+  --rb: 5px;
+  --quick: 140ms;
+  --move: 200ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dm-frame: var(--chrome);
+  --dm-page: var(--surface);
+  --dm-raised: var(--raised);
+  --dm-well: var(--chrome);
+  --dm-rule: var(--hair-2);
+  --dm-rule-2: var(--hair);
+  --dm-text-1: var(--t1);
+  --dm-text-2: var(--t2);
+  --dm-text-3: var(--t3);
+  --dm-text-4: color-mix(in srgb, var(--t3) 80%, transparent);
+  --dm-glacier: var(--light);
+  --dm-glacier-ink: var(--chrome);
+  --dm-signal: var(--attn);
+  --dm-signal-edge: var(--attn);
+  --dm-signal-ink: var(--chrome);
+  --dm-done: var(--t2);
+  --dm-fault: var(--fail);
+  --dm-second: var(--t2);
+  --dm-font-brand: 'Schibsted Grotesk', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --dm-font-ui: 'Schibsted Grotesk', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --dm-font-read: 'IBM Plex Serif', Cambria, Georgia, serif;
   --dm-font-code: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
@@ -39,64 +56,151 @@
 html {
   zoom: var(--dm-ui-scale);
 }
-html[data-package='cobalt'] {
-  --dm-frame: #061226;
-  --dm-page: #0c1b35;
-  --dm-well: #08172c;
-  --dm-raised: #172b46;
-  --dm-rule: #45617c;
-  --dm-rule-2: #293d56;
-  --dm-text-1: #ecf1f8;
-  --dm-text-2: #bbc7d6;
-  --dm-text-3: #96a7bc;
-  --dm-glacier: #5be7e2;
-  --dm-signal: #fdd343;
+html[data-package='field'] {
+  --chrome: #121417;
+  --surface: #16191d;
+  --raised: #1c2025;
+  --hair: rgba(255, 255, 255, 0.07);
+  --hair-2: rgba(255, 255, 255, 0.12);
+  --t1: #e6e9ed;
+  --t2: #a4acb6;
+  --t3: #808b97;
+  --light: #3fd6df;
+  --attn: #e0a94a;
+  --fail: #e06c6c;
+}
+html[data-package='deep-field'] {
+  --chrome: #0c1220;
+  --surface: #101828;
+  --raised: #162036;
+  --hair: rgba(255, 255, 255, 0.08);
+  --hair-2: rgba(255, 255, 255, 0.14);
+  --t1: #e8edf5;
+  --t2: #a7b2c4;
+  --t3: #7f8ca0;
+  --light: #5cc8ff;
+  --attn: #e6b45a;
+  --fail: #e06c6c;
 }
 html[data-package='graphite'] {
-  --dm-frame: #131519;
-  --dm-page: #1c1e22;
-  --dm-well: #17191d;
-  --dm-raised: #292d33;
-  --dm-rule: #50565f;
-  --dm-rule-2: #343a42;
-  --dm-text-1: #edf0f4;
-  --dm-text-2: #bec3cb;
-  --dm-text-3: #939ca8;
-  --dm-glacier: #7ac8f5;
-  --dm-signal: #f0cf4c;
+  --chrome: #151515;
+  --surface: #1a1a1a;
+  --raised: #212121;
+  --hair: rgba(255, 255, 255, 0.07);
+  --hair-2: rgba(255, 255, 255, 0.12);
+  --t1: #ebe9e6;
+  --t2: #aaa7a2;
+  --t3: #86827c;
+  --light: #f0e6d2;
+  --attn: #e0a94a;
+  --fail: #e06c6c;
 }
 html[data-package='verdigris'] {
-  --dm-frame: #051719;
-  --dm-page: #0a2223;
-  --dm-well: #081c1e;
-  --dm-raised: #183536;
-  --dm-rule: #446765;
-  --dm-rule-2: #294441;
-  --dm-text-1: #e6f4ed;
-  --dm-text-2: #b6d0c8;
-  --dm-text-3: #90aaa4;
-  --dm-glacier: #87e8bf;
-  --dm-done: #b6df83;
+  --chrome: #0a1716;
+  --surface: #0e1c1b;
+  --raised: #142523;
+  --hair: rgba(255, 255, 255, 0.07);
+  --hair-2: rgba(255, 255, 255, 0.12);
+  --t1: #e4efeb;
+  --t2: #a5b8b2;
+  --t3: #7f948e;
+  --light: #4fd1a5;
+  --attn: #e0a94a;
+  --fail: #e06c6c;
+}
+html[data-package='harbor'] {
+  --chrome: #0d1020;
+  --surface: #12162a;
+  --raised: #181d35;
+  --hair: rgba(255, 255, 255, 0.08);
+  --hair-2: rgba(255, 255, 255, 0.13);
+  --t1: #e7e9f2;
+  --t2: #a8adc4;
+  --t3: #8188a3;
+  --light: #8aa2ff;
+  --attn: #e6b45a;
+  --fail: #e06c6c;
+}
+html[data-package='cobalt'] {
+  --chrome: #0d1020;
+  --surface: #12162a;
+  --raised: #181d35;
+  --hair: rgba(255, 255, 255, 0.08);
+  --hair-2: rgba(255, 255, 255, 0.13);
+  --t1: #e7e9f2;
+  --t2: #a8adc4;
+  --t3: #8188a3;
+  --light: #8aa2ff;
+  --attn: #e6b45a;
+  --fail: #e06c6c;
+}
+html[data-package='ember'] {
+  --chrome: #171311;
+  --surface: #1c1715;
+  --raised: #241d1a;
+  --hair: rgba(255, 255, 255, 0.07);
+  --hair-2: rgba(255, 255, 255, 0.12);
+  --t1: #ede7e2;
+  --t2: #b0a59c;
+  --t3: #8a7f76;
+  --light: #ff8a5b;
+  --attn: #e0a94a;
+  --fail: #e06c6c;
+}
+html[data-package='moss'] {
+  --chrome: #111410;
+  --surface: #151914;
+  --raised: #1b201a;
+  --hair: rgba(255, 255, 255, 0.07);
+  --hair-2: rgba(255, 255, 255, 0.12);
+  --t1: #e7eae3;
+  --t2: #a7ada0;
+  --t3: #828a7a;
+  --light: #b5d84a;
+  --attn: #e0a94a;
+  --fail: #e06c6c;
+}
+html[data-package='dusk'] {
+  --chrome: #151219;
+  --surface: #1a161f;
+  --raised: #211c28;
+  --hair: rgba(255, 255, 255, 0.07);
+  --hair-2: rgba(255, 255, 255, 0.12);
+  --t1: #ebe6ef;
+  --t2: #aea6b6;
+  --t3: #877f91;
+  --light: #e58fb1;
+  --attn: #e0a94a;
+  --fail: #e06c6c;
+}
+html[data-package='ink'] {
+  --chrome: #0a0a0b;
+  --surface: #0f0f10;
+  --raised: #161617;
+  --hair: rgba(255, 255, 255, 0.08);
+  --hair-2: rgba(255, 255, 255, 0.14);
+  --t1: #f2f2f2;
+  --t2: #b3b3b3;
+  --t3: #8a8a8a;
+  --light: #ffffff;
+  --attn: #e0a94a;
+  --fail: #e06c6c;
 }
 html[data-package='paper'] {
   color-scheme: light;
-  --dm-frame: #e7edf2;
-  --dm-page: #f9fafc;
-  --dm-well: #f0f3f7;
-  --dm-raised: #e4ebf1;
-  --dm-rule: #8699aa;
-  --dm-rule-2: #c4cfd9;
-  --dm-text-1: #152331;
-  --dm-text-2: #384d60;
-  --dm-text-3: #53697b;
-  --dm-text-4: #8191a0;
-  --dm-glacier: #02629c;
-  --dm-glacier-ink: #f9fafc;
-  --dm-signal: #edb417;
-  --dm-signal-edge: #a26f17;
-  --dm-signal-ink: #292100;
-  --dm-done: #187047;
-  --dm-fault: #bd2234;
+  --chrome: #f3f4f6;
+  --surface: #ffffff;
+  --raised: #eef0f3;
+  --hair: rgba(0, 0, 0, 0.08);
+  --hair-2: rgba(0, 0, 0, 0.14);
+  --t1: #1a1d21;
+  --t2: #4b5563;
+  --t3: #6b7280;
+  --light: #0e7c86;
+  --attn: #b7791f;
+  --fail: #c53030;
+  --dm-glacier-ink: #ffffff;
+  --dm-signal-ink: #ffffff;
 }
 html[data-motion='reduced'] {
   --dm-t-quick: 0ms;
@@ -107,14 +211,14 @@ body {
   margin: 0;
   background: var(--dm-frame);
   color: var(--dm-text-1);
-  font: 15px / 1.5 var(--dm-font-ui);
+  /* 14 px floor: tests/ui.spec.ts flags any text-bearing element under 14 px. */
+  font: 14px / 1.5 var(--dm-font-ui);
   font-synthesis: none;
 }
 /* Tabular figures only where numbers line up; in running text they widen the punctuation. */
 time,
 .rail-count,
 .task-column > header .caption,
-.console-column > header .caption,
 .work-log time,
 .document-row > .caption {
   font-variant-numeric: tabular-nums;
@@ -196,16 +300,16 @@ p {
   margin: 0;
 }
 h1 {
-  font: 600 20px / 1.28 var(--dm-font-ui);
+  font: 500 18px / 1.3 var(--dm-font-ui);
   letter-spacing: -0.01em;
 }
 h2 {
-  font: 600 24px / 1.22 var(--dm-font-ui);
+  font: 600 20px / 1.3 var(--dm-font-ui);
   letter-spacing: -0.01em;
-  margin: 0 0 16px;
+  margin: 0 0 12px;
 }
 h3 {
-  font: 600 16px / 1.42 var(--dm-font-ui);
+  font: 600 14px / 1.4 var(--dm-font-ui);
   display: flex;
   gap: 10px;
   align-items: center;
@@ -240,10 +344,12 @@ a {
   word-break: break-word;
 }
 .code.caption {
-  font: 400 calc(13.5px * var(--dm-code-scale)) / 1.48 var(--dm-font-code);
+  font: 400 calc(14px * var(--dm-code-scale)) / 1.48 var(--dm-font-code);
 }
+/* Technical-only hint; no text-bearing use on the size-checked pages. */
 .key-hint {
-  font: 400 14px / 1.48 var(--dm-font-code);
+  font: 400 12px / 1.5 var(--dm-font-code);
+  letter-spacing: 0.06em;
 }
 .row,
 .actions {
@@ -278,15 +384,18 @@ a {
 .button:hover:not(:disabled) {
   background: var(--dm-raised);
 }
+/* One primary action per screen at most: a 1 px --light border with --light
+   text on a quiet ground. Never a filled block, so nothing hard-codes a dark
+   colour and ember/paper keep working. */
 .button.primary {
-  background: var(--dm-glacier);
-  color: var(--dm-glacier-ink);
+  background: transparent;
+  color: var(--dm-glacier);
   border-color: var(--dm-glacier);
   font-weight: 600;
 }
 .button.primary:hover:not(:disabled) {
-  background: #80eaf3;
-  border-color: #80eaf3;
+  background: color-mix(in srgb, var(--dm-glacier) 10%, transparent);
+  border-color: var(--dm-glacier);
 }
 .button.signal {
   background: var(--dm-signal);
@@ -303,31 +412,37 @@ a {
   color: var(--dm-text-2);
 }
 .button.selected {
-  color: var(--dm-glacier);
+  color: var(--dm-text-1);
 }
 .icon-button {
   width: 36px;
   min-width: 36px;
   padding: 8px;
 }
+/* The point replaces every square marker: 8 px circle, hollow when waiting to
+   start (todo), --light with its glow only while live (working), amber while
+   it needs the person (waiting), --t3 when done, red on fault. */
 .mark {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   display: inline-block;
   flex: none;
-  border: 1px solid var(--dm-rule);
+  border-radius: 50%;
+  border: 1.5px solid var(--dm-text-3);
+  background: transparent;
 }
 .mark.working {
   border-color: var(--dm-glacier);
   background: var(--dm-glacier);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--dm-glacier) 40%, transparent);
 }
 .mark.waiting {
   border-color: var(--dm-signal);
   background: var(--dm-signal);
 }
 .mark.done {
-  border-color: var(--dm-done);
-  background: var(--dm-done);
+  border-color: var(--dm-text-3);
+  background: var(--dm-text-3);
 }
 .mark.fault {
   border-color: var(--dm-fault);
@@ -341,8 +456,8 @@ a {
   overflow: hidden;
 }
 .top-bar {
-  min-height: 46px;
-  height: 46px;
+  min-height: 40px;
+  height: 40px;
   display: flex;
   align-items: stretch;
   flex: none;
@@ -361,52 +476,21 @@ a {
   app-region: no-drag;
 }
 .brand-button {
-  border-right: 1px solid var(--dm-rule-2);
-  padding: 0 24px;
+  border-right: 0;
+  padding: 0 16px;
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
+/* Wordmark: the mark's spear-line stands before it; tracked type, no bar. */
 .brand {
   display: inline-flex;
   flex-direction: column;
   justify-content: center;
   width: max-content;
-  font: 800 20px / 1 var(--dm-font-brand);
-  letter-spacing: 0.15em;
-}
-.brand i {
-  height: 2px;
-  position: relative;
-  margin-top: 5px;
-  width: 100%;
-  display: block;
-}
-.brand i::before,
-.brand i::after {
-  content: '';
-  position: absolute;
-  height: 2px;
-  background: var(--dm-glacier);
-  top: 0;
-}
-.brand i::before {
-  left: 0;
-  width: 76%;
-}
-.brand i::after {
-  left: 83%;
-  width: 9%;
-}
-.top-bar .brand i {
-  transform-origin: left;
-  animation: draw-rule calc(var(--dm-t-extend) * 2.6) var(--dm-ease) both;
-}
-@keyframes draw-rule {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
+  font: 400 14px / 1 var(--dm-font-brand);
+  letter-spacing: 0.32em;
 }
 .project-tabs {
   display: flex;
@@ -414,25 +498,26 @@ a {
   min-width: 0;
   scrollbar-width: thin;
 }
+/* The open project reads as the current crumb: text weight and --t1, no tab
+   box and no accent bar. */
 .project-tab {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 0 16px;
-  border-right: 1px solid var(--dm-rule-2);
-  border-top: 2px solid transparent;
-  color: var(--dm-text-3);
+  border: 0;
+  color: var(--dm-text-2);
   white-space: nowrap;
-  min-height: 44px;
+  min-height: 38px;
 }
 .project-tab.active {
-  border-top-color: var(--dm-glacier);
-  background: var(--dm-page);
+  border: 0;
+  background: none;
   color: var(--dm-text-1);
-  font-weight: 600;
+  font-weight: 500;
 }
 .project-tab:hover {
-  background: var(--dm-well);
+  background: var(--dm-raised);
   color: var(--dm-text-1);
 }
 .top-right {
@@ -450,6 +535,14 @@ a {
   padding: 0 12px;
   color: var(--dm-text-2);
   white-space: nowrap;
+}
+/* Settings is a quiet --t2 link that lifts to --t1 on hover. */
+.top-right .button {
+  color: var(--dm-text-2);
+}
+.top-right .button:hover:not(:disabled) {
+  background: none;
+  color: var(--dm-text-1);
 }
 .account-wrap {
   position: relative;
@@ -479,17 +572,17 @@ a {
 }
 .page-frame {
   margin: 0 20px 20px;
-  border-top: 2px solid var(--dm-glacier);
+  border-top: 1px solid var(--dm-rule-2);
   background: var(--dm-page);
   flex: 1;
   min-height: 0;
   overflow: hidden;
 }
 .page-frame.needs-attention {
-  border-top-color: var(--dm-signal);
+  border-top: 1px solid var(--dm-signal);
 }
 .page-frame.disconnected {
-  border-top-color: var(--dm-fault);
+  border-top: 1px solid var(--dm-fault);
 }
 .workspace,
 .settings-layout {
@@ -499,6 +592,7 @@ a {
   position: relative;
 }
 .rail {
+  position: relative;
   border-right: 1px solid var(--dm-rule-2);
   padding: 16px 0;
   overflow-y: auto;
@@ -506,25 +600,49 @@ a {
   display: flex;
   flex-direction: column;
 }
+/* A thin spine down the nav gutter, as in the Console rail. */
+.rail::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: var(--dm-rule-2);
+}
 .rail-link {
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 2px;
-  padding: 7px 14px 7px 16px;
+  padding: 7px 14px 7px 30px;
   min-height: 36px;
-  border-left: 2px solid transparent;
+  border-left: 0;
   color: var(--dm-text-2);
   width: 100%;
 }
 .rail-link:hover {
-  background: var(--dm-well);
-}
-.rail-link.active {
-  border-left-color: var(--dm-glacier);
-  background: var(--dm-well);
+  background: var(--dm-raised);
   color: var(--dm-text-1);
-  font-weight: 600;
+}
+/* The current page is --t1 with the point in the gutter; no accent bar. */
+.rail-link.active {
+  border-left: 0;
+  background: none;
+  color: var(--dm-text-1);
+  font-weight: 500;
+}
+.rail-link.active::before {
+  content: '';
+  position: absolute;
+  left: 12.5px;
+  top: 50%;
+  margin-top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dm-glacier);
 }
 .rail-link.with-description {
   padding-top: 6px;
@@ -542,8 +660,11 @@ a {
   color: var(--dm-text-3);
   font-weight: 400;
 }
+/* Counts are tabular mono system labels, held at the 14 px floor. */
 .rail-count {
+  font-family: var(--dm-font-code);
   font-size: 14px;
+  letter-spacing: 0.02em;
 }
 .rail-description {
   font-size: 14px;
@@ -740,7 +861,7 @@ a {
 }
 .document-row:hover,
 .reference-row:is(button):hover {
-  color: var(--dm-glacier);
+  color: var(--dm-text-1);
 }
 .reference-row > .caption {
   font-size: 14px;
@@ -796,11 +917,19 @@ a {
 }
 .composer {
   margin: 18px 0 24px;
+  border: 1px solid var(--dm-rule-2);
+  border-radius: 6px;
+  background: var(--dm-raised);
+  padding: 4px 14px 12px;
 }
+/* Quiet segmented controls everywhere (Board/List toggle, Settings): the
+   current choice is --t1 on --raised, never a filled block. */
 .segmented {
   display: flex;
   border: 1px solid var(--dm-rule);
+  border-radius: 5px;
   min-height: 36px;
+  overflow: hidden;
 }
 .segmented button {
   flex: 1;
@@ -809,19 +938,54 @@ a {
   padding: 6px 12px;
   min-width: 60px;
   min-height: 36px;
-  color: var(--dm-text-2);
+  color: var(--dm-text-3);
 }
 .segmented button:last-child {
   border-right: 0;
 }
+.segmented button:hover {
+  color: var(--dm-text-1);
+}
 .segmented button.active {
-  background: var(--dm-glacier);
-  color: var(--dm-glacier-ink);
-  font-weight: 600;
+  background: var(--dm-raised);
+  color: var(--dm-text-1);
+  font-weight: 500;
 }
 .segmented.compact button {
   min-width: 48px;
   padding: 6px 10px;
+}
+/* The Ask mode control is a mono strip like the Console composer strip:
+   ASK PLAN BUILD FIX at 11 px uppercase; the current one is --t1 with a
+   1 px --light ink line under it, the rest --t3. */
+.composer .segmented {
+  border: 0;
+  border-bottom: 1px solid var(--dm-rule-2);
+  border-radius: 0;
+  gap: 2px;
+}
+.composer .segmented button {
+  flex: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  margin-bottom: -1px;
+  padding: 11px 10px 11px;
+  min-width: 0;
+  font-family: var(--dm-font-code);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dm-text-3);
+}
+.composer .segmented button:hover {
+  color: var(--dm-text-2);
+  background: none;
+}
+.composer .segmented button.active {
+  background: none;
+  color: var(--dm-text-1);
+  border-bottom-color: var(--dm-glacier);
 }
 .mode-line {
   margin: 8px 0 12px;
@@ -833,10 +997,24 @@ a {
   min-height: 68px;
   font: 400 calc(16px * var(--dm-read-scale)) / 1.6 var(--dm-font-read);
   background: transparent;
-  padding: 10px 12px;
+  border-color: transparent;
+  padding: 8px 0;
+}
+.composer > textarea:focus {
+  border-color: transparent;
 }
 .composer-actions {
-  margin-top: 8px;
+  margin-top: 12px;
+}
+/* Send is a quiet button that turns --light text only when there is text
+   (the button is disabled while the box is empty). */
+.composer-actions .button.primary {
+  background: none;
+  border-color: var(--dm-rule);
+  color: var(--dm-text-3);
+}
+.composer-actions .button.primary:not(:disabled) {
+  color: var(--dm-glacier);
 }
 .route-line {
   margin-top: 10px;
@@ -900,13 +1078,13 @@ a {
   min-height: 48px;
 }
 .project-row:hover strong {
-  color: var(--dm-glacier);
+  color: var(--dm-text-1);
 }
 .project-row > div {
   min-width: 160px;
 }
 .project-row strong {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
 }
 .project-row .code {
@@ -1051,7 +1229,7 @@ a {
 }
 .setup-content > h1 {
   margin: 8px 0 24px;
-  font-size: 24px;
+  font-size: 20px;
   line-height: 1.28;
 }
 .setup-content .intro {
@@ -1119,29 +1297,14 @@ a {
 .setting-rows {
   margin: 20px 0;
 }
-.palette-swatch {
+/* Appearance swatches are 12 px points in the scheme's own light colour. */
+.palette-dot {
   display: inline-block;
-  width: 32px;
-  height: 22px;
-  border: 1px solid var(--dm-rule);
-  border-left: 6px solid #36dcec;
-  background: #17212e;
-}
-.palette-swatch.cobalt {
-  background: #0c1b35;
-  border-left-color: #5be7e2;
-}
-.palette-swatch.graphite {
-  background: #1c1e22;
-  border-left-color: #7ac8f5;
-}
-.palette-swatch.verdigris {
-  background: #0a2223;
-  border-left-color: #87e8bf;
-}
-.palette-swatch.paper {
-  background: #f9fafc;
-  border-left-color: #02629c;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--sw-light, var(--light));
 }
 .service-list {
   margin-top: 24px;
@@ -1194,18 +1357,33 @@ a {
   border-left: 0;
   padding-left: 0;
 }
+/* Board columns are hairline-topped lists with mono labels and tabular mono
+   counts. The state point comes from .mark (todo hollow, working live,
+   waiting amber, done --t3). */
 .task-column > header {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 40px;
   margin-bottom: 10px;
-  border-bottom: 1px solid var(--dm-rule-2);
+  border-bottom: 0;
+  border-top: 1px solid var(--dm-rule-2);
+  padding-top: 10px;
 }
 .task-column h2 {
-  font-size: 16px;
+  font-family: var(--dm-font-code);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dm-text-3);
   margin: 0;
-  line-height: 1.42;
+  line-height: 1.4;
+}
+.task-column > header .caption {
+  font-family: var(--dm-font-code);
+  font-size: 14px;
+  letter-spacing: 0.02em;
 }
 .task-card {
   background: var(--dm-well);
@@ -1229,14 +1407,14 @@ a {
   padding: 0;
   min-height: 24px;
   display: block;
-  font-size: 17px;
+  font-size: 14px;
   line-height: 1.42;
   font-weight: 600;
   width: 100%;
   overflow-wrap: anywhere;
 }
 .task-title:hover {
-  color: var(--dm-glacier);
+  color: var(--dm-text-1);
 }
 .task-card p {
   margin-top: 6px;
@@ -1492,6 +1670,75 @@ a {
 .facts dd {
   margin: 0;
 }
+/* Approval decision record (Astra): the instrument register, not a card.
+   One rule set for both surfaces: a 1 px rule at the left, the outcome in
+   the UI face, the record summary as a mono uppercase control, and the four
+   digests as lowercase mono facts. Small type lives here only; this record
+   never renders on Home, where the suite holds the 14 px floor. */
+.approval-status {
+  margin: 12px 0 4px;
+  padding: 2px 0 2px 12px;
+  border-left: 1px solid var(--dm-rule);
+}
+.approval-outcome {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font: 400 13.5px / 1.5 var(--dm-font-ui);
+  color: var(--dm-text-1);
+  overflow-wrap: anywhere;
+}
+.approval-outcome .mark {
+  align-self: center;
+}
+.approval-status.is-conflicted .approval-outcome,
+.approval-status.is-not-applied .approval-outcome {
+  color: var(--dm-signal);
+}
+.approval-status.is-declined .approval-outcome {
+  color: var(--dm-text-3);
+}
+.approval-pending,
+.approval-recorded {
+  margin: 0;
+  font: 400 11.5px / 1.7 var(--dm-font-code);
+  color: var(--dm-text-3);
+  overflow-wrap: anywhere;
+}
+.approval-record {
+  margin-top: 6px;
+}
+.approval-summary {
+  font: 500 11px / 1.6 var(--dm-font-code);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dm-text-3);
+  cursor: pointer;
+  min-height: 0;
+}
+.approval-summary:hover {
+  color: var(--dm-text-1);
+}
+.approval-recorded {
+  margin-top: 4px;
+}
+.approval-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 10px;
+  margin: 6px 0 0;
+  font: 400 11.5px / 1.7 var(--dm-font-code);
+  overflow-wrap: anywhere;
+}
+.approval-facts dt {
+  text-transform: lowercase;
+  letter-spacing: 0.01em;
+  color: var(--dm-text-3);
+}
+.approval-facts dd {
+  color: var(--dm-text-1);
+}
 .change-card > p {
   margin: 10px 0 16px;
 }
@@ -1559,8 +1806,8 @@ a {
   color: var(--dm-text-2);
 }
 .filter-chips button.active {
-  border-color: var(--dm-glacier);
-  color: var(--dm-glacier);
+  border-color: var(--dm-rule);
+  color: var(--dm-text-1);
 }
 .restore-actions {
   display: flex;
@@ -1637,7 +1884,7 @@ a {
     flex-wrap: wrap;
   }
   .page-header h1 {
-    font-size: 20px;
+    font-size: 18px;
   }
   .header-path {
     display: none;
@@ -1687,7 +1934,7 @@ a {
     padding-top: 12px;
   }
   .rail-link {
-    padding-left: 14px;
+    padding-left: 30px;
   }
   .rail-description {
     font-size: 14px;
@@ -1786,15 +2033,15 @@ a {
   }
   .top-bar {
     height: auto;
-    min-height: 46px;
+    min-height: 40px;
     flex-wrap: wrap;
   }
   .brand-button {
-    height: 46px;
+    height: 40px;
     padding: 0 16px;
   }
   .top-right {
-    height: 46px;
+    height: 40px;
     padding-right: 4px;
   }
   .project-tabs {
@@ -1831,6 +2078,9 @@ a {
   .key-hint {
     display: none;
   }
+  .rail::before {
+    display: none;
+  }
   .rail-link {
     min-width: 70px;
     white-space: nowrap;
@@ -1841,6 +2091,9 @@ a {
   }
   .rail-link.active {
     border-bottom-color: var(--dm-glacier);
+  }
+  .rail-link.active::before {
+    display: none;
   }
   .rail-line {
     gap: 6px;
@@ -1920,7 +2173,7 @@ a {
     margin-left: auto;
   }
   .project-row strong {
-    font-size: 16px;
+    font-size: 14px;
   }
   .dotted-leader {
     min-width: 4px;
@@ -1959,7 +2212,7 @@ a {
     padding: 0 24px 40px;
   }
   .setup-content > h1 {
-    font-size: 22px;
+    font-size: 20px;
   }
   .setup-actions {
     flex-wrap: wrap;
@@ -2014,7 +2267,7 @@ a {
     display: none;
   }
   .task-title {
-    font-size: 17px;
+    font-size: 14px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -2068,15 +2321,20 @@ html[data-motion='reduced'] *::after {
 .intent:hover {
   background: var(--dm-raised);
 }
-.intent .square {
-  width: 12px;
-  height: 12px;
-  margin-top: 7px;
-  background: var(--dm-glacier);
+/* Each door title carries a point, not a square. (.square stays for the
+   landing markup in client/App.tsx until Fable renames it there.) */
+.intent .square,
+.intent .pt {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  border: 1.5px solid var(--dm-text-3);
+  background: transparent;
 }
 .intent strong {
   display: block;
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1.4;
 }
@@ -2096,57 +2354,26 @@ html[data-motion='reduced'] *::after {
   }
 }
 
-/* ---- The Console ---- */
-.console {
-  height: 100%;
-  display: grid;
-  grid-template-columns: 264px minmax(0, 1fr) 400px;
-  min-height: 0;
-}
-.console-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.console-side,
-.console-right {
-  min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--dm-rule) transparent;
-}
-.console-side {
-  border-right: 1px solid var(--dm-rule-2);
-  display: flex;
-  flex-direction: column;
-}
-.console-right {
-  border-left: 1px solid var(--dm-rule-2);
-  display: flex;
-  flex-direction: column;
-}
-.console-project {
-  padding: 18px 18px 14px;
-  border-bottom: 1px solid var(--dm-rule-2);
-}
-.console-project h1 {
-  font-size: 20px;
-  margin: 0 0 4px;
-  overflow-wrap: anywhere;
-}
-.console-project .actions {
-  margin-top: 10px;
-}
+/* ---- Workbook Ask threads ----
+   These .console-* class names predate the new client/console/ shell and are
+   shared with it: client/console/Rail.tsx renders `spine console-threads`
+   with `console-thread` rows inside .console (styled there by
+   client/console/console.css). The base rules below stay as they were for the
+   rail; the .workspace-scoped rules restyle the same markup as Workbook rail
+   rows: name with mono time at right, one-line ellipsis, current row in --t1
+   with the point in the gutter. */
 .console-side-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 18px 6px;
+  padding: 4px 0 8px;
 }
 .console-side-header h2 {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-family: var(--dm-font-code);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--dm-text-3);
   margin: 0;
 }
@@ -2187,39 +2414,70 @@ html[data-motion='reduced'] *::after {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.console-team {
-  padding-bottom: 20px;
+/* Workbook rail rows (Ask threads): the base rules above also serve the
+   Console rail, so every Workbook change is scoped under .workspace. */
+.workspace .console-threads {
+  flex: none;
+  border-bottom: 0;
+  padding-bottom: 4px;
 }
-.console-helper {
-  display: flex;
-  flex-direction: column;
-  padding: 8px 20px;
+.workspace .console-thread {
+  position: relative;
+  padding: 7px 10px 7px 30px;
+  border-left: 0;
+  border-radius: 0;
+  color: var(--dm-text-2);
 }
-.console-helper-line {
+.workspace .console-thread:hover {
+  background: var(--dm-raised);
+  color: var(--dm-text-1);
+}
+.workspace .console-thread.open {
+  border-left: 0;
+  background: none;
+  color: var(--dm-text-1);
+}
+.workspace .console-thread.open::before {
+  content: '';
+  position: absolute;
+  left: 12.5px;
+  top: 50%;
+  margin-top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dm-glacier);
+}
+.workspace .console-thread-row {
   display: flex;
-  align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  align-items: baseline;
+  min-width: 0;
 }
-.console-engine {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 20px;
-  min-height: 28px;
-}
-.console-engine-name {
+.workspace .console-thread-name {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-weight: 400;
+}
+.workspace .console-thread.open .console-thread-name {
+  font-weight: 500;
+}
+.workspace .console-thread .thread-meta {
+  flex: none;
+  display: inline;
+  margin-top: 0;
+  font-family: var(--dm-font-code);
+  font-size: 14px;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
-.console-engine > .caption {
-  flex: none;
+.workspace .console-thread .mode-chip {
+  display: block;
+  margin-top: 2px;
 }
-.console-side-action {
-  padding: 10px 20px 0;
-}
+/* .choice-row survives the old Console: Settings uses it for the Default
+   model/effort pickers. */
 .choice-row {
   gap: 8px;
   align-items: center;
@@ -2229,256 +2487,18 @@ html[data-motion='reduced'] *::after {
 .choice-row > .caption {
   flex: none;
 }
-.console-pane-send select {
-  max-width: 190px;
-}
-.console-effort-note {
-  flex: none;
-  color: var(--dm-text-3);
-}
-.console-honest {
-  padding: 8px 20px 0;
-  color: var(--dm-text-3);
-}
-.console-panes {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(320px, 1fr);
-  gap: 1px;
-  background: var(--dm-rule-2);
-  min-height: 0;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-.console-panes > .empty {
-  background: var(--dm-page);
-  margin: 0;
-  padding: 48px 40px;
-  align-self: center;
-}
-.console-pane {
-  background: var(--dm-page);
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  min-height: 0;
-  border-top: 2px solid transparent;
-}
-.console-pane.live {
-  border-top-color: var(--dm-glacier);
-}
-.console-pane.needs {
-  border-top-color: var(--dm-signal);
-}
-.console-pane-header {
-  padding: 12px 18px 8px;
-  border-bottom: 1px solid var(--dm-rule-2);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: 12px;
-}
-.console-pane-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.console-pane-name {
-  padding: 0;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.console-pane-name:hover {
-  color: var(--dm-glacier);
-}
-.console-pane-meta {
-  grid-column: 1;
-  margin: 2px 0 0 22px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.console-pane-actions {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  align-self: start;
-  margin: -4px 0 0;
-}
-.console-pane-body {
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--dm-rule) transparent;
-  padding: 14px 18px 8px;
-}
-.console-pane-body .turn {
-  padding: 10px 0;
-  margin-bottom: 8px;
-}
-.console-pane-body .turn.you {
-  padding-left: 14px;
-}
-.console-turn-text {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font: 400 calc(16px * var(--dm-read-scale)) / 1.6 var(--dm-font-read);
-}
-.console-pane-body .work-session.compact {
-  padding: 8px 0 12px;
-  border-bottom: 0;
-  margin-bottom: 8px;
-}
-.console-pane-body .work-log > div {
-  gap: 14px;
-  min-height: 30px;
-}
-.console-pane-composer {
-  border-top: 1px solid var(--dm-rule-2);
-  padding: 10px 18px 14px;
-  display: grid;
-  gap: 10px;
-}
-.console-pane-composer textarea {
-  width: 100%;
-  min-height: 64px;
-  font: 400 calc(16px * var(--dm-read-scale)) / 1.6 var(--dm-font-read);
-  background: transparent;
-  padding: 10px 12px;
-  border: 1px solid var(--dm-rule);
-  resize: vertical;
-}
-.console-pane-send select {
-  flex: 0 1 220px;
-}
-.console-tabs {
-  margin: 16px 20px 0;
-  flex: none;
-}
-.console-right-body {
-  padding: 14px 18px 20px;
-  min-height: 0;
-  flex: 1;
-}
-.console-board {
-  display: grid;
-  gap: 16px;
-}
-.console-column > header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 0 8px;
-  border-bottom: 1px solid var(--dm-rule-2);
-  margin-bottom: 10px;
-}
-.console-column > header h3 {
-  margin: 0;
-  font-size: 14px;
-}
-.console-column .task-card {
-  margin-bottom: 12px;
-  min-height: 0;
-}
-.console-column .task-card .task-title {
-  margin: 0;
-  font-size: 15px;
-}
-.console-column .task-card .actions {
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.console-column .column-empty {
-  margin: 0 0 4px;
-}
-.console-files .document-row.static {
-  cursor: default;
-}
-.console-files .actions,
-.console-changes .actions {
-  margin-top: 16px;
-}
-.console.disconnected {
-  opacity: 0.85;
-}
-@media (max-width: 1280px) {
-  .console {
-    grid-template-columns: 232px minmax(0, 1fr) 340px;
-  }
-}
-@media (max-width: 1040px) {
-  .console {
-    grid-template-columns: 220px minmax(0, 1fr);
-  }
-  .console-right {
-    display: none;
-  }
-}
-
 .open-console {
   margin-top: 24px;
 }
 .text-button {
   padding: 0;
-  color: var(--dm-glacier);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  min-height: 0;
+  color: var(--dm-text-2);
+  text-decoration: none;
+  border-bottom: 1px solid var(--dm-rule);
 }
 .text-button:hover {
   color: var(--dm-text-1);
-}
-
-/* Console: permission per thread, team roster, team messages */
-.console-permission {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 14px;
-  margin-top: 10px;
-}
-.console-permission .segmented {
-  min-height: 30px;
-}
-.console-permission .segmented button {
-  min-height: 30px;
-  padding: 4px 10px;
-  font-size: 14px;
-}
-.console-permission .segmented button:disabled {
-  color: var(--dm-text-4);
-  opacity: 1;
-}
-.console-member {
-  display: flex;
-  flex-direction: column;
-  padding: 8px 20px 10px;
-  border-left: 2px solid transparent;
-}
-.console-member .console-helper-line .caption {
-  margin-left: auto;
-}
-.console-member-actions {
-  margin-top: 4px;
-  gap: 4px;
-}
-.console-side-sub {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--dm-text-3);
-  margin: 16px 20px 4px;
-}
-.turn.team {
-  border-left: 2px dashed var(--dm-rule);
-  padding-left: 14px;
-}
-.turn.team.you {
-  border-left-style: solid;
-}
-.console-composer-modes {
-  align-items: center;
 }
 
 /* ---- Home: one column, one right edge, a reading face on the section titles ---- */
@@ -2581,10 +2601,6 @@ html[data-motion='reduced'] *::after {
   margin-top: 2px;
   color: var(--dm-text-2);
 }
-.console-pane-header .helper-caption {
-  margin-top: 2px;
-  color: var(--dm-text-2);
-}
 
 /* ---- Usage ---- */
 .usage-bar {
@@ -2654,26 +2670,24 @@ button.usage-chip:hover {
   align-items: center;
   gap: 8px;
 }
-.console-pane-meta .usage-bar {
-  margin-left: 2px;
-}
-.console-member .usage-chip {
-  font-size: 14px;
-}
+
 
 /* ---- Modes ---- */
+/* Mode names are mono text, not chips: no box, no pill. (The label text
+   itself is untouched; tests read "Fix, try 1 of 3".) */
 .mode-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border: 1px solid var(--dm-rule);
-  color: var(--dm-text-2);
+  display: inline;
+  border: 0;
+  padding: 0;
+  font-family: var(--dm-font-code);
   font-size: 14px;
   line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--dm-text-3);
   white-space: nowrap;
 }
 .mode-chip[data-mode='fix'] {
-  border-color: var(--dm-signal-edge);
+  border: 0;
   color: var(--dm-signal);
 }
 .failing-row {

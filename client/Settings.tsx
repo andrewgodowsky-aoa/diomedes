@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import type {
   EngineCatalog,
   IntegrationStatus,
@@ -6,6 +7,7 @@ import type {
   UsageSnapshot,
 } from '../shared/types';
 import { api } from './api';
+import { SCHEMES, schemeId } from './console/schemes';
 import {
   Button,
   Mark,
@@ -414,26 +416,34 @@ export function SettingsPage({
               <>
                 <h2>Appearance package</h2>
                 <div className="radio-list">
-                  {['deep-field', 'cobalt', 'graphite', 'verdigris', 'paper'].map((p) => (
-                    <label
-                      className={`radio-row ${settings.appearance.package === p ? 'selected' : ''}`}
-                      key={p}
-                    >
-                      <input
-                        type="radio"
-                        name="appearance"
-                        checked={settings.appearance.package === p}
-                        onChange={() =>
-                          void save({
-                            ...settings,
-                            appearance: { ...settings.appearance, package: p },
-                          })
-                        }
-                      />
-                      <span className={`palette-swatch ${p}`} />
-                      <strong>{p === 'deep-field' ? 'Deep Field' : titleCase(p)}</strong>
-                    </label>
-                  ))}
+                  {SCHEMES.map((s) => {
+                    const selected = schemeId(settings.appearance.package) === s.id;
+                    return (
+                      <label className={`radio-row ${selected ? 'selected' : ''}`} key={s.id}>
+                        <input
+                          type="radio"
+                          name="appearance"
+                          checked={selected}
+                          onChange={() =>
+                            void save({
+                              ...settings,
+                              appearance: { ...settings.appearance, package: s.id },
+                            })
+                          }
+                        />
+                        <span
+                          className="palette-dot"
+                          aria-hidden="true"
+                          style={
+                            {
+                              '--sw-light': s.light,
+                            } as CSSProperties
+                          }
+                        />
+                        <strong>{s.name}</strong>
+                      </label>
+                    );
+                  })}
                 </div>
                 <label className="setting-row">
                   <span>Reduced motion</span>

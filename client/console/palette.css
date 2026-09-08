@@ -1,0 +1,109 @@
+/* Ctrl+K palette: 1:1 with 05-instrumented-density-prototype.html.
+   Every rule is prefixed with `.console`; tokens only. The palette is the
+   one surface allowed a shadow; radii 6/5 px. */
+.console .veil {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  background: rgba(0, 0, 0, 0.35);
+  display: grid;
+  place-items: start center;
+  padding-top: 12vh;
+}
+.console .palette {
+  width: min(540px, 92vw);
+  background: var(--raised);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--r);
+  box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.9);
+}
+.console .palette input {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--hair);
+  color: var(--t1);
+  font: 400 15px/1.4 var(--ui);
+  padding: 12px 14px;
+  outline: none;
+}
+.console .palette ul {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  max-height: 400px;
+  overflow: auto;
+}
+.console .palette .group {
+  padding: 8px 10px 2px;
+  font: 500 11px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.console .palette li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  gap: 0 10px;
+  align-items: baseline;
+  padding: 6px 8px 6px 10px;
+  border-radius: var(--rb);
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--t1);
+}
+.console .palette li.sel {
+  background: var(--surface);
+}
+.console .palette li .pt {
+  align-self: center;
+}
+.console .palette li .sub {
+  grid-column: 2;
+  font: 400 11.5px/1.5 var(--mono);
+  color: var(--t3);
+}
+.console .palette li .acts {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: center;
+  display: flex;
+  gap: 4px;
+}
+.console .palette li .acts button {
+  font: 500 11px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--t3);
+  padding: 3px 7px;
+  border-radius: var(--rb);
+  border: 1px solid transparent;
+}
+.console .palette li .acts button:hover {
+  color: var(--t1);
+}
+.console .palette li.sel .acts button {
+  border-color: var(--hair);
+  color: var(--t2);
+}
+.console .palette li.sel .acts button.act {
+  border-color: var(--hair-2);
+  background: var(--raised);
+  color: var(--t1);
+}
+.console .palette li.sel .acts button.act.light {
+  color: var(--light);
+}
+.console .palette li .acts button.stay {
+  border-style: dashed;
+}
+.console .palette li.none {
+  grid-template-columns: 1fr;
+  color: var(--t3);
+}
+.console .palette .hint {
+  display: flex;
+  gap: 16px;
+  padding: 6px 14px 10px;
+  border-top: 1px solid var(--hair);
+}

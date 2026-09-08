@@ -484,7 +484,7 @@ describe('request and filesystem boundaries', () => {
     expect(await fs.readdir(outside)).toEqual([]);
   });
   test('settings survive restart and every supported appearance validates', async () => {
-    for (const name of ['deep-field', 'cobalt', 'graphite', 'verdigris', 'paper'])
+    for (const name of ['field', 'deep-field', 'graphite', 'verdigris', 'harbor', 'ember', 'moss', 'dusk', 'ink', 'paper', 'cobalt'])
       expect((await request('/settings', 'PUT', { appearance: { package: name } })).status).toBe(
         200,
       );

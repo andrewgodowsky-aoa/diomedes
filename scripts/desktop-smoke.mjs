@@ -76,8 +76,10 @@ try {
       ),
     );
   const beforeFonts = await fonts();
-  expect(beforeFonts.body).toBe(15);
-  expect(beforeFonts['.task-title']).toBe(17);
+  // The Field scale: the Workbook body sits at the 14 px floor the layout
+  // checks enforce, and a task title is body size carried by weight, not size.
+  expect(beforeFonts.body).toBe(14);
+  expect(beforeFonts['.task-title']).toBe(14);
   const before = await sizes();
   await page.screenshot({
     path: path.resolve('evidence/screenshots/desktop-tasks.png'),
@@ -142,15 +144,28 @@ try {
   await page.reload();
   await expect(page.locator('html[data-surface="console"]')).toHaveCount(1);
   await expect(page.locator('.console')).toBeVisible();
-  await expect(page.locator('.console-team')).toBeVisible();
-  await startWithLostResponse('console', () => page.locator('.console-board')
-    .getByRole('button', { name: 'Start with Sample work', exact: true }).first().click());
+  // The Console is client/console/ now: a rail with the three views, a board of
+  // rows with one verb each, and lanes instead of panes.
+  const rail = page.getByRole('navigation', { name: 'Threads and views' });
+  await expect(rail).toBeVisible();
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  const board = page.locator('.board[aria-label="Board"]');
+  await expect(board).toBeVisible();
+  await startWithLostResponse('console', async () => {
+    // Under "Show me first" the row's Start opens an inline confirm, and the
+    // confirm's own Start is the one that sends the Work command.
+    const row = board.locator('.crow').first();
+    await row.getByRole('button', { name: 'Start', exact: true }).first().click();
+    await row.locator('.confirm').getByRole('button', { name: 'Start', exact: true }).click();
+  });
 
   const thread = await api(`/projects/${project.id}/threads`, 'POST', {
     name: 'Desktop smoke thread',
   });
   await page.reload();
-  await expect(page.locator('.console-pane').filter({ hasText: thread.name })).toBeVisible();
+  await rail.getByRole('button', { name: new RegExp(thread.name) }).click();
+  await expect(page.locator('#scrThread')).toBeVisible();
+  await expect(page.locator('#scrThread .head h1')).toContainText(thread.name);
 
   const helperResult = await api(`/projects/${project.id}/team/members`, 'POST', {
     name: 'Helper',
@@ -158,16 +173,17 @@ try {
     engine: 'sample',
   });
   await page.reload();
-  await expect(page.locator('.console-member').filter({ hasText: 'Helper' })).toBeVisible();
-  const helperPane = page.locator('.console-pane').filter({ hasText: 'Helper' });
-  await expect(helperPane).toBeVisible();
+  await rail.getByRole('button', { name: /^Team/ }).click();
+  const helperLane = page.locator('.team[aria-label="Team"] .lane').filter({ hasText: 'Helper' });
+  await expect(helperLane).toBeVisible();
   const teamMessage = 'Desktop smoke team message';
   await api(`/projects/${project.id}/team/messages`, 'POST', {
     to: helperResult.member.slotId,
     content: teamMessage,
   });
   await page.reload();
-  await expect(helperPane.locator('.turn.team').filter({ hasText: teamMessage })).toBeVisible();
+  await rail.getByRole('button', { name: /^Team/ }).click();
+  await expect(helperLane.locator('.msg')).toContainText(teamMessage);
 
   const bookSettings = await api('/settings');
   await api('/settings', 'PUT', {
