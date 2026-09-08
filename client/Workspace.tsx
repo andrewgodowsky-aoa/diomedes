@@ -876,6 +876,7 @@ export function Workspace({
       draggable={!running.some((s) => s.taskId === task.id)}
       onDragStart={(e) => e.dataTransfer.setData('text/plain', task.id)}
     >
+      <Mark state={task.state} />
       <button className="task-title" onClick={() => setTaskDetail(task)}>
         {task.name}
       </button>

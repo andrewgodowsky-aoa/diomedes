@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { Conversation, Mode, TeamMember } from '../../shared/types';
+import type { Conversation, Mode } from '../../shared/types';
 import { reducedMotion, spring } from './motion';
 
 const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
@@ -27,9 +27,6 @@ interface ComposerProps {
   thread: Conversation;
   mode: Mode;
   onMode(mode: Mode): void;
-  member: TeamMember | null;
-  toTeam: boolean;
-  onTeam(on: boolean): void;
   busy: boolean;
   online: boolean;
   onSend(text: string, failingDocument: string, failingText: string): void;
@@ -38,19 +35,9 @@ interface ComposerProps {
 /**
  * The prototype composer 1:1: autosizing box, the mode strip with its
  * point-and-line indicator, the caption, Send and the Enter hint, plus the
- * Build/Fix aux rows and the Team strip item for member threads.
+ * Build/Fix aux rows.
  */
-export function Composer({
-  thread,
-  mode,
-  onMode,
-  member,
-  toTeam,
-  onTeam,
-  busy,
-  online,
-  onSend,
-}: ComposerProps) {
+export function Composer({ thread, mode, onMode, busy, online, onSend }: ComposerProps) {
   const [text, setText] = useState('');
   const [failingDocument, setFailingDocument] = useState('');
   const [failingText, setFailingText] = useState('');
@@ -61,7 +48,7 @@ export function Composer({
   const buttons = useRef(new Map<string, HTMLButtonElement>());
   const sources = [...new Set(thread.turns.flatMap((t) => t.sources ?? []))];
   const fixReady = failingDocument.trim() !== '' || failingText.trim() !== '';
-  const ready = text.trim() !== '' && (toTeam || mode !== 'fix' || fixReady);
+  const ready = text.trim() !== '' && (mode !== 'fix' || fixReady);
 
   useEffect(() => {
     setText('');
@@ -81,7 +68,7 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
   }, [text]);
   // The mode strip's point rides a small spring (stiffness 210, damping 22,
-  // settles under 300 ms) and its line scales, never resizes. Interruptible:
+  // relative exit test, 267 ms budget) and its line scales, never resizes. Interruptible:
   // a new mode cancels the running animation and springs from the current
   // computed position. The CSS transition this replaces is removed in
   // console.css; motion.ts owns the movement now.
@@ -91,12 +78,12 @@ export function Composer({
   const lineS = useRef<number | null>(null);
   useLayoutEffect(() => {
     const active = mode === 'ask' || mode === 'plan' || mode === 'build' || mode === 'fix'
-      ? buttons.current.get(toTeam ? 'team' : mode)
+      ? buttons.current.get(mode)
       : undefined;
     const bar = ind.current;
     if (!active || !bar) return;
     const toX = active.offsetLeft + 10;
-    const [width, dashed] = toTeam ? [0, false] : LINE_FOR[mode];
+    const [width, dashed] = LINE_FOR[mode];
     const toS = width / 34;
     const rail = line.current;
     if (rail) rail.classList.toggle('dash', dashed);
@@ -180,12 +167,12 @@ export function Composer({
     }
     indX.current = toX;
     lineS.current = toS;
-  }, [mode, toTeam, member]);
+  }, [mode]);
 
   function submit() {
     const value = text.trim();
     if (!value || busy || !online) return;
-    if (!toTeam && mode === 'fix' && !fixReady) return;
+    if (mode === 'fix' && !fixReady) return;
     onSend(value, failingDocument.trim(), failingText.trim());
     setText('');
     setFailingDocument('');
@@ -205,9 +192,7 @@ export function Composer({
           ref={box}
           rows={1}
           aria-label="Message this thread"
-          placeholder={
-            toTeam && member ? `Message ${member.name} through the team service...` : PLACEHOLDERS[mode]
-          }
+          placeholder={PLACEHOLDERS[mode]}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
@@ -217,7 +202,7 @@ export function Composer({
             }
           }}
         />
-        {mode === 'build' && !toTeam && (
+        {mode === 'build' && (
           <div className="aux show">
             <span className="mono">may touch</span>
             <span className="mono lc" style={{ color: 'var(--t1)' }}>
@@ -226,7 +211,7 @@ export function Composer({
             <span style={{ marginLeft: 'auto' }}>Nothing is written until you say go ahead.</span>
           </div>
         )}
-        {mode === 'fix' && !toTeam && (
+        {mode === 'fix' && (
           <div className="aux show">
             <span>What is failing</span>
             <select
@@ -262,39 +247,20 @@ export function Composer({
                   else buttons.current.delete(m);
                 }}
                 role="radio"
-                aria-checked={mode === m && !toTeam}
-                className={mode === m && !toTeam ? 'on' : ''}
-                onClick={() => {
-                  onTeam(false);
-                  onMode(m);
-                }}
+                aria-checked={mode === m}
+                className={mode === m ? 'on' : ''}
+                onClick={() => onMode(m)}
               >
                 {m}
               </button>
             ))}
-            {member && (
-              <button
-                type="button"
-                ref={(el) => {
-                  if (el) buttons.current.set('team', el);
-                  else buttons.current.delete('team');
-                }}
-                role="radio"
-                aria-checked={toTeam}
-                className={toTeam ? 'on' : ''}
-                title="Send a team message through the Diomedes team service"
-                onClick={() => onTeam(true)}
-              >
-                Team
-              </button>
-            )}
             <span className="ind" ref={ind}>
               <i />
               <b ref={line} />
             </span>
           </div>
           <span className="cap">
-            {!toTeam && mode === 'fix' && !fixReady
+            {mode === 'fix' && !fixReady
               ? 'Pick the document or paste what went wrong to send.'
               : CAPS[mode]}
           </span>

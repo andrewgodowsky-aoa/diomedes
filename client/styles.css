@@ -275,6 +275,38 @@ input[type='radio'] {
   padding: 0;
   cursor: pointer;
 }
+/* The app's control styling for the native checkbox (Settings' Reduced
+   motion row): 1 px rule border, the same 5 px control radius the Workbook
+   controls use (via --rb, never above 6 px), --dm-well ground, and a drawn
+   check in --dm-glacier when checked. It stays a real <input type=checkbox>
+   with its label association; the app's focus ring already covers
+   :focus-visible (see the global input:focus-visible rule). Radios are left
+   alone: they already render as native circles. */
+input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-content: center;
+  margin: 0;
+  background: var(--dm-well);
+  border: 1px solid var(--dm-rule);
+  border-radius: var(--rb);
+  vertical-align: middle;
+}
+input[type='checkbox']:hover {
+  border-color: var(--dm-text-3);
+}
+input[type='checkbox']:checked {
+  border-color: var(--dm-glacier);
+  background: color-mix(in srgb, var(--dm-glacier) 14%, var(--dm-well));
+}
+input[type='checkbox']:checked::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background: var(--dm-glacier);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
 textarea {
   resize: vertical;
   line-height: 1.65;
@@ -397,14 +429,27 @@ a {
   background: color-mix(in srgb, var(--dm-glacier) 10%, transparent);
   border-color: var(--dm-glacier);
 }
+/* The consent action is a quiet control, never a filled block: transparent
+   ground, amber text, 1 px amber border. Hover is a faint amber tint only.
+   (.usage-fill.signal and .signal-text are meters and text, not buttons,
+   and keep their own rules below.) */
 .button.signal {
-  background: var(--dm-signal);
+  background: transparent;
   border-color: var(--dm-signal);
-  color: var(--dm-signal-ink);
+  color: var(--dm-signal);
   font-weight: 600;
 }
 .button.signal:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--dm-signal) 85%, white);
+  background: color-mix(in srgb, var(--dm-signal) 12%, transparent);
+  border-color: var(--dm-signal);
+  color: var(--dm-signal);
+}
+/* Paper is light: the amber label text reads 3.31:1 there, below the 4.5:1
+   floor, so Paper keeps the 1 px amber border form with a --dm-text-1 label
+   instead. Every other scheme keeps the amber label. */
+html[data-package='paper'] .button.signal,
+html[data-package='paper'] .button.signal:hover:not(:disabled) {
+  color: var(--dm-text-1);
 }
 .button.quiet {
   border-color: transparent;
@@ -905,6 +950,19 @@ a {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Engines states are a point plus text (the meter stays): the point sits
+   before the label on the same baseline with the Console's 8 px gap.
+   Available reads live (--dm-glacier via .mark.working); unavailable reads
+   quiet (--dm-text-3 via the hollow .mark). No new colour token. */
+.engine-state {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+.engine-state > .mark {
+  align-self: center;
+}
 .document-row > .caption {
   flex: none;
 }
@@ -1385,23 +1443,41 @@ a {
   font-size: 14px;
   letter-spacing: 0.02em;
 }
+/* Workbook task rows read as bare rows over hairlines, like the Console's
+   board (.console .crow): no fill, no box, no coloured left bar. The state
+   reads as the point in the 14 px gutter (the row's <Mark>, aria-hidden);
+   the row itself carries a single bottom hairline. */
 .task-card {
-  background: var(--dm-well);
-  border: 1px solid var(--dm-rule-2);
-  border-left: 2px solid var(--dm-rule);
-  padding: 12px;
-  min-height: 88px;
-  margin: 0 0 14px;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 0 10px;
+  align-items: baseline;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--dm-rule-2);
+  border-radius: 0;
+  padding: 6px 6px 6px 2px;
+  margin: 0;
+  min-height: 0;
   animation: view-enter var(--dm-t-extend) var(--dm-ease);
 }
-.task-card.working {
-  border-left-color: var(--dm-glacier);
+.task-card:hover {
+  background: var(--dm-raised);
 }
-.task-card.waiting {
-  border-left: 4px solid var(--dm-signal-edge);
+.task-card > .mark {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: start;
+  margin-top: 5px;
 }
+.task-card > :not(.mark) {
+  grid-column: 2;
+  min-width: 0;
+}
+.task-card.working,
+.task-card.waiting,
 .task-card.done {
-  border-left-color: var(--dm-done);
+  border-left: 0;
 }
 .task-title {
   padding: 0;
@@ -2198,7 +2274,7 @@ a {
     margin-bottom: 24px;
   }
   .task-card {
-    min-height: 120px;
+    min-height: 0;
   }
   .task-card .button {
     font-size: 14px;

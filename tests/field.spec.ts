@@ -229,3 +229,48 @@ test('C06: the Ember scheme applies its package and token, then Field is restore
     .poll(async () => page.evaluate(() => document.documentElement.dataset.package))
     .toBe('field');
 });
+
+test('C07: the thread head states the exact-OK rule while an approval is open', async ({
+  page,
+}) => {
+  await openConsole(page);
+  const state = await projectState(page);
+  const task = state.tasks.find((t) => t.name === READY_TASK);
+  expect(task, 'The Ready task must exist so the approval can attach to it').toBeTruthy();
+  // Neither Codex nor a real approval proposal is reachable in this
+  // environment, so stand in an open approval need on the state payload: the
+  // head reads the same `needs.some((n) => n.approval)` branch either way.
+  const approvalNeed = {
+    id: 'N7exactok',
+    sessionId: 'S7exactok',
+    taskId: task!.id,
+    what: 'apply the patio proposal',
+    why: 'The proposal is ready to review.',
+    consequence: 'If you say go ahead, the proposal applies.',
+    files: [],
+    state: 'open',
+    createdAt: new Date().toISOString(),
+    decidedAt: null,
+    decidedFrom: 'test',
+    allowForTask: false,
+    approval: {
+      protocolVersion: 1,
+      proposalDigest: 'a'.repeat(64),
+      actionDigest: 'b'.repeat(64),
+      baseDigest: 'c'.repeat(64),
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      sources: [],
+    },
+  };
+  await page.route('**/api/projects/*/state', async (route) => {
+    const response = await route.fetch();
+    const json = (await response.json()) as { needs?: unknown[] };
+    await route.fulfill({
+      response,
+      json: { ...json, needs: [...(json.needs ?? []), approvalNeed] },
+    });
+  });
+  await page.reload();
+  await expect(page.locator('.console')).toBeVisible();
+  await expect(page.getByText('Each proposed file change needs its own exact OK.')).toBeVisible();
+});

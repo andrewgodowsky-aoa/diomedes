@@ -84,7 +84,6 @@ export function Shell({
   const [view, setView] = useState<ShellView>('Thread');
   const [mode, setMode] = useState<Mode>('ask');
   const [route, setRoute] = useState<Route>('sample');
-  const [toTeam, setToTeam] = useState(false);
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
@@ -217,7 +216,6 @@ export function Shell({
     if (selected) {
       const lastHelper = [...selected.turns].reverse().find((t) => t.role === 'diomedes');
       setRoute(lastHelper?.route ?? 'sample');
-      setToTeam(false);
     }
   }, [selected?.id]);
 
@@ -303,7 +301,6 @@ export function Shell({
     if (!selected || next === mode) return;
     const previous = mode;
     setMode(next);
-    setToTeam(false);
     void api(`${base}/threads/${selected.id}`, 'PUT', { mode: next }).catch((e: unknown) => {
       report(e);
       setMode(previous);
@@ -639,15 +636,12 @@ export function Shell({
               settings={settings}
               mode={mode}
               route={route}
-              toTeam={toTeam}
               busy={busy}
               online={online}
               onMode={changeMode}
-              onTeam={setToTeam}
               onPermission={(p) => void setPermission(selected, p)}
               onRename={() => setRenaming({ id: selected.id, name: threadName(selected, state) })}
               onSend={(m, text, r, failing, sources) => void send(selected, m, text, r, failing, sources)}
-              onMessage={(m, text) => void messageMember(m, text)}
               onResolve={(n, res, allow) => void resolveNeed(n, res, allow)}
               onPreview={setPreviewNeed}
               onStopSession={(id) => void stopSession(id)}

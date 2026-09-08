@@ -45,11 +45,9 @@ interface ThreadViewProps {
   settings: Settings;
   mode: Mode;
   route: Route;
-  toTeam: boolean;
   busy: boolean;
   online: boolean;
   onMode(mode: Mode): void;
-  onTeam(on: boolean): void;
   onPermission(permission: ThreadPermission): void;
   onRename(): void;
   onSend(
@@ -59,7 +57,6 @@ interface ThreadViewProps {
     failing?: { document?: string; text?: string },
     sources?: string[],
   ): void;
-  onMessage(member: TeamMember, text: string): void;
   onResolve(need: Need, resolution: 'go-ahead' | 'declined', allow?: boolean): void;
   onPreview(need: Need): void;
   onStopSession(id: string): void;
@@ -84,15 +81,12 @@ export function ThreadView({
   settings,
   mode,
   route,
-  toTeam,
   busy,
   online,
   onMode,
-  onTeam,
   onPermission,
   onRename,
   onSend,
-  onMessage,
   onResolve,
   onPreview,
   onStopSession,
@@ -223,10 +217,6 @@ export function ThreadView({
   items.sort((a, b) => a.at.localeCompare(b.at) || a.seq - b.seq);
 
   function submit(text: string, failingDocument: string, failingText: string) {
-    if (toTeam && member) {
-      onMessage(member, text);
-      return;
-    }
     if (mode === 'fix') {
       const doc = failingDocument.trim();
       const txt = failingText.trim();
@@ -306,6 +296,13 @@ export function ThreadView({
           </span>
         )}
       </div>
+      <p className="col permission-note">
+        {route === 'codex' || needs.some((n) => n.approval)
+          ? 'Each proposed file change needs its own exact OK.'
+          : permission === 'task'
+            ? 'The first OK in a task covers the rest of it. Nothing runs without that first OK.'
+            : 'Every change waits for your OK.'}
+      </p>
       <div className="transcript">
         <div className="col" ref={body}>
           {needs.map((n) => (
@@ -335,9 +332,6 @@ export function ThreadView({
         thread={thread}
         mode={mode}
         onMode={onMode}
-        member={member}
-        toTeam={toTeam}
-        onTeam={onTeam}
         busy={busy}
         online={online}
         onSend={submit}

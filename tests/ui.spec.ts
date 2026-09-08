@@ -72,12 +72,29 @@ test('F01-F02: first run resumes, chooses a surface, and opens the selected surf
   await expect(page.getByRole('heading', { name: 'Ready.' })).toBeVisible();
   await page.getByRole('button', { name: 'Open Diomedes' }).click();
   await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
-  // The empty-state prose only renders with no projects, and field.spec.ts sorts
-  // ahead of this file and leaves one behind in the shared data folder. Assert it
-  // where it is meant to appear rather than depending on the run order.
-  const landing: { projects: Project[] } = await (await page.request.get('/api/projects')).json();
-  if (landing.projects.length === 0)
-    await expect(page.getByText(/a project for a restaurant's menus, suppliers and schedules/)).toBeVisible();
+  // The shared data folder is not guaranteed empty by the time this file runs
+  // (field.spec.ts sorts first and leaves a project behind), so the empty state
+  // is asserted against an intercepted empty list rather than the live folder.
+  let emptyListServed = false;
+  await page.route('**/api/projects', async route => {
+    const request = route.request();
+    if (request.method() !== 'GET' || new URL(request.url()).pathname !== '/api/projects') {
+      await route.fallback();
+      return;
+    }
+    emptyListServed = true;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ projects: [] }),
+    });
+  });
+  await page.reload();
+  await expect(page.getByText(/a project for a restaurant's menus, suppliers and schedules/)).toBeVisible();
+  expect(emptyListServed).toBe(true);
+  await page.unroute('**/api/projects');
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
   const settings: Settings = await (await page.request.get('/api/settings')).json();
   expect(settings.detail).toBe('guided');
   expect(settings.surface).toBe('workbook');

@@ -195,7 +195,7 @@ export function BoardView({
     <div className="board" aria-label="Board">
       <div className="bhead">
         <h1>Board</h1>
-        <span className="mono ctx">
+        <span className="mono">
           {project.name} · {tasks.length} tasks
         </span>
         <button

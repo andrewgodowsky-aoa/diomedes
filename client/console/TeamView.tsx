@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type {
   Conversation,
   MailboxMessage,
@@ -380,7 +380,7 @@ export function TeamView({
         <div
           className="lanes"
           ref={lanesRef}
-          style={{ gridTemplateColumns: `repeat(${ordered.length}, minmax(0,1fr))` }}
+          style={{ ['--lane-count' as string]: String(ordered.length) } as CSSProperties}
         >
           <svg className="handsvg" ref={svgRef} aria-hidden="true" />
           {ordered.map((m) => (

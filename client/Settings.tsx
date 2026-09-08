@@ -597,7 +597,8 @@ export function SettingsPage({
                       <span className="engine-row-name">
                         {isDesk ? s.name : s.kind === 'sample' ? 'Sample work' : 'Online service'}
                       </span>
-                      <span className="caption push-right">
+                      <span className="caption push-right engine-state">
+                        <Mark state={s.available ? 'working' : 'todo'} />
                         {s.available ? 'Available' : 'Unavailable'}
                       </span>
                     </div>

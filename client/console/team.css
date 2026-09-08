@@ -38,6 +38,7 @@
 .console .lanes {
   position: relative;
   display: grid;
+  grid-template-columns: repeat(var(--lane-count, 1), minmax(0, 1fr));
   grid-template-rows: auto auto auto minmax(160px, 1fr) auto auto;
   margin: 0 32px 0 56px;
   border-top: 1px solid var(--hair-2);
