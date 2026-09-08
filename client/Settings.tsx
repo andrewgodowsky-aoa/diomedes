@@ -367,7 +367,6 @@ export function SettingsPage({
                     [
                       ['changingFiles', 'changing files in a project'],
                       ['deleting', 'deleting files'],
-                      ['sending', 'sending anything outside this computer'],
                       ['workingOutside', 'working outside the project folder'],
                       ['spending', 'spending money'],
                     ] as const

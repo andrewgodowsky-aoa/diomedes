@@ -778,7 +778,12 @@ describe('request and filesystem boundaries (continued)', () => {
       (await request(`/projects/${id}/ask`, 'POST', { route: 'codex', mode: 'ask', text: 'test' }))
         .status,
     ).toBe(409);
+    // A fresh install no longer asks before sending; the service still refuses
+    // a Codex Ask without consent when the person turns that question back on.
     await request('/settings', 'PUT', { services: { codex: true } });
+    const asked = await request(`/projects/${id}/ask`, 'POST', { route: 'codex', mode: 'ask', text: 'test' });
+    expect(asked.data.consentRequired).toBeUndefined();
+    await request('/settings', 'PUT', { permissions: { sending: true } });
     const consent = await request(`/projects/${id}/ask`, 'POST', {
       route: 'codex',
       mode: 'ask',

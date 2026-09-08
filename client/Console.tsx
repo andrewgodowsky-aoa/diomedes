@@ -125,7 +125,6 @@ export function Console({
   const [tab, setTab] = useState<RightTab>('board');
   const [busy, setBusy] = useState(false);
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
-  const [pendingOnline, setPendingOnline] = useState<null | (() => Promise<void>)>(null);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [team, setTeam] = useState<TeamState>(emptyTeam);
   const [teamAvailable, setTeamAvailable] = useState(false);
@@ -320,16 +319,9 @@ export function Console({
       await load();
     });
   }
-  async function startTask(task: Task, route: Route, consent = false) {
-    if (route === 'codex' && !consent && (settings.permissions.sending || !settings.seen.onlineServiceNotice)) {
-      setPendingOnline(() => () => startTask(task, route, true));
-      return;
-    }
+  async function startTask(task: Task, route: Route) {
     await perform(async () => {
-      await api(`${base}/work/start`, 'POST', { taskId: task.id, route, sources: [], consent });
-      setPendingOnline(null);
-      if (route === 'codex' && !settings.seen.onlineServiceNotice)
-        await saveSettings({ ...settings, seen: { ...settings.seen, onlineServiceNotice: true } });
+      await api(`${base}/work/start`, 'POST', { taskId: task.id, route, sources: [], consent: true });
       await load();
     });
   }
@@ -344,36 +336,20 @@ export function Console({
     mode: Mode,
     text: string,
     route: Route,
-    consent = false,
     failing?: { document?: string; text?: string },
     sources?: string[],
   ) {
-    // Build and Fix on Codex always confirm, matching the service's rule.
-    if (
-      route === 'codex' &&
-      !consent &&
-      (mode === 'build' ||
-        mode === 'fix' ||
-        settings.permissions.sending ||
-        !settings.seen.onlineServiceNotice)
-    ) {
-      setPendingOnline(() => () => send(thread, mode, text, route, true, failing, sources));
-      return;
-    }
     await perform(async () => {
       await api(`${base}/ask`, 'POST', {
         mode,
         text,
         route,
-        consent,
+        consent: true,
         threadId: thread.id,
         attachedTo: thread.attachedTo,
         ...(sources?.length ? { sources } : {}),
         ...(mode === 'fix' && failing ? { failing } : {}),
       });
-      setPendingOnline(null);
-      if (route === 'codex' && !settings.seen.onlineServiceNotice)
-        await saveSettings({ ...settings, seen: { ...settings.seen, onlineServiceNotice: true } });
       await load();
     });
   }
@@ -579,8 +555,8 @@ export function Console({
               members={team.members}
               close={() => closePane(id)}
               rename={() => setRenaming({ id, name: threadName(thread, state) })}
-              send={(mode, text, route, consent, failing, sources) =>
-                void send(thread, mode, text, route, consent, failing, sources)
+              send={(mode, text, route, failing, sources) =>
+                void send(thread, mode, text, route, failing, sources)
               }
               message={(member, text) => void messageMember(member, text)}
               setPermission={(perm) => void setPermission(thread, perm)}
@@ -843,23 +819,6 @@ export function Console({
           </div>
         </Modal>
       )}
-      {pendingOnline && (
-        <Modal title="Use an online service?" onClose={() => setPendingOnline(null)}>
-          <p className="prose">
-            Diomedes will use an online service for this. Your instructions are sent to that
-            service. You can change this in Settings &gt; Engines.
-          </p>
-          <p className="caption">
-            This uses your existing ChatGPT subscription. There is no paid API fallback.
-          </p>
-          <div className="dialog-actions">
-            <Button onClick={() => setPendingOnline(null)}>Not now</Button>
-            <Button tone="primary" disabled={busy} onClick={() => void pendingOnline()}>
-              Continue
-            </Button>
-          </div>
-        </Modal>
-      )}
       {adding && (
         <Modal title="Add a helper to the team" onClose={() => setAdding(null)}>
           <form
@@ -1002,7 +961,6 @@ function Pane({
     mode: Mode,
     text: string,
     route: Route,
-    consent?: boolean,
     failing?: { document?: string; text?: string },
     sources?: string[],
   ) => void;
@@ -1064,7 +1022,7 @@ function Pane({
         <div className={`turn ${t.role}`} key={t.id || `${thread.id}:${i}`}>
           <p className="caption turn-meta">
             {t.role === 'you' ? 'You' : t.route === 'codex' ? 'Codex' : 'Diomedes, sample work'}
-            <ModeChip mode={t.mode} attempt={t.attempt} />
+            {t.attempt ? <ModeChip mode={t.mode} attempt={t.attempt} /> : null}
             <time>{time(t.at)}</time>
           </p>
           <p className="console-turn-text">{t.text}</p>
@@ -1126,7 +1084,6 @@ function Pane({
         mode,
         value,
         route,
-        false,
         { ...(doc ? { document: doc } : {}), ...(txt ? { text: txt } : {}) },
         doc ? [doc] : [],
       );
@@ -1146,7 +1103,6 @@ function Pane({
         </div>
         <p className="caption console-pane-meta">
           {member ? `${member.name}, ${member.role === 'lead' ? 'leader' : 'member'} on ${engineNames[member.engine]}` : helperName}
-          <ModeChip mode={thread.mode ?? 'ask'} />
           {live?.engine.model ? `, ${live.engine.model}` : member?.model ? `, ${member.model}` : ''}
           {task ? ` · Task: ${task.name}` : ''}
           {live?.engine.context != null ? ` · Context ${Math.round(live.engine.context)}%` : ''}
@@ -1273,7 +1229,7 @@ function Pane({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.ctrlKey && e.key === 'Enter') {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               submit();
             }

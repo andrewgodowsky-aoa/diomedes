@@ -507,7 +507,11 @@ export function App() {
                               value={landingText}
                               onChange={(e) => setLandingText(e.target.value)}
                               onKeyDown={(e) => {
-                                if (e.ctrlKey && e.key === 'Enter') {
+                                if (
+                                  e.key === 'Enter' &&
+                                  !e.shiftKey &&
+                                  !e.nativeEvent.isComposing
+                                ) {
                                   e.preventDefault();
                                   const sorted = [...projects].sort((a, b) =>
                                     (b.lastOpenedAt || b.createdAt).localeCompare(

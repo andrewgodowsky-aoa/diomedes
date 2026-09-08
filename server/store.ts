@@ -131,7 +131,7 @@ export const defaults = (): Settings => ({
   permissions: {
     changingFiles: true,
     deleting: true,
-    sending: true,
+    sending: false,
     workingOutside: true,
     spending: true,
   },

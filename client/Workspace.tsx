@@ -111,7 +111,6 @@ export function Workspace({
   const [attached, setAttached] = useState('');
   const [failingDocument, setFailingDocument] = useState('');
   const [failingText, setFailingText] = useState('');
-  const [pendingOnline, setPendingOnline] = useState(false);
   const [modal, setModal] = useState<
     'document' | 'plan' | 'task' | 'snapshot' | 'folder' | 'attach' | null
   >(null);
@@ -132,7 +131,6 @@ export function Workspace({
   const [editorConflict, setEditorConflict] = useState(false);
   const [sessionNote, setSessionNote] = useState('');
   const [workSessionId, setWorkSessionId] = useState('');
-  const [pendingTask, setPendingTask] = useState<Task | null>(null);
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
   const [showMore, setShowMore] = useState(false);
   const currentId = useRef(projectId);
@@ -373,15 +371,10 @@ export function Workspace({
       navigate('tasks');
     });
   }
-  async function startTask(task: Task, consent = false) {
-    if (route === 'codex' && !consent) {
-      setPendingTask(task);
-      return;
-    }
+  async function startTask(task: Task) {
     await perform(async () => {
       const sources = attached ? [attached] : task.from ? [task.from.plan] : [];
-      await api(`${base}/work/start`, 'POST', { taskId: task.id, route, sources, consent });
-      setPendingTask(null);
+      await api(`${base}/work/start`, 'POST', { taskId: task.id, route, sources, consent: true });
       setWorkSessionId('');
       navigate('work');
       await load();
@@ -563,22 +556,9 @@ export function Workspace({
   }
   const fixReady =
     mode !== 'fix' || failingDocument.trim() !== '' || failingText.trim() !== '';
-  async function send(consent = false) {
+  async function send() {
     if (!prompt.trim()) return;
     if (mode === 'fix' && !fixReady) return;
-    // Build and Fix on Codex always confirm, matching the service's rule; Ask and
-    // Plan confirm when the setting says so or the notice has not been seen.
-    if (
-      route === 'codex' &&
-      !consent &&
-      (mode === 'build' ||
-        mode === 'fix' ||
-        settings.permissions.sending ||
-        !settings.seen.onlineServiceNotice)
-    ) {
-      setPendingOnline(true);
-      return;
-    }
     if (mode === 'plan' && dirty) {
       report(new Error('Save your plan before asking for a new version.'));
       return;
@@ -591,7 +571,7 @@ export function Workspace({
         mode,
         text: prompt.trim(),
         route,
-        consent,
+        consent: true,
         ...(sentThreadId ? { threadId: sentThreadId } : {}),
         attachedTo: {
           kind: attached ? 'document' : page === 'plan' && path ? 'plan' : 'project',
@@ -610,9 +590,6 @@ export function Workspace({
       setPrompt('');
       setFailingDocument('');
       setFailingText('');
-      setPendingOnline(false);
-      if (route === 'codex' && !settings.seen.onlineServiceNotice)
-        await saveSettings({ ...settings, seen: { ...settings.seen, onlineServiceNotice: true } });
       if (!sentThreadId && !result.document) {
         const data = await api<ProjectState>(`/projects/${projectId}/state`);
         if (currentId.current === projectId) {
@@ -687,7 +664,7 @@ export function Workspace({
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         onKeyDown={(e) => {
-          if (e.ctrlKey && e.key === 'Enter') {
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
             void send();
           }
@@ -1468,7 +1445,9 @@ export function Workspace({
                                         ? 'Codex'
                                         : 'Online service'
                                       : 'Diomedes, sample work'}
-                                  <ModeChip mode={t.mode} attempt={t.attempt} />
+                                  {t.attempt ? (
+                                    <ModeChip mode={t.mode} attempt={t.attempt} />
+                                  ) : null}
                                   <time>{time(t.at)}</time>
                                 </p>
                                 {t.role === 'you' ? <p>{t.text}</p> : <Markdown text={t.text} />}
@@ -2191,30 +2170,6 @@ export function Workspace({
           </form>
         </Modal>
       )}
-      {pendingTask && (
-        <Modal title="Use an online service for this task?" onClose={() => setPendingTask(null)}>
-          <p className="prose">
-            Diomedes will send the task instruction
-            {attached || pendingTask.from ? ` and ${attached || pendingTask.from?.plan}` : ''} to
-            the online service. It will prepare changes for you to review. Files change only after
-            you say go ahead.
-          </p>
-          <p className="caption">
-            This uses your existing ChatGPT subscription. No paid API fallback. No commands or
-            external tools run.
-          </p>
-          <div className="dialog-actions">
-            <Button onClick={() => setPendingTask(null)}>Not now</Button>
-            <Button
-              tone="primary"
-              disabled={busy}
-              onClick={() => void startTask(pendingTask, true)}
-            >
-              Continue
-            </Button>
-          </div>
-        </Modal>
-      )}
       {previewNeed && (
         <Modal title="Proposed changes" wide onClose={() => setPreviewNeed(null)}>
           <p className="prose">
@@ -2250,24 +2205,6 @@ export function Workspace({
               }}
             >
               Go ahead
-            </Button>
-          </div>
-        </Modal>
-      )}
-      {pendingOnline && (
-        <Modal title="Use an online service?" onClose={() => setPendingOnline(false)}>
-          <p className="prose">
-            Diomedes will use an online service for this. Your instructions
-            {attached || (page === 'plan' && path) ? ` and ${attached || path}` : ''} are sent to
-            that service. You can change this in Settings &gt; Helpers on this computer.
-          </p>
-          <p className="caption">
-            This uses your existing ChatGPT subscription. There is no paid API fallback.
-          </p>
-          <div className="dialog-actions">
-            <Button onClick={() => setPendingOnline(false)}>Not now</Button>
-            <Button tone="primary" disabled={busy} onClick={() => void send(true)}>
-              Continue
             </Button>
           </div>
         </Modal>

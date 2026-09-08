@@ -818,3 +818,31 @@ test('Modes: the Workbook composer shows four modes and Fix needs what is failin
   const helperTurn = page.locator('.turn.diomedes').last();
   await expect(helperTurn.locator('.mode-chip')).toContainText('Fix, try 1 of 3');
 });
+
+test('Enter sends from the Workbook composer and Shift+Enter adds a line', async ({ page }) => {
+  await openProject(page);
+  await navigate(page, 'Ask');
+  const askBox = page.getByRole('region', { name: 'Ask box', exact: true });
+  const box = askBox.getByRole('textbox', { name: 'Ask, plan, or say what to do' });
+  const heldText = `Shift+Enter held line ${Date.now()}`;
+  await box.fill(heldText);
+  await page.keyboard.down('Shift');
+  await box.press('Enter');
+  await page.keyboard.up('Shift');
+  await expect(box).toHaveValue(`${heldText}\n`);
+  expect(
+    (await projectState(page)).conversations.some((thread) =>
+      thread.turns.some((turn) => turn.role === 'you' && turn.text === heldText),
+    ),
+  ).toBe(false);
+  const sentText = `Enter sends this turn ${Date.now()}`;
+  await box.fill(sentText);
+  await box.press('Enter');
+  await expect
+    .poll(async () =>
+      (await projectState(page)).conversations.some((thread) =>
+        thread.turns.some((turn) => turn.role === 'you' && turn.text === sentText),
+      ),
+    )
+    .toBe(true);
+});
