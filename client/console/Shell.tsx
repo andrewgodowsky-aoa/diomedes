@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   Change,
   Conversation,
+  EngineCatalog,
   IntegrationStatus,
   Mode,
   Need,
@@ -28,8 +29,10 @@ import { Picker } from './Picker';
 import { BoardView } from './BoardView';
 import { TeamView } from './TeamView';
 import { Palette } from './Palette';
+import { applyQuery, buildEntries, type PaletteContext } from './paletteEntries';
 import type { ShellView } from './types';
 import './console.css';
+import './palette.css';
 
 interface ShellProps {
   projectId: string;
@@ -45,6 +48,8 @@ interface ShellProps {
   onOpenSettings: () => void;
   report: (e: unknown) => void;
   online: boolean;
+  /** Registration so App can open the console palette on Ctrl+K. */
+  onPaletteKey?: (open: () => void) => void;
 }
 
 const emptyTeam: TeamState = { members: [], messages: [], runs: [] };
@@ -68,6 +73,7 @@ export function Shell({
   onOpenSettings,
   report,
   online,
+  onPaletteKey,
 }: ShellProps) {
   const [state, setState] = useState<ProjectState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -82,6 +88,14 @@ export function Shell({
   const [teamAvailable, setTeamAvailable] = useState(false);
   const [toast, setToast] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState('');
+  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
+  const [routingTaskId, setRoutingTaskId] = useState<string | null>(null);
+  const [catalogs, setCatalogs] = useState<Record<string, EngineCatalog>>({});
+  // The member a palette Message picked. The lane view has no composer yet,
+  // so opening Team records the target here for the pass that adds one.
+  const teamTarget = useRef<Slot | null>(null);
   const currentId = useRef(projectId);
   currentId.current = projectId;
   const base = `/projects/${projectId}`;
@@ -120,6 +134,36 @@ export function Shell({
     },
     [report],
   );
+  const openPalette = useCallback(() => {
+    setPaletteQuery('');
+    setPendingTaskId(null);
+    setRoutingTaskId(null);
+    setPaletteOpen(true);
+  }, []);
+  useEffect(() => {
+    onPaletteKey?.(openPalette);
+  }, [onPaletteKey, openPalette]);
+  // Live engine catalogues for the Models group, read exactly as the Picker does.
+  useEffect(() => {
+    let alive = true;
+    for (const id of ['codex', 'claude-code', 'opencode'] as const) {
+      const found = integrations.find((i) => i.id === id);
+      const on =
+        !!found &&
+        (found.kind === 'sample' ? found.available : found.available && settings.services?.[id] === true);
+      if (!on) continue;
+      api<EngineCatalog>(`/engines/${id}/models`)
+        .then((catalog) => {
+          if (alive) setCatalogs((prev) => ({ ...prev, [id]: catalog }));
+        })
+        .catch(() => {
+          if (alive) setCatalogs((prev) => ({ ...prev, [id]: { engine: id, models: [], detail: '' } }));
+        });
+    }
+    return () => {
+      alive = false;
+    };
+  }, [integrations, settings]);
   useEffect(() => {
     setState(null);
     setSelectedId(null);
@@ -340,6 +384,24 @@ export function Shell({
       void newThread(task.id);
     }
   }
+  // Palette Message: open the Team view with the member selected and focus
+  // its composer. The lane view has no composer yet, so this records the
+  // target and focuses the first composer available.
+  function focusTeamComposer(member: TeamMember) {
+    teamTarget.current = member.slotId;
+    setView('Team');
+    window.setTimeout(() => {
+      const box =
+        document.querySelector<HTMLTextAreaElement>('[data-team-composer] textarea') ??
+        document.querySelector<HTMLTextAreaElement>('.console .composer textarea');
+      box?.focus();
+    }, 80);
+  }
+  function closePalette() {
+    setPaletteOpen(false);
+    setPendingTaskId(null);
+    setRoutingTaskId(null);
+  }
 
   if (!state) {
     return (
@@ -370,6 +432,68 @@ export function Shell({
   const latestTaskSession = selectedSessions.length
     ? [...selectedSessions].sort((a, b) => a.startedAt.localeCompare(b.startedAt)).at(-1)!
     : null;
+  // The palette finds tasks, workers, models, projects and views and exposes
+  // only the actions valid for each item's current state. Every action calls
+  // the same handlers the board and lanes call; nothing is duplicated.
+  const paletteCtx: PaletteContext = {
+    tasks: state.tasks,
+    sessions,
+    needs: state.needs,
+    changes: state.changes,
+    members: team.members,
+    catalogs,
+    integrations,
+    projects,
+    currentProjectId: projectId,
+    currentThread: selected,
+    policy,
+    view,
+    focusTaskId: selectedTask?.id,
+    focusTaskName: selectedTask?.name,
+    pendingTaskId,
+    routingTaskId,
+    onPendingTask: setPendingTaskId,
+    onRoutingTask: setRoutingTaskId,
+    onPivotModels: () => {
+      setPaletteQuery('use');
+    },
+    handlers: {
+      startTask: (task) => void startTask(task, firstRoute),
+      pauseTask: (task) => {
+        const running = liveByTask(task.id);
+        if (running) void stopSession(running.id);
+      },
+      reviewTask: (task) => {
+        openTaskThread(task);
+        const need =
+          task.needId != null
+            ? (waiting.find((n) => n.id === task.needId) ?? null)
+            : (waiting.find((n) => n.taskId === task.id) ?? null);
+        if (need) scrollToNeed(need);
+      },
+      routeTask: (task, to) =>
+        void perform(async () => {
+          await api(`${base}/tasks/${task.id}`, 'PUT', { assignedTo: to });
+          await load();
+        }),
+      reopenTask: (task) => void moveTask(task, 'todo'),
+      openBoard: () => setView('Board'),
+      openTeam: () => setView('Team'),
+      setRequested: (requested) => {
+        if (selected) void setRequested(selected, requested);
+      },
+      messageMember: focusTeamComposer,
+      stopMember: (m) => void stopMember(m),
+      wakeMember: (m) => void wakeMember(m),
+      selectThread: (id) => {
+        setSelectedId(id);
+        setView('Thread');
+      },
+      setView: (v) => setView(v),
+      openProject: (p) => onOpenProject(p),
+    },
+  };
+  const paletteEntries = (query: string) => applyQuery(buildEntries(paletteCtx), query);
 
   return (
     <div className={`console ${!online ? 'disconnected' : ''}`}>
@@ -409,9 +533,9 @@ export function Shell({
             role="button"
             tabIndex={0}
             title="Find a task, worker, model or project and act on it"
-            onClick={() => say('The Ctrl+K palette arrives in the next pass.')}
+            onClick={openPalette}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') say('The Ctrl+K palette arrives in the next pass.');
+              if (e.key === 'Enter') openPalette();
             }}
           >
             Ctrl K
@@ -640,7 +764,13 @@ export function Shell({
         )}
       </div>
 
-      <Palette open={false} entries={() => []} onClose={() => {}} />
+      <Palette
+        open={paletteOpen}
+        entries={paletteEntries}
+        onClose={closePalette}
+        query={paletteQuery}
+        onQuery={setPaletteQuery}
+      />
       {toast && (
         <div className="toast show" role="status">
           {toast}

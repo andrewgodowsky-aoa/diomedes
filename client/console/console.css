@@ -606,7 +606,7 @@ html[data-surface='console'] body {
   transition: border-color var(--quick);
 }
 .console .composer:focus-within {
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: color-mix(in srgb, var(--t3) 70%, transparent);
 }
 .console .composer textarea {
   display: block;

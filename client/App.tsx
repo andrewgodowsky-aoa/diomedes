@@ -58,6 +58,9 @@ export function App() {
   const [landingProjectId, setLandingProjectId] = useState<string | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  // Opener registered by the console Shell; Ctrl+K on the console surface
+  // opens the console palette instead of the Workbook's project search.
+  const paletteOpen = useRef<(() => void) | null>(null);
   const report = useCallback(
     (e: unknown) =>
       setError(e instanceof Error ? e.message : 'The request could not be completed.'),
@@ -204,7 +207,10 @@ export function App() {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setSearch(true);
+        const s = settingsRef.current;
+        const onConsole = !!selected && !!s && surfaceOf(s) === 'console' && !showSettings;
+        if (onConsole && paletteOpen.current) paletteOpen.current();
+        else setSearch(true);
       }
       if (e.ctrlKey && /^[1-8]$/.test(e.key) && selected) {
         e.preventDefault();
@@ -222,7 +228,7 @@ export function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selected, navigate]);
+  }, [selected, showSettings, navigate]);
   async function createProject() {
     setBusy(true);
     try {
@@ -502,6 +508,9 @@ export function App() {
                   onOpenSettings={() => setShowSettings(true)}
                   report={report}
                   online={online}
+                  onPaletteKey={(open) => {
+                    paletteOpen.current = open;
+                  }}
                 />
               ) : selected ? (
                 <Workspace
