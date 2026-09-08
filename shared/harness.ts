@@ -181,6 +181,8 @@ export interface HarnessRun {
   sessionId: string | null;
   capabilityId: string;
   capabilityVersion: string;
+  /** The only tool names this run may dispatch, copied from the manifest at start. */
+  capabilityTools: string[];
   policyVersion: string;
   principal: HarnessPrincipal;
   state: HarnessRunState;

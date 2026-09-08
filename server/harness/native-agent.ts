@@ -66,7 +66,9 @@ export class NativeAgent {
     if (units(maxTurns, 'Turn limit') === 0)
       throw new HarnessError('invalid_turns', 'A positive turn limit is required.');
     const messages: PortableMessage[] = [{ role: 'user', text: prompt }];
-    const descriptors = this.tools.describe();
+    // The run's capability, not the registry, decides which tools this loop may offer.
+    const allowed = new Set((await this.runtime.get(runId)).capabilityTools);
+    const descriptors = this.tools.describe().filter((tool) => allowed.has(tool.name));
     try {
       for (let i = 0; i < maxTurns; i++) {
         const observed = await this.runtime.step<{ response: ModelResponse }>(
@@ -109,6 +111,11 @@ export class NativeAgent {
           return response.text;
         }
         // Effect, permission, approval and cost come from the registry, never from the model.
+        if (!allowed.has(response.name))
+          throw new HarnessError(
+            'tool_not_in_capability',
+            `Unknown tool for this capability: ${response.name}.`,
+          );
         const tool = this.tools.get(response.name);
         const input = this.tools.validate(response.name, response.input) as Json;
         const output = await this.runtime.step<Json>(

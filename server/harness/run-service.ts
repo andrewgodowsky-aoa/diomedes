@@ -302,6 +302,7 @@ export class RunService {
       sessionId: input.sessionId ?? null,
       capabilityId: capability.id,
       capabilityVersion: capability.version,
+      capabilityTools: [...new Set(capability.tools)],
       policyVersion: this.policyVersion,
       principal: copy(input.principal),
       state: 'queued',
@@ -348,13 +349,21 @@ export class RunService {
       throw new HarnessError('invalid_lease', 'An owner and a positive TTL are required.');
     return this.serialize(runId, async () => {
       const run = await this.load(runId);
-      if (run.owner && run.owner !== owner && (run.leaseExpiresAt ?? 0) > this.clock())
+      const live = (run.leaseExpiresAt ?? 0) > this.clock();
+      if (run.owner && run.owner !== owner && live)
         throw new HarnessError('lease_busy', 'lease busy');
-      run.fence += 1;
+      // A live owner renewing its own lease keeps the fence: the generation
+      // changes only when ownership does, so an in-flight step can still commit.
+      const renewal = run.owner === owner && live;
+      if (!renewal) run.fence += 1;
       run.owner = owner;
       run.leaseExpiresAt = this.clock() + ttlMs;
       if (run.state === 'queued') run.state = 'running';
-      this.note(run, 'run.claimed', { owner, fence: run.fence, expiresAt: run.leaseExpiresAt });
+      this.note(run, renewal ? 'run.lease_renewed' : 'run.claimed', {
+        owner,
+        fence: run.fence,
+        expiresAt: run.leaseExpiresAt,
+      });
       await this.commit(run);
       return run.fence;
     });
@@ -383,9 +392,12 @@ export class RunService {
       if (run.state === 'cancelled')
         throw new HarnessError('run_cancelled', `This run was cancelled: ${run.cancelReason ?? ''}`.trim());
       this.guard(run, owner);
+      const before = run.steps.length;
       const s = this.ensure(run, intent);
+      let changed = run.steps.length !== before;
       const finish = async (outcome: StartOutcome) => {
-        await this.commit(run);
+        // A replayed observation is a read; only a new record or a state change is written.
+        if (changed) await this.commit(run);
         return outcome;
       };
       if (s.state === 'succeeded') return finish({ cached: s.output });
@@ -394,13 +406,17 @@ export class RunService {
       if (s.state === 'reconcile_required') return finish({ blocked: 'reconciliation required' });
       if (s.state === 'running' && s.leaseFence === run.fence)
         return finish({ blocked: 'step already in flight' });
+      changed = true;
       if (s.state === 'running' && intent.effect === 'non-idempotent') {
         s.state = 'reconcile_required';
         run.state = 'reconcile_required';
         this.note(run, 'step.reconcile_required', { why: 'ownership changed while running' }, s.intent.stepId, s.attempt);
         return finish({ blocked: 'reconciliation required' });
       }
-      if (s.attempt >= intent.maxAttempts) return finish({ blocked: 'attempt limit reached' });
+      if (s.attempt >= intent.maxAttempts) {
+        changed = false;
+        return finish({ blocked: 'attempt limit reached' });
+      }
       if (intent.approval) {
         const now = this.clock();
         const approval = run.approvals.find(
@@ -419,12 +435,18 @@ export class RunService {
         }
         approval.consumedAt ??= this.now();
       }
-      if (intent.cost > run.budget.units - run.used.units)
-        return finish({ blocked: 'budget exceeded' });
-      if (intent.kind === 'model' && run.used.modelCalls >= run.budget.modelCalls)
-        return finish({ blocked: 'budget exceeded: model calls' });
-      if (intent.kind === 'tool' && run.used.toolCalls >= run.budget.toolCalls)
-        return finish({ blocked: 'budget exceeded: tool calls' });
+      const blockedBy =
+        intent.cost > run.budget.units - run.used.units
+          ? 'budget exceeded'
+          : intent.kind === 'model' && run.used.modelCalls >= run.budget.modelCalls
+            ? 'budget exceeded: model calls'
+            : intent.kind === 'tool' && run.used.toolCalls >= run.budget.toolCalls
+              ? 'budget exceeded: tool calls'
+              : null;
+      if (blockedBy) {
+        changed = run.steps.length !== before;
+        return finish({ blocked: blockedBy });
+      }
       run.used.units += intent.cost;
       if (intent.kind === 'model') run.used.modelCalls += 1;
       if (intent.kind === 'tool') run.used.toolCalls += 1;
@@ -577,6 +599,8 @@ export class RunService {
     await this.serialize(runId, async () => {
       const run = await this.load(runId);
       if (run.state === 'completed') return;
+      if (run.state === 'cancelled')
+        throw new HarnessError('run_cancelled', 'This run was cancelled and cannot complete.');
       this.guard(run, owner);
       if (run.steps.some((s) => s.state === 'running'))
         throw new HarnessError('step_running', 'A step is still running.');
@@ -653,6 +677,9 @@ export class RunService {
       leaseExpiresAt: null,
       parentRunId: parent.id,
       forkPoint: beforeStepId,
+      // A fork is its own lineage: no provider transcript, no context revision, carries over.
+      contextRevision: 1,
+      transcripts: {},
       result: null,
       failure: null,
       cancelReason: null,

@@ -50,6 +50,7 @@ const run = (overrides: Partial<HarnessRun> = {}): HarnessRun => ({
   sessionId: null,
   capabilityId: 'fixture',
   capabilityVersion: 'v1',
+  capabilityTools: ['send'],
   policyVersion: 'p1',
   principal: { id: 'w', tenantId: 'local', projectId: 'P1', capabilities: [], identityGeneration: 1 },
   state: 'waiting',

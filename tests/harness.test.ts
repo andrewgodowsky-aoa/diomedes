@@ -43,7 +43,7 @@ const capability: CapabilityManifest = {
   version: 'v1',
   label: 'Fixture capability',
   description: 'A synthetic capability for the boundary tests.',
-  tools: [],
+  tools: ['sum'],
   requestedPermissions: [],
   approvalPolicy: 'show-first',
   maxTurns: 8,
@@ -269,6 +269,40 @@ describe('durable step boundary', () => {
     await expect(service.claim('r', 'other', 100)).rejects.toThrow(/lease busy/);
   });
 
+  test('renewing a live lease keeps the fence, so an in-flight step can still commit', async () => {
+    let time = 1000;
+    const { service } = await setup({ clock: () => time });
+    const fence = (await service.get('r')).fence;
+    const value = await execute(service, def(), async () => {
+      time += 50;
+      expect(await service.claim('r', 'host', 100)).toBe(fence);
+      return 'committed';
+    });
+    expect(value).toBe('committed');
+    const run = await service.get('r');
+    expect(run.fence).toBe(fence);
+    expect(run.events.some((e) => e.type === 'run.lease_renewed')).toBe(true);
+    // Once the lease has lapsed, a new claim by anyone is a new generation.
+    time += 200;
+    expect(await service.claim('r', 'host', 100)).toBe(fence + 1);
+  });
+
+  test('a cancelled run cannot be completed', async () => {
+    const { service } = await setup();
+    await service.cancel('r', 'stopped');
+    await expect(service.complete('r', 'host', { text: 'no' })).rejects.toThrow(/cancelled/);
+    expect((await service.get('r')).state).toBe('cancelled');
+  });
+
+  test('replaying a completed step does not rewrite the run file', async () => {
+    const { service, dir } = await setup();
+    await execute(service, def(), () => 1);
+    const before = (await fs.stat(path.join(dir, 'r.json'))).mtimeMs;
+    await new Promise((r) => setTimeout(r, 15));
+    await execute(service, def(), () => 2);
+    expect((await fs.stat(path.join(dir, 'r.json'))).mtimeMs).toBe(before);
+  });
+
   test('a stale owner cannot commit after another owner claims the expired lease', async () => {
     let time = 1000;
     const { service } = await setup({ clock: () => time });
@@ -447,6 +481,24 @@ describe('durable step boundary', () => {
     expect((await service.get('r')).steps).toHaveLength(2);
   });
 
+  test('a fork starts its own lineage without the parent transcript', async () => {
+    const { service } = await setup();
+    await execute(service, def(), () => 5);
+    await service.recordTranscript('r', 'host', 'fixture', {
+      providerId: 'fixture',
+      modelId: null,
+      lineageId: 'L1',
+      opaqueRef: 'thread-1',
+      prefixHash: 'h',
+    });
+    await execute(service, def({ id: 'two' }), () => 6);
+    await service.fork('r', 'branch', 'two', principal);
+    const child = await service.get('branch');
+    expect(child.transcripts).toEqual({});
+    expect(child.contextRevision).toBe(1);
+    expect(child.events[0]).toMatchObject({ seq: 1, type: 'run.forked' });
+  });
+
   test('a fork refuses a prefix containing external side effects', async () => {
     const { service } = await setup();
     await execute(service, def({ effect: 'idempotent' }), () => 5);
@@ -612,6 +664,27 @@ describe('native loop over an injected model adapter', () => {
       /turn limit/,
     );
     expect((await service.get('r')).state).toBe('failed');
+  });
+
+  test('a registered tool outside the capability is not offered and cannot be called', async () => {
+    const { service } = await setup();
+    const tools = registry();
+    tools.register({ ...sumTool, name: 'shout', description: 'Not in the capability.' });
+    let offered: string[] = [];
+    const agent = new NativeAgent(
+      service,
+      {
+        ...adapter(() => ({ response: { type: 'tool', name: 'shout', input: { values: [1] } } })),
+        complete: async (request) => {
+          offered = request.tools.map((t) => t.name);
+          return { response: { type: 'tool', name: 'shout', input: { values: [1] } } };
+        },
+      },
+      tools,
+    );
+    await expect(agent.run('r', 'host', 'do work', principal)).rejects.toThrow(/Unknown tool/);
+    expect(offered).toEqual(['sum']);
+    expect((await service.get('r')).used.toolCalls).toBe(0);
   });
 
   test('a tool the principal may not use is refused by the boundary, not the model', async () => {
