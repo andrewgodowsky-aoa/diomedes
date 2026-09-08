@@ -31,7 +31,7 @@
 
 .dm-mark svg .dm-mark-point.live {
   fill: var(--light, #3fd6df);
-  filter: drop-shadow(0 0 2px rgba(63, 214, 223, 0.4));
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--light) 40%, transparent));
 }
 
 .dm-mark svg .dm-mark-point.attn {
@@ -81,7 +81,7 @@
   margin-left: 150px;
   border-radius: 50%;
   background: var(--light, #3fd6df);
-  box-shadow: 0 0 5px rgba(63, 214, 223, 0.4);
+  box-shadow: 0 0 5px color-mix(in srgb, var(--light) 40%, transparent);
   transform: scale(0);
 }
 

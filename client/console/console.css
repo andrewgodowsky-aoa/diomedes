@@ -73,7 +73,7 @@ html[data-surface='console'] body {
 .console .pt.live {
   background: var(--light);
   border-color: var(--light);
-  box-shadow: 0 0 4px rgba(63, 214, 223, 0.35);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--light) 35%, transparent);
 }
 .console .pt.attn {
   background: var(--attn);
@@ -477,7 +477,7 @@ html[data-surface='console'] body {
   height: 6px;
   border-radius: 50%;
   background: var(--light);
-  box-shadow: 0 0 6px rgba(63, 214, 223, 0.6);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--light) 60%, transparent);
 }
 .console .record .ms {
   color: var(--t3);
@@ -503,7 +503,7 @@ html[data-surface='console'] body {
 }
 .console .turn.dio.live::before {
   background: var(--light);
-  box-shadow: 0 0 6px rgba(63, 214, 223, 0.6);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--light) 60%, transparent);
 }
 .console .who {
   display: flex;
@@ -550,7 +550,7 @@ html[data-surface='console'] body {
   line-height: 1.65;
 }
 .console .turn.you .body {
-  color: #d3d9e0;
+  color: color-mix(in srgb, var(--t1) 80%, var(--t2));
 }
 .console .body p {
   margin: 0 0 8px;
@@ -718,7 +718,7 @@ html[data-surface='console'] body {
   color: var(--light);
 }
 .console .bar .send.ready:hover {
-  background: rgba(63, 214, 223, 0.08);
+  background: color-mix(in srgb, var(--light) 8%, transparent);
 }
 .console .bar .hint {
   color: var(--t3);
@@ -1051,6 +1051,12 @@ html[data-surface='console'] body {
 .console .caption {
   color: var(--t3);
   font-size: 12px;
+}
+/* Approval decision record: the shared instrument register from
+   client/styles.css, set here in the transcript's rhythm. */
+.console .approval-status {
+  margin: 10px 0 4px;
+  padding-left: 10px;
 }
 
 /* surface switch lives in the shell's top strip while the app bar is hidden */

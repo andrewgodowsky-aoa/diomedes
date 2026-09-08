@@ -1670,6 +1670,75 @@ a {
 .facts dd {
   margin: 0;
 }
+/* Approval decision record (Astra): the instrument register, not a card.
+   One rule set for both surfaces: a 1 px rule at the left, the outcome in
+   the UI face, the record summary as a mono uppercase control, and the four
+   digests as lowercase mono facts. Small type lives here only; this record
+   never renders on Home, where the suite holds the 14 px floor. */
+.approval-status {
+  margin: 12px 0 4px;
+  padding: 2px 0 2px 12px;
+  border-left: 1px solid var(--dm-rule);
+}
+.approval-outcome {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font: 400 13.5px / 1.5 var(--dm-font-ui);
+  color: var(--dm-text-1);
+  overflow-wrap: anywhere;
+}
+.approval-outcome .mark {
+  align-self: center;
+}
+.approval-status.is-conflicted .approval-outcome,
+.approval-status.is-not-applied .approval-outcome {
+  color: var(--dm-signal);
+}
+.approval-status.is-declined .approval-outcome {
+  color: var(--dm-text-3);
+}
+.approval-pending,
+.approval-recorded {
+  margin: 0;
+  font: 400 11.5px / 1.7 var(--dm-font-code);
+  color: var(--dm-text-3);
+  overflow-wrap: anywhere;
+}
+.approval-record {
+  margin-top: 6px;
+}
+.approval-summary {
+  font: 500 11px / 1.6 var(--dm-font-code);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dm-text-3);
+  cursor: pointer;
+  min-height: 0;
+}
+.approval-summary:hover {
+  color: var(--dm-text-1);
+}
+.approval-recorded {
+  margin-top: 4px;
+}
+.approval-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 10px;
+  margin: 6px 0 0;
+  font: 400 11.5px / 1.7 var(--dm-font-code);
+  overflow-wrap: anywhere;
+}
+.approval-facts dt {
+  text-transform: lowercase;
+  letter-spacing: 0.01em;
+  color: var(--dm-text-3);
+}
+.approval-facts dd {
+  color: var(--dm-text-1);
+}
 .change-card > p {
   margin: 10px 0 16px;
 }

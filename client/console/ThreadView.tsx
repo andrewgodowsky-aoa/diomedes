@@ -14,7 +14,7 @@ import type {
   Turn,
 } from '../../shared/types';
 import { effortFor } from '../../shared/effort';
-import { Notice, time } from '../components';
+import { ApprovalStatus, Notice, time } from '../components';
 import { Composer } from './Composer';
 
 function fmtDur(ms: number): string {
@@ -41,6 +41,7 @@ interface ThreadViewProps {
   members: TeamMember[];
   member: TeamMember | null;
   needs: Need[];
+  receiptNeeds?: Need[];
   settings: Settings;
   mode: Mode;
   route: Route;
@@ -79,6 +80,7 @@ export function ThreadView({
   members,
   member,
   needs,
+  receiptNeeds = [],
   settings,
   mode,
   route,
@@ -310,7 +312,7 @@ export function ThreadView({
             <div id={`need-${n.id}`} key={n.id}>
               <Notice
                 need={n}
-                decide={(r, a) => onResolve(n, r, a ?? (r === 'go-ahead' && permission === 'task'))}
+                decide={(r, a) => onResolve(n, r, n.approval ? false : a ?? (r === 'go-ahead' && permission === 'task'))}
                 show={() => onPreview(n)}
               />
             </div>
@@ -323,6 +325,9 @@ export function ThreadView({
           )}
           {items.map((entry, i) => (
             <div key={i}>{entry.node}</div>
+          ))}
+          {receiptNeeds.map((n) => (
+            <ApprovalStatus key={n.id} need={n} />
           ))}
         </div>
       </div>

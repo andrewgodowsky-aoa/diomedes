@@ -20,7 +20,9 @@ import type {
   UsageSnapshot,
 } from '../../shared/types';
 import { api } from '../api';
-import { Button, Modal, time, titleCase } from '../components';
+import { reconcileWorkStarts, startWork } from '../work-start';
+import { decideApproval, reconcileApprovals } from '../approval-decisions';
+import { ApprovalStatus, Button, Modal, time, titleCase } from '../components';
 import { Mark } from './Mark';
 import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
@@ -101,6 +103,7 @@ export function Shell({
   // The console root the travelling point lives in (motion.ts appends it here).
   const rootRef = useRef<HTMLDivElement | null>(null);
   const currentId = useRef(projectId);
+  const reconciliationIssue = useRef<string | undefined>(undefined);
   currentId.current = projectId;
   const base = `/projects/${projectId}`;
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -113,6 +116,13 @@ export function Shell({
   const load = useCallback(async () => {
     const data = await api<ProjectState>(`/projects/${projectId}/state`);
     if (currentId.current === projectId) setState(data);
+    const workIssue = reconcileWorkStarts(projectId, data.sessions);
+    const approvalIssue = reconcileApprovals(projectId, data.needs);
+    const issue = workIssue ?? approvalIssue;
+    if (issue?.message !== reconciliationIssue.current) {
+      reconciliationIssue.current = issue?.message;
+      if (issue) report(issue);
+    }
     try {
       const t = await api<TeamState>(`/projects/${projectId}/team`);
       if (currentId.current === projectId) {
@@ -124,7 +134,7 @@ export function Shell({
       if (!isMissingRoute(e)) throw e;
       if (currentId.current === projectId) setTeamAvailable(false);
     }
-  }, [projectId]);
+  }, [projectId, report]);
   const perform = useCallback(
     async (fn: () => Promise<void>) => {
       setBusy(true);
@@ -224,6 +234,12 @@ export function Shell({
   useTravelOnView(view, selectedTask?.id ?? null, rootRef);
   const selectedSessions = selectedTask
     ? sessions.filter((s) => s.taskId === selectedTask.id)
+    : [];
+  // The decision record for this thread: the newest need it owns with an
+  // approval receipt, the way Astra's Pane read state.needs. ThreadView
+  // renders nothing when there is no receipt.
+  const selectedReceipts = selected && state
+    ? state.needs.filter((n) => n.approvalReceipt && threadOwnsNeed(selected, n, state)).slice(-1)
     : [];
   const selectedMember = team.members.find((m) => m.threadId === selected?.id) ?? null;
   const selectedMail = team.messages.filter((m) => {
@@ -327,7 +343,7 @@ export function Shell({
   }
   async function resolveNeed(need: Need, resolution: 'go-ahead' | 'declined', allowForTask = false) {
     await perform(async () => {
-      await api(`${base}/needs/${need.id}/resolve`, 'POST', { resolution, allowForTask });
+      await decideApproval(projectId, need, resolution, allowForTask);
       await load();
     });
   }
@@ -345,7 +361,7 @@ export function Shell({
   }
   async function startTask(task: Task, route: Route) {
     await perform(async () => {
-      await api(`${base}/work/start`, 'POST', { taskId: task.id, route, sources: [], consent: true });
+      await startWork(projectId, { taskId: task.id, route, sources: [], consent: true });
       await load();
     });
   }
@@ -619,6 +635,7 @@ export function Shell({
               members={team.members}
               member={selectedMember}
               needs={waiting.filter((n) => threadOwnsNeed(selected, n, state))}
+              receiptNeeds={selectedReceipts}
               settings={settings}
               mode={mode}
               route={route}
@@ -790,6 +807,7 @@ export function Shell({
           <p className="prose">
             {previewNeed.why} {previewNeed.consequence}
           </p>
+          <ApprovalStatus need={previewNeed} />
           <div className="dialog-actions">
             <Button
               onClick={() => {
