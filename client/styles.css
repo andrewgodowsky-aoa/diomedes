@@ -347,6 +347,18 @@ a {
   align-items: stretch;
   flex: none;
   border-bottom: 1px solid var(--dm-rule-2);
+  -webkit-app-region: drag;
+  app-region: drag;
+  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+.top-bar button,
+.top-bar a,
+.top-bar input,
+.top-bar select,
+.top-bar textarea,
+.top-bar [role='button'] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 .brand-button {
   border-right: 1px solid var(--dm-rule-2);

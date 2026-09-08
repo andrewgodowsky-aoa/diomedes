@@ -81,6 +81,9 @@ if (!app.requestSingleInstanceLock()) {
         title: 'Diomedes',
         backgroundColor: '#222d39',
         show: false,
+        titleBarStyle: 'hidden',
+        titleBarOverlay: { color: '#17212e', symbolColor: '#eaeff3', height: 46 },
+        autoHideMenuBar: true,
         webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
       });
       Menu.setApplicationMenu(
