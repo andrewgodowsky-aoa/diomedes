@@ -33,6 +33,25 @@ export const now = () => new Date().toISOString();
 export const hash = (text: string | null) =>
   text === null ? null : createHash('sha256').update(text).digest('hex');
 export const identifier = (prefix = '') => prefix + randomBytes(6).toString('hex');
+// Folders that never hold Diomedes documents; skipped during the documents walk.
+export const SKIPPED_FOLDERS = new Set([
+  'node_modules',
+  'dist',
+  'build',
+  'target',
+  'out',
+  '__pycache__',
+  '.venv',
+  'venv',
+  'artifacts',
+  'libraries',
+  'assets',
+  'natives',
+  'versions',
+  'logs',
+  'crash-reports',
+  'screenshots',
+]);
 /** Trim conversation text to a 60-character thread name at a word boundary. */
 export function threadNameFromText(text: string): string {
   const collapsed = text.trim().replaceAll(/\s+/g, ' ');
@@ -206,6 +225,10 @@ export class Store extends EventEmitter {
   private registry: Project[] = [];
   private states = new Map<string, StoredState>();
   private queue: Promise<unknown> = Promise.resolve();
+  private docCache = new Map<
+    string,
+    { at: number; documents: DocumentInfo[]; inFlight?: Promise<DocumentInfo[]> }
+  >();
   readonly projectRoot: string;
   constructor(
     readonly dataDir: string,
@@ -342,9 +365,63 @@ export class Store extends EventEmitter {
     migrateTeam(state);
     state.teamMeta ??= emptyTeamMeta();
     this.refreshCounts(state);
-    await jsonWrite(this.statePath(state.project.id), state);
+    // The documents listing is a cache, never persisted: it can hold 10,000 rows
+    // and would otherwise be rewritten with fsync on every change.
+    await jsonWrite(this.statePath(state.project.id), { ...state, documents: [] });
     this.states.set(state.project.id, state);
     this.emit('change', state.project.id);
+  }
+  /** Cheap fingerprint for the documents cache: count plus a hash of path+size+changedAt. */
+  private documentsFingerprint(documents: DocumentInfo[]): string {
+    const digest = createHash('sha256');
+    for (const doc of documents) digest.update(`${doc.path}\0${doc.size}\0${doc.changedAt}\n`);
+    return `${documents.length}:${digest.digest('hex')}`;
+  }
+  /** Walk in the background and emit 'change' only when the listing actually changed. */
+  async refreshDocuments(id: string): Promise<DocumentInfo[]> {
+    const cached = this.docCache.get(id);
+    if (cached?.inFlight) return cached.inFlight;
+    const previous = cached ? this.documentsFingerprint(cached.documents) : null;
+    const entry = cached ?? { at: 0, documents: [] as DocumentInfo[] };
+    this.docCache.set(id, entry);
+    const flight = this.walkDocuments(id)
+      .then((documents) => {
+        entry.at = Date.now();
+        const next = this.documentsFingerprint(documents);
+        const changed = previous === null || previous !== next;
+        entry.documents = documents;
+        try {
+          this.state(id).documents = documents;
+        } catch {
+          // Project may have been removed while the walk was in flight.
+        }
+        if (entry.inFlight === flight) delete entry.inFlight;
+        if (changed) this.emit('change', id);
+        return documents;
+      })
+      .catch((error) => {
+        if (entry.inFlight === flight) delete entry.inFlight;
+        throw error;
+      });
+    entry.inFlight = flight;
+    return flight;
+  }
+  /** Mark the cached listing stale and kick a background refresh after a Diomedes folder write. */
+  private invalidateDocuments(id: string): void {
+    const cached = this.docCache.get(id);
+    if (cached?.inFlight) {
+      // A walk that began before this write may miss it: walk once more when it lands.
+      void cached.inFlight.then(
+        () => {
+          cached.at = 0;
+          return this.refreshDocuments(id);
+        },
+        () => undefined,
+      ).catch(() => undefined);
+      return;
+    }
+    if (cached) cached.at = 0;
+    void this.refreshDocuments(id).catch(() => undefined);
   }
   private refreshCounts(state: StoredState) {
     state.project.counts = {
@@ -437,15 +514,27 @@ export class Store extends EventEmitter {
     this.emit('settings', this.settings);
     return this.settings;
   }
-  async listDocuments(id: string) {
+  /** Explicit listing: awaits a fresh walk (Files tab and pickers call this on demand). */
+  async listDocuments(id: string): Promise<DocumentInfo[]> {
+    return this.refreshDocuments(id);
+  }
+  private async walkDocuments(id: string): Promise<DocumentInfo[]> {
     const state = this.state(id);
     await this.checkFolder(state);
     if (state.project.missing) return [];
+    const waiting = new Set<string>();
+    for (const change of state.changes) if (change.state === 'waiting') waiting.add(change.path);
+    const recorded = new Set<string>();
+    for (const entry of state.history)
+      for (const file of entry.files) if (file.recorded) recorded.add(file.path);
     const documents: DocumentInfo[] = [];
     const walk = async (folder: string, prefix = ''): Promise<void> => {
-      for (const item of await fs.readdir(folder, { withFileTypes: true })) {
-        if (item.name.startsWith('.') || item.name === 'node_modules' || item.isSymbolicLink())
-          continue;
+      const dirents = await fs.readdir(folder, { withFileTypes: true });
+      const files: { relative: string; absolute: string }[] = [];
+      const subdirs: { relative: string; absolute: string }[] = [];
+      for (const item of dirents) {
+        if (item.isSymbolicLink() || item.name.startsWith('.')) continue;
+        if (item.isDirectory() && SKIPPED_FOLDERS.has(item.name)) continue;
         const relative = prefix ? `${prefix}/${item.name}` : item.name;
         let absolute: string;
         try {
@@ -455,28 +544,46 @@ export class Store extends EventEmitter {
           throw error;
         }
         if (item.isDirectory()) {
-          if (documents.length < 10000) await walk(absolute, relative);
+          if (documents.length < 10000) subdirs.push({ relative, absolute });
         } else if (item.isFile()) {
-          const stat = await fs.stat(absolute);
+          files.push({ relative, absolute });
+        }
+        // Stop collecting at the cap; entries beyond it are ignored.
+        if (documents.length + files.length >= 10000) break;
+      }
+      for (let index = 0; index < files.length && documents.length < 10000; index += 32) {
+        const batch = files.slice(index, index + 32);
+        const stats = await Promise.all(
+          batch.map(async (file) => {
+            try {
+              return { file, stat: await fs.stat(file.absolute) };
+            } catch (error) {
+              if (absent(error)) return null;
+              throw error;
+            }
+          }),
+        );
+        for (const item of stats) {
+          if (!item || documents.length >= 10000) continue;
           documents.push({
-            path: relative,
-            kind: state.project.plans.includes(relative) ? 'plan' : textKind(relative),
-            size: stat.size,
-            changedAt: stat.mtime.toISOString(),
-            hasChangesWaiting: state.changes.some(
-              (c) => c.path === relative && c.state === 'waiting',
-            ),
-            recorded: state.history.some((e) =>
-              e.files.some((f) => f.path === relative && f.recorded),
-            ),
+            path: item.file.relative,
+            kind: state.project.plans.includes(item.file.relative)
+              ? 'plan'
+              : textKind(item.file.relative),
+            size: item.stat.size,
+            changedAt: item.stat.mtime.toISOString(),
+            hasChangesWaiting: waiting.has(item.file.relative),
+            recorded: recorded.has(item.file.relative),
           });
         }
+      }
+      for (const sub of subdirs) {
         if (documents.length >= 10000) break;
+        await walk(sub.absolute, sub.relative);
       }
     };
     await walk(state.project.folder);
-    state.documents = documents.sort((a, b) => a.path.localeCompare(b.path));
-    return state.documents;
+    return documents.sort((a, b) => a.path.localeCompare(b.path));
   }
   async current(id: string, input: string) {
     const file = await projectFile(this.state(id).project.folder, input);
@@ -641,6 +748,7 @@ export class Store extends EventEmitter {
     try {
       for (const file of checked) await this.applyWrite(id, file, entry.id);
       await this.persist(state);
+      this.invalidateDocuments(id);
       await fs.unlink(journalPath);
     } catch (error) {
       // Settle prepared writes before a worker records its failure, so its count
@@ -964,7 +1072,14 @@ export class Store extends EventEmitter {
   }
   async projectState(id: string): Promise<ProjectState> {
     const state = this.state(id);
-    await this.listDocuments(id);
+    // Never walk on the request path: serve the cached listing and refresh in the background.
+    const cached = this.docCache.get(id);
+    if (!cached || Date.now() - cached.at > 20000) {
+      if (!cached) this.docCache.set(id, { at: 0, documents: [] });
+      const entry = this.docCache.get(id)!;
+      if (!entry.inFlight) void this.refreshDocuments(id).catch(() => undefined);
+    }
+    const documents = this.docCache.get(id)?.documents ?? [];
     this.refreshCounts(state);
     if (!state.project.missing)
       for (const change of state.changes) {
@@ -985,6 +1100,7 @@ export class Store extends EventEmitter {
     migrateTeam(state);
     const clone = structuredClone(state) as StoredState;
     delete (clone as Partial<StoredState>).teamMeta;
+    clone.documents = [...documents];
     return clone;
   }
 }

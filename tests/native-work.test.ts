@@ -56,6 +56,12 @@ async function request(route: string, method = 'GET', body?: unknown) {
 }
 const state = async (): Promise<ProjectState> =>
   (await request(`/projects/${projectId}/state`)).data;
+// The explicit list awaits a fresh walk; /state serves the cache.
+const documentsOf = async () => {
+  const result = await request(`/projects/${projectId}/documents`);
+  expect(result.status).toBe(200);
+  return result.data.documents;
+};
 const start = (sources = ['Fall menu.md']) =>
   request(`/projects/${projectId}/work/start`, 'POST', {
     taskId,
@@ -519,7 +525,10 @@ describe('guarded native file proposals', () => {
     expect(await fs.readFile(path.join(ready.project.folder, 'Fall menu.md'), 'utf8')).toContain(
       'Mushroom risotto',
     );
-    expect(ready.documents.some((document) => document.path === 'Announcement.md')).toBe(false);
+    await documentsOf();
+    expect((await state()).documents.some((document) => document.path === 'Announcement.md')).toBe(
+      false,
+    );
     expect(ready.project.status.needsYou).toBe(1);
     expect(
       Date.parse(ready.tasks[0].moves[0].undoUntil) - Date.parse(ready.tasks[0].moves[0].at),
@@ -574,7 +583,8 @@ describe('guarded native file proposals', () => {
     expect(await fs.readFile(path.join(current.project.folder, 'Fall menu.md'), 'utf8')).toContain(
       'Mushroom risotto',
     );
-    expect(current.documents).toHaveLength(3);
+    await documentsOf();
+    expect((await state()).documents).toHaveLength(3);
   });
   test('rejects stale selected text before any proposed file is written', async () => {
     await start();
@@ -588,7 +598,10 @@ describe('guarded native file proposals', () => {
     expect(await fs.readFile(path.join(current.project.folder, 'Fall menu.md'), 'utf8')).toBe(
       'A newer outside edit',
     );
-    expect(current.documents.some((document) => document.path === 'Announcement.md')).toBe(false);
+    await documentsOf();
+    expect((await state()).documents.some((document) => document.path === 'Announcement.md')).toBe(
+      false,
+    );
   });
   test('checks source freshness even when that source is not modified by the proposal', async () => {
     invoke = async () => proposal([created]);
@@ -596,6 +609,7 @@ describe('guarded native file proposals', () => {
     const ready = await waiting();
     await fs.writeFile(path.join(ready.project.folder, 'Fall menu.md'), 'Changed context');
     expect((await decision(ready.needs[0].id, 'go-ahead')).status).toBe(409);
+    await documentsOf();
     expect((await state()).documents.some((document) => document.path === 'Announcement.md')).toBe(
       false,
     );
@@ -627,7 +641,8 @@ describe('guarded native file proposals', () => {
     expect(current.sessions[0].state).toBe('stopped');
     expect(current.needs).toEqual([]);
     expect(current.changes).toEqual([]);
-    expect(current.documents).toHaveLength(3);
+    await documentsOf();
+    expect((await state()).documents).toHaveLength(3);
   });
   test('a stopped response cannot attach a proposal to a newer session', async () => {
     const first = deferred(),
@@ -767,6 +782,7 @@ describe('guarded native file proposals', () => {
     expect(generator.mock.calls[0][0].documents).toEqual([]);
     expect(ready.needs[0].preview?.[0].before).toBeNull();
     expect((await decision(ready.needs[0].id, 'go-ahead')).status).toBe(200);
+    await documentsOf();
     expect((await state()).documents.some((document) => document.path === created.path)).toBe(true);
   });
   test('keeps notes local and requires another approval for a new proposal after whole-task approval', async () => {
@@ -788,7 +804,8 @@ describe('guarded native file proposals', () => {
     const second = await waiting();
     expect(second.needs.filter((need) => need.state === 'open')).toHaveLength(1);
     expect(second.needs.at(-1)?.allowForTask).toBe(false);
-    expect(second.documents.some((document) => document.path === 'Second.md')).toBe(false);
+    await documentsOf();
+    expect((await state()).documents.some((document) => document.path === 'Second.md')).toBe(false);
   });
   test('finishes a no-op proposal honestly without creating an approval or fake change', async () => {
     const initial = await state(),
@@ -940,7 +957,8 @@ describe('untrusted generated proposal validation', () => {
     const failed = await until((current) => current.sessions[0].state === 'failed');
     expect(failed.needs).toEqual([]);
     expect(failed.changes).toEqual([]);
-    expect(failed.documents).toHaveLength(3);
+    await documentsOf();
+    expect((await state()).documents).toHaveLength(3);
     expect(failed.tasks[0].reason).toBe('went-wrong');
   });
 });

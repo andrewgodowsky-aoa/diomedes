@@ -6,6 +6,7 @@ import type {
   Conversation,
   Owner,
   Page,
+  ProjectState,
   Session,
   Settings,
   TaskState,
@@ -57,6 +58,13 @@ const choice = <const T extends string>(value: unknown, values: readonly T[], na
 };
 const THREAD_PERMISSIONS: readonly ThreadPermission[] = ['show-first', 'task'];
 const PERMISSION_UNAVAILABLE = 'That permission mode is not available in this version.';
+/**
+ * The SSE `state` fan-out never carries the documents listing: it can hold
+ * 10,000 rows and the client already refetches after any event.
+ */
+export function statePayload(state: ProjectState): ProjectState {
+  return { ...state, documents: [] };
+}
 function parseThreadPermission(value: unknown): ThreadPermission {
   if (typeof value !== 'string' || !THREAD_PERMISSIONS.includes(value as ThreadPermission))
     throw new ApiError(400, PERMISSION_UNAVAILABLE);
@@ -1588,7 +1596,7 @@ export async function createApp(options: AppOptions) {
     };
     const listener = (projectId: string) => {
       const state = store.state(projectId);
-      send('state', { projectId, state });
+      send('state', { projectId, state: statePayload(state) });
       for (const event of [
         'project',
         'tasks',
