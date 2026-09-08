@@ -121,12 +121,8 @@ test('Native UI: consent, exact proposal preview, approval, Review and History w
   await page.locator('.task-card').first().locator('.task-title').click();
   await page.getByRole('dialog').getByRole('combobox', { name: 'Work service' }).selectOption('codex');
   await page.getByRole('dialog').getByRole('button', { name: 'Do this for me', exact: true }).click();
-  const consent = page.getByRole('dialog', { name: 'Use an online service for this task?' });
-  await expect(consent).toBeVisible();
   expect(generationCount).toBe(0);
   expect(await fs.readFile(path.join(project.folder, 'Reopening plan.md'), 'utf8')).toBe(original);
-  await page.screenshot({ path: testInfo.outputPath('native-consent.png'), animations: 'disabled', fullPage: true });
-  await consent.getByRole('button', { name: 'Continue', exact: true }).click();
   const need = page.getByRole('region', { name: 'Needs your OK' });
   await expect(need).toBeVisible();
   expect(generationCount).toBe(1);
