@@ -1,0 +1,137 @@
+{
+  "checkedAt": "2026-09-08T12:08:25.988Z",
+  "passed": true,
+  "executablePath": "F:\\Achilles\\diomedes-wt\\codex-approvals\\release\\Diomedes-win32-x64\\Diomedes.exe",
+  "profileDir": "F:\\Achilles\\diomedes-wt\\codex-approvals\\test-results\\approval-desktop-1788869305986\\profile",
+  "dataDir": "F:\\Achilles\\diomedes-wt\\codex-approvals\\test-results\\approval-desktop-1788869305986\\data",
+  "projectsDir": "F:\\Achilles\\diomedes-wt\\codex-approvals\\test-results\\approval-desktop-1788869305986\\projects",
+  "sourcePaths": {
+    "briefPath": "Brief.md",
+    "projectFolder": "F:\\Achilles\\diomedes-wt\\codex-approvals\\test-results\\approval-desktop-1788869305986\\projects\\approval-desktop"
+  },
+  "requested": {
+    "model": "gpt-5.6-luna",
+    "effort": "low",
+    "generations": 1
+  },
+  "provenance": {
+    "engine": {
+      "name": "Codex, guarded file proposals",
+      "model": "gpt-5.6-luna",
+      "worker": 1,
+      "branch": null,
+      "context": 58,
+      "events": 4,
+      "version": "0.153.4",
+      "verified": true
+    },
+    "sessionSample": false,
+    "taskOwner": "diomedes-with-ok"
+  },
+  "generationCount": 1,
+  "receipt": {
+    "protocolVersion": 1,
+    "commandId": "31af8f2e-4de2-484f-8b16-08978c2cf5cf",
+    "payloadDigest": "sha256:3d8b1ca4fa303f9d06c4a30085eec7cefccfe09609aa7233fbc623d26fd479d1",
+    "projectId": "caf2334d9c42",
+    "approvalId": "N818947bc0f0c",
+    "taskId": "T1",
+    "sessionId": "S59499f966018",
+    "actor": "local-client",
+    "scope": "local-prototype",
+    "proposalDigest": "sha256:67117a54c958d0e0fb7e56f5c48cfb3861e68a08b739209de7474822599b5c04",
+    "actionDigest": "sha256:843382ad65fbe48d42793540b54450d01dd3888f3bbb7b8927c5ea6621e1e21b",
+    "baseDigest": "sha256:83c2ec42232ae9669674c933816fdffe316105176fbba45b430a9f760dcf1a49",
+    "createdAt": "2026-09-08T12:08:35.472Z",
+    "expiresAt": "2026-09-08T13:08:35.472Z",
+    "decision": "go-ahead",
+    "decidedAt": "2026-09-08T12:08:36.656Z",
+    "eventId": "Eb3398bcda814"
+  },
+  "execution": {
+    "state": "applied",
+    "eventId": "Ea63f1a8a650a",
+    "completedAt": "2026-09-08T12:08:36.680Z",
+    "reason": null,
+    "conflicts": []
+  },
+  "hashes": {
+    "before": "d359422d94ff64f54a3420d8fc1bb32c9bc54f8ba36d1bd6fbd1df02059a0e9e",
+    "after": "f32c0ce399866bcd7b6ba9f30c0338400e021e2077df2ad4c5f29455221bf87c"
+  },
+  "restart": {
+    "relaunched": true,
+    "receiptUnchanged": true,
+    "replayWithoutRun": true
+  },
+  "limitations": [
+    "One real Codex generation only; no retries, no fallback, no sample work.",
+    "Reuses the existing local runtime and sign-in; no credentials are copied.",
+    "Only the first approval HTTP response is lost after route.fetch commits.",
+    "Writes evidence/approval-desktop-proof.json; never evidence/desktop-proof.json."
+  ],
+  "pageErrors": [],
+  "runtimeAvailable": {
+    "found": true,
+    "available": true
+  },
+  "workReceipt": {
+    "protocolVersion": 1,
+    "commandId": "approval-desktop-work",
+    "payloadDigest": "sha256:617d18b78e73922376a466dbc6745a82416a67d0ef8ec193cf07731973fce7b5",
+    "projectId": "caf2334d9c42",
+    "taskId": "T1",
+    "sessionId": "S59499f966018",
+    "eventId": "Edcffcc216122",
+    "admittedAt": "2026-09-08T12:08:30.304Z",
+    "route": "codex",
+    "scope": "local-prototype"
+  },
+  "needId": "N818947bc0f0c",
+  "sessionId": "S59499f966018",
+  "approvalIdentity": {
+    "protocolVersion": 1,
+    "actionDigest": "sha256:843382ad65fbe48d42793540b54450d01dd3888f3bbb7b8927c5ea6621e1e21b",
+    "baseDigest": "sha256:83c2ec42232ae9669674c933816fdffe316105176fbba45b430a9f760dcf1a49",
+    "expiresAt": "2026-09-08T13:08:35.472Z",
+    "sources": [
+      {
+        "path": "Brief.md",
+        "sha": "d359422d94ff64f54a3420d8fc1bb32c9bc54f8ba36d1bd6fbd1df02059a0e9e"
+      }
+    ],
+    "proposalDigest": "sha256:67117a54c958d0e0fb7e56f5c48cfb3861e68a08b739209de7474822599b5c04"
+  },
+  "approvalCommandId": "31af8f2e-4de2-484f-8b16-08978c2cf5cf",
+  "approvalAttempts": [
+    {
+      "protocolVersion": 1,
+      "commandId": "31af8f2e-4de2-484f-8b16-08978c2cf5cf",
+      "resolution": "go-ahead",
+      "proposalDigest": "sha256:67117a54c958d0e0fb7e56f5c48cfb3861e68a08b739209de7474822599b5c04",
+      "actionDigest": "sha256:843382ad65fbe48d42793540b54450d01dd3888f3bbb7b8927c5ea6621e1e21b",
+      "baseDigest": "sha256:83c2ec42232ae9669674c933816fdffe316105176fbba45b430a9f760dcf1a49"
+    },
+    {
+      "protocolVersion": 1,
+      "commandId": "31af8f2e-4de2-484f-8b16-08978c2cf5cf",
+      "resolution": "go-ahead",
+      "proposalDigest": "sha256:67117a54c958d0e0fb7e56f5c48cfb3861e68a08b739209de7474822599b5c04",
+      "actionDigest": "sha256:843382ad65fbe48d42793540b54450d01dd3888f3bbb7b8927c5ea6621e1e21b",
+      "baseDigest": "sha256:83c2ec42232ae9669674c933816fdffe316105176fbba45b430a9f760dcf1a49"
+    }
+  ],
+  "changedEntryId": "Ea63f1a8a650a",
+  "decisionEntryId": "Eb3398bcda814",
+  "startup": {
+    "version": "0.1.0",
+    "executable": "F:\\Achilles\\diomedes-wt\\codex-approvals\\release\\Diomedes-win32-x64\\Diomedes.exe",
+    "pid": 38188,
+    "url": "http://127.0.0.1:49708",
+    "startedAt": "2026-09-08T12:08:27.386Z",
+    "packaged": true
+  },
+  "restoreEntryId": "E2978b6e764c1",
+  "restoredSha": "d359422d94ff64f54a3420d8fc1bb32c9bc54f8ba36d1bd6fbd1df02059a0e9e",
+  "completedAt": "2026-09-08T12:08:38.596Z"
+}

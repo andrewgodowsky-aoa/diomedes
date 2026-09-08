@@ -12,6 +12,30 @@ remote service of its own. When you switch a helper on, that helper's own sign-i
 
 Diomedes Systems LLC. Version 0.1.0, a working prototype.
 
+## Work and approval recovery
+
+Task Start in Workbook and Console now saves a command identity before sending it.
+If a response is lost, the same request finds the original Work session instead of
+starting another one. The receipt, session and admission History event are saved
+together before the native helper is called. A host restart retains the receipt and
+marks interrupted Work stopped; it does not silently repeat a model call or apply a
+pending proposal.
+
+Native proposals now expire after one hour. Each decision binds the displayed
+proposal, exact output bytes and selected source revisions. The host saves an
+immutable decision receipt before writing. A lost response or identical retry
+returns that decision; restart reconciles prepared writes and explicitly marks an
+accepted decision with no prepared write as not applied. Workbook and Console show
+the expiry, recorded outcome and an expandable Decision record. Exact proposals
+cannot grant permission for a whole task.
+
+Work Start and approval decisions share command identity and conflict primitives.
+Composer sends, team starts, authenticated actors and durable event cursors remain
+later foundation work. The older sample flow remains supported. See the
+[Work foundation record](docs/implementation/2026-09-08-work-admission.md) and
+[approval continuation record](docs/implementation/2026-09-08-approval-receipts.md)
+for acceptance gates, limits and evidence.
+
 ## Two surfaces over one project
 
 There is one model underneath and two ways to see it. Switch in the top-right menu or
@@ -276,6 +300,9 @@ usage and are not part of `npm test`:
 - `npm run verify:native-work` — a synthetic native Work integration check. It needs the
   native runtime and a ChatGPT sign-in, creates only its own test project, verifies
   preview, approval, write, history and restore, and closes its own service.
+- `node scripts/approval-desktop-smoke.mjs` — one real Luna run through the packaged
+  approval flow, using its own project and profile. Verifies a lost approval response,
+  decision receipt, restart, replay and byte-exact restore.
 - `npm run smoke:team-codex` — a real Codex team session against a running Diomedes
   service. Set `DIOMEDES_API` to override the default `http://127.0.0.1:47631/api`.
 
@@ -329,6 +356,9 @@ junctions are rejected.
 
 ## Where the record is
 
+- [Main build integration, 2026-09-08](docs/implementation/2026-09-08-main-build.md)
+  records the verified Work foundation and exact approval changes now in the main
+  Windows executable and existing desktop shortcut.
 - `QUESTIONS.md` — what has been settled and what is still open.
 - `evidence/` — dated verification records. `BUILD-REPORT.md` and `DESKTOP-RELEASE.md`
   describe the 2026-09-05 state; `codex-team-real-binary-2026-09-06.md` is the team

@@ -1,0 +1,239 @@
+{
+  "checkedAt": "2026-09-08T12:30:20.409Z",
+  "workspace": "F:\\Achilles\\diomedes-wt\\codex-approvals",
+  "base": "218f325d2a902c53b089045dd24496890063a702",
+  "foundationSnapshotFiles": 26,
+  "authored": [
+    {
+      "file": "README.md",
+      "inherited": true,
+      "sha256": "36ab2bb2f2f6e701b6dcbe4de69e3e5729f5a4037d113c8d28bda9ec7fe32846"
+    },
+    {
+      "file": "client/Console.tsx",
+      "inherited": true,
+      "sha256": "3b79c3a873ab218d510edfefd4f145a18a5fbcd1ae19664306983bdd9402dce8"
+    },
+    {
+      "file": "client/Workspace.tsx",
+      "inherited": true,
+      "sha256": "d0a2f08673cc7907655308449e75afd171b1e3d4702f80a1627036fa8468b765"
+    },
+    {
+      "file": "client/approval-decisions.ts",
+      "inherited": false,
+      "sha256": "c51d391b1e91303d408e1f051c65555378d77496337718fd16d9a4da101cc8de"
+    },
+    {
+      "file": "client/components.tsx",
+      "inherited": false,
+      "sha256": "00c3b9102255de0b7ead09587a6b563346858e05fdd0f7ea31609fd2f6b2fb3c"
+    },
+    {
+      "file": "docs/implementation/2026-09-08-approval-files.md",
+      "inherited": false,
+      "sha256": null,
+      "note": "Generated change index; self/cross hashes excluded."
+    },
+    {
+      "file": "docs/implementation/2026-09-08-approval-receipts.md",
+      "inherited": false,
+      "sha256": "b7bba8641e47c8befa3b65e03561fe040fed19ab264b2f11682e030c514c7df8"
+    },
+    {
+      "file": "evidence/approval-changes.json",
+      "inherited": false,
+      "sha256": null,
+      "note": "Generated change index; self/cross hashes excluded."
+    },
+    {
+      "file": "evidence/approval-desktop-proof.json",
+      "inherited": false,
+      "sha256": "e70403fdc1ec609d075e9401ba477df24ae3df0ebb594ede2edb444989ddac18"
+    },
+    {
+      "file": "evidence/approval-performance.json",
+      "inherited": false,
+      "sha256": "6978c93967fbfd7a4094f74853c5b1454a6b43f40f74ddcac707329f9f731542"
+    },
+    {
+      "file": "evidence/approval-verification.json",
+      "inherited": false,
+      "sha256": "6a49a9d09316360ea2f4c9a3e4219904bc475bc4872ae90ef9583470de933327"
+    },
+    {
+      "file": "evidence/desktop-proof.json",
+      "inherited": true,
+      "sha256": "6f92508e961da38b32013069371c46d22ec7040c1b319c2db2d1eb59273ad3d7"
+    },
+    {
+      "file": "evidence/native-runtime-manifest.json",
+      "inherited": true,
+      "sha256": "281a321e6a6002d808153ff6d2cce4c37328071805664df5e97f5ed0afb1152b"
+    },
+    {
+      "file": "evidence/screenshots/approval-console-record.png",
+      "inherited": false,
+      "sha256": "84f289286243ae5869a28b6e6fabeab657630c9ec7c67d42c356b7fb0b493e02"
+    },
+    {
+      "file": "evidence/screenshots/approval-desktop-console.png",
+      "inherited": false,
+      "sha256": "2d95a2b73c841c1a5bdcf0942be62cbf869969adf5fddcec21f829217500bfe4"
+    },
+    {
+      "file": "evidence/screenshots/approval-desktop-workbook.png",
+      "inherited": false,
+      "sha256": "3f88df929ba968c2fa17a8c61a9e0ed0ce7a76e5fb93a86908b0582645c695c0"
+    },
+    {
+      "file": "evidence/screenshots/approval-workbook-preview.png",
+      "inherited": false,
+      "sha256": "00642fcb79496cdc450d33530adce41e2d90ad6c453d71b46bc8b3b4df44b1bf"
+    },
+    {
+      "file": "evidence/screenshots/work-admission-console.png",
+      "inherited": true,
+      "sha256": "348318a856f9a0c1b06d5980bdcd6e26b4957121017b723e408f2b1f5957e86c"
+    },
+    {
+      "file": "evidence/screenshots/work-admission-workbook.png",
+      "inherited": true,
+      "sha256": "00642fcb79496cdc450d33530adce41e2d90ad6c453d71b46bc8b3b4df44b1bf"
+    },
+    {
+      "file": "scripts/approval-desktop-smoke.mjs",
+      "inherited": false,
+      "sha256": "6bd1182ac03c27ef534263b3cf81af62c92978d8c18d72820e9ff3153030c26e"
+    },
+    {
+      "file": "scripts/native-work-smoke.ts",
+      "inherited": true,
+      "sha256": "f3590ea2ccacde6937ef8c30a207d009eb80a107743b550ebf4662dd22b4b670"
+    },
+    {
+      "file": "scripts/team-codex-smoke.mjs",
+      "inherited": false,
+      "sha256": "2193e7e098783f9433ef04e50bf1ac5f331fb8ac89d998d16568f98c3ee0f822"
+    },
+    {
+      "file": "server/app.ts",
+      "inherited": true,
+      "sha256": "17eee3b80ee32d09e3fc2c3147eb658428b031a190a6fe0b8ca71f2c78d65edd"
+    },
+    {
+      "file": "server/approval-admission.ts",
+      "inherited": false,
+      "sha256": "c0564c37fc2af33b0afebab264a9f2c6665c03b8b808e853f328c9c1eb2781f1"
+    },
+    {
+      "file": "server/command-admission.ts",
+      "inherited": false,
+      "sha256": "fc99c9419b6dc34f69c34e9b3b9c9463a605f4fddc72c47295349a3b58bc82ea"
+    },
+    {
+      "file": "server/native-work.ts",
+      "inherited": true,
+      "sha256": "0ad3b3dbb89d7d7509082a2dc46a9d001d5e63d1fab3c1ed4c2929e294c96cda"
+    },
+    {
+      "file": "server/store.ts",
+      "inherited": true,
+      "sha256": "7a5d8d1cb40b9b9e378ae630df6d1704de091cbc6cecc3581392fb8feade6f06"
+    },
+    {
+      "file": "server/work-admission.ts",
+      "inherited": true,
+      "sha256": "25eab34767c8cbf2f4603696f4a5421d5131d3094a414261c0f3b979ed3750f0"
+    },
+    {
+      "file": "shared/types.ts",
+      "inherited": true,
+      "sha256": "bff42df5b210ef10a4ad251a3e9cd0517fd74e795b8c6a814196b51c7dff1f0e"
+    },
+    {
+      "file": "tests/approval-admission.test.ts",
+      "inherited": false,
+      "sha256": "fcba4720f57f84562da88e4c900b5101b0c9912a3913e776ab2c5319422dff30"
+    },
+    {
+      "file": "tests/approval-crash-child.ts",
+      "inherited": false,
+      "sha256": "5fbdecabad02654154a98c37edf9d9a165deab0f71a43fe460fe1ff6537fdfd0"
+    },
+    {
+      "file": "tests/approval-decisions-client.test.ts",
+      "inherited": false,
+      "sha256": "032279b0ca83b3c43da4f585235e89ea316f96fe34095380612e6a95eb2e66fd"
+    },
+    {
+      "file": "tests/native-ui.spec.ts",
+      "inherited": true,
+      "sha256": "7d1b0216d456b4a879b8a2af0b2d2a49ddb3fac9843e6c9eeb75762499f246c1"
+    },
+    {
+      "file": "tests/native-work.test.ts",
+      "inherited": false,
+      "sha256": "6037e4b46b45b7c896848f8fd2102215d2e79b61e46bfea10ad9562cabbbc9f0"
+    },
+    {
+      "file": "tests/work-admission.test.ts",
+      "inherited": true,
+      "sha256": "489e48009aab6a8110d9cf7371db5f6ffd67a379561a681316b8da98a84ddc31"
+    }
+  ],
+  "unchangedInherited": [
+    {
+      "file": "client/work-start.ts",
+      "sha256": "0e892ba185d011df72be557d97884b423ae168a841b1b69e19e44b5257e29545"
+    },
+    {
+      "file": "docs/implementation/2026-09-08-work-admission.md",
+      "sha256": "e3a80b1527e575b1144a2ba29416004750ed509c8082c06dc1db69cdcbe59356"
+    },
+    {
+      "file": "evidence/native-work-proof.json",
+      "sha256": "12e196f40a2f4530e45c5555c44da15638501b2b16a680af3f131f464d26ceef"
+    },
+    {
+      "file": "evidence/screenshots/desktop-tasks-large.png",
+      "sha256": "07dea069435c8285a0599341d5140a2c3fd501eb7b6f20aff248942c69fbc1f0"
+    },
+    {
+      "file": "evidence/screenshots/desktop-tasks.png",
+      "sha256": "6515b912c5c25f55d4a7cbbfcadfa7e98e328fb17460d02ef38b529e8d98b495"
+    },
+    {
+      "file": "evidence/work-admission-performance.json",
+      "sha256": "a28bbf499bdbbe7ab04339190f19ef6de57ce9aa8adb0666cba5e01d32e9ba5b"
+    },
+    {
+      "file": "evidence/work-admission-verification.json",
+      "sha256": "32c398a2a6adde578cb1dcea044e65b168a8266fb286d300d4e23a240be72b88"
+    },
+    {
+      "file": "scripts/desktop-smoke.mjs",
+      "sha256": "df73f9df92fc645954deb7bf0d54b820f11f240e138566aed3d4d47275ae5a04"
+    },
+    {
+      "file": "server/work.ts",
+      "sha256": "a74f3ec1d496cce62e659ca59efc1967256f5ede285eab1e2c13d936fcce9e62"
+    },
+    {
+      "file": "tests/work-admission-child.ts",
+      "sha256": "d0c668fa8ef11362f8846a00be0f90b7bd8882ea9e5e60e070b22d356353639b"
+    },
+    {
+      "file": "tests/work-start-client.test.ts",
+      "sha256": "6b0d40652c81c7162b4f1f427639a1bc601f02db7b884a42a8678bc8b985c67e"
+    }
+  ],
+  "patches": {
+    "continuation": "output/approvals/approval-continuation.patch",
+    "combined": "output/approvals/foundation-and-approvals.patch"
+  },
+  "notes": [
+    "No commit was made. Patch construction uses temporary indexes only.",
+    "Authored means changed in this continuation relative to the imported foundation snapshot, including regenerated evidence."
+  ]
+}

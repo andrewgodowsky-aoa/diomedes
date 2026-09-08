@@ -118,13 +118,75 @@ export interface Need {
   decidedFrom: string;
   allowForTask: boolean;
   preview?: Change[];
+  /** Present on new exact native proposals; legacy sample requests stay unversioned. */
+  approval?: ApprovalIdentity;
+  approvalReceipt?: ApprovalReceipt;
+  execution?: ApprovalExecution;
+}
+export interface ApprovalIdentity {
+  readonly protocolVersion: 1;
+  readonly proposalDigest: string;
+  readonly actionDigest: string;
+  readonly baseDigest: string;
+  readonly expiresAt: string;
+  readonly sources: readonly { readonly path: string; readonly sha: string }[];
+}
+export interface ApprovalCommand {
+  protocolVersion: 1;
+  commandId: string;
+  resolution: 'go-ahead' | 'declined';
+  proposalDigest: string;
+  actionDigest: string;
+  baseDigest: string;
+}
+/** The decision never changes. Execution has its own durable outcome. */
+export interface ApprovalReceipt {
+  readonly protocolVersion: 1;
+  readonly commandId: string;
+  readonly payloadDigest: string;
+  readonly projectId: string;
+  readonly approvalId: string;
+  readonly taskId: string;
+  readonly sessionId: string;
+  readonly actor: 'local-client';
+  readonly scope: 'local-prototype';
+  readonly proposalDigest: string;
+  readonly actionDigest: string;
+  readonly baseDigest: string;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly decision: 'go-ahead' | 'declined';
+  readonly decidedAt: string;
+  readonly eventId: string;
+}
+export interface ApprovalExecution {
+  state: 'pending' | 'applied' | 'conflicted' | 'not-applied' | 'declined';
+  eventId: string | null;
+  completedAt: string | null;
+  reason: string | null;
+  conflicts: string[];
 }
 export type ThreadPermission = 'show-first' | 'task';
+/** Immutable receipt for one admitted task Work command in the local prototype. */
+export interface WorkReceipt {
+  readonly protocolVersion: 1;
+  readonly commandId: string;
+  readonly payloadDigest: string;
+  readonly projectId: string;
+  readonly taskId: string;
+  readonly sessionId: string;
+  readonly eventId: string;
+  readonly admittedAt: string;
+  readonly route: Route;
+  /** This is the existing loopback trust boundary, not a device authentication claim. */
+  readonly scope: 'local-prototype';
+}
 export interface Session {
   id: string;
   taskId: string;
   slotId?: Slot;
   permission?: ThreadPermission;
+  receipt?: WorkReceipt;
   state: 'queued' | 'working' | 'waiting' | 'done' | 'stopped' | 'failed';
   startedAt: string;
   endedAt: string | null;
@@ -168,6 +230,8 @@ export interface HistoryEntry {
   replaced: string | null;
   versionId: string;
   commit: string | null;
+  /** Links a decision or recorded write to its exact Need. */
+  approvalId?: string;
 }
 export interface Change {
   id: string;

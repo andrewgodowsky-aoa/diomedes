@@ -94,8 +94,14 @@ async function until(predicate: (state: ProjectState) => boolean) {
   throw new Error('Native proposal work did not reach its expected state.');
 }
 const waiting = () => until((result) => result.needs.some((need) => need.state === 'open'));
-const decision = (needId: string, resolution: 'go-ahead' | 'declined', allowForTask = false) =>
-  request(`/projects/${projectId}/needs/${needId}/resolve`, 'POST', { resolution, allowForTask });
+const decision = async (needId: string, resolution: 'go-ahead' | 'declined', allowForTask = false) => {
+  const need = (await state()).needs.find((item) => item.id === needId)!;
+  return request(`/projects/${projectId}/needs/${needId}/resolve`, 'POST', {
+    protocolVersion: 1, commandId: crypto.randomUUID(), resolution, allowForTask,
+    proposalDigest: need.approval!.proposalDigest,
+    actionDigest: need.approval!.actionDigest, baseDigest: need.approval!.baseDigest,
+  });
+};
 
 // Protocol fake: exercises the real adapter without launching Codex.
 class TeamAppServer implements NativeRpc {
@@ -544,7 +550,8 @@ describe('guarded native file proposals', () => {
     await start(['Fall menu.md', 'Opening notes.txt']);
     let current = await waiting();
     const need = current.needs.find((item) => item.state === 'open')!;
-    expect((await decision(need.id, 'go-ahead', true)).status).toBe(200);
+    expect((await decision(need.id, 'go-ahead', true)).status).toBe(400);
+    expect((await decision(need.id, 'go-ahead')).status).toBe(200);
     current = await state();
     expect(current.sessions[0].state).toBe('done');
     expect(current.tasks[0].reason).toBe('changes-ready');
@@ -785,7 +792,7 @@ describe('guarded native file proposals', () => {
     await documentsOf();
     expect((await state()).documents.some((document) => document.path === created.path)).toBe(true);
   });
-  test('keeps notes local and requires another approval for a new proposal after whole-task approval', async () => {
+  test('keeps notes local and requires a separate exact approval for every new proposal', async () => {
     invoke = async () => proposal([created]);
     const started = await start([]);
     const first = await waiting();
@@ -797,7 +804,8 @@ describe('guarded native file proposals', () => {
       ).status,
     ).toBe(200);
     expect(generator).toHaveBeenCalledOnce();
-    await decision(first.needs[0].id, 'go-ahead', true);
+    expect((await decision(first.needs[0].id, 'go-ahead', true)).status).toBe(400);
+    await decision(first.needs[0].id, 'go-ahead');
     invoke = async () =>
       proposal([{ path: 'Second.md', text: 'Second draft', summary: 'A second document' }]);
     await start([]);

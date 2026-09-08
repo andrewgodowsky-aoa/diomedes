@@ -1,43 +1,55 @@
 {
-  "startedAt": "2026-09-05T08:36:06.996Z",
+  "startedAt": "2026-09-08T10:33:01.094Z",
   "passed": true,
   "nativeGenerationRequests": 1,
   "scope": "One synthetic native file proposal, preview, explicit approval, recorded write, review, and restore through the local HTTP API.",
-  "projectFolder": "F:\\Achilles\\diomedes\\test-results\\native-work-smoke-2026-09-05T08-36-06-995Z\\project",
-  "appData": "F:\\Achilles\\diomedes\\.data\\native-work-smoke-2026-09-05T08-36-06-995Z",
+  "projectFolder": "F:\\Achilles\\diomedes-wt\\codex-foundation\\test-results\\native-work-smoke-2026-09-08T10-33-01-094Z\\project",
+  "appData": "F:\\Achilles\\diomedes-wt\\codex-foundation\\.data\\native-work-smoke-2026-09-08T10-33-01-094Z",
   "port": 47633,
   "limitations": [
     "This flow proposes text files; the native engine has no filesystem, shell, browser, or MCP tools.",
     "Diomedes applies the approved fixed proposal using its recorded write service.",
     "No model fallback, local inference, external sending, or build command was performed."
   ],
-  "projectId": "4ec2c6cfbb2a",
+  "projectId": "54a1ff249d2b",
   "taskId": "T1",
-  "sessionId": "S1c41c5272b9c",
+  "commandReceipt": {
+    "protocolVersion": 1,
+    "commandId": "native-work-smoke",
+    "payloadDigest": "sha256:40eb4c504896f33392a678f086f10cbea5689b629701ab2df1ee6b728d7bc4a5",
+    "projectId": "54a1ff249d2b",
+    "taskId": "T1",
+    "sessionId": "S14fc6a4ec874",
+    "eventId": "E68542122d2b2",
+    "admittedAt": "2026-09-08T10:33:01.222Z",
+    "route": "codex",
+    "scope": "local-prototype"
+  },
+  "sessionId": "S14fc6a4ec874",
   "beforeApproval": {
-    "checkedAt": "2026-09-05T08:36:15.204Z",
+    "checkedAt": "2026-09-08T10:33:08.385Z",
     "fileUnchanged": true,
-    "needId": "Nccf405aa85a1",
+    "needId": "N7d7315939d67",
     "previewFiles": 1,
     "sha256": "d359422d94ff64f54a3420d8fc1bb32c9bc54f8ba36d1bd6fbd1df02059a0e9e"
   },
   "afterApproval": {
-    "checkedAt": "2026-09-05T08:36:15.287Z",
+    "checkedAt": "2026-09-08T10:33:08.626Z",
     "fileMatchesPreview": true,
-    "model": "gpt-6-astra",
-    "historyEntryId": "E1ad93c507faf",
-    "reviewChangeId": "E1ad93c507faf:0",
+    "model": "gpt-5.6-luna",
+    "historyEntryId": "E9c267439273e",
+    "reviewChangeId": "E9c267439273e:0",
     "sha256": "f32c0ce399866bcd7b6ba9f30c0338400e021e2077df2ad4c5f29455221bf87c",
     "sessionSample": false
   },
   "restore": {
-    "checkedAt": "2026-09-05T08:36:15.334Z",
+    "checkedAt": "2026-09-08T10:33:08.815Z",
     "originalBytesRestored": true,
     "displacedVersionPreserved": true,
-    "historyEntryId": "E6cdf45eefb29",
+    "historyEntryId": "E1a86bb691ecc",
     "sha256": "d359422d94ff64f54a3420d8fc1bb32c9bc54f8ba36d1bd6fbd1df02059a0e9e",
     "reviewState": "undone"
   },
   "ownedServerClosed": true,
-  "completedAt": "2026-09-05T08:36:15.335Z"
+  "completedAt": "2026-09-08T10:33:08.816Z"
 }
