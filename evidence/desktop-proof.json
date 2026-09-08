@@ -1,23 +1,23 @@
 {
-  "checkedAt": "2026-09-08T12:49:28.283Z",
-  "executablePath": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
+  "checkedAt": "2026-09-08T15:15:15.317Z",
+  "executablePath": "F:\\Achilles\\diomedes-wt\\field\\release\\Diomedes-win32-x64\\Diomedes.exe",
   "startup": {
     "version": "0.1.0",
-    "executable": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
-    "pid": 42200,
-    "url": "http://127.0.0.1:54296",
-    "startedAt": "2026-09-08T12:49:24.258Z",
+    "executable": "F:\\Achilles\\diomedes-wt\\field\\release\\Diomedes-win32-x64\\Diomedes.exe",
+    "pid": 9156,
+    "url": "http://127.0.0.1:62551",
+    "startedAt": "2026-09-08T15:15:12.449Z",
     "packaged": true
   },
   "taskCount": 4,
   "fontSizes": {
     "before": {
-      ".rail-link": 36.5,
+      ".rail-link": 36,
       ".task-card .button": 36,
       ".task-card .caption.owner": 21
     },
     "after": {
-      ".rail-link": 45.234375,
+      ".rail-link": 44.625,
       ".task-card .button": 44.625,
       ".task-card .caption.owner": 26.03125
     }
@@ -35,13 +35,13 @@
         "requests": 2,
         "receipt": {
           "protocolVersion": 1,
-          "commandId": "9755fdfa-d55b-4683-871e-db60a9e1a86d",
+          "commandId": "acbebf73-fb19-4ab4-ad67-26a0c2cbfb7f",
           "payloadDigest": "sha256:fadcf63690b2b3db42ae6d4235215abcca34c2ec981e85fb099ae14967a4380b",
-          "projectId": "7c17fda7dc24",
+          "projectId": "d78ac75161f7",
           "taskId": "T1",
-          "sessionId": "S77d5c55ed2c2",
-          "eventId": "Ea80384c56a45",
-          "admittedAt": "2026-09-08T12:49:24.807Z",
+          "sessionId": "Sdf5f948010bc",
+          "eventId": "E2cd9b7824c75",
+          "admittedAt": "2026-09-08T15:15:13.017Z",
           "route": "sample",
           "scope": "local-prototype"
         }
@@ -51,13 +51,13 @@
         "requests": 2,
         "receipt": {
           "protocolVersion": 1,
-          "commandId": "fbc3f5fa-f40b-4433-b4c4-595eb6e1c190",
+          "commandId": "0b4381fe-16cf-4ef5-9935-d76993295fd9",
           "payloadDigest": "sha256:c54fc3a39939f69aa3a84c980ea9f1958fea1384906bab71ed501b1853d707f8",
-          "projectId": "7c17fda7dc24",
+          "projectId": "d78ac75161f7",
           "taskId": "T1",
-          "sessionId": "Sbe0bea8ad9a9",
-          "eventId": "E0028bd4286b9",
-          "admittedAt": "2026-09-08T12:49:26.348Z",
+          "sessionId": "S5ef9075fa5ba",
+          "eventId": "E3150ca3c924f",
+          "admittedAt": "2026-09-08T15:15:13.319Z",
           "route": "sample",
           "scope": "local-prototype"
         }
