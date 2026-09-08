@@ -27,6 +27,8 @@ import { Console } from './Console';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
 import { Workspace } from './Workspace';
+import { Wake } from './console/Wake';
+import { useWake } from './console/useWake';
 
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -40,6 +42,7 @@ export function App() {
   const [helpersRequest, setHelpersRequest] = useState(0);
   const [error, setError] = useState('');
   const [online, setOnline] = useState(true);
+  const [initialLoaded, setInitialLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [projectDialog, setProjectDialog] = useState<'new' | 'open' | null>(null);
   const [projectName, setProjectName] = useState('');
@@ -93,28 +96,31 @@ export function App() {
       setBusy(false);
     }
   }
-  useEffect(() => {
-    void (async () => {
-      try {
-        const [s, p] = await Promise.all([
-          api<Settings>('/settings'),
-          api<{ projects: Project[] }>('/projects'),
-        ]);
-        setSettings(s);
-        setProjects(p.projects);
-        const id = s.openProjects.at(-1);
-        if (id && p.projects.some((x) => x.id === id)) {
-          setSelected(id);
-          setPage(s.lastPage[id] ?? 'home');
-        }
-        void refreshIntegrations();
-        void refreshUsage();
-      } catch (e) {
-        setOnline(false);
-        report(e);
+  const loadInitial = useCallback(async () => {
+    try {
+      const [s, p] = await Promise.all([
+        api<Settings>('/settings'),
+        api<{ projects: Project[] }>('/projects'),
+      ]);
+      setSettings(s);
+      setProjects(p.projects);
+      setInitialLoaded(true);
+      setOnline(true);
+      const id = s.openProjects.at(-1);
+      if (id && p.projects.some((x) => x.id === id)) {
+        setSelected(id);
+        setPage(s.lastPage[id] ?? 'home');
       }
-    })();
+      void refreshIntegrations();
+      void refreshUsage();
+    } catch (e) {
+      setOnline(false);
+      report(e);
+    }
   }, [refreshIntegrations, refreshUsage, report]);
+  useEffect(() => {
+    void loadInitial();
+  }, [loadInitial]);
   useEffect(() => {
     const es = new EventSource('/api/events');
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -295,16 +301,43 @@ export function App() {
           ? ''
           : 'Ready when you are.';
 
+  const loaded = settings !== null && initialLoaded;
+  const reduced =
+    settings?.appearance.motion === 'reduced' ||
+    (typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const wake = useWake({ loaded, online, reduced, firstOpen: true });
+  const retryInitial = useCallback(() => {
+    setError('');
+    void loadInitial();
+  }, [loadInitial]);
+  // The wake sits above everything; the team count arrives in a later pass.
+  const wakeLayer = wake.show ? (
+    <Wake
+      short={wake.short}
+      failed={wake.failed}
+      projects={projects.length}
+      reduced={reduced}
+      onDone={wake.done}
+      onRetry={retryInitial}
+    />
+  ) : null;
+
   if (!settings)
     return (
-      <div className="initial-state">
-        <Brand />
-        <p className="prose">{error || 'Opening your workbook...'}</p>
-        {error && <Button onClick={() => location.reload()}>Try again</Button>}
-      </div>
+      <>
+        {wakeLayer}
+        <div className="initial-state">
+          <Brand />
+          <p className="prose">{error || 'Opening your workbook...'}</p>
+          {error && <Button onClick={() => location.reload()}>Try again</Button>}
+        </div>
+      </>
     );
   return (
     <>
+      {wakeLayer}
       <div className="app">
         {settings.onboarding.resumeAt !== 'done' ? (
           <Setup settings={settings} save={saveSettings} busy={busy} />

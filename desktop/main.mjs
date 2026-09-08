@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, Menu } from 'electron';
 import { createServer } from 'node:http';
 import fs from 'node:fs/promises';
+import { watch } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,6 +17,65 @@ let server;
 let service;
 let shuttingDown = false;
 let releaseLock;
+
+// Field colour schemes as [chrome, t1] pairs for the titlebar overlay.
+// `cobalt` is retired and reads as `harbor` for saved settings.
+const FIELD_TITLEBAR = {
+  field: ['#121417', '#e6e9ed'],
+  'deep-field': ['#0c1220', '#e8edf5'],
+  graphite: ['#151515', '#ebe9e6'],
+  verdigris: ['#0a1716', '#e4efeb'],
+  harbor: ['#0d1020', '#e7e9f2'],
+  cobalt: ['#0d1020', '#e7e9f2'],
+  ember: ['#171311', '#ede7e2'],
+  moss: ['#111410', '#e7eae3'],
+  dusk: ['#151219', '#ebe6ef'],
+  ink: ['#0a0a0b', '#f2f2f2'],
+  paper: ['#f3f4f6', '#1a1d21'],
+};
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+function titleBarFor(packageId) {
+  const id = packageId === 'cobalt' ? 'harbor' : packageId;
+  const entry = FIELD_TITLEBAR[id] ?? FIELD_TITLEBAR.field;
+  const [color, symbolColor] = entry;
+  if (!HEX_COLOR.test(color) || !HEX_COLOR.test(symbolColor))
+    return { color: '#121417', symbolColor: '#e6e9ed', height: 46 };
+  return { color, symbolColor, height: 46 };
+}
+
+// The service persists settings at settings.json in the data dir
+// (see server/store.ts). Read the saved appearance once, then re-apply
+// when it changes. No IPC or preload: this stays in the shell.
+async function applyTitleBarOverlay() {
+  if (!window || window.isDestroyed()) return;
+  try {
+    const raw = await fs.readFile(path.join(dataDir, 'settings.json'), 'utf8');
+    const settings = JSON.parse(raw);
+    window.setTitleBarOverlay(titleBarFor(settings?.appearance?.package));
+  } catch {
+    // Missing file, unparsable JSON, or unknown id: keep the default overlay.
+  }
+}
+
+function watchSettingsForTitleBar() {
+  let timer = null;
+  const schedule = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      void applyTitleBarOverlay();
+    }, 150);
+  };
+  try {
+    const watcher = watch(dataDir, (_event, filename) => {
+      if (!filename || filename === 'settings.json') schedule();
+    });
+    watcher.on('error', () => {});
+  } catch {
+    // Watching is best-effort; the default overlay stays if it fails.
+  }
+}
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -79,10 +139,10 @@ if (!app.requestSingleInstanceLock()) {
         minWidth: 800,
         minHeight: 600,
         title: 'Diomedes',
-        backgroundColor: '#222d39',
+        backgroundColor: '#16191d',
         show: false,
         titleBarStyle: 'hidden',
-        titleBarOverlay: { color: '#17212e', symbolColor: '#eaeff3', height: 46 },
+        titleBarOverlay: { color: '#121417', symbolColor: '#e6e9ed', height: 46 },
         autoHideMenuBar: true,
         webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
       });
@@ -122,6 +182,8 @@ if (!app.requestSingleInstanceLock()) {
       );
       window.once('ready-to-show', () => window.show());
       await window.loadURL(url);
+      await applyTitleBarOverlay();
+      watchSettingsForTitleBar();
       await fs.mkdir(dataDir, { recursive: true });
       await fs.writeFile(
         path.join(dataDir, 'desktop-startup.json'),
