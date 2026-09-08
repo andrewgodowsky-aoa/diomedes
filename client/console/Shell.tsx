@@ -30,9 +30,11 @@ import { BoardView } from './BoardView';
 import { TeamView } from './TeamView';
 import { Palette } from './Palette';
 import { applyQuery, buildEntries, type PaletteContext } from './paletteEntries';
+import { useTravelOnView } from './motion';
 import type { ShellView } from './types';
 import './console.css';
 import './palette.css';
+import './motion.css';
 
 interface ShellProps {
   projectId: string;
@@ -96,6 +98,8 @@ export function Shell({
   // The member a palette Message picked. The lane view has no composer yet,
   // so opening Team records the target here for the pass that adds one.
   const teamTarget = useRef<Slot | null>(null);
+  // The console root the travelling point lives in (motion.ts appends it here).
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const currentId = useRef(projectId);
   currentId.current = projectId;
   const base = `/projects/${projectId}`;
@@ -214,6 +218,10 @@ export function Shell({
   const taskOf = (thread: Conversation | null) =>
     thread?.taskId ? (state?.tasks.find((t) => t.id === thread.taskId) ?? null) : null;
   const selectedTask = taskOf(selected);
+  // Thread -> Board -> Team -> Thread continuity: one travelling point
+  // between the views' anchors (kind `screen`, 260 ms). Enter and every
+  // board/team action resolve without waiting on it.
+  useTravelOnView(view, selectedTask?.id ?? null, rootRef);
   const selectedSessions = selectedTask
     ? sessions.filter((s) => s.taskId === selectedTask.id)
     : [];
@@ -496,7 +504,7 @@ export function Shell({
   const paletteEntries = (query: string) => applyQuery(buildEntries(paletteCtx), query);
 
   return (
-    <div className={`console ${!online ? 'disconnected' : ''}`}>
+    <div ref={rootRef} className={`console ${!online ? 'disconnected' : ''}`}>
       <header className="top">
         <Mark />
         <nav className="crumb" aria-label="Open projects">

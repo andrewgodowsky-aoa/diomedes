@@ -677,7 +677,7 @@ html[data-surface='console'] body {
   display: flex;
   align-items: center;
   gap: 4px;
-  transition: transform var(--move) var(--ease);
+  /* No transition: motion.ts springs this on the Web Animations API. */
   pointer-events: none;
 }
 .console .modes .ind i {
@@ -693,7 +693,7 @@ html[data-surface='console'] body {
   transform-origin: left center;
   transform: scaleX(0);
   background: var(--light);
-  transition: transform var(--move) var(--ease);
+  /* No transition: motion.ts springs this on the Web Animations API. */
 }
 .console .modes .ind b.dash {
   background: repeating-linear-gradient(90deg, var(--light) 0 3px, transparent 3px 6px);

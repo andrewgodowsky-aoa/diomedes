@@ -24,6 +24,7 @@ import {
   titleCase,
 } from './components';
 import { Shell } from './console/Shell';
+import { MarkGlyph } from './console/Mark';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
 import { Workspace } from './Workspace';
@@ -362,6 +363,7 @@ export function App() {
                 }}
                 aria-label="Diomedes projects"
               >
+                <MarkGlyph size={18} />
                 <Brand />
               </button>
               <nav className="project-tabs" aria-label="Open projects">
@@ -696,21 +698,21 @@ export function App() {
                         <>
                           <div className="intent-rail">
                             <button className="intent" onClick={() => setProjectDialog('new')}>
-                              <span className="square" aria-hidden="true" />
+                              <span className="pt" aria-hidden="true" />
                               <span>
                                 <strong>New project</strong>
                                 <span>Start from an empty folder.</span>
                               </span>
                             </button>
                             <button className="intent" onClick={() => setProjectDialog('open')}>
-                              <span className="square" aria-hidden="true" />
+                              <span className="pt" aria-hidden="true" />
                               <span>
                                 <strong>Open a folder as a project</strong>
                                 <span>Use documents you already have.</span>
                               </span>
                             </button>
                             <button className="intent" onClick={() => void sampleProject()}>
-                              <span className="square" aria-hidden="true" />
+                              <span className="pt" aria-hidden="true" />
                               <span>
                                 <strong>Try the sample project</strong>
                                 <span>Three example documents. Sample work stays on this computer.</span>

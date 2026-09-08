@@ -432,11 +432,10 @@ export function SettingsPage({
                           }
                         />
                         <span
-                          className="palette-swatch"
+                          className="palette-dot"
+                          aria-hidden="true"
                           style={
                             {
-                              '--sw-chrome': s.chrome,
-                              '--sw-surface': s.surface,
                               '--sw-light': s.light,
                             } as CSSProperties
                           }

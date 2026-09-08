@@ -150,7 +150,11 @@ export function ThreadView({
       node: (
         <div className="exchange" key={`ex-${i}`}>
           {group.map((t) => (
-            <div className={`turn ${t.role === 'you' ? 'you' : 'dio'}`} key={t.id || `${thread.id}:${i}`}>
+            <div
+              className={`turn ${t.role === 'you' ? 'you' : 'dio'}`}
+              key={t.id || `${thread.id}:${i}`}
+              data-thread-point={t.role === 'diomedes' ? '' : undefined}
+            >
               <div className="who">
                 <b>{t.role === 'you' ? 'You' : 'Diomedes'}</b>
                 <span className="mono">{time(t.at).toLowerCase()}</span>
@@ -312,7 +316,7 @@ export function ThreadView({
             </div>
           ))}
           {!thread.turns.length && !live && (
-            <div className="greeting">
+            <div className="greeting" data-thread-point>
               <p>A new thread.</p>
               <p>Ask, or choose Plan, Build or Fix below. Nothing changes until you say so.</p>
             </div>

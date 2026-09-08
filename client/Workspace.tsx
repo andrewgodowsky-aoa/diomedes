@@ -1235,7 +1235,7 @@ export function Workspace({
                                 go(intent as Page);
                               }}
                             >
-                              <span className="square" aria-hidden="true" />
+                              <span className="pt" aria-hidden="true" />
                               <span>
                                 <strong>{title}</strong>
                                 <span>{line}</span>
@@ -1396,9 +1396,11 @@ export function Workspace({
                             className={`console-thread ${c.id === selectedThreadId ? 'open' : ''}`}
                             onClick={() => setThreadId(c.id)}
                           >
-                            <span className="console-thread-name">{threadName(c, state)}</span>
+                            <span className="console-thread-row">
+                              <span className="console-thread-name">{threadName(c, state)}</span>
+                              <span className="caption thread-meta">{threadMeta(c)}</span>
+                            </span>
                             <ModeChip mode={c.mode ?? 'ask'} />
-                            <span className="caption">{threadMeta(c)}</span>
                           </button>
                         ))}
                       </section>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Slot, Task, TeamMember } from '../../shared/types';
 import type { BoardProps } from './types';
+import { travel } from './motion';
 import './board.css';
 
 type Column = 'Ready' | 'Working' | 'Review' | 'Blocked' | 'Done';
@@ -27,6 +28,16 @@ function columnOf(task: Task): Column {
   if (task.state === 'done') return 'Done';
   if (task.reason === 'needs-ok' || task.reason === 'changes-ready') return 'Review';
   return 'Blocked';
+}
+
+function selForTask(taskId: string): string {
+  try {
+    const esc = (CSS as unknown as { escape?: (value: string) => string }).escape;
+    if (typeof esc === 'function') return `[data-task-point="${esc(taskId)}"]`;
+  } catch {
+    // Fall through to the raw id; the query simply misses.
+  }
+  return `[data-task-point="${taskId}"]`;
 }
 
 function pointClass(column: Column): string {
@@ -75,6 +86,18 @@ export function BoardView({
   const [routeId, setRouteId] = useState<string | null>(null);
   const [arrived, setArrived] = useState<ReadonlySet<string>>(new Set());
   const prevCol = useRef(new Map<string, Column>());
+  // The row's point rect and column before a board action. After the Shell's
+  // handler resolves and the row has re-rendered in its new column, the point
+  // travels to it; the `arrived` fade above still plays. If the row never
+  // left its column (a failed or approval-gated start), no trip runs: motion
+  // only explains movement that happened.
+  const pendingTravel = useRef<{
+    id: string;
+    from: { x: number; y: number };
+    kind: string;
+    ms: number;
+    column: Column;
+  } | null>(null);
 
   const effective = onPolicyChange ? policy : localPolicy;
   useEffect(() => {
@@ -99,6 +122,27 @@ export function BoardView({
     return () => clearTimeout(timer);
   }, [tasks]);
 
+  // A board action resolved above: fly the remembered point to the row's new
+  // home, but only when the row actually changed column. Start 280 ms,
+  // Route to 420 ms (the one board handoff), Review 220 ms.
+  useEffect(() => {
+    const p = pendingTravel.current;
+    if (!p) return;
+    pendingTravel.current = null;
+    const task = tasks.find((t) => t.id === p.id);
+    if (!task || columnOf(task) === p.column) return;
+    const sel = selForTask(p.id);
+    requestAnimationFrame(() => {
+      try {
+        const to = document.querySelector(sel);
+        if (!to) return;
+        travel(p.from, to, p.kind, p.ms);
+      } catch {
+        // Motion never breaks the board.
+      }
+    });
+  }, [tasks]);
+
   const members = state.team?.members ?? [];
   const changes = state.changes ?? [];
   const workingCount = tasks.filter((t) => columnOf(t) === 'Working').length;
@@ -107,6 +151,39 @@ export function BoardView({
   function pickPolicy(next: 'first' | 'go') {
     setLocalPolicy(next);
     if (onPolicyChange) onPolicyChange(next);
+  }
+
+  function noteTravel(task: Task, kind: string, ms: number) {
+    try {
+      const el = document.querySelector(selForTask(task.id));
+      if (!el) {
+        pendingTravel.current = null;
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      pendingTravel.current = {
+        id: task.id,
+        from: { x: r.left + r.width / 2, y: r.top + r.height / 2 },
+        kind,
+        ms,
+        column: columnOf(task),
+      };
+    } catch {
+      pendingTravel.current = null;
+    }
+  }
+
+  async function handleStart(task: Task): Promise<void> {
+    noteTravel(task, 'start', 280);
+    await onStart(task);
+  }
+  async function handleRoute(task: Task, to: Slot): Promise<void> {
+    noteTravel(task, 'route', 420);
+    await onRoute(task, to);
+  }
+  function handleReview(task: Task): void {
+    noteTravel(task, 'review', 220);
+    onReview(task);
   }
 
   function closeInline() {
@@ -192,10 +269,10 @@ export function BoardView({
                     }
                     onToggleRoute={() => setRouteId(routeId === task.id ? null : task.id)}
                     onCloseInline={closeInline}
-                    onStart={onStart}
+                    onStart={handleStart}
                     onPause={onPause}
-                    onReview={onReview}
-                    onRoute={onRoute}
+                    onReview={handleReview}
+                    onRoute={handleRoute}
                     onReopen={onReopen}
                     onOpenTeam={onOpenTeam}
                     onOpenThread={onOpenThread}

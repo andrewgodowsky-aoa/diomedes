@@ -1,0 +1,53 @@
+/* The Living Thread motion language (field 4a): 1:1 with the `.traveller`
+   and `.landed` CSS of 05-instrumented-density-prototype.html. Every rule is
+   prefixed with `.console`; tokens only, transform and opacity only. Travel
+   itself runs on the Web Animations API in motion.ts; this file only places
+   the dot and pulses the landing. */
+.console .traveller {
+  position: fixed;
+  left: 0;
+  top: 0;
+  /* Below the palette veil (z 5), above everything else in the console; ties
+     with the toast (z 4) win by DOM order because the dot is appended last. */
+  z-index: 4;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: var(--light);
+  pointer-events: none;
+}
+/* The landing pulse: a 1.25 scale on the point over 180 ms, then back. */
+.console .pt.landed {
+  animation: motionland 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes motionland {
+  0% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Reduced motion keeps the fade and the state change and drops the travel. */
+html[data-motion='reduced'] .console .traveller {
+  display: none;
+}
+html[data-motion='reduced'] .console .pt.landed {
+  animation: none;
+}
+html[data-motion='reduced'] .console .crow.arrived {
+  animation-duration: 120ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .console .traveller {
+    display: none;
+  }
+  .console .pt.landed {
+    animation: none;
+  }
+  .console .crow.arrived {
+    animation-duration: 120ms;
+  }
+}

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Conversation, Mode, TeamMember } from '../../shared/types';
+import { reducedMotion, spring } from './motion';
 
 const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
 const CAPS: Record<Mode, string> = {
@@ -79,18 +80,106 @@ export function Composer({
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
   }, [text]);
+  // The mode strip's point rides a small spring (stiffness 210, damping 22,
+  // settles under 300 ms) and its line scales, never resizes. Interruptible:
+  // a new mode cancels the running animation and springs from the current
+  // computed position. The CSS transition this replaces is removed in
+  // console.css; motion.ts owns the movement now.
+  const indAnim = useRef<Animation | null>(null);
+  const lineAnim = useRef<Animation | null>(null);
+  const indX = useRef<number | null>(null);
+  const lineS = useRef<number | null>(null);
   useLayoutEffect(() => {
     const active = mode === 'ask' || mode === 'plan' || mode === 'build' || mode === 'fix'
       ? buttons.current.get(toTeam ? 'team' : mode)
       : undefined;
     const bar = ind.current;
     if (!active || !bar) return;
-    bar.style.transform = `translateX(${active.offsetLeft + 10}px)`;
+    const toX = active.offsetLeft + 10;
     const [width, dashed] = toTeam ? [0, false] : LINE_FOR[mode];
-    if (line.current) {
-      line.current.style.transform = `scaleX(${width / 34})`;
-      line.current.classList.toggle('dash', dashed);
+    const toS = width / 34;
+    const rail = line.current;
+    if (rail) rail.classList.toggle('dash', dashed);
+    if (indX.current === toX && lineS.current === toS) return;
+    if (reducedMotion() || indX.current === null) {
+      bar.style.transform = `translateX(${toX}px)`;
+      if (rail) rail.style.transform = `scaleX(${toS})`;
+      indX.current = toX;
+      lineS.current = toS;
+      return;
     }
+    // Read the current computed position first, then cancel: the spring
+    // starts where the eye is, not where the last trip was heading.
+    let curX = indX.current;
+    try {
+      const m = new DOMMatrix(getComputedStyle(bar).transform);
+      if (Number.isFinite(m.m41)) curX = m.m41;
+    } catch {
+      // Keep the last target; the spring still lands true.
+    }
+    let curS = lineS.current ?? 0;
+    try {
+      if (rail) {
+        const ml = new DOMMatrix(getComputedStyle(rail).transform);
+        if (Number.isFinite(ml.m11)) curS = ml.m11;
+      }
+    } catch {
+      // Keep the last scale; the spring still lands true.
+    }
+    try {
+      indAnim.current?.cancel();
+    } catch {
+      // The previous run already finished; the new trip still starts.
+    }
+    try {
+      lineAnim.current?.cancel();
+    } catch {
+      // The previous run already finished; the new trip still starts.
+    }
+    indAnim.current = null;
+    lineAnim.current = null;
+    const fx = spring(curX, toX);
+    const move = bar.animate(
+      fx.map((x) => ({ transform: `translateX(${x}px)` })),
+      {
+        duration: Math.max(1, Math.round((fx.length * 1000) / 120)),
+        easing: 'linear',
+        fill: 'forwards',
+      },
+    );
+    indAnim.current = move;
+    move.onfinish = () => {
+      bar.style.transform = `translateX(${toX}px)`;
+      try {
+        move.cancel();
+      } catch {
+        // Already done; the end state is committed above.
+      }
+      if (indAnim.current === move) indAnim.current = null;
+    };
+    if (rail) {
+      const fs = spring(curS, toS);
+      const grow = rail.animate(
+        fs.map((s) => ({ transform: `scaleX(${s})` })),
+        {
+          duration: Math.max(1, Math.round((fs.length * 1000) / 120)),
+          easing: 'linear',
+          fill: 'forwards',
+        },
+      );
+      lineAnim.current = grow;
+      grow.onfinish = () => {
+        rail.style.transform = `scaleX(${toS})`;
+        try {
+          grow.cancel();
+        } catch {
+          // Already done; the end state is committed above.
+        }
+        if (lineAnim.current === grow) lineAnim.current = null;
+      };
+    }
+    indX.current = toX;
+    lineS.current = toS;
   }, [mode, toTeam, member]);
 
   function submit() {

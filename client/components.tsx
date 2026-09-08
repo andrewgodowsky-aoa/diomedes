@@ -67,7 +67,6 @@ export function Brand() {
   return (
     <span className="brand">
       <span>DIOMEDES</span>
-      <i aria-hidden="true" />
     </span>
   );
 }
