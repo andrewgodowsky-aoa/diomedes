@@ -1,0 +1,1164 @@
+/* The Field shell: 1:1 with 05-instrumented-density-prototype.html.
+   Every rule is prefixed with `.console`; the prototype's `.app` grid is the
+   `.console` root. Tokens come from client/styles.css `:root`. No gradients,
+   no shadows except the picker menu and palette, radii 6/5 px only, glow only
+   on the live point. */
+html[data-surface='console'] body {
+  background: var(--chrome);
+}
+.console {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 40px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  background: var(--chrome);
+  color: var(--t1);
+  font: 400 13px/1.5 var(--ui);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+.console button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.console button:focus-visible,
+.console textarea:focus-visible,
+.console input:focus-visible,
+.console select:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 2px;
+}
+.console textarea,
+.console input {
+  caret-color: var(--light);
+}
+.console .mono.lc,
+.console .lc {
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+.console .mono {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
+}
+.console .mono.lc {
+  text-transform: none;
+  letter-spacing: 0.01em;
+  font-size: 11.5px;
+}
+.console .pt {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--t3);
+  vertical-align: -1px;
+  flex: none;
+}
+.console .pt.done {
+  background: var(--t2);
+  border-color: var(--t2);
+}
+.console .pt.live {
+  background: var(--light);
+  border-color: var(--light);
+  box-shadow: 0 0 4px rgba(63, 214, 223, 0.35);
+}
+.console .pt.attn {
+  background: var(--attn);
+  border-color: var(--attn);
+}
+.console .pt.fail {
+  background: var(--fail);
+  border-color: var(--fail);
+}
+
+/* resets: the app stylesheet styles bare `.turn`, `.rail`, `.composer` and
+   `.composer > textarea` for the Workbook; the shell reclaims them */
+.console .turn {
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.console .turn.you {
+  border-left: 0;
+  padding-left: 0;
+  font-size: inherit;
+}
+.console .rail {
+  padding: 0;
+  overflow: visible;
+}
+.console .composer {
+  margin: 0;
+}
+.console .composer > textarea {
+  height: auto;
+}
+.console .ledger .ev li.quiet {
+  grid-template-columns: 1fr;
+}
+
+/* ---- frame ---- */
+.console .top {
+  display: grid;
+  grid-template-columns: 232px 1fr max-content;
+  align-items: center;
+  border-bottom: 1px solid var(--hair);
+  -webkit-app-region: drag;
+  app-region: drag;
+  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+.console .top button,
+.console .top a,
+.console .top input,
+.console .top select,
+.console .top textarea,
+.console .top [role='button'] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+.console .top .dm-mark {
+  padding: 0 16px;
+}
+.console .crumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 56px;
+  color: var(--t3);
+  min-width: 0;
+  overflow: hidden;
+}
+.console .crumb button {
+  padding: 3px 6px;
+  border-radius: var(--rb);
+  white-space: nowrap;
+  color: var(--t3);
+}
+.console .crumb button:hover {
+  background: var(--raised);
+}
+.console .crumb button.on {
+  color: var(--t1);
+  font-weight: 500;
+}
+.console .top-right {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 18px;
+  padding: 0 16px;
+  white-space: nowrap;
+}
+.console .top-right .link {
+  cursor: pointer;
+}
+.console .top-right .link:hover {
+  color: var(--t2);
+}
+.console .stage {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  min-height: 0;
+}
+
+/* ---- rail with the spine ---- */
+.console .rail {
+  border-right: 1px solid var(--hair);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--chrome);
+}
+.console .rail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 14px 16px 6px;
+}
+.console .rail-head h2 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.console .rail-head button {
+  color: var(--t3);
+  font-size: 12px;
+}
+.console .rail-head button:hover {
+  color: var(--t1);
+}
+.console .spine {
+  position: relative;
+  margin: 0;
+  padding: 0 8px 0 0;
+  list-style: none;
+}
+.console .spine::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--hair-2);
+}
+.console .spine li {
+  position: relative;
+}
+.console .spine .gp {
+  position: absolute;
+  left: 12.5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--light);
+  transition: top var(--move) var(--ease);
+  z-index: 1;
+}
+.console .spine button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px 7px 30px;
+  border-radius: 0 var(--rb) var(--rb) 0;
+  color: var(--t2);
+  transition:
+    background var(--quick),
+    color var(--quick);
+}
+.console .spine button:hover {
+  background: var(--raised);
+  color: var(--t1);
+}
+.console .spine button.on {
+  color: var(--t1);
+}
+.console .spine .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+.console .spine .row .nm {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .spine .row .when {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.console .spine small {
+  display: block;
+  color: var(--t3);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.console .spine .tick {
+  position: absolute;
+  left: 16px;
+  top: 15px;
+  width: 6px;
+  height: 1px;
+  background: var(--hair-2);
+}
+.console .rail .views {
+  margin-top: 18px;
+  padding: 10px 8px 0;
+  border-top: 1px solid var(--hair);
+}
+.console .rail .views button,
+.console .rail .foot button {
+  display: flex;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px 6px 12px;
+  color: var(--t2);
+  border-radius: var(--rb);
+  gap: 10px;
+  align-items: baseline;
+}
+.console .rail .views button:hover,
+.console .rail .foot button:hover {
+  background: var(--raised);
+  color: var(--t1);
+}
+.console .rail .views button.on {
+  color: var(--t1);
+  background: var(--surface);
+}
+.console .rail .views button .mono {
+  margin-left: auto;
+}
+.console .rail .foot {
+  margin-top: auto;
+  padding: 10px 8px 12px;
+  border-top: 1px solid var(--hair);
+}
+
+/* ---- screens ---- */
+.console .screen {
+  display: none;
+  min-height: 0;
+}
+.console .screen.on {
+  display: grid;
+}
+.console #scrThread {
+  grid-template-columns: minmax(0, 1fr) 296px;
+}
+.console .work {
+  background: var(--surface);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  min-height: 0;
+}
+.console .col {
+  max-width: 760px;
+  margin-left: 56px;
+  padding-right: 24px;
+}
+.console .head {
+  padding: 26px 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+}
+.console .head h1 {
+  margin: 0;
+  font: 500 18px/1.25 var(--ui);
+  cursor: pointer;
+}
+/* instrumentation lives on one mono line under the title, never inside the conversation */
+.console .instr {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 6px 0 12px;
+  border-bottom: 1px solid var(--hair);
+  font: 400 11px/1.6 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
+}
+.console .instr .lc {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.console .instr b {
+  color: var(--t2);
+  font-weight: 500;
+}
+.console .instr .st {
+  color: var(--light);
+}
+.console .instr .st.attn {
+  color: var(--attn);
+}
+.console .instr .st.quiet {
+  color: var(--t3);
+}
+.console .instr button {
+  color: var(--t3);
+  font: inherit;
+  border-bottom: 1px solid var(--hair-2);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.console .instr button:hover {
+  color: var(--t1);
+}
+.console .instr .grow {
+  flex: 1;
+}
+.console .seg {
+  display: inline-flex;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  overflow: hidden;
+  margin-left: auto;
+}
+.console .seg button {
+  padding: 3px 9px;
+  font-size: 12px;
+  color: var(--t3);
+}
+.console .seg button + button {
+  border-left: 1px solid var(--hair-2);
+}
+.console .seg button.on {
+  color: var(--t1);
+  background: var(--raised);
+}
+.console .transcript {
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hair-2) transparent;
+}
+.console .transcript .col {
+  padding-bottom: 28px;
+  position: relative;
+}
+.console .exchange {
+  position: relative;
+  padding: 16px 0 18px;
+}
+.console .exchange::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: var(--hair);
+}
+.console .exchange:first-child::before {
+  display: none;
+}
+.console .exchange:first-child {
+  padding-top: 6px;
+}
+.console .turn {
+  position: relative;
+  max-width: 68ch;
+}
+.console .turn + .turn {
+  margin-top: 14px;
+}
+.console .record {
+  position: relative;
+  margin: 4px 0 8px;
+  padding: 2px 0 2px 10px;
+  border-left: 1px solid var(--hair-2);
+  font: 400 11.5px/1.7 var(--mono);
+  color: var(--t3);
+  white-space: pre-wrap;
+}
+.console .record i {
+  color: var(--light);
+  font-style: normal;
+}
+.console .record b {
+  color: var(--t2);
+  font-weight: 500;
+}
+.console .record.open.live::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--light);
+  box-shadow: 0 0 6px rgba(63, 214, 223, 0.6);
+}
+.console .record .ms {
+  color: var(--t3);
+}
+.console .record button {
+  color: var(--t3);
+  font: inherit;
+  border-bottom: 1px solid var(--hair-2);
+  cursor: pointer;
+}
+.console .record button:hover {
+  color: var(--t1);
+}
+.console .turn.dio::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--t2);
+}
+.console .turn.dio.live::before {
+  background: var(--light);
+  box-shadow: 0 0 6px rgba(63, 214, 223, 0.6);
+}
+.console .who {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.console .who b {
+  font-weight: 500;
+  font-size: 12.5px;
+  color: var(--t2);
+}
+.console .who .mono,
+.console .who .tools {
+  opacity: 0;
+  transition: opacity var(--quick);
+}
+.console .turn:focus-within .who .mono,
+.console .turn:focus-within .who .tools {
+  opacity: 1;
+}
+.console .who .mono {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.console .who .tools {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+}
+.console .who .tools button {
+  color: var(--t3);
+  font-size: 12px;
+}
+.console .who .tools button:hover {
+  color: var(--t1);
+}
+.console .turn:hover .who .mono,
+.console .turn:hover .who .tools {
+  opacity: 1;
+}
+.console .body {
+  font-size: 16px;
+  line-height: 1.65;
+}
+.console .turn.you .body {
+  color: #d3d9e0;
+}
+.console .body p {
+  margin: 0 0 8px;
+}
+.console .body p:last-child {
+  margin: 0;
+}
+.console .greeting {
+  padding: 48px 0 0;
+  max-width: 46ch;
+}
+.console .greeting p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--t2);
+}
+.console .greeting p:first-child {
+  color: var(--t1);
+  font-weight: 500;
+}
+.console .greeting .mono {
+  display: block;
+  margin-top: 14px;
+}
+.console .caret {
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  background: var(--light);
+  vertical-align: -2px;
+  animation: blink 1s steps(2) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+.console .proposal {
+  margin-top: 12px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--r);
+  font-size: 13px;
+}
+
+.console .compose {
+  padding: 0 0 20px;
+}
+.console .composer {
+  border: 1px solid var(--hair-2);
+  border-radius: var(--r);
+  background: var(--raised);
+  transition: border-color var(--quick);
+}
+.console .composer:focus-within {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.console .composer textarea {
+  display: block;
+  width: 100%;
+  resize: none;
+  background: transparent;
+  border: 0;
+  color: var(--t1);
+  font: 400 15px/1.55 var(--ui);
+  padding: 11px 14px 4px;
+  min-height: 42px;
+  max-height: 220px;
+  outline: none;
+}
+.console .composer textarea::placeholder {
+  color: var(--t3);
+}
+.console .aux {
+  display: none;
+  gap: 10px;
+  padding: 4px 14px 8px;
+  color: var(--t3);
+  font-size: 12.5px;
+  align-items: center;
+}
+.console .aux.show {
+  display: flex;
+}
+.console .aux select {
+  background: var(--surface);
+  color: var(--t1);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 12.5px;
+}
+.console .bar {
+  display: flex;
+  align-items: center;
+  padding: 0 8px 0 4px;
+  border-top: 1px solid var(--hair);
+}
+.console .modes {
+  position: relative;
+  display: flex;
+  gap: 2px;
+}
+.console .modes button {
+  padding: 11px 10px 12px;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--t3);
+  transition: color var(--quick);
+}
+.console .modes button:hover {
+  color: var(--t2);
+}
+.console .modes button.on {
+  color: var(--t1);
+}
+.console .modes .ind {
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  height: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: transform var(--move) var(--ease);
+  pointer-events: none;
+}
+.console .modes .ind i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--light);
+  flex: none;
+}
+.console .modes .ind b {
+  height: 1px;
+  width: 34px;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: var(--light);
+  transition: transform var(--move) var(--ease);
+}
+.console .modes .ind b.dash {
+  background: repeating-linear-gradient(90deg, var(--light) 0 3px, transparent 3px 6px);
+}
+.console .bar .cap {
+  margin-left: 14px;
+  color: var(--t3);
+  font-size: 12px;
+}
+.console .bar .send {
+  margin-left: auto;
+  padding: 5px 10px;
+  border-radius: var(--rb);
+  color: var(--t3);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.console .bar .send[aria-disabled='true'] {
+  cursor: default;
+}
+.console .bar .send.ready {
+  color: var(--light);
+}
+.console .bar .send.ready:hover {
+  background: rgba(63, 214, 223, 0.08);
+}
+.console .bar .hint {
+  color: var(--t3);
+  font-size: 11.5px;
+  margin-left: 10px;
+}
+
+/* ---- ledger ---- */
+.console .ledger {
+  border-left: 1px solid var(--hair);
+  padding: 22px 18px 16px 20px;
+  overflow-y: auto;
+  min-height: 0;
+  background: var(--chrome);
+}
+.console .ledger h2 {
+  margin: 0;
+  font: 500 11px/1.4 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.console .ledger .sub {
+  color: var(--t3);
+  font-size: 12px;
+  margin: 3px 0 0;
+}
+/* hierarchy by type and hairline weight: the thread's own work leads, section labels recede to mono */
+.console .ledger .focus {
+  margin-top: 16px;
+  padding: 12px 0 2px;
+  border-top: 1px solid var(--hair-2);
+}
+.console .ledger .focus .t {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--t1);
+}
+.console .ledger .focus .t .pt {
+  align-self: center;
+}
+.console .ledger .focus .m {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin: 3px 0 0 18px;
+  color: var(--t3);
+  font-size: 12px;
+}
+.console .ledger .focus .m .mono {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.console .ledger .focus .m button {
+  color: var(--t3);
+  font-size: 12px;
+  border-bottom: 1px solid var(--hair-2);
+}
+.console .ledger .focus .m button:hover {
+  color: var(--t1);
+}
+.console .ledger section {
+  border-top: 1px solid var(--hair);
+  margin-top: 18px;
+  padding-top: 12px;
+  transition: opacity var(--move);
+}
+.console .ledger section.dim {
+  opacity: 0.55;
+}
+.console .ledger h3 {
+  margin: 0 0 8px;
+  font: 500 11px/1.4 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t3);
+  display: flex;
+}
+.console .ledger h3 .mono {
+  margin-left: auto;
+}
+.console .ledger ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.console .ledger li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  gap: 0 8px;
+  align-items: baseline;
+  padding: 5px 0;
+  font-size: 13px;
+  color: var(--t1);
+}
+.console .ledger li .mono {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.console .ledger li .sub {
+  grid-column: 2 / -1;
+  font-size: 12px;
+  color: var(--t3);
+}
+.console .ledger li.quiet {
+  color: var(--t3);
+  grid-template-columns: 1fr;
+}
+.console .ledger li button {
+  color: var(--attn);
+  font-size: 12.5px;
+}
+.console .ledger .ev {
+  font: 400 11.5px/1.7 var(--mono);
+  color: var(--t3);
+}
+.console .ledger .ev li {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 0 10px;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+.console .ledger .ev b {
+  color: var(--t2);
+  font-weight: 500;
+}
+.console .ledger .ev i {
+  color: var(--light);
+  font-style: normal;
+}
+.console #secRecent li.quiet {
+  font-size: 12px;
+}
+
+/* ---- model picker: full name in every mode ---- */
+.console .picker {
+  position: relative;
+}
+.console .picker > button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: var(--rb);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--t2);
+  transition:
+    background var(--quick),
+    color var(--quick);
+}
+.console .picker > button:hover {
+  background: var(--raised);
+  color: var(--t1);
+}
+.console .picker > button .eng {
+  color: var(--t3);
+  text-transform: uppercase;
+}
+.console .picker > button .mdl {
+  color: var(--t1);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.console .picker > button .eff {
+  color: var(--t3);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.console .picker > button .eff.capped {
+  color: var(--attn);
+}
+.console .pmenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  width: 340px;
+  background: var(--raised);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--r);
+  box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.9);
+  z-index: 6;
+  padding: 6px;
+  display: none;
+}
+.console .pmenu.open {
+  display: block;
+}
+.console .pmenu h4 {
+  margin: 8px 8px 4px;
+  font: 500 11px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t3);
+  display: flex;
+}
+.console .pmenu h4 span {
+  margin-left: auto;
+  color: var(--t3);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.console .pmenu .m {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: var(--rb);
+  color: var(--t1);
+  font-size: 13px;
+}
+.console .pmenu .m:hover {
+  background: var(--surface);
+}
+.console .pmenu .m .id {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--t2);
+}
+.console .pmenu .m.on .id {
+  color: var(--light);
+}
+.console .pmenu .m small {
+  color: var(--t3);
+  font-size: 12px;
+  grid-column: 1 / -1;
+  margin-top: -2px;
+}
+.console .pmenu .ladder {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px 8px;
+  border-top: 1px solid var(--hair);
+  margin-top: 4px;
+}
+.console .pmenu .ladder button {
+  padding: 4px 8px;
+  border-radius: var(--rb);
+  font: 500 11px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.console .pmenu .ladder button:hover {
+  color: var(--t2);
+  background: var(--surface);
+}
+.console .pmenu .ladder button.on {
+  color: var(--t1);
+  background: var(--surface);
+}
+.console .pmenu .ladder button.capped {
+  text-decoration: line-through;
+  text-decoration-color: var(--attn);
+}
+.console .pmenu .note {
+  padding: 4px 8px 6px;
+  color: var(--t3);
+  font-size: 12px;
+}
+.console .pmenu .note b {
+  color: var(--attn);
+  font-weight: 500;
+}
+.console .toast {
+  position: fixed;
+  left: 50%;
+  bottom: 80px;
+  transform: translateX(-50%);
+  z-index: 4;
+  background: var(--raised);
+  border: 1px solid var(--hair-2);
+  padding: 7px 12px;
+  border-radius: var(--rb);
+  font-size: 12.5px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--quick);
+}
+.console .toast.show {
+  opacity: 1;
+}
+
+/* placeholder board/team rows: plain list, no styling beyond .col */
+.console .board-placeholder section,
+.console .team-placeholder {
+  padding: 12px 0;
+}
+.console .board-placeholder h3 {
+  font: 500 11px/1.4 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.console .board-row,
+.console .team-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--hair);
+  font-size: 13px;
+}
+.console .board-row .actions,
+.console .team-row .actions {
+  display: flex;
+  gap: 12px;
+  flex: none;
+}
+.console .board-row .actions button,
+.console .team-row .actions button {
+  color: var(--t3);
+  font-size: 12px;
+}
+.console .board-row .actions button:hover,
+.console .team-row .actions button:hover {
+  color: var(--t1);
+}
+.console .caption {
+  color: var(--t3);
+  font-size: 12px;
+}
+
+/* surface switch lives in the shell's top strip while the app bar is hidden */
+.console .surface-menu {
+  position: relative;
+}
+.console .surface-menu > button {
+  color: var(--t3);
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: var(--rb);
+}
+.console .surface-menu > button:hover {
+  color: var(--t1);
+  background: var(--raised);
+}
+.console .surface-menu .pmenu {
+  width: 220px;
+}
+.console .surface-menu .pmenu button {
+  display: flex;
+  width: 100%;
+  text-align: left;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: var(--rb);
+  font-size: 13px;
+  color: var(--t1);
+}
+.console .surface-menu .pmenu button:hover {
+  background: var(--surface);
+}
+.console .surface-menu .pmenu .caption {
+  padding: 8px 8px 2px;
+}
+
+@media (max-width: 1100px) {
+  .console .top,
+  .console .stage {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+  .console .top {
+    grid-template-columns: 200px minmax(0, 1fr) max-content;
+  }
+  .console .top-right {
+    gap: 14px;
+  }
+  .console .picker > button .eng {
+    display: none;
+  }
+  .console #scrThread {
+    grid-template-columns: minmax(0, 1fr) 250px;
+  }
+  .console .col {
+    margin-left: 32px;
+  }
+}
+
+@media (max-width: 860px) {
+  .console .bar .cap,
+  .console .bar .hint {
+    display: none;
+  }
+  .console .head .seg {
+    margin-left: 0;
+    flex-basis: 100%;
+    width: max-content;
+  }
+  .console .rail,
+  .console .ledger,
+  .console .top-right {
+    display: none;
+  }
+  .console .top,
+  .console .stage {
+    grid-template-columns: 1fr;
+  }
+  .console #scrThread {
+    grid-template-columns: 1fr;
+  }
+  .console .crumb {
+    padding-left: 16px;
+  }
+  .console .col {
+    margin-left: 16px;
+  }
+  .console .instr .grow {
+    display: none;
+  }
+}
+
+/* the spine slide and the indicator move stand still under reduced motion */
+html[data-motion='reduced'] .console .spine .gp,
+html[data-motion='reduced'] .console .modes .ind,
+html[data-motion='reduced'] .console .modes .ind b {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .console .spine .gp,
+  .console .modes .ind,
+  .console .modes .ind b,
+  .console .toast,
+  .console .spine button,
+  .console .picker > button {
+    transition: none;
+  }
+  .console .caret {
+    animation: none;
+  }
+}

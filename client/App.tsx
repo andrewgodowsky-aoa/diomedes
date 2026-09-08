@@ -23,7 +23,7 @@ import {
   tightestWindow,
   titleCase,
 } from './components';
-import { Console } from './Console';
+import { Shell } from './console/Shell';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
 import { Workspace } from './Workspace';
@@ -278,6 +278,9 @@ export function App() {
   };
   const current = projects.find((p) => p.id === selected);
   const surface: Surface = settings ? surfaceOf(settings) : 'workbook';
+  // The Field shell draws its own top strip; the app bar hides underneath it
+  // so the shell strip is the only one on the console surface.
+  const consoleActive = !!selected && surface === 'console' && !showSettings;
   // The chip follows the helper that is on: the first ready engine whose
   // switch is on. It shows the last reported windows even when that engine
   // is momentarily unreachable; the helpers list carries the live status.
@@ -343,6 +346,7 @@ export function App() {
           <Setup settings={settings} save={saveSettings} busy={busy} />
         ) : (
           <>
+            {!consoleActive && (
             <header className="top-bar">
               <button
                 className="brand-button"
@@ -456,6 +460,7 @@ export function App() {
                 </div>
               </div>
             </header>
+            )}
             <div
               className={`page-frame ${needs && current?.status?.needsYou ? 'needs-attention' : ''} ${!online ? 'disconnected' : ''}`}
             >
@@ -469,9 +474,10 @@ export function App() {
                   refresh={() => void refreshIntegrations(true)}
                 />
               ) : selected && surface === 'console' ? (
-                <Console
+                <Shell
                   key={`console:${selected}`}
                   projectId={selected}
+                  projects={shownProjects}
                   settings={settings}
                   integrations={integrations}
                   usage={usage}
@@ -488,6 +494,12 @@ export function App() {
                     setShowSettings(true);
                     setHelpersRequest((n) => n + 1);
                   }}
+                  onOpenProject={openProject}
+                  onShowProjects={() => {
+                    setSelected(null);
+                    setShowSettings(false);
+                  }}
+                  onOpenSettings={() => setShowSettings(true)}
                   report={report}
                   online={online}
                 />
