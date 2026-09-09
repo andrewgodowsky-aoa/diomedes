@@ -1,6 +1,6 @@
 # DIOMEDES LIVE ROADMAP
 
-**Roadmap version:** 2026-09-09.3  
+**Roadmap version:** 2026-09-09.4  
 **Last reconciled:** September 9, 2026  
 **Product:** Diomedes  
 **Company direction:** Diomedes Systems  
@@ -23,11 +23,26 @@ The Google Doc is the human/cloud canonical copy. This repository file is the im
 
 Every substantial agent thread should read the newest roadmap before architectural work and finish with `ROADMAP IMPACT`.
 
-## 2. North star
+If the Drive copy and repository mirror temporarily diverge because an agent is actively editing one, do not force-overwrite live work. Use the higher roadmap version, reconcile material decisions explicitly, then restore equivalence when the writer is idle.
 
-Diomedes is a model-agnostic agent harness/runtime with a polished Windows-first workspace, not merely a chatbot, wrapper, workflow builder or business-automation shell.
+## 2. North star — a Diomedes-led general-purpose agent
 
-Long term it combines:
+Diomedes is intended to become a **true general-purpose agent with its own universal harness/runtime and human workspace**, not merely a chatbot, model picker, external-agent launcher, workflow builder, coding wrapper or business-automation shell.
+
+The preferred long-term mental model is closer to **Devin-style outcome ownership**: the user describes an outcome, and Diomedes owns the durable operation around accomplishing it. A native Diomedes-led run should be able to understand intent, assemble context, choose an execution approach, route to models/runtimes, invoke tools/skills, delegate bounded work, monitor progress, react to failures/rule triggers, request human authority where needed, verify outputs, record evidence and preserve durable state.
+
+“Native Diomedes agent” means Diomedes owns the **agent loop and operational semantics**. It does not require a proprietary Diomedes foundation model. Reasoning can come from subscription-backed models, APIs, local models, specialist runtimes or future Diomedes-hosted routes.
+
+Direct-agent use remains first-class. A user may deliberately choose Codex, Claude Code, OpenCode, Hermes or another supported runtime as primary reasoner/executor for a task while Diomedes retains surrounding durable project state, rules, permissions, evidence/history and whatever interception/control guarantees that adapter can truthfully provide.
+
+Support two coherent execution arrangements over one durable workspace:
+
+- **Diomedes-led:** Diomedes owns the loop and calls models, tools, skills and external agents as resources/workers.
+- **Direct-agent:** the user explicitly chooses an external agent/runtime as primary reasoner/executor while Diomedes retains the surrounding durable state and enforceable policy/evidence boundaries.
+
+Thread, Board and Team remain views of the same durable work object in either arrangement.
+
+Long term Diomedes combines:
 
 - a crisp GUI for ordinary and technical users;
 - Diomedes-owned runtime semantics;
@@ -41,9 +56,19 @@ Long term it combines:
 - business/client workspaces using the same Runtime + Trust substrate;
 - consulting as an early commercial discovery/delivery layer.
 
-A model or external agent is a participant in Diomedes Runtime, not the runtime itself.
+## 3. Reference systems — synthesize, do not nest
 
-## 3. Product principles
+Study useful systems for patterns while preserving one Diomedes-owned source of truth:
+
+- **Devin:** outcome ownership, persistent work/session state, delegation, progress monitoring, supervised execution environments and inspect/take-over behavior.
+- **Hermes:** general-purpose personal-agent behavior, durable continuity, memory, skills, schedules, messaging and multiple backends.
+- **OMP:** layered rules/context, triggered corrective intervention, regex/pattern interception where technically supported, tool reliability and capability-aware provider adaptation.
+- **witt3rd/oh-my-hermes:** planning discipline, research/interview/planning composition, verified execution/iterate loops and hook/plugin role/context injection patterns.
+- **rlaope/oh-my-hermes:** routing natural-language requests into explicit capabilities/playbooks/workflows, executor-neutral handoffs and evidence/approval/quality gates.
+
+These are design/implementation references, not authorities to stack complete orchestrators inside Diomedes. Reuse bounded patterns where they strengthen Diomedes-owned semantics.
+
+## 4. Product principles
 
 1. **Local-first remains mandatory.** Core personal use must remain useful without a functioning Diomedes cloud account service.
 2. **Online accounts are an approved active track.** Accounts may add sync, identity, hosted services, multi-device, teams and Business features, but must not replace the local principal/device model.
@@ -56,8 +81,31 @@ A model or external agent is a participant in Diomedes Runtime, not the runtime 
 9. **Performance is product quality.** Startup, RAM/CPU, latency, event growth, rendering, cleanup and local-model lifecycle are acceptance criteria.
 10. **GUI-first, not GUI-only.** Technical depth should not require normal users to live in a TUI.
 11. **One authority per durable domain.** Avoid parallel runtime, approval, permission, credential or mutation authorities.
+12. **Universal north star, narrow proof slices.** Do not try to implement every model, workflow, integration and remote capability at once merely because the architecture supports them.
 
-## 4. Current implementation checkpoint
+## 5. Layered rules — a defining Diomedes capability
+
+Keep three rule classes distinct:
+
+1. **Standing guidance:** durable contextual instructions, project/user/business conventions, preferences and procedures that shape reasoning.
+2. **Triggered correction:** detectable output/tool/state patterns that can interrupt, redirect, inject targeted guidance, retry within bounded policy or require review. Regex and stream-time matching are useful mechanisms where supported, not the whole rule system.
+3. **Enforced policy:** pre-action authority and safety boundaries deciding whether an operation may occur at all: data egress, credentials, publishing/sending, destructive effects, budgets/resources, restricted resources, tenant scope and exact approvals.
+
+Never claim a prompt, regex or after-the-fact observer enforces a boundary that must be checked before an external effect. Each rule should identify the surface it actually controls: advisory context, generation correction, tool interception, pre-effect authorization, postcondition verification, or another explicit boundary.
+
+Normal users should be able to express rules in ordinary language. Diomedes can translate them into proposed structured rules and explain what is advisory versus enforceable. Technical users may inspect/edit lower-level triggers, regex, precedence, scopes and hooks.
+
+## 6. Tool-call standardization
+
+Diomedes should standardize tool semantics without reducing every runtime to the lowest common denominator.
+
+Diomedes-owned operations should converge on a typed execution envelope that can answer: requester/actor, project/task/thread/worker, target resource/action, validated arguments, required authority, effect class/destination, outcome and evidence.
+
+Provider/agent adapters translate that common operation into native tool protocols and normalize results/errors/events back into Diomedes. Preserve provider/runtime-specific strengths such as reasoning controls, sandbox modes, context controls, model routing, local-resource parameters and specialist capabilities when available.
+
+Routing is capability-aware. A task requiring enforced pre-send approval must not be routed through an integration that can only report actions after completion while claiming equivalent guarantees.
+
+## 7. Current implementation checkpoint
 
 ### Published GitHub state
 
@@ -77,7 +125,7 @@ GitHub Actions still had no workflow runs and GitHub Releases had no releases wh
 - Pure-prefix forks and bounded event cursors.
 - Secret scrubbing on delivered paths.
 - Existing guarded document writer, journal, History and restore remain the mutation authority.
-- **NR-02 packaged-runtime proof completed locally:** a relocated Windows package was exercised while source/client/fixtures/dist were unavailable. Exact preview, decline, Stop, reload, cursor replay, History and supported restore were covered. The suspected fixture resource problem was reproduced and minimally corrected by shipping/resolving the fixture from the bundled server.
+- **NR-02 packaged-runtime proof completed locally:** a relocated Windows package was exercised while source/client/fixtures/dist were unavailable. Exact preview, decline, Stop, reload, cursor replay, History and supported restore were covered. The fixture resource problem was reproduced and minimally corrected by shipping/resolving the fixture from the bundled server.
 - **NR-03 bounded Codex EngineAdapter proved locally:** one real native ChatGPT turn used synthetic input, durable start admission, run-scoped egress authority, exact proposal review and one recorded write. Host recreation reused the saved observation rather than repeating the provider call.
 - The Codex path keeps outbound-data authority, result acceptance, exact write approval and write permission as separate checks.
 - Ambiguous provider dispatch does not cause blind redispatch.
@@ -100,7 +148,7 @@ GitHub Actions still had no workflow runs and GitHub Releases had no releases wh
 
 `docs/harness/CURRENT_STATE.md` describes an older `218f325` checkout. Keep it as historical evidence, not a current inventory. Prefer current source, `RUNTIME_VERIFICATION.md`, `CHANGES.md`, `HARNESS_INTEGRATION_MAP.md`, the NR-02/NR-03 continuation report, and fresh tests.
 
-## 5. Responsibility architecture
+## 8. Responsibility architecture
 
 These are responsibility boundaries, not instructions to create separate services/databases.
 
@@ -111,7 +159,7 @@ These are responsibility boundaries, not instructions to create separate service
 - **Observatory:** structured traces, timings, usage/cost provenance, failures/retries, approvals/corrections, outcomes, replay/evals and evidence-grounded self-improvement.
 - **Interop:** MCP, MCP Apps, ACP where useful, A2A, webhooks, APIs and external events.
 
-## 6. Active ownership
+## 9. Active ownership
 
 ### Codex — runtime/build integration
 
@@ -155,7 +203,7 @@ Codex and Opus must agree on shared principal/grant/session interfaces and file 
 
 Fable's September 8 visual/interaction work remains the product design north star. Preserve the handoff rather than spending the remaining design allowance on another broad redesign. A future Fable pass is best used to review actual onboarding/security/account UX or a specific weak packaged screen.
 
-## 7. Identity/account decisions already made
+## 10. Identity/account decisions already made
 
 Provider choice is open, but these decisions are approved:
 
@@ -174,7 +222,7 @@ Passkey-first and standards-based native authentication remain preferred directi
 
 Sensitive changes should support step-up verification, especially device enrollment, recovery/auth changes, high-risk grants and destructive/consequential actions.
 
-## 8. Runtime + Trust invariants
+## 11. Runtime + Trust invariants
 
 - Requests have durable identity.
 - Identical ambiguous retries reconcile; changed payload under the same identity is refused.
@@ -190,7 +238,7 @@ Sensitive changes should support step-up verification, especially device enrollm
 - `enforced`, `observed`, `instructional` and `unsupported` remain distinct guarantee labels.
 - Store/document mutation authority remains singular unless evidence justifies migration.
 
-## 9. Near-term milestone order
+## 12. Near-term milestone order
 
 ### M1 — close current local runtime regression
 
@@ -208,9 +256,11 @@ Reconcile Opus's research, select the provider/data/recovery architecture, and l
 
 Add minimal credential-free GitHub build/test CI. Signed-in provider smoke stays a controlled local/integration gate. Add signing/update infrastructure before broad public release.
 
-### M5 — second-engine model-agnostic proof
+### M5 — genuine Diomedes-led proof
 
-Route a second real model/engine through the same Diomedes runtime, Trust, rules, durable task semantics, approvals and evidence. Prefer this over rapidly adding many provider-specific adapters.
+When prerequisites are ready, prove one genuine Diomedes-led workflow in which the native loop uses a real model route, invokes typed Diomedes tools, encounters a triggered rule/correction, crosses an exact approval boundary, survives interruption/restart, verifies its result and records evidence/history.
+
+Then prove the same durable contract with a second supported model route without rewriting its semantics. Separately test a direct external-agent route and document which Diomedes controls are enforceable, observed, advisory or unavailable.
 
 ### M6 — authenticated remote/device access
 
@@ -236,7 +286,21 @@ Recorded human activity becomes a tested workflow/capability with deterministic 
 
 Environment abstraction/stronger containment, MCP Apps, A2A, snapshot forks/comparison and eventual execution portability once Runtime + Trust semantics are mature.
 
-## 10. Product design direction
+## 13. Audience and UX
+
+Diomedes is general-purpose, not software-only. Software engineering is a demanding proof domain, not the definition of the product.
+
+Primary near/mid-term audiences are personal users, power users wanting one coherent agent environment, and small/local businesses. Enterprise-scale administration is not the initial target, though architecture should not block later organization/tenant expansion.
+
+Separate three concerns:
+
+- **Experience level:** how much machinery the UI exposes.
+- **Workspace purpose:** personal, business, software, research, content, etc.
+- **Authority:** what actions/data/resources are actually permitted.
+
+Changing Guided/Standard/Technical presentation must never grant more authority. Guided reveals less machinery; it is not a weaker/different underlying product.
+
+## 14. Product design direction
 
 Preserve:
 
@@ -255,7 +319,17 @@ Preserve:
 
 Team/conversation views need clear structural separation between threads. Workbook/Console names may remain until an intentional migration.
 
-## 11. Model/engine strategy
+## 15. Learning, self-improvement and Demonstration-to-Automation
+
+Keep distinct but interoperable concepts for user memory/preferences, workspace/business knowledge, procedures/skills, behavioral rules/policies and observable evidence about which approaches succeed. Learned preference never becomes authorization.
+
+Preferred improvement loop:
+
+observed problem/human correction → proposed rule/skill/prompt/routing/workflow change → replay/evaluation → compare quality/cost/latency/failure/corrections → human/policy approval where appropriate → versioned adoption → monitoring/rollback.
+
+The recorder/teach-by-demonstration path remains strategic. A demonstration should become an inspectable tested capability/workflow with deterministic operations where stable, semantic/visual reasoning only where needed, generative steps where needed, explicit approval boundaries and verification.
+
+## 16. Model/engine strategy
 
 Diomedes remains model-agnostic. Do not architect rules, memory, permissions, task state, workflows or evaluation around one provider.
 
@@ -263,13 +337,15 @@ External engines remain useful even as Diomedes owns more runtime semantics. Per
 
 Muse/local models remain candidates, not permanent commitments. Prefer empirical routing/eval evidence.
 
-## 12. Business / consulting track
+## 17. Business / consulting and commercial thesis
 
 Product: **Diomedes**. Company: **Diomedes Systems**.
 
 Principle: **Find the weak point. Fix the workflow.**
 
-Lead with measurable outcomes rather than model names: time recovered, repetitive steps removed, faster turnaround, fewer errors, consistent execution, accessible knowledge, approvals and evidence.
+The long-term commercial thesis is stronger than selling model access or a model picker: sell a configured Diomedes system that can take responsibility for recurring work within explicit boundaries, produce inspectable results/evidence and improve through measured use.
+
+Potential commercial layers include personal software, configured business deployments, consulting/audits/pilots/implementation, Managed Diomedes support, customer-hosted local/remote workers, and later provider-authorized hosted Diomedes execution where economics/terms support it.
 
 The three-restaurant group remains the preferred first controlled design-partner shape. Candidate workflows:
 
@@ -283,7 +359,7 @@ Initial pilots should be measurable, reviewable and low-to-moderate risk. Do not
 
 Production client data waits for credible tenant isolation, identity/membership, least privilege, credential protection, auditability, retention/offboarding and recovery. Early pilots prefer exports/lower-risk data over broad admin credentials.
 
-## 13. Security and information flow
+## 18. Security and information flow
 
 Treat prompt injection as systems security: least privilege, secret isolation, provenance, policy, approval and external-effect reconciliation.
 
@@ -293,7 +369,7 @@ Business tenant isolation must eventually apply to files, search, memory, embedd
 
 Supply-chain trust matters for skills, MCP servers/apps, plugins, adapters, models, workflows and updates. Plan toward signed/trusted packages and capability manifests. Public Diomedes releases/updates must eventually be code-signed.
 
-## 14. Website/deployment boundary
+## 19. Website/deployment boundary
 
 `andrewgodowsky-aoa/diomedes-site` is a separate Astro + Cloudflare Worker/static-assets project. Website deployment is not desktop deployment, and its current forms/D1 setup is not automatically the Diomedes account backend.
 
@@ -311,7 +387,7 @@ Track separately:
 
 One status does not imply another.
 
-## 15. Agent coordination rules
+## 20. Agent coordination rules
 
 - Read the newest roadmap before substantial architectural work.
 - Resolve current repo/worktrees before editing; never reset a newer checkout to a roadmap hash.
@@ -324,7 +400,7 @@ One status does not imply another.
 - Distinguish fixture proof, real-provider proof, packaged-desktop proof, CI proof and production proof.
 - End substantial handoffs with `ROADMAP IMPACT` and the next smallest safe slice.
 
-## 16. Open strategic decisions
+## 21. Open strategic decisions
 
 - online-account/backend provider and cloud data architecture — **Opus research active**;
 - passkey/recovery/account-linking design — **Opus research active**;
@@ -341,7 +417,7 @@ One status does not imply another.
 - default native/local model route;
 - first restaurant-pilot workflow/data source after owner discovery.
 
-## 17. Retired stale guidance
+## 22. Retired stale guidance
 
 Do not use these as current instructions:
 
@@ -353,21 +429,23 @@ Do not use these as current instructions:
 - a worktree is a security sandbox;
 - the website is automatically the desktop/account backend;
 - older Achilles product naming is current;
-- older AionCore-centric host architecture is authoritative.
+- older AionCore-centric host architecture is authoritative;
+- Diomedes should primarily be a model picker/wrapper/control plane rather than an agent with its own operational loop.
 
-## 18. Acceptance culture
+## 23. Acceptance culture
 
 Runtime/security/account changes need verification proportional to the invariant: deterministic tests, duplicate/lost-response tests, stale/replay tests, concurrency, crash/restart, write-failure injection, authorization denials, revoked/expired identity tests, cross-project/tenant tests, browser/renderer boundaries, packaged smoke, real provider smoke where warranted, performance measurement and explicit proof boundaries.
 
 Use `VERIFIED`, `PARTIAL`, `MISSING`, `DEFERRED`. Never claim a fixture proves real-provider behavior, source tests prove a packaged executable, or login proves authorization correctness.
 
-## 19. Change ledger
+## 24. Change ledger
 
-- **2026-09-09.3** — Reconciled concurrent Codex updates into the clean roadmap: NR-02 packaged proof complete; bounded real Codex adapter proved locally; 533 integrated tests recorded; Opus prototype Trust correction integrated; one order-dependent browser Usage failure remains; newest runtime changes remain local/uncommitted. Online accounts stay an approved active Opus-owned track. Removed stale duplicated September 8/early-September instructions.
+- **2026-09-09.4** — Final clean reconciliation before new-thread handoff. Folded the concurrent native-agent north-star clarification into the clean roadmap: Diomedes-led Devin-style outcome ownership, direct-agent mode, Devin/Hermes/OMP/two-OMH reference roles, layered standing/triggered/enforced rules, typed tool standardization, general-purpose accessible UX, self-improvement/Demonstration-to-Automation and outcome-responsibility commercial thesis. Preserved NR-02 packaged proof, bounded NR-03 real Codex adapter proof, 533 integrated tests, Opus Trust/account ownership and the disclosed Usage regression. Removed stale duplicate September 8/early-September instructions from the repository mirror.
+- **2026-09-09.3** — Reconciled concurrent Codex runtime updates: NR-02 packaged proof complete; bounded real Codex adapter proved locally; 533 integrated tests; Opus prototype Trust correction; one order-dependent browser Usage failure remains; newest runtime changes local/uncommitted.
 - **2026-09-09.2** — First clean-roadmap rewrite and repository mirror; established Codex/Opus ownership and activated online-account work.
 - **2026-09-09.1** — Reconciled published native harness runtime, exact approvals, packaging risk and run-scoped egress direction.
-- **2026-09-08.1** — Initial canonical roadmap created from master/replan/business/design/foundation work.
+- **2026-09-08.1** — Initial canonical roadmap created.
 
 ### Next reconciliation trigger
 
-Reconcile when any of these lands: browser Usage regression fix; publication of the local NR-02/NR-03 runtime work; Opus account/Trust research decision or implementation; first GitHub CI run; major host/persistence change; or a new Andrew product decision.
+Reconcile when any of these lands: browser Usage regression fix; publication of local NR-02/NR-03 runtime work; Opus account/Trust research decision or implementation; first GitHub CI run; major host/persistence change; or a new Andrew product decision.
