@@ -10,7 +10,7 @@ It runs entirely on this computer. There is no account, no server, no telemetry 
 remote service of its own. When you switch a helper on, that helper's own sign-in
 (today, your existing ChatGPT sign-in for Codex) is what talks to the outside world.
 
-Diomedes Systems LLC. Version 0.1.0, a working prototype.
+Diomedes Systems (LLC formation pending). Version 0.1.0, a working prototype.
 
 ## Work and approval recovery
 
