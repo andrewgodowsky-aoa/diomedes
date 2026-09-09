@@ -27,6 +27,16 @@ async function sourceSnapshot() {
 const source = await sourceSnapshot();
 const sourceDigest = sha256(JSON.stringify(source));
 const baseCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
+// `sourceStatus` used to be the literal 'local-uncommitted', which stayed wrong once the
+// source was committed: a build stamped with a real commit still claimed it could not be
+// reproduced from one. Ask git instead, over the tracked inputs only -- `dist` and
+// `fixtures/projects` are gitignored build/test output and can never be committed, so
+// including them would pin the answer to 'local-uncommitted' forever.
+const trackedInputs = ['client', 'server', 'shared', 'desktop', 'licenses',
+  'package.json', 'package-lock.json', 'LICENSE', 'scripts/package-desktop.mjs'];
+const dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=all', '--', ...trackedInputs],
+  { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
+const sourceStatus = dirty ? 'local-uncommitted' : 'committed';
 // Each build gets an isolated staging folder; never copy app data or credentials.
 const stage = await fs.mkdtemp(path.join(root, '.desktop-stage-'));
 try {
@@ -79,7 +89,7 @@ try {
   if (sha256(JSON.stringify(await sourceSnapshot())) !== sourceDigest)
     throw new Error('Build inputs changed while packaging; repeat from a stable snapshot.');
   const buildInfo = { schemaVersion: 1, version: manifest.version, baseCommit,
-    sourceStatus: 'local-uncommitted', sourceDigest, source,
+    sourceStatus, sourceDigest, source,
     nativeRuntime: { version: '0.153.4', sha256: hashes },
     signing: 'unsigned-experimental', builtAt: new Date().toISOString() };
   await fs.writeFile(path.join(stage, 'BUILD_INFO.json'), JSON.stringify(buildInfo, null, 2));

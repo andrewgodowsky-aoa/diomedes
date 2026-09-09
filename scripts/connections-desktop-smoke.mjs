@@ -112,9 +112,12 @@ try {
   await api(`${base}/event`, 'POST', savedEvent, 202);
   expect((await api(base)).tasks).toHaveLength(1);
   proof.checks.push('Fresh process requires explicit authorization, starts stale, keeps durable receipts and never duplicates manager Task');
-  await api('/settings', 'PUT', { surface: 'workbook', lastPage: { [project.id]: 'connections' } });
-  await page.reload(); await expect(page.getByRole('heading', { name: 'Reported availability', exact: true })).toBeVisible();
-  proof.checks.push('Connections available through normal Workbook navigation as well as Console');
+  // Connections is Console-only: AGENTS.md standing decision 1 freezes the Workbook and
+  // takes no new screens there. This proves the rail entry on a fresh process, which is a
+  // stronger check than the settings write it replaces.
+  await page.reload(); await page.getByRole('button', { name: 'Connections', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Reported availability', exact: true })).toBeVisible();
+  proof.checks.push('Connections reachable through ordinary Console navigation on a fresh process');
   await desktop.close(); desktop = undefined;
   await launch({ DIOMEDES_TEST_HOLD_TRIAGE: '1' });
   await api(`${base}/resume`, 'POST', {});
@@ -125,7 +128,21 @@ try {
   proof.pendingBeforeCrash = pending;
   const ownedPid = desktop.process().pid;
   const stopped = spawnSync('taskkill.exe', ['/PID', String(ownedPid), '/T', '/F'], { windowsHide: true, encoding: 'utf8' });
-  if (stopped.status !== 0) throw new Error(`Could not terminate owned crash-test PID ${ownedPid}: ${stopped.stderr}`);
+  // `/T` exits nonzero when a descendant already went on its own between enumeration and
+  // kill, which says nothing about the property under test. What has to hold is that the
+  // owned process is gone, so assert that and keep the exit code as evidence.
+  const ownedGone = () => {
+    // CSV keeps the pid as its own quoted field, so this needs no word-boundary regex and
+    // does not depend on the locale of tasklist's "no tasks" message.
+    const listed = spawnSync('tasklist.exe', ['/FI', `PID eq ${ownedPid}`, '/NH', '/FO', 'CSV'],
+      { windowsHide: true, encoding: 'utf8' }).stdout ?? '';
+    return !listed.includes(`"${ownedPid}"`);
+  };
+  const killDeadline = Date.now() + 10_000;
+  while (!ownedGone() && Date.now() < killDeadline) await new Promise((resolve) => setTimeout(resolve, 100));
+  proof.crashKill = { pid: ownedPid, taskkillStatus: stopped.status, taskkillStderr: (stopped.stderr ?? '').trim() };
+  if (!ownedGone())
+    throw new Error(`Owned crash-test PID ${ownedPid} survived taskkill: ${stopped.stderr}`);
   desktop = undefined;
   await launch(); expect((await api(base)).authorized).toBe(false);
   await api(`${base}/resume`, 'POST', {});

@@ -139,7 +139,7 @@ GitHub Actions still had no workflow runs and GitHub Releases had no releases wh
 
 - The Usage regression is closed locally: a delayed settings refresh reproduced navigation overwriting a concurrent engine setting. Navigation now writes only its owned fields; the controlled browser regression and relocated built-client check pass. Earlier intermittent failures remain preserved as historical evidence.
 
-- Connections is available in both Console and Workbook: explicit synthetic three-location scope, incomplete-intent questions, exact reviewed activation, typed availability, freshness, pause/disconnect, rules and inspectable evidence.
+- Connections is available in the Console: explicit synthetic three-location scope, incomplete-intent questions, exact reviewed activation, typed availability, freshness, pause/disconnect, rules and inspectable evidence.
 - A constrained generic OpenAPI compiler promotes exact reviewed data-only candidates for two unrelated services. Both run through the existing Runtime and official MCP SDK client using in-memory transport. No remotely reachable MCP service is implied.
 - Scoped context is frozen before model authorization. Final-output inspection records the raw scripted error and a distinct budgeted corrective step; narrowed tools remain narrowed at dispatch. Per-step transcript references survive replay without double advancement.
 - Signed raw-body fixture ingress is durable before acknowledgment. Deterministic service hours AND reported quantity produce one internal manager Task; fresh-session recovery preserves accepted events without reviving old authority. A registered forbidden write is denied before its handler.

@@ -1,12 +1,12 @@
 {
-  "checkedAt": "2026-09-08T16:37:31.214Z",
+  "checkedAt": "2026-09-09T11:39:40.102Z",
   "executablePath": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
   "startup": {
-    "version": "0.1.0",
+    "version": "0.1.1",
     "executable": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
-    "pid": 2968,
-    "url": "http://127.0.0.1:56613",
-    "startedAt": "2026-09-08T16:37:28.406Z",
+    "pid": 48036,
+    "url": "http://127.0.0.1:51643",
+    "startedAt": "2026-09-09T11:39:36.999Z",
     "packaged": true
   },
   "taskCount": 4,
@@ -35,13 +35,13 @@
         "requests": 2,
         "receipt": {
           "protocolVersion": 1,
-          "commandId": "cae6742b-0deb-41ff-8c0e-863e47d0b31a",
+          "commandId": "b7de3b61-d42b-425e-a81f-9b1db83789c7",
           "payloadDigest": "sha256:fadcf63690b2b3db42ae6d4235215abcca34c2ec981e85fb099ae14967a4380b",
-          "projectId": "0e34e28546d8",
+          "projectId": "db2c0127377f",
           "taskId": "T1",
-          "sessionId": "S304d458c6305",
-          "eventId": "E5a0eaad0f1d8",
-          "admittedAt": "2026-09-08T16:37:28.950Z",
+          "sessionId": "S5cd0002a36b5",
+          "eventId": "E01d1948c013b",
+          "admittedAt": "2026-09-09T11:39:37.598Z",
           "route": "sample",
           "scope": "local-prototype"
         }
@@ -51,13 +51,13 @@
         "requests": 2,
         "receipt": {
           "protocolVersion": 1,
-          "commandId": "adc0f2a7-4408-48d5-81fc-abacd96428be",
+          "commandId": "ba05d19f-5884-419c-a908-26ed187e20fb",
           "payloadDigest": "sha256:c54fc3a39939f69aa3a84c980ea9f1958fea1384906bab71ed501b1853d707f8",
-          "projectId": "0e34e28546d8",
+          "projectId": "db2c0127377f",
           "taskId": "T1",
-          "sessionId": "Secd708d51236",
-          "eventId": "E14c2f5787d7c",
-          "admittedAt": "2026-09-08T16:37:29.218Z",
+          "sessionId": "S8fe1b8c4efc7",
+          "eventId": "E814c6e837d23",
+          "admittedAt": "2026-09-09T11:39:37.890Z",
           "route": "sample",
           "scope": "local-prototype"
         }
