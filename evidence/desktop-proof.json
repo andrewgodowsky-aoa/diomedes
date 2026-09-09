@@ -1,12 +1,12 @@
 {
-  "checkedAt": "2026-09-09T11:39:40.102Z",
+  "checkedAt": "2026-09-09T12:08:26.619Z",
   "executablePath": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
   "startup": {
     "version": "0.1.1",
     "executable": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
-    "pid": 48036,
-    "url": "http://127.0.0.1:51643",
-    "startedAt": "2026-09-09T11:39:36.999Z",
+    "pid": 39860,
+    "url": "http://127.0.0.1:62110",
+    "startedAt": "2026-09-09T12:08:23.348Z",
     "packaged": true
   },
   "taskCount": 4,
@@ -35,13 +35,13 @@
         "requests": 2,
         "receipt": {
           "protocolVersion": 1,
-          "commandId": "b7de3b61-d42b-425e-a81f-9b1db83789c7",
+          "commandId": "88308c66-4276-4de4-baf3-042633afb188",
           "payloadDigest": "sha256:fadcf63690b2b3db42ae6d4235215abcca34c2ec981e85fb099ae14967a4380b",
-          "projectId": "db2c0127377f",
+          "projectId": "a1b870c5f6fb",
           "taskId": "T1",
-          "sessionId": "S5cd0002a36b5",
-          "eventId": "E01d1948c013b",
-          "admittedAt": "2026-09-09T11:39:37.598Z",
+          "sessionId": "Se494bf839b9a",
+          "eventId": "Ebfa155fbd56d",
+          "admittedAt": "2026-09-09T12:08:24.053Z",
           "route": "sample",
           "scope": "local-prototype"
         }
@@ -51,13 +51,13 @@
         "requests": 2,
         "receipt": {
           "protocolVersion": 1,
-          "commandId": "ba05d19f-5884-419c-a908-26ed187e20fb",
+          "commandId": "b74b4401-dfa4-474a-a624-8e1537feb43c",
           "payloadDigest": "sha256:c54fc3a39939f69aa3a84c980ea9f1958fea1384906bab71ed501b1853d707f8",
-          "projectId": "db2c0127377f",
+          "projectId": "a1b870c5f6fb",
           "taskId": "T1",
-          "sessionId": "S8fe1b8c4efc7",
-          "eventId": "E814c6e837d23",
-          "admittedAt": "2026-09-09T11:39:37.890Z",
+          "sessionId": "S628fc2446394",
+          "eventId": "E8b9e26980cd6",
+          "admittedAt": "2026-09-09T12:08:24.375Z",
           "route": "sample",
           "scope": "local-prototype"
         }
