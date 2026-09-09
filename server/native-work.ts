@@ -278,13 +278,11 @@ export class NativeWorkService {
     this.store.moveTask(state, task, 'working', 'diomedes');
     this.log(
       session,
-      `Preparing a proposal with Codex using the instruction and ${sources.length} selected ${sources.length === 1 ? 'document' : 'documents'}. Project files have not changed.`,
+      sources.length
+        ? `Preparing a proposal with Codex from ${sources.length} ${sources.length === 1 ? 'document' : 'documents'}.`
+        : 'Preparing a proposal with Codex.',
     );
-    this.log(
-      session,
-      'The native process has no file or shell tools. Only the local service may apply the exact proposal after your OK.',
-      'technical',
-    );
+    this.log(session, 'The engine has no file or shell access.', 'technical');
     if (input.team) this.log(session, nativeWorkDisclosure(input.team), 'technical');
     if (sources.length) {
       const snapshot = this.store.addEntry(state, {
@@ -417,6 +415,11 @@ export class NativeWorkService {
           for (const conversation of state.conversations) {
             const turn = conversation.turns.find((item) => item.id === run.turnId);
             if (turn?.helper) {
+              // The turn was written before the run with a holding line. Once the
+              // proposal exists it is what the person came to read, so it replaces
+              // that line instead of leaving the narration standing for good.
+              // `proposal.summary` is already scrubbed above.
+              if (proposal.summary.trim()) turn.text = proposal.summary.trim();
               turn.helper = {
                 engine: 'codex',
                 model: session.engine.model,
@@ -482,10 +485,7 @@ export class NativeWorkService {
         run.writes = writes;
         this.log(session, proposal.summary);
         if (!writes.length) {
-          this.log(
-            session,
-            'The proposal does not change any files. Finished without writing project files.',
-          );
+          this.log(session, 'The proposal changes no files.');
           session.state = 'done';
           session.endedAt = now();
           this.store.moveTask(state, task, 'done', 'diomedes');

@@ -1343,8 +1343,8 @@ export async function createApp(options: AppOptions) {
         role: 'diomedes',
         mode: runMode,
         text: wake
-          ? 'Picked up a message from the team. Anything Codex proposes waits for your go-ahead.'
-          : 'Codex is preparing a file proposal. Review each proposed change before saying go ahead. No project files have been changed.',
+          ? 'Picked up a message from the team.'
+          : 'Preparing a proposal.',
         at: now(),
         sources,
         route: 'codex',
