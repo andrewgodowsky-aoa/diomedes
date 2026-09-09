@@ -4,8 +4,23 @@
 // It is deliberately dependency-free: nothing here imports from server/ or shared/,
 // so it cannot collide with runtime edits in flight elsewhere in the tree.
 
-/** The four identity classes NR-04 requires be distinguishable. */
-export type PrincipalKind = 'local-owner' | 'device' | 'session' | 'team-member';
+/**
+ * The four identity classes NR-04 requires be distinguishable, plus 'prototype'.
+ *
+ * 'prototype' is NOT a fifth identity class. It is the host-only synthetic
+ * driver, and it exists as its own kind precisely so that it can never be
+ * mistaken for one of the four. Giving it kind 'local-owner' — as the first
+ * cut of this module did — let a stored reference to a prototype authority
+ * re-resolve through the local-owner grant table and come back genuine,
+ * non-synthetic and holding every capability. A driver that makes no human
+ * authentication claim must not be shaped like a human principal.
+ */
+export type PrincipalKind =
+  | 'local-owner'
+  | 'device'
+  | 'session'
+  | 'team-member'
+  | 'prototype';
 
 export interface Principal {
   kind: PrincipalKind;
