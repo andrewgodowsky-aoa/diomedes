@@ -248,6 +248,25 @@ describe('approval-decisions client', () => {
     expect(storage.length).toBe(0);
   });
 
+  test('a harness intent hash uses the existing exact decision and lost-response recovery', async () => {
+    const intentHash = 'f'.repeat(64);
+    const need = baseNeed({ preview: [], harness: { runId: 'R123456789abc', intent: {} } });
+    need.approval = { ...need.approval!, actionDigest: intentHash };
+    fetchMock.mockRejectedValueOnce(new Error('Lost response.'));
+    fetchMock.mockImplementationOnce(async (_url: string, init: { body: string }) => {
+      const body = JSON.parse(init.body);
+      expect(body.actionDigest).toBe(intentHash);
+      expect(readRaw()).not.toContain('harness');
+      return okFetchFor(decidedNeed(body.commandId, 'go-ahead', { actionDigest: intentHash }, {
+        harness: need.harness, preview: [], approval: need.approval,
+      }));
+    });
+    const result = await decideApproval(PROJECT, need, 'go-ahead');
+    expect(result.approvalReceipt!.actionDigest).toBe(intentHash);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(readPending()).toBeNull();
+  });
+
   test('rejects invalid digest strings without sending', async () => {
     const bad = baseNeed({
       approval: {

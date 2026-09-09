@@ -30,11 +30,26 @@ the expiry, recorded outcome and an expandable Decision record. Exact proposals
 cannot grant permission for a whole task.
 
 Work Start and approval decisions share command identity and conflict primitives.
-Composer sends, team starts, authenticated actors and durable event cursors remain
-later foundation work. The older sample flow remains supported. See the
+Composer sends, team starts and authenticated actors remain later foundation work.
+The older sample flow remains supported. See the
 [Work foundation record](docs/implementation/2026-09-08-work-admission.md) and
 [approval continuation record](docs/implementation/2026-09-08-approval-receipts.md)
 for acceptance gates, limits and evidence.
+
+## Native harness runtime
+
+The native harness now has a per-project run store, a Session/Task/Need bridge,
+read and cancellation routes, and durable events with a reconnect cursor. The
+`format-report` capability reads shipped synthetic lines, formats a report and
+waits for an exact approval before writing `Harness report.md` through the existing
+document journal and History. Restart recovery preserves unanswered approvals and
+reuses recorded writes without applying them twice.
+
+The model adapter is scripted; a real provider adapter is the next implementation.
+TypeScript and all 483 tests passed, including real host and child-process crash
+recovery tests. This source change has not been packaged into the Windows executable.
+See the [runtime report](docs/harness/RUNTIME_VERIFICATION.md) for API invocation,
+verification evidence, migration notes and limitations.
 
 ## Two surfaces over one project
 

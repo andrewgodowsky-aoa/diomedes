@@ -1,0 +1,123 @@
+{
+  "verifiedAt": "2026-09-09T00:25:06.1749901-04:00",
+  "worktree": "F:\\Achilles\\diomedes-wt\\codex-harness-runtime",
+  "branch": "codex/harness-runtime-20260908",
+  "base": "86ee91d8357080a7d2aa41206281d68502dd5c2e",
+  "pendingMerge": "c777c4178d254fb057447c33d046884029818b3b",
+  "gates": [
+    {
+      "command": "npm run check",
+      "exitCode": 0,
+      "log": "evidence/harness-runtime-check.log"
+    },
+    {
+      "command": "npx --no-install vitest run",
+      "exitCode": 0,
+      "log": "evidence/harness-runtime-tests.log"
+    }
+  ],
+  "testSummary": [
+    "Test Files  18 passed (18)",
+    "Tests  483 passed (483)"
+  ],
+  "files": [
+    {
+      "path": "client/approval-decisions.ts",
+      "sha256": "6535b9500200aaea0078ce7b27e3f3d4f3483651ba79de4c74e5ea84c0714036"
+    },
+    {
+      "path": "server/app.ts",
+      "sha256": "2645b1e4b897f9c3798e0e7ab6f470766af6685710a210a3183dbfc0ad392a32"
+    },
+    {
+      "path": "server/approval-admission.ts",
+      "sha256": "b59b0dc44057536e98efc76fa936de1cc93bde56e6748f62a8a2b16ac0a47403"
+    },
+    {
+      "path": "server/native-work.ts",
+      "sha256": "16f95e7f03aefb5cb8afaa96568ad37d0fea0dac023495fc0ab2e34590d4e68e"
+    },
+    {
+      "path": "server/store.ts",
+      "sha256": "0d3c2e3c8573f51aacae84249f244b8105c4cb368479d20ea9db3dfcdc0bab7f"
+    },
+    {
+      "path": "server/secrets.ts",
+      "sha256": "408cfb0a0bfd2cd39420fd84406d4441d2e7308499515b9fe5325f474222aae4"
+    },
+    {
+      "path": "shared/types.ts",
+      "sha256": "751f7b863b77f24e97200ad85563f3e6b59b7829a7c1b35ecd0db9a71487321b"
+    },
+    {
+      "path": "server/harness/adapters.ts",
+      "sha256": "7fbc18e24831905a32ce756cac6b8d337900a19bcb5ece428ccb0c7c964cb55a"
+    },
+    {
+      "path": "server/harness/approval.ts",
+      "sha256": "b0b0b3cecdca36f28b5a5ffe74f46943cc0a8cd81f3f3181c9808d0f3d99b92f"
+    },
+    {
+      "path": "server/harness/bridge.ts",
+      "sha256": "c704a39c2c3e5e15e0a4c3d396fdaaf09b5c05dbf2c984a2a4cc6322c0f8780e"
+    },
+    {
+      "path": "server/harness/capabilities/format-report.ts",
+      "sha256": "92b24b445d06aa2a34b1348117cb5e18fbbe2151e32dd7cf53f6418abd1ac03a"
+    },
+    {
+      "path": "server/harness/fixture-adapter.ts",
+      "sha256": "20fa79e8cdff1d9e90434ee4eba28fae1d1aa8742bd0207582fc7e65d58f805a"
+    },
+    {
+      "path": "server/harness/host.ts",
+      "sha256": "50f81dfe6e81482b71b61592f493a667e1325affa0f39236ab1caf52c9375781"
+    },
+    {
+      "path": "server/harness/routes.ts",
+      "sha256": "4bf14ae2db547f1eb82c16be39191e0ee6210300c930f8b1fd3f9190e31e14ad"
+    },
+    {
+      "path": "server/harness/run-service.ts",
+      "sha256": "42c0d7ed879704bb0102cf805506961e9be83cbe851fcedf587cd533951de006"
+    },
+    {
+      "path": "server/harness/run-store.ts",
+      "sha256": "d07a06c375c6125869882ef6e3ece416d4ef37023a45dc3801aaec9e7ac5faa8"
+    },
+    {
+      "path": "fixtures/harness/report-lines.txt",
+      "sha256": "a71a8d39da27895540a22af47baa95d4146bd473b11edc3579319b6f50d57b11"
+    },
+    {
+      "path": "tests/approval-decisions-client.test.ts",
+      "sha256": "fcdac8d5b1934437e94119a5d4fe093317707c9ceaa6e2133c2de24e14191850"
+    },
+    {
+      "path": "tests/harness-host.test.ts",
+      "sha256": "3616aa81a243f5fe5f692b5216042f359d81a605b5774bdee65206b185b4dc91"
+    },
+    {
+      "path": "tests/harness-host-child.ts",
+      "sha256": "a92abb74bc4ca3cfc4632461800b2ca0144abfd88f6c44b86039947de99cbf5e"
+    },
+    {
+      "path": "docs/harness/CHANGES.md",
+      "sha256": "b90bd21208d0f55c8429bebd14bbbe1fe2f6de8653fa5cf7bddc04ef683b502a"
+    },
+    {
+      "path": "docs/harness/RUNTIME_VERIFICATION.md",
+      "sha256": "b583570b1df276ba8418223b466bacbe673b31f1a8f9b3502a824d0caaab0c93"
+    },
+    {
+      "path": "README.md",
+      "sha256": "8b08a8477a22b7289a07e7b8d83e85be80926c5a5916140e916d593f55f29a1e"
+    }
+  ],
+  "runtimeProof": "createApp with temporary project/data folders; scripted adapter; real filesystem receipts and child-process exits",
+  "desktopRebuilt": false,
+  "committed": false,
+  "pushed": false,
+  "gitStateScope": "The committed and pushed flags describe the verification snapshot, before publication was authorized.",
+  "documentationUpdatedAt": "2026-09-09T00:55:27.6480297-04:00"
+}

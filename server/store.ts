@@ -1,4 +1,5 @@
 import { assertReplay, findCommand } from './command-admission.js';
+import { FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
@@ -273,7 +274,7 @@ export class Store extends EventEmitter {
     await this.interruptUnpreparedApprovals();
     for (const state of this.states.values()) {
       for (const session of state.sessions.filter((item) =>
-        ['working', 'waiting', 'queued'].includes(item.state),
+        item.engine.name !== FIXTURE_ENGINE && ['working', 'waiting', 'queued'].includes(item.state),
       )) {
         session.state = 'stopped';
         session.endedAt = now();
@@ -419,6 +420,8 @@ export class Store extends EventEmitter {
       ? 'The accepted decision was interrupted before a write was prepared. Start new work for a new proposal.'
       : conflicts.length ? 'Outside edits were preserved during recovery. Some approved changes may have applied; inspect History.' : null;
     need.execution = { state: eventId === null ? 'not-applied' : conflicts.length ? 'conflicted' : 'applied', eventId, completedAt, reason, conflicts };
+    // Only the harness presentation may finish its Session. A write is one step.
+    if (need.harness) return;
     const session = state.sessions.find((item) => item.id === need.sessionId)!;
     session.state = reason ? 'failed' : 'done';
     session.endedAt = completedAt;
@@ -440,7 +443,7 @@ export class Store extends EventEmitter {
     for (const state of this.states.values()) {
       let changed = false;
       for (const need of state.needs) {
-        if (need.execution?.state !== 'pending') continue;
+        if (need.execution?.state !== 'pending' || need.harness) continue;
         this.settleApproval(state, need, null);
         changed = true;
       }
@@ -787,7 +790,7 @@ export class Store extends EventEmitter {
     const approval = options.approvalId ? state.needs.find((need) => need.id === options.approvalId) : undefined;
     if (options.approvalId && (!approval?.approvalReceipt || approval.execution?.state !== 'pending' ||
         approval.approvalReceipt.decision !== 'go-ahead' || approval.sessionId !== options.sessionId || approval.taskId !== options.taskId ||
-        actionDigest(inputs) !== approval.approvalReceipt.actionDigest || options.merge !== false))
+        actionDigest(inputs) !== (approval.harness ? actionDigest(harnessWrites(id, approval)) : approval.approvalReceipt.actionDigest) || options.merge !== false))
       throw new ApiError(409, 'The write does not match its exact approval receipt.');
     const checked: PendingWrite[] = [];
     if (new Set(inputs.map((i) => relativeName(i.path).toLowerCase())).size !== inputs.length)

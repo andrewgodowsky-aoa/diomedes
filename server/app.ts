@@ -26,6 +26,10 @@ import { engineCatalog, isKnownChoice } from './models.js';
 import { effortFor } from '../shared/effort.js';
 import type { UsageSnapshot } from '../shared/types.js';
 import { mountTeamRoutes } from './team/routes.js';
+import { createHarnessHost } from './harness/host.js';
+import { mountHarnessRoutes } from './harness/routes.js';
+import { localHarnessPrincipal } from './harness/bridge.js';
+import { FIXTURE_ENGINE } from './harness/approval.js';
 import { roleInstructions } from './team/prompts.js';
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
 
@@ -276,6 +280,8 @@ export async function createApp(options: AppOptions) {
   await store.init();
   const work = new WorkService(store, options.stepMs);
   const nativeWork = new NativeWorkService(store, options.nativeGenerator);
+  const harness = createHarnessHost({ store, dataDir: store.dataDir });
+  await harness.init();
   const app = express();
   // The port this service listens on, learned from the first request's socket (listen(0)
   // in tests picks it late). A wake has no request of its own, so it uses the remembered one.
@@ -311,7 +317,7 @@ export async function createApp(options: AppOptions) {
   const serviceFor = (projectId: string, sessionId: string) => {
     const session = store.state(projectId).sessions.find((item) => item.id === sessionId);
     if (!session) throw new ApiError(404, 'This work session was not found.');
-    return session.sample ? work : nativeWork;
+    return session.engine.name === FIXTURE_ENGINE ? harness.bridge : session.sample ? work : nativeWork;
   };
   const port = options.port ?? Number(process.env.DIOMEDES_PORT ?? 47631),
     clientPort = options.clientPort ?? Number(process.env.DIOMEDES_CLIENT_PORT ?? 5173);
@@ -342,6 +348,7 @@ export async function createApp(options: AppOptions) {
   });
   app.use(express.json({ limit: '9mb' }));
   const teamService = mountTeamRoutes(app, store);
+  mountHarnessRoutes(app, store, harness);
   // A member wakes on team mail (see server/team/service.ts): the run is the same Codex Work
   // run a person starts from the thread, on the member's open task when it has one. Only
   // Codex members run; other engines park as waiting until they exist.
@@ -847,6 +854,12 @@ export async function createApp(options: AppOptions) {
     '/api/projects/:id/work/start',
     route(async (req) => {
       const supplied = body(req);
+      if (supplied.capabilityId !== undefined) {
+        if (supplied.protocolVersion !== undefined || supplied.commandId !== undefined)
+          throw new ApiError(400, 'Saved Work commands for native fixtures are not available yet.');
+        return harness.bridge.start(id(req), supplied.taskId === null ? null : asString(supplied.taskId, 'a task', 100),
+          asString(supplied.capabilityId, 'a capability', 100), asString(supplied.instruction, 'an instruction', 16000), localHarnessPrincipal(id(req)));
+      }
       const command = parseWorkCommand(supplied);
       const b = command?.request ?? supplied;
       const projectId = id(req);
@@ -963,6 +976,8 @@ export async function createApp(options: AppOptions) {
       const need = store.state(id(req)).needs.find((item) => item.id === req.params.needId);
       if (!need) throw new ApiError(404, 'This request was not found.');
       const admission = parseApprovalCommand(id(req), need.id, b);
+      if (need.harness)
+        return harness.bridge.resolve(id(req), need.id, choice(b.resolution, ['go-ahead', 'declined'], 'decision'), b.allowForTask === true, admission);
       if (need.approval || admission)
         return nativeWork.resolve(id(req), need.id, choice(b.resolution, ['go-ahead', 'declined'], 'decision'), b.allowForTask === true, admission);
       return serviceFor(id(req), need.sessionId).resolve(
@@ -1712,7 +1727,9 @@ export async function createApp(options: AppOptions) {
   app.locals.store = store;
   app.locals.work = work;
   app.locals.nativeWork = nativeWork;
+  app.locals.harness = harness;
   app.locals.close = async () => {
+    await harness.close();
     await work.close();
     await nativeWork.close();
   };

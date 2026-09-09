@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { ApprovalCommand, ApprovalIdentity, Need, ProjectState } from '../shared/types.js';
 import { ApiError, relativeName } from './paths.js';
 import type { WriteInput } from './store.js';
+import { FIXTURE_ENGINE, harnessWrites, identifyHarnessApproval } from './harness/approval.js';
 
 import {
   commandIdSchema as commandId,
@@ -12,6 +13,8 @@ import {
 } from './command-admission.js';
 const id = z.string().min(1).max(100);
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
+// Harness v1 intent hashes are bare SHA-256; text actions keep their prefixed digest.
+const actionHash = z.union([digest, sha]);
 const time = z
   .string()
   .max(40)
@@ -27,7 +30,7 @@ const requestSchema = z.strictObject({
   commandId,
   resolution: z.enum(['go-ahead', 'declined']),
   proposalDigest: digest,
-  actionDigest: digest,
+  actionDigest: actionHash,
   baseDigest: digest,
   allowForTask: z.literal(false).optional(),
 });
@@ -85,6 +88,7 @@ export function identifyApproval(
   need: Need,
   sources: ApprovalIdentity['sources'],
 ): ApprovalIdentity {
+  if (need.harness) return identifyHarnessApproval(projectId, need);
   const preview = need.preview;
   if (!preview?.length || preview.length > 8)
     throw new Error('An exact approval needs a bounded text preview.');
@@ -158,7 +162,7 @@ export function assertApprovalMatches(projectId: string, need: Need, admission: 
 const identitySchema = z.strictObject({
   protocolVersion: z.literal(1),
   proposalDigest: digest,
-  actionDigest: digest,
+  actionDigest: actionHash,
   baseDigest: digest,
   expiresAt: time,
   sources: z.array(z.strictObject({ path: z.string().min(1).max(1000), sha })).max(8),
@@ -174,7 +178,7 @@ const receiptSchema = z.strictObject({
   actor: z.literal('local-client'),
   scope: z.literal('local-prototype'),
   proposalDigest: digest,
-  actionDigest: digest,
+  actionDigest: actionHash,
   baseDigest: digest,
   createdAt: time,
   expiresAt: time,
@@ -213,6 +217,11 @@ export function validateApprovalReceipts(state: ProjectState) {
     )
       throw incompatible();
     try {
+      if (need.harness) {
+        if (sessions.get(need.sessionId)?.engine.name !== FIXTURE_ENGINE || need.approval.sources.length)
+          throw incompatible();
+        harnessWrites(state.project.id, need);
+      }
       const identity = identifyApproval(state.project.id, need, need.approval.sources);
       if (
         identity.expiresAt !== need.approval.expiresAt ||
@@ -292,7 +301,7 @@ export function validateApprovalReceipts(state: ProjectState) {
             before: file.before,
             after: file.after,
           })),
-        }) !== receipt.actionDigest
+        }) !== (need.harness ? actionDigest(harnessWrites(state.project.id, need)) : receipt.actionDigest)
       )
         throw incompatible();
     }

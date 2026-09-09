@@ -9,6 +9,7 @@ import { absent, ApiError, projectFile, relativeName, textKind } from './paths.j
 import { hash, identifier, now, Store, type WriteInput } from './store.js';
 import { TeamService } from './team/service.js';
 import { actionDigest, assertApprovalMatches, baseDigest, identifyApproval, type ApprovalAdmission } from './approval-admission.js';
+import { secretScrubber } from './secrets.js';
 
 export type NativeGenerator = (input: {
   prompt: string;
@@ -243,7 +244,7 @@ export class NativeWorkService {
           released = true;
           if (process.env[tokenEnv] === token) delete process.env[tokenEnv];
         },
-        redact: (text) => text.split(token).join('[redacted]'),
+        redact: secretScrubber([token]),
       };
     }
     const session: Session = {

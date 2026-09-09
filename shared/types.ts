@@ -1,3 +1,5 @@
+import type { StepIntent } from './harness.js';
+
 export type Detail = 'guided' | 'standard' | 'technical';
 /** The two surfaces. The Workbook is one page at a time; the Console is every thread, helper and change at once. */
 export type Surface = 'workbook' | 'console';
@@ -122,6 +124,8 @@ export interface Need {
   approval?: ApprovalIdentity;
   approvalReceipt?: ApprovalReceipt;
   execution?: ApprovalExecution;
+  /** Optional v1 harness binding. The Need remains the single approval record. */
+  harness?: { runId: string; intent: StepIntent };
 }
 export interface ApprovalIdentity {
   readonly protocolVersion: 1;

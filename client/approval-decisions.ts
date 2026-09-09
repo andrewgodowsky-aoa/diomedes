@@ -16,6 +16,7 @@ const MAX_PENDING = 32;
 const inFlight = new Map<string, { signature: string; promise: Promise<Need> }>();
 const commandPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const digestPattern = /^sha256:[a-f0-9]{64}$/;
+const intentPattern = /^[a-f0-9]{64}$/;
 const invalid = () => new Error('Stored approval command is invalid; the request was not sent.');
 const unavailable = () => new Error('Approval storage is unavailable; the request was not sent.');
 const unresolved = () =>
@@ -100,7 +101,7 @@ function readPending(
     typeof command.proposalDigest !== 'string' ||
     !digestPattern.test(command.proposalDigest) ||
     typeof command.actionDigest !== 'string' ||
-    !digestPattern.test(command.actionDigest) ||
+    !(digestPattern.test(command.actionDigest) || intentPattern.test(command.actionDigest)) ||
     typeof command.baseDigest !== 'string' ||
     !digestPattern.test(command.baseDigest)
   )
@@ -287,7 +288,7 @@ export async function decideApproval(
     typeof approval.proposalDigest !== 'string' ||
     !digestPattern.test(approval.proposalDigest) ||
     typeof approval.actionDigest !== 'string' ||
-    !digestPattern.test(approval.actionDigest) ||
+    !(need.harness ? intentPattern : digestPattern).test(approval.actionDigest) ||
     typeof approval.baseDigest !== 'string' ||
     !digestPattern.test(approval.baseDigest)
   )

@@ -1,0 +1,352 @@
+import path from 'node:path';
+import { z } from 'zod';
+import type { HarnessPrincipal, HarnessRun, Json } from '../../shared/harness.js';
+import { Store, hash } from '../store.js';
+import { ApiError } from '../paths.js';
+import { secretScrubber } from '../secrets.js';
+import { FileRunStore, validateRunId, type RunStore } from './run-store.js';
+import { RunService, type StepDefinition, type StepHandler } from './run-service.js';
+import { ToolRegistry } from './tools.js';
+import { HarnessError } from './policy.js';
+import { HarnessBridge } from './bridge.js';
+import { ScriptedModelAdapter } from './fixture-adapter.js';
+import { REPORT_PATH } from './approval.js';
+import { registerFormatReport } from './capabilities/format-report.js';
+
+export const HARNESS_POLICY_VERSION = 'diomedes-host-policy-v1';
+
+// The boundary's reader checks the contract version. The host also needs a
+// structurally readable record before startup recovery can touch any Session.
+const integer = z.number().int().nonnegative().safe();
+const stamp = z.string().refine((value) => Number.isFinite(Date.parse(value)));
+const sha = z.string().regex(/^[a-f0-9]{64}$/);
+const errorRecord = z.object({ name: z.string(), message: z.string() }).nullable();
+const usage = z.object({ units: integer, modelCalls: integer, toolCalls: integer });
+const readableRun = z.object({
+  v: z.literal(1),
+  id: z.string(),
+  projectId: z.string(),
+  tenantId: z.string(),
+  sessionId: z.string().nullable(),
+  taskId: z.string().nullable(),
+  capabilityId: z.string(),
+  capabilityVersion: z.string(),
+  capabilityTools: z.array(z.string()),
+  policyVersion: z.string(),
+  principal: z.object({
+    id: z.string(),
+    projectId: z.string(),
+    tenantId: z.string(),
+    capabilities: z.array(z.string()),
+    identityGeneration: integer,
+  }),
+  state: z.enum([
+    'queued',
+    'running',
+    'waiting',
+    'reconcile_required',
+    'completed',
+    'failed',
+    'cancelled',
+  ]),
+  budget: usage.extend({ wallMs: integer.nullable() }),
+  used: usage,
+  owner: z.string().nullable(),
+  fence: integer,
+  leaseExpiresAt: integer.nullable(),
+  parentRunId: z.string().nullable(),
+  forkPoint: z.string().nullable(),
+  contextRevision: integer,
+  transcripts: z.record(
+    z.string(),
+    z.object({
+      providerId: z.string(),
+      modelId: z.string().nullable(),
+      lineageId: z.string(),
+      opaqueRef: z.string(),
+      prefixHash: z.string(),
+    }),
+  ),
+  result: z.json(),
+  failure: errorRecord,
+  cancelReason: z.string().nullable(),
+  createdAt: stamp,
+  updatedAt: stamp,
+  steps: z.array(
+    z.object({
+      intent: z.object({
+        stepId: z.string(),
+        stepVersion: z.string(),
+        kind: z.enum(['model', 'tool', 'transform', 'approval', 'wait']),
+        effect: z.enum(['pure', 'read', 'idempotent', 'non-idempotent']),
+        name: z.string().nullable().optional(),
+        input: z.json(),
+        cost: integer,
+        maxAttempts: integer.positive(),
+        permission: z.string().nullable(),
+        approval: z.boolean(),
+        destination: z.enum(['local', 'external']),
+        trustedInputRequired: z.boolean(),
+        label: z
+          .object({
+            tenantId: z.string(),
+            projectId: z.string(),
+            integrity: z.enum(['trusted', 'untrusted']),
+            confidentiality: z.enum(['public', 'internal', 'restricted']),
+            provenance: z.array(z.string()),
+          })
+          .nullable(),
+        policyVersion: z.string(),
+      }),
+      intentHash: sha,
+      attempt: integer,
+      state: z.enum([
+        'pending',
+        'running',
+        'succeeded',
+        'retry_wait',
+        'waiting_approval',
+        'waiting_event',
+        'reconcile_required',
+        'failed',
+        'cancelled',
+      ]),
+      output: z.json(),
+      outputHash: sha.nullable(),
+      leaseFence: integer,
+      startedAt: stamp.nullable(),
+      endedAt: stamp.nullable(),
+      error: errorRecord,
+    }),
+  ),
+  approvals: z.array(
+    z.object({
+      runId: z.string(),
+      stepId: z.string(),
+      intentHash: sha,
+      principalId: z.string(),
+      identityGeneration: integer,
+      executionGeneration: integer,
+      decision: z.enum(['approved', 'denied']),
+      decidedBy: z.string(),
+      decidedAt: stamp,
+      expiresAt: stamp,
+      consumedAt: stamp.nullable(),
+    }),
+  ),
+  events: z.array(
+    z.object({
+      v: z.literal(1),
+      seq: integer.positive(),
+      runId: z.string(),
+      at: stamp,
+      type: z.string(),
+      stepId: z.string().optional(),
+      attempt: integer.optional(),
+      attributes: z.record(z.string(), z.json()),
+    }),
+  ),
+  lastSeq: integer,
+});
+
+/** One lazily created file store per registered project; no second write queue. */
+class ProjectRunStore implements RunStore {
+  private projects = new Map<string, FileRunStore>();
+  private locations = new Map<string, string>();
+  private catalogs = new Map<string, Set<string>>();
+  private revisions = new Map<string, number>();
+  private duplicates = new Set<string>();
+  saved: (run: HarnessRun) => void = () => {};
+  constructor(
+    private readonly store: Store,
+    private readonly dataDir: string,
+  ) {}
+  private project(projectId: string) {
+    this.store.state(projectId);
+    let files = this.projects.get(projectId);
+    if (!files) {
+      files = new FileRunStore(path.join(this.dataDir, 'projects', projectId, 'harness', 'runs'));
+      this.projects.set(projectId, files);
+    }
+    return files;
+  }
+  async ids(projectId: string): Promise<string[]> {
+    const revision = this.revisions.get(projectId) ?? 0;
+    const ids = await this.project(projectId).list();
+    // A listing begun before create() must not erase the new run's lookup.
+    if (revision !== (this.revisions.get(projectId) ?? 0)) return this.ids(projectId);
+    this.catalog(projectId, new Set(ids));
+    return ids;
+  }
+  private catalog(projectId: string, ids: Set<string>) {
+    const previous = this.catalogs.get(projectId);
+    if (previous && previous.size === ids.size && [...ids].every((id) => previous.has(id))) return;
+    this.catalogs.set(projectId, ids);
+    this.revisions.set(projectId, (this.revisions.get(projectId) ?? 0) + 1);
+    this.index();
+  }
+  private index() {
+    this.locations.clear();
+    this.duplicates.clear();
+    for (const [projectId, ids] of this.catalogs)
+      for (const id of ids) {
+        if (this.locations.has(id)) this.duplicates.add(id);
+        else this.locations.set(id, projectId);
+      }
+  }
+  async list() {
+    return (
+      await Promise.all((await this.store.projects()).map((project) => this.ids(project.id)))
+    ).flat();
+  }
+  async create(run: HarnessRun) {
+    if (this.locations.has(run.id))
+      throw new HarnessError('run_exists', 'This run already exists.');
+    await this.project(run.projectId).create(run);
+    const ids = new Set(this.catalogs.get(run.projectId));
+    ids.add(run.id);
+    this.catalog(run.projectId, ids);
+    this.saved(structuredClone(run));
+  }
+  async read(runId: string) {
+    validateRunId(runId);
+    if (this.duplicates.has(runId))
+      throw new HarnessError(
+        'duplicate_run',
+        'This run id appears in more than one project. Its files were left unchanged.',
+      );
+    const projectId = this.locations.get(runId);
+    if (!projectId) return null;
+    let run: HarnessRun | null;
+    try {
+      run = await this.project(projectId).read(runId);
+    } catch (error) {
+      if (error instanceof SyntaxError)
+        throw new HarnessError('invalid_run_record', 'This saved run could not be read.');
+      throw error;
+    }
+    if (
+      run &&
+      (run.id !== runId ||
+        run.projectId !== projectId ||
+        !readableRun.safeParse(run).success ||
+        run.projectId !== run.principal.projectId ||
+        run.tenantId !== run.principal.tenantId ||
+        run.events.length !== run.lastSeq ||
+        run.events.some((event, index) => event.seq !== index + 1 || event.runId !== run.id))
+    )
+      throw new HarnessError(
+        'invalid_run_record',
+        'This saved run has inconsistent identity or events.',
+      );
+    if (!run) {
+      const ids = new Set(this.catalogs.get(projectId));
+      ids.delete(runId);
+      this.catalog(projectId, ids);
+    }
+    return run;
+  }
+  async write(run: HarnessRun) {
+    if (this.duplicates.has(run.id) || this.locations.get(run.id) !== run.projectId)
+      throw new HarnessError('project_mismatch', 'The run does not belong to this project.');
+    await this.project(run.projectId).write(run);
+    this.saved(structuredClone(run));
+  }
+}
+
+class HostRunService extends RunService {
+  afterStep: () => Promise<void> = async () => {};
+  override async step<T = Json>(
+    runId: string,
+    owner: string,
+    definition: StepDefinition,
+    handler: StepHandler<T>,
+    principal: HarnessPrincipal,
+  ): Promise<T> {
+    try {
+      return await super.step(runId, owner, definition, handler, principal);
+    } finally {
+      await this.afterStep();
+    }
+  }
+}
+
+export function createHarnessHost({ store, dataDir }: { store: Store; dataDir: string }) {
+  if (path.resolve(dataDir) !== store.dataDir)
+    throw new Error('The harness must use the Store data folder.');
+  const secrets = new Set<string>();
+  const redact = secretScrubber(secrets);
+  const files = new ProjectRunStore(store, dataDir);
+  const runs = new HostRunService(files, {
+    clock: Date.now,
+    policyVersion: HARNESS_POLICY_VERSION,
+    redact,
+  });
+  const tools = new ToolRegistry();
+  const adapter = new ScriptedModelAdapter(async (runId) => {
+    const run = await runs.get(runId);
+    return {
+      projectId: run.projectId,
+      expected: hash(await store.current(run.projectId, REPORT_PATH)),
+    };
+  });
+  const adapters = { 'native-fixture': adapter };
+  registerFormatReport(tools, store, runs);
+  const bridge = new HarnessBridge(store, runs, tools, adapter, redact);
+  files.saved = (run) => bridge.enqueue(run);
+  runs.afterStep = () => bridge.flush();
+  runs.use((context) => bridge.beforeStep(context));
+  const refreshSecrets = async () => {
+    for (const project of await store.projects())
+      for (const token of Object.values(await store.readTeamSecrets(project.id)))
+        secrets.add(token);
+  };
+  const get = async (projectId: string, runId: string) => {
+    if (!(await files.ids(projectId)).includes(validateRunId(runId)))
+      throw new ApiError(404, 'This run was not found in this project.');
+    return runs.get(runId);
+  };
+  const list = async (projectId: string) => {
+    const result: HarnessRun[] = [];
+    for (const id of await files.ids(projectId)) {
+      try {
+        result.push(await runs.get(id));
+      } catch (error) {
+        if (!(error instanceof HarnessError)) throw error;
+        console.warn(`Skipped an unreadable harness run: ${redact(error.message)}`);
+      }
+    }
+    return result;
+  };
+  const scrub = <T>(value: T): T =>
+    JSON.parse(
+      JSON.stringify(value, (_key, item: unknown) =>
+        typeof item === 'string' ? redact(item) : item,
+      ),
+    ) as T;
+  return {
+    runs,
+    tools,
+    adapters,
+    bridge,
+    redact,
+    scrub,
+    get,
+    list,
+    refreshSecrets,
+    // Future leased secrets use the same live scrubber; no secret is leased by this fixture.
+    rememberSecret(secret: string) {
+      if (secret) secrets.add(secret);
+    },
+    async init() {
+      await refreshSecrets();
+      await files.list();
+      for (const project of await store.projects())
+        await bridge.recover(project.id, await list(project.id));
+      await bridge.flush();
+    },
+    close: () => bridge.close(),
+  };
+}
+
+export type HarnessHost = ReturnType<typeof createHarnessHost>;
