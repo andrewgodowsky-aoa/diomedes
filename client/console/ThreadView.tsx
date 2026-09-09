@@ -14,8 +14,9 @@ import type {
   Turn,
 } from '../../shared/types';
 import { effortFor } from '../../shared/effort';
-import { ApprovalStatus, Notice, time } from '../components';
+import { ApprovalStatus, time } from '../components';
 import { Composer } from './Composer';
+import { NeedBlock } from './Need';
 
 function fmtDur(ms: number): string {
   const s = ms / 1000;
@@ -307,7 +308,7 @@ export function ThreadView({
         <div className="col" ref={body}>
           {needs.map((n) => (
             <div id={`need-${n.id}`} key={n.id}>
-              <Notice
+              <NeedBlock
                 need={n}
                 decide={(r, a) => onResolve(n, r, n.approval ? false : a ?? (r === 'go-ahead' && permission === 'task'))}
                 show={() => onPreview(n)}

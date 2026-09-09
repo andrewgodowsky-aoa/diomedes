@@ -19,6 +19,14 @@ html[data-surface='console'] body {
   font: 400 13px/1.5 var(--ui);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  /* `scrollbar-color` inherits; `scrollbar-width` does not, so it is set on the
+     descendants too (rule below). One place, so no scroller in the Console can
+     be left showing the fat system bar. */
+  scrollbar-color: var(--hair-2) transparent;
+}
+.console,
+.console * {
+  scrollbar-width: thin;
 }
 /* The Workbook's global button box (styles.css: UA padding plus a 36 px hit
    target) does not belong in the Console: the prototype resets every button to
@@ -146,11 +154,23 @@ html[data-surface='console'] body {
   min-width: 0;
   overflow: hidden;
 }
+/* The nav clips, so a long project name would be cut mid-glyph. Each name
+   shrinks to its own ellipsis first and only then runs out of room. */
 .console .crumb button {
   padding: 3px 6px;
   border-radius: var(--rb);
   white-space: nowrap;
   color: var(--t3);
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* "Projects" is the way back to the list; it never gives up room. */
+.console .crumb > button:first-of-type {
+  flex: none;
+  max-width: none;
 }
 .console .crumb button:hover {
   background: var(--raised);
@@ -340,10 +360,13 @@ html[data-surface='console'] body {
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   min-height: 0;
 }
+/* One measure, centred in the work pane. `min()` keeps the 760 px reading
+   width whenever the pane can hold it and turns the gutters into padding when
+   it cannot, so head, instrument line, transcript and composer stay on the
+   same two edges at every width. */
 .console .col {
-  max-width: 760px;
-  margin-left: 56px;
-  padding-right: 24px;
+  width: min(760px, 100% - 96px);
+  margin-inline: auto;
 }
 .console .head {
   padding: 26px 0 0;
@@ -405,7 +428,9 @@ html[data-surface='console'] body {
 .console .permission-note {
   font-size: 12px;
   color: var(--t2);
-  margin: 0;
+  /* block only: the shorthand would reset `.col`'s auto inline margins and pull
+     this line out of the centred measure */
+  margin-block: 0;
   padding: 8px 0 0;
 }
 .console .seg {
@@ -430,8 +455,6 @@ html[data-surface='console'] body {
 .console .transcript {
   overflow-y: auto;
   min-height: 0;
-  scrollbar-width: thin;
-  scrollbar-color: var(--hair-2) transparent;
 }
 .console .transcript .col {
   padding-bottom: 28px;
@@ -445,7 +468,7 @@ html[data-surface='console'] body {
   content: '';
   position: absolute;
   left: -24px;
-  right: 0;
+  right: -24px;
   top: 0;
   height: 1px;
   background: var(--hair);
@@ -601,12 +624,73 @@ html[data-surface='console'] body {
     opacity: 0;
   }
 }
-.console .proposal {
-  margin-top: 12px;
-  border: 1px solid var(--hair-2);
-  border-radius: var(--r);
-  font-size: 13px;
+/* ---- needs you: the Console's own block, not the Workbook's card ---- */
+.console .need {
+  position: relative;
+  padding: 16px 0 20px;
 }
+.console .need + .need {
+  border-top: 1px solid var(--hair);
+}
+.console .need::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 23px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--attn);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--attn) 55%, transparent);
+}
+/* the one label that stays visible without hover: it is why the run stopped */
+.console .need .who .mono {
+  opacity: 1;
+  color: var(--attn);
+}
+.console .need .ask {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--t1);
+  max-width: 62ch;
+}
+.console .need .why {
+  margin: 5px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--t2);
+  max-width: 62ch;
+}
+.console .need .verbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 18px;
+  margin-top: 12px;
+}
+/* the board's verb language: text, no chrome. Ink stays 12 px; the hit area is
+   pushed out to 24 px with padding the negative margin takes back. */
+.console .need .verbs .verb {
+  font-size: 12px;
+  color: var(--t2);
+  padding: 6px 6px;
+  margin: -6px -6px;
+  transition: color var(--quick);
+}
+.console .need .verbs .verb:hover {
+  color: var(--t1);
+}
+.console .need .verbs .verb.go {
+  color: var(--attn);
+}
+.console .need .verbs .verb.go:hover {
+  color: color-mix(in srgb, var(--attn) 75%, var(--t1));
+}
+.console .need .approval-status {
+  margin: 14px 0 0;
+  border-left-color: var(--hair-2);
+}
+
 
 .console .compose {
   padding: 0 0 20px;
@@ -646,6 +730,13 @@ html[data-surface='console'] body {
 }
 .console .aux.show {
   display: flex;
+}
+/* A long list of documents truncates inside the composer rather than widening it. */
+.console .aux .names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .console .aux select {
   background: var(--surface);
@@ -909,11 +1000,22 @@ html[data-surface='console'] body {
 .console .picker > button .eff.capped {
   color: var(--attn);
 }
+/* A popup escapes its ancestor's layout box but not its inherited typography:
+   the chrome bar sets `white-space: nowrap`, which would forbid every line in
+   here from wrapping and push text straight out of the panel. Reset it at the
+   panel edge, and let a tall menu scroll rather than run off the window. */
 .console .pmenu {
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
   width: 340px;
+  max-width: calc(100vw - 32px);
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hair-2) transparent;
+  white-space: normal;
   background: var(--raised);
   border: 1px solid var(--hair-2);
   border-radius: var(--r);
@@ -935,6 +1037,10 @@ html[data-surface='console'] body {
 }
 .console .pmenu h4 span {
   margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--t3);
   font-weight: 400;
   text-transform: none;
@@ -942,7 +1048,7 @@ html[data-surface='console'] body {
 }
 .console .pmenu .m {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   gap: 10px;
   align-items: baseline;
   width: 100%;
@@ -955,10 +1061,23 @@ html[data-surface='console'] body {
 .console .pmenu .m:hover {
   background: var(--surface);
 }
+/* The model id is what the picker is for: it keeps its full width (the longest
+   real slug measures ~131 px) and only a pathological one ever truncates. The
+   display name yields first. */
+.console .pmenu .m > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .console .pmenu .m .id {
   font-family: var(--mono);
   font-size: 11.5px;
   color: var(--t2);
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .console .pmenu .m.on .id {
   color: var(--light);
@@ -966,8 +1085,10 @@ html[data-surface='console'] body {
 .console .pmenu .m small {
   color: var(--t3);
   font-size: 12px;
+  line-height: 1.45;
   grid-column: 1 / -1;
-  margin-top: -2px;
+  margin-top: -1px;
+  overflow-wrap: anywhere;
 }
 .console .pmenu .ladder {
   display: flex;
@@ -1124,7 +1245,7 @@ html[data-surface='console'] body {
     grid-template-columns: minmax(0, 1fr) 250px;
   }
   .console .col {
-    margin-left: 32px;
+    width: min(760px, 100% - 64px);
   }
 }
 
@@ -1154,7 +1275,7 @@ html[data-surface='console'] body {
     padding-left: 16px;
   }
   .console .col {
-    margin-left: 16px;
+    width: min(760px, 100% - 32px);
   }
   .console .instr .grow {
     display: none;

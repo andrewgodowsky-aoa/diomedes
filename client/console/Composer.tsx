@@ -6,7 +6,7 @@ const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
 const CAPS: Record<Mode, string> = {
   ask: 'Nothing in the project changes.',
   plan: 'A plan you read before work begins.',
-  build: 'Changes proposed, applied only on your go-ahead.',
+  build: 'Applied only on your go-ahead.',
   fix: 'The smallest change that clears the failure.',
 };
 const PLACEHOLDERS: Record<Mode, string> = {
@@ -202,13 +202,14 @@ export function Composer({ thread, mode, onMode, busy, online, onSend }: Compose
             }
           }}
         />
-        {mode === 'build' && (
+        {/* Named documents are worth stating; the approval promise is already on
+            the caption below, so an empty scope says nothing at all. */}
+        {mode === 'build' && sources.length > 0 && (
           <div className="aux show">
-            <span className="mono">may touch</span>
-            <span className="mono lc" style={{ color: 'var(--t1)' }}>
-              {sources.join(', ') || 'the documents you name'}
+            <span className="mono">in scope</span>
+            <span className="mono lc names" style={{ color: 'var(--t1)' }} title={sources.join(', ')}>
+              {sources.join(', ')}
             </span>
-            <span style={{ marginLeft: 'auto' }}>Nothing is written until you say go ahead.</span>
           </div>
         )}
         {mode === 'fix' && (

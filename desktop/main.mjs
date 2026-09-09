@@ -40,8 +40,8 @@ function titleBarFor(packageId) {
   const entry = FIELD_TITLEBAR[id] ?? FIELD_TITLEBAR.field;
   const [color, symbolColor] = entry;
   if (!HEX_COLOR.test(color) || !HEX_COLOR.test(symbolColor))
-    return { color: '#121417', symbolColor: '#e6e9ed', height: 46 };
-  return { color, symbolColor, height: 46 };
+    return { color: '#121417', symbolColor: '#e6e9ed', height: 40 };
+  return { color, symbolColor, height: 40 };
 }
 
 // The service persists settings at settings.json in the data dir
@@ -142,7 +142,7 @@ if (!app.requestSingleInstanceLock()) {
         backgroundColor: '#16191d',
         show: false,
         titleBarStyle: 'hidden',
-        titleBarOverlay: { color: '#121417', symbolColor: '#e6e9ed', height: 46 },
+        titleBarOverlay: { color: '#121417', symbolColor: '#e6e9ed', height: 40 },
         autoHideMenuBar: true,
         webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
       });

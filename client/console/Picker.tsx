@@ -23,6 +23,17 @@ interface PickerProps {
   onPick(requested: Conversation['requested'], engine: string): void;
 }
 
+/**
+ * A 340 px menu cannot hold an install path. Keep the tail that identifies the
+ * binary; the whole path stays available on hover.
+ */
+function shortLocation(value: string): string {
+  if (value.length <= 28) return value;
+  const parts = value.split(/[\\/]/).filter(Boolean);
+  if (parts.length < 3) return value;
+  return `…${value.includes('\\') ? '\\' : '/'}${parts.slice(-2).join(value.includes('\\') ? '\\' : '/')}`;
+}
+
 function available(id: string, integrations: IntegrationStatus[], settings: Settings): boolean {
   const found = integrations.find((i) => i.id === id);
   if (!found) return false;
@@ -131,7 +142,9 @@ export function Picker({
                   <div key={id}>
                     <h4>
                       {integration?.name ?? id}
-                      <span>{integration?.location || integration?.status}</span>
+                      <span title={integration?.location || integration?.status}>
+                        {shortLocation(integration?.location || integration?.status || '')}
+                      </span>
                     </h4>
                     <button
                       type="button"
