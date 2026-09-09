@@ -1,0 +1,136 @@
+{
+  "config": {
+    "argv": [
+      "F:\\LocalAI\\hermes-home\\node\\node.exe",
+      "F:\\Achilles\\diomedes\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "--config",
+      "playwright.connections.config.ts"
+    ],
+    "configFile": "F:\\Achilles\\diomedes\\playwright.connections.config.ts",
+    "rootDir": "F:/Achilles/diomedes/tests",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "F:/Achilles/diomedes/test-results/connections-browser",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "F:/Achilles/diomedes/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "connections-ui.spec.ts"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "evidence/windows-release/connections-browser.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.63.0",
+    "workers": 1,
+    "webServer": {
+      "command": "\"F:\\LocalAI\\hermes-home\\node\\node.exe\" --import tsx scripts/serve-built-client.ts",
+      "url": "http://127.0.0.1:5174/api/settings",
+      "timeout": 30000,
+      "reuseExistingServer": false,
+      "env": {
+        "DIOMEDES_PORT": "47632",
+        "DIOMEDES_CLIENT_PORT": "5174",
+        "DIOMEDES_DATA_DIR": "F:\\Achilles\\diomedes\\test-results\\app-data-1788955524774-46920\\data",
+        "DIOMEDES_PROJECTS_DIR": "F:\\Achilles\\diomedes\\test-results\\app-data-1788955524774-46920\\projects",
+        "DIOMEDES_TEST_MODE": "1",
+        "CODEX_HOME": "F:\\Achilles\\diomedes\\test-results\\app-data-1788955524774-46920\\codex"
+      },
+      "stdout": "pipe",
+      "stderr": "pipe"
+    }
+  },
+  "suites": [
+    {
+      "title": "connections-ui.spec.ts",
+      "file": "connections-ui.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "Connections works through ordinary Console navigation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4672,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-09T12:05:27.192Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "8880256cca827c2b3dcf-0840ac2d2a8a12e65007",
+          "file": "connections-ui.spec.ts",
+          "line": 4,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-09T12:05:24.787Z",
+    "duration": 7812.860000000001,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}
