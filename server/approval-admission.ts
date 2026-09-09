@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { ApprovalCommand, ApprovalIdentity, Need, ProjectState } from '../shared/types.js';
 import { ApiError, relativeName } from './paths.js';
 import type { WriteInput } from './store.js';
-import { FIXTURE_ENGINE, harnessWrites, identifyHarnessApproval } from './harness/approval.js';
+import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites, identifyHarnessApproval } from './harness/approval.js';
 
 import {
   commandIdSchema as commandId,
@@ -218,7 +218,9 @@ export function validateApprovalReceipts(state: ProjectState) {
       throw incompatible();
     try {
       if (need.harness) {
-        if (sessions.get(need.sessionId)?.engine.name !== FIXTURE_ENGINE || need.approval.sources.length)
+        const engine = sessions.get(need.sessionId)?.engine.name;
+        if (![FIXTURE_ENGINE, CODEX_ENGINE].includes(engine ?? '')
+          || (engine === FIXTURE_ENGINE && need.approval.sources.length))
           throw incompatible();
         harnessWrites(state.project.id, need);
       }

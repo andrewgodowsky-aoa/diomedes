@@ -1,0 +1,289 @@
+/* Connections in the Console.
+   The Field register, 1:1 with planning/2026-09-08-field-visual-system/
+   05-instrumented-density-prototype.html: tokens only, radii 6/5 px, hairline
+   separation instead of cards, one cyan accent for the live/primary thing,
+   yellow only where a person has to decide. No shadows, no gradients, no glass.
+
+   `.connections` is the Board's two-row screen shape; `.connection-desktop` is
+   its scroller and keeps that class because tests/connections-ui.spec.ts scrolls
+   the element by it. */
+
+.console .connections {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+  background: var(--surface);
+}
+.console .connection-desktop {
+  overflow: auto;
+  min-height: 0;
+  padding: 4px 32px 32px 56px;
+}
+
+/* ---- blocks: a hairline and a heading, never a card ---- */
+.console .cblock {
+  max-width: 900px;
+  padding: 14px 0 16px;
+  border-top: 1px solid var(--hair);
+}
+.console .cblock:first-child {
+  border-top: 0;
+  padding-top: 4px;
+}
+.console .cblock h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font: 500 12.5px/1.4 var(--ui);
+  color: var(--t1);
+}
+.console .cblock h2 .mono {
+  margin-left: auto;
+}
+.console .cblock h3 {
+  margin: 14px 0 0;
+  font: 500 12.5px/1.4 var(--ui);
+  color: var(--t1);
+}
+.console .cblock p {
+  margin: 5px 0 0;
+  max-width: 68ch;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--t2);
+}
+.console .cblock p.quiet {
+  color: var(--t3);
+  font-size: 12.5px;
+}
+/* The instrument line is the Console's one place for measured values; here it
+   carries scope and freshness, so it drops the thread head's rule and padding. */
+.console .connection-desktop .instr {
+  border-bottom: 0;
+  padding: 8px 0 0;
+}
+
+/* ---- inputs ---- */
+.console .cfields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.console .cblock label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  margin-top: 12px;
+  font: 400 11px/1.6 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.console .cfields label {
+  margin-top: 0;
+}
+.console .cblock input,
+.console .cblock textarea {
+  min-width: 0;
+  padding: 7px 10px;
+  background: var(--raised);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t1);
+  font: 400 13px/1.5 var(--ui);
+  transition: border-color var(--quick);
+}
+.console .cblock textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+.console .cblock input:focus,
+.console .cblock textarea:focus {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ---- actions: text verbs, the primary one in the accent ---- */
+.console .cacts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  padding-top: 12px;
+}
+.console .cacts button {
+  padding: 3px 6px;
+  border-radius: var(--rb);
+  color: var(--t2);
+  font-size: 12.5px;
+  transition:
+    color var(--quick),
+    background var(--quick);
+}
+.console .cacts button:hover:not(:disabled) {
+  color: var(--t1);
+  background: var(--raised);
+}
+.console .cacts button.go {
+  color: var(--light);
+  font-weight: 500;
+}
+.console .cacts button.go:hover:not(:disabled) {
+  background: rgba(63, 214, 223, 0.08);
+}
+.console .cacts button:disabled {
+  color: var(--t3);
+  cursor: default;
+}
+
+/* ---- tables: mono uppercase heads, tabular figures, hairline rows ---- */
+.console .ctable {
+  margin-top: 10px;
+  overflow-x: auto;
+}
+.console .ctable table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.console .ctable th {
+  padding: 0 14px 6px 0;
+  border-bottom: 1px solid var(--hair-2);
+  color: var(--t3);
+  font: 500 11px/1.6 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+}
+.console .ctable td {
+  padding: 6px 14px 6px 0;
+  border-bottom: 1px solid var(--hair);
+  color: var(--t1);
+  font-variant-numeric: tabular-nums;
+}
+.console .ctable tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ---- rules ---- */
+.console .crules {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.console .crules li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hair);
+}
+.console .crules li:last-child {
+  border-bottom: 0;
+}
+.console .crules .id {
+  color: var(--t2);
+  font: 400 11.5px/1.6 var(--mono);
+  letter-spacing: 0.02em;
+}
+.console .crules p {
+  margin-top: 2px;
+}
+
+/* ---- proposal facts: a label ladder, not a definition card ---- */
+.console .cfacts {
+  margin: 10px 0 0;
+}
+.console .cfacts div {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--hair);
+}
+.console .cfacts div:last-child {
+  border-bottom: 0;
+}
+.console .cfacts dt {
+  color: var(--t3);
+  font: 400 11px/1.7 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.console .cfacts dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--t1);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* A machine string wraps where it is written, so it can never widen the pane. */
+.console .connection-desktop pre {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--hair);
+  border-radius: var(--rb);
+  color: var(--t2);
+  font: 400 11.5px/1.7 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---- disclosure ---- */
+.console .connection-desktop summary {
+  padding: 4px 0;
+  color: var(--t3);
+  font-size: 12.5px;
+  cursor: pointer;
+  list-style: none;
+  transition: color var(--quick);
+}
+.console .connection-desktop summary::-webkit-details-marker {
+  display: none;
+}
+.console .connection-desktop summary::before {
+  content: '+';
+  display: inline-block;
+  width: 14px;
+  color: var(--t3);
+  font-family: var(--mono);
+}
+.console .connection-desktop details[open] > summary::before {
+  content: '\2212';
+}
+.console .connection-desktop summary:hover {
+  color: var(--t1);
+}
+
+.console .cerr {
+  margin: 10px 0 0;
+  padding: 6px 0 6px 10px;
+  border-left: 1px solid var(--fail);
+  color: var(--fail);
+  font-size: 12.5px;
+}
+
+@media (max-width: 1100px) {
+  .console .connection-desktop {
+    padding-left: 32px;
+  }
+  .console .cfields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 860px) {
+  .console .connection-desktop {
+    padding: 4px 16px 24px;
+  }
+}
+@media (max-width: 620px) {
+  .console .cfields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

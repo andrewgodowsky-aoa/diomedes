@@ -9,6 +9,10 @@ import { harnessWrites, writeInputSchema } from '../approval.js';
 import type { RunService } from '../run-service.js';
 import type { ToolRegistry } from '../tools.js';
 
+// Defined only by the desktop bundler. Packaged paths are relative to server/app.mjs,
+// never the process working directory or the development checkout.
+declare const DIOMEDES_BUNDLED: boolean | undefined;
+
 export const FORMAT_REPORT = {
   id: 'format-report',
   version: 'v1',
@@ -38,7 +42,12 @@ export function registerFormatReport(tools: ToolRegistry, store: Store, runs: Ru
     schema: z.strictObject({}),
     execute: async () => ({
       text: await fs.readFile(
-        new URL('../../../fixtures/harness/report-lines.txt', import.meta.url),
+        new URL(
+          typeof DIOMEDES_BUNDLED !== 'undefined' && DIOMEDES_BUNDLED
+            ? '../fixtures/harness/report-lines.txt'
+            : '../../../fixtures/harness/report-lines.txt',
+          import.meta.url,
+        ),
         'utf8',
       ),
     }),

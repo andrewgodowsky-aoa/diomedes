@@ -36,7 +36,7 @@ async function expectFreshBundle(dist: string): Promise<void> {
     `dist is older than ${newestPath}, so this spec would test the previous build. Run "npm run build" first.`,
   ).toBeGreaterThan(newest);
 }
-const port = 47634;
+const port = Number(process.env.DIOMEDES_NATIVE_UI_PORT ?? 47634);
 const baseURL = `http://127.0.0.1:${port}`;
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 let application: Awaited<ReturnType<typeof createApp>> | undefined;

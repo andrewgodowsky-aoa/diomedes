@@ -9,6 +9,9 @@ const requestSchema = z.strictObject({
   commandId,
   taskId: id,
   route: z.enum(['sample', 'codex']).default('sample'),
+  capabilityId: z.literal('codex-report').optional(),
+  model: z.string().trim().min(1).max(120).optional(),
+  effort: z.string().trim().min(1).max(40).optional(),
   instruction: z.string().trim().min(1).max(16_000).optional(),
   sources: z.array(z.string().min(1).max(1000)).max(8).optional(),
   consent: z.boolean().default(false),
@@ -30,6 +33,10 @@ export function parseWorkCommand(body: Record<string, unknown>) {
       code: 'invalid_work_command',
     });
   const request = parsed.data;
+  if (request.capabilityId && request.route !== 'codex')
+    throw new ApiError(400, 'This capability requires the Codex route.', { code: 'invalid_work_command' });
+  if ((request.model || request.effort) && !request.capabilityId)
+    throw new ApiError(400, 'Explicit capability selections require a capability command.', { code: 'invalid_work_command' });
   if (request.route === 'codex' && request.sources === undefined)
     throw new ApiError(400, 'Provide the explicitly selected source documents, or an empty list.', {
       code: 'invalid_work_command',
@@ -46,6 +53,7 @@ export function parseWorkCommand(body: Record<string, unknown>) {
     protocolVersion: 1,
     taskId: request.taskId,
     route: request.route,
+    ...(request.capabilityId ? { capabilityId: request.capabilityId, model: request.model ?? null, effort: request.effort ?? null } : {}),
     instruction: request.instruction ?? null,
     sources,
     consent: request.consent,

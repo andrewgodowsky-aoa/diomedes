@@ -1,0 +1,79 @@
+{
+  "x-diomedes-note": "Reduced documentation projection for candidate-generator tests only; not a real provider proof and never executed.",
+  "x-provenance": "Original small JSON projection of the official OAI Petstore example (MIT licensed sample) at https://github.com/OAI/OpenAPI-Specification/blob/main/_archive_/schemas/v3.0/pass/petstore.yaml. Only listPets (GET /pets) is selected; createPet (POST /pets) exists solely to prove curation.",
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Petstore projection",
+    "version": "1.0.0",
+    "description": "Tiny hand-written projection of the OAI Petstore sample for offline candidate tests.",
+    "license": { "name": "MIT" }
+  },
+  "paths": {
+    "/pets": {
+      "get": {
+        "operationId": "listPets",
+        "summary": "List pets",
+        "description": "Read-only curated operation used by candidate tests.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A list of pets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["id", "name"],
+                    "properties": {
+                      "id": { "type": "integer" },
+                      "name": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createPet",
+        "summary": "Create a pet (never selected)",
+        "description": "Unselected write operation proving the generator curates by operationId.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": { "name": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["id"],
+                  "properties": { "id": { "type": "integer" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

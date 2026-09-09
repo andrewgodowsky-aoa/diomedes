@@ -1,0 +1,973 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diomedes Instrumented Density</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --chrome: #121417; --surface: #16191d; --raised: #1c2025;
+    --hair: rgba(255,255,255,.07); --hair-2: rgba(255,255,255,.12);
+    --t1: #e6e9ed; --t2: #a4acb6; --t3: #808b97;
+    --light: #3fd6df; --attn: #e0a94a; --fail: #e06c6c;
+    --ui: 'Schibsted Grotesk', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
+    --r: 6px; --rb: 5px; --quick: 140ms; --move: 200ms; --ease: cubic-bezier(.2,.8,.2,1);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--chrome); color: var(--t1); font: 400 13px/1.5 var(--ui); -webkit-font-smoothing: antialiased; overflow: hidden; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--light); outline-offset: 2px; }
+  ::selection { background: rgba(63,214,223,.22); color: var(--t1); }
+  textarea, input { caret-color: var(--light); }
+  * { scrollbar-width: thin; scrollbar-color: var(--hair-2) transparent; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; } *::-webkit-scrollbar-thumb { background: var(--hair-2); border-radius: 4px; } *::-webkit-scrollbar-track { background: transparent; }
+  .mono.lc, .lc { text-transform: none; letter-spacing: .01em; }
+  .mono { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); font-variant-numeric: tabular-nums; }
+  .mono.lc { text-transform: none; letter-spacing: .01em; font-size: 11.5px; }
+  .pt { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--t3); vertical-align: -1px; flex: none; }
+  .pt.done { background: var(--t2); border-color: var(--t2); }
+  .pt.live { background: var(--light); border-color: var(--light); box-shadow: 0 0 4px rgba(63,214,223,.35); }
+  .pt.attn { background: var(--attn); border-color: var(--attn); }
+  .pt.fail { background: var(--fail); border-color: var(--fail); }
+  .pt.half { background: linear-gradient(90deg, var(--t2) 50%, transparent 50%); border-color: var(--t2); }
+
+  /* ---- the mark ---- */
+  .mark { display: inline-flex; align-items: center; gap: 12px; }
+  .mark svg { width: 20px; height: 20px; overflow: visible; }
+  .mark svg path, .mark svg line { fill: none; stroke: var(--t1); stroke-width: 1.6; stroke-linecap: round; }
+  .mark svg circle { fill: var(--t2); transition: fill var(--move); }
+  .mark svg circle.live { fill: var(--light); filter: drop-shadow(0 0 2px rgba(63,214,223,.4)); }
+  .mark svg circle.attn { fill: var(--attn); }
+  .word { font: 400 12.5px/1 var(--ui); letter-spacing: .32em; color: var(--t1); text-transform: uppercase; }
+
+  /* ---- wake ---- */
+  .wake { position: fixed; inset: 0; z-index: 20; background: var(--chrome); display: grid; place-items: center; transition: opacity 320ms ease-out; }
+  .wake.gone { opacity: 0; pointer-events: none; transition-delay: 120ms; }
+  .wake .field { position: relative; width: 420px; height: 120px; }
+  .wake .gp { position: absolute; left: 50%; top: 36px; width: 6px; height: 6px; margin-left: 150px; border-radius: 50%; background: var(--light); box-shadow: 0 0 5px rgba(63,214,223,.4); transform: scale(0); }
+  .wake .thread { position: absolute; top: 39px; right: 50%; margin-right: -150px; height: 1px; width: 0; background: var(--hair-2); }
+  .wake .letters { position: absolute; left: 0; right: 0; top: 24px; text-align: center; font: 400 22px/1.2 var(--ui); letter-spacing: .9em; text-transform: uppercase; color: var(--t1); white-space: nowrap; transition: letter-spacing 900ms var(--ease); }
+  .wake .letters span { opacity: 0; transition: opacity 260ms ease-out; }
+  .wake .status { position: absolute; left: 0; right: 0; top: 86px; text-align: center; font: 400 11.5px/1.6 var(--mono); color: var(--t3); letter-spacing: .04em; opacity: 0; transition: opacity 240ms; }
+  .wake .status.show { opacity: 1; }
+  .wake .skip { position: absolute; right: 22px; bottom: 18px; font: 400 11px var(--mono); color: var(--t3); letter-spacing: .08em; text-transform: uppercase; opacity: 0; transition: opacity 400ms 1400ms; }
+  .wake .skip.show { opacity: 1; }
+  .wake.playing .gp { animation: gp 400ms var(--ease) 200ms forwards; }
+  .wake.playing .thread { animation: th 600ms var(--ease) 500ms forwards; }
+  @keyframes gp { to { transform: scale(1); } }
+  @keyframes th { to { width: 300px; } }
+
+  /* ---- frame ---- */
+  .app { position: relative; z-index: 1; height: 100vh; display: grid; grid-template-rows: 40px 1fr; }
+  .top { display: grid; grid-template-columns: 232px 1fr max-content; align-items: center; border-bottom: 1px solid var(--hair); -webkit-app-region: drag; app-region: drag; }
+  .top > * { -webkit-app-region: no-drag; app-region: no-drag; }
+  .top .mark { padding: 0 16px; }
+  .crumb { display: flex; align-items: center; gap: 8px; padding-left: 56px; color: var(--t3); }
+  .crumb b { color: var(--t1); font-weight: 500; }
+  .crumb button { padding: 3px 6px; border-radius: var(--rb); } .crumb button:hover { background: var(--raised); }
+  .top-right { display: flex; justify-content: flex-end; align-items: center; gap: 18px; padding: 0 16px; white-space: nowrap; }
+  .top-right .link { cursor: pointer; } .top-right .link:hover { color: var(--t2); }
+  .stage { display: grid; grid-template-columns: 232px minmax(0,1fr); min-height: 0; }
+
+  /* ---- rail with the spine ---- */
+  .rail { border-right: 1px solid var(--hair); display: flex; flex-direction: column; min-height: 0; background: var(--chrome); }
+  .rail-head { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 16px 6px; }
+  .rail-head button { color: var(--t3); font-size: 12px; } .rail-head button:hover { color: var(--t1); }
+  .spine { position: relative; margin: 0; padding: 0 8px 0 0; list-style: none; }
+  .spine::before { content: ''; position: absolute; left: 16px; top: 6px; bottom: 6px; width: 1px; background: var(--hair-2); }
+  .spine .gp { position: absolute; left: 12.5px; width: 8px; height: 8px; border-radius: 50%; background: var(--light); transition: top var(--move) var(--ease); z-index: 1; }
+  .spine button { display: block; width: 100%; text-align: left; padding: 7px 10px 7px 30px; border-radius: 0 var(--rb) var(--rb) 0; color: var(--t2); transition: background var(--quick), color var(--quick); }
+  .spine button:hover { background: var(--raised); color: var(--t1); }
+  .spine button.on { color: var(--t1); }
+  .spine .row { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .spine small { display: block; color: var(--t3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .spine .tick { position: absolute; left: 16px; width: 6px; height: 1px; background: var(--hair-2); margin-top: -1px; }
+  .rail .views { margin-top: 18px; padding: 10px 8px 0; border-top: 1px solid var(--hair); }
+  .rail .views button, .rail .foot button { display: flex; width: 100%; text-align: left; padding: 6px 10px 6px 12px; color: var(--t2); border-radius: var(--rb); gap: 10px; align-items: baseline; }
+  .rail .views button:hover, .rail .foot button:hover { background: var(--raised); color: var(--t1); }
+  .rail .views button.on { color: var(--t1); background: var(--surface); }
+  .rail .views button .mono { margin-left: auto; }
+  .rail .foot { margin-top: auto; padding: 10px 8px 12px; border-top: 1px solid var(--hair); }
+
+  /* ---- screens ---- */
+  .screen { display: none; min-height: 0; }
+  .screen.on { display: grid; }
+  #scrThread { grid-template-columns: minmax(0,1fr) 296px; }
+  .work { background: var(--surface); display: grid; grid-template-rows: auto auto 1fr auto; min-height: 0; }
+  .col { max-width: 760px; margin-left: 56px; padding-right: 24px; }
+  .head { padding: 26px 0 0; display: flex; align-items: baseline; gap: 12px 16px; flex-wrap: wrap; }
+  .head h1 { margin: 0; font: 500 18px/1.25 var(--ui); }
+  /* instrumentation lives on one mono line under the title, never inside the conversation */
+  .instr { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; padding: 6px 0 12px; border-bottom: 1px solid var(--hair); font: 400 11px/1.6 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--t3); font-variant-numeric: tabular-nums; }
+  .instr .lc { text-transform: none; letter-spacing: .02em; }
+  .instr b { color: var(--t2); font-weight: 500; }
+  .instr .st { color: var(--light); } .instr .st.attn { color: var(--attn); } .instr .st.quiet { color: var(--t3); }
+  .instr button { color: var(--t3); font: inherit; border-bottom: 1px solid var(--hair-2); text-transform: none; letter-spacing: .02em; }
+  .instr button:hover { color: var(--t1); }
+  .instr .grow { flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--hair-2); border-radius: var(--rb); overflow: hidden; margin-left: auto; }
+  .seg button { padding: 3px 9px; font-size: 12px; color: var(--t3); }
+  .seg button + button { border-left: 1px solid var(--hair-2); }
+  .seg button.on { color: var(--t1); background: var(--raised); }
+  .transcript { overflow-y: auto; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--hair-2) transparent; }
+  .transcript .col { padding-bottom: 28px; position: relative; }
+  .exchange { position: relative; padding: 16px 0 18px; }
+  .exchange::before { content: ''; position: absolute; left: -24px; right: 0; top: 0; height: 1px; background: var(--hair); }
+  .exchange:first-child::before { display: none; }
+  .exchange:first-child { padding-top: 6px; }
+  .turn { position: relative; max-width: 68ch; } .turn + .turn { margin-top: 14px; }
+  .record { margin: 4px 0 8px; padding: 2px 0 2px 10px; border-left: 1px solid var(--hair-2); font: 400 11.5px/1.7 var(--mono); color: var(--t3); white-space: pre-wrap; }
+  .record i { color: var(--light); font-style: normal; } .record b { color: var(--t2); font-weight: 500; }
+  .turn.dio::before { content: ''; position: absolute; left: -24px; top: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--t2); }
+  .turn.dio.live::before { background: var(--light); box-shadow: 0 0 6px rgba(63,214,223,.6); }
+  .who { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .who b { font-weight: 500; font-size: 12.5px; color: var(--t2); }
+  .who .mono, .who .tools { opacity: 0; transition: opacity var(--quick); }
+  .turn:focus-within .who .mono, .turn:focus-within .who .tools { opacity: 1; }
+  .who .mono { text-transform: none; letter-spacing: .02em; }
+  .who .tools { margin-left: auto; display: flex; gap: 10px; } .who .tools button { color: var(--t3); font-size: 12px; } .who .tools button:hover { color: var(--t1); }
+  .turn:hover .who .mono, .turn:hover .who .tools { opacity: 1; }
+  .body { font-size: 16px; line-height: 1.65; } .turn.you .body { color: #d3d9e0; }
+  .body p { margin: 0 0 8px; } .body p:last-child { margin: 0; } .body ol { margin: 6px 0 0; padding-left: 22px; } .body li { margin: 3px 0; }
+  .greeting { padding: 48px 0 0; max-width: 46ch; }
+  .greeting p { margin: 0; font-size: 16px; line-height: 1.65; color: var(--t2); }
+  .greeting p:first-child { color: var(--t1); font-weight: 500; }
+  .greeting .mono { display: block; margin-top: 14px; }
+  .caret { display: inline-block; width: 1px; height: 1em; background: var(--light); vertical-align: -2px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .proposal { margin-top: 12px; border: 1px solid var(--hair-2); border-radius: var(--r); font-size: 13px; }
+  .proposal .file { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--hair); }
+  .proposal .foot { display: flex; gap: 14px; padding: 8px 12px; color: var(--t3); font-size: 12.5px; align-items: center; }
+  .proposal .foot .act { margin-left: auto; display: flex; gap: 14px; } .proposal .foot .act button { color: var(--t2); } .proposal .foot .act button.go { color: var(--light); font-weight: 500; }
+
+  .compose { padding: 0 0 20px; }
+  .composer { border: 1px solid var(--hair-2); border-radius: var(--r); background: var(--raised); transition: border-color var(--quick); }
+  .composer:focus-within { border-color: rgba(255,255,255,.2); }
+  .composer textarea { display: block; width: 100%; resize: none; background: transparent; border: 0; color: var(--t1); font: 400 15px/1.55 var(--ui); padding: 11px 14px 4px; min-height: 42px; max-height: 220px; outline: none; }
+  .composer textarea::placeholder { color: var(--t3); }
+  .aux { display: none; gap: 10px; padding: 4px 14px 8px; color: var(--t3); font-size: 12.5px; align-items: center; } .aux.show { display: flex; }
+  .aux select { background: var(--surface); color: var(--t1); border: 1px solid var(--hair-2); border-radius: var(--rb); padding: 3px 8px; font: inherit; font-size: 12.5px; }
+  .bar { display: flex; align-items: center; padding: 0 8px 0 4px; border-top: 1px solid var(--hair); }
+  .modes { position: relative; display: flex; gap: 2px; }
+  .modes button { padding: 11px 10px 12px; font: 500 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--t3); transition: color var(--quick); }
+  .modes button:hover { color: var(--t2); } .modes button.on { color: var(--t1); }
+  .modes .ind { position: absolute; bottom: 4px; left: 0; height: 6px; display: flex; align-items: center; gap: 4px; transition: transform var(--move) var(--ease); pointer-events: none; }
+  .modes .ind i { width: 6px; height: 6px; border-radius: 50%; background: var(--light); flex: none; }
+  .modes .ind b { height: 1px; width: 34px; transform-origin: left center; transform: scaleX(0); background: var(--light); transition: transform var(--move) var(--ease); }
+  .modes .ind b.dash { background: repeating-linear-gradient(90deg, var(--light) 0 3px, transparent 3px 6px); }
+  .bar .cap { margin-left: 14px; color: var(--t3); font-size: 12px; }
+  .bar .send { margin-left: auto; padding: 5px 10px; border-radius: var(--rb); color: var(--t3); font-size: 12.5px; font-weight: 500; }
+  .bar .send[aria-disabled='true'] { cursor: default; }
+  .bar .send.ready { color: var(--light); } .bar .send.ready:hover { background: rgba(63,214,223,.08); }
+  .bar .hint { color: var(--t3); font-size: 11.5px; margin-left: 10px; }
+
+  /* ---- ledger ---- */
+  .ledger { border-left: 1px solid var(--hair); padding: 22px 18px 16px 20px; overflow-y: auto; min-height: 0; background: var(--chrome); }
+  .ledger h2 { margin: 0; font: 500 11px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .ledger .sub { color: var(--t3); font-size: 12px; margin: 3px 0 0; }
+  /* hierarchy by type and hairline weight: the thread's own work leads, section labels recede to mono */
+  .ledger .focus { margin-top: 16px; padding: 12px 0 2px; border-top: 1px solid var(--hair-2); }
+  .ledger .focus .t { display: flex; gap: 10px; align-items: baseline; font-size: 13.5px; font-weight: 500; color: var(--t1); }
+  .ledger .focus .t .pt { align-self: center; }
+  .ledger .focus .m { display: flex; gap: 12px; align-items: baseline; margin: 3px 0 0 18px; color: var(--t3); font-size: 12px; }
+  .ledger .focus .m .mono { text-transform: none; letter-spacing: 0; }
+  .ledger .focus .m button { color: var(--t3); font-size: 12px; border-bottom: 1px solid var(--hair-2); } .ledger .focus .m button:hover { color: var(--t1); }
+  .ledger section { border-top: 1px solid var(--hair); margin-top: 18px; padding-top: 12px; transition: opacity var(--move); } .ledger section.dim { opacity: .55; }
+  .ledger h3 { margin: 0 0 8px; font: 500 11px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--t3); display: flex; } .ledger h3 .mono { margin-left: auto; }
+  .ledger ul { list-style: none; margin: 0; padding: 0; }
+  .ledger li { display: grid; grid-template-columns: 14px 1fr auto; gap: 0 8px; align-items: baseline; padding: 5px 0; font-size: 13px; color: var(--t1); }
+  .ledger li .mono { text-transform: none; letter-spacing: 0; }
+  .ledger li .sub { grid-column: 2 / -1; font-size: 12px; color: var(--t3); }
+  .ledger li.quiet { color: var(--t3); grid-template-columns: 1fr; }
+  .ledger li button { color: var(--attn); font-size: 12.5px; }
+  .ledger .extra { display: none; } .ledger .extra.show { display: block; }
+  .ledger .ev { font: 400 11.5px/1.7 var(--mono); color: var(--t3); }
+  .ledger .ev li { display: grid; grid-template-columns: 40px 1fr; gap: 0 10px; padding: 0; font: inherit; color: inherit; }
+  .ledger .ev b { color: var(--t2); font-weight: 500; } .ledger .ev i { color: var(--light); font-style: normal; }
+  #secRecent li.quiet { font-size: 12px; }
+  .ledger .diff { font: 400 11.5px/1.6 var(--mono); margin: 6px 0 0; padding: 6px 8px; border: 1px solid var(--hair); border-radius: var(--rb); }
+  .ledger .diff .del { color: var(--fail); } .ledger .diff .add { color: #9fd4a3; }
+
+  /* ---- board ---- */
+  #scrBoard, #scrTeam { grid-template-columns: 1fr; background: var(--surface); }
+  .bhead { display: flex; align-items: baseline; gap: 16px; padding: 26px 32px 10px 56px; }
+  .bhead h1 { margin: 0; font: 500 18px/1.25 var(--ui); }
+  .bhead .seg { margin-left: auto; }
+  .bhead .ctx { color: var(--t3); font-size: 12.5px; }
+  .columns { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 0 20px; padding: 8px 32px 24px 56px; overflow: auto; min-height: 0; align-content: start; }
+  .column h3 { margin: 0; padding: 8px 0 2px; border-top: 1px solid var(--hair-2); display: flex; align-items: baseline; gap: 10px; font: 500 12.5px/1.4 var(--ui); color: var(--t1); }
+  .column h3 .mono { margin-left: auto; }
+  /* each column names what its state does to a worker: the board is a lifecycle, not a label set */
+  .column .why { font-size: 11.5px; color: var(--t3); padding: 0 0 6px; border-bottom: 1px solid var(--hair); }
+  .column ul { list-style: none; margin: 0; padding: 0; min-height: 60px; }
+  .crow { position: relative; display: grid; grid-template-columns: 14px 1fr; gap: 0 10px; align-items: baseline; padding: 6px 6px 6px 2px; border-bottom: 1px solid var(--hair); border-radius: var(--rb); transition: background var(--quick); }
+  .crow:hover { background: var(--raised); }
+  .crow .pt { align-self: start; margin-top: 5px; }
+  .crow .t { font-size: 13px; color: var(--t1); padding-right: 60px; line-height: 1.4; }
+  .crow .m { display: flex; gap: 10px; margin-top: 1px; flex-wrap: wrap; }
+  .crow .m .mono { text-transform: none; letter-spacing: 0; }
+  .crow .m .why { color: var(--attn); } .crow .m .here { color: var(--light); }
+  .crow .verb { position: absolute; right: 6px; top: 8px; font-size: 12px; color: var(--t2); opacity: 0; transition: opacity var(--quick); background: var(--raised); padding: 0 2px; }
+  .crow:hover .verb, .crow:focus-within .verb { opacity: 1; } .crow .verb:hover { color: var(--t1); }
+  .crow .verb.light { color: var(--light); }
+  .crow .prog { height: 1px; background: var(--hair-2); margin-top: 6px; position: relative; overflow: hidden; }
+  .crow .prog i { position: absolute; left: 0; top: 0; bottom: 0; width: 38%; background: var(--t2); transition: width 1.2s linear; }
+  .crow .confirm { grid-column: 2; display: flex; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--t3); }
+  .crow .confirm button { color: var(--t1); } .crow .confirm button.go { color: var(--light); }
+  .crow.moving { animation: settle 220ms var(--ease); }
+  @keyframes settle { from { opacity: 0; transform: translateY(-4px); } }
+
+  /* ---- team: three concurrent lanes, one spine each, aligned regions ---- */
+  .team { display: grid; grid-template-rows: auto 1fr auto; min-height: 0; }
+  .task { position: relative; display: flex; align-items: baseline; gap: 12px; padding: 26px 32px 14px 56px; }
+  .task h1 { margin: 0; font: 500 18px/1.25 var(--ui); }
+  .task .pt { align-self: center; }
+  .task::after { content: ''; position: absolute; left: 60px; bottom: 0; width: 1px; height: 12px; background: var(--hair-2); }
+  .task .hands { margin-left: auto; color: var(--t3); font-size: 12.5px; }
+  .lanes { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); grid-template-rows: auto auto auto minmax(160px, 1fr) auto auto; margin: 0 32px 0 56px; border-top: 1px solid var(--hair-2); min-height: 0; }
+  .lane { --sp: -20px; display: grid; grid-row: 1 / -1; grid-template-rows: subgrid; min-height: 0; position: relative; padding: 0 18px 0 26px; border-left: 1px solid var(--hair); }
+  .lane:first-child { --sp: -21px; border-left: 0; padding-left: 22px; }
+  /* the worker's spine: hairline while the relation only exists, stronger while work runs, dashed while waiting, broken while blocked */
+  .lane::before { content: ''; position: absolute; left: 9px; top: 0; bottom: 0; width: 1px; background: var(--hair-2); }
+  .lane:first-child::before { left: 4px; }
+  .lane.working::before { background: rgba(255,255,255,.22); }
+  .lane.waiting::before { background: repeating-linear-gradient(180deg, var(--hair-2) 0 3px, transparent 3px 7px); }
+  .lane.blocked::before { background: linear-gradient(180deg, var(--hair-2) 0 46%, transparent 46% 54%, var(--hair-2) 54%); }
+  .lane header { position: relative; display: flex; align-items: baseline; gap: 10px; padding: 12px 0 4px; flex-wrap: wrap; }
+  .lane header .pt { position: absolute; left: var(--sp); top: 16px; }
+  .lane header b { font-weight: 500; font-size: 13.5px; color: var(--t1); }
+  .lane header .role { color: var(--t3); font-size: 12px; }
+  .lane header .mono { margin-left: auto; text-transform: none; letter-spacing: 0; }
+  .lane header .state { flex-basis: 100%; font-size: 12.5px; color: var(--t2); }
+  .lane.working header .state { color: var(--t1); } .lane.blocked header .state { color: var(--attn); }
+  .lane .action { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: baseline; padding: 6px 0 10px; border-bottom: 1px solid var(--hair); font-size: 13.5px; line-height: 1.45; color: var(--t1); }
+  .lane .action .mono { text-transform: none; letter-spacing: 0; }
+  .lane.waiting .action { color: var(--t2); } .lane.waiting .action .mono { text-transform: uppercase; letter-spacing: .14em; font-size: 10.5px; }
+  .lane.blocked .action .mono { color: var(--attn); }
+  .lane .action .acts { grid-column: 1 / -1; display: flex; gap: 14px; font-size: 12.5px; }
+  .lane .action .acts button { color: var(--t2); } .lane .action .acts button:hover { color: var(--t1); } .lane .action .acts button.go { color: var(--light); }
+  .lane .log { margin: 0; padding: 8px 4px 8px 0; font: 400 11.5px/1.75 var(--mono); color: var(--t3); white-space: pre-wrap; overflow: auto; min-height: 0; }
+  .lane .log b { color: var(--t2); font-weight: 500; } .lane .log i { color: var(--light); font-style: normal; } .lane .log em { color: var(--attn); font-style: normal; }
+  .lane .log .now { position: relative; color: var(--t2); }
+  .lane .log .now::before { content: ''; position: absolute; left: var(--sp); top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--light); box-shadow: 0 0 4px rgba(63,214,223,.35); }
+  .lane.waiting .log .now::before { background: var(--surface); border: 1.5px solid var(--t3); width: 5px; height: 5px; box-shadow: none; }
+  .lane.blocked .log .now::before { background: var(--attn); box-shadow: none; }
+  .lane .log .hand { position: relative; }
+  .lane .msg { padding: 10px 0 4px; border-top: 1px solid var(--hair); font-size: 13.5px; line-height: 1.5; color: var(--t1); max-width: 52ch; }
+  .lane .msg .mono { display: block; margin-bottom: 2px; text-transform: none; letter-spacing: .02em; }
+  .lane .msg.quiet { color: var(--t3); }
+  .lane .ctl { display: flex; gap: 14px; padding: 6px 0 12px; opacity: 0; transition: opacity var(--quick); }
+  .lane:hover .ctl, .lane:focus-within .ctl, .lane.blocked .ctl { opacity: 1; }
+  .lane .ctl button { color: var(--t3); font-size: 12px; } .lane .ctl button:hover { color: var(--t1); }
+  .handsvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .handsvg polyline { fill: none; stroke: var(--hair-2); stroke-width: 1; }
+  .handsvg polyline.live { stroke: var(--t2); }
+  .teamcompose { padding: 12px 32px 18px 56px; max-width: 900px; }
+  .teamcompose .composer .to { display: flex; gap: 12px; align-items: center; padding: 0 14px 8px; color: var(--t3); font-size: 12px; }
+  .teamcompose .to select { background: var(--surface); color: var(--t1); border: 1px solid var(--hair-2); border-radius: var(--rb); padding: 2px 6px; font: inherit; font-size: 12px; }
+
+  /* ---- model picker: full name in every mode ---- */
+  .picker { position: relative; }
+  .picker > button { display: inline-flex; align-items: baseline; gap: 8px; white-space: nowrap; padding: 4px 8px; border-radius: var(--rb); font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--t2); transition: background var(--quick), color var(--quick); }
+  .picker > button:hover { background: var(--raised); color: var(--t1); }
+  .picker > button .eng { color: var(--t3); text-transform: uppercase; }
+  .picker > button .mdl { color: var(--t1); text-transform: none; letter-spacing: .02em; }
+  .picker > button .eff { color: var(--t3); text-transform: none; letter-spacing: .02em; }
+  .picker > button .eff.capped { color: var(--attn); }
+  .pmenu { position: absolute; right: 0; top: calc(100% + 6px); width: 340px; background: var(--raised); border: 1px solid var(--hair-2); border-radius: var(--r); box-shadow: 0 24px 60px -30px rgba(0,0,0,.9); z-index: 6; padding: 6px; display: none; }
+  .pmenu.open { display: block; }
+  .pmenu h4 { margin: 8px 8px 4px; font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--t3); display: flex; }
+  .pmenu h4 span { margin-left: auto; color: var(--t3); font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .pmenu .m { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: baseline; width: 100%; text-align: left; padding: 6px 8px; border-radius: var(--rb); color: var(--t1); font-size: 13px; }
+  .pmenu .m:hover { background: var(--surface); }
+  .pmenu .m .id { font-family: var(--mono); font-size: 11.5px; color: var(--t2); }
+  .pmenu .m.on .id { color: var(--light); }
+  .pmenu .m small { color: var(--t3); font-size: 12px; grid-column: 1 / -1; margin-top: -2px; }
+  .pmenu .ladder { display: flex; gap: 2px; padding: 4px 8px 8px; border-top: 1px solid var(--hair); margin-top: 4px; }
+  .pmenu .ladder button { padding: 4px 8px; border-radius: var(--rb); font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
+  .pmenu .ladder button:hover { color: var(--t2); background: var(--surface); }
+  .pmenu .ladder button.on { color: var(--t1); background: var(--surface); }
+  .pmenu .ladder button.capped { text-decoration: line-through; text-decoration-color: var(--attn); }
+  .pmenu .note { padding: 4px 8px 6px; color: var(--t3); font-size: 12px; }
+  .pmenu .note b { color: var(--attn); font-weight: 500; }
+  /* ---- the living thread: a point that travels, screens that arrive ---- */
+  .traveller { position: fixed; z-index: 30; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--light); pointer-events: none; }
+  .screen.on { animation: arrive 160ms ease-out; }
+  @keyframes arrive { from { opacity: 0; } }
+  .crow.arrived { animation: arrive 180ms ease-out; }
+  .pt.landed { animation: land 220ms cubic-bezier(.16,1,.3,1); }
+  @keyframes land { 0% { transform: scale(1.6); } 100% { transform: scale(1); } }
+  .wake .gp.settle { transition: transform 420ms cubic-bezier(.16,1,.3,1), opacity 300ms 200ms; }
+  .modes .ind { transition: none; }
+  @media (prefers-reduced-motion: reduce) { .traveller { display: none; } .screen.on, .crow.arrived { animation-duration: 120ms; } .pt.landed { animation: none; } }
+  /* ---- instrumented density: every live thing carries its own numbers, in mono, without a new surface ---- */
+  .lane .ctx { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 2px 0 8px; }
+  .lane .ctx .bar { height: 1px; background: var(--hair); position: relative; }
+  .lane .ctx .bar i { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--f) * 100%); background: var(--t3); transition: width 600ms var(--ease); }
+  .lane.working .ctx .bar i { background: var(--t2); }
+  .lane .ctx .mono { text-transform: none; letter-spacing: 0; }
+  .ev3 { list-style: none; margin: 0; padding: 8px 4px 8px 0; font: 400 11.5px/1.7 var(--mono); color: var(--t3); overflow: auto; min-height: 0; font-variant-numeric: tabular-nums; }
+  .ev3 li { display: grid; grid-template-columns: 40px 56px minmax(0,1fr); gap: 0 8px; align-items: baseline; position: relative; }
+  .ev3 li b { color: var(--t2); font-weight: 500; }
+  .ev3 li.hand .k, .ev3 li.hand b { color: var(--light); }
+  .ev3 li.stop .k, .ev3 li.stop b { color: var(--attn); }
+  .ev3 li.now { color: var(--t2); }
+  .ev3 li.now::before { content: ''; position: absolute; left: var(--sp); top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--light); box-shadow: 0 0 4px rgba(63,214,223,.35); }
+  .lane.waiting .ev3 li.now::before { background: var(--surface); border: 1.5px solid var(--t3); width: 5px; height: 5px; box-shadow: none; }
+  .lane.blocked .ev3 li.now::before { background: var(--attn); box-shadow: none; }
+  .ev3 li.more { grid-template-columns: 1fr; padding-bottom: 4px; }
+  .ev3 li.more button, .ledger .ev li.more button, .record button { color: var(--t3); font: inherit; border-bottom: 1px solid var(--hair-2); cursor: pointer; }
+  .ev3 li.more button:hover, .ledger .ev li.more button:hover, .record button:hover { color: var(--t1); }
+  .ev3 li .ms { color: var(--t3); font-size: 10.5px; }
+  .crow .m { grid-column: 2; } .crow .x { grid-column: 2 / -1; display: flex; gap: 10px; } .crow .prog { grid-column: 2 / -1; }
+  .columns.compact { grid-template-columns: repeat(5, minmax(210px, 1fr)); } /* one-line rows need room; the board scrolls sideways before a title breaks */
+  .columns.compact .crow { grid-template-columns: 14px minmax(0,1fr) auto; padding: 4px 6px 4px 2px; }
+  .columns.compact .crow .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .columns.compact .crow .t { padding-right: 0; font-size: 12.5px; }
+  .columns.compact .crow .m { grid-column: 3; grid-row: 1; margin: 0; }
+  .columns.compact .crow .verb { top: 4px; }
+  .columns.compact .column .why { display: none; }
+  .bhead .link { cursor: pointer; margin-left: auto; } .bhead .link:hover { color: var(--t2); } .bhead .link.on { color: var(--t1); } .bhead .seg { margin-left: 0; }
+  .column h3 .mono.attn { color: var(--attn); }
+  .record .ms { color: var(--t3); }
+  .ledger .ev li.run { grid-template-columns: 1fr; margin-top: 6px; color: var(--t2); } .ledger .ev li.run:first-child { margin-top: 0; }
+  .ledger .ev li.more { grid-template-columns: 1fr; margin-top: 6px; }
+  .palette li .acts button.stay { border-style: dashed; }
+  /* ---- palette, demo, toast ---- */
+  .veil { position: fixed; inset: 0; z-index: 5; background: rgba(0,0,0,.35); display: grid; place-items: start center; padding-top: 12vh; } .veil[hidden] { display: none; }
+  .palette { width: min(540px,92vw); background: var(--raised); border: 1px solid var(--hair-2); border-radius: var(--r); box-shadow: 0 24px 60px -30px rgba(0,0,0,.9); }
+  .palette input { width: 100%; background: transparent; border: 0; border-bottom: 1px solid var(--hair); color: var(--t1); font: 400 15px/1.4 var(--ui); padding: 12px 14px; outline: none; }
+  .palette ul { list-style: none; margin: 0; padding: 6px; max-height: 400px; overflow: auto; }
+  .palette .group { padding: 8px 10px 2px; font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
+  .palette li { display: grid; grid-template-columns: 14px 1fr auto; gap: 0 10px; align-items: baseline; padding: 6px 8px 6px 10px; border-radius: var(--rb); cursor: pointer; font-size: 13.5px; color: var(--t1); }
+  .palette li.sel { background: var(--surface); }
+  .palette li .pt { align-self: center; }
+  .palette li .sub { grid-column: 2; font: 400 11.5px/1.5 var(--mono); color: var(--t3); }
+  /* the valid actions for this item, in its current state; the highlighted one runs on Enter */
+  .palette li .acts { grid-column: 3; grid-row: 1 / span 2; align-self: center; display: flex; gap: 4px; }
+  .palette li .acts button { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--t3); padding: 3px 7px; border-radius: var(--rb); border: 1px solid transparent; }
+  .palette li .acts button:hover { color: var(--t1); }
+  .palette li.sel .acts button { border-color: var(--hair); color: var(--t2); }
+  .palette li.sel .acts button.act { border-color: var(--hair-2); background: var(--raised); color: var(--t1); }
+  .palette li.sel .acts button.act.light { color: var(--light); }
+  .palette li.none { grid-template-columns: 1fr; color: var(--t3); }
+  .palette .hint { display: flex; gap: 16px; padding: 6px 14px 10px; border-top: 1px solid var(--hair); }
+  .demo { position: fixed; left: 12px; bottom: 10px; z-index: 4; display: flex; gap: 12px; align-items: baseline; }
+  .demo button { color: var(--t3); font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; } .demo button.on { color: var(--t1); }
+  .toast { position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%); z-index: 4; background: var(--raised); border: 1px solid var(--hair-2); padding: 7px 12px; border-radius: var(--rb); font-size: 12.5px; opacity: 0; pointer-events: none; transition: opacity var(--quick); } .toast.show { opacity: 1; }
+
+  @media (max-width: 1100px) { .top, .stage { grid-template-columns: 200px minmax(0,1fr); } .top { grid-template-columns: 200px 1fr 250px; } #scrThread { grid-template-columns: minmax(0,1fr) 250px; } .col { margin-left: 32px; } .bhead, .task { padding-left: 32px; } .columns, .teamcompose { padding-left: 32px; } .lanes { margin-left: 32px; grid-template-columns: 1fr; grid-template-rows: none; grid-auto-rows: max-content; align-content: start; overflow-y: auto; } .lane, .lane:first-child { grid-row: auto; grid-template-rows: auto auto auto auto auto auto; border-left: 0; border-top: 1px solid var(--hair); padding-left: 26px; --sp: -20px; } .lane .ev3 { max-height: 240px; } .task { flex-wrap: wrap; } .task .hands { flex-basis: 100%; margin-left: 0; } .lane:first-child { border-top: 0; } .lane:first-child::before { left: 9px; } .task::after { left: 36px; } .handsvg { display: none; } }
+  @media (max-width: 860px) { .bar .cap, .bar .hint { display: none; } .head .seg { margin-left: 0; flex-basis: 100%; width: max-content; } .rail, .ledger, .top-right { display: none; } .top, .stage { grid-template-columns: 1fr; } #scrThread { grid-template-columns: 1fr; } .crumb { padding-left: 16px; } .col { margin-left: 16px; } .columns { grid-template-columns: 1fr 1fr; } .bhead, .task { padding-left: 16px; } .columns, .teamcompose { padding-left: 16px; padding-right: 16px; } .lanes { margin: 0 16px; } .task::after { left: 20px; } .instr .grow { display: none; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .wake { display: none; } }
+</style>
+
+<div class="wake playing" id="wake" aria-label="Diomedes is waking">
+  <div class="field">
+    <span class="gp"></span><span class="thread"></span>
+    <div class="letters" id="letters"><span>D</span><span>I</span><span>O</span><span>M</span><span>E</span><span>D</span><span>E</span><span>S</span></div>
+    <div class="status" id="wakeStatus">recovering the field</div>
+  </div>
+  <span class="skip" id="wakeSkip">any key skips</span>
+</div>
+
+<div class="app" id="app" data-mode="ask" data-state="idle">
+  <header class="top">
+    <span class="mark" title="Diomedes"><svg viewBox="0 0 24 24" aria-hidden="true"><line x1="5" y1="3" x2="5" y2="21"/><path d="M5 3 C 14 3, 18 7.5, 18 12 C 18 16.5, 14 20.2, 9 21"/><circle cx="20.5" cy="12" r="1.6" id="markPt"/></svg><span class="word">Diomedes</span></span>
+    <div class="crumb"><button>Projects</button><span>/</span><button><b>Reopening the patio</b></button></div>
+    <div class="top-right">
+      <div class="picker" id="picker">
+        <button id="pickerBtn" aria-haspopup="menu" aria-expanded="false" title="Engine, model and reasoning level for this thread"><span class="eng" id="pEng">Codex</span><span class="mdl" id="pMdl">gpt-5.2-codex</span><span class="eff" id="pEff">medium</span></button>
+        <div class="pmenu" id="pmenu" role="menu"></div>
+      </div>
+      <span class="mono link" id="openPalette" tabindex="0" title="Find a task, worker, model or project and act on it">Ctrl K</span></div>
+  </header>
+
+  <div class="stage">
+    <nav class="rail" aria-label="Threads and views">
+      <div class="rail-head"><span class="mono">Threads</span><button id="newThread">New</button></div>
+      <ul class="spine" id="spine">
+        <span class="gp" id="spineGp"></span>
+        <li><button class="on" data-thread="0"><span class="tick"></span><span class="row">Reopening plan<span class="mono lc" id="threadTime">8:19 pm</span></span><small>Who owns the permit?</small></button></li>
+        <li><button data-thread="1"><span class="tick"></span><span class="row">Supplier prices<span class="mono lc">yesterday</span></span><small>Codex, three answers</small></button></li>
+        <li><button data-thread="2"><span class="tick"></span><span class="row">Friday staffing<span class="mono lc">sun</span></span><small>Done</small></button></li>
+      </ul>
+      <div class="views">
+        <button class="on" data-screen="Thread">Thread</button>
+        <button data-screen="Board">Board <span class="mono" id="boardCount">7</span></button>
+        <button data-screen="Team">Team <span class="mono">3 workers</span></button>
+      </div>
+      <div class="foot"><button>Workbook</button><button>History</button><button>Settings</button></div>
+    </nav>
+
+    <!-- ---- thread ---- -->
+    <section class="screen on" id="scrThread">
+      <main class="work" aria-label="Reopening plan">
+        <div class="col head"><h1>Reopening plan</h1>
+          <div class="seg" role="radiogroup" aria-label="What Codex may do"><button class="on" role="radio" aria-checked="true">Show me first</button><button role="radio" aria-checked="false">Go ahead</button></div></div>
+        <div class="col instr" id="instr" aria-label="Thread instruments">
+          <span id="headLabel"><b><span>Ask</span></b> <span class="lc" id="headModel">gpt-5.2-codex</span> <span class="lc" id="headEff">medium</span></span>
+          <span>context <b id="ctxPct">14%</b></span>
+          <span id="lastRun">last run <span class="lc">06:42</span> <span class="lc">4.2 s</span></span>
+          <span>runs <b id="runCount">3</b></span>
+          <span class="grow"></span>
+          <span>task <button type="button" id="instrTask" title="Open this task on the board">Permit renewal</button> <span class="st" id="instrState">working</span> <span class="lc">Codex</span></span>
+        </div>
+        <div class="transcript"><div class="col" id="transcript">
+          <div class="exchange">
+            <div class="turn you"><div class="who"><b>Andrew</b><span class="mono">8:18 pm</span></div><div class="body"><p>What is left before the patio can reopen?</p></div></div>
+            <div class="turn dio"><div class="who"><b>Diomedes</b><span class="mono">8:18 pm</span><span class="tools"><button>Copy</button><button>Make a task</button></span></div><div class="body"><p>Three items in Reopening plan.md are still open: the county permit renewal, the awning repair quote, and staffing for Friday nights. The permit is the long pole; the plan names a 10-day review.</p></div></div>
+          </div>
+          <div class="exchange">
+            <div class="turn you"><div class="who"><b>Andrew</b><span class="mono">8:19 pm</span></div><div class="body"><p>Who owns the permit?</p></div></div>
+            <div class="turn dio"><div class="who"><b>Diomedes</b><span class="mono">8:19 pm</span><span class="tools"><button>Copy</button><button>Make a task</button></span></div><div class="body"><p>The plan does not name an owner. Suppliers.md lists the county contact, but no one on your side is written down. Want me to draft the line for the plan?</p></div></div>
+          </div>
+        </div></div>
+        <div class="col compose"><form class="composer" id="composer">
+          <textarea id="box" rows="1" placeholder="Ask or think out loud" aria-label="Message this thread"></textarea>
+          <div class="aux" id="auxPlan"><span>Plan goes to</span><select aria-label="Plan document"><option>Reopening plan.md</option><option>A new plan</option></select></div>
+          <div class="aux" id="auxBuild"><span class="mono">may touch</span><span class="mono lc" style="color:var(--t1)">Reopening plan.md, Suppliers.md</span><span style="margin-left:auto">Nothing is written until you say go ahead.</span></div>
+          <div class="aux" id="auxFix"><span>What is failing</span><select aria-label="What is failing"><option>Reopening plan.md</option><option>Suppliers.md</option><option>Paste what went wrong</option></select><span style="margin-left:auto">Up to three tries.</span></div>
+          <div class="bar">
+            <div class="modes" id="modes" role="radiogroup" aria-label="Mode">
+              <button class="on" data-mode="ask" role="radio" aria-checked="true">Ask</button><button data-mode="plan" role="radio" aria-checked="false">Plan</button><button data-mode="build" role="radio" aria-checked="false">Build</button><button data-mode="fix" role="radio" aria-checked="false">Fix</button>
+              <span class="ind" id="ind"><i></i><b id="indLine"></b></span>
+            </div>
+            <span class="cap" id="cap">Nothing in the project changes.</span>
+            <button class="send" id="send" type="submit" aria-disabled="true">Send</button><span class="hint">Enter</span>
+          </div>
+        </form></div>
+      </main>
+      <aside class="ledger" aria-label="This project">
+        <h2>Reopening the patio</h2><p class="sub" id="ledgerSub">3 open items, updated 6 min ago</p>
+        <div class="focus" aria-label="This thread's work">
+          <div class="t"><span class="pt live" id="focusPt"></span>Permit renewal</div>
+          <div class="m"><span class="mono" id="focusState">Working on Codex, 2 d</span><button type="button" data-go="Board">Board</button><button type="button" data-go="Team">Team</button></div>
+        </div>
+        <section id="secWork"><h3>Work <span class="mono">3 open</span></h3>
+          <ul><li><span class="pt live"></span>Permit renewal<span class="mono lc">10 d</span><span class="sub">Codex, county review running</span></li><li><span class="pt"></span>Awning repair quote<span class="mono lc">quote due</span><span class="sub">Andrew, not started</span></li><li><span class="pt"></span>Staffing Friday nights<span class="mono lc">wed</span><span class="sub">Claude Code, not started</span></li></ul>
+          <div class="extra" id="planExtra"><ul><li class="quiet">Plan outline, from Reopening plan.md</li><li><span class="pt done"></span>Permit: name the owner<span class="mono lc">step 1</span></li><li><span class="pt done"></span>Awning: request quote<span class="mono lc">step 2</span></li><li><span class="pt done"></span>Post Friday shift<span class="mono lc">step 3</span></li></ul></div></section>
+        <section id="secNeeds"><h3>Needs you <span class="mono" id="needCount"></span></h3><ul id="needList"><li class="quiet">Nothing right now</li></ul></section>
+        <section id="secActivity" class="dim"><h3>Activity <span class="mono" id="actState">quiet</span></h3><ul class="ev" id="activity"><li class="run">run 3 &middot; 06:42 &middot; 4.2 s</li><li><b>06:42</b><span>finished, codex low</span></li><li><b>06:41</b><span>read Suppliers.md</span></li><li><b>06:41</b><span>read Reopening plan.md</span></li><li class="more"><button type="button">2 earlier runs</button></li></ul></section>
+        <section id="secRecent"><h3>Recent</h3><ul><li class="quiet">Reopening plan.md updated, 2 files changed</li><li class="quiet">Suppliers.md read by Codex</li></ul>
+          <div class="extra" id="fixExtra"><div class="diff"><span class="del">- Permit review: 5 days</span><br><span class="add">+ Permit review: 10 days (county notice, Aug 30)</span></div></div></section>
+      </aside>
+    </section>
+
+    <!-- ---- board ---- -->
+    <section class="screen" id="scrBoard">
+      <div style="display:grid;grid-template-rows:auto 1fr;min-height:0">
+        <div class="bhead"><h1>Board</h1><span class="mono">Reopening the patio &middot; <span id="taskTotal">7</span> tasks</span>
+          <button class="mono link on" id="dense" type="button" aria-pressed="true" title="Compact rows: title, worker and age on one line">compact</button>
+          <div class="seg" role="radiogroup" aria-label="Board policy"><button class="on" role="radio" aria-checked="true" data-policy="first">Show me first</button><button role="radio" aria-checked="false" data-policy="go">Go ahead for tasks</button></div></div>
+        <div class="columns compact" id="columns"></div>
+      </div>
+    </section>
+
+    <!-- ---- team ---- -->
+    <section class="screen" id="scrTeam">
+      <div class="team">
+        <div class="task"><span class="pt live" id="taskPt"></span><h1>Permit renewal</h1><span class="mono">3 lanes &middot; Codex leads</span><span class="hands" id="hands">1 handoff, 06:42 Codex to Claude Code</span></div>
+        <div class="lanes" id="lanes">
+          <svg class="handsvg" id="handsvg" aria-hidden="true"></svg>
+          <div class="lane working" id="lane1">
+            <header><span class="pt live" id="l1pt"></span><b>Codex</b><span class="role">leads</span><span class="mono">gpt-5.2-codex &middot; medium</span><span class="state">Working</span></header>
+            <div class="ctx"><span class="bar"><i style="--f:.38"></i></span><span class="mono">context 38% &middot; 3 files open</span></div>
+            <div class="action"><span>Checking the county dates against Reopening plan.md</span><span class="mono">2 m 10 s</span></div>
+            <ol class="ev3" id="l1log">
+              <li class="more"><button type="button">212 earlier events</button></li>
+              <li><b>06:41</b><span class="k">start</span><span>permit renewal</span></li>
+              <li><b>06:41</b><span class="k">read</span><span>Reopening plan.md <span class="ms">120 ms</span></span></li>
+              <li><b>06:42</b><span class="k">found</span><span>county contact in Suppliers.md</span></li>
+              <li class="hand" id="l1hand"><b>06:42</b><span class="k">handoff</span><span>to Claude Code</span></li>
+              <li class="now"><b>06:42</b><span class="k">check</span><span>permit dates</span></li>
+            </ol>
+            <div class="msg"><span class="mono">to Claude Code</span>Draft the "permit owner" line for Reopening plan.md from the county contact. I will check the dates.</div>
+            <div class="ctl"><button>Pause</button><button>Take over</button><button>Message</button></div>
+          </div>
+          <div class="lane waiting" id="lane2">
+            <header><span class="pt" id="l2pt"></span><b>Claude Code</b><span class="role">member</span><span class="mono">claude-sonnet-5 &middot; medium</span><span class="state" id="l2state">Waiting</span></header>
+            <div class="ctx"><span class="bar"><i style="--f:.12"></i></span><span class="mono">context 12% &middot; idle 2 m</span></div>
+            <div class="action" id="l2action"><span>Waiting for Codex to hand off the owner line</span><span class="mono">waiting</span></div>
+            <ol class="ev3" id="l2log">
+              <li class="more"><button type="button">48 earlier events</button></li>
+              <li><b>06:40</b><span class="k">ready</span><span>context loaded, 3 documents</span></li>
+              <li><b>06:40</b><span class="k">read</span><span>Reopening plan.md <span class="ms">90 ms</span></span></li>
+              <li class="now" id="l2now"><b>06:40</b><span class="k">wait</span><span>for mail from Codex</span></li>
+            </ol>
+            <div class="msg quiet" id="l2msg">No messages yet.</div>
+            <div class="ctl"><button>Pause</button><button>Take over</button><button>Message</button></div>
+          </div>
+          <div class="lane blocked" id="lane3">
+            <header><span class="pt attn"></span><b>OpenCode</b><span class="role">member</span><span class="mono">muse-spark-1.3 &middot; high</span><span class="state">Blocked</span></header>
+            <div class="ctx"><span class="bar"><i style="--f:.21"></i></span><span class="mono">context 21% &middot; blocked 40 m</span></div>
+            <div class="action"><span>Needs the supplier list before the schedule can be checked</span><span class="mono">blocked</span><span class="acts"><button class="go">Give the list</button><button>Route to Codex</button></span></div>
+            <ol class="ev3">
+              <li class="more"><button type="button">31 earlier events</button></li>
+              <li><b>06:39</b><span class="k">read</span><span>Suppliers.md <span class="ms">70 ms</span></span></li>
+              <li><b>06:40</b><span class="k">note</span><span>three suppliers lack contacts</span></li>
+              <li class="now stop"><b>06:40</b><span class="k">blocked</span><span>needs supplier list from Andrew</span></li>
+            </ol>
+            <div class="msg"><span class="mono">to Andrew</span>Two of the three supplier rows have no contact. I need the list before the schedule can be checked.</div>
+            <div class="ctl"><button>Pause</button><button>Take over</button><button>Message</button></div>
+          </div>
+        </div>
+        <div class="teamcompose"><form class="composer" id="teamComposer">
+          <textarea id="teamBox" rows="1" placeholder="Tell the team" aria-label="Tell the team"></textarea>
+          <div class="to"><span>to</span><select id="teamTo" aria-label="Recipient"><option>Diomedes routes it</option><option>Codex</option><option>Claude Code</option><option>OpenCode</option></select><span style="margin-left:auto">Members talk through the Diomedes team service.</span></div>
+          <div class="bar"><span class="cap" style="margin-left:6px">One task, one record; every message lands in the logs above.</span><button class="send" id="teamSend" type="submit">Send</button><span class="hint">Enter</span></div>
+        </form></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="veil" id="veil" hidden><div class="palette" role="dialog" aria-label="Find and act"><input id="paletteInput" placeholder="Task, worker, model, project, or a verb like pause" autocomplete="off"><ul id="paletteList"></ul><div class="hint"><span class="mono">Up Down</span><span class="mono">Tab picks the action</span><span class="mono">Enter runs it</span><span class="mono">Esc</span></div></div></div>
+<div class="demo" aria-label="Prototype controls"><span class="mono">prototype</span><button class="on" data-set="idle">idle</button><button data-set="working">working</button><button data-set="needs">needs you</button><button id="replay">replay wake</button><button id="reconnect">reconnect</button></div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const $ = (id) => document.getElementById(id);
+  const app = $('app'); const toast = $('toast'); let toastTimer;
+  const say = (t) => { toast.textContent = t; toast.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('show'), 1600); };
+  const now = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+  const clock = () => new Date().toTimeString().slice(0, 5); // logs keep one fixed-width form
+
+  /* ---- wake ---- */
+  const wake = $('wake'); let wakeTimers = [];
+  // Full wake on start, about 3.2 s. Reconnect plays the short form: the name is already resolved and
+  // only the status line moves, about 1.4 s. Both end on any key or click.
+  function playWake(short = false) {
+    wakeTimers.forEach(clearTimeout); wakeTimers = [];
+    wake.classList.remove('gone'); wake.classList.add('playing');
+    const letters = [...$('letters').children]; letters.forEach(l => l.style.opacity = short ? 1 : 0);
+    $('letters').style.letterSpacing = short ? '.32em' : '.9em'; $('wakeStatus').classList.remove('show'); $('wakeSkip').classList.remove('show');
+    const at = (ms, fn) => wakeTimers.push(setTimeout(fn, reduced ? 0 : ms));
+    if (short) {
+      at(200, () => { $('wakeStatus').textContent = 'restoring context'; $('wakeStatus').classList.add('show'); });
+      at(1000, () => $('wakeStatus').textContent = 'field established');
+      at(1400, endWake); return;
+    }
+    letters.forEach((l, i) => at(1000 + i * 60, () => l.style.opacity = 1));
+    at(1050, () => $('letters').style.letterSpacing = '.32em');
+    at(1200, () => { $('wakeStatus').textContent = 'recovering the field'; $('wakeStatus').classList.add('show'); $('wakeSkip').classList.add('show'); });
+    at(1900, () => $('wakeStatus').textContent = 'restoring context   3 projects   2 workers');
+    at(2600, () => $('wakeStatus').textContent = 'field established');
+    at(3200, endWake);
+  }
+  function endWake() {
+    if (wake.classList.contains('gone')) return;
+    wakeTimers.forEach(clearTimeout);
+    const gp = wake.querySelector('.gp');
+    if (!reduced) {
+      const a = centerOf(gp), b = centerOf($('markPt'));
+      gp.classList.add('settle'); gp.style.transform = `translate(${b.x - a.x}px, ${b.y - a.y}px) scale(0.8)`; gp.style.opacity = '0';
+    }
+    wake.classList.add('gone'); wake.classList.remove('playing'); $('box').focus();
+    setTimeout(() => { gp.classList.remove('settle'); gp.style.transform = ''; gp.style.opacity = ''; }, 700);
+  }
+  wake.addEventListener('pointerdown', endWake);
+  document.addEventListener('keydown', (e) => { if (!wake.classList.contains('gone')) endWake(); }, true);
+  $('replay').addEventListener('click', () => playWake(false));
+  $('reconnect').addEventListener('click', () => playWake(true));
+  if (!reduced) playWake(); else wake.classList.add('gone');
+
+  /* ---- the living thread ---- */
+  const EASE_ARRIVE = 'cubic-bezier(0.16, 1, 0.3, 1)';
+  const travelCount = {};
+  let activeTravel = null;
+  function centerOf(el) { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
+  // A point leaves one place and arrives at another. The destination is already live;
+  // the traveller only explains continuity. Repeated trips get plainer, then vanish.
+  function travel(fromEl, toEl, kind, ms) {
+    if (reduced || !fromEl || !toEl) return;
+    travelCount[kind] = (travelCount[kind] || 0) + 1;
+    const n = travelCount[kind];
+    if (n > 8) return;
+    if (activeTravel) { activeTravel.cancel(); }
+    const a = centerOf(fromEl), b = centerOf(toEl);
+    const dot = document.createElement('span'); dot.className = 'traveller'; document.body.append(dot);
+    const dur = n > 4 ? Math.min(ms, 160) : ms;
+    const mid = { x: (a.x + b.x) / 2, y: Math.min(a.y, b.y) - Math.min(40, Math.abs(b.x - a.x) * 0.08) };
+    const anim = dot.animate([
+      { transform: `translate(${a.x}px, ${a.y}px)`, opacity: 1 },
+      { transform: `translate(${mid.x}px, ${mid.y}px)`, opacity: 1, offset: 0.5 },
+      { transform: `translate(${b.x}px, ${b.y}px)`, opacity: 1 },
+    ], { duration: dur, easing: EASE_ARRIVE, fill: 'forwards' });
+    activeTravel = anim;
+    const done = () => { dot.remove(); if (activeTravel === anim) activeTravel = null; if (n <= 4 && toEl.isConnected) { toEl.classList.remove('landed'); void toEl.offsetWidth; toEl.classList.add('landed'); } };
+    anim.onfinish = done; anim.oncancel = () => dot.remove();
+  }
+  // Where the selected thread's work lives on each screen.
+  function anchorFor(screen) {
+    if (screen === 'Board') return [...document.querySelectorAll('.crow')].find(r => r.querySelector('.t').textContent === 'Permit renewal')?.querySelector('.pt');
+    if (screen === 'Team') return $('taskPt');
+    return document.querySelector('#transcript .turn.dio') || document.querySelector('#transcript .greeting .pt');
+  }
+  // Springs for the mode indicator: interruptible, settles in about 280 ms.
+  function spring(from, to) {
+    const frames = []; const k = 210, c = 22, m = 1, dt = 1 / 120; let x = from, v = 0;
+    for (let t = 0; t < 0.5; t += dt) { const a = (-k * (x - to) - c * v) / m; v += a * dt; x += v * dt; frames.push(x); if (Math.abs(x - to) < 0.15 && Math.abs(v) < 2 && t > 0.12) break; }
+    frames.push(to); return frames;
+  }
+
+  /* ---- screens ---- */
+  const screens = { Thread: 'scrThread', Board: 'scrBoard', Team: 'scrTeam' };
+  let currentScreen = 'Thread';
+  function show(name) {
+    if (name === currentScreen) return;
+    const from = anchorFor(currentScreen) || spineGp;
+    const a = from ? centerOf(from) : null;
+    Object.entries(screens).forEach(([n, id]) => { const el = $(id); el.classList.remove('on'); if (n === name) { void el.offsetWidth; el.classList.add('on'); } });
+    document.querySelectorAll('.views button').forEach(b => b.classList.toggle('on', b.dataset.screen === name));
+    currentScreen = name;
+    if (name === 'Thread') placeInd();
+    if (name === 'Team' && handed) requestAnimationFrame(() => drawHandoff($('l1hand'), $('l2hand'), false));
+    const to = anchorFor(name);
+    if (a && to) { const ghost = { getBoundingClientRect: () => ({ left: a.x, top: a.y, width: 0, height: 0 }) }; travel(ghost, to, 'screen', 260); }
+  }
+  document.querySelectorAll('.views button').forEach(b => b.addEventListener('click', () => show(b.dataset.screen)));
+
+  /* ---- spine ---- */
+  const spine = $('spine'), spineGp = $('spineGp');
+  function placeSpine(btn) { spineGp.style.top = (btn.offsetTop + 12) + 'px'; spine.querySelectorAll('.tick').forEach(t => t.style.top = (t.parentElement.offsetTop + 15) + 'px'); }
+  function wireSpine() { spine.querySelectorAll('button').forEach(b => { if (b.dataset.wired) return; b.dataset.wired = '1'; b.addEventListener('click', () => { spine.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); placeSpine(b); show('Thread'); }); }); }
+  wireSpine();
+  $('newThread').addEventListener('click', () => {
+    const li = document.createElement('li');
+    li.innerHTML = `<button data-thread="new"><span class="tick"></span><span class="row">New thread<span class="mono lc">${now()}</span></span><small>Nothing said yet</small></button>`;
+    spine.insertBefore(li, spine.children[1]); wireSpine();
+    const b = li.querySelector('button'); spine.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); placeSpine(b);
+    transcript.innerHTML = `<div class="greeting"><p>A new thread in Reopening the patio.</p><p>Ask, or choose Plan, Build or Fix below. Documents you name are read; nothing changes until you say so.</p><span class="mono"><span class="pt" style="margin-right:8px"></span>no work yet</span></div>`;
+    document.querySelector('.head h1').textContent = 'New thread';
+    show('Thread'); box.focus();
+  });
+
+  /* ---- state ---- */
+  const idleEvents = '<li class="run">run 3 &middot; 06:42 &middot; 4.2 s</li><li><b>06:42</b><span>finished, codex low</span></li><li><b>06:41</b><span>read Suppliers.md</span></li><li><b>06:41</b><span>read Reopening plan.md</span></li><li class="more"><button type="button">2 earlier runs</button></li>';
+  const runEvents = '<li class="run">run 4 &middot; now</li><li><i>now</i><span>started, codex medium</span></li><li><b>now</b><span>read Reopening plan.md</span></li><li><b>now</b><span>read Suppliers.md</span></li>' + idleEvents;
+  function setState(s) {
+    app.dataset.state = s;
+    document.querySelectorAll('.demo button[data-set]').forEach(b => b.classList.toggle('on', b.dataset.set === s));
+    const working = s === 'working', needs = s === 'needs';
+    $('actState').textContent = working ? 'running' : 'quiet'; $('actState').style.color = working ? 'var(--light)' : '';
+    $('secActivity').classList.toggle('dim', !working);
+    $('markPt').setAttribute('class', needs ? 'attn' : working ? 'live' : '');
+    spineGp.style.background = needs ? 'var(--attn)' : 'var(--light)'; spineGp.style.boxShadow = working ? '0 0 4px rgba(63,214,223,.35)' : 'none';
+    if (working) $('activity').innerHTML = runEvents; else if (!needs) $('activity').innerHTML = idleEvents;
+    $('ctxPct').textContent = working ? '19%' : '14%';
+    const list = $('needList');
+    if (needs) { list.innerHTML = '<li><span class="pt attn"></span>2 changes to Reopening plan.md<button>Review</button></li>'; $('needCount').textContent = '1'; $('ledgerSub').textContent = '3 open items, 1 waiting on you'; }
+    else if (!list.querySelector('.done')) { list.innerHTML = '<li class="quiet">Nothing right now</li>'; $('needCount').textContent = ''; $('ledgerSub').textContent = '3 open items, updated 6 min ago'; }
+    if (working) handoff();
+  }
+  document.querySelectorAll('.demo button[data-set]').forEach(b => b.addEventListener('click', () => setState(b.dataset.set)));
+
+  /* ---- modes: the point and its line ---- */
+  const modes = $('modes'), ind = $('ind'), indLine = $('indLine');
+  const lineFor = { ask: [0, ''], plan: [22, 'dash'], build: [34, ''], fix: [12, ''] };
+  const caps = { ask: 'Nothing in the project changes.', plan: 'A plan you read before work begins.', build: 'Changes proposed, applied only on your go-ahead.', fix: 'The smallest change that clears the failure.' };
+  const placeholders = { ask: 'Ask or think out loud', plan: 'What should the plan cover?', build: 'What should be done?', fix: 'What went wrong?' };
+  let mode = 'ask'; const box = $('box');
+  let indX = null, indAnim = null;
+  function placeInd(animate = false) {
+    const b = modes.querySelector('button.on'); if (!b) return;
+    const to = b.offsetLeft + 10; const [w, cls] = lineFor[mode]; indLine.style.transform = `scaleX(${w / 34})`; indLine.className = cls;
+    if (!animate || reduced || indX === null) { ind.style.transform = `translateX(${to}px)`; indX = to; return; }
+    if (indAnim) indAnim.cancel();
+    const cur = new DOMMatrix(getComputedStyle(ind).transform).m41 || indX;
+    const frames = spring(cur, to).map(x => ({ transform: `translateX(${x}px)` }));
+    indAnim = ind.animate(frames, { duration: Math.round(frames.length * 1000 / 120), easing: 'linear', fill: 'forwards' });
+    indAnim.onfinish = () => { ind.style.transform = `translateX(${to}px)`; indAnim.cancel(); indAnim = null; };
+    indX = to;
+  }
+  function setMode(m) {
+    mode = m; app.dataset.mode = m;
+    modes.querySelectorAll('button').forEach(b => { const on = b.dataset.mode === m; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+    placeInd(true); $('cap').textContent = caps[m]; box.placeholder = placeholders[m]; if (typeof paintPicker === 'function') paintPicker(); if (pmenu.classList.contains('open')) renderPicker();
+    ['Plan', 'Build', 'Fix'].forEach(k => $('aux' + k).classList.toggle('show', m === k.toLowerCase()));
+    $('planExtra').classList.toggle('show', m === 'plan'); $('fixExtra').classList.toggle('show', m === 'fix');
+    $('secWork').classList.toggle('dim', m === 'ask'); $('secRecent').classList.toggle('dim', m === 'ask' || m === 'plan');
+    if (m === 'build' && app.dataset.state === 'idle') $('secActivity').classList.remove('dim'); else if (app.dataset.state !== 'working') $('secActivity').classList.add('dim');
+  }
+  modes.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { setMode(b.dataset.mode); box.focus(); }));
+  document.querySelectorAll('.seg').forEach(seg => seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { seg.querySelectorAll('button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', String(x === b)); }); if (b.dataset.policy) { policy = b.dataset.policy; say(policy === 'go' ? 'Ready tasks start when their worker is free' : 'Every start waits for your OK'); } else say(b.textContent === 'Go ahead' ? 'Codex may apply changes in this thread' : 'Every change waits for your OK'); })));
+
+  /* ---- composer ---- */
+  const send = $('send'), transcript = $('transcript'), scroller = document.querySelector('.transcript');
+  box.addEventListener('input', () => { box.style.height = 'auto'; box.style.height = Math.min(box.scrollHeight, 220) + 'px'; const ready = box.value.trim().length > 0; send.classList.toggle('ready', ready); send.setAttribute('aria-disabled', String(!ready)); });
+  box.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); } });
+  $('composer').addEventListener('submit', (e) => { e.preventDefault(); submit(); });
+  const replies = { ask: 'From Reopening plan.md, the permit renewal is the only item with a fixed wait. Everything else can move this week. Nothing in the documents says who filed the original permit.', plan: ['Name the permit owner in Reopening plan.md and add the county contact from Suppliers.md.', 'Request the awning quote today; the plan allows three days for it.', 'Post the Friday shift on Wednesday so staffing is settled before the permit clears.'], fix: 'Which part is wrong: the dates in the plan, or the contact in Suppliers.md? Point me at one and I will change only that.' };
+  let busy = false;
+  const turn = (role, name) => { const d = document.createElement('div'); d.className = `turn ${role}`; d.innerHTML = `<div class="who"><b>${name}</b><span class="mono">${now()}</span>${role === 'dio' ? '<span class="tools"><button>Copy</button><button>Make a task</button></span>' : ''}</div><div class="body"><p></p></div>`; return d; };
+  function submit() {
+    const text = box.value.trim(); if (!text || busy) return;
+    const ex = document.createElement('div'); ex.className = 'exchange';
+    const you = turn('you', 'Andrew'); you.querySelector('p').textContent = text; ex.append(you); transcript.append(ex);
+    box.value = ''; box.style.height = 'auto'; send.classList.remove('ready'); send.setAttribute('aria-disabled', 'true'); const tt = $('threadTime'); if (tt) tt.textContent = now();
+    const g = transcript.querySelector('.greeting'); if (g) g.remove();
+    scroller.scrollTo({ top: scroller.scrollHeight, behavior: reduced ? 'auto' : 'smooth' });
+    busy = true; setState('working'); setTimeout(() => stream(mode, ex), 450);
+  }
+  function stream(m, ex) {
+    const dio = turn('dio', 'Diomedes'); dio.classList.add('live'); ex.append(dio); const p = dio.querySelector('p');
+    // The run record is instrumentation: mono, hairline, beside the prose and never part of it. It collapses when the run ends.
+    // Each step carries its own time. The record folds to one line when the run ends and reopens on request.
+    const full = '<i>read</i>  Reopening plan.md  <span class="ms">120 ms</span>\n<i>read</i>  Suppliers.md  <span class="ms">80 ms</span>\n<i>think</i>  gpt-5.2-codex medium  <span class="ms">1.1 s</span>';
+    const rec = document.createElement('div'); rec.className = 'record'; rec.innerHTML = full; dio.querySelector('.body').before(rec);
+    const t0 = performance.now(); let brief = '';
+    rec.addEventListener('click', (e) => { if (e.target.tagName !== 'BUTTON' || !brief) return; const open = rec.classList.toggle('open'); rec.innerHTML = open ? full + '\n<button type="button">hide run</button>' : brief; });
+    const finish = () => { busy = false; dio.classList.remove('live'); const secs = ((performance.now() - t0) / 1000).toFixed(1); brief = `<b>2 documents read</b>  ${secs} s  <span class="ms">2.1k tokens</span>  <button type="button">show run</button>`; rec.innerHTML = brief; $('lastRun').innerHTML = `last run <span class="lc">${now()}</span> <span class="lc">${secs} s</span>`; $('runCount').textContent = String(+$('runCount').textContent + 1); setState(m === 'build' ? 'needs' : 'idle'); scroller.scrollTo({ top: scroller.scrollHeight, behavior: reduced ? 'auto' : 'smooth' }); };
+    if (m === 'build') {
+      p.textContent = 'Two changes, ready for you to look at.';
+      const card = document.createElement('div'); card.className = 'proposal';
+      card.innerHTML = `<div class="file"><span class="pt attn"></span>Reopening plan.md<span class="mono lc">+6 lines</span></div><div class="file"><span class="pt attn"></span>Suppliers.md<span class="mono lc">+1 line</span></div><div class="foot">Nothing is written yet.<span class="act"><button type="button">Show the diff</button><button type="button" class="go">Go ahead</button></span></div>`;
+      dio.querySelector('.body').append(card);
+      card.querySelector('.go').addEventListener('click', () => { card.querySelectorAll('.pt').forEach(g => g.className = 'pt done'); card.querySelector('.foot').textContent = 'Applied. Both files are in History.'; $('needList').innerHTML = '<li class="quiet done">Nothing right now</li>'; $('needCount').textContent = ''; setState('idle'); say('Changes kept'); });
+      setTimeout(finish, 800); return;
+    }
+    const words = (Array.isArray(replies[m]) ? 'Three steps, in order.' : replies[m]).split(' ');
+    const caret = document.createElement('span'); caret.className = 'caret'; p.append(caret); let i = 0;
+    const tick = () => { if (i < words.length) { caret.before((i ? ' ' : '') + words[i++]); scroller.scrollTop = scroller.scrollHeight; setTimeout(tick, reduced ? 0 : 26 + Math.random() * 36); } else { caret.remove(); if (Array.isArray(replies[m])) { const ol = document.createElement('ol'); replies[m].forEach(s => { const li = document.createElement('li'); li.textContent = s; ol.append(li); }); dio.querySelector('.body').append(ol); } finish(); } };
+    tick();
+  }
+
+  /* ---- board: executable states ---- */
+  let policy = 'first';
+  const states = ['Ready', 'Working', 'Review', 'Blocked', 'Done'];
+  const verbs = { Ready: 'Start', Working: 'Pause', Review: 'Review', Blocked: 'Route to', Done: 'Reopen' };
+  const next = { Ready: 'Working', Working: 'Ready', Review: 'Done', Blocked: 'Working', Done: 'Ready' };
+  // What each state does to a worker. The column says it once, under its name.
+  const why = { Ready: 'Start hands it to its worker', Working: 'a worker holds it now', Review: 'waits on you', Blocked: 'needs an answer or a route', Done: 'kept; Reopen to change it' };
+  const tasks = [
+    { t: 'Permit renewal', w: 'Codex', age: '2 d', s: 'Working', p: 38 },
+    { t: 'Awning repair quote', w: 'Andrew', age: '1 d', s: 'Ready' },
+    { t: 'Staffing Friday nights', w: 'Claude Code', age: '3 h', s: 'Ready' },
+    { t: 'Supplier contacts', w: 'OpenCode', age: '40 m', s: 'Blocked', why: 'needs the supplier list' },
+    { t: 'Menu prices, spring', w: 'Codex', age: '5 h', s: 'Review', rev: 'proposal, 2 files' },
+    { t: 'Health inspection prep', w: 'Andrew', age: 'sun', s: 'Done' },
+    { t: 'Patio furniture order', w: 'Codex', age: 'sat', s: 'Done' },
+  ];
+  const glyph = (s) => s === 'Working' ? 'live' : s === 'Review' ? 'attn' : s === 'Blocked' ? 'fail' : s === 'Done' ? 'done' : '';
+  function renderBoard() {
+    const cols = $('columns'); cols.innerHTML = '';
+    states.forEach(s => {
+      const rows = tasks.filter(t => t.s === s);
+      const col = document.createElement('div'); col.className = 'column';
+      col.innerHTML = `<h3>${s}<span class="mono ${(s === 'Review' || s === 'Blocked') && rows.length ? 'attn' : ''}">${rows.length}${s === 'Working' ? ' of 2 slots' : ''}</span></h3><div class="why">${why[s]}</div><ul></ul>`;
+      const ul = col.querySelector('ul');
+      rows.forEach(t => {
+        const li = document.createElement('li'); li.className = 'crow'; t.moved = false;
+        const extra = (s === 'Blocked' && t.why ? `<span class="mono why">${t.why}</span>` : '') + (s === 'Review' && t.rev ? `<span class="mono">${t.rev}</span>` : '') + (t.t === 'Permit renewal' ? '<span class="mono here">this thread</span>' : '');
+        li.innerHTML = `<span class="pt ${glyph(s)}"></span><div class="t">${t.t}</div><div class="m"><span class="mono">${t.w}</span><span class="mono age">${t.age}</span></div>${extra ? `<div class="x">${extra}</div>` : ''}${s === 'Working' ? `<div class="prog"><i style="width:${t.p ?? 10}%"></i></div>` : ''}<button class="verb ${s === 'Ready' ? 'light' : ''}">${verbs[s]}</button>`;
+        li.querySelector('.verb').addEventListener('click', () => act(t, li));
+        ul.append(li);
+      });
+      cols.append(col);
+    });
+    $('boardCount').textContent = tasks.filter(t => t.s !== 'Done').length;
+    paintFocus();
+  }
+  // The thread, the ledger and the instrument line all read the same task; the board is the source.
+  function paintFocus() {
+    const t = tasks.find(x => x.t === 'Permit renewal'); if (!t) return;
+    $('focusPt').className = 'pt ' + glyph(t.s); $('focusState').textContent = `${t.s} on ${t.w}, ${t.age}`;
+    const st = $('instrState'); st.textContent = t.s.toLowerCase(); st.className = 'st' + (t.s === 'Review' || t.s === 'Blocked' ? ' attn' : t.s === 'Working' ? '' : ' quiet'); st.nextElementSibling.textContent = t.w;
+  }
+  function rowOf(t) { return [...document.querySelectorAll('.crow')].find(r => r.querySelector('.t').textContent === t.t); }
+  function move(t, to, msg, ms = 280) {
+    const before = rowOf(t)?.querySelector('.pt'); const a = before ? centerOf(before) : null;
+    t.s = to; t.moved = true; if (to === 'Working') t.p = 8; renderBoard(); say(msg);
+    const row = rowOf(t); if (row) { row.classList.add('arrived'); const pt = row.querySelector('.pt'); if (a && pt) travel({ getBoundingClientRect: () => ({ left: a.x, top: a.y, width: 0, height: 0 }) }, pt, 'board:' + to, ms); }
+    if (to === 'Working') setTimeout(() => { const bar = rowOf(t)?.querySelector('.prog i'); if (bar) bar.style.width = '46%'; }, 60);
+  }
+  function act(t, li) {
+    const s = t.s;
+    if (s === 'Ready' && policy === 'first') {
+      if (li.querySelector('.confirm')) return;
+      const c = document.createElement('div'); c.className = 'confirm'; c.innerHTML = `<span>Hand to ${t.w}?</span><button class="go">Start</button><button>Not now</button>`;
+      c.querySelector('.go').addEventListener('click', () => move(t, 'Working', `Started on ${t.w}`));
+      c.children[2].addEventListener('click', () => c.remove());
+      li.append(c); return;
+    }
+    if (s === 'Ready') return move(t, 'Working', `Started on ${t.w}`);
+    if (s === 'Working') return move(t, 'Ready', `Paused; ${t.w} keeps its context`);
+    if (s === 'Review') return move(t, 'Done', 'Reviewed and kept');
+    if (s === 'Blocked') { t.w = t.w === 'OpenCode' ? 'Codex' : 'OpenCode'; return move(t, 'Working', `Routed to ${t.w}`, 420); }
+    if (s === 'Done') return move(t, 'Ready', 'Reopened');
+  }
+  renderBoard();
+
+  /* ---- team: a handoff travels between lanes because responsibility changed ---- */
+  let handed = false;
+  function handoff() {
+    if (handed) return; handed = true;
+    const l2 = $('lane2'); l2.classList.remove('waiting'); l2.classList.add('working');
+    $('l2state').textContent = 'Working';
+    $('l2action').innerHTML = '<span>Drafting the permit owner line for Reopening plan.md</span><span class="mono">just now</span>';
+    // The record lands now, in both streams; the travelling point only shows where responsibility went.
+    const t = clock(); const old = $('l2now'); if (old) old.classList.remove('now');
+    $('l2log').insertAdjacentHTML('beforeend', `<li class="hand" id="l2hand"><b>${t}</b><span class="k">handoff</span><span>from Codex</span></li><li class="now"><b>${t}</b><span class="k">read</span><span>Suppliers.md <span class="ms">80 ms</span></span></li>`);
+    l2.querySelector('.ctx .bar i').style.setProperty('--f', '.26'); l2.querySelector('.ctx .mono').textContent = 'context 26% · 1 file open';
+    $('l2msg').className = 'msg'; $('l2msg').innerHTML = '<span class="mono">from Codex</span>Draft the "permit owner" line for Reopening plan.md from the county contact. I will check the dates.';
+    $('l2pt').className = 'pt live'; $('hands').textContent = `2 handoffs, last ${t} Codex to Claude Code`;
+    if (currentScreen === 'Team') drawHandoff($('l1hand'), $('l2hand'), !reduced);
+  }
+  // A polyline from the giver's spine, across the divider, down the receiver's spine to the line that records it.
+  // The line stays as a solid thread afterwards: work travelled here.
+  function drawHandoff(fromLine, toLine, animate) {
+    const svg = $('handsvg'); const box = $('lanes').getBoundingClientRect();
+    if (!fromLine || !toLine || !box.width) return;
+    const l1 = $('lane1').getBoundingClientRect(), l2 = $('lane2').getBoundingClientRect();
+    const x1 = l1.left - box.left + 4.5, x2 = l2.left - box.left + 9.5;
+    const y1 = fromLine.getBoundingClientRect().bottom - box.top + 1, y2 = toLine.getBoundingClientRect().bottom - box.top + 1;
+    const level = Math.abs(y2 - y1) < 3;
+    svg.innerHTML = `<polyline class="live" points="${x1},${y1} ${x2},${y1}${level ? '' : ` ${x2},${y2}`}"/>`;
+    if (!animate) return;
+    const dot = document.createElement('span'); dot.className = 'traveller'; document.body.append(dot);
+    const P = (x, y) => `translate(${x + box.left}px, ${y + box.top}px)`;
+    const frames = level ? [{ transform: P(x1, y1), opacity: 1 }, { transform: P(x2, y1), opacity: 1 }] : [{ transform: P(x1, y1), opacity: 1 }, { transform: P(x2, y1), opacity: 1, offset: 0.7 }, { transform: P(x2, y2), opacity: 1 }];
+    const anim = dot.animate(frames, { duration: 480, easing: EASE_ARRIVE, fill: 'forwards' });
+    anim.onfinish = () => { dot.remove(); const p = $('l2pt'); p.classList.remove('landed'); void p.offsetWidth; p.classList.add('landed'); };
+  }
+  $('lane3').querySelector('.acts .go').addEventListener('click', () => { const l3 = $('lane3'); l3.classList.remove('blocked'); l3.classList.add('working'); l3.querySelector('.state').textContent = 'Working'; l3.querySelector('header .pt').className = 'pt live'; l3.querySelector('.action').innerHTML = '<span>Checking the supplier schedule against the list</span><span class="mono">just now</span>'; const lg = l3.querySelector('.ev3'); lg.querySelector('.now')?.classList.remove('now'); lg.insertAdjacentHTML('beforeend', `<li class="now"><b>${clock()}</b><span class="k">read</span><span>supplier list from Andrew</span></li>`); l3.querySelector('.ctx .mono').textContent = 'context 24% · 1 file open'; l3.querySelector('.ctx .bar i').style.setProperty('--f', '.24'); say('OpenCode has the list'); });
+  // Streams are windows onto a longer record; earlier events load in place instead of shipping with the page.
+  document.querySelectorAll('.ev3 .more button').forEach(b => b.addEventListener('click', () => { const li = b.parentElement; b.textContent = 'loading'; setTimeout(() => { li.insertAdjacentHTML('afterend', '<li><b>06:38</b><span class="k">start</span><span>context loaded</span></li><li><b>06:38</b><span class="k">read</span><span>Reopening plan.md <span class="ms">110 ms</span></span></li>'); li.remove(); }, 300); }));
+  $('teamBox').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); teamSubmit(); } });
+  $('teamBox').addEventListener('input', () => $('teamSend').classList.toggle('ready', $('teamBox').value.trim().length > 0));
+  $('teamComposer').addEventListener('submit', (e) => { e.preventDefault(); teamSubmit(); });
+  function teamSubmit() { const v = $('teamBox').value.trim(); if (!v) return; const to = $('teamTo').value; $('l1log').insertAdjacentHTML('beforeend', `<li><b>${clock()}</b><span class="k">from</span><span>Andrew${to.startsWith('Diomedes') ? '' : ' to ' + to}: ${v.slice(0, 40)}</span></li>`); $('teamBox').value = ''; $('teamSend').classList.remove('ready'); say(to.startsWith('Diomedes') ? 'Diomedes routed it to Codex' : `Sent to ${to}`); }
+
+  /* ---- model picker: the full name shows in every mode; Fix caps, and says so ---- */
+  const engines = [
+    { id: 'codex', name: 'Codex', where: 'ChatGPT account', models: [
+      { id: 'gpt-5.2-codex', name: 'GPT-5.2 Codex', note: 'Fast, low cost; the default', ladder: ['low', 'medium', 'high', 'xhigh'] },
+      { id: 'gpt-5.5', name: 'GPT-5.5', note: 'Stronger reasoning', ladder: ['low', 'medium', 'high', 'xhigh'] },
+      { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna', note: 'Long context', ladder: ['low', 'medium', 'high', 'xhigh'] },
+      { id: 'gpt-6-astra', name: 'GPT-6 Astra', note: 'Orchestrator; ultra effort available', ladder: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] } ] },
+    { id: 'claude-code', name: 'Claude Code', where: 'installed 2.1.252', models: [
+      { id: 'claude-sonnet-5', name: 'Sonnet 5', note: 'Balanced', ladder: ['low', 'medium', 'high'] },
+      { id: 'claude-opus-5', name: 'Opus 5', note: 'Deepest', ladder: ['low', 'medium', 'high', 'max'] } ] },
+    { id: 'opencode', name: 'OpenCode', where: 'OpenCode Go', models: [
+      { id: 'muse-spark-1.3', name: 'Muse Spark 1.3', note: 'Long context, cheap', ladder: ['minimal', 'high', 'max'] } ] },
+  ];
+  const CAP = { fix: 'medium' };
+  const order = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+  const choice = { engine: 'codex', model: 'gpt-5.2-codex', effort: 'medium' };
+  const pmenu = $('pmenu'), pickerBtn = $('pickerBtn');
+  const current = () => { const eng = engines.find(e => e.id === choice.engine); return { eng, mdl: eng.models.find(m => m.id === choice.model) }; };
+  function effective() { const cap = CAP[mode]; if (!cap) return choice.effort; return order.indexOf(choice.effort) > order.indexOf(cap) ? cap : choice.effort; }
+  function paintPicker() {
+    const { eng, mdl } = current();
+    $('pEng').textContent = eng.name; $('pMdl').textContent = mdl.id;
+    const eff = effective(); const capped = eff !== choice.effort;
+    $('pEff').textContent = capped ? `${choice.effort}, runs ${eff}` : eff; $('pEff').classList.toggle('capped', capped);
+    $('headLabel').firstElementChild.textContent = mode; $('headModel').textContent = mdl.id; $('headEff').textContent = capped ? `${eff}, capped` : eff;
+  }
+  function renderPicker() {
+    const { mdl } = current();
+    pmenu.innerHTML = engines.map(e => `<h4>${e.name}<span>${e.where}</span></h4>` + e.models.map(m => `<button class="m ${m.id === choice.model ? 'on' : ''}" data-e="${e.id}" data-m="${m.id}" role="menuitemradio" aria-checked="${m.id === choice.model}"><span>${m.name}</span><span class="id">${m.id}</span><small>${m.note}</small></button>`).join('')).join('')
+      + `<div class="ladder" role="radiogroup" aria-label="Reasoning level">${mdl.ladder.map(l => `<button data-l="${l}" class="${l === choice.effort ? 'on' : ''} ${CAP[mode] && order.indexOf(l) > order.indexOf(CAP[mode]) ? 'capped' : ''}">${l}</button>`).join('')}</div>`
+      + (CAP[mode] ? `<div class="note"><b>Fix runs at ${CAP[mode]}.</b> Your choice still governs Ask, Plan and Build.</div>` : `<div class="note">Applies to this thread. The default lives in Settings.</div>`);
+    pmenu.querySelectorAll('.m').forEach(b => b.addEventListener('click', () => {
+      choice.engine = b.dataset.e; choice.model = b.dataset.m;
+      const ladder = current().mdl.ladder;
+      if (!ladder.includes(choice.effort)) choice.effort = ladder.includes('medium') ? 'medium' : ladder[0];
+      renderPicker(); paintPicker(); say(`This thread runs on ${choice.model}`);
+    }));
+    pmenu.querySelectorAll('.ladder button').forEach(b => b.addEventListener('click', () => { choice.effort = b.dataset.l; renderPicker(); paintPicker(); }));
+  }
+  function togglePicker(open) { const o = open ?? !pmenu.classList.contains('open'); pmenu.classList.toggle('open', o); pickerBtn.setAttribute('aria-expanded', String(o)); if (o) renderPicker(); }
+  pickerBtn.addEventListener('click', () => togglePicker());
+  addEventListener('click', (e) => { if (!$('picker').contains(e.target)) togglePicker(false); });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && pmenu.classList.contains('open')) togglePicker(false); });
+
+  /* ---- Ctrl+K: find a thing and act on it in its current state ---- */
+  const veil = $('veil'), input = $('paletteInput'), list = $('paletteList');
+  const workers = [
+    { n: 'Codex', sub: 'leads, gpt-5.2-codex', st: 'live' },
+    { n: 'Claude Code', sub: 'member, claude-sonnet-5', st: '' },
+    { n: 'OpenCode', sub: 'member, muse-spark-1.3, blocked', st: 'attn' },
+  ];
+  const projects = ['Reopening the patio', 'Marina cafe menu', 'Q3 books'];
+  // Only the verbs a task's state allows appear. They call the same functions the board's row verbs do.
+  const taskActions = (t) => {
+    const a = [];
+    // Under "Show me first" the confirm happens inside the palette: Start asks, Start now hands over.
+    if (t.s === 'Ready' && policy === 'first' && pending === t.t) { a.push(['Start now', () => { pending = null; move(t, 'Working', `Started on ${t.w}`); }, 'light']); a.push(['Not now', () => { pending = null; render(); }, '', 'stay']); }
+    else if (t.s === 'Ready') a.push(['Start', policy === 'first' ? () => { pending = t.t; render(); } : () => move(t, 'Working', `Started on ${t.w}`), 'light', policy === 'first' ? 'stay' : '']);
+    if (t.s === 'Working') a.push(['Pause', () => move(t, 'Ready', `Paused; ${t.w} keeps its context`)]);
+    if (t.s === 'Review') a.push(['Review', () => move(t, 'Done', 'Reviewed and kept'), 'light']);
+    if (t.s === 'Blocked') a.push(['Route to', () => { t.w = t.w === 'OpenCode' ? 'Codex' : 'OpenCode'; move(t, 'Working', `Routed to ${t.w}`, 420); }, 'light']);
+    if (t.s === 'Done') a.push(['Reopen', () => move(t, 'Ready', 'Reopened')]);
+    if (t.s === 'Working') a.push(['Handoff', () => { t.w = t.w === 'Codex' ? 'Claude Code' : 'Codex'; move(t, 'Working', `Handed to ${t.w}`, 420); }]);
+    a.push(['Board', () => show('Board')]);
+    if (t.s === 'Working') a.push(['Team', () => show('Team')]);
+    if (t.s !== 'Done') a.push(['Model', () => { input.value = 'use'; sel = 0; selAct = 0; render(); }, '', 'stay']);
+    return a;
+  };
+  let pending = null; const recent = [];
+  const workerActions = (w) => [
+    ['Message', () => { show('Team'); $('teamTo').value = w.n; $('teamBox').focus(); }, 'light'],
+    ['Pause', () => say(`${w.n} pauses after its current step`)],
+    ['Take over', () => say(`You hold ${w.n}'s task; it waits`)],
+    ['Lane', () => show('Team')],
+  ];
+  const modelActions = (e, m) => [['Use here', () => { choice.engine = e.id; choice.model = m.id; if (!m.ladder.includes(choice.effort)) choice.effort = m.ladder.includes('medium') ? 'medium' : m.ladder[0]; paintPicker(); say(`This thread runs on ${m.id}`); }, 'light']];
+  function entries() {
+    const out = [];
+    tasks.forEach(t => out.push({ g: 'Tasks', n: t.t, sub: `${t.s.toLowerCase()} on ${t.w}, ${t.age}`, st: glyph(t.s), acts: taskActions(t) }));
+    workers.forEach(w => out.push({ g: 'Workers', n: w.n, sub: w.sub, st: w.st, acts: workerActions(w) }));
+    engines.forEach(e => e.models.forEach(m => out.push({ g: 'Models', n: m.name, sub: `${m.id}, ${e.name}`, st: m.id === choice.model ? 'live' : '', acts: modelActions(e, m) })));
+    projects.forEach(p => out.push({ g: 'Projects', n: p, sub: p === projects[0] ? 'open now' : 'project', st: p === projects[0] ? 'done' : '', acts: [['Open', () => say(`Opening ${p}`)]] }));
+    ['Thread', 'Board', 'Team'].forEach(v => out.push({ g: 'Views', n: v, sub: 'Permit renewal, from here', st: '', acts: [['Open', () => show(v)]] }));
+    // With nothing typed, the things you last acted on come first, in their current state.
+    if (!input.value.trim() && recent.length) return recent.map(n => out.find(e => e.n === n)).filter(Boolean).map(e => ({ ...e, g: 'Recent' })).concat(out);
+    return out;
+  }
+  let sel = 0, selAct = 0;
+  // A verb in the query matches what can do it now: "pause" lists only running work and live workers.
+  function rows() {
+    const q = input.value.trim().toLowerCase(); if (!q) return entries();
+    const words = q.split(/\s+/);
+    return entries().filter(e => words.every(w => e.n.toLowerCase().includes(w) || e.sub.toLowerCase().includes(w) || e.acts.some(a => a[0].toLowerCase().startsWith(w))));
+  }
+  function render() {
+    const r = rows(); sel = Math.min(sel, Math.max(r.length - 1, 0)); const cur = r[sel]; if (cur) selAct = Math.min(selAct, cur.acts.length - 1);
+    let g = '';
+    list.innerHTML = r.map((e, i) => { const head = e.g !== g ? `<div class="group">${g = e.g}</div>` : ''; return head + `<li class="${i === sel ? 'sel' : ''}" data-i="${i}"><span class="pt ${e.st}"></span><span>${e.n}</span><span class="sub">${e.sub}</span><span class="acts">${e.acts.map((a, j) => `<button type="button" data-j="${j}" class="${i === sel && j === selAct ? 'act' : ''} ${a[2] || ''} ${a[3] === 'stay' ? 'stay' : ''}">${a[0]}</button>`).join('')}</span></li>`; }).join('') || '<li class="none">Nothing matches</li>';
+    list.querySelectorAll('li[data-i]').forEach(li => li.addEventListener('click', (ev) => { const b = ev.target.closest('button'); run(r[+li.dataset.i], b ? +b.dataset.j : 0); }));
+    list.querySelector('li.sel')?.scrollIntoView({ block: 'nearest' });
+  }
+  const open = () => { veil.hidden = false; input.value = ''; sel = 0; selAct = 0; pending = null; render(); input.focus(); };
+  const close = () => { veil.hidden = true; pending = null; box.focus(); };
+  function run(e, j) {
+    if (!e) return; const a = e.acts[j] || e.acts[0];
+    if (a[3] === 'stay') { a[1](); return; }
+    const i = recent.indexOf(e.n); if (i >= 0) recent.splice(i, 1); recent.unshift(e.n); if (recent.length > 3) recent.pop();
+    close(); a[1]();
+  }
+  $('openPalette').addEventListener('click', open); $('openPalette').addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
+  addEventListener('keydown', (e) => {
+    if (!wake.classList.contains('gone')) { endWake(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); veil.hidden ? open() : close(); return; }
+    if (veil.hidden) return;
+    if (e.key === 'Escape') close();
+    if (e.key === 'ArrowDown') { sel++; selAct = 0; render(); e.preventDefault(); }
+    if (e.key === 'ArrowUp') { sel = Math.max(0, sel - 1); selAct = 0; render(); e.preventDefault(); }
+    if (e.key === 'Tab') { const r = rows()[sel]; if (r) { selAct = (selAct + (e.shiftKey ? r.acts.length - 1 : 1)) % r.acts.length; render(); } e.preventDefault(); }
+    if (e.key === 'Enter') run(rows()[sel], selAct);
+  });
+  input.addEventListener('input', () => { sel = 0; selAct = 0; render(); }); veil.addEventListener('click', (e) => { if (e.target === veil) close(); });
+
+  document.querySelectorAll('.focus [data-go]').forEach(b => b.addEventListener('click', () => show(b.dataset.go)));
+  $('instrTask').addEventListener('click', () => show('Board'));
+  $('dense').addEventListener('click', () => { const on = $('columns').classList.toggle('compact'); $('dense').classList.toggle('on', on); $('dense').setAttribute('aria-pressed', String(on)); });
+  setMode('ask'); setState('idle'); paintPicker(); placeSpine(spine.querySelector('button.on'));
+  addEventListener('resize', () => { placeInd(); placeSpine(spine.querySelector('button.on')); if (handed && currentScreen === 'Team') drawHandoff($('l1hand'), $('l2hand'), false); });
+  document.fonts && document.fonts.ready.then(() => { placeInd(); placeSpine(spine.querySelector('button.on')); });
+})();
+</script>

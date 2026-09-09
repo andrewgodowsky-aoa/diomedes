@@ -19,6 +19,7 @@ import {
   UsageChip,
   askDraftKey,
   date,
+  pages,
   surfaceOf,
   tightestWindow,
   titleCase,
@@ -113,7 +114,10 @@ export function App() {
       const id = s.openProjects.at(-1);
       if (id && p.projects.some((x) => x.id === id)) {
         setSelected(id);
-        setPage(s.lastPage[id] ?? 'home');
+        const restored = s.lastPage[id];
+        // A page the Workbook rail no longer offers — Connections is Console-only — would
+        // otherwise restore as an empty reading pane.
+        setPage(restored && (pages as readonly Page[]).includes(restored) ? restored : 'home');
       }
       void refreshIntegrations();
       void refreshUsage();
@@ -183,7 +187,8 @@ export function App() {
         };
         settingsRef.current = next;
         setSettings(next);
-        void api<Settings>('/settings', 'PUT', next).catch(report);
+        // Navigation owns only this field; a stale client must not overwrite engine consent.
+        void api<Settings>('/settings', 'PUT', { openProjects: next.openProjects }).catch(report);
       }
     },
     [report],
@@ -199,7 +204,7 @@ export function App() {
         const next = { ...s, lastPage: { ...s.lastPage, [selected]: p } };
         settingsRef.current = next;
         setSettings(next);
-        void api<Settings>('/settings', 'PUT', next).catch(report);
+        void api<Settings>('/settings', 'PUT', { lastPage: next.lastPage }).catch(report);
       }
     },
     [report, selected],

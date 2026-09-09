@@ -64,7 +64,7 @@ export const ADAPTER_CAPABILITIES = {
       'Every tool feature is switched off in the thread configuration and the model has no shell or file tool; that inventory is the model\'s own report, not a protocol-level proof (evidence/codex-team-real-binary-2026-09-06.md, D8).',
       'Project files cannot be written by the engine: the Windows read-only sandbox passes a write-denial probe before each run, and a proposal is applied only by Store.writeRecorded after the person says go ahead.',
       'The runtime echoes networkAccess=false in the policy check; no outbound probe has been run.',
-      'A run that is interrupted restarts from nothing; there is no checkpoint inside a turn.',
+      'There is no checkpoint inside a Codex turn. The host-only codex-report capability persists a completed outer-turn observation; unknown dispatch stays parked for reconciliation and is never automatically resent.',
       'Stopping sends an abort and ends the process; the engine reports the interruption.',
     ],
   },

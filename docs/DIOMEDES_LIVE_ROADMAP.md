@@ -1,11 +1,16 @@
 # DIOMEDES LIVE ROADMAP
 
-**Roadmap version:** 2026-09-09.4  
+**Roadmap version:** 2026-09-09.7 (local reconciliation; cloud patch not applied)
 **Last reconciled:** September 9, 2026  
 **Product:** Diomedes  
 **Company direction:** Diomedes Systems  
 **Cloud canonical:** Google Doc `1bRhz3zQPXOYuVlt95U1EIkz7pcm1dtSsoBvkDrLR3zE`  
 **Repository mirror:** `docs/DIOMEDES_LIVE_ROADMAP.md`
+
+Cloud basis: version 2026-09-09.6, refreshed unchanged during final verification.
+The exact revision-guarded proposed update is `docs/releases/ROADMAP_PATCH.json`.
+This local checkpoint adds verified implementation facts and preserves the .6
+product decisions; it does not claim cloud synchronization or source publication.
 
 ## 1. Authority and synchronization
 
@@ -111,7 +116,7 @@ Routing is capability-aware. A task requiring enforced pre-send approval must no
 
 The implementation/history checkpoint before roadmap-only commits was `eab162c58151704454867573ce2427c02559cdac`, containing the published native-harness work whose substantive runtime commit is `f6f0460f3e4c1571fa86b95280d191f29e133892`.
 
-`main` now also contains roadmap documentation commits. Do not mistake roadmap commits for runtime implementation changes. Resolve current refs/worktrees before editing.
+Remote `main` is `11829e1962b448360d3fc7aaba7c38fda6833a84`, freshly resolved on September 9. The Windows integration branch is `codex/windows-release-20260909`, based there. Runtime's 143-file completed snapshot and the frozen 28-file Connections slice were imported into that isolated checkout. Original worktrees and the last good M1 package remain preserved. No new commit, amend or push was made.
 
 GitHub Actions still had no workflow runs and GitHub Releases had no releases when last checked. Source publication, CI, packaged artifact, tested package, local installation and public release remain separate statuses.
 
@@ -129,13 +134,23 @@ GitHub Actions still had no workflow runs and GitHub Releases had no releases wh
 - **NR-03 bounded Codex EngineAdapter proved locally:** one real native ChatGPT turn used synthetic input, durable start admission, run-scoped egress authority, exact proposal review and one recorded write. Host recreation reused the saved observation rather than repeating the provider call.
 - The Codex path keeps outbound-data authority, result acceptance, exact write approval and write permission as separate checks.
 - Ambiguous provider dispatch does not cause blind redispatch.
-- The integrated local tree records **533 passing tests** for the current runtime/Trust combination.
+- M1's historical 534-test/27-browser checkpoint is preserved. The current integrated tree passes **615/615 unit tests**, TypeScript and the client build. Browser coverage includes the existing 24 ordinary UI tests, three native built-client tests, and the added built Connections flow. The initial three native failures were missing-build prerequisites; the rebuilt run passed. See `docs/releases/VERIFICATION.md` for commands, environments and retained failure evidence.
 - Opus's corrected prototype Trust seam is integrated in the local runtime tree: synthetic/prototype assurance stays explicit and old references are invalidated across disable/rearm/restart.
+
+- The Usage regression is closed locally: a delayed settings refresh reproduced navigation overwriting a concurrent engine setting. Navigation now writes only its owned fields; the controlled browser regression and relocated built-client check pass. Earlier intermittent failures remain preserved as historical evidence.
+
+- Connections is available in both Console and Workbook: explicit synthetic three-location scope, incomplete-intent questions, exact reviewed activation, typed availability, freshness, pause/disconnect, rules and inspectable evidence.
+- A constrained generic OpenAPI compiler promotes exact reviewed data-only candidates for two unrelated services. Both run through the existing Runtime and official MCP SDK client using in-memory transport. No remotely reachable MCP service is implied.
+- Scoped context is frozen before model authorization. Final-output inspection records the raw scripted error and a distinct budgeted corrective step; narrowed tools remain narrowed at dispatch. Per-step transcript references survive replay without double advancement.
+- Signed raw-body fixture ingress is durable before acknowledgment. Deterministic service hours AND reported quantity produce one internal manager Task; fresh-session recovery preserves accepted events without reviving old authority. A registered forbidden write is denied before its handler.
+- Correction evidence supports a bounded offline rule-text replay, explicit versioned adoption and rollback. This measures instruction coverage and preserved deterministic outcomes, not live-model quality improvement.
+- A fresh real `gpt-5.6-sol` report smoke used the existing native ChatGPT route with frozen synthetic connector evidence, one provider call, exact Need and one recorded write. It does not prove a general live-agent connector loop.
+- Windows 0.1.1 was rebuilt and exercised as an actual executable, relocated with checkout source directories unavailable, installed into a disposable directory, repaired and uninstalled while preserving unknown files/profile data. Its full portable ZIP was extracted, hash-compared and used for a real 0.1.0-to-0.1.1 profile upgrade with an exact waiting approval.
+- Release identity, final installer/ZIP checksums, capability ledger and the Opus website contract are in `docs/releases/RELEASE_HANDOFF.md`. The candidate is unsigned, experimental, local and unpublished.
 
 ### PARTIAL / open
 
 - The newest NR-02/NR-03 runtime changes are **local/uncommitted/unpublished** at this roadmap checkpoint unless a newer source commit says otherwise.
-- The full browser suite has one disclosed **order-dependent Usage-chip failure**; isolated Usage and the remaining browser tests pass. Do not claim the entire browser suite is green until this is fixed and rerun.
 - The real Codex adapter proof is host/local and synthetic; it is not yet an ordinary authenticated end-user account/session path.
 - `HarnessPrincipal` alone is still a policy object supplied by trusted host code, not proof of an authenticated human/device session.
 - General credential brokerage, production tenant isolation and broader online-account identity are not yet established in published source.
@@ -143,6 +158,9 @@ GitHub Actions still had no workflow runs and GitHub Releases had no releases wh
 - General provider-side reconciliation for external effects remains future work beyond bounded `reconcile_required` semantics.
 - Native OS containment is not established; worktrees are edit isolation, not a security sandbox.
 - No CI run, signed release, production account backend or production migration is implied by the local proofs.
+- Live Toast access, production webhook hosting, real credential brokerage, unrestricted API generation and authenticated business tenancy remain disabled/unproven. Natural-language setup is deliberately bounded; there is no general autonomous connector discovery claim.
+- A second independent authorized model adapter is unavailable in this app composition. Claude/OpenCode are planned and LocalAI is observe-only here; existing external accounts do not make a second adapter ready.
+- The native executable contents match the official Codex release and its root LICENSE/NOTICE are included. A complete binary-specific Rust dependency notice inventory is not published upstream or independently generated here; this remains a publication evidence gap. No purchase or invented approval requirement is implied.
 
 ### Historical-doc warning
 
@@ -159,18 +177,30 @@ These are responsibility boundaries, not instructions to create separate service
 - **Observatory:** structured traces, timings, usage/cost provenance, failures/retries, approvals/corrections, outcomes, replay/evals and evidence-grounded self-improvement.
 - **Interop:** MCP, MCP Apps, ACP where useful, A2A, webhooks, APIs and external events.
 
+The .6 product naming sits over these responsibilities. **Diomedes Desktop** is one
+downloadable client; Personal/Pro/Business normally use entitlement/workspace modes
+of that client. **Diomedes Agent** is paid supervisory behavior built on Core and
+Runtime: planning, routing, delegation, context, monitoring, budgets, approvals,
+verification and synthesis. It need not use proprietary weights. Software fees
+and customer-supplied inference are separate concepts. Core agent semantics do
+not absorb Runtime's durable authority. Direct-agent mode remains first-class,
+with only the control guarantees each adapter actually supports.
+
 ## 9. Active ownership
 
 ### Codex — runtime/build integration
 
-Codex owns the current runtime continuation and run-scoped outbound-data authorization. Its immediate remaining responsibilities are:
+The Windows release task owns the integrated app candidate, verification, release
+manifest and roadmap patch. Runtime and Connections source tasks were frozen for
+import. Compiler/MCP work used primary/Sol; their final files are now owned by the
+integrator. Sol's installer and notice research were also integrated. No other
+task's source or package was replaced.
 
-1. preserve and verify the local NR-02/NR-03 work without overwriting Opus Trust changes;
-2. fix and freshly verify the order-dependent Usage-chip browser failure;
-3. reconcile current worktrees/remote refs and prepare the local runtime work for safe integration/publication only when authorized;
-4. keep the real Codex adapter on the single runtime/admission/approval/mutation authorities;
-5. add minimal credential-free GitHub build/test CI after the local regression state is clean, unless another branch has already done so;
-6. keep provider ambiguity and no-blind-redispatch semantics intact.
+The separate Opus website task owns any eventual public download link and site
+publication. It consumes the exact release manifest and capability ledger, not
+an inferred newest branch or guessed filename. Source commit/push, artifact
+publication, signing and replacement of an existing installation still need the
+user's explicit authorization for that operation.
 
 Codex should not create a competing account/session/credential system while Opus owns Trust/accounts.
 
@@ -199,9 +229,12 @@ Opus owns:
 
 Codex and Opus must agree on shared principal/grant/session interfaces and file ownership before both modify those seams. There should be one Trust contract.
 
-### Fable 5.1 — design baseline
+### Existing design baseline
 
-Fable's September 8 visual/interaction work remains the product design north star. Preserve the handoff rather than spending the remaining design allowance on another broad redesign. A future Fable pass is best used to review actual onboarding/security/account UX or a specific weak packaged screen.
+The September 8 Field/Console visual handoff remains the design baseline. Preserve
+`client/console/`, graphite surfaces, readable typography and restrained motion.
+No Fable agent is used by this task. Review concrete packaged screens when needed
+rather than reopening a broad redesign.
 
 ## 10. Identity/account decisions already made
 
@@ -242,11 +275,14 @@ Sensitive changes should support step-up verification, especially device enrollm
 
 ### M1 — close current local runtime regression
 
-Fix and freshly verify the order-dependent Usage-chip browser failure. Re-run the relevant browser suite and deterministic gates against the integrated NR-02/NR-03/Trust tree.
+VERIFIED locally. Reproduced and corrected stale navigation writes overwriting an engine setting during delayed refresh. Full browser suite 27/27; integrated runtime/Trust suite 534/534. A relocated Windows package passed all 11 checks with checkout source directories unavailable, including this race. A separate concurrency-test timing assumption now uses handler-entry synchronization. Evidence: `evidence/m1/manifest.json` and the NR-02/NR-03 verification report.
 
 ### M2 — safely integrate/publish verified runtime continuation
 
-Once authorized, reconcile the uncommitted NR-02/NR-03 work with current main, preserve Opus Trust changes, rerun fresh gates, and publish without implying CI/release/installation status that does not exist.
+Local integration and fresh app/package verification are complete for the 0.1.1
+experimental candidate. Source publication remains pending authorization; the
+proposed commit/file list is in `docs/releases/COMMIT_PROPOSAL.md`. This does not
+imply GitHub CI or public artifact availability.
 
 ### M3 — Identity & Trust + online accounts
 
@@ -254,11 +290,16 @@ Reconcile Opus's research, select the provider/data/recovery architecture, and l
 
 ### M4 — CI / reproducible package gate
 
-Add minimal credential-free GitHub build/test CI. Signed-in provider smoke stays a controlled local/integration gate. Add signing/update infrastructure before broad public release.
+PARTIAL: `.github/workflows/build-test.yml` is prepared locally with Windows, Node 22, locked npm installation, typecheck, synthetic unit tests, client compilation, pinned action SHAs, read-only token permissions and seven-day test artifacts. Its commands are locally checked; GitHub execution awaits authorized source publication. It does not package/sign/install/release or run signed-in providers. Reproducible native packaging and signing/update infrastructure remain separate gates.
 
 ### M5 — genuine Diomedes-led proof
 
 When prerequisites are ready, prove one genuine Diomedes-led workflow in which the native loop uses a real model route, invokes typed Diomedes tools, encounters a triggered rule/correction, crosses an exact approval boundary, survives interruption/restart, verifies its result and records evidence/history.
+
+PARTIAL: the 0.1.1 package proves that sequence using an explicitly scripted model,
+and a separate real Sol report smoke consumes frozen synthetic connector evidence.
+Neither is claimed as the full combined live-model workflow. Preserve that proof
+boundary when choosing the next adapter slice.
 
 Then prove the same durable contract with a second supported model route without rewriting its semantics. Separately test a direct external-agent route and document which Diomedes controls are enforceable, observed, advisory or unavailable.
 
@@ -274,9 +315,17 @@ Typed deterministic + agent steps, conditions/branches, retries/timeouts, waits/
 
 Event inbox/wakeups, schedules/webhooks, priority/concurrency, token/model/tool/runtime/retry budgets and local GPU/VRAM/RAM awareness aligned with the existing LocalAI supervisor.
 
+The local signed fixture inbox/triage/recovery slice is verified. General scheduler,
+always-on receiver, provider backoff and continuous monitoring while the PC sleeps
+remain future work.
+
 ### M9 — Observatory, replay/evals and self-improvement
 
 Replay historical cases against changed models/prompts/capabilities/workflows; compare quality, correction rate, latency, cost and failure. Self-improvement is versioned and evidence-gated, never a silent privilege/billing/tenant escalation.
+
+A narrow correction-to-rule revision/coverage replay/adoption/rollback loop is
+implemented and packaged. It cannot dispatch network or production effects and
+cannot expand scope. Model quality, cost and latency improvements are not proven.
 
 ### M10 — Demonstration-to-Automation
 
@@ -337,6 +386,13 @@ External engines remain useful even as Diomedes owns more runtime semantics. Per
 
 Muse/local models remain candidates, not permanent commitments. Prefer empirical routing/eval evidence.
 
+Preserve the .6 model evolution order: first establish supervisory behavior/evals
+using interchangeable existing models; then collect privacy-appropriate observable
+state/decision/outcome evidence. Do not collect hidden chain-of-thought or convert
+client data into training data without explicit permission and policy. A specialized
+Supervisor model is an option only when evidence and economics justify it. Optional
+commercial managed inference/workers come later without silently changing billing.
+
 ## 17. Business / consulting and commercial thesis
 
 Product: **Diomedes**. Company: **Diomedes Systems**.
@@ -346,6 +402,20 @@ Principle: **Find the weak point. Fix the workflow.**
 The long-term commercial thesis is stronger than selling model access or a model picker: sell a configured Diomedes system that can take responsibility for recurring work within explicit boundaries, produce inspectable results/evidence and improve through measured use.
 
 Potential commercial layers include personal software, configured business deployments, consulting/audits/pilots/implementation, Managed Diomedes support, customer-hosted local/remote workers, and later provider-authorized hosted Diomedes execution where economics/terms support it.
+
+**Diomedes Business** is the same product and Agent with organization/tenant roles,
+locations, shared capabilities, connector/credential administration, approvals,
+audit history, usage/budgets, deployment management and support. Exact pricing is
+unresolved and need not be mechanically tied to personal pricing. **Diomedes
+Consulting** is a separate professional-services revenue stream for discovery,
+configuration, integrations, capabilities, rules, training and support. **Diomedes
+Cloud** is a possible future umbrella for optional managed inference or workers.
+
+Capital efficiency is a current constraint: first personal/business revenue must
+not require persistent rented GPUs, proprietary training, mandatory hosted inference,
+paid employees or subsidized uncapped model usage. Customer hardware, local/BYOK
+and provider-authorized user-owned routes remain first-class. Consulting can fund
+later infrastructure. Successful sign-in does not authorize resale of subscriptions.
 
 The three-restaurant group remains the preferred first controlled design-partner shape. Candidate workflows:
 
@@ -440,6 +510,20 @@ Use `VERIFIED`, `PARTIAL`, `MISSING`, `DEFERRED`. Never claim a fixture proves r
 
 ## 24. Change ledger
 
+- **2026-09-09.7 (local, proposed cloud update)** - Integrated Runtime/Trust and the
+  frozen Connections slice, scoped rules/correction/replay, two generic compiled
+  fixture services and official MCP, desktop business flow, 615 source tests,
+  real Sol synthetic report, final Windows/ZIP/installer/upgrade proof and release
+  handoff. Source and artifacts remain unpublished; cloud synchronization awaits
+  the exact revision-guarded patch. Production connector/auth and complete native
+  dependency-notice evidence are explicitly outstanding.
+- **2026-09-09.6 (cloud)** - Unified Desktop/Core/Runtime/Agent terminology,
+  supervisory behavior before proprietary weights, first-class direct agents,
+  Business on the same product, separate Consulting, optional future Cloud and
+  the bootstrap capital constraint. Those decisions are incorporated above.
+
+- **2026-09-09.5** - Reconciled the clean repository .4 and concurrent cloud .4 after the other writer finished. Preserved the final 534-test authority-loss/startup/shutdown evidence, closed M1 with 27 browser tests and a new relocated package proof, and prepared credential-free CI locally. Current remote/main is `11829e1` (license/README-only additions after the roadmap commits); runtime changes remain local/uncommitted. Opus retains the explicitly authorized full Trust/account track; no competing identity service or broader runtime authentication was added.
+
 - **2026-09-09.4** — Final clean reconciliation before new-thread handoff. Folded the concurrent native-agent north-star clarification into the clean roadmap: Diomedes-led Devin-style outcome ownership, direct-agent mode, Devin/Hermes/OMP/two-OMH reference roles, layered standing/triggered/enforced rules, typed tool standardization, general-purpose accessible UX, self-improvement/Demonstration-to-Automation and outcome-responsibility commercial thesis. Preserved NR-02 packaged proof, bounded NR-03 real Codex adapter proof, 533 integrated tests, Opus Trust/account ownership and the disclosed Usage regression. Removed stale duplicate September 8/early-September instructions from the repository mirror.
 - **2026-09-09.3** — Reconciled concurrent Codex runtime updates: NR-02 packaged proof complete; bounded real Codex adapter proved locally; 533 integrated tests; Opus prototype Trust correction; one order-dependent browser Usage failure remains; newest runtime changes local/uncommitted.
 - **2026-09-09.2** — First clean-roadmap rewrite and repository mirror; established Codex/Opus ownership and activated online-account work.
@@ -448,4 +532,6 @@ Use `VERIFIED`, `PARTIAL`, `MISSING`, `DEFERRED`. Never claim a fixture proves r
 
 ### Next reconciliation trigger
 
-Reconcile when any of these lands: browser Usage regression fix; publication of local NR-02/NR-03 runtime work; Opus account/Trust research decision or implementation; first GitHub CI run; major host/persistence change; or a new Andrew product decision.
+Reconcile on application of the guarded cloud patch, authorized source/artifact
+publication, the first CI run, closure of native notice evidence, a production
+Trust/account decision, a live connector/model-loop proof or a new user decision.

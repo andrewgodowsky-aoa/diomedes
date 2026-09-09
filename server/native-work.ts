@@ -63,7 +63,7 @@ const active = (session: Session) => ['queued', 'working', 'waiting'].includes(s
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
-function parseProposal(text: string): Proposal {
+export function parseProposal(text: string): Proposal {
   if (Buffer.byteLength(text) > MAX_BYTES * 8)
     throw new ApiError(413, 'Codex returned a proposal that is too large. No files were changed.');
   let parsed: unknown;

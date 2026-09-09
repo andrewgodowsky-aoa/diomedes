@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "diomedes-0.1.1-windows-experimental-20260909-09e551958dfa",
+  "appVersion": "0.1.1",
+  "statusVocabulary": [
+    "VERIFIED",
+    "PARTIAL",
+    "MISSING",
+    "DEFERRED"
+  ],
+  "capabilities": [
+    {
+      "id": "desktop-connections",
+      "status": "VERIFIED",
+      "evidenceLevels": [
+        "source",
+        "fixture",
+        "packaged",
+        "installer"
+      ],
+      "claim": "Connections in Console and Workbook with reviewed three-location synthetic scope, incomplete-intent questions and freshness.",
+      "limit": "Bounded Toast intent template; no general language-to-arbitrary-connector construction."
+    },
+    {
+      "id": "typed-availability",
+      "status": "VERIFIED",
+      "evidenceLevels": [
+        "source",
+        "fixture",
+        "packaged"
+      ],
+      "claim": "Current-authority typed reads preserve reported quantity, unknown and untracked availability.",
+      "limit": "Synthetic menu-item availability; no physical ingredient inventory or live Toast access."
+    },
+    {
+      "id": "scoped-rules-and-correction",
+      "status": "VERIFIED",
+      "evidenceLevels": [
+        "source",
+        "fixture",
+        "packaged"
+      ],
+      "claim": "Scoped frozen context, raw scripted bad output, final-output trigger, distinct bounded correction step and versioned evidence.",
+      "limit": "Final-output interception only; no stream-time or external-agent internal-tool interception."
+    },
+    {
+      "id": "signed-inbox-triage",
+      "status": "VERIFIED",
+      "evidenceLevels": [
+        "source",
+        "fixture",
+        "packaged",
+        "installer"
+      ],
+      "claim": "Raw-body signed durable ingress, service-window AND quantity condition, one internal Task and explicit-authority crash recovery.",
+      "limit": "Local synthetic signer/receiver while host online; no production webhook endpoint or continuous offline monitoring."
+    },
+    {
+      "id": "registered-write-denial",
+      "status": "VERIFIED",
+      "evidenceLevels": [
+        "source",
+        "fixture",
+        "packaged"
+      ],
+      "claim": "Actual registered test-only write operation denied by Runtime before its handler; zero dispatches.",
+      "limit": "Isolated test-mode probe; no live vendor write attempted."
+    },
+    {
+      "id": "generic-openapi-compiler",
+      "status": "VERIFIED",
+      "evidenceLevels": [
+        "source",
+        "fixture",
+        "packaged"
+      ],
+      "claim": "Two unrelated services compile from a constrained declarative OpenAPI subset into exact reviewed data-only adapters.",
+      "limit": "No arbitrary scripts, remote references, live auth/transport, writes, servers or unrestricted schema support."
+    },
+    {
+      "id": "mcp-projection",
+      "status": "VERIFIED",
+      "evidenceLevels": [
+        "source",
+        "fixture",
+        "packaged"
+      ],
+      "claim": "Official SDK Client/Server discovery and invocation through the same authorization and Runtime path.",
+      "limit": "In-memory host-local transport only; remotely accessible MCP and MCP Apps are absent."
+    },
+    {
+      "id": "exact-approval-and-history",
+      "status": "VERIFIED",
+      "evidenceLevels": [
+        "source",
+        "fixture",
+        "packaged",
+        "archive-extracted"
+      ],
+      "claim": "Exact proposal/base identity, bounded expiry, decline, Stop, one-write replay, waiting restart, History and restore.",
+      "limit": "Only existing supported local report/recorded-write capabilities; not general external-effect reconciliation."
+    },
+    {
+      "id": "improvement-loop",
+      "status": "PARTIAL",
+      "evidenceLevels": [
+        "source",
+        "fixture",
+        "packaged"
+      ],
+      "claim": "Correction history to pure offline coverage replay, exact versioned adoption and rollback with no privilege expansion.",
+      "limit": "Instruction coverage and deterministic outcomes only; no measured real-model quality/cost improvement."
+    },
+    {
+      "id": "real-codex-report",
+      "status": "VERIFIED",
+      "evidenceLevels": [
+        "real-provider",
+        "source"
+      ],
+      "claim": "One actual Sol turn over frozen synthetic connector evidence through existing native ChatGPT egress, Need and recorded write.",
+      "limit": "Host-only report proof; not ordinary authenticated-user starts or a combined live-model connector/correction loop."
+    },
+    {
+      "id": "second-model-route",
+      "status": "MISSING",
+      "evidenceLevels": [],
+      "claim": "No second independently ready authorized adapter in this composition.",
+      "limit": "Planned external integrations and observe-only LocalAI are not substitutes for an implemented adapter."
+    },
+    {
+      "id": "windows-package",
+      "status": "VERIFIED",
+      "evidenceLevels": [
+        "packaged",
+        "archive-extracted",
+        "installer"
+      ],
+      "claim": "Exact x64 package, source-unavailable relocation, 76-file ZIP comparison, installed runtime, repair/uninstall and actual 0.1.0 profile upgrade.",
+      "limit": "Windows 11 build 26200 tested; no public download, other-OS matrix, signed updater or historic-version migration claim."
+    },
+    {
+      "id": "production-trust-and-connectors",
+      "status": "DEFERRED",
+      "evidenceLevels": [],
+      "claim": "Production account/tenant/credential authority and live vendor transport remain separate work.",
+      "limit": "Synthetic prototype authority is explicit; local core does not require account service."
+    },
+    {
+      "id": "public-download",
+      "status": "MISSING",
+      "evidenceLevels": [],
+      "claim": "Artifacts are staged locally; no public URL exists for this release.",
+      "limit": "Publication not authorized; complete native dependency-notice evidence remains unresolved."
+    }
+  ]
+}
