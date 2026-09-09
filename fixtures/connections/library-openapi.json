@@ -1,0 +1,64 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Library Catalogue Fixture API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/books": {
+      "get": {
+        "operationId": "listBooks",
+        "summary": "List books in one library catalogue.",
+        "parameters": [
+          {
+            "name": "libraryId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["central", "west"]
+            }
+          },
+          {
+            "name": "genre",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["fiction", "history"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A bounded library catalogue result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "libraryId": { "type": "string" },
+                    "books": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "title": { "type": "string" },
+                          "available": { "type": "boolean" }
+                        },
+                        "required": ["id", "title", "available"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["libraryId", "books"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

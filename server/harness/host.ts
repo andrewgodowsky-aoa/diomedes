@@ -12,6 +12,11 @@ import { HarnessBridge } from './bridge.js';
 import { ScriptedModelAdapter } from './fixture-adapter.js';
 import { REPORT_PATH } from './approval.js';
 import { registerFormatReport } from './capabilities/format-report.js';
+import { CODEX_REPORT, CodexEngineAdapter, type ResolveHarnessAuthority } from './codex-engine.js';
+import { askCodex } from '../integrations.js';
+import { parseWorkCommand } from '../work-admission.js';
+import { identifier } from '../store.js';
+import { currentAuthority as resolveTrustAuthority } from '../trust/index.js';
 
 export const HARNESS_POLICY_VERSION = 'diomedes-host-policy-v1';
 
@@ -271,16 +276,21 @@ class HostRunService extends RunService {
   }
 }
 
-export function createHarnessHost({ store, dataDir }: { store: Store; dataDir: string }) {
+export function createHarnessHost({ store, dataDir, currentAuthority, codexGenerator, codexAccountRoute }: {
+  store: Store; dataDir: string; currentAuthority?: ResolveHarnessAuthority;
+  codexGenerator?: typeof askCodex; codexAccountRoute?: () => Promise<string>;
+}) {
   if (path.resolve(dataDir) !== store.dataDir)
     throw new Error('The harness must use the Store data folder.');
   const secrets = new Set<string>();
   const redact = secretScrubber(secrets);
   const files = new ProjectRunStore(store, dataDir);
+  let codex: CodexEngineAdapter;
   const runs = new HostRunService(files, {
     clock: Date.now,
     policyVersion: HARNESS_POLICY_VERSION,
     redact,
+    authorizeEgress: (runId, intent, principal, phase) => codex.authorize(runId, intent, principal, phase),
   });
   const tools = new ToolRegistry();
   const adapter = new ScriptedModelAdapter(async (runId) => {
@@ -290,9 +300,12 @@ export function createHarnessHost({ store, dataDir }: { store: Store; dataDir: s
       expected: hash(await store.current(run.projectId, REPORT_PATH)),
     };
   });
-  const adapters = { 'native-fixture': adapter };
   registerFormatReport(tools, store, runs);
-  const bridge = new HarnessBridge(store, runs, tools, adapter, redact);
+  codex = new CodexEngineAdapter(store, runs, tools, HARNESS_POLICY_VERSION,
+    currentAuthority ?? resolveTrustAuthority,
+    codexGenerator, codexAccountRoute);
+  const adapters = { 'native-fixture': adapter, codex };
+  const bridge = new HarnessBridge(store, runs, tools, adapter, redact, codex);
   files.saved = (run) => bridge.enqueue(run);
   runs.afterStep = () => bridge.flush();
   runs.use((context) => bridge.beforeStep(context));
@@ -304,18 +317,29 @@ export function createHarnessHost({ store, dataDir }: { store: Store; dataDir: s
   const get = async (projectId: string, runId: string) => {
     if (!(await files.ids(projectId)).includes(validateRunId(runId)))
       throw new ApiError(404, 'This run was not found in this project.');
-    return runs.get(runId);
+    const run = await runs.get(runId);
+    if (run.capabilityId === CODEX_REPORT.id) await codex.authorityForRun(run, 'project.read');
+    return run;
   };
-  const list = async (projectId: string) => {
+  // Startup may inspect saved records to report an authority pause. Client
+  // reads below still require current rights before returning their contents.
+  const savedRuns = async (projectId: string) => {
     const result: HarnessRun[] = [];
     for (const id of await files.ids(projectId)) {
       try {
-        result.push(await runs.get(id));
+        const run = await runs.get(id);
+        result.push(run);
       } catch (error) {
         if (!(error instanceof HarnessError)) throw error;
         console.warn(`Skipped an unreadable harness run: ${redact(error.message)}`);
       }
     }
+    return result;
+  };
+  const list = async (projectId: string) => {
+    const result = await savedRuns(projectId);
+    for (const run of result)
+      if (run.capabilityId === CODEX_REPORT.id) await codex.authorityForRun(run, 'project.read');
     return result;
   };
   const scrub = <T>(value: T): T =>
@@ -329,6 +353,36 @@ export function createHarnessHost({ store, dataDir }: { store: Store; dataDir: s
     tools,
     adapters,
     bridge,
+    codex,
+    /** Host-only until authenticated client admission is supplied by Trust.
+     * Reuses the same command parser, collision check, receipt and Store lock. */
+    startCodexReport(projectId: string, body: Record<string, unknown>, selection: { model: string; effort: string }) {
+      return store.locked(async () => {
+        const command = parseWorkCommand({ ...body, model: selection.model, effort: selection.effort });
+        if (!command || command.request.capabilityId !== CODEX_REPORT.id
+          || command.request.route !== 'codex' || command.request.consent !== true
+          || !command.request.instruction || command.request.threadId)
+          throw new ApiError(400, 'Provide an explicit versioned Codex report command without team context.');
+        const authority = await codex.authority(projectId);
+        if (!store.settings.services?.codex || !store.settings.permissions.sending)
+          throw new ApiError(403, 'Current sending permission is disabled.');
+        const previous = store.workCommand(projectId, command.admission.commandId, command.admission.payloadDigest);
+        if (previous) return structuredClone(previous);
+        const state = store.state(projectId);
+        if (!state.tasks.some(t => t.id === command.request.taskId && !t.deletedAt))
+          throw new ApiError(404, 'This task was not found.');
+        if (state.sessions.some(s => ['queued', 'working', 'waiting'].includes(s.state)))
+          throw new ApiError(409, 'This project already has work in progress.');
+        store.checkWorkReceiptCapacity(projectId);
+        const runId = identifier('R');
+        const input = await codex.prepare(runId, projectId, {
+          instruction: command.request.instruction, sources: command.request.sources,
+          consent: true, ...selection,
+        });
+        return bridge.start(projectId, command.request.taskId, CODEX_REPORT.id, command.request.instruction,
+          authority.principal, { runId, input, admission: command.admission });
+      });
+    },
     redact,
     scrub,
     get,
@@ -342,7 +396,7 @@ export function createHarnessHost({ store, dataDir }: { store: Store; dataDir: s
       await refreshSecrets();
       await files.list();
       for (const project of await store.projects())
-        await bridge.recover(project.id, await list(project.id));
+        await bridge.recover(project.id, await savedRuns(project.id));
       await bridge.flush();
     },
     close: () => bridge.close(),

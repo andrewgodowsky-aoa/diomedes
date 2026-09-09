@@ -22,7 +22,7 @@ import type {
 import { api } from '../api';
 import { reconcileWorkStarts, startWork } from '../work-start';
 import { decideApproval, reconcileApprovals } from '../approval-decisions';
-import { ApprovalStatus, Button, Modal, time, titleCase } from '../components';
+import { ApprovalStatus, HarnessProposal, Button, Modal, time, titleCase } from '../components';
 import { Mark } from './Mark';
 import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
@@ -30,6 +30,7 @@ import { Ledger } from './Ledger';
 import { Picker } from './Picker';
 import { BoardView } from './BoardView';
 import { TeamView } from './TeamView';
+import { Connections } from '../connections/Connections';
 import { Palette } from './Palette';
 import { applyQuery, buildEntries, type PaletteContext } from './paletteEntries';
 import { useTravelOnView } from './motion';
@@ -621,6 +622,7 @@ export function Shell({
           onHistory={() => openInBook('history')}
           onEngines={openEngineSettings}
         />
+        {view === 'Connections' && <Connections projectId={projectId} />}
         {view === 'Thread' && selected && (
           <section className="screen on" id="scrThread">
             <ThreadView
@@ -797,11 +799,12 @@ export function Shell({
       )}
 
       {previewNeed && (
-        <Modal title={`Diomedes wants to ${previewNeed.what}`} onClose={() => setPreviewNeed(null)}>
+        <Modal title={`Diomedes wants to ${previewNeed.what}`} wide onClose={() => setPreviewNeed(null)}>
           <p className="prose">
             {previewNeed.why} {previewNeed.consequence}
           </p>
           <ApprovalStatus need={previewNeed} />
+          <HarnessProposal need={previewNeed} />
           <div className="dialog-actions">
             <Button
               onClick={() => {

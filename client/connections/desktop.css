@@ -1,0 +1,29 @@
+.connection-desktop { padding: 30px clamp(18px, 3vw, 46px) 70px; overflow: auto; min-width: 0; flex: 1; color: inherit; }
+.connection-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.connection-title h1 { margin: 4px 0; font-size: 36px; font-weight: 500; letter-spacing: -.03em; }
+.connection-eyebrow { font: 11px 'IBM Plex Mono', monospace; letter-spacing: .12em; opacity: .65; }
+.connection-intro { font-size: 17px; max-width: 720px; }
+.connection-note { opacity: .7; max-width: 850px; line-height: 1.6; }
+.connection-badge { border: 1px solid currentColor; border-radius: 3px; padding: 6px 10px; font-size: 11px; opacity: .75; }
+.connection-card { margin: 20px 0; padding: 22px; border: 1px solid #56615c66; border-radius: 5px; background: #66776608; }
+.connection-card h2 { margin: 0 0 12px; font-size: 20px; font-weight: 500; }
+.connection-card p { line-height: 1.6; }
+.connection-card label { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+.connection-card input, .connection-card textarea { border: 1px solid #65736b80; border-radius: 3px; background: transparent; color: inherit; padding: 10px; font: inherit; }
+.connection-card textarea { min-height: 78px; resize: vertical; }
+.connection-fields { display: grid; grid-template-columns: repeat(4, minmax(100px, 1fr)); gap: 14px; margin: 18px 0; }
+.connection-actions { display: flex; gap: 9px; flex-wrap: wrap; }
+.connection-desktop .connection-card button { background: #62766b20; color: inherit; border: 1px solid #7b958580; border-radius: 3px; padding: 9px 13px; min-height: 36px; font: inherit; cursor: pointer; }
+.connection-card button:hover { background: #62766b40; }
+.connection-card button:disabled { opacity: .4; cursor: default; }
+.connection-card :focus-visible { outline: 2px solid #9ebcaf; outline-offset: 3px; }
+.connection-card table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+.connection-card th, .connection-card td { padding: 11px 12px; border-bottom: 1px solid #65736b40; }
+.connection-table { overflow-x: auto; }
+.connection-card pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.6 'IBM Plex Mono', monospace; max-height: 500px; overflow: auto; }
+.connection-rules { list-style: none; padding: 0; }
+.connection-rules li { padding: 14px 0; border-bottom: 1px solid #65736b40; }
+.connection-error { color: #e6a796; border-left: 2px solid currentColor; padding: 10px; }
+.connection-card summary { cursor: pointer; padding: 5px 0; }
+@media (max-width: 900px) { .connection-fields { grid-template-columns: repeat(2, minmax(110px, 1fr)); } }
+@media (max-width: 520px) { .connection-fields { grid-template-columns: 1fr; } .connection-card { padding: 15px; } }

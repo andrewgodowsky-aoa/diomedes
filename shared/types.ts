@@ -5,7 +5,7 @@ export type Detail = 'guided' | 'standard' | 'technical';
 export type Surface = 'workbook' | 'console';
 /** The four things a person can want to do; the Workbook's Home leads with these. */
 export type Intent = 'ask' | 'work' | 'plan' | 'review';
-export type Page = 'home' | 'ask' | 'plan' | 'work' | 'review' | 'tasks' | 'documents' | 'history';
+export type Page = 'home' | 'ask' | 'plan' | 'work' | 'review' | 'tasks' | 'documents' | 'history' | 'connections';
 export type Mode = 'ask' | 'plan' | 'build' | 'fix';
 export type TaskState = 'todo' | 'working' | 'waiting' | 'done';
 export type Owner = 'you' | 'diomedes' | 'diomedes-with-ok';

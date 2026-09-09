@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { IntegrationStatus } from '../shared/types.js';
 import {
   createDiscovery,
@@ -20,6 +20,27 @@ import {
 // Protocol generated from the installed 0.153.4 CLI. An upgrade needs a new
 // isolation proof, particularly for the experimental empty-environments field.
 export const CODEX_PROTOCOL_VERSION = '0.153.4';
+export const CODEX_CONTEXT_POLICY = 'diomedes-text-only-v1';
+export interface CodexTextContext {
+  prompt: string;
+  documents: { path: string; text: string }[];
+  instructions: string;
+  model: string;
+  effort: string;
+}
+export interface CodexDispatchIdentity {
+  accountRoute: string;
+  contextHash: string;
+}
+/** Includes host rules and native workspace framing, not only selected file names. */
+export function codexContextHash(input: CodexTextContext): string {
+  return createHash('sha256').update(JSON.stringify({
+    policy: CODEX_CONTEXT_POLICY, protocol: CODEX_PROTOCOL_VERSION,
+    workspace: CODEX_WORKSPACE, prompt: input.prompt, documents: input.documents,
+    instructions: input.instructions, model: input.model, effort: input.effort,
+    transcript: null, tools: [], memory: false,
+  })).digest('hex');
+}
 const dataRoot =
   process.env.DIOMEDES_DATA_DIR ?? fileURLToPath(new URL('../.data/', import.meta.url));
 export const CODEX_WORKSPACE = path.join(dataRoot, 'native-readonly');
@@ -467,6 +488,8 @@ async function requireChatGpt(client: NativeRpc) {
       'Sign in to the native Codex CLI with ChatGPT. Diomedes never substitutes an API key or another provider.',
     );
   }
+  // Nonsecret account metadata is hashed in memory, never copied as credentials.
+  return `openai:chatgpt:${createHash('sha256').update(JSON.stringify(result.account)).digest('hex')}`;
 }
 
 export function createIntegrations(overrides: Partial<IntegrationDependencies> = {}) {
@@ -696,7 +719,9 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
      * disagree. A model's ladder may go past 'high' (Astra reaches 'ultra'),
      * so this is not narrowed to the three a mode uses.
      */
-    effort?: string;
+      effort?: string;
+      /** In-process host grant check. Never accepted from renderer/request JSON. */
+      beforeDispatch?: (identity: CodexDispatchIdentity) => Promise<void>;
   }): Promise<{ text: string; model?: string; threadId?: string; version?: string }> {
     if (!input.prompt.trim())
       throw new IntegrationError('EMPTY_PROMPT', 'Enter a question or planning request.');
@@ -731,7 +756,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       };
       input.signal?.addEventListener('abort', onAbort, { once: true });
       const version = await initialize(client);
-      await requireChatGpt(client);
+      const accountRoute = await requireChatGpt(client);
 
       // Empty TOML tables merge with native config, so mcp_servers={} is NOT a
       // fence. Read the public effective-config protocol once, retain names only,
@@ -746,6 +771,14 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           Object.keys(object(effective.mcp_servers)).map((name) => [name, { enabled: false }]),
         ),
       };
+      if (input.beforeDispatch) {
+        if (input.team || !input.instructions || !input.model || !input.effort)
+          throw new IntegrationError('CONTEXT_UNBOUND', 'The guarded route requires explicit text context and no team tools.');
+        // A custom instruction file cannot be enumerated safely in this slice.
+        if (effective.model_instructions_file || effective.experimental_instructions_file)
+          throw new IntegrationError('CONTEXT_UNBOUND', 'An inherited instruction file is outside this run authorization.');
+        threadConfig.developer_instructions = '';
+      }
       // An explicit selection rides in the thread config, never in the prompt text,
       // so the answer cannot rename its own engine.
       const requestedModel =
@@ -809,6 +842,18 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
           'A custom OpenAI provider is configured. The native ChatGPT route cannot be proven and will not run.',
         );
       }
+      const checkDispatch = async () => {
+        if (!input.beforeDispatch) return;
+        input.signal?.throwIfAborted();
+        const currentRoute = await requireChatGpt(client!);
+        if (currentRoute !== accountRoute)
+          throw new IntegrationError('ACCOUNT_CHANGED', 'The native account changed before dispatch.');
+        await input.beforeDispatch({ accountRoute, contextHash: codexContextHash({
+          prompt: input.prompt, documents: input.documents, instructions: input.instructions!,
+          model: requestedModel!, effort: requestedEffort!,
+        }) });
+      };
+      await checkDispatch();
       const started = object(
         await client.request('thread/start', {
           cwd: CODEX_WORKSPACE,
@@ -1014,6 +1059,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       // Attach a rejection handler before awaiting the acknowledgement so a
       // disconnect during turn/start cannot become an unhandled rejection.
       void completed.catch(() => {});
+      await checkDispatch();
       await client.request('turn/start', {
         threadId,
         input: [{ type: 'text', text: prompt, text_elements: [] }],
@@ -1043,9 +1089,17 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       if (client) await client.close();
     }
   }
-  return { getIntegrationStatuses, askCodex };
+  async function readCodexAccountRoute(): Promise<string> {
+    const client = await dependencies.createClient();
+    try {
+      await initialize(client);
+      return await requireChatGpt(client);
+    } finally { await client.close(); }
+  }
+  return { getIntegrationStatuses, askCodex, readCodexAccountRoute };
 }
 
 const integrations = createIntegrations();
 export const getIntegrationStatuses = integrations.getIntegrationStatuses;
 export const askCodex = integrations.askCodex;
+export const readCodexAccountRoute = integrations.readCodexAccountRoute;

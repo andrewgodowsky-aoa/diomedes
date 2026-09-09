@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const runRoot = path.resolve('test-results', `app-data-${Date.now()}-${process.pid}`);
-const clientPort = 5174;
+const clientPort = Number(process.env.DIOMEDES_UI_CLIENT_PORT ?? 5174);
 
 /**
  * A fixed engine catalogue for the suite. The server reads the engine's own
@@ -77,7 +77,7 @@ export default defineConfig({
     timeout: 30_000,
     reuseExistingServer: false,
     env: {
-      DIOMEDES_PORT: '47632',
+      DIOMEDES_PORT: process.env.DIOMEDES_UI_SERVICE_PORT ?? '47632',
       DIOMEDES_CLIENT_PORT: String(clientPort),
       DIOMEDES_DATA_DIR: path.join(runRoot, 'data'),
       DIOMEDES_PROJECTS_DIR: path.join(runRoot, 'projects'),

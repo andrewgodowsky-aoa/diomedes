@@ -406,7 +406,13 @@ describe('durable task Work admission', () => {
   test('restart expires an unapproved proposal while retaining its original receipt', async () => {
     const accepted = await start();
     await until((s) => s.sessions[0]?.state === 'waiting');
-    const snapshot = await fs.readFile(store().statePath(projectId));
+    // In-memory waiting precedes the async durable write. Capture a genuinely
+    // saved proposal, not the earlier admission bytes that happen to be on disk.
+    let snapshot!: Buffer;
+    await vi.waitFor(async () => {
+      snapshot = await fs.readFile(store().statePath(projectId));
+      expect(JSON.parse(snapshot.toString('utf8')).needs[0]?.state).toBe('open');
+    });
     await close();
     // Restore the last running-process bytes to emulate loss without a clean close.
     await fs.writeFile(path.join(root, 'data', 'projects', projectId, 'state.json'), snapshot);

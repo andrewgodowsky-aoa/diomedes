@@ -23,6 +23,7 @@ export const pages = [
   'tasks',
   'documents',
   'history',
+  'connections',
 ] as const;
 export const stateNames: Record<TaskState, string> = {
   todo: 'To do',
@@ -190,6 +191,23 @@ export function Modal({
       </div>
       <div className="dialog-body">{children}</div>
     </dialog>
+  );
+}
+/** Render the exact saved harness write, without executing or interpreting its text. */
+export function HarnessProposal({ need }: { need: Need }) {
+  const input = need.harness?.intent.input;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  if (typeof input.text !== 'string' || !Array.isArray(input.files)) return null;
+  return (
+    <section aria-label="Exact proposed file contents" className="change-card">
+      <h3>{input.files.filter((file): file is string => typeof file === 'string').join(', ')}</h3>
+      <p className="caption">
+        {input.expected === null ? 'Create this file.' : 'Replace the file contents below; outside edits will be refused.'}
+      </p>
+      <div className="change-lines code"><div className="change-hunk added">
+        <span aria-hidden="true">+</span><pre>{input.text}</pre>
+      </div></div>
+    </section>
   );
 }
 export function ApprovalStatus({ need }: { need: Need }) {

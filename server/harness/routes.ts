@@ -5,6 +5,7 @@ import { ApiError } from '../paths.js';
 import type { HarnessHost } from './host.js';
 import { localHarnessPrincipal } from './bridge.js';
 import { HarnessError } from './policy.js';
+import { CODEX_REPORT } from './codex-engine.js';
 
 export function mountHarnessRoutes(app: Express, store: Store, host: HarnessHost) {
   const base = '/api/projects/:id/harness/runs';
@@ -67,6 +68,12 @@ export function mountHarnessRoutes(app: Express, store: Store, host: HarnessHost
       if (!input.success) throw new ApiError(400, 'Provide a short reason for stopping the run.');
       const projectId = String(req.params.id);
       const run = await host.get(projectId, String(req.params.runId));
+      if (run.capabilityId === CODEX_REPORT.id) {
+        if (!run.sessionId) throw new ApiError(409, 'This run has no owning session.');
+        await store.locked(() => host.bridge.stop(projectId, run.sessionId!, input.data.reason));
+        await host.bridge.flush();
+        return host.get(projectId, run.id);
+      }
       await store.locked(() =>
         host.runs.cancel(
           run.id,

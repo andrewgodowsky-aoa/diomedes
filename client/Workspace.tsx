@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Connections } from './connections/Connections';
 import type {
   Change,
   Conversation,
@@ -22,6 +23,7 @@ import { reconcileWorkStarts, startWork } from './work-start';
 import { decideApproval, reconcileApprovals } from './approval-decisions';
 import {
   ApprovalStatus,
+  HarnessProposal,
   Button,
   ChangeCard,
   Empty,
@@ -418,7 +420,7 @@ export function Workspace({
     });
   }
   function showNeed(need: Need) {
-    if (need.preview?.length) {
+    if (need.preview?.length || need.harness) {
       setPreviewNeed(need);
       return;
     }
@@ -763,6 +765,7 @@ export function Workspace({
     </section>
   );
   const headerActions: Record<Page, ReactNode> = {
+    connections: null,
     home: (
       <>
         <Button onClick={() => newDialog('snapshot')}>Save a version</Button>
@@ -1219,6 +1222,7 @@ export function Workspace({
                 className={`workbook-layout ${running.some((s) => s.state === 'working') ? 'working' : ''} ${page === 'home' ? 'home' : ''}`}
               >
                 <div className="reading" key={`${projectId}:${page}`}>
+                  {page === 'connections' && <Connections projectId={projectId} />}
                   {page === 'home' && (
                     <>
                       {!!waiting.length && (
@@ -1628,8 +1632,9 @@ export function Workspace({
                   )}
                   {page === 'review' && (
                     <>
+                      {waiting.map(needCard)}
                       {!changes.length ? (
-                        <Empty title="Nothing to review">
+                        waiting.length ? null : <Empty title="Nothing to review">
                           <p>Changes appear here after Diomedes works on a task.</p>
                         </Empty>
                       ) : (
@@ -1970,7 +1975,9 @@ export function Workspace({
                             <dd>{workSession.engine.events}</dd>
                             <dt>usage</dt>
                             <dd>
-                              {workSession.sample ? 'no model calls' : 'ChatGPT subscription'}
+                              {workSession.sample || workSession.engine.name === 'native-fixture'
+                                ? 'no provider calls'
+                                : 'ChatGPT subscription'}
                             </dd>
                           </dl>
                         </>
@@ -2192,6 +2199,7 @@ export function Workspace({
             {previewNeed.why} Nothing here has been written to the project yet.
           </p>
           <ApprovalStatus need={previewNeed} />
+          <HarnessProposal need={previewNeed} />
           {previewNeed.preview?.map((c) => (
             <ChangeCard key={c.id} change={c} detail={detail}>
               <span className="caption">Proposed</span>

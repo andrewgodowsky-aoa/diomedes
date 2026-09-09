@@ -183,7 +183,8 @@ export function App() {
         };
         settingsRef.current = next;
         setSettings(next);
-        void api<Settings>('/settings', 'PUT', next).catch(report);
+        // Navigation owns only this field; a stale client must not overwrite engine consent.
+        void api<Settings>('/settings', 'PUT', { openProjects: next.openProjects }).catch(report);
       }
     },
     [report],
@@ -199,7 +200,7 @@ export function App() {
         const next = { ...s, lastPage: { ...s.lastPage, [selected]: p } };
         settingsRef.current = next;
         setSettings(next);
-        void api<Settings>('/settings', 'PUT', next).catch(report);
+        void api<Settings>('/settings', 'PUT', { lastPage: next.lastPage }).catch(report);
       }
     },
     [report, selected],

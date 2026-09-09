@@ -4,16 +4,42 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { packager } from '@electron/packager';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+async function sourceSnapshot() {
+  const files = [];
+  async function visit(relative) {
+    for (const entry of await fs.readdir(path.join(root, relative), { withFileTypes: true })) {
+      const child = `${relative}/${entry.name}`;
+      if (entry.isDirectory()) await visit(child);
+      else if (entry.isFile()) files.push({ path: child, sha256: sha256(await fs.readFile(path.join(root, child))) });
+      else throw new Error(`Unexpected source link: ${child}`);
+    }
+  }
+  for (const directory of ['client', 'server', 'shared', 'desktop', 'fixtures', 'licenses', 'dist']) await visit(directory);
+  for (const name of ['package.json', 'package-lock.json', 'LICENSE', 'scripts/package-desktop.mjs'])
+    files.push({ path: name, sha256: sha256(await fs.readFile(path.join(root, name))) });
+  return files.sort((a, b) => a.path.localeCompare(b.path));
+}
+const source = await sourceSnapshot();
+const sourceDigest = sha256(JSON.stringify(source));
+const baseCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
 // Each build gets an isolated staging folder; never copy app data or credentials.
 const stage = await fs.mkdtemp(path.join(root, '.desktop-stage-'));
 try {
   await fs.mkdir(path.join(stage, 'server'));
+  await fs.mkdir(path.join(stage, 'fixtures/harness'), { recursive: true });
+  await fs.copyFile(
+    path.join(root, 'fixtures/harness/report-lines.txt'),
+    path.join(stage, 'fixtures/harness/report-lines.txt'),
+  );
   await fs.copyFile(path.join(root, 'desktop/main.mjs'), path.join(stage, 'main.mjs'));
   await fs.cp(path.join(root, 'dist'), path.join(stage, 'dist'), { recursive: true });
   await fs.cp(path.join(root, 'licenses'), path.join(stage, 'licenses'), { recursive: true });
+  await fs.copyFile(path.join(root, 'LICENSE'), path.join(stage, 'LICENSE'));
   await fs.writeFile(
     path.join(stage, 'package.json'),
     JSON.stringify({
@@ -45,10 +71,18 @@ try {
     platform: 'node',
     format: 'esm',
     target: 'node22',
+    define: { DIOMEDES_BUNDLED: 'true' },
     banner: {
       js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
     },
   });
+  if (sha256(JSON.stringify(await sourceSnapshot())) !== sourceDigest)
+    throw new Error('Build inputs changed while packaging; repeat from a stable snapshot.');
+  const buildInfo = { schemaVersion: 1, version: manifest.version, baseCommit,
+    sourceStatus: 'local-uncommitted', sourceDigest, source,
+    nativeRuntime: { version: '0.153.4', sha256: hashes },
+    signing: 'unsigned-experimental', builtAt: new Date().toISOString() };
+  await fs.writeFile(path.join(stage, 'BUILD_INFO.json'), JSON.stringify(buildInfo, null, 2));
   const outputs = await packager({
     dir: stage,
     out: path.join(root, 'release'),
@@ -69,6 +103,8 @@ try {
       CompanyName: 'Diomedes',
     },
   });
+  await fs.mkdir(path.join(root, 'evidence/windows-release'), { recursive: true });
+  await fs.writeFile(path.join(root, 'evidence/windows-release/build-info.json'), JSON.stringify(buildInfo, null, 2));
   console.log(`Desktop release: ${outputs.join(', ')}`);
 } finally {
   // The staging copy is fully derived from the repo; never leave it behind.

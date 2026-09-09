@@ -1,5 +1,8 @@
 # Native harness runtime delivery, 2026-09-09
 
+Continuation: [NR-02 packaged proof and NR-03 adapter verification](NR02_NR03_VERIFICATION_2026-09-09.md).
+The report below describes the earlier published packet and is retained as evidence.
+
 Worktree: `F:\Achilles\diomedes-wt\codex-harness-runtime`.
 Branch: `codex/harness-runtime-20260908`.
 Base: main `86ee91d8357080a7d2aa41206281d68502dd5c2e`.
