@@ -174,9 +174,9 @@
   margin: 10px 0 0;
   padding: 0;
 }
+/* Ordinary flow, not a grid: the id and its ` / type / state` are one sentence and must
+   stay on one line, while the rule text below is a block and finds its own. */
 .console .crules li {
-  display: grid;
-  gap: 2px;
   padding: 8px 0;
   border-bottom: 1px solid var(--hair);
 }
