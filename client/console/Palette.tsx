@@ -114,7 +114,7 @@ export function Palette({ open, entries, onClose, query: controlled, onQuery }: 
             setSel(0);
             setSelAct(0);
           }}
-          placeholder="Task, worker, model, project, or a verb like pause"
+          placeholder="Task, worker, model, project, or a verb like stop"
           autoComplete="off"
           aria-label="Find a task, worker, model, project or action"
         />

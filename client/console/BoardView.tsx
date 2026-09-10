@@ -1,34 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Slot, Task, TeamMember } from '../../shared/types';
+import { formatOrigin, originForSession } from '../../shared/attribution';
 import type { BoardProps } from './types';
 import { travel } from './motion';
+import {
+  isActiveSession,
+  taskEvidence,
+  type TaskColumn as Column,
+} from '../workbench/task-evidence';
 import './board.css';
 
-type Column = 'Ready' | 'Working' | 'Review' | 'Blocked' | 'Done';
-
-const ORDER: Column[] = ['Ready', 'Working', 'Review', 'Blocked', 'Done'];
+const ORDER: Column[] = ['Ready', 'Queued', 'Working', 'Review', 'Blocked', 'Done'];
 const WHY: Record<Column, string> = {
-  Ready: 'Start hands it to its worker',
-  Working: 'a worker holds it now',
+  Ready: 'Start explicitly to run',
+  Queued: 'Admitted; waiting to start',
+  Working: 'A run is in progress',
   Review: 'waits on you',
   Blocked: 'needs an answer or a route',
-  Done: 'kept; Reopen to change it',
+  Done: 'Completion evidence stays in the thread',
 };
 const EMPTY: Record<Column, string> = {
-  Ready: 'Add a task in the Workbook, or make tasks from a plan.',
+  Ready: 'Make tasks from a plan.',
+  Queued: 'Nothing is queued.',
   Working: 'Nothing is running.',
   Review: 'Nothing waits on you.',
   Blocked: 'Nothing is blocked.',
   Done: 'Finished tasks appear here.',
 };
-
-function columnOf(task: Task): Column {
-  if (task.state === 'todo') return 'Ready';
-  if (task.state === 'working') return 'Working';
-  if (task.state === 'done') return 'Done';
-  if (task.reason === 'needs-ok' || task.reason === 'changes-ready') return 'Review';
-  return 'Blocked';
-}
 
 function selForTask(taskId: string): string {
   try {
@@ -80,8 +78,9 @@ export function BoardView({
   onOpenThread,
   onPolicyChange,
 }: BoardProps) {
+  const evidenceOf = (task: Task) => taskEvidence(task, state.sessions, state.needs, state.changes);
+  const columnOf = (task: Task): Column => evidenceOf(task).column;
   const [compact, setCompact] = useState(true);
-  const [localPolicy, setLocalPolicy] = useState(policy);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [routeId, setRouteId] = useState<string | null>(null);
   const [arrived, setArrived] = useState<ReadonlySet<string>>(new Set());
@@ -99,10 +98,10 @@ export function BoardView({
     column: Column;
   } | null>(null);
 
-  const effective = onPolicyChange ? policy : localPolicy;
-  useEffect(() => {
-    if (onPolicyChange) setLocalPolicy(policy);
-  }, [onPolicyChange, policy]);
+  // The thread's permission owns board policy. The board never keeps its own
+  // override: when Shell passes no callback it shows the prop read-only.
+  const effective = policy;
+  const controlled = typeof onPolicyChange === 'function';
 
   // Rows that just changed column get the 180 ms arrival fade.
   useEffect(() => {
@@ -120,7 +119,7 @@ export function BoardView({
     setArrived(new Set(changed));
     const timer = setTimeout(() => setArrived(new Set()), 300);
     return () => clearTimeout(timer);
-  }, [tasks]);
+  }, [tasks, state.sessions, state.needs, state.changes]);
 
   // A board action resolved above: fly the remembered point to the row's new
   // home, but only when the row actually changed column. Start 280 ms,
@@ -141,15 +140,13 @@ export function BoardView({
         // Motion never breaks the board.
       }
     });
-  }, [tasks]);
+  }, [tasks, state.sessions, state.needs, state.changes]);
 
   const members = state.team?.members ?? [];
   const changes = state.changes ?? [];
-  const workingCount = tasks.filter((t) => columnOf(t) === 'Working').length;
-  const slotBusy = workingCount > 0;
+  const slotBusy = state.sessions.some(isActiveSession);
 
   function pickPolicy(next: 'first' | 'go') {
-    setLocalPolicy(next);
     if (onPolicyChange) onPolicyChange(next);
   }
 
@@ -207,32 +204,37 @@ export function BoardView({
         >
           compact
         </button>
-        <div className="seg" role="radiogroup" aria-label="Board policy">
-          <button
-            type="button"
-            role="radio"
-            aria-checked={effective === 'first'}
-            className={effective === 'first' ? 'on' : ''}
-            onClick={() => pickPolicy('first')}
-          >
-            Show me first
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={effective === 'go'}
-            className={effective === 'go' ? 'on' : ''}
-            onClick={() => pickPolicy('go')}
-          >
-            Go ahead for tasks
-          </button>
-        </div>
+        {controlled ? (
+          <div className="seg" role="radiogroup" aria-label="Start confirmation">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={effective === 'first'}
+              className={effective === 'first' ? 'on' : ''}
+              onClick={() => pickPolicy('first')}
+            >
+              Confirm each start
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={effective === 'go'}
+              className={effective === 'go' ? 'on' : ''}
+              onClick={() => pickPolicy('go')}
+            >
+              Start on click
+            </button>
+          </div>
+        ) : (
+          <span className="ctx" data-board-policy={effective} aria-label="Start confirmation">
+            {effective === 'first' ? 'Confirm each start' : 'Start on click'}
+          </span>
+        )}
       </div>
       <div className={`columns${compact ? ' compact' : ''}`}>
         {ORDER.map((column) => {
           const rows = tasks.filter((t) => columnOf(t) === column);
-          const count =
-            column === 'Working' ? `${rows.length} of 1 slot` : String(rows.length);
+          const count = column === 'Working' ? `${rows.length} of 1 slot` : String(rows.length);
           const amber = (column === 'Review' || column === 'Blocked') && rows.length > 0;
           return (
             <div className="column" key={column} aria-label={column}>
@@ -248,6 +250,7 @@ export function BoardView({
                     key={task.id}
                     task={task}
                     column={column}
+                    evidence={evidenceOf(task)}
                     worker={workerOf(task)}
                     workerTitle={workerTitleOf(task)}
                     age={ageOf(task)}
@@ -259,14 +262,14 @@ export function BoardView({
                     members={members}
                     reviewCount={
                       column === 'Review' && task.reason !== 'needs-ok'
-                        ? changes.filter((c) => c.state === 'waiting' && task.changeIds.includes(c.id)).length
+                        ? changes.filter(
+                            (c) => c.state === 'waiting' && task.changeIds.includes(c.id),
+                          ).length
                         : 0
                     }
                     confirmOpen={confirmId === task.id}
                     routeOpen={routeId === task.id}
-                    onToggleConfirm={() =>
-                      setConfirmId(confirmId === task.id ? null : task.id)
-                    }
+                    onToggleConfirm={() => setConfirmId(confirmId === task.id ? null : task.id)}
                     onToggleRoute={() => setRouteId(routeId === task.id ? null : task.id)}
                     onCloseInline={closeInline}
                     onStart={handleStart}
@@ -287,20 +290,16 @@ export function BoardView({
   );
 
   function workerOf(task: Task): string {
-    const running = state.sessions.find(
-      (s) => s.taskId === task.id && ['queued', 'working', 'waiting'].includes(s.state),
-    );
-    if (running) return running.engine.name;
+    const session = evidenceOf(task).session;
+    if (session) return formatOrigin(originForSession(session)).primary;
     const member = members.find((m) => m.slotId === task.assignedTo);
     if (member) return member.name;
-    return task.owner === 'you' ? 'You' : 'Diomedes';
+    return task.owner === 'you' ? 'You' : 'Unassigned';
   }
 
   function workerTitleOf(task: Task): string | undefined {
-    const running = state.sessions.find(
-      (s) => s.taskId === task.id && ['queued', 'working', 'waiting'].includes(s.state),
-    );
-    if (running) return running.engine.model ? `${running.engine.name} ${running.engine.model}` : running.engine.name;
+    const session = evidenceOf(task).session;
+    if (session) return formatOrigin(originForSession(session)).label;
     const member = members.find((m) => m.slotId === task.assignedTo);
     if (member) return member.model ? `${member.name} ${member.model}` : member.name;
     return undefined;
@@ -310,6 +309,7 @@ export function BoardView({
 function TaskRow({
   task,
   column,
+  evidence,
   worker,
   workerTitle,
   age,
@@ -335,6 +335,7 @@ function TaskRow({
 }: {
   task: Task;
   column: Column;
+  evidence: ReturnType<typeof taskEvidence>;
   worker: string;
   workerTitle: string | undefined;
   age: string;
@@ -358,18 +359,12 @@ function TaskRow({
   onOpenTeam(task: Task): void;
   onOpenThread(task: Task): void;
 }) {
-  const blockedReason =
-    column === 'Blocked'
-      ? task.reason === 'went-wrong'
-        ? 'something went wrong'
-        : 'waiting'
-      : null;
-  const reviewLine =
-    column === 'Review'
-      ? task.reason === 'needs-ok'
-        ? 'needs your OK'
-        : `proposal, ${reviewCount} files`
-      : null;
+  // Working owns the column for its progress bar, and Ready repeats the
+  // column caption unless the row has a distinct reason (a stopped run).
+  const evidenceLine =
+    column === 'Working' || (column === 'Ready' && evidence.detail === WHY.Ready)
+      ? null
+      : evidence.detail;
   const startBlocked = column === 'Ready' && slotBusy;
 
   function onKeyClose(e: React.KeyboardEvent) {
@@ -392,12 +387,10 @@ function TaskRow({
         </span>
         <span className="mono age">{age}</span>
       </div>
-      {(blockedReason ?? reviewLine ?? focus) && (
+      {(evidenceLine || focus) && (
         <div className="x">
-          {blockedReason && <span className="mono why">{blockedReason}</span>}
-          {reviewLine && (
-            <span className={`mono${task.reason === 'needs-ok' ? ' why' : ''}`}>{reviewLine}</span>
-          )}
+          {evidenceLine && <span className="why">{evidenceLine}</span>}
+          {column === 'Review' && reviewCount > 0 && <span>{reviewCount} files</span>}
           {focus && <span className="mono here">this thread</span>}
         </div>
       )}
@@ -424,10 +417,15 @@ function TaskRow({
             Start
           </button>
         )}
-        {column === 'Working' && (
+        {evidence.active && (
           <>
-            <button type="button" className="verb" disabled={busy} onClick={() => void onPause(task)}>
-              Pause
+            <button
+              type="button"
+              className="verb"
+              disabled={busy}
+              onClick={() => void onPause(task)}
+            >
+              Stop
             </button>
             <button type="button" className="teamlink" onClick={() => onOpenTeam(task)}>
               Team
@@ -439,13 +437,18 @@ function TaskRow({
             Review
           </button>
         )}
-        {column === 'Blocked' && (
+        {column === 'Blocked' && !evidence.active && (
           <button type="button" className="verb" onClick={onToggleRoute}>
             Route to
           </button>
         )}
         {column === 'Done' && (
-          <button type="button" className="verb" disabled={busy} onClick={() => void onReopen(task)}>
+          <button
+            type="button"
+            className="verb"
+            disabled={busy}
+            onClick={() => void onReopen(task)}
+          >
             Reopen
           </button>
         )}
@@ -453,7 +456,12 @@ function TaskRow({
       {column === 'Ready' && confirmOpen && (
         <div className="confirm">
           <span>Hand to {worker}?</span>
-          <button type="button" className="go" disabled={busy || startBlocked} onClick={() => void onStart(task)}>
+          <button
+            type="button"
+            className="go"
+            disabled={busy || startBlocked}
+            onClick={() => void onStart(task)}
+          >
             Start
           </button>
           <button type="button" onClick={onToggleConfirm}>
@@ -461,15 +469,21 @@ function TaskRow({
           </button>
         </div>
       )}
-      {column === 'Blocked' && routeOpen && (
+      {column === 'Blocked' && !evidence.active && routeOpen && (
         <div className="route" role="list">
           {members.length === 0 && (
-            <button type="button" disabled={busy} onClick={() => void onStart(task)}>
+            <button type="button" disabled={busy || slotBusy} onClick={() => void onStart(task)}>
               Retry
             </button>
           )}
           {members.map((m) => (
-            <button key={m.slotId} type="button" role="listitem" disabled={busy} onClick={() => void onRoute(task, m.slotId)}>
+            <button
+              key={m.slotId}
+              type="button"
+              role="listitem"
+              disabled={busy || slotBusy}
+              onClick={() => void onRoute(task, m.slotId)}
+            >
               <span>{m.name}</span>
               <span className="mono">{m.engine}</span>
             </button>

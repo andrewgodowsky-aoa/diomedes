@@ -19,7 +19,8 @@
     "verify:native-work": "tsx scripts/native-work-smoke.ts",
     "smoke:team-codex": "node scripts/team-codex-smoke.mjs",
     "package:desktop": "npm run build",
-    "test:desktop": "node scripts/desktop-smoke.mjs"
+    "test:desktop": "node scripts/desktop-smoke.mjs",
+    "test:desktop-reviewer": "node scripts/reviewer-desktop-smoke.mjs"
   },
   "dependencies": {
     "@fontsource/big-shoulders-display": "^5.2.8",

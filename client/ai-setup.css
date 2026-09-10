@@ -1,0 +1,86 @@
+/* Console AI connection setup. Flat, cool, dark; sharp radii only (6/5).
+   Layout and controls reuse the Settings shared design (setting-rows,
+   setting-row, service-list, service, actions, caption, switch, selects);
+   this sheet only scopes machine strings and states to their rows. */
+.ai-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.ai-setup > h1 {
+  margin: 8px 0 0;
+  font-size: 20px;
+  line-height: 1.28;
+}
+
+.ai-connections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ai-connections .setting-rows {
+  margin: 12px 0;
+}
+
+/* A machine string never enters a fixed-width surface without a policy:
+   version, location, source and destination values truncate and wrap here. */
+.ai-connections .setting-row > span,
+.ai-connections .setting-row > a {
+  min-width: 0;
+}
+
+.ai-connections .setting-row > span:last-child {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  text-align: right;
+  color: var(--dm-text-2);
+}
+
+.ai-connections .setting-row > span:first-child {
+  flex: none;
+  color: var(--dm-text-1);
+}
+
+.ai-connections .setting-row > a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  text-align: right;
+}
+
+.ai-connections select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ai-connections .service p {
+  overflow-wrap: anywhere;
+}
+
+.ai-alert {
+  border: 1px solid var(--dm-rule);
+  border-left: 4px solid var(--dm-fault);
+  border-radius: var(--rb);
+  background: var(--dm-well);
+  padding: 10px 12px;
+  color: var(--t1);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ai-offer {
+  border-top: 1px solid var(--dm-rule-2);
+  padding-top: 4px;
+  min-width: 0;
+}
+
+/* Stacked Settings sections must size to their contents. A constrained grid
+   can place the engine summary over a long connection list at narrow widths. */
+@media (max-width: 850px) {
+  :root[data-surface='console'] .settings-layout .workbook-layout {
+    display: block;
+  }
+}

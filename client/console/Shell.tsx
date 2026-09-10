@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { selectedEngine } from '../../shared/ai-selection';
+import { formatOrigin, originForNeed, originForSession } from '../../shared/attribution';
+import type { ScopeGrantView } from '../../shared/permissions';
+import { isRoute, isExternalEngine, ENGINE_NAMES } from '../../shared/engines';
 import type {
   Change,
   Conversation,
@@ -22,16 +26,27 @@ import type {
 import { api } from '../api';
 import { reconcileWorkStarts, startWork } from '../work-start';
 import { decideApproval, reconcileApprovals } from '../approval-decisions';
-import { ApprovalStatus, HarnessProposal, Button, Modal, time, titleCase } from '../components';
+import {
+  ApprovalStatus,
+  HarnessProposal,
+  ChangeCard,
+  Button,
+  Modal,
+  time,
+  titleCase,
+} from '../components';
 import { Mark } from './Mark';
 import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
+import { PermissionPanel } from './PermissionPanel';
 import { Ledger } from './Ledger';
 import { Picker } from './Picker';
+import { AgentPicker } from './AgentPicker';
 import { BoardView } from './BoardView';
 import { TeamView } from './TeamView';
 import { Connections } from '../connections/Connections';
 import { Palette } from './Palette';
+import { WorkspaceMark, WorkspacePanel, useWorkspace } from './Workspaces';
 import { applyQuery, buildEntries, type PaletteContext } from './paletteEntries';
 import { useTravelOnView } from './motion';
 import type { ShellView } from './types';
@@ -59,6 +74,9 @@ interface ShellProps {
 
 const emptyTeam: TeamState = { members: [], messages: [], runs: [] };
 
+// Cap for the live streamed display: ephemeral text never persists.
+const MAX_STREAM_CHARS = 256 * 1024;
+
 /**
  * The Field shell: top strip, thread rail and the Thread/Board/Team screens
  * on the app's existing data flow. Board, Team and the Ctrl+K palette are
@@ -83,11 +101,16 @@ export function Shell({
   const [state, setState] = useState<ProjectState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<ShellView>('Thread');
+  const [workspacesOpen, setWorkspacesOpen] = useState(false);
+  const [workspace, setWorkspace] = useWorkspace(report);
   const [mode, setMode] = useState<Mode>('ask');
-  const [route, setRoute] = useState<Route>('sample');
+  const [route, setRoute] = useState<Route>(selectedEngine(settings));
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
+  const [permissionsOpen, setPermissionsOpen] = useState(false);
+  const [scopeGrants, setScopeGrants] = useState<ScopeGrantView[]>([]);
+  const [sendTask, setSendTask] = useState<{ task: Task; route: Route } | null>(null);
   const [team, setTeam] = useState<TeamState>(emptyTeam);
   const [teamAvailable, setTeamAvailable] = useState(false);
   const [toast, setToast] = useState('');
@@ -97,6 +120,18 @@ export function Shell({
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const [routingTaskId, setRoutingTaskId] = useState<string | null>(null);
   const [catalogs, setCatalogs] = useState<Record<string, EngineCatalog>>({});
+  // Live streamed text for a new external-engine Ask/Plan: ephemeral, never
+  // persisted. The server owns the requestId; the started event adopts it.
+  const [streaming, setStreaming] = useState<{
+    requestId: string;
+    threadId: string;
+    text: string;
+    engine: string;
+  } | null>(null);
+  const askControl = useRef<AbortController | null>(null);
+  const askThreadId = useRef<string | null>(null);
+  const askEngine = useRef<Route | null>(null);
+  const streamingId = useRef<string | null>(null);
   // The member a palette Message picked. The lane view has no composer yet,
   // so opening Team records the target here for the pass that adds one.
   const teamTarget = useRef<Slot | null>(null);
@@ -114,8 +149,14 @@ export function Shell({
   }, []);
 
   const load = useCallback(async () => {
-    const data = await api<ProjectState>(`/projects/${projectId}/state`);
-    if (currentId.current === projectId) setState(data);
+    const [data, permissions] = await Promise.all([
+      api<ProjectState>(`/projects/${projectId}/state`),
+      api<{ grants: ScopeGrantView[] }>(`/projects/${projectId}/permissions/grants`),
+    ]);
+    if (currentId.current === projectId) {
+      setState(data);
+      setScopeGrants(permissions.grants);
+    }
     const workIssue = reconcileWorkStarts(projectId, data.sessions);
     const approvalIssue = reconcileApprovals(projectId, data.needs);
     const issue = workIssue ?? approvalIssue;
@@ -148,6 +189,18 @@ export function Shell({
     },
     [report],
   );
+  useEffect(() => {
+    const deadlines = scopeGrants
+      .filter((record) => record.active)
+      .map((record) => Date.parse(record.grant.expiresAt))
+      .filter(Number.isFinite);
+    if (!deadlines.length) return;
+    const timer = setTimeout(
+      () => void load().catch(report),
+      Math.max(1, Math.min(...deadlines) - Date.now() + 25),
+    );
+    return () => clearTimeout(timer);
+  }, [scopeGrants, load, report]);
   const openPalette = useCallback(() => {
     setPaletteQuery('');
     setPendingTaskId(null);
@@ -160,18 +213,21 @@ export function Shell({
   // Live engine catalogues for the Models group, read exactly as the Picker does.
   useEffect(() => {
     let alive = true;
-    for (const id of ['codex', 'claude-code', 'opencode'] as const) {
+    for (const id of ['codex', 'claude-code', 'opencode', 'oh-my-pi'] as const) {
       const found = integrations.find((i) => i.id === id);
       const on =
         !!found &&
-        (found.kind === 'sample' ? found.available : found.available && settings.services?.[id] === true);
+        (found.kind === 'sample'
+          ? found.available
+          : found.available && settings.services?.[id] === true);
       if (!on) continue;
       api<EngineCatalog>(`/engines/${id}/models`)
         .then((catalog) => {
           if (alive) setCatalogs((prev) => ({ ...prev, [id]: catalog }));
         })
         .catch(() => {
-          if (alive) setCatalogs((prev) => ({ ...prev, [id]: { engine: id, models: [], detail: '' } }));
+          if (alive)
+            setCatalogs((prev) => ({ ...prev, [id]: { engine: id, models: [], detail: '' } }));
         });
     }
     return () => {
@@ -180,6 +236,8 @@ export function Shell({
   }, [integrations, settings]);
   useEffect(() => {
     setState(null);
+    setScopeGrants([]);
+    setPermissionsOpen(false);
     setSelectedId(null);
     setView('Thread');
     void load().catch(report);
@@ -191,14 +249,87 @@ export function Shell({
       clearTimeout(timer);
       timer = setTimeout(() => void load().catch(report), 70);
     };
-    ['state', 'project', 'tasks', 'needs', 'session', 'history', 'review', 'status', 'conversations', 'team'].forEach(
-      (n) => es.addEventListener(n, update),
-    );
+    [
+      'state',
+      'project',
+      'tasks',
+      'needs',
+      'session',
+      'history',
+      'review',
+      'status',
+      'conversations',
+      'team',
+    ].forEach((n) => es.addEventListener(n, update));
+    // Live engine text: started before engine metadata/generate, delta for
+    // partial text, ended in finally on all outcomes. Ephemeral only.
+    const onEngineText = (ev: Event) => {
+      let data: {
+        projectId?: unknown;
+        threadId?: unknown;
+        requestId?: unknown;
+        kind?: unknown;
+        text?: unknown;
+      };
+      try {
+        data = JSON.parse((ev as MessageEvent).data);
+      } catch {
+        return;
+      }
+      if (
+        typeof data.projectId !== 'string' ||
+        typeof data.threadId !== 'string' ||
+        typeof data.requestId !== 'string' ||
+        (data.kind !== 'started' && data.kind !== 'delta' && data.kind !== 'ended')
+      ) {
+        return;
+      }
+      if (data.projectId !== currentId.current) return;
+      if (data.kind === 'started') {
+        if (askThreadId.current == null || data.threadId !== askThreadId.current) return;
+        if (streamingId.current != null) return;
+        streamingId.current = data.requestId;
+        setStreaming({
+          requestId: data.requestId,
+          threadId: data.threadId,
+          text: '',
+          engine: askEngine.current ?? '',
+        });
+        return;
+      }
+      if (data.kind === 'delta') {
+        if (streamingId.current == null || data.requestId !== streamingId.current) return;
+        if (data.threadId !== askThreadId.current) return;
+        const chunk = typeof data.text === 'string' ? data.text : '';
+        if (!chunk) return;
+        setStreaming((prev) => {
+          if (!prev || prev.requestId !== data.requestId) return prev;
+          const next = (prev.text + chunk).slice(0, MAX_STREAM_CHARS);
+          return next === prev.text ? prev : { ...prev, text: next };
+        });
+        return;
+      }
+      if (streamingId.current == null || data.requestId !== streamingId.current) return;
+      streamingId.current = null;
+      setStreaming((prev) => (prev && prev.requestId === data.requestId ? null : prev));
+    };
+    es.addEventListener('engine-text', onEngineText as EventListener);
     return () => {
       clearTimeout(timer);
       es.close();
     };
   }, [load, report]);
+  // An in-flight ask owns its AbortController; leaving the project or
+  // unmounting cancels it and drops any partial text.
+  useEffect(() => {
+    return () => {
+      askControl.current?.abort();
+      askControl.current = null;
+      askThreadId.current = null;
+      streamingId.current = null;
+      setStreaming(null);
+    };
+  }, [projectId]);
 
   const threads = [...(state?.conversations ?? [])].sort((a, b) =>
     threadTime(b).localeCompare(threadTime(a)),
@@ -209,21 +340,22 @@ export function Shell({
       setSelectedId(threads[0].id);
     }
   }, [state, selectedId, threads.length]);
-  const selected = selectedId ? (state?.conversations.find((c) => c.id === selectedId) ?? null) : null;
+  const selected = selectedId
+    ? (state?.conversations.find((c) => c.id === selectedId) ?? null)
+    : null;
   useEffect(() => {
     if (selected) setMode(selected.mode ?? 'ask');
   }, [selected?.id, selected?.mode]);
   useEffect(() => {
-    if (selected) {
-      const lastHelper = [...selected.turns].reverse().find((t) => t.role === 'diomedes');
-      setRoute(lastHelper?.route ?? 'sample');
-    }
-  }, [selected?.id]);
+    setRoute(selectedEngine(settings, state?.project, selected));
+  }, [selected?.id, selected?.engine, state?.project.ai, settings.services?.defaultEngine]);
 
   const waiting = state?.needs.filter((n) => n.state === 'open') ?? [];
   const sessions = state?.sessions ?? [];
   const liveByTask = (taskId: string) =>
-    sessions.find((s) => s.taskId === taskId && ['queued', 'working', 'waiting'].includes(s.state)) ?? null;
+    sessions.find(
+      (s) => s.taskId === taskId && ['queued', 'working', 'waiting'].includes(s.state),
+    ) ?? null;
   const taskOf = (thread: Conversation | null) =>
     thread?.taskId ? (state?.tasks.find((t) => t.id === thread.taskId) ?? null) : null;
   const selectedTask = taskOf(selected);
@@ -231,19 +363,32 @@ export function Shell({
   // between the views' anchors (kind `screen`, 260 ms). Enter and every
   // board/team action resolve without waiting on it.
   useTravelOnView(view, selectedTask?.id ?? null, rootRef);
-  const selectedSessions = selectedTask
-    ? sessions.filter((s) => s.taskId === selectedTask.id)
+  const selectedSessions = selected
+    ? sessions.filter((s) =>
+        s.threadId ? s.threadId === selected.id : s.taskId === selectedTask?.id,
+      )
     : [];
-  // The decision record for this thread: the newest need it owns with an
-  // approval receipt, the way Astra's Pane read state.needs. ThreadView
-  // renders nothing when there is no receipt.
-  const selectedReceipts = selected && state
-    ? state.needs.filter((n) => n.approvalReceipt && threadOwnsNeed(selected, n, state)).slice(-1)
-    : [];
+  // Keep exact approvals and scoped authorization outcomes visible on their owning thread.
+  const selectedReceipts =
+    selected && state
+      ? state.needs
+          .filter(
+            (n) => (n.approvalReceipt || n.authorization) && threadOwnsNeed(selected, n, state),
+          )
+          .slice(-1)
+      : [];
+  // Live text shows only for the exact selected thread: cross-thread events
+  // never render elsewhere.
+  const streamingForSelected =
+    selected && streaming && streaming.threadId === selected.id
+      ? { requestId: streaming.requestId, text: streaming.text, engine: streaming.engine }
+      : undefined;
   const selectedMember = team.members.find((m) => m.threadId === selected?.id) ?? null;
   const selectedMail = team.messages.filter((m) => {
     const member = selected ? team.members.find((x) => x.threadId === selected.id) : undefined;
-    return member ? m.to === member.slotId || m.from === member.slotId : m.threadId === selected?.id;
+    return member
+      ? m.to === member.slotId || m.from === member.slotId
+      : m.threadId === selected?.id;
   });
   const helpers = integrations
     .filter((i) => i.adapter === 'ready' || i.adapter === 'planned')
@@ -252,9 +397,12 @@ export function Shell({
       available:
         i.kind === 'sample' ? i.available : i.available && settings.services?.[i.id] === true,
     }));
-  // Only these ids can start work or take a thread; the Route contract has no other engine.
-  const routeHelpers = helpers.filter((h) => h.id === 'sample' || h.id === 'codex');
-  const firstRoute = (routeHelpers[0]?.id ?? 'sample') as Route;
+  const routeForTask = (task: Task) =>
+    selectedEngine(
+      settings,
+      state?.project,
+      state?.conversations.find((thread) => thread.taskId === task.id),
+    );
 
   async function newThread(taskId?: string) {
     await perform(async () => {
@@ -286,9 +434,13 @@ export function Shell({
       setRenaming(null);
     });
   }
-  async function setRequested(thread: Conversation, requested: Conversation['requested']) {
+  async function setRequested(
+    thread: Conversation,
+    requested: Conversation['requested'],
+    engine: Route = route,
+  ) {
     await perform(async () => {
-      await api(`${base}/threads/${thread.id}`, 'PUT', { requested });
+      await api(`${base}/threads/${thread.id}`, 'PUT', { requested, engine });
       await load();
     });
   }
@@ -307,11 +459,31 @@ export function Shell({
       setMode(previous);
     });
   }
-  function pick(requested: Conversation['requested'], engine: string) {
+  /** Agent and model are separate choices; changing one preserves the other. */
+  function pickAgent(agentId: string | null) {
     if (!selected) return;
-    if (engine === 'codex') setRoute('codex');
-    else if (engine === 'sample') setRoute('sample');
-    void setRequested(selected, requested);
+    const current = selected.requested;
+    const next =
+      agentId === null
+        ? current?.model
+          ? { model: current.model, effort: current.effort ?? null }
+          : null
+        : {
+            model: current?.model ?? null,
+            effort: current?.effort ?? null,
+            agent: agentId,
+          };
+    void setRequested(selected, next as Conversation['requested'], route);
+  }
+  function pick(requested: Conversation['requested'], engine: string) {
+    if (!selected || !isRoute(engine)) return;
+    setRoute(engine);
+    // Changing the model must not silently change the worker.
+    const agent = selected.requested?.agent ?? null;
+    const next = agent
+      ? { model: requested?.model ?? null, effort: requested?.effort ?? null, agent }
+      : requested;
+    void setRequested(selected, next as Conversation['requested'], engine);
   }
   async function postMessage(to: Slot, content: string) {
     await perform(async () => {
@@ -339,7 +511,11 @@ export function Shell({
       }
     });
   }
-  async function resolveNeed(need: Need, resolution: 'go-ahead' | 'declined', allowForTask = false) {
+  async function resolveNeed(
+    need: Need,
+    resolution: 'go-ahead' | 'declined',
+    allowForTask = false,
+  ) {
     await perform(async () => {
       await decideApproval(projectId, need, resolution, allowForTask);
       await load();
@@ -358,8 +534,22 @@ export function Shell({
     });
   }
   async function startTask(task: Task, route: Route) {
+    if (isExternalEngine(route)) {
+      setSendTask({ task, route });
+      return;
+    }
+    await dispatchTask(task, route);
+  }
+  async function dispatchTask(task: Task, route: Route) {
     await perform(async () => {
-      await startWork(projectId, { taskId: task.id, route, sources: [], consent: true });
+      const thread = state?.conversations.find((item) => item.taskId === task.id);
+      await startWork(projectId, {
+        taskId: task.id,
+        route,
+        sources: [],
+        consent: true,
+        ...(thread ? { threadId: thread.id } : {}),
+      });
       await load();
     });
   }
@@ -377,19 +567,52 @@ export function Shell({
     failing?: { document?: string; text?: string },
     sources?: string[],
   ) {
+    askControl.current?.abort();
+    const control = new AbortController();
+    askControl.current = control;
+    askThreadId.current = thread.id;
+    askEngine.current = route;
     await perform(async () => {
-      await api(`${base}/ask`, 'POST', {
-        mode,
-        text,
-        route,
-        consent: true,
-        threadId: thread.id,
-        attachedTo: thread.attachedTo,
-        ...(sources?.length ? { sources } : {}),
-        ...(mode === 'fix' && failing ? { failing } : {}),
-      });
-      await load();
+      try {
+        await api(
+          `${base}/ask`,
+          'POST',
+          {
+            mode,
+            text,
+            route,
+            consent: true,
+            threadId: thread.id,
+            attachedTo: thread.attachedTo,
+            ...(sources?.length ? { sources } : {}),
+            ...(mode === 'fix' && failing ? { failing } : {}),
+          },
+          control.signal,
+        );
+        await load();
+        // The persisted turn is in; drop the ephemeral text if still ours.
+        streamingId.current = null;
+        setStreaming((prev) => (prev && prev.threadId === thread.id ? null : prev));
+      } catch (e) {
+        if (control.signal.aborted || isAbortError(e)) {
+          streamingId.current = null;
+          setStreaming((prev) => (prev && prev.threadId === thread.id ? null : prev));
+          report(new Error('Request stopped. The provider may still consume usage.'));
+          return;
+        }
+        streamingId.current = null;
+        setStreaming((prev) => (prev && prev.threadId === thread.id ? null : prev));
+        throw e;
+      } finally {
+        if (askControl.current === control) {
+          askControl.current = null;
+          askThreadId.current = null;
+        }
+      }
     });
+  }
+  function cancelAsk() {
+    askControl.current?.abort();
   }
 
   function scrollToNeed(need: Need) {
@@ -447,13 +670,22 @@ export function Shell({
   const openTasks = state.tasks.filter((t) => t.state !== 'done').length;
   const policy: 'first' | 'go' = selected?.permission === 'task' ? 'go' : 'first';
   const taskWorker = selectedTask
-    ? (liveByTask(selectedTask.id)?.engine.name ??
+    ? ((liveByTask(selectedTask.id)
+        ? formatOrigin(originForSession(liveByTask(selectedTask.id)!)).label
+        : null) ??
       selectedMember?.name ??
-      (selectedTask.owner === 'you' ? 'You' : 'Diomedes'))
+      (selectedTask.owner === 'you' ? 'You' : 'Assistant'))
     : '';
   const latestTaskSession = selectedSessions.length
     ? [...selectedSessions].sort((a, b) => a.startedAt.localeCompare(b.startedAt)).at(-1)!
     : null;
+  const activeGrant = scopeGrants.find(
+    (record) =>
+      record.active &&
+      record.grant.taskId === selectedTask?.id &&
+      record.grant.engine === route &&
+      Date.parse(record.grant.expiresAt) > Date.now(),
+  );
   // The palette finds tasks, workers, models, projects and views and exposes
   // only the actions valid for each item's current state. Every action calls
   // the same handlers the board and lanes call; nothing is duplicated.
@@ -480,7 +712,7 @@ export function Shell({
       setPaletteQuery('use');
     },
     handlers: {
-      startTask: (task) => void startTask(task, firstRoute),
+      startTask: (task) => void startTask(task, routeForTask(task)),
       pauseTask: (task) => {
         const running = liveByTask(task.id);
         if (running) void stopSession(running.id);
@@ -538,6 +770,17 @@ export function Shell({
           ))}
         </nav>
         <div className="top-right">
+          {selected && (
+            <AgentPicker
+              projectId={projectId}
+              thread={selected}
+              mode={mode}
+              route={route}
+              live={selectedTask ? liveByTask(selectedTask.id) !== null : false}
+              busy={busy}
+              onPick={pickAgent}
+            />
+          )}
           {selected && (
             <Picker
               thread={selected}
@@ -607,6 +850,7 @@ export function Shell({
 
       <div className="stage">
         <Rail
+          top={<WorkspaceMark view={workspace} onOpen={() => setWorkspacesOpen(true)} />}
           items={railItems}
           selectedId={selectedId}
           onSelect={(id) => {
@@ -639,6 +883,44 @@ export function Shell({
               member={selectedMember}
               needs={waiting.filter((n) => threadOwnsNeed(selected, n, state))}
               receiptNeeds={selectedReceipts}
+              projectId={projectId}
+              history={state.history}
+              allNeeds={state.needs}
+              changes={state.changes}
+              grantActive={!!activeGrant}
+              onScope={() => setPermissionsOpen(true)}
+              permissionControl={
+                <div className="task-permission">
+                  <button
+                    type="button"
+                    aria-haspopup="dialog"
+                    onClick={() => setPermissionsOpen(true)}
+                  >
+                    {activeGrant
+                      ? activeGrant.grant.review === 'model-reviewer'
+                        ? 'Approve for me'
+                        : 'Work in this project'
+                      : 'Review changes'}
+                  </button>
+                  {activeGrant && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void perform(async () => {
+                          await api(
+                            `${base}/permissions/grants/${encodeURIComponent(activeGrant.grant.id)}/revoke`,
+                            'POST',
+                            {},
+                          );
+                          await load();
+                        })
+                      }
+                    >
+                      Revoke and stop
+                    </button>
+                  )}
+                </div>
+              }
               settings={settings}
               mode={mode}
               route={route}
@@ -647,11 +929,15 @@ export function Shell({
               onMode={changeMode}
               onPermission={(p) => void setPermission(selected, p)}
               onRename={() => setRenaming({ id: selected.id, name: threadName(selected, state) })}
-              onSend={(m, text, r, failing, sources) => void send(selected, m, text, r, failing, sources)}
+              onSend={(m, text, r, failing, sources) =>
+                void send(selected, m, text, r, failing, sources)
+              }
               onResolve={(n, res, allow) => void resolveNeed(n, res, allow)}
               onPreview={setPreviewNeed}
               onStopSession={(id) => void stopSession(id)}
               onOpenBoard={() => setView('Board')}
+              streaming={streamingForSelected}
+              onCancelText={cancelAsk}
             />
             <Ledger
               project={project}
@@ -722,7 +1008,7 @@ export function Shell({
               focusTaskId={selectedTask?.id}
               busy={busy}
               onStart={async (task) => {
-                await startTask(task, firstRoute);
+                await startTask(task, routeForTask(task));
               }}
               onPause={async (task) => {
                 const running = liveByTask(task.id);
@@ -802,13 +1088,79 @@ export function Shell({
         </div>
       )}
 
+      {workspacesOpen && workspace && (
+        <WorkspacePanel
+          view={workspace}
+          busy={busy}
+          onClose={() => setWorkspacesOpen(false)}
+          onChanged={setWorkspace}
+          report={report}
+        />
+      )}
+      {sendTask && (
+        <Modal title="Send this task?" onClose={() => setSendTask(null)}>
+          <p className="prose">
+            Send the instruction for {sendTask.task.name} to{' '}
+            {isExternalEngine(sendTask.route) ? ENGINE_NAMES[sendTask.route] : sendTask.route} using
+            its selected model and account. No documents are included. File proposals will wait for
+            exact approval.
+          </p>
+          <div className="dialog-actions">
+            <Button onClick={() => setSendTask(null)}>Cancel</Button>
+            <Button
+              tone="primary"
+              onClick={() => {
+                const pending = sendTask;
+                setSendTask(null);
+                void dispatchTask(pending.task, pending.route);
+              }}
+            >
+              Send task
+            </Button>
+          </div>
+        </Modal>
+      )}
+      {permissionsOpen && selected && (
+        <Modal title="Task permissions" onClose={() => setPermissionsOpen(false)}>
+          <PermissionPanel
+            key={`${projectId}:${selectedTask?.id ?? 'none'}:${route}`}
+            projectId={projectId}
+            projectName={project.name}
+            taskId={selectedTask?.id ?? null}
+            taskName={selectedTask?.name ?? null}
+            engine={route}
+            onChange={() => {
+              void load().catch(report);
+            }}
+          />
+        </Modal>
+      )}
       {previewNeed && (
-        <Modal title={`Diomedes wants to ${previewNeed.what}`} wide onClose={() => setPreviewNeed(null)}>
+        <Modal
+          title={`${
+            formatOrigin(
+              originForNeed(
+                previewNeed,
+                state.sessions.find((s) => s.id === previewNeed.sessionId),
+              ),
+            ).label
+          } proposes to ${previewNeed.what}`}
+          wide
+          onClose={() => setPreviewNeed(null)}
+        >
           <p className="prose">
             {previewNeed.why} {previewNeed.consequence}
           </p>
           <ApprovalStatus need={previewNeed} />
+          {previewNeed.authorizationBoundary && (
+            <p>Approval needed: {previewNeed.authorizationBoundary}</p>
+          )}
           <HarnessProposal need={previewNeed} />
+          {previewNeed.preview?.map((change) => (
+            <ChangeCard key={change.id} change={change} detail={settings.detail}>
+              <span className="caption">Proposed</span>
+            </ChangeCard>
+          ))}
           <div className="dialog-actions">
             <Button
               onClick={() => {
@@ -870,9 +1222,13 @@ function threadName(c: Conversation, state: ProjectState) {
   if (first) return first.length > 60 ? `${first.slice(0, 57).trimEnd()}...` : first;
   if (c.attachedTo.kind === 'task')
     return `Thread for ${state.tasks.find((t) => t.id === c.attachedTo.ref)?.name ?? 'a task'}`;
-  return c.attachedTo.kind === 'project' ? 'Project thread' : `${titleCase(c.attachedTo.kind)}: ${c.attachedTo.ref}`;
+  return c.attachedTo.kind === 'project'
+    ? 'Project thread'
+    : `${titleCase(c.attachedTo.kind)}: ${c.attachedTo.ref}`;
 }
 function threadOwnsNeed(thread: Conversation, need: Need, state: ProjectState) {
+  const session = state.sessions.find((item) => item.id === need.sessionId);
+  if (session?.threadId) return session.threadId === thread.id;
   if (thread.taskId) return need.taskId === thread.taskId;
   // Without a task link, project-level threads carry the needs that no task thread owns.
   return (
@@ -881,5 +1237,16 @@ function threadOwnsNeed(thread: Conversation, need: Need, state: ProjectState) {
   );
 }
 function isMissingRoute(e: unknown) {
-  return typeof e === 'object' && e !== null && 'status' in e && (e as { status: number }).status === 404;
+  return (
+    typeof e === 'object' && e !== null && 'status' in e && (e as { status: number }).status === 404
+  );
+}
+function isAbortError(e: unknown) {
+  return (
+    (typeof DOMException !== 'undefined' && e instanceof DOMException && e.name === 'AbortError') ||
+    (typeof e === 'object' &&
+      e !== null &&
+      'name' in e &&
+      (e as { name: unknown }).name === 'AbortError')
+  );
 }

@@ -1,4 +1,7 @@
 import { assertReplay, findCommand } from './command-admission.js';
+import { ScopeGrants, validateScopeGrants } from './trust/scope-grants.js';
+import { validateAgentResolutions } from './agents.js';
+import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/attribution.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -119,6 +122,19 @@ export function migrateConversation(
  * running Diomedes does not land on a surface they did not choose.
  */
 export function migrateSettings(settings: Settings): void {
+  // Settings written before workspaces existed mean Personal, which is also
+  // what a malformed value means: a stored reference is honoured only when the
+  // membership behind it is still active, and this is not where that is decided.
+  const workspace = settings.activeWorkspace as
+    | { kind?: unknown; organizationId?: unknown }
+    | undefined;
+  settings.activeWorkspace =
+    workspace?.kind === 'business' && typeof workspace.organizationId === 'string'
+      ? { kind: 'business', organizationId: workspace.organizationId }
+      : { kind: 'personal' };
+  settings.onboarding.setupVersion = 2;
+  settings.onboarding.discoveryConsentAt ??= null;
+  settings.onboarding.aiSkipped ??= false;
   const stored = settings.surface as string | undefined;
   if (stored === 'book') settings.surface = 'workbook';
   else if (stored === 'desk' || stored === 'technical') settings.surface = 'console';
@@ -145,8 +161,11 @@ export const emptyTeamMeta = (): TeamMeta => ({ idempotency: {}, blockedBy: {} }
 export const defaults = (): Settings => ({
   version: 1,
   detail: 'guided',
-  surface: 'workbook',
+  surface: 'console',
   onboarding: {
+    setupVersion: 2,
+    discoveryConsentAt: null,
+    aiSkipped: false,
     work: null,
     detail: null,
     familiarity: null,
@@ -167,10 +186,13 @@ export const defaults = (): Settings => ({
   openProjects: [],
   lastPage: {},
   tasksView: {},
+  // Personal until an explicit switch through the workspace service, which is
+  // the only writer: `validateSettings` keeps the stored value on every PUT.
+  activeWorkspace: { kind: 'personal' },
   services: { codex: false },
 });
 
-async function durableWrite(target: string, bytes: string) {
+async function durableWrite(target: string, bytes: string, beforeReplace?: () => Promise<void>) {
   await fs.mkdir(path.dirname(target), { recursive: true });
   const temp = `${target}.${identifier()}.tmp`;
   const handle = await fs.open(temp, 'wx');
@@ -180,11 +202,18 @@ async function durableWrite(target: string, bytes: string) {
   } finally {
     await handle.close();
   }
-  await fs.rename(temp, target);
+  try {
+    await beforeReplace?.();
+    await fs.rename(temp, target);
+  } catch (error) {
+    await fs.unlink(temp);
+    throw error;
+  }
 }
-const jsonWrite = (target: string, object: unknown) =>
+/** The one durable JSON write in the process: temp file, fsync, atomic rename. */
+export const jsonWrite = (target: string, object: unknown) =>
   durableWrite(target, JSON.stringify(object, null, 2));
-async function readJson<T>(target: string, initial: () => T): Promise<T> {
+export async function readJson<T>(target: string, initial: () => T): Promise<T> {
   try {
     return JSON.parse(await fs.readFile(target, 'utf8')) as T;
   } catch (error) {
@@ -215,6 +244,7 @@ export interface WriteInput {
   expected: string | null;
 }
 export interface WriteOptions {
+  origin?: OriginSnapshot;
   approvalId?: string;
   actor?: Owner;
   kind?: string;
@@ -229,6 +259,7 @@ export interface WriteOptions {
 }
 
 export class Store extends EventEmitter {
+  readonly scopeGrants = new ScopeGrants(this);
   settings = defaults();
   private registry: Project[] = [];
   private states = new Map<string, StoredState>();
@@ -268,6 +299,8 @@ export class Store extends EventEmitter {
       state.teamMeta.blockedBy ??= {};
       validateWorkReceipts(state);
       validateApprovalReceipts(state);
+      validateScopeGrants(state);
+      validateAgentResolutions(state);
       this.states.set(project.id, state);
     }
     await this.recover();
@@ -319,6 +352,9 @@ export class Store extends EventEmitter {
       migrateTeam(fresh);
       validateWorkReceipts(fresh);
       validateApprovalReceipts(fresh);
+      validateScopeGrants(fresh);
+      validateAgentResolutions(fresh);
+      validateAgentResolutions(fresh);
       fresh.teamMeta ??= emptyTeamMeta();
       this.states.set(id, fresh);
     }
@@ -385,7 +421,8 @@ export class Store extends EventEmitter {
   }
   recordApprovalDecision(id: string, need: Need, admission: ApprovalAdmission) {
     const identity = need.approval;
-    if (!identity || need.approvalReceipt) throw new ApiError(409, 'This approval cannot be decided again.');
+    if (!identity || need.approvalReceipt || need.authorization)
+      throw new ApiError(409, 'This approval cannot be decided again.');
     const decidedAt = now();
     if (Date.parse(decidedAt) >= Date.parse(identity.expiresAt) || Date.parse(decidedAt) < Date.parse(need.createdAt))
       throw new ApiError(409, 'This approval window expired. Start work again for a new proposal.', { code: 'approval_expired' });
@@ -469,9 +506,15 @@ export class Store extends EventEmitter {
       sessionId: session.id, taskId: session.taskId, sample: session.sample,
     });
     session.receipt = {
-      protocolVersion: 1, ...admission, projectId: id, taskId: session.taskId,
-      sessionId: session.id, eventId: entry.id, admittedAt: entry.time,
-      route: session.sample ? 'sample' : 'codex', scope: 'local-prototype',
+      protocolVersion: 1,
+      ...admission,
+      projectId: id,
+      taskId: session.taskId,
+      sessionId: session.id,
+      eventId: entry.id,
+      admittedAt: entry.time,
+      route: session.route ?? (session.sample ? 'sample' : 'codex'),
+      scope: 'local-prototype',
     };
   }
   async object(id: string, sha: string | null) {
@@ -641,6 +684,18 @@ export class Store extends EventEmitter {
   }
   /** Explicit listing: awaits a fresh walk (Files tab and pickers call this on demand). */
   async listDocuments(id: string): Promise<DocumentInfo[]> {
+    // An in-flight walk may predate this call (for example a background refresh
+    // kicked at project creation while outside files landed after it). Returning it
+    // would report a listing older than this explicit request. Let it land, then
+    // walk again so the returned listing covers everything up to this call.
+    const pending = this.docCache.get(id)?.inFlight;
+    if (pending) {
+      try {
+        await pending;
+      } catch {
+        // A failed walk is retried by the fresh walk below.
+      }
+    }
     return this.refreshDocuments(id);
   }
   private async walkDocuments(id: string): Promise<DocumentInfo[]> {
@@ -765,6 +820,13 @@ export class Store extends EventEmitter {
   }
   addEntry(state: StoredState, options: WriteOptions): HistoryEntry {
     const entry: HistoryEntry = {
+      origin: structuredClone(
+        options.origin ??
+          (options.kind === 'changed'
+            ? state.sessions.find((session) => session.id === options.sessionId)?.origin
+            : undefined) ??
+          applicationOrigin(),
+      ),
       id: identifier('E'),
       time: now(),
       actor: options.actor ?? 'you',
@@ -787,10 +849,24 @@ export class Store extends EventEmitter {
   async writeRecorded(id: string, inputs: WriteInput[], options: WriteOptions = {}) {
     const source = this.state(id);
     const state = structuredClone(source);
-    const approval = options.approvalId ? state.needs.find((need) => need.id === options.approvalId) : undefined;
-    if (options.approvalId && (!approval?.approvalReceipt || approval.execution?.state !== 'pending' ||
-        approval.approvalReceipt.decision !== 'go-ahead' || approval.sessionId !== options.sessionId || approval.taskId !== options.taskId ||
-        actionDigest(inputs) !== (approval.harness ? actionDigest(harnessWrites(id, approval)) : approval.approvalReceipt.actionDigest) || options.merge !== false))
+    const approval = options.approvalId
+      ? state.needs.find((need) => need.id === options.approvalId)
+      : undefined;
+    if (approval?.authorization) await this.scopeGrants.assertCurrent(id, approval, inputs);
+    const authorization = approval?.authorization ?? approval?.approvalReceipt;
+    if (
+      options.approvalId &&
+      (!authorization ||
+        approval?.execution?.state !== 'pending' ||
+        approval.state !== 'go-ahead' ||
+        approval.sessionId !== options.sessionId ||
+        approval.taskId !== options.taskId ||
+        actionDigest(inputs) !==
+          (approval.harness
+            ? actionDigest(harnessWrites(id, approval))
+            : authorization.actionDigest) ||
+        options.merge !== false)
+    )
       throw new ApiError(409, 'The write does not match its exact approval receipt.');
     const checked: PendingWrite[] = [];
     if (new Set(inputs.map((i) => relativeName(i.path).toLowerCase())).size !== inputs.length)
@@ -839,6 +915,7 @@ export class Store extends EventEmitter {
       ...options,
       sentence: options.sentence ?? `You edited ${checked.map((f) => f.path).join(', ')}`,
     });
+    if (approval?.authorization) entry.authorization = structuredClone(approval.authorization);
     for (const file of checked) {
       const previous = entry.files.find((f) => f.path === file.path);
       if (previous) {
@@ -855,7 +932,7 @@ export class Store extends EventEmitter {
     }
     entry.time = now();
     if (options.sessionId) {
-      entry.sentence = `Diomedes changed ${entry.files.length} ${entry.files.length === 1 ? 'file' : 'files'}`;
+      entry.sentence = `${formatOrigin(entry.origin).primary} changed ${entry.files.length} ${entry.files.length === 1 ? 'file' : 'files'}${approval?.authorization ? ' - allowed for this task' : ''}`;
       const session = state.sessions.find((s) => s.id === options.sessionId);
       if (session && !session.entryIds.includes(entry.id)) session.entryIds.push(entry.id);
     }
@@ -875,7 +952,12 @@ export class Store extends EventEmitter {
     if (approval) {
       for (const source of approval.approval!.sources)
         if (hash(await this.current(id, source.path)) !== source.sha)
-          throw new ApiError(409, 'A selected source changed before the approved write was prepared.', { path: source.path });
+          throw new ApiError(
+            409,
+            'A selected source changed before the approved write was prepared.',
+            { path: source.path },
+          );
+      if (approval.authorization) await this.scopeGrants.assertCurrent(id, approval, inputs);
       this.settleApproval(state, approval, entry.id);
     }
     const journal: Journal = { id: identifier(), projectId: id, writes: checked, state,
@@ -884,7 +966,27 @@ export class Store extends EventEmitter {
     // Both images and the complete intended metadata are durable before touching a project.
     await jsonWrite(journalPath, journal);
     try {
-      for (const file of checked) await this.applyWrite(id, file, entry.id);
+      for (const file of checked) {
+        if (approval?.authorization)
+          await this.scopeGrants.assertCurrent(
+            id,
+            source.needs.find((need) => need.id === approval.id)!,
+            inputs,
+          );
+        await this.applyWrite(
+          id,
+          file,
+          entry.id,
+          approval?.authorization
+            ? () =>
+                this.scopeGrants.assertCurrent(
+                  id,
+                  source.needs.find((need) => need.id === approval.id)!,
+                  inputs,
+                )
+            : undefined,
+        );
+      }
       await this.persist(state);
       this.invalidateDocuments(id);
       await fs.unlink(journalPath);
@@ -896,7 +998,12 @@ export class Store extends EventEmitter {
     }
     return entry;
   }
-  private async applyWrite(id: string, file: PendingWrite, entryId: string) {
+  private async applyWrite(
+    id: string,
+    file: PendingWrite,
+    entryId: string,
+    beforeEffect?: () => Promise<void>,
+  ) {
     const absolute = (await projectFile(this.state(id).project.folder, file.path)).absolute;
     const actual = hash(await readTextOrNull(absolute));
     if (actual === file.after) return;
@@ -906,6 +1013,17 @@ export class Store extends EventEmitter {
         'A file changed while this operation was being saved. Its current content was preserved.',
         { path: file.path },
       );
+    const finalCheck = async () => {
+      await projectFile(this.state(id).project.folder, file.path);
+      const latest = hash(await readTextOrNull(absolute));
+      if (latest !== file.before && latest !== file.after)
+        throw new ApiError(
+          409,
+          'The file changed before replacement. Its current contents were preserved.',
+          { path: file.path },
+        );
+      await beforeEffect?.();
+    };
     if (file.after === null) {
       if (actual !== null) {
         const removed = path.join(
@@ -919,12 +1037,13 @@ export class Store extends EventEmitter {
         );
         await durableWrite(removed, (await this.object(id, actual))!);
         await projectFile(this.state(id).project.folder, file.path);
+        await finalCheck();
         await fs.unlink(absolute);
       }
     } else {
       await fs.mkdir(path.dirname(absolute), { recursive: true });
       await projectFile(this.state(id).project.folder, file.path);
-      await durableWrite(absolute, (await this.object(id, file.after))!);
+      await durableWrite(absolute, (await this.object(id, file.after))!, finalCheck);
     }
   }
   private async recover() {
@@ -934,18 +1053,59 @@ export class Store extends EventEmitter {
       const currentState = this.state(journal.projectId);
       validateWorkReceipts(journal.state);
       validateApprovalReceipts(journal.state);
-      const approval = journal.approvalId ? journal.state.needs.find((need) => need.id === journal.approvalId) : undefined;
-      const accepted = currentState.needs.find((need) => need.id === journal.approvalId)?.approvalReceipt;
-      if (journal.state.project.id !== journal.projectId || journal.state.project.folder !== currentState.project.folder ||
-          (!journal.approvalId && journal.state.needs.some((need) => need.execution?.state === 'applied' && currentState.needs.find((item) => item.id === need.id)?.execution?.state === 'pending')) ||
-          (journal.approvalId && (!approval?.approvalReceipt || approval.execution?.state !== 'applied' ||
-            approval.approvalReceipt.commandId !== accepted?.commandId ||
-            approval.approvalReceipt.payloadDigest !== accepted?.payloadDigest ||
-            approval.approvalReceipt.eventId !== accepted?.eventId ||
-            approval.approvalReceipt.decidedAt !== accepted?.decidedAt ||
-            JSON.stringify(journal.writes) !== JSON.stringify(journal.state.history.find((entry) => entry.id === approval.execution?.eventId)?.files.map(({ path, before, after }) => ({ path, before, after }))))))
-        throw new Error('A prepared write is inconsistent with its approval. No recovery write was dispatched.');
+      validateScopeGrants(journal.state);
+      validateAgentResolutions(journal.state);
+      const approval = journal.approvalId
+        ? journal.state.needs.find((need) => need.id === journal.approvalId)
+        : undefined;
+      const acceptedNeed = currentState.needs.find((need) => need.id === journal.approvalId);
+      const accepted = acceptedNeed?.authorization ?? acceptedNeed?.approvalReceipt;
+      const preparedDecision = approval?.authorization ?? approval?.approvalReceipt;
+      if (
+        journal.state.project.id !== journal.projectId ||
+        journal.state.project.folder !== currentState.project.folder ||
+        (!journal.approvalId &&
+          journal.state.needs.some(
+            (need) =>
+              need.execution?.state === 'applied' &&
+              currentState.needs.find((item) => item.id === need.id)?.execution?.state ===
+                'pending',
+          )) ||
+        (journal.approvalId &&
+          (!preparedDecision ||
+            approval?.execution?.state !== 'applied' ||
+            JSON.stringify(preparedDecision) !== JSON.stringify(accepted) ||
+            JSON.stringify(journal.writes) !==
+              JSON.stringify(
+                journal.state.history
+                  .find((entry) => entry.id === approval.execution?.eventId)
+                  ?.files.map(({ path, before, after }) => ({ path, before, after })),
+              )))
+      )
+        throw new Error(
+          'A prepared write is inconsistent with its approval. No recovery write was dispatched.',
+        );
       const conflicts: string[] = [];
+      let scopeCurrent = true;
+      if (approval?.authorization) {
+        try {
+          await this.scopeGrants.assertCurrent(
+            journal.projectId,
+            acceptedNeed!,
+            await Promise.all(
+              journal.writes.map(async (file) => ({
+                path: file.path,
+                expected: file.before,
+                text: file.after === null ? null : await this.object(journal.projectId, file.after),
+              })),
+            ),
+          );
+        } catch (error) {
+          if (!(error instanceof ApiError) || error.details.code !== 'scope_not_authorized')
+            throw error;
+          scopeCurrent = false;
+        }
+      }
       for (const file of journal.writes) {
         let actual: string | null = null;
         let unreadable: string | null = null;
@@ -959,9 +1119,48 @@ export class Store extends EventEmitter {
           unreadable = `The outside replacement was preserved but could not be recorded as text: ${error.message}`;
         }
         const actualHash = hash(actual);
-        if (!unreadable && (actualHash === file.before || actualHash === file.after))
-          await this.applyWrite(journal.projectId, file, journal.id);
-        else {
+        if (
+          !unreadable &&
+          (actualHash === file.after || (scopeCurrent && actualHash === file.before))
+        )
+          await this.applyWrite(
+            journal.projectId,
+            file,
+            journal.id,
+            approval?.authorization
+              ? async () =>
+                  this.scopeGrants.assertCurrent(
+                    journal.projectId,
+                    acceptedNeed!,
+                    await Promise.all(
+                      journal.writes.map(async (item) => ({
+                        path: item.path,
+                        expected: item.before,
+                        text:
+                          item.after === null
+                            ? null
+                            : await this.object(journal.projectId, item.after),
+                      })),
+                    ),
+                  )
+              : undefined,
+          );
+        else if (!unreadable && !scopeCurrent && actualHash === file.before) {
+          // Scope expired/revoked before this file reached disk: never resume
+          // authority and never invent an outside edit. Record the conflict so
+          // execution reflects the unfinished scope outcome; already-applied
+          // files remain recorded via the intended changed entry.
+          conflicts.push(file.path);
+          if (approval) {
+            const change = journal.state.changes.find(
+              (item) => item.entryId === approval.execution?.eventId && item.path === file.path,
+            );
+            if (change) {
+              change.current = actual;
+              change.changedSince = { actor: 'task scope ended before write', at: now() };
+            }
+          }
+        } else {
           conflicts.push(file.path);
           if (!unreadable) await this.saveObject(journal.projectId, actual);
           const entry = this.addEntry(journal.state, {
@@ -982,7 +1181,19 @@ export class Store extends EventEmitter {
           }
         }
       }
-      if (approval && conflicts.length) this.settleApproval(journal.state, approval, approval.execution!.eventId, conflicts);
+      if (approval && conflicts.length)
+        this.settleApproval(journal.state, approval, approval.execution!.eventId, conflicts);
+      if (approval?.authorization && !scopeCurrent && conflicts.length)
+        approval.execution!.reason =
+          'The task scope is no longer active. Unfinished writes were not resumed; already-written files remain recorded in History.';
+      // A prepared state image cannot undo a revocation recorded after it was prepared.
+      for (const record of journal.state.scopeGrants ?? []) {
+        const current = currentState.scopeGrants?.find((item) => item.grant.id === record.grant.id);
+        if (current && current.generation > record.generation) {
+          record.generation = current.generation;
+          record.revokedAt = current.revokedAt;
+        }
+      }
       await this.persist(journal.state);
       this.invalidateDocuments(journal.projectId);
       await fs.unlink(path.join(pending, name));
@@ -1256,16 +1467,22 @@ export class Store extends EventEmitter {
         const current = await this.current(id, change.path);
         change.current = current;
         const latest = this.latestFile(state, change.path);
+        const untouchedAfterScopeEnded =
+          change.changedSince?.actor === 'task scope ended before write' &&
+          hash(current) === hash(change.before) &&
+          latest?.entry.id === change.entryId;
         change.changedSince =
           hash(current) === hash(change.after)
             ? null
-            : {
-                actor:
-                  latest && latest.entry.id !== change.entryId
-                    ? latest.entry.actor
-                    : 'outside Diomedes',
-                at: latest?.entry.time ?? now(),
-              };
+            : untouchedAfterScopeEnded
+              ? change.changedSince
+              : {
+                  actor:
+                    latest && latest.entry.id !== change.entryId
+                      ? latest.entry.actor
+                      : 'outside Diomedes',
+                  at: latest?.entry.time ?? now(),
+                };
       }
     migrateTeam(state);
     const clone = structuredClone(state) as StoredState;

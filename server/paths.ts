@@ -43,12 +43,25 @@ export const isContained = (root: string, candidate: string) => {
   );
 };
 
+// Windows 8.3 aliases (NODEMO~1, CREDEN~1.JSO) can name guarded entries while
+// evading literal-component checks. Refuse any component whose name portion is
+// 1-8 non-space characters ending in ~digits — a plausible short name — while
+// ordinary tilde filenames (notes~backup.md, main.py~, file.txt~1) stay valid.
+const plausibleDosShortName = (part: string) => {
+  const [name = ''] = part.split('.');
+  return name.length > 0 && name.length <= 8 && /^\S*~\d{1,4}$/.test(name);
+};
+
 export function rejectForbidden(absolute: string) {
   const normalized = path.resolve(absolute);
   const pieces = normalized.split(/[\\/]+/).map((part) => part.toLowerCase());
   if (
     pieces.some(
-      (part) => blocked.has(part) || privateNames.has(part) || part.startsWith('.env.'),
+      (part) =>
+        blocked.has(part) ||
+        privateNames.has(part) ||
+        part.startsWith('.env.') ||
+        plausibleDosShortName(part),
     ) ||
     /^f:[\\/]localai(?:[\\/]|$)/i.test(normalized)
   ) {

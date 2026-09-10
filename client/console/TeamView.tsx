@@ -7,6 +7,7 @@ import type {
   TeamMember,
   TeamRun,
 } from '../../shared/types';
+import { formatOrigin, originForSession } from '../../shared/attribution';
 import type { TeamProps } from './types';
 import './team.css';
 
@@ -98,7 +99,7 @@ interface StreamRow {
 }
 
 function memberName(slots: Map<Slot, string>, slot: Slot): string {
-  if (slot === 'owner') return 'Diomedes';
+  if (slot === 'owner') return 'You';
   return slots.get(slot) ?? slot;
 }
 
@@ -134,9 +135,7 @@ function buildStream(
         at: timeOf(m.createdAt),
         clock: fmtClock(m.createdAt),
         kind: 'handoff',
-        detail: incoming
-          ? `from ${memberName(slots, m.from)}`
-          : `to ${memberName(slots, m.to)}`,
+        detail: incoming ? `from ${memberName(slots, m.from)}` : `to ${memberName(slots, m.to)}`,
         handoffId: m.id,
       });
     } else {
@@ -259,8 +258,7 @@ export function TeamView({
     const giverLane = lanesEl.querySelector(`:scope > .lane[data-lane="${latestHandoff.from}"]`);
     const receiverLane = lanesEl.querySelector(`:scope > .lane[data-lane="${latestHandoff.to}"]`);
     const giverRow = giverLane?.querySelector(`[data-handoff="${latestHandoff.id}"]`) ?? null;
-    const receiverRow =
-      receiverLane?.querySelector(`[data-handoff="${latestHandoff.id}"]`) ?? null;
+    const receiverRow = receiverLane?.querySelector(`[data-handoff="${latestHandoff.id}"]`) ?? null;
     if (!giverLane || !receiverLane || !giverRow || !receiverRow) {
       svg.innerHTML = '';
       return;
@@ -355,11 +353,7 @@ export function TeamView({
   return (
     <div className="team" aria-label="Team">
       <div className="task">
-        <span
-          className={`pt${anyWorking ? ' live' : ''}`}
-          data-focus-point
-          aria-hidden="true"
-        />
+        <span className={`pt${anyWorking ? ' live' : ''}`} data-focus-point aria-hidden="true" />
         <h1>{taskName}</h1>
         <span className="mono">
           {ordered.length} lane{ordered.length === 1 ? '' : 's'}
@@ -491,13 +485,9 @@ function Lane({
   const unread = member.unread ?? 0;
   const thread: Conversation | null =
     member.threadId != null ? (convById.get(member.threadId) ?? null) : null;
-  const model = member.model ?? thread?.helper?.model ?? 'default';
 
   const taskSessions = useMemo(
-    () =>
-      thread?.taskId
-        ? state.sessions.filter((s) => s.taskId === thread.taskId)
-        : [],
+    () => (thread?.taskId ? state.sessions.filter((s) => s.taskId === thread.taskId) : []),
     [state.sessions, thread?.taskId],
   );
   const latestSession = useMemo(
@@ -515,6 +505,12 @@ function Lane({
     [taskSessions],
   );
   const ctx = latestSession?.engine.context ?? null;
+  // Actual worker identity: the latest session's recorded origin when there is
+  // one, else the assigned engine with model not recorded. The assigned model
+  // and thread prose are requests, not runtime reports, so they never stand in.
+  const workerAttribution = latestSession
+    ? formatOrigin(originForSession(latestSession))
+    : formatOrigin(undefined, { engine: member.engine });
 
   const memberMail = useMemo(
     () => mail.filter((m) => m.to === member.slotId || m.from === member.slotId),
@@ -550,8 +546,8 @@ function Lane({
         <span className={ptClass} data-pt={member.slotId} aria-hidden="true" />
         <b>{member.name}</b>
         <span className="role">{member.role === 'lead' ? 'leads' : 'member'}</span>
-        <span className="mono">
-          {member.engine} · {model}
+        <span className="mono" title={workerAttribution.detail}>
+          {workerAttribution.label}
         </span>
         <span className="state">{STATE_WORD[lane]}</span>
       </header>
@@ -666,7 +662,11 @@ function Action({
   if (lane === 'waiting') {
     return (
       <div className="action">
-        <span>{unread > 0 ? `${unread} message${unread === 1 ? '' : 's'} waiting` : `Waiting for ${leadName}`}</span>
+        <span>
+          {unread > 0
+            ? `${unread} message${unread === 1 ? '' : 's'} waiting`
+            : `Waiting for ${leadName}`}
+        </span>
         <span className="mono">WAITING</span>
         {unread > 0 && (
           <span className="acts">
@@ -679,7 +679,8 @@ function Action({
     );
   }
   if (lane === 'blocked') {
-    const last = latestSession?.log.at(-1)?.sentence ?? liveSession?.log.at(-1)?.sentence ?? 'Blocked';
+    const last =
+      latestSession?.log.at(-1)?.sentence ?? liveSession?.log.at(-1)?.sentence ?? 'Blocked';
     return (
       <div className="action">
         <span>{last}</span>

@@ -1,25 +1,42 @@
 import type { StepIntent } from './harness.js';
+import type { ReviewerDecision, ScopeGrantRecord, ScopedAuthorization } from './permissions.js';
+import type { AgentResolution } from './agents.js';
+import type { OriginSnapshot } from './attribution.js';
+import type { WorkspaceRef } from './workspaces.js';
 
 export type Detail = 'guided' | 'standard' | 'technical';
 /** The two surfaces. The Workbook is one page at a time; the Console is every thread, helper and change at once. */
 export type Surface = 'workbook' | 'console';
 /** The four things a person can want to do; the Workbook's Home leads with these. */
 export type Intent = 'ask' | 'work' | 'plan' | 'review';
-export type Page = 'home' | 'ask' | 'plan' | 'work' | 'review' | 'tasks' | 'documents' | 'history' | 'connections';
+export type Page =
+  | 'home'
+  | 'ask'
+  | 'plan'
+  | 'work'
+  | 'review'
+  | 'tasks'
+  | 'documents'
+  | 'history'
+  | 'connections';
 export type Mode = 'ask' | 'plan' | 'build' | 'fix';
 export type TaskState = 'todo' | 'working' | 'waiting' | 'done';
 export type Owner = 'you' | 'diomedes' | 'diomedes-with-ok';
-export type Route = 'sample' | 'codex';
+export type ExternalEngine = 'claude-code' | 'opencode' | 'oh-my-pi';
+export type Route = 'sample' | 'codex' | ExternalEngine;
 export interface Settings {
   version: 1;
   detail: Detail;
   /** Missing on settings written before 2026-09-06; the server fills it: 'technical' detail becomes the Console. */
   surface?: Surface;
   onboarding: {
+    setupVersion?: 2;
+    discoveryConsentAt?: string | null;
+    aiSkipped?: boolean;
     work: 'business' | 'school' | 'software' | 'personal' | 'mix' | null;
     detail: Detail | null;
     familiarity: 'new' | 'some' | 'comfortable' | null;
-    resumeAt: 'welcome' | 'q1' | 'q2' | 'q3' | 'ready' | 'done';
+    resumeAt: 'welcome' | 'q1' | 'q2' | 'q3' | 'ai' | 'ready' | 'done';
     completedAt: string | null;
   };
   permissions: {
@@ -47,6 +64,16 @@ export interface Settings {
   lastPage: Record<string, Page>;
   tasksView: Record<string, 'board' | 'list'>;
   /**
+   * Which workspace this person is acting in. Absent means Personal, which is
+   * what every settings file written before workspaces existed means too.
+   *
+   * It is a personal preference, so it lives here — but it is not writable
+   * through `PUT /api/settings`: `validateSettings` keeps whatever is stored,
+   * and only `POST /api/workspace/switch` changes it, after checking that the
+   * membership behind it is real and still active.
+   */
+  activeWorkspace?: WorkspaceRef;
+  /**
    * Which helpers are switched on, by engine id; only engines whose adapter is
    * ready can be on. A few keys are choices rather than switches, and hold a
    * string: `codexModel` and `codexEffort` are the default Codex runs use when
@@ -55,6 +82,7 @@ export interface Settings {
   services?: Record<string, boolean | string>;
 }
 export interface Project {
+  ai?: { engine: Route; model: string | null };
   id: string;
   name: string;
   folder: string;
@@ -107,6 +135,11 @@ export interface Task {
   }[];
 }
 export interface Need {
+  origin?: OriginSnapshot;
+  /** Versioned delegated decision; mutually exclusive with exact approvalReceipt. */
+  authorization?: ScopedAuthorization;
+  /** Host policy explanation when an existing task scope did not cover this proposal. */
+  authorizationBoundary?: string;
   id: string;
   sessionId: string;
   taskId: string;
@@ -126,6 +159,12 @@ export interface Need {
   execution?: ApprovalExecution;
   /** Optional v1 harness binding. The Need remains the single approval record. */
   harness?: { runId: string; intent: StepIntent };
+  /**
+   * Bounded reviewer decisions for this proposal, newest last. A reviewer
+   * decision is evidence, never a person's approval, and a refusal leaves the
+   * proposal open for you rather than deciding it.
+   */
+  reviews?: ReviewerDecision[];
 }
 export interface ApprovalIdentity {
   readonly protocolVersion: 1;
@@ -186,6 +225,15 @@ export interface WorkReceipt {
   readonly scope: 'local-prototype';
 }
 export interface Session {
+  origin?: OriginSnapshot;
+  /**
+   * Which Agent this run resolved to, with the model, route and policy state at
+   * that moment. It is a record of what was permitted, never a grant, and it is
+   * never re-resolved for an old session.
+   */
+  agent?: AgentResolution;
+  route?: Route;
+  threadId?: string;
   id: string;
   taskId: string;
   slotId?: Slot;
@@ -220,6 +268,10 @@ export interface FileRecord {
   reason: string | null;
 }
 export interface HistoryEntry {
+  origin?: OriginSnapshot;
+  authorization?: ScopedAuthorization;
+  /** Mirrors the reviewer decision this event records, for audit without the Need. */
+  review?: ReviewerDecision;
   id: string;
   time: string;
   actor: Owner;
@@ -253,8 +305,9 @@ export interface Change {
   state: 'waiting' | 'kept' | 'undone';
 }
 export interface Turn {
+  origin?: OriginSnapshot;
   id: string;
-  role: 'you' | 'diomedes';
+  role: 'you' | 'assistant' | 'diomedes';
   mode: Mode;
   text: string;
   at: string;
@@ -277,6 +330,7 @@ export interface Turn {
 }
 /** A thread: a named conversation that belongs to a project and, optionally, to a task. */
 export interface Conversation {
+  engine?: Route;
   id: string;
   attachedTo: { kind: 'project' | 'document' | 'plan' | 'task' | 'review'; ref: string };
   turns: Turn[];
@@ -294,7 +348,12 @@ export interface Conversation {
    * follow the saved default, and the default in turn may be null for the
    * engine's own default. An explicit level here outranks the mode's own.
    */
-  requested?: { model: string | null; effort: string | null } | null;
+  /**
+   * The thread's own picks. Agent and model are independent axes: changing
+   * either changes who works and with what intelligence, never what is allowed.
+   * `agent` may be `auto`, which resolves per run and is recorded as automatic.
+   */
+  requested?: { model: string | null; effort: string | null; agent?: string | null } | null;
   /** The thread's current mode. State written before modes lacks it; the store fills it on load. */
   mode: Mode;
 }
@@ -314,6 +373,8 @@ export interface EngineCatalog {
   detail: string; // one plain sentence for where the list came from, or why it is empty
 }
 export interface ProjectState {
+  /** Absent in v1 projects. Persisted grants alone never restore active authority. */
+  scopeGrants?: ScopeGrantRecord[];
   project: Project;
   documents: DocumentInfo[];
   tasks: Task[];
@@ -367,6 +428,8 @@ export interface TeamMember {
   slotId: Slot;
   name: string;
   role: 'lead' | 'member';
+  /** Team membership by Agent identity. Absent on members created before Agents. */
+  agentId?: string;
   engine: 'codex' | 'claude-code' | 'opencode' | 'oh-my-pi' | 'sample' | 'probe';
   model: string | null;
   status: 'idle' | 'working' | 'waiting' | 'stopped' | 'error';

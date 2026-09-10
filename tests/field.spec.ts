@@ -136,16 +136,18 @@ test('C02: the view switch swaps Thread, Board, and Team', async ({ page }) => {
 
 test('C03: the Board shows the Ready task, and Show-me-first confirms instead of starting', async ({ page }) => {
   await openConsole(page);
+  // The selected thread's permission owns board policy; pick the show-first thread.
+  await railOf(page).getByRole('button', { name: /Alpha thread/ }).click();
   await railOf(page).getByRole('button', { name: /^Board/ }).click();
   const board = page.locator('.board[aria-label="Board"]');
   await expect(board).toBeVisible();
   // The board starts compact, which hides the column captions; expand it first.
   await board.getByRole('button', { name: 'compact', exact: true }).click();
-  await expect(board.getByText('Start hands it to its worker', { exact: true })).toBeVisible();
+  await expect(board.getByText('Start explicitly to run', { exact: true })).toBeVisible();
   await expect(board.getByText('waits on you', { exact: true })).toBeVisible();
-  // The thread head carries its own "Show me first" radio; scope to the board policy.
-  await board.getByRole('radio', { name: 'Show me first', exact: true }).click();
-  await expect(board.getByRole('radio', { name: 'Go ahead for tasks', exact: true })).toBeVisible();
+  // The board states the thread's policy read-only; it is not a grant control.
+  await expect(board.locator('[data-board-policy="first"]')).toHaveText('Confirm each start');
+  await expect(board.getByRole('radio')).toHaveCount(0);
   const ready = page.locator('.column[aria-label="Ready"]');
   const row = ready.locator('.crow', { hasText: READY_TASK });
   await expect(row.getByRole('button', { name: READY_TASK })).toBeVisible();
@@ -173,8 +175,8 @@ test('C04: the palette finds and filters, Escape closes, and the Workbook keeps 
   await expect(find).toBeVisible();
   await find.fill('field notes');
   await expect(palette.getByText(READY_TASK)).toBeVisible();
-  // Nothing pausable exists, so the verb narrows the Ready task away.
-  await find.fill('pause');
+  // Nothing stoppable is on a Ready task, so the verb narrows it away.
+  await find.fill('stop');
   await expect(palette.getByText(READY_TASK)).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(palette).toHaveCount(0);

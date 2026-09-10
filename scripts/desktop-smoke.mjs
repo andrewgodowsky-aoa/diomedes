@@ -41,7 +41,10 @@ try {
     path: 'Reopening plan.md',
     items: found,
   });
+  // New profiles default to the Console surface; this lifecycle smoke keeps
+  // exercising the still-supported Workbook task path, so it opts in explicitly.
   await api('/settings', 'PUT', {
+    surface: 'workbook',
     detail: 'standard',
     onboarding: {
       work: 'business',

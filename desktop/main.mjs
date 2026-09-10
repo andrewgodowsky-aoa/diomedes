@@ -1,11 +1,33 @@
-import { app, BrowserWindow, dialog, Menu } from 'electron';
+import { app, BrowserWindow, dialog, Menu, shell } from 'electron';
 import { createServer } from 'node:http';
 import fs from 'node:fs/promises';
 import { watch } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  createInstallAccepted,
+  isUpdateReleaseReference,
+  updateShellConfig,
+} from './app-updates.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
+// Only explicit setup reference links may leave the app. This does not grant
+// arbitrary model output or project documents permission to open local URLs.
+function openSetupReference(destination) {
+  const allowed = new Set([
+    'https://github.com/can1357/oh-my-pi/blob/v18.0.6/docs/models.md#auth-and-api-key-resolution-order',
+    'https://platform.openai.com/api-keys',
+    'https://downloads.claude.ai/claude-code-releases/2.1.252/win32-x64/claude.exe',
+    'https://github.com/anomalyco/opencode/releases/download/v1.18.4/opencode-windows-x64-baseline.zip',
+    'https://github.com/can1357/oh-my-pi/releases/download/v18.0.6/omp-windows-x64.exe',
+    // Official Diomedes release notes, opened from Settings > App updates.
+    'https://github.com/andrewgodowsky-aoa/diomedes/releases',
+  ]);
+  if (!allowed.has(destination) && !isUpdateReleaseReference(destination)) return;
+  void shell
+    .openExternal(destination)
+    .catch((error) => dialog.showErrorBox('The reference could not open', error.message));
+}
 app.setName('Diomedes');
 if (process.env.DIOMEDES_DESKTOP_PROFILE)
   app.setPath('userData', process.env.DIOMEDES_DESKTOP_PROFILE);
@@ -123,12 +145,30 @@ if (!app.requestSingleInstanceLock()) {
       // Claim the folder once the port is known: a recorded start time and port
       // let a later start tell a live Diomedes from a pid the system reused.
       ({ release: releaseLock } = await claimDataFolder(dataDir, { port }));
+      // Update shell facts and the owned close-and-install handoff live in
+      // desktop/app-updates.mjs and desktop/update-helper.mjs, staged next to
+      // main.mjs by scripts/package-desktop.mjs. The install callback is the
+      // existing graceful quit: the app closes so the installer can replace it.
+      const updateShell = await updateShellConfig({
+        platform: process.platform,
+        packaged: app.isPackaged,
+        execPath: process.execPath,
+        dataDir,
+      });
+      const updates = {
+        ...updateShell,
+        onInstallAccepted: createInstallAccepted(() => app.quit(), {
+          onError: (error) =>
+            dialog.showErrorBox('Diomedes could not close for the update', error.message),
+        }),
+      };
       service = await createApp({
         dataDir,
         projectRoot:
           process.env.DIOMEDES_PROJECTS_DIR ?? path.join(app.getPath('documents'), 'Diomedes'),
         port,
         clientPort: port,
+        updateOverrides: updates,
       });
       serveClient(service, path.join(root, 'dist'));
       server.on('request', service);
@@ -173,9 +213,15 @@ if (!app.requestSingleInstanceLock()) {
           },
         ]),
       );
-      window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      window.webContents.setWindowOpenHandler(({ url: destination }) => {
+        openSetupReference(destination);
+        return { action: 'deny' };
+      });
       window.webContents.on('will-navigate', (event, destination) => {
-        if (new URL(destination).origin !== url) event.preventDefault();
+        if (new URL(destination).origin !== url) {
+          event.preventDefault();
+          openSetupReference(destination);
+        }
       });
       window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) =>
         callback(false),

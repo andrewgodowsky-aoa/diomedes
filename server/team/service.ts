@@ -166,7 +166,15 @@ export class TeamService {
 
   async createMember(
     projectId: string,
-    input: { name: unknown; role: unknown; engine: unknown; model?: unknown; threadId?: unknown },
+    input: {
+      name: unknown;
+      role: unknown;
+      engine: unknown;
+      model?: unknown;
+      threadId?: unknown;
+      /** Team membership by Agent identity. Validated by the caller's registry. */
+      agentId?: unknown;
+    },
   ): Promise<{ member: TeamMember; token: string }> {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
@@ -182,6 +190,12 @@ export class TeamService {
       if (typeof input.model !== 'string' || input.model.length > 200)
         throw new ApiError(400, 'Provide a model of up to 200 characters.');
       model = input.model;
+    }
+    let agentId: string | null = null;
+    if (input.agentId !== undefined && input.agentId !== null) {
+      if (typeof input.agentId !== 'string' || !input.agentId.trim() || input.agentId.length > 80)
+        throw new ApiError(400, 'Provide a valid Agent identifier.');
+      agentId = input.agentId.trim();
     }
     let threadId: string | null = null;
     if (input.threadId !== undefined && input.threadId !== null) {
@@ -213,6 +227,7 @@ export class TeamService {
       slotId,
       name,
       role,
+      ...(agentId ? { agentId } : {}),
       engine,
       model,
       status: 'idle',

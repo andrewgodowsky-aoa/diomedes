@@ -61,6 +61,11 @@ function projectModel(raw: unknown): EngineModel | null {
 }
 
 let cached: { key: string; catalog: EngineCatalog } | null = null;
+const externalCatalogs = new Map<string, EngineCatalog>();
+/** Only a completed, bounded adapter inspection supplies these catalogues. */
+export function recordEngineCatalog(catalog: EngineCatalog): void {
+  externalCatalogs.set(catalog.engine, structuredClone(catalog));
+}
 
 /** The Codex catalogue, or an empty one with a plain sentence saying why. */
 export function codexCatalog(): EngineCatalog {
@@ -112,6 +117,8 @@ function order(rows: unknown[], model: EngineModel): number {
 /** Only Codex reports a catalogue in this version; the rest say so plainly. */
 export function engineCatalog(engine: string): EngineCatalog {
   if (engine === 'codex') return codexCatalog();
+  const external = externalCatalogs.get(engine);
+  if (external) return structuredClone(external);
   if (engine === 'sample')
     return { engine, models: [], detail: 'Sample work is deterministic and has no choices.' };
   return { engine, models: [], detail: 'This engine does not report its choices to Diomedes yet.' };

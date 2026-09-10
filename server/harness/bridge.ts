@@ -7,10 +7,16 @@ import { FIXTURE_ENGINE, harnessWrites, identifyHarnessApproval } from './approv
 import { FORMAT_REPORT } from './capabilities/format-report.js';
 import { NativeAgent, type ModelAdapter } from './native-agent.js';
 import { digest, HarnessError, validatePrincipal } from './policy.js';
-import { needFromWaitingStep, presentRun } from './present.js';
+import { needFromWaitingStep, presentRun, sessionOriginFromRun } from './present.js';
 import { RunService, Suspended, type HarnessHook } from './run-service.js';
 import type { ToolRegistry } from './tools.js';
-import { CODEX_ENGINE, CODEX_REPORT, HarnessAuthorityUnavailable, type CodexEngineAdapter, type CodexRunInput } from './codex-engine.js';
+import {
+  CODEX_ENGINE,
+  CODEX_REPORT,
+  HarnessAuthorityUnavailable,
+  type CodexEngineAdapter,
+  type CodexRunInput,
+} from './codex-engine.js';
 import type { WorkAdmission } from '../work-admission.js';
 
 export const localHarnessPrincipal = (projectId: string): HarnessPrincipal => ({
@@ -84,7 +90,8 @@ export class HarnessBridge {
     codex?: { runId: string; input: CodexRunInput; admission: WorkAdmission },
   ): Promise<Session> {
     if (this.closed) throw new ApiError(503, 'The local service is closing.');
-    const capability = codex && this.codex && capabilityId === CODEX_REPORT.id ? CODEX_REPORT : FORMAT_REPORT;
+    const capability =
+      codex && this.codex && capabilityId === CODEX_REPORT.id ? CODEX_REPORT : FORMAT_REPORT;
     if (capabilityId !== capability.id)
       throw new ApiError(400, 'This native capability is not available.');
     validatePrincipal(principal);
@@ -134,8 +141,12 @@ export class HarnessBridge {
       },
     };
     state.sessions.push(session);
-    if (codex) session.log.push({ time: now(), level: 'technical',
-      sentence: `Codex adapter guarantees: ${JSON.stringify(this.codex!.capabilities())}` });
+    if (codex)
+      session.log.push({
+        time: now(),
+        level: 'technical',
+        sentence: `Codex adapter guarantees: ${JSON.stringify(this.codex!.capabilities())}`,
+      });
     task.sessionIds.push(session.id);
     task.state = 'working';
     task.reason = null;
@@ -155,7 +166,8 @@ export class HarnessBridge {
         principal,
         capability,
         tools: this.tools,
-        budget: codex ? { units: 1, modelCalls: 1, toolCalls: 1, wallMs: null }
+        budget: codex
+          ? { units: 1, modelCalls: 1, toolCalls: 1, wallMs: null }
           : { units: 6, modelCalls: 6, toolCalls: 6, wallMs: null },
       });
       createdRunId = run.id;
@@ -210,6 +222,8 @@ export class HarnessBridge {
       });
     }
     session.engine.events = run.lastSeq;
+    const origin = sessionOriginFromRun(run);
+    if (origin) session.origin = structuredClone(origin);
     if (run.capabilityId === CODEX_REPORT.id && run.transcripts.codex) {
       session.engine.model = run.transcripts.codex.modelId;
       session.engine.verified = true;
@@ -234,6 +248,7 @@ export class HarnessBridge {
       );
       if (!need) {
         const fields = needFromWaitingStep(run, step);
+        const proposerOrigin = run.capabilityId === CODEX_REPORT.id ? origin : fields.origin;
         need = {
           id: identifier('N'),
           taskId: task.id,
@@ -242,6 +257,9 @@ export class HarnessBridge {
           why: fields.why,
           consequence: fields.consequence,
           files: fields.files,
+          // Codex's known proposal/write chain separates model proposer from
+          // the application-owned recorded writer. Other steps keep their own origin.
+          ...(proposerOrigin ? { origin: structuredClone(proposerOrigin) } : {}),
           state: 'open',
           createdAt: now(),
           decidedAt: null,
@@ -250,8 +268,7 @@ export class HarnessBridge {
           preview: [],
           harness: { runId: run.id, intent: structuredClone(step.intent) },
         };
-        const sources = run.capabilityId === CODEX_REPORT.id
-          ? this.codex!.sources(run) : [];
+        const sources = run.capabilityId === CODEX_REPORT.id ? this.codex!.sources(run) : [];
         need.approval = identifyHarnessApproval(run.projectId, need, sources);
         harnessWrites(run.projectId, need);
         state.needs.push(need);
@@ -369,7 +386,8 @@ export class HarnessBridge {
         code: 'exact_approval_required',
       });
     const run = await this.runs.get(need.harness.runId);
-    if (run.capabilityId === CODEX_REPORT.id) await this.codex!.authorityForRun(run, 'approval.decide');
+    if (run.capabilityId === CODEX_REPORT.id)
+      await this.codex!.authorityForRun(run, 'approval.decide');
     const replay = this.store.approvalCommand(projectId, admission);
     if (replay) return structuredClone(replay);
     if (need.state !== 'open') throw new ApiError(409, 'This request has already been decided.');
@@ -408,7 +426,8 @@ export class HarnessBridge {
           decidedBy: 'local-client',
         },
         run.capabilityId === CODEX_REPORT.id
-          ? (await this.codex!.authorityForRun(run, 'approval.decide')).principal : localHarnessPrincipal(run.projectId),
+          ? (await this.codex!.authorityForRun(run, 'approval.decide')).principal
+          : localHarnessPrincipal(run.projectId),
       );
     } catch (error) {
       if (error instanceof HarnessError && error.code === 'approval_expired')
@@ -420,7 +439,11 @@ export class HarnessBridge {
       throw error;
     }
     if (need.approvalReceipt.decision === 'go-ahead') {
-      await this.runs.claim(run.id, this.owner, run.capabilityId === CODEX_REPORT.id ? 5 * 60_000 : 60_000);
+      await this.runs.claim(
+        run.id,
+        this.owner,
+        run.capabilityId === CODEX_REPORT.id ? 5 * 60_000 : 60_000,
+      );
       this.launch(run.id, this.prompt(run));
     }
   }
@@ -501,20 +524,26 @@ export class HarnessBridge {
       known.add(run.sessionId);
       let current: HarnessPrincipal;
       try {
-        current = run.capabilityId === CODEX_REPORT.id
-          ? (await this.codex!.authorityForRun(run, 'project.read')).principal : localHarnessPrincipal(projectId);
+        current =
+          run.capabilityId === CODEX_REPORT.id
+            ? (await this.codex!.authorityForRun(run, 'project.read')).principal
+            : localHarnessPrincipal(projectId);
       } catch (error) {
         if (!(error instanceof HarnessAuthorityUnavailable)) throw error;
         // Do not replay, fail, renew or rewrite the run under stale authority.
         // The host may describe the pause in its existing Session without
         // preventing unrelated projects from opening. The exact Need is kept.
         await this.store.locked(async () => {
-          const session = state.sessions.find(s => s.id === run.sessionId)!;
+          const session = state.sessions.find((s) => s.id === run.sessionId)!;
           if (!active(session)) return;
-          const sentence = 'This saved run needs current authority before it can continue. No provider request or project write was resumed.';
-          const task = state.tasks.find(t => t.id === session.taskId)!;
-          const changed = session.state !== 'waiting' || session.log.at(-1)?.sentence !== sentence
-            || task.state !== 'waiting' || task.reason !== 'went-wrong';
+          const sentence =
+            'This saved run needs current authority before it can continue. No provider request or project write was resumed.';
+          const task = state.tasks.find((t) => t.id === session.taskId)!;
+          const changed =
+            session.state !== 'waiting' ||
+            session.log.at(-1)?.sentence !== sentence ||
+            task.state !== 'waiting' ||
+            task.reason !== 'went-wrong';
           session.state = 'waiting';
           if (session.log.at(-1)?.sentence !== sentence)
             session.log.push({ time: now(), level: 'plain', sentence });
@@ -551,7 +580,11 @@ export class HarnessBridge {
           }
         }
       } else if (run.state === 'queued') {
-        await this.runs.claim(run.id, this.owner, run.capabilityId === CODEX_REPORT.id ? 5 * 60_000 : 60_000);
+        await this.runs.claim(
+          run.id,
+          this.owner,
+          run.capabilityId === CODEX_REPORT.id ? 5 * 60_000 : 60_000,
+        );
         this.launch(run.id, this.prompt(run));
       }
     }
@@ -559,7 +592,10 @@ export class HarnessBridge {
       const state = this.store.state(projectId);
       let changed = false;
       for (const session of state.sessions.filter(
-        (item) => [FIXTURE_ENGINE, CODEX_ENGINE].includes(item.engine.name) && active(item) && !known.has(item.id),
+        (item) =>
+          [FIXTURE_ENGINE, CODEX_ENGINE].includes(item.engine.name) &&
+          active(item) &&
+          !known.has(item.id),
       )) {
         session.state = 'failed';
         session.endedAt = now();

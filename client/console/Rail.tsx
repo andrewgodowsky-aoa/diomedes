@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { ShellView } from './types';
 
 export interface RailItem {
@@ -9,6 +9,8 @@ export interface RailItem {
 }
 
 interface RailProps {
+  /** Rendered above the thread head: the workspace a thread belongs to. */
+  top?: ReactNode;
   items: RailItem[];
   selectedId: string | null;
   onSelect(id: string): void;
@@ -27,6 +29,7 @@ interface RailProps {
  * views, and the workbook/engine foot. 1:1 with the prototype rail.
  */
 export function Rail({
+  top,
   items,
   selectedId,
   onSelect,
@@ -47,6 +50,7 @@ export function Rail({
   }, [selectedId, items.length]);
   return (
     <nav className="rail" aria-label="Threads and views">
+      {top}
       <div className="rail-head">
         <h2>Threads</h2>
         <button type="button" onClick={onNew}>

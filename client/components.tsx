@@ -13,6 +13,8 @@ import type {
   UsageSnapshot,
   UsageWindow,
 } from '../shared/types';
+import { formatOrigin, originForNeed, originForSession } from '../shared/attribution';
+import './attribution.css';
 
 export const pages = [
   'home',
@@ -36,8 +38,10 @@ export const detailDescriptions = {
   technical: 'Engines, models, logs, version ids, and developer tools where they apply.',
 };
 export const surfaceDescriptions = {
-  workbook: 'One page at a time. Ask, plan, work and review, and Diomedes asks before anything that matters.',
-  console: 'Every thread, every helper and every change on one screen. For people who work with these tools every day.',
+  workbook:
+    'One page at a time. Ask, plan, work and review, and Diomedes asks before anything that matters.',
+  console:
+    'Every thread, every helper and every change on one screen. For people who work with these tools every day.',
 };
 export function surfaceOf(settings: Settings): Surface {
   return settings.surface === 'console' ||
@@ -201,39 +205,210 @@ export function HarnessProposal({ need }: { need: Need }) {
     <section aria-label="Exact proposed file contents" className="change-card">
       <h3>{input.files.filter((file): file is string => typeof file === 'string').join(', ')}</h3>
       <p className="caption">
-        {input.expected === null ? 'Create this file.' : 'Replace the file contents below; outside edits will be refused.'}
+        {input.expected === null
+          ? 'Create this file.'
+          : 'Replace the file contents below; outside edits will be refused.'}
       </p>
-      <div className="change-lines code"><div className="change-hunk added">
-        <span aria-hidden="true">+</span><pre>{input.text}</pre>
-      </div></div>
+      <div className="change-lines code">
+        <div className="change-hunk added">
+          <span aria-hidden="true">+</span>
+          <pre>{input.text}</pre>
+        </div>
+      </div>
     </section>
+  );
+}
+/** Who actually did the work: runtime-reported model primary, engine secondary.
+    Unknown stays Assistant with model not recorded; app-owned stays Diomedes. */
+export function OriginLine({ origin }: { origin?: Parameters<typeof formatOrigin>[0] }) {
+  const formatted = formatOrigin(origin);
+  return (
+    <span className="attribution" title={formatted.detail}>
+      <b>{formatted.primary}</b>
+      {formatted.secondary ? (
+        <span className="muted attribution-secondary">{formatted.secondary}</span>
+      ) : null}
+    </span>
+  );
+}
+/**
+ * A model reviewer's decision, said as what it is. The heading never uses a
+ * person's name or the word approved on its own, because this record must not
+ * be mistakable for the person having seen the output.
+ */
+export function ReviewerRecord({ need }: { need: Need }) {
+  const reviews = need.reviews ?? [];
+  if (!reviews.length) return null;
+  const latest = reviews[reviews.length - 1];
+  const used = need.authorization?.reviewId === latest.id;
+  const outcome =
+    latest.decision === 'approve'
+      ? used
+        ? 'Approved by a separate model reviewer. You did not review this output.'
+        : 'A separate model reviewer approved this, and it was not applied under that approval.'
+      : latest.decision === 'require-human'
+        ? 'A separate model reviewer asked you to decide.'
+        : latest.decision === 'reject'
+          ? 'A separate model reviewer recommended a change. Nothing was applied and you can still decide.'
+          : 'A separate model reviewer could not decide. Nothing was applied and it is waiting for you.';
+  return (
+    <details className="approval-record" aria-label="Reviewer record">
+      <summary className="approval-summary">Reviewer record</summary>
+      <p>{outcome}</p>
+      {latest.note && <p className="approval-recorded">{latest.note}</p>}
+      <dl className="facts approval-facts">
+        <dt>Decision source</dt>
+        <dd>model-reviewer</dd>
+        <dt>Decision</dt>
+        <dd>
+          {latest.decision} ({latest.reasonCode})
+        </dd>
+        <dt>Reviewer model</dt>
+        <dd className="attribution-wrap">
+          {latest.modelSource === 'runtime'
+            ? latest.reportedModel
+            : 'not reported by the runtime'}
+          {latest.requestedModel ? ` · requested ${latest.requestedModel}` : ' · no model requested'}
+        </dd>
+        <dt>Reviewer engine</dt>
+        <dd className="attribution-wrap">{latest.engine}</dd>
+        <dt>Reviewer run</dt>
+        <dd className="attribution-wrap">
+          {latest.invocationId}
+          {latest.runId ? ` · ${latest.runId}` : ''}
+        </dd>
+        <dt>Independence</dt>
+        <dd>{latest.independence}</dd>
+        <dt>Worker model</dt>
+        <dd className="attribution-wrap">
+          {latest.proposerReportedModel ?? 'not reported by the runtime'}
+        </dd>
+        <dt>Policy</dt>
+        <dd className="attribution-wrap">
+          {latest.policy.version} · {latest.policy.result}
+        </dd>
+        <dt>Proposal</dt>
+        <dd>{latest.proposalDigest}</dd>
+        <dt>Action</dt>
+        <dd>{latest.actionDigest}</dd>
+        <dt>Decided</dt>
+        <dd>{new Date(latest.decidedAt).toLocaleString()}</dd>
+        <dt>Checks recorded</dt>
+        <dd>{reviews.length}</dd>
+      </dl>
+    </details>
   );
 }
 export function ApprovalStatus({ need }: { need: Need }) {
   if (!need.approval) return null;
   const receipt = need.approvalReceipt;
-  if (!receipt)
-    return <p className="approval-pending">This OK covers only this proposal. Expires {new Date(need.approval.expiresAt).toLocaleString()}.</p>;
+  const grant = need.authorization;
+  const state = need.execution?.state ?? 'pending';
+  const mark =
+    state === 'conflicted' || state === 'not-applied'
+      ? 'waiting'
+      : state === 'pending'
+        ? 'todo'
+        : 'done';
+  if (!receipt) {
+    if (grant) {
+      const outcomes = {
+        pending: 'Scope matched. Execution has not been confirmed.',
+        applied: 'Scope-matched changes applied. Their versions are in History.',
+        conflicted: 'Outside edits preserved. Some scoped changes may have applied; check History.',
+        'not-applied': 'No scoped write was confirmed. Start new work for a new proposal.',
+        declined: 'Proposal declined. No changes were applied.',
+      };
+      return (
+        <div className={`approval-status is-${state}`} aria-label="Approval record">
+          <p className="approval-outcome">
+            <Mark state={mark} />
+            <span>{outcomes[state]}</span>
+          </p>
+          <details className="approval-record">
+            <summary className="approval-summary">Decision record</summary>
+            {/* The reviewer's own record sits beside this one and carries every
+                reviewer fact, so this paragraph says only where authority came
+                from. Saying it twice would read as two separate assurances. */}
+            <p>
+              {grant.reviewId
+                ? 'Matched the task scope. Authorization came from the scope you confirmed.'
+                : 'Matched the task scope. Authorization came from the confirmed scope; this output did not receive an individual approval.'}
+            </p>
+            <dl className="facts approval-facts">
+              <dt>Authorization</dt>
+              <dd>{grant.id}</dd>
+              <dt>Grant</dt>
+              <dd className="attribution-wrap">{grant.grantId}</dd>
+              <dt>Generation</dt>
+              <dd>{grant.grantGeneration}</dd>
+              <dt>Proposal</dt>
+              <dd>{grant.proposalDigest}</dd>
+              <dt>Action</dt>
+              <dd>{grant.actionDigest}</dd>
+              <dt>Source versions</dt>
+              <dd>{grant.baseDigest}</dd>
+              <dt>Engine</dt>
+              <dd className="attribution-wrap">
+                {grant.engine}
+                {grant.accountRoute ? `, ${grant.accountRoute}` : ''}
+              </dd>
+              <dt>Authorized</dt>
+              <dd>{new Date(grant.authorizedAt).toLocaleString()}</dd>
+              <dt>Reserved effects</dt>
+              <dd>
+                {grant.writes} writes, {grant.bytes} output bytes
+              </dd>
+              <dt>Reviewer</dt>
+              <dd className="attribution-wrap">{grant.reviewId ?? 'none, deterministic scope'}</dd>
+            </dl>
+          </details>
+          <ReviewerRecord need={need} />
+        </div>
+      );
+    }
+    return (
+      <>
+        <p className="approval-pending">
+          This OK covers only this proposal. Expires{' '}
+          {new Date(need.approval.expiresAt).toLocaleString()}.
+        </p>
+        <ReviewerRecord need={need} />
+      </>
+    );
+  }
   const outcomes = {
     pending: 'Decision saved. Execution has not been confirmed.',
     applied: 'Approved changes applied. Their versions are in History.',
     conflicted: 'Outside edits preserved. Some approved changes may have applied; check History.',
-    'not-applied': 'Decision saved, but the write was not prepared. Start new work for a new proposal.',
+    'not-applied':
+      'Decision saved, but the write was not prepared. Start new work for a new proposal.',
     declined: 'Proposal declined. No changes were applied.',
   };
-  const state = need.execution?.state ?? 'pending';
-  const mark = state === 'conflicted' || state === 'not-applied' ? 'waiting' : state === 'pending' ? 'todo' : 'done';
   return (
     <div className={`approval-status is-${state}`} aria-label="Approval record">
-      <p className="approval-outcome"><Mark state={mark} /><span>{outcomes[state]}</span></p>
+      <p className="approval-outcome">
+        <Mark state={mark} />
+        <span>{outcomes[state]}</span>
+      </p>
       <details className="approval-record">
         <summary className="approval-summary">Decision record</summary>
-        <p className="approval-recorded">Recorded by the local service at {new Date(receipt.decidedAt).toLocaleString()}.</p>
+        <p className="approval-recorded">
+          Recorded by the local service at {new Date(receipt.decidedAt).toLocaleString()}.
+        </p>
         <dl className="facts approval-facts">
-          <dt>Request</dt><dd>{receipt.commandId}</dd>
-          <dt>Proposal</dt><dd>{receipt.proposalDigest}</dd>
-          <dt>Action</dt><dd>{receipt.actionDigest}</dd>
-          <dt>Source versions</dt><dd>{receipt.baseDigest}</dd>
+          <dt>Request</dt>
+          <dd>{receipt.commandId}</dd>
+          <dt>Proposal</dt>
+          <dd>{receipt.proposalDigest}</dd>
+          <dt>Action</dt>
+          <dd>{receipt.actionDigest}</dd>
+          <dt>Source versions</dt>
+          <dd>{receipt.baseDigest}</dd>
+          <dt>Authorizer</dt>
+          <dd className="attribution-wrap">{receipt.actor}</dd>
+          <dt>Scope</dt>
+          <dd className="attribution-wrap">{receipt.scope}</dd>
         </dl>
       </details>
     </div>
@@ -243,10 +418,12 @@ export function Notice({
   need,
   decide,
   show,
+  session,
 }: {
   need: Need;
   decide: (resolution: 'go-ahead' | 'declined', allow?: boolean) => void;
   show: () => void;
+  session?: Session;
 }) {
   return (
     <section className="notice needs" aria-label="Needs your OK">
@@ -255,13 +432,16 @@ export function Notice({
         Needs your OK
       </h3>
       <p className="prose">
-        Diomedes wants to {need.what}. {need.why} {need.consequence}
+        <OriginLine origin={originForNeed(need, session)} /> wants to {need.what}. {need.why}{' '}
+        {need.consequence}
       </p>
       <div className="actions">
         <Button tone="signal" onClick={() => decide('go-ahead')}>
           Go ahead
         </Button>
-        {!need.approval && <Button onClick={() => decide('go-ahead', true)}>Go ahead for this whole task</Button>}
+        {!need.approval && (
+          <Button onClick={() => decide('go-ahead', true)}>Go ahead for this whole task</Button>
+        )}
         <Button onClick={() => decide('declined')}>Don't do this</Button>
         <Button tone="quiet" onClick={show}>
           Show me first
@@ -291,6 +471,7 @@ export function SessionStatus({
     stopped: 'Stopped',
     failed: 'Something went wrong',
   }[session.state];
+  const sessionOrigin = originForSession(session);
   return (
     <div className="session-status">
       <Mark
@@ -308,10 +489,11 @@ export function SessionStatus({
         <strong>
           {label}
           {name ? ` on ${name}` : ''}.
-        </strong>
+        </strong>{' '}
+        <OriginLine origin={sessionOrigin} />
         <span className="muted">
           {' '}
-          {session.sample ? 'Sample work. ' : ''}Started at {time(session.startedAt)}.
+          {session.sample ? 'Scripted example. ' : ''}Started at {time(session.startedAt)}.
         </span>
         {detail === 'technical' && (
           <div className="code caption">
@@ -431,7 +613,7 @@ export function HelperLine({
         </span>
       ) : signedIn ? (
         <>
-          <span>{signedIn.name} is signed in but turned off, so Diomedes uses sample work.</span>
+          <span>{signedIn.name} is signed in but turned off.</span>
           <button
             className="text-button"
             onClick={() =>
@@ -446,7 +628,7 @@ export function HelperLine({
           <span>{signedIn.disclosure[0]}</span>
         </>
       ) : (
-        <span>Sample work, on this computer. No online service is connected.</span>
+        <span>No online service is connected.</span>
       )}
     </p>
   );

@@ -1,11 +1,7 @@
 import type { Settings } from '../shared/types';
-import { Brand, Button, detailDescriptions, surfaceDescriptions, surfaceOf, titleCase } from './components';
-
-const workPreferences = {
-  new: { detail: 'guided', surface: 'workbook' },
-  some: { detail: 'standard', surface: 'workbook' },
-  comfortable: { detail: 'standard', surface: 'console' },
-} as const;
+import { Brand, Button, detailDescriptions, titleCase } from './components';
+import { advanceSetup, hasUsableService } from '../shared/onboarding';
+import AISetup from './AISetup';
 
 export function Setup({
   settings,
@@ -17,33 +13,19 @@ export function Setup({
   busy: boolean;
 }) {
   const step = settings.onboarding.resumeAt;
-  const order = ['welcome', 'q1', 'q2', 'q3', 'ready', 'done'] as const;
-  const index = order.indexOf(step);
-  const surface = surfaceOf(settings);
+  const order = ['welcome', 'q1', 'q2', 'q3', 'ai', 'ready', 'done'] as const;
+  const index = (order as readonly string[]).indexOf(step);
   const update = (patch: Partial<Settings['onboarding']>) =>
     save({ ...settings, onboarding: { ...settings.onboarding, ...patch } });
   async function next(skip = false) {
-    const ob = { ...settings.onboarding };
-    if (step === 'q1' && (!ob.work || skip)) ob.work = 'mix';
-    if (step === 'q2' && (!ob.familiarity || skip)) {
-      ob.familiarity = 'some';
-      ob.detail = 'standard';
-    }
-    if (step === 'q3' && (!ob.familiarity || skip)) ob.familiarity = 'some';
-    const preference = workPreferences[ob.familiarity ?? 'some'];
-    ob.detail = preference.detail;
-    ob.resumeAt = order[index + 1];
-    if (ob.resumeAt === 'done') ob.completedAt = new Date().toISOString();
-    await save({
-      ...settings,
-      onboarding: ob,
-      detail: ob.detail ?? 'standard',
-      surface: preference.surface,
-      permissions: { ...settings.permissions, changingFiles: ob.familiarity === 'new' },
-      explanations:
-        ob.familiarity === 'new' ? 'persistent' : ob.familiarity === 'comfortable' ? 'off' : 'once',
-    });
+    await save(advanceSetup(settings, skip));
   }
+  if (step === 'done') return null;
+  const usable = hasUsableService(settings);
+  const engine =
+    typeof settings.services?.['defaultEngine'] === 'string'
+      ? (settings.services['defaultEngine'] as string)
+      : '';
   return (
     <div className="setup">
       <header className="setup-top">
@@ -63,19 +45,37 @@ export function Setup({
               </Button>
             </div>
           </>
+        ) : step === 'ai' ? (
+          <AISetup
+            settings={settings}
+            save={save}
+            busy={busy}
+            onContinue={() => void next()}
+            onBack={() => void update({ resumeAt: 'q3' })}
+          />
         ) : step === 'ready' ? (
           <>
-            <h1>Ready.</h1>
+            <h1>Your workspace is ready</h1>
             <p className="prose intro">
-              You'll use <strong>The {titleCase(surface)}</strong> with{' '}
-              <strong>{titleCase(settings.detail)}</strong> detail:{' '}
-              {detailDescriptions[settings.detail].toLowerCase()} Diomedes asks before{' '}
-              {settings.permissions.changingFiles ? 'changing files, ' : ''}deleting, sending
-              anything outside this computer, or working outside a project. Change either in
+              You&apos;ll work in the {settings.surface === 'workbook' ? 'Workbook' : 'Console'}{' '}
+              with {titleCase(settings.detail)} detail:{' '}
+              {detailDescriptions[settings.detail].toLowerCase()} File proposals require review
+              before Diomedes applies them. Your other approval preferences are saved separately in
               Settings.
             </p>
+            {usable ? (
+              <p className="prose">
+                {titleCase(engine)} is your selected default. Diomedes checks its connection before
+                sending a request.
+              </p>
+            ) : (
+              <p className="prose">
+                {settings.onboarding.aiSkipped ? 'AI setup was skipped. ' : ''}No usable service is
+                connected, so Diomedes uses sample work on this computer.
+              </p>
+            )}
             <div className="actions">
-              <Button tone="quiet" onClick={() => void update({ resumeAt: 'q3' })}>
+              <Button tone="quiet" onClick={() => void update({ resumeAt: 'ai' })}>
                 Back
               </Button>
               <Button tone="primary" disabled={busy} onClick={() => void next()}>
@@ -90,22 +90,12 @@ export function Setup({
               {step === 'q1'
                 ? 'What are you here to work on?'
                 : step === 'q2'
-                  ? 'How do you want to work?'
-                  : 'How familiar are you with software that can edit files or complete tasks for you?'}
+                  ? 'How much detail do you want?'
+                  : 'How should file changes work?'}
             </h1>
-            <div
-              className="radio-list"
-              role="radiogroup"
-              aria-label={
-                step === 'q1'
-                  ? 'Kind of work'
-                  : step === 'q2'
-                    ? 'How you want to work'
-                    : 'Familiarity'
-              }
-            >
-              {step === 'q1' &&
-                (
+            {step === 'q1' && (
+              <div className="radio-list" role="radiogroup" aria-label="Kind of work">
+                {(
                   [
                     ['business', 'Business'],
                     ['school', 'School and research'],
@@ -127,75 +117,58 @@ export function Setup({
                     <strong>{label}</strong>
                   </label>
                 ))}
-              {step === 'q2' &&
-                (
-                  [
-                    ['new', "I'm new to this"],
-                    ['some', "I've used tools like this"],
-                    ['comfortable', 'I work with these tools every day'],
-                  ] as const
-                ).map(([value, label]) => (
-                  <label
-                    className={`radio-row ${settings.onboarding.familiarity === value ? 'selected' : ''}`}
-                    key={value}
-                  >
-                    <input
-                      type="radio"
-                      name="familiarity"
-                      checked={settings.onboarding.familiarity === value}
-                      onChange={() =>
-                        void update({ familiarity: value, detail: workPreferences[value].detail })
-                      }
-                    />
-                    <span>
-                      <strong>{label}</strong>
-                      <span className="caption">
-                        {workPreferences[value].surface === 'console'
-                          ? surfaceDescriptions.console
-                          : detailDescriptions[workPreferences[value].detail]}
-                      </span>
-                    </span>
-                  </label>
-                ))}
-              {step === 'q3' &&
-                (
-                  [
-                    [
-                      'new',
-                      'New to this',
-                      'Diomedes will ask before changing files and explain as it goes.',
-                    ],
-                    [
-                      'some',
-                      "I've used some",
-                      'Diomedes will ask before deleting, sending anything outside this computer, or working outside a project.',
-                    ],
-                    ['comfortable', 'Very comfortable', 'Same safety checks, fewer explanations.'],
-                  ] as const
-                ).map(([value, label, description]) => (
-                  <label
-                    className={`radio-row ${settings.onboarding.familiarity === value ? 'selected' : ''}`}
-                    key={value}
-                  >
-                    <input
-                      type="radio"
-                      name="familiarity"
-                      checked={settings.onboarding.familiarity === value}
-                      onChange={() =>
-                        void update({ familiarity: value, detail: workPreferences[value].detail })
-                      }
-                    />
-                    <span>
-                      <strong>{label}</strong>
-                      <span className="caption">{description}</span>
-                    </span>
-                  </label>
-                ))}
-            </div>
+              </div>
+            )}
             {step === 'q2' && (
-              <p className="caption">
-                You can change this any time in Settings &gt; Interface detail.
-              </p>
+              <>
+                <div className="radio-list" role="radiogroup" aria-label="Detail preference">
+                  {(['guided', 'standard', 'technical'] as const).map((value) => (
+                    <label
+                      className={`radio-row ${settings.onboarding.detail === value ? 'selected' : ''}`}
+                      key={value}
+                    >
+                      <input
+                        type="radio"
+                        name="detail"
+                        checked={settings.onboarding.detail === value}
+                        onChange={() => void update({ detail: value })}
+                      />
+                      <span>
+                        <strong>{titleCase(value)}</strong>
+                        <span className="caption">{detailDescriptions[value]}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <p className="caption">
+                  You can change this any time in Settings &gt; Interface detail.
+                </p>
+              </>
+            )}
+            {step === 'q3' && (
+              <>
+                <div className="setting-rows">
+                  <label className="setting-row">
+                    <span>Ask before changing files in a project</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.permissions.changingFiles}
+                      onChange={(e) =>
+                        void save({
+                          ...settings,
+                          permissions: {
+                            ...settings.permissions,
+                            changingFiles: e.target.checked,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                <p className="caption">
+                  Exact proposals always require your review, even if you allow direct edits.
+                </p>
+              </>
             )}
             <div className="setup-actions">
               <Button tone="quiet" onClick={() => void update({ resumeAt: order[index - 1] })}>

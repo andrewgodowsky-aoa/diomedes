@@ -34,7 +34,7 @@ if (JSON.stringify(embedded) !== JSON.stringify(build)) throw new Error('Embedde
 for (const input of build.source.filter(item => item.path.startsWith('licenses/') || item.path === 'LICENSE')) {
   if (createHash('sha256').update(extractFile(asar, input.path)).digest('hex') !== input.sha256) throw new Error(`Shipped notice differs: ${input.path}`);
 }
-const allowed = new Set(['dist', 'main.mjs', 'server', 'fixtures', 'licenses', 'package.json', 'LICENSE', 'BUILD_INFO.json']);
+const allowed = new Set(['dist', 'main.mjs', 'app-updates.mjs', 'update-helper.mjs', 'server', 'fixtures', 'licenses', 'package.json', 'LICENSE', 'BUILD_INFO.json']);
 for (const file of listPackage(asar)) {
   const top = file.replaceAll('\\', '/').replace(/^\//, '').split('/')[0];
   if (top && !allowed.has(top)) throw new Error(`Unexpected staged ASAR path: ${file}`);

@@ -1,5 +1,6 @@
-import type { Need } from '../../shared/types';
+import type { Need, Session } from '../../shared/types';
 import { ApprovalStatus } from '../components';
+import { formatOrigin, originForNeed } from '../../shared/attribution';
 
 /**
  * The needs-you moment in the Console's own register.
@@ -20,20 +21,30 @@ export function NeedBlock({
   need,
   decide,
   show,
+  onScope,
+  session,
 }: {
   need: Need;
   decide: (resolution: 'go-ahead' | 'declined', allow?: boolean) => void;
   show: () => void;
+  onScope?: () => void;
+  session?: Session;
 }) {
   const why = [need.why, need.consequence].filter(Boolean).join(' ');
+  const actor = formatOrigin(originForNeed(need, session));
   return (
     <section className="need" aria-label="Needs your OK">
       <div className="who">
-        <b>Diomedes</b>
-        <span className="mono">needs you</span>
+        <b>{actor.primary}</b>
+        <span>{actor.secondary} · needs you</span>
       </div>
-      <p className="ask">Diomedes wants to {need.what}.</p>
+      <p className="ask">
+        {actor.primary} proposes to {need.what}.
+      </p>
       {why && <p className="why">{why}</p>}
+      {need.authorizationBoundary && (
+        <p className="why">Approval needed: {need.authorizationBoundary}</p>
+      )}
       <div className="verbs">
         <button type="button" className="verb go" onClick={() => decide('go-ahead')}>
           Go ahead
@@ -43,6 +54,14 @@ export function NeedBlock({
             Go ahead for this whole task
           </button>
         )}
+        {onScope &&
+          need.origin?.engine?.id === 'codex' &&
+          !need.harness &&
+          need.preview?.every((change) => change.after !== null) && (
+            <button type="button" className="verb" onClick={onScope}>
+              Allow creates and updates for this task
+            </button>
+          )}
         <button type="button" className="verb" onClick={() => decide('declined')}>
           Don't do this
         </button>

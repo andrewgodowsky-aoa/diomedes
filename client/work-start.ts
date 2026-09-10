@@ -1,9 +1,10 @@
 import { api, ApiError } from './api';
-import type { Session } from '../shared/types';
+import type { Route, Session } from '../shared/types';
+import { isRoute } from '../shared/engines';
 
 export interface WorkStartInput {
   taskId: string;
-  route: 'sample' | 'codex';
+  route: Route;
   sources: string[];
   consent: boolean;
   instruction?: string;
@@ -47,13 +48,13 @@ function normalize(value: unknown): WorkStartInput {
         !['taskId', 'route', 'sources', 'consent', 'instruction', 'threadId', 'demo'].includes(key),
     ) ||
     !text(value.taskId, 100) ||
-    !['sample', 'codex'].includes(String(value.route)) ||
+    !isRoute(value.route) ||
     !Array.isArray(value.sources) ||
     value.sources.length > 8 ||
     typeof value.consent !== 'boolean'
   )
     throw invalid();
-  if (value.route !== 'sample' && value.route !== 'codex') throw invalid();
+  if (!isRoute(value.route)) throw invalid();
   const sources: string[] = [];
   for (const source of value.sources) {
     if (!text(source, 1000)) throw invalid();

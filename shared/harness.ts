@@ -14,6 +14,7 @@
  * references kept apart from the portable messages a run carries.
  */
 import type { TaskState, Task, Session, ThreadPermission } from './types.js';
+import type { OriginSnapshot } from './attribution.js';
 
 export const HARNESS_CONTRACT_VERSION = 1 as const;
 
@@ -111,6 +112,8 @@ export interface StepRecord {
   state: StepState;
   output: Json | null;
   outputHash: string | null;
+  /** Immutable per-step provenance from trustworthy adapter/runtime metadata. Absent on legacy records; unknown is never invented. Never part of the intent hash. */
+  origin?: OriginSnapshot;
   /** The run's lease fence when the current attempt started. */
   leaseFence: number;
   startedAt: string | null;

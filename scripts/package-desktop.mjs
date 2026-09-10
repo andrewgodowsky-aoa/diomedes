@@ -47,6 +47,8 @@ try {
     path.join(stage, 'fixtures/harness/report-lines.txt'),
   );
   await fs.copyFile(path.join(root, 'desktop/main.mjs'), path.join(stage, 'main.mjs'));
+  for (const helper of ['app-updates.mjs', 'update-helper.mjs'])
+    await fs.copyFile(path.join(root, 'desktop', helper), path.join(stage, helper));
   await fs.cp(path.join(root, 'dist'), path.join(stage, 'dist'), { recursive: true });
   await fs.cp(path.join(root, 'licenses'), path.join(stage, 'licenses'), { recursive: true });
   await fs.copyFile(path.join(root, 'LICENSE'), path.join(stage, 'LICENSE'));

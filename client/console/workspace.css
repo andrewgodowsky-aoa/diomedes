@@ -1,0 +1,379 @@
+/* Workspaces and the Business intake.
+
+   The Settings > Engines reference: flat graphite surfaces, hairline rules,
+   radii 6/5 px, restrained accent, compact controls, no shadows or gradients.
+   Every rule is prefixed so nothing here reaches the Workbook's stylesheet. */
+
+/* ---- the rail's workspace mark ---- */
+.console .ws-mark {
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--hair);
+}
+.console .ws-mark-button {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border-radius: var(--rb);
+}
+.console .ws-mark-button:hover {
+  background: var(--raised);
+}
+.console .ws-mark .ws-name {
+  color: var(--t1);
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .ws-mark .ws-open {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  flex: none;
+}
+.console .ws-mark-button:hover .ws-open {
+  color: var(--t2);
+}
+.console .ws-mark .ws-fixture {
+  margin: 4px 0 0;
+  color: var(--attn);
+}
+
+/* ---- the panel ---- */
+.ws-panel,
+.ws-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  font: 400 var(--dm-type-body) / var(--dm-line-body) var(--ui);
+  color: var(--t1);
+}
+.ws-panel .caption,
+.ws-setup .caption {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  margin: 0;
+}
+.ws-panel h3,
+.ws-setup h3 {
+  margin: 0 0 6px;
+  font-size: var(--dm-type-section);
+  font-weight: 500;
+  color: var(--t1);
+}
+.ws-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.ws-list > li + li {
+  border-top: 1px solid var(--hair);
+}
+.ws-list > li.on {
+  background: var(--raised);
+}
+.ws-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  min-width: 0;
+}
+.ws-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.ws-row-text strong {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-current {
+  color: var(--light);
+  font-size: var(--dm-type-caption);
+  flex: none;
+  padding-top: 2px;
+}
+.ws-section {
+  border-top: 1px solid var(--hair);
+  padding-top: 16px;
+}
+.ws-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.ws-actions .push-right {
+  margin-left: auto;
+}
+.ws-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  align-items: flex-start;
+}
+.ws-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  max-width: 420px;
+  min-width: 0;
+}
+.ws-form label > span {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.ws-form input,
+.ws-input {
+  font: inherit;
+  color: var(--t1);
+  background: var(--chrome);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  padding: 6px 8px;
+  width: 100%;
+  min-width: 0;
+}
+.ws-form input:focus-visible,
+.ws-input:focus-visible {
+  outline: 1px solid var(--light);
+  outline-offset: 1px;
+}
+.ws-code .mono {
+  color: var(--t1);
+  user-select: all;
+}
+.ws-legacy {
+  border-top: 1px solid var(--hair);
+  padding-top: 14px;
+}
+.ws-error {
+  margin: 0;
+  color: var(--fail);
+  font-size: var(--dm-type-caption);
+}
+
+/* ---- the questionnaire ---- */
+.ws-setup .ws-question {
+  margin: 0;
+  font-size: var(--dm-type-title);
+}
+.ws-setup .ws-reason {
+  margin: 0;
+  max-width: 62ch;
+}
+.ws-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 520px;
+}
+.ws-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--hair);
+  border-radius: var(--rb);
+  cursor: pointer;
+  min-width: 0;
+}
+.ws-choice:hover {
+  background: var(--raised);
+}
+.ws-choice.on {
+  border-color: var(--hair-2);
+  background: var(--raised);
+}
+.ws-choice > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ws-text {
+  max-width: 520px;
+  resize: vertical;
+  font: inherit;
+}
+.ws-money {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 260px;
+}
+.ws-money > .mono {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  flex: none;
+}
+.ws-facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  padding: 12px 14px;
+}
+.ws-facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ws-facts dt {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.ws-facts dd {
+  margin: 0;
+  color: var(--t1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ws-facts > div.unresolved dd {
+  color: var(--t3);
+  font-style: italic;
+}
+.ws-boundary {
+  border-top: 1px solid var(--hair);
+  padding-top: 12px;
+  max-width: 62ch;
+}
+
+/* The review screen between a finished questionnaire and a setup that runs.
+   It reuses the intake's panel, facts and action styles; only the parts that
+   are genuinely new to reviewing a proposal are defined here. */
+.ws-config {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.ws-config .ws-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* The previous value, kept beside the new one so a change reads as a change
+   rather than as a fresh fact. */
+.ws-was {
+  color: var(--t3);
+  margin-left: 8px;
+}
+/* Why this field holds this value. Recorded provenance, not reasoning. */
+.ws-why {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  margin: 0;
+  max-width: 62ch;
+}
+/* Configured, honestly marked as not running. Held back visually so it cannot
+   be mistaken for part of what will happen. */
+.ws-facts.ws-unsupported dd {
+  color: var(--t3);
+}
+.ws-problems {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--t1);
+  max-width: 62ch;
+}
+.ws-degraded {
+  border-left: 2px solid var(--hair);
+  padding-left: 12px;
+  white-space: pre-line;
+  max-width: 62ch;
+}
+
+/* Where a business writes, and what managed access would cost. Both reuse the
+   panel's own section, fact-list and form treatments; neither introduces a card. */
+
+/* A native select carries the input treatment plus a drawn chevron. The arrow
+   is an SVG in --t3 rather than a text glyph, so it matches the icon weight and
+   does not shift with the font. */
+.console .ws-select {
+  appearance: none;
+  padding-right: 26px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23808b97' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  text-overflow: ellipsis;
+}
+.console .ws-select:disabled {
+  color: var(--t3);
+  cursor: default;
+}
+/* The menu itself is drawn by the platform; give its options the panel's
+   surface so an open list is not a white rectangle over a graphite panel. */
+.console .ws-select option {
+  background: var(--chrome);
+  color: var(--t1);
+}
+
+/* Where a business writes is a settled fact, not a live state and not an
+   action, so it stays off the accent. The accent directly above it belongs to
+   "Start setup", and two of them stacked made neither mean anything. */
+.console .ws-bound {
+  margin-top: 12px;
+  color: var(--t2);
+  display: flex;
+  gap: 0.35em;
+  min-width: 0;
+}
+.console .ws-bound > strong {
+  color: var(--t1);
+  font-weight: 500;
+}
+
+/* A project name is a machine string: it truncates where it is written rather
+   than pushing the row wide. */
+.console .ws-truncate {
+  display: inline-block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.console .ws-brief {
+  margin-top: 10px;
+  color: var(--t2);
+}
+
+/* Money reads as a column: tabular figures so digits line up between rows, and
+   the value at the right edge of the term column's gutter. */
+.console .ws-facts.ws-allowance dd.mono {
+  font-variant-numeric: tabular-nums;
+  color: var(--t1);
+}
+
+.console .ws-rate-card {
+  margin-top: 12px;
+  color: var(--t3);
+}
+.console .ws-rate-card .mono {
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}

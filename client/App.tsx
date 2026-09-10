@@ -161,11 +161,8 @@ export function App() {
     root.dataset.detail = surface === 'console' ? 'technical' : settings.detail;
     root.dataset.package = settings.appearance.package;
     root.dataset.motion = settings.appearance.motion;
-    // Untouched interface scale follows who the person is: the Console fits more
-    // at 0.95, Guided reads larger at 1.1, otherwise 1. A saved value wins.
-    const effectiveUiScale =
-      settings.appearance.interfaceScale ??
-      (surface === 'console' ? 0.95 : settings.detail === 'guided' ? 1.1 : 1);
+    // Surface changes never resize the interface. Explicit size preferences win.
+    const effectiveUiScale = settings.appearance.interfaceScale ?? 1;
     for (const [name, value] of Object.entries({
       'ui-scale': effectiveUiScale,
       'read-scale': settings.appearance.readingScale ?? 1,
@@ -390,7 +387,7 @@ export function App() {
                     {p.status?.needsYou || p.status?.working ? (
                       <Mark state={p.status.needsYou ? 'waiting' : 'working'} />
                     ) : null}
-                    {p.name}
+                    <span className="project-tab-name" title={p.name}>{p.name}</span>
                   </button>
                 ))}
               </nav>
@@ -720,7 +717,7 @@ export function App() {
                               <span className="pt" aria-hidden="true" />
                               <span>
                                 <strong>Try the sample project</strong>
-                                <span>Three example documents. Sample work stays on this computer.</span>
+                                <span>Three example documents to explore on this computer.</span>
                               </span>
                             </button>
                           </div>
