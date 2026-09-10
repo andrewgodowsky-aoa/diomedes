@@ -1,0 +1,75 @@
+{
+  "at": "2026-09-10T08:38:58.436Z",
+  "root": "F:\\Achilles\\diomedes-wt\\autonomy-workbench\\test-results\\updates-desktop-1789029534483",
+  "executablePath": "F:\\Achilles\\diomedes-wt\\autonomy-workbench\\release\\Diomedes-win32-x64\\Diomedes.exe",
+  "asarPath": "F:\\Achilles\\diomedes-wt\\autonomy-workbench\\release\\Diomedes-win32-x64\\resources\\app.asar",
+  "helperPath": "F:\\Achilles\\diomedes-wt\\autonomy-workbench\\release\\Diomedes-win32-x64\\resources\\app.asar\\update-helper.mjs",
+  "sourceDigest": "3b0d2b856bbb6b09704893179006b760db2180f00d08a757f65ec14655f5dbda",
+  "exeSha256": "19de600d6bd92cd851da090d00ba1b00560bfab553cac3103e1264c60242b6b4",
+  "asarSha256": "e15ebef563531c83a4d4dfa5b159b41cadbcbca423bcd286816ee2e58a3b76db",
+  "checks": [
+    {
+      "name": "compiled portable shell facts; no automatic release check",
+      "ok": true
+    },
+    {
+      "name": "compiled UI check, digest verification and accepted-response handoff",
+      "ok": true,
+      "effects": {
+        "checked": 1,
+        "accepted": 1,
+        "handedOff": [
+          {
+            "path": "F:\\Achilles\\diomedes-wt\\autonomy-workbench\\test-results\\updates-desktop-1789029534483\\fixture-data\\updates\\Diomedes-Experimental-0.1.2-unsigned-setup.exe",
+            "sha256": "25350816221fdd9ac91d0d79c8ce731ada5f117136e28575a15e9ebded280619",
+            "size": 1100000,
+            "version": "0.1.2"
+          }
+        ]
+      },
+      "synthetic": true
+    },
+    {
+      "name": "real packaged helper: parent-still-running",
+      "ok": true,
+      "result": {
+        "schema": 1,
+        "status": "parent-still-running",
+        "parentPid": 40636,
+        "artifact": {
+          "path": "F:\\Achilles\\diomedes-wt\\autonomy-workbench\\test-results\\updates-desktop-1789029534483\\parent-still-running\\updates\\Diomedes-Experimental-0.1.2-unsigned-setup.exe",
+          "name": "Diomedes-Experimental-0.1.2-unsigned-setup.exe",
+          "sha256": "25350816221fdd9ac91d0d79c8ce731ada5f117136e28575a15e9ebded280619",
+          "size": 1100000,
+          "version": "0.1.2"
+        },
+        "at": "2026-09-10T08:38:57.721Z"
+      }
+    },
+    {
+      "name": "real packaged helper: tamper-after-exit",
+      "ok": true,
+      "result": {
+        "schema": 1,
+        "status": "mismatch",
+        "parentPid": 4220,
+        "artifact": {
+          "path": "F:\\Achilles\\diomedes-wt\\autonomy-workbench\\test-results\\updates-desktop-1789029534483\\tamper-after-exit\\updates\\Diomedes-Experimental-0.1.2-unsigned-setup.exe",
+          "name": "Diomedes-Experimental-0.1.2-unsigned-setup.exe",
+          "sha256": "25350816221fdd9ac91d0d79c8ce731ada5f117136e28575a15e9ebded280619",
+          "size": 1100000,
+          "version": "0.1.2"
+        },
+        "at": "2026-09-10T08:38:58.409Z",
+        "error": "The staged installer changed after verification."
+      }
+    }
+  ],
+  "screenshots": [
+    "F:\\Achilles\\diomedes-wt\\autonomy-workbench\\evidence\\autonomy-workbench\\desktop-app-updates-portable.png",
+    "F:\\Achilles\\diomedes-wt\\autonomy-workbench\\evidence\\autonomy-workbench\\desktop-app-updates-verified.png",
+    "F:\\Achilles\\diomedes-wt\\autonomy-workbench\\evidence\\autonomy-workbench\\desktop-app-updates-handoff.png"
+  ],
+  "errors": [],
+  "limits": "UI release bytes and install effects are injected. Real packaged helper startup, parent wait and post-exit digest refusal are verified. No actual installer or published upgrade ran."
+}

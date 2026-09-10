@@ -1,0 +1,68 @@
+{
+  "checkedAt": "2026-09-10T09:18:20.456Z",
+  "executablePath": "F:\\Achilles\\diomedes-wt\\integration-autonomy\\release\\Diomedes-win32-x64\\Diomedes.exe",
+  "startup": {
+    "version": "0.1.1",
+    "executable": "F:\\Achilles\\diomedes-wt\\integration-autonomy\\release\\Diomedes-win32-x64\\Diomedes.exe",
+    "pid": 26152,
+    "url": "http://127.0.0.1:56493",
+    "startedAt": "2026-09-10T09:18:17.697Z",
+    "packaged": true
+  },
+  "taskCount": 4,
+  "fontSizes": {
+    "before": {
+      ".rail-link": 36,
+      ".task-card .button": 36,
+      ".task-card .caption.owner": 21
+    },
+    "after": {
+      ".rail-link": 44.625,
+      ".task-card .button": 44.625,
+      ".task-card .caption.owner": 26.03125
+    }
+  },
+  "rendererNodeDisabled": true,
+  "serviceStopsOnClose": true,
+  "dataLockReleased": true,
+  "persistedOnRestart": true,
+  "workAdmission": {
+    "lostResponsesRecovered": true,
+    "receiptsRetainedOnRestart": true,
+    "runs": [
+      {
+        "surface": "workbook",
+        "requests": 2,
+        "receipt": {
+          "protocolVersion": 1,
+          "commandId": "4dc62e62-525b-4a5d-9bc7-78458a57b273",
+          "payloadDigest": "sha256:fadcf63690b2b3db42ae6d4235215abcca34c2ec981e85fb099ae14967a4380b",
+          "projectId": "0a27791113b9",
+          "taskId": "T1",
+          "sessionId": "Sb8a4cf32f03f",
+          "eventId": "E27545b9b7197",
+          "admittedAt": "2026-09-10T09:18:18.193Z",
+          "route": "sample",
+          "scope": "local-prototype"
+        }
+      },
+      {
+        "surface": "console",
+        "requests": 2,
+        "receipt": {
+          "protocolVersion": 1,
+          "commandId": "4acb5347-4635-4961-a409-e1e9a8274665",
+          "payloadDigest": "sha256:c54fc3a39939f69aa3a84c980ea9f1958fea1384906bab71ed501b1853d707f8",
+          "projectId": "0a27791113b9",
+          "taskId": "T1",
+          "sessionId": "S2c8ee26996c9",
+          "eventId": "E8a924f8d5371",
+          "admittedAt": "2026-09-10T09:18:18.420Z",
+          "route": "sample",
+          "scope": "local-prototype"
+        }
+      }
+    ]
+  },
+  "pageErrors": []
+}

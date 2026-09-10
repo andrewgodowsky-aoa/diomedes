@@ -1,0 +1,13 @@
+npm notice run diomedes@0.1.1 npx
+npm notice run vitest run tests/app-updates.test.ts tests/desktop-app-updates.test.ts
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/autonomy-workbench
+
+ ✓ tests/desktop-app-updates.test.ts (20 tests) 163ms
+ ✓ tests/app-updates.test.ts (35 tests) 722ms
+
+ Test Files  2 passed (2)
+      Tests  55 passed (55)
+   Start at  04:21:18
+   Duration  3.91s (transform 448ms, setup 0ms, collect 1.08s, tests 886ms, environment 0ms, prepare 193ms)
+

@@ -1,0 +1,8 @@
+npm notice run diomedes@0.1.1 npx
+npm notice run prettier --write client/AppUpdates.tsx server/app-updates.ts desktop/main.mjs desktop/update-helper.mjs tests/app-updates.test.ts tests/desktop-app-updates.test.ts
+client/AppUpdates.tsx 53ms (unchanged)
+server/app-updates.ts 69ms (unchanged)
+desktop/main.mjs 30ms
+desktop/update-helper.mjs 11ms (unchanged)
+tests/app-updates.test.ts 66ms
+tests/desktop-app-updates.test.ts 28ms (unchanged)

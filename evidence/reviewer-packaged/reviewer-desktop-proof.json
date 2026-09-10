@@ -1,0 +1,77 @@
+{
+  "at": "2026-09-10T10:52:47.573Z",
+  "root": "F:\\Achilles\\diomedes-wt\\integration-autonomy\\test-results\\reviewer-desktop-1789037564085",
+  "executablePath": "F:\\Achilles\\diomedes-wt\\integration-autonomy\\release\\Diomedes-win32-x64\\Diomedes.exe",
+  "exeSha256": "41e76ecc7cc2242f37ed187789bfeb5adfa1b002198b0dad16477fe43ea73846",
+  "asarPath": "F:\\Achilles\\diomedes-wt\\integration-autonomy\\release\\Diomedes-win32-x64\\resources\\app.asar",
+  "asarSha256": "0d95e4d61ea10257b0a0d6a2d2bdcf61e76792090a56a85389646236903699ae",
+  "baseCommit": "a70ae5d9523d81bf5db98304a657cf16ed014a7a",
+  "sourceStatus": "local-uncommitted",
+  "sourceDigest": "40a89fe8615a439f723a47fdc8d51d493a293397459585bb2036e9752ee11050",
+  "version": "0.1.1",
+  "syntheticVsLive": "Both the worker and the reviewer were injected synthetic fixtures inside the packaged compiled module. This proves the authority path - which decisions may write, which may not, what is recorded and what the person is told - and proves nothing about a live model's judgement. No live provider inference, credentials or billing were involved.",
+  "defaultUrl": "http://127.0.0.1:65056",
+  "fixtureUrl": "http://127.0.0.1:65119",
+  "limitation": null,
+  "checks": [
+    {
+      "name": "packaged default app serves",
+      "ok": true,
+      "detail": "http://127.0.0.1:65056"
+    },
+    {
+      "name": "packaged fixture backend (compiled module)",
+      "ok": true,
+      "detail": "http://127.0.0.1:65119"
+    },
+    {
+      "name": "packaged Agent selection is a separate axis and grants nothing",
+      "ok": true,
+      "detail": "Change Builder selected; menu states permissions decide authority"
+    },
+    {
+      "name": "packaged Full access is unavailable and says which environment is missing",
+      "ok": true,
+      "detail": "radio disabled; no isolated environment named"
+    },
+    {
+      "name": "packaged reviewer identity pinned at consent",
+      "ok": true,
+      "detail": "Code Reviewer 1.0.0 sha256:c5f591993d3b7..."
+    },
+    {
+      "name": "packaged automatic review applies and is labelled a model decision",
+      "ok": true,
+      "detail": "Reviewed/A.md applied under a reviewer decision; no approval receipt"
+    },
+    {
+      "name": "packaged reviewer refusal writes nothing and leaves the person in control",
+      "ok": true,
+      "detail": "Need stays open with a durable reviewer record; Reviewed/B.md absent"
+    },
+    {
+      "name": "packaged reviewer failure falls back to the person",
+      "ok": true,
+      "detail": "No authorization minted when the reviewer could not answer"
+    },
+    {
+      "name": "packaged revocation ends automatic review",
+      "ok": true,
+      "detail": "No active grant remains"
+    },
+    {
+      "name": "packaged capability view refuses Full access and offers a reviewer",
+      "ok": true,
+      "detail": "Full access is unavailable for Codex, ChatGPT account: 6 prerequisites unmet."
+    }
+  ],
+  "screenshots": [
+    "F:\\Achilles\\diomedes-wt\\integration-autonomy\\evidence\\reviewer-packaged\\packaged-agent-picker.png",
+    "F:\\Achilles\\diomedes-wt\\integration-autonomy\\evidence\\reviewer-packaged\\packaged-permission-choices.png",
+    "F:\\Achilles\\diomedes-wt\\integration-autonomy\\evidence\\reviewer-packaged\\packaged-approve-for-me.png",
+    "F:\\Achilles\\diomedes-wt\\integration-autonomy\\evidence\\reviewer-packaged\\packaged-reviewer-record.png",
+    "F:\\Achilles\\diomedes-wt\\integration-autonomy\\evidence\\reviewer-packaged\\packaged-reviewer-refusal.png",
+    "F:\\Achilles\\diomedes-wt\\integration-autonomy\\evidence\\reviewer-packaged\\packaged-reviewer-unavailable.png"
+  ],
+  "errors": []
+}

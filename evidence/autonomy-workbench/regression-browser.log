@@ -1,0 +1,135 @@
+[WebServer] Diomedes: http://127.0.0.1:5174. Press Ctrl+C to stop both local processes.
+[WebServer] (node:22108) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer]   VITE v7.3.6  ready in 384 ms
+[WebServer] 
+[WebServer]   ➜  Local:   http://127.0.0.1:5174/
+[WebServer] (node:28132) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Diomedes local service ready: http://127.0.0.1:47632
+[WebServer] App data: F:\Achilles\diomedes-wt\autonomy-workbench\test-results\app-data-1789025884137-22652\data
+[WebServer] Project root: F:\Achilles\diomedes-wt\autonomy-workbench\test-results\app-data-1789025884137-22652\projects
+
+Running 18 tests using 1 worker
+
+(node:44272) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Error: fixture request cancelled
+    at AbortSignal.abort (file:///F:/Achilles/diomedes-wt/autonomy-workbench/tests/ai-engines-ui.spec.ts:85:20)
+    at AbortSignal.[nodejs.internal.kHybridDispatch] (node:internal/event_target:843:20)
+    at AbortSignal.dispatchEvent (node:internal/event_target:776:26)
+    at runAbort (node:internal/abort_controller:486:10)
+    at abortSignal (node:internal/abort_controller:463:5)
+    at AbortController.abort (node:internal/abort_controller:505:5)
+    at ServerResponse.<anonymous> (file:///F:/Achilles/diomedes-wt/autonomy-workbench/server/app.ts:513:42)
+    at Object.onceWrapper (node:events:633:28)
+    at ServerResponse.emit (node:events:519:28)
+    at emitCloseNT (node:_http_server:1066:10)
+    at Socket.onServerResponseClose (node:_http_server:285:5)
+    at Socket.emit (node:events:531:35)
+    at TCP.<anonymous> (node:net:347:12)
+    at TCP.callbackTrampoline (node:internal/async_hooks:130:17)
+  x   1 tests\ai-engines-ui.spec.ts:233:1 › Console discovers, selects, streams, cancels, and approves all three fixture engines (15.8s)
+(node:25952) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  2 tests\ui.spec.ts:60:1 › F01-F02: first run preserves detail and approvals, supports AI skip, and resumes (2.7s)
+  ok  3 tests\ui.spec.ts:172:1 › F04, F06: sample project opens and a plan edit survives reload with History (851ms)
+  ok  4 tests\ui.spec.ts:232:1 › F10: plan steps become real tasks with provenance and a History entry (886ms)
+  ok  5 tests\ui.spec.ts:273:1 › F11-F13: work asks twice, decline skips creation, and the remaining change is recorded (5.1s)
+  ok  6 tests\ui.spec.ts:368:1 › F15-F16: Review keeps the changed file and History exposes the recorded change (653ms)
+  ok  7 tests\ui.spec.ts:402:1 › F07-F08: restore and Undo recover both versions; newer edits expose conflict choices (1.0s)
+  ok  8 tests\ui.spec.ts:468:1 › F14: Stop settles a started sample promptly and expires its approval (968ms)
+  ok  9 tests\ui.spec.ts:496:1 › F17, F20-F22: surface switches preserve data; visible pages meet copy and layout checks (2.2s)
+  ok 10 tests\ui.spec.ts:695:1 › Draft recovery: Settings, reload and same-named files in separate projects preserve writing and stale-save conflicts (2.0s)
+  ok 11 tests\ui.spec.ts:827:1 › Services roster: every reported engine listed with switch discipline; Guided hides non-ready adapters; Console has no Connections (3.4s)
+  ok 12 tests\ui.spec.ts:903:1 › Usage: chip, signal bar and Settings bars from the test-mode snapshot (715ms)
+  ok 13 tests\ui.spec.ts:977:1 › Landing: ask box carries a draft into the chosen project (499ms)
+  ok 14 tests\ui.spec.ts:1032:1 › Unavailable helper: the application notice has no invented runtime caption (515ms)
+  ok 15 tests\ui.spec.ts:1047:1 › Engine choices: the list comes from the engine, and the levels follow the choice (622ms)
+  x  16 tests\ui.spec.ts:1130:1 › Modes: the Workbook composer shows four modes and Fix needs what is failing (12.6s)
+  -  17 tests\ui.spec.ts:1199:1 › Enter sends from the Workbook composer and Shift+Enter adds a line
+  -  18 tests\ui.spec.ts:1227:1 › Usage: navigation preserves a concurrent engine setting while refresh is delayed
+
+
+  1) tests\ai-engines-ui.spec.ts:233:1 › Console discovers, selects, streams, cancels, and approves all three fixture engines 
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: getByRole('dialog', { name: /^claude-code\/fixture-model wants to/ })
+    Expected substring: "Approved claude-code fixture content."
+    Timeout: 12000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toContainText" getByRole('dialog', { name: /^claude-code\/fixture-model wants to/ }) with timeout 12000ms
+      - waiting for getByRole('dialog', { name: /^claude-code\/fixture-model wants to/ })
+
+
+      340 |     await need.getByRole('button', { name: 'Show me first', exact: true }).click();
+      341 |     const proposal = page.getByRole('dialog', { name: new RegExp(`^${engine}/fixture-model wants to`) });
+    > 342 |     await expect(proposal).toContainText(`Approved ${engine} fixture content.`);
+          |                            ^
+      343 |     await expect(
+      344 |       fs.access(path.join(project.folder, `Approved ${engine}.md`)),
+      345 |     ).rejects.toMatchObject({ code: 'ENOENT' });
+        at F:\Achilles\diomedes-wt\autonomy-workbench\tests\ai-engines-ui.spec.ts:342:28
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\browser\ai-engines-ui-Console-disc-c93f0-s-all-three-fixture-engines\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\browser\ai-engines-ui-Console-disc-c93f0-s-all-three-fixture-engines\error-context.md
+
+    Error Context: test-results\browser\ai-engines-ui-Console-disc-c93f0-s-all-three-fixture-engines\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\browser\ai-engines-ui-Console-disc-c93f0-s-all-three-fixture-engines\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\browser\ai-engines-ui-Console-disc-c93f0-s-all-three-fixture-engines\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) tests\ui.spec.ts:1130:1 › Modes: the Workbook composer shows four modes and Fix needs what is failing 
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: locator('.turn.diomedes').last().locator('.mode-chip')
+    Expected substring: "Fix, try 1 of 3"
+    Timeout: 12000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toContainText" locator('.turn.diomedes').last().locator('.mode-chip') with timeout 12000ms
+      - waiting for locator('.turn.diomedes').last().locator('.mode-chip')
+
+
+      1194 |     .click();
+      1195 |   const helperTurn = page.locator('.turn.diomedes').last();
+    > 1196 |   await expect(helperTurn.locator('.mode-chip')).toContainText('Fix, try 1 of 3');
+           |                                                  ^
+      1197 | });
+      1198 |
+      1199 | test('Enter sends from the Workbook composer and Shift+Enter adds a line', async ({ page }) => {
+        at F:\Achilles\diomedes-wt\autonomy-workbench\tests\ui.spec.ts:1196:50
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\browser\ui-Modes-the-Workbook-comp-48ce7-d-Fix-needs-what-is-failing\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\browser\ui-Modes-the-Workbook-comp-48ce7-d-Fix-needs-what-is-failing\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\browser\ui-Modes-the-Workbook-comp-48ce7-d-Fix-needs-what-is-failing\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\browser\ui-Modes-the-Workbook-comp-48ce7-d-Fix-needs-what-is-failing\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    tests\ai-engines-ui.spec.ts:233:1 › Console discovers, selects, streams, cancels, and approves all three fixture engines 
+    tests\ui.spec.ts:1130:1 › Modes: the Workbook composer shows four modes and Fix needs what is failing 
+  2 did not run
+  14 passed (56.2s)

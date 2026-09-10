@@ -1,0 +1,40 @@
+{
+  "at": "2026-09-10T09:19:30.000Z",
+  "note": "Integration checkpoint record. 'at' is the start of this checkpoint's documentation pass; per-proof timestamps live inside each proof JSON. See docs/implementation/2026-09-10-integration-autonomy.md.",
+  "root": "F:/Achilles/diomedes-wt/integration-autonomy",
+  "branch": "integration/autonomy-workbench-20260910",
+  "base": "a70ae5d",
+  "candidateBase": "0299f5154e5ed2b1fa07789cfc6c3728cc068a0a",
+  "typecheck": "PASS (tsc --noEmit)",
+  "unit": {
+    "passed": 869,
+    "failed": 0,
+    "total": 869,
+    "files": 49,
+    "source": "unit-results.json"
+  },
+  "browser": { "full": 32, "responsive": 9 },
+  "build": {
+    "result": "PASS (vite build)",
+    "entry": "dist/assets/index-CmbakWCA.js",
+    "rawBytes": 422388,
+    "gzipBytes": 126742
+  },
+  "package": {
+    "result": "PASS (package-desktop.mjs, pinned native-runtime hashes verified by the script)",
+    "exeSha256": "e154ba3b8d67fc45fb0e73a55722e5e477cda29c0b1635fd0858057bd0b4376e",
+    "asarSha256": "db18b34c7cfb315478616d6f191f1f53a14d70b7fe7ce929f4e4864674f15c80"
+  },
+  "desktopProofs": {
+    "autonomy": "integration-autonomy-desktop-proof.json (10/10 checks, synthetic generator only)",
+    "appUpdates": "integration-app-updates-desktop-proof.json (4/4 checks, real packaged helper boundaries)",
+    "lifecycle": "desktop-proof.json (Workbook+Console lost-response recovery, restart receipts)"
+  },
+  "fixesBeyondCandidate": [
+    "server/store.ts listDocuments: explicit listing awaits a pending walk, then walks fresh",
+    "tests/work-admission-child.ts: deterministic dispatched-phase exit (73 on redispatch, bounded marker wait)",
+    "scripts/desktop-smoke.mjs: pin surface workbook for the Workbook lifecycle leg"
+  ],
+  "liveApplicationInference": "not run: no explicit small live application-test budget received",
+  "publication": "no commit, push, installed replacement, release, website or cloud update"
+}

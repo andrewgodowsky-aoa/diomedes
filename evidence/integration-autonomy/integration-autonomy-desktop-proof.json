@@ -1,0 +1,79 @@
+{
+  "at": "2026-09-10T09:15:32.052Z",
+  "root": "F:\\Achilles\\diomedes-wt\\integration-autonomy\\test-results\\autonomy-desktop-1789031700225",
+  "executablePath": "F:\\Achilles\\diomedes-wt\\integration-autonomy\\release\\Diomedes-win32-x64\\Diomedes.exe",
+  "exeSha256": "e154ba3b8d67fc45fb0e73a55722e5e477cda29c0b1635fd0858057bd0b4376e",
+  "asarPath": "F:\\Achilles\\diomedes-wt\\integration-autonomy\\release\\Diomedes-win32-x64\\resources\\app.asar",
+  "asarSha256": "db18b34c7cfb315478616d6f191f1f53a14d70b7fe7ce929f4e4864674f15c80",
+  "baseCommit": "a70ae5d9523d81bf5db98304a657cf16ed014a7a",
+  "sourceStatus": "local-uncommitted",
+  "sourceDigest": "f1087d42fe572e740c0b107a9e7f47eb967cb7042522f39d1814d9c8cbfdc2cf",
+  "version": "0.1.1",
+  "syntheticVsLive": "Every proposal in this run used an injected synthetic generator (synthetic-packaged-fixture-model) inside the packaged compiled module. No live provider inference or billing changes were performed.",
+  "defaultUrl": "http://127.0.0.1:63539",
+  "fixtureUrl": "http://127.0.0.1:64568",
+  "limitation": null,
+  "checks": [
+    {
+      "name": "packaged default app serves",
+      "ok": true,
+      "detail": "http://127.0.0.1:63539"
+    },
+    {
+      "name": "packaged fixture backend (compiled module)",
+      "ok": true,
+      "detail": "http://127.0.0.1:64568"
+    },
+    {
+      "name": "packaged exact proposal shows synthetic actor",
+      "ok": true,
+      "detail": "synthetic-packaged-fixture-model"
+    },
+    {
+      "name": "packaged exact approval writes",
+      "ok": true,
+      "detail": "Packaged-proof.md applied"
+    },
+    {
+      "name": "packaged scope confirmation",
+      "ok": true,
+      "detail": "Work in this project badge"
+    },
+    {
+      "name": "packaged scope auto-applies same-task writes",
+      "ok": true,
+      "detail": "Packaged/A.md and Packaged/B.md contents verified"
+    },
+    {
+      "name": "packaged inspector honest non-harness state",
+      "ok": true,
+      "detail": "Runtime evidence empty"
+    },
+    {
+      "name": "packaged scope boundary holds",
+      "ok": true,
+      "detail": "Outside-packaged.md waits for exact approval and is absent on disk"
+    },
+    {
+      "name": "packaged revoke blocks scope",
+      "ok": true,
+      "detail": "Review changes badge"
+    },
+    {
+      "name": "packaged History retains attributed hashes",
+      "ok": true,
+      "detail": "Two change sets, three file versions, original synthetic actor"
+    }
+  ],
+  "screenshots": [
+    "F:\\Achilles\\diomedes-wt\\integration-autonomy\\evidence\\autonomy-workbench\\desktop-autonomy-first-run.png",
+    "F:\\Achilles\\diomedes-wt\\integration-autonomy\\evidence\\autonomy-workbench\\desktop-autonomy-preview.png",
+    "F:\\Achilles\\diomedes-wt\\integration-autonomy\\evidence\\autonomy-workbench\\desktop-autonomy-permissions.png",
+    "F:\\Achilles\\diomedes-wt\\integration-autonomy\\evidence\\autonomy-workbench\\desktop-autonomy-scoped.png",
+    "F:\\Achilles\\diomedes-wt\\integration-autonomy\\evidence\\autonomy-workbench\\desktop-autonomy-inspector.png",
+    "F:\\Achilles\\diomedes-wt\\integration-autonomy\\evidence\\autonomy-workbench\\desktop-autonomy-boundary.png",
+    "F:\\Achilles\\diomedes-wt\\integration-autonomy\\evidence\\autonomy-workbench\\desktop-autonomy-revoked.png",
+    "F:\\Achilles\\diomedes-wt\\integration-autonomy\\evidence\\autonomy-workbench\\desktop-autonomy-history.png"
+  ],
+  "errors": []
+}

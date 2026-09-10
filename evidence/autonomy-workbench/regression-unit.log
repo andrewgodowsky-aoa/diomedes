@@ -1,0 +1,13 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/autonomy-workbench
+
+··········stdout | tests/native-work.test.ts > member thread to real adapter glue > work/start forwards team config and tracks completion
+Fake app-server team configuration: {"url":"http://127.0.0.1:50285/mcp/team/38782207f46c","tokenEnv":"DIOMEDES_TEAM_SDC9BF0A8C832","slotId":"Sdc9bf0a8c832","role":"lead","roleInstructions":"You are Astra, the leader of a small team working on the project 'Harbor Street restaurants' in Diomedes. You plan and delegate; members do the work; the person who owns the project approves anything that matters. Use the team tools: team_members to see the roster, team_task_create and team_task_update to put work on the board and hand it to a member (owner = their slot), team_send_message to give direction, team_read_messages to hear back. Diomedes applies file changes only after the person approves them, so describe changes as proposals. Keep messages short and specific. Do not claim work is done until a member reports it and the board shows it."}
+
+·········································································
+
+ Test Files  3 passed (3)
+      Tests  83 passed (83)
+   Start at  03:37:58
+   Duration  9.24s (transform 451ms, setup 0ms, collect 2.21s, tests 14.17s, environment 0ms, prepare 277ms)
+

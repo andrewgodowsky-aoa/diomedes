@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "version": "0.1.1",
-  "baseCommit": "a70ae5d9523d81bf5db98304a657cf16ed014a7a",
+  "baseCommit": "0299f5154e5ed2b1fa07789cfc6c3728cc068a0a",
   "sourceStatus": "local-uncommitted",
-  "sourceDigest": "40a89fe8615a439f723a47fdc8d51d493a293397459585bb2036e9752ee11050",
+  "sourceDigest": "3b0d2b856bbb6b09704893179006b760db2180f00d08a757f65ec14655f5dbda",
   "source": [
     {
       "path": "client/ai-setup.css",
@@ -39,7 +39,7 @@
     },
     {
       "path": "client/components.tsx",
-      "sha256": "cacd7379f6f0a8b1cb5bc54d8c7e228818bc79fbd1ddf3e441e0798508c59a5a"
+      "sha256": "fc68dc7bf7959f3234059c21454f42558fb44b484298750922500d7caf9f9c7f"
     },
     {
       "path": "client/connections/connections.css",
@@ -58,10 +58,6 @@
       "sha256": "01bcc3b2c91bd151d5007d9dee6c12d1a7988bdc3f029431c6b54e41c5eb5195"
     },
     {
-      "path": "client/console/AgentPicker.tsx",
-      "sha256": "f5a413b45fbbfb0d6b216b692d73cab8645cbc9d42409e6862b23c5108a915c3"
-    },
-    {
       "path": "client/console/board.css",
       "sha256": "bdba38c470f62dbeb91e675e39006eded886fb8fbf8a5e32fdd24057d89f4fc4"
     },
@@ -75,7 +71,7 @@
     },
     {
       "path": "client/console/console.css",
-      "sha256": "1bad3d3929a3658ea6a92f3eae0af33c8f0a8d23e607f97b6fec92906a2dd81b"
+      "sha256": "76052e982a15b59e08337fbc01dee7bff0e78b6e07d0ccdbbaf4f3082090e602"
     },
     {
       "path": "client/console/Ledger.tsx",
@@ -111,11 +107,11 @@
     },
     {
       "path": "client/console/PermissionPanel.tsx",
-      "sha256": "f3e8c67e988485f200db6c489bbe742fe272d4abeda211b303dc73cf1b622553"
+      "sha256": "05688ac24d48779db1344812300f7bcf1aba2b9bca149a0a5a7277f1c5256ce9"
     },
     {
       "path": "client/console/Picker.tsx",
-      "sha256": "2b8fb368709b3757e6bf1e98132f51018f0bbd8d21bcc55987ec1575af9a10f2"
+      "sha256": "51aad1da3c57104d1b436abf8ed9260a0f17923b865c96bb6c832c21119fe9af"
     },
     {
       "path": "client/console/Rail.tsx",
@@ -127,7 +123,7 @@
     },
     {
       "path": "client/console/Shell.tsx",
-      "sha256": "ef660141e69ae386d91d3c7989364fe3888ed03587781fe1a0c0f94496395fc8"
+      "sha256": "200496092ccfef92b4cabfe446e137ceb1e86be61d96fc103e8c1b9abc31f0f0"
     },
     {
       "path": "client/console/team.css",
@@ -298,12 +294,12 @@
       "sha256": "781633d95de88040fb77141d1e65d928c87c0144691fbc74da5a64d137a7e910"
     },
     {
-      "path": "dist/assets/index-BoxQ2R3o.css",
-      "sha256": "5a4c9bcd11b7b7e934b4e918ce7311e85486177042d7fcad8155580db6f12036"
+      "path": "dist/assets/index-CmbakWCA.js",
+      "sha256": "6645bb44bc7b07f5890ad878787cfbc541f9811d5d233921638cd969f44ce7b5"
     },
     {
-      "path": "dist/assets/index-Dlql4Jty.js",
-      "sha256": "7db5d8adef063a0d6fa3dff6882d6a0ce67f193d1298b6a0e54c6768ff714d95"
+      "path": "dist/assets/index-t2c8eZc3.css",
+      "sha256": "5a6d9d6180e58b2c0005a88620d2ade35f03e0197fba0cc8e19d91de05ca4508"
     },
     {
       "path": "dist/assets/schibsted-grotesk-latin-400-normal-BkiRe4WW.woff",
@@ -355,7 +351,7 @@
     },
     {
       "path": "dist/index.html",
-      "sha256": "77d73cb8d5cb86fe4373a9a9de1477b942c844341aaac6756260f6dfb7c908a3"
+      "sha256": "a4f7e79d5b040c9ab6be119a300f3f63af92ac1caf02cbc4a79ccc1f3ab8fcdd"
     },
     {
       "path": "fixtures/connections/helpdesk-openapi.json",
@@ -422,20 +418,16 @@
       "sha256": "887e3947b07a992265d874f7005c90bcdda0ffa1fc6e17dedddf67d204a58e7f"
     },
     {
-      "path": "server/agents.ts",
-      "sha256": "b1f1cc9e32c2ec96acdd7f1eb1895b7354b84a4345488557a19b448536a4972f"
-    },
-    {
       "path": "server/app-updates.ts",
       "sha256": "c36637952bcd51f792f844d030668fda58bedde88948d25f86560d3aac28572f"
     },
     {
       "path": "server/app.ts",
-      "sha256": "48f0f1f8c662d9f461a64e35a27063e7485809e4d784d9ed6630c79aef96f739"
+      "sha256": "65e48aded077919b6e039a4b158b72fe55ce75da314d903954895713f185310a"
     },
     {
       "path": "server/approval-admission.ts",
-      "sha256": "7bea943fa10f635d6902735277009a75a1a95e9a767df7cc4b73f11af8f5c71f"
+      "sha256": "5695fcf39da772a96e1eefe95b369ec323f0bb6d5bafd5918af85b2f90b47be4"
     },
     {
       "path": "server/command-admission.ts",
@@ -603,7 +595,7 @@
     },
     {
       "path": "server/native-work.ts",
-      "sha256": "f9c7dc56d0b4d4f5fe932ed3e7ca7454275a92ababca1f7dd5d9489455470421"
+      "sha256": "013becf2551f8ab241865fa3edde303406b0635c80c4cebb631833a4c17e4da5"
     },
     {
       "path": "server/paths.ts",
@@ -611,7 +603,7 @@
     },
     {
       "path": "server/permission-routes.ts",
-      "sha256": "fe0db0dfd3b3f4e3c62ab1144bdeebba6e1ef47e7fac55f83b9ad1c54444cc8d"
+      "sha256": "951b2ccdd5029c7cbb7fdbae1ced3e51ccfb9078fa79b5f4f245ccf286658afa"
     },
     {
       "path": "server/rules.ts",
@@ -623,7 +615,7 @@
     },
     {
       "path": "server/store.ts",
-      "sha256": "b1a25247a50ee6a7bf4c9fa60bc4a8686172fbf16941fcd358121acb44fe2b6a"
+      "sha256": "338ca2288255d1c2e928e070b8309d3fab3bdb9dcf5d23a6168f026322ab05f8"
     },
     {
       "path": "server/team/board.ts",
@@ -643,31 +635,19 @@
     },
     {
       "path": "server/team/routes.ts",
-      "sha256": "53f1addfce4c324c5612378e1f1ed202a77228ea039799e74e49af2f4eac3fd0"
+      "sha256": "58a34828f0e0e3a7ebfeb5662d3fcb5ef5214520211a5aebe8c21bdd59f37d7a"
     },
     {
       "path": "server/team/service.ts",
-      "sha256": "dd8a0573fbc4127e49537853b4d4363e021836e331f52fc66bc513d0adda9421"
+      "sha256": "3c96038b192380e44dc510c2d933464e1a01ab19be22cdf8a3139f41c6d6d125"
     },
     {
       "path": "server/trust/authority.ts",
       "sha256": "b1399b4812930178c5bc60b413042dc54e3b146342c9d479f428cbc98520f4d5"
     },
     {
-      "path": "server/trust/codex-reviewer.ts",
-      "sha256": "2da0e56511ad53dc36718434e2ce43366169a106a490dfad92a7c1d91d754234"
-    },
-    {
-      "path": "server/trust/environments.ts",
-      "sha256": "8868db968bf5f03a469296d4d4ebac55bb45f609f9530680416cedaa7bb05ac5"
-    },
-    {
       "path": "server/trust/index.ts",
       "sha256": "06bf4c96b811a8ed45d08ca735020340fe0d8390aefacb03c6a04f25e70c123a"
-    },
-    {
-      "path": "server/trust/reviewer.ts",
-      "sha256": "1fa9de1b3b90195a5c8c0d4ea3708cea980aefe9b465c60676281c84c38f8968"
     },
     {
       "path": "server/trust/revocation.ts",
@@ -675,7 +655,7 @@
     },
     {
       "path": "server/trust/scope-grants.ts",
-      "sha256": "b33211140f5658e74d2515afe4b85ed30dab7352cf2ef87ce7c0542967ddabb3"
+      "sha256": "8631f730ed4093848ef604c3fc002360a5811387f0f3ab9837f6f9b97ed445fa"
     },
     {
       "path": "server/trust/types.ts",
@@ -687,15 +667,11 @@
     },
     {
       "path": "server/work-admission.ts",
-      "sha256": "2b52e611a049c69770c4160b9f165d8a459be9ec143215b5e0830b708a12cb46"
+      "sha256": "e7d1c94f7becdb2b5aa0e5031c88216632bcb91579d6567efb34a34ebefd809d"
     },
     {
       "path": "server/work.ts",
       "sha256": "c4e3daf69db8f879ca315e07a5a0a2450973ff03164545797e9d89bc0f79ccdb"
-    },
-    {
-      "path": "shared/agents.ts",
-      "sha256": "0f0e25fd0b16c3867cf2b8f5399873afd5e86fbe912fb9bc63f2de22680d8780"
     },
     {
       "path": "shared/ai-selection.ts",
@@ -707,11 +683,7 @@
     },
     {
       "path": "shared/attribution.ts",
-      "sha256": "62e8981ad74ca421c12c26b8b2f7444331927ec22ffd6d51c9ba303c285f68ea"
-    },
-    {
-      "path": "shared/capabilities.ts",
-      "sha256": "903f2a1ffdcbf6c067600255f8eafc13fd3859ec1dfc2617f2af4c2ee698005b"
+      "sha256": "5bcbe2e65f0a7195b93323476f2bebd87236089919251846faee0d7b49bf9c10"
     },
     {
       "path": "shared/connection-desktop.ts",
@@ -743,11 +715,11 @@
     },
     {
       "path": "shared/permissions.ts",
-      "sha256": "75eb7c657978465f37c0ec66268df3e7539a9c00b84d15f4b9c62b6cf8bb9397"
+      "sha256": "e4eb9f010b13510838409548e956935d7fdb2ce2470bfa521bbc4284adf2df82"
     },
     {
       "path": "shared/types.ts",
-      "sha256": "4c6724ef5dfe7df498e5531d64b814c289cf1c0ff0f5a6a174c8d97931115c16"
+      "sha256": "a391660adbbb5c27e9cf17c33e7d17e6243b848932b2005538268c2e1dba5332"
     }
   ],
   "nativeRuntime": {
@@ -759,5 +731,5 @@
     }
   },
   "signing": "unsigned-experimental",
-  "builtAt": "2026-09-10T10:49:35.459Z"
+  "builtAt": "2026-09-10T08:34:57.023Z"
 }
