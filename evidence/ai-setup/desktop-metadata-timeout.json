@@ -1,0 +1,46 @@
+{
+  "at": "2026-09-10T06:16:10.019Z",
+  "root": "F:\\Achilles\\diomedes-wt\\ai-setup\\test-results\\ai-desktop-1789020843773",
+  "executablePath": "F:\\Achilles\\diomedes-wt\\ai-setup\\release\\Diomedes-win32-x64\\Diomedes.exe",
+  "exeSha256": "a0acba1f0ca023aaac8f58102eb7e0a4f7bfba50d276037966dfd45eff78b792",
+  "sourceDigest": "db11a5cd45ebedd050b73c782c477ca71f87a0284f8a8556beac3f99485fe283",
+  "baseCommit": "2e230c89020d1ddb4fd51720a201ad0b562fbef8",
+  "sourceStatus": "local-uncommitted",
+  "cleanProfile": true,
+  "upgradePreferencesAndHistory": true,
+  "metadataOnly": true,
+  "modelPrompts": 0,
+  "metadata": [
+    {
+      "engine": "claude-code",
+      "version": "2.1.252",
+      "authentication": "signed-in",
+      "accountRoute": "claude-code:claude.ai",
+      "models": [
+        "sonnet",
+        "haiku"
+      ],
+      "checkedAt": "2026-09-10T06:14:39.631Z",
+      "detail": "Claude account connected. Choose a model for text and reviewed proposals."
+    },
+    {
+      "engine": "opencode",
+      "version": "1.18.4",
+      "authentication": "unknown",
+      "accountRoute": null,
+      "models": [],
+      "checkedAt": "2026-09-10T06:14:55.457Z",
+      "detail": "OpenCode did not finish within the time limit. Recheck before starting another request."
+    },
+    {
+      "engine": "oh-my-pi",
+      "version": "18.0.6",
+      "authentication": "unknown",
+      "accountRoute": null,
+      "models": [],
+      "checkedAt": "2026-09-10T06:14:57.002Z",
+      "detail": "The isolated native OMP profile exited before it could report metadata. Configure supported OpenAI API access in the native profile, then recheck."
+    }
+  ],
+  "errors": []
+}

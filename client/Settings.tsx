@@ -7,6 +7,8 @@ import type {
   UsageSnapshot,
 } from '../shared/types';
 import { api } from './api';
+import { AIConnections } from './AISetup';
+import { isExternalEngine } from '../shared/engines';
 import { SCHEMES, schemeId } from './console/schemes';
 import {
   Button,
@@ -57,6 +59,7 @@ export function SettingsPage({
 }) {
   const [section, setSection] = useState('Interface detail');
   const [disclosure, setDisclosure] = useState<IntegrationStatus | null>(null);
+  const [connectionError, setConnectionError] = useState('');
   // Discovery starts only when this page asks for it, once per visit to the helpers section.
   const askedForHelpers = useRef(false);
   const helpersOpen = section === 'Helpers on this computer' || section === 'Engines';
@@ -66,11 +69,14 @@ export function SettingsPage({
       return;
     }
     if (askedForHelpers.current) return;
-    if (integrations.some((s) => s.status === 'Not checked')) {
+    if (
+      settings.onboarding.discoveryConsentAt &&
+      integrations.some((s) => s.status === 'Not checked')
+    ) {
       askedForHelpers.current = true;
       refresh();
     }
-  }, [helpersOpen, integrations, refresh]);
+  }, [helpersOpen, integrations, refresh, settings.onboarding.discoveryConsentAt]);
   // What each engine says it can run. Only engines with a ready adapter are
   // asked, and the key is the id list so an unchanged roster does not refetch.
   const [catalogs, setCatalogs] = useState<Record<string, EngineCatalog>>({});
@@ -189,7 +195,9 @@ export function SettingsPage({
                             type="radio"
                             name="settings-detail"
                             checked={settings.detail === d}
-                            onChange={() => void save({ ...settings, detail: d, surface: 'workbook' })}
+                            onChange={() =>
+                              void save({ ...settings, detail: d, surface: 'workbook' })
+                            }
                           />
                           <span>
                             <strong>{titleCase(d)}</strong>
@@ -221,143 +229,162 @@ export function SettingsPage({
                     one sends.
                   </p>
                 )}
-                <Button onClick={refresh}>Check connections</Button>
+                {isDesk && <AIConnections settings={settings} save={save} />}
+                <p className="caption">
+                  Check connections runs bounded local version, account and status checks. It sends
+                  no model prompts and opens no sign-in pages.
+                </p>
+                <Button
+                  onClick={() => {
+                    setConnectionError('');
+                    void api('/ai/discover', 'POST', { consent: true })
+                      .then(refresh)
+                      .catch((e) =>
+                        setConnectionError(
+                          e instanceof Error ? e.message : 'Connection check failed.',
+                        ),
+                      );
+                  }}
+                >
+                  Check connections
+                </Button>
+                {connectionError && <p role="alert">{connectionError}</p>}
                 <div className="service-list">
                   {(settings.detail === 'guided' && !isDesk
                     ? integrations.filter((s) => s.adapter === 'ready')
                     : integrations
-                  ).map((s) => (
-                    <section className="service" key={s.id}>
-                      <div className="row">
-                        <h3>
-                          <Mark
-                            state={
-                              s.available && s.enabled
-                                ? 'done'
-                                : s.found && s.adapter === 'ready'
-                                  ? 'waiting'
-                                  : 'todo'
-                            }
-                          />
-                          {s.name}
-                        </h3>
-                        <span className="caption push-right">{s.status}</span>
-                      </div>
-                      <p>{s.detail}</p>
-                      {(() => {
-                        const snapshot = usage.find((u) => u.engine === s.id);
-                        if (!snapshot) return null;
-                        return (
-                          <div className="usage-block">
-                            {snapshot.windows.map((w) => (
-                              <div key={w.id}>
-                                <div className="usage-row">
-                                  <span>{w.label}</span>
-                                  <UsageBar window={w} />
-                                  <span>{leftPercent(w)}% left</span>
-                                </div>
-                                <p className="caption">{resetLine(w.resetsAt)}</p>
-                              </div>
-                            ))}
-                            {snapshot.thread ? (
-                              <p className="caption">{meterLine(snapshot.thread.meter)}</p>
-                            ) : (
-                              <p className="caption">{snapshot.detail}</p>
-                            )}
-                          </div>
-                        );
-                      })()}
-                      {isDesk && (
-                        <p className="code caption">
-                          {s.installedVersion ?? 'Version not reported'}
-                          <br />
-                          {s.provenVersion ? (
-                            <>
-                              proven on {s.provenVersion}
-                              <br />
-                            </>
-                          ) : null}
-                          {s.location ? (
-                            <>
-                              {s.location}
-                              <br />
-                            </>
-                          ) : null}
-                          {s.capabilities.join(', ') || 'No execution capabilities'}
-                        </p>
-                      )}
-                      {settings.services?.[s.id] === true &&
-                        (catalogs[s.id]?.models.length ?? 0) > 0 &&
-                        (() => {
-                          const models = catalogs[s.id].models;
-                          const chosen = models.find((m) => m.slug === chosenText('codexModel'));
-                          const efforts = chosen?.efforts ?? [];
-                          const effort = efforts.some((e) => e.id === chosenText('codexEffort'))
-                            ? chosenText('codexEffort')
-                            : (chosen?.defaultEffort ?? '');
+                  )
+                    .filter((s) => !isDesk || !isExternalEngine(s.id))
+                    .map((s) => (
+                      <section className="service" key={s.id}>
+                        <div className="row">
+                          <h3>
+                            <Mark
+                              state={
+                                s.available && s.enabled
+                                  ? 'done'
+                                  : s.found && s.adapter === 'ready'
+                                    ? 'waiting'
+                                    : 'todo'
+                              }
+                            />
+                            {s.name}
+                          </h3>
+                          <span className="caption push-right">{s.status}</span>
+                        </div>
+                        <p>{s.detail}</p>
+                        {(() => {
+                          const snapshot = usage.find((u) => u.engine === s.id);
+                          if (!snapshot) return null;
                           return (
-                            <div className="row choice-row">
-                              <span className="caption">Default</span>
-                              <select
-                                aria-label="Default choice"
-                                value={chosen?.slug ?? ''}
-                                onChange={(e) => {
-                                  const picked = models.find((m) => m.slug === e.target.value);
-                                  // A new choice brings its own level: the
-                                  // ladders are not the same from one to the next.
-                                  saveChoice(picked?.slug ?? '', picked?.defaultEffort ?? '');
-                                }}
-                              >
-                                <option value="">Whatever Codex uses</option>
-                                {models.map((m) => (
-                                  <option key={m.slug} value={m.slug} title={m.description}>
-                                    {m.name}
-                                  </option>
-                                ))}
-                              </select>
-                              {efforts.length > 0 && (
-                                <select
-                                  aria-label="Default reasoning level"
-                                  value={effort}
-                                  onChange={(e) =>
-                                    saveChoice(chosen?.slug ?? '', e.target.value)
-                                  }
-                                >
-                                  {efforts.map((e) => (
-                                    <option key={e.id} value={e.id} title={e.description}>
-                                      {effortNames[e.id] ?? titleCase(e.id)}
-                                    </option>
-                                  ))}
-                                </select>
+                            <div className="usage-block">
+                              {snapshot.windows.map((w) => (
+                                <div key={w.id}>
+                                  <div className="usage-row">
+                                    <span>{w.label}</span>
+                                    <UsageBar window={w} />
+                                    <span>{leftPercent(w)}% left</span>
+                                  </div>
+                                  <p className="caption">{resetLine(w.resetsAt)}</p>
+                                </div>
+                              ))}
+                              {snapshot.thread ? (
+                                <p className="caption">{meterLine(snapshot.thread.meter)}</p>
+                              ) : (
+                                <p className="caption">{snapshot.detail}</p>
                               )}
                             </div>
                           );
                         })()}
-                      <div className="actions">
-                        {s.adapter === 'ready' && s.kind !== 'sample' && (
-                          <label className="switch">
-                            <input
-                              type="checkbox"
-                              checked={settings.services?.[s.id] === true}
-                              disabled={!s.available}
-                              onChange={(e) =>
-                                void save({
-                                  ...settings,
-                                  services: { ...settings.services, [s.id]: e.target.checked },
-                                })
-                              }
-                            />
-                            {settings.services?.[s.id] ? 'On' : 'Off'}
-                          </label>
+                        {isDesk && (
+                          <p className="code caption">
+                            {s.installedVersion ?? 'Version not reported'}
+                            <br />
+                            {s.provenVersion ? (
+                              <>
+                                proven on {s.provenVersion}
+                                <br />
+                              </>
+                            ) : null}
+                            {s.location ? (
+                              <>
+                                {s.location}
+                                <br />
+                              </>
+                            ) : null}
+                            {s.capabilities.join(', ') || 'No execution capabilities'}
+                          </p>
                         )}
-                        {s.adapter === 'ready' && (
-                          <Button tone="quiet" onClick={() => setDisclosure(s)}>
-                            What is sent
-                          </Button>
-                        )}
-                      </div>
-                    </section>
-                  ))}
+                        {settings.services?.[s.id] === true &&
+                          (catalogs[s.id]?.models.length ?? 0) > 0 &&
+                          (() => {
+                            const models = catalogs[s.id].models;
+                            const chosen = models.find((m) => m.slug === chosenText('codexModel'));
+                            const efforts = chosen?.efforts ?? [];
+                            const effort = efforts.some((e) => e.id === chosenText('codexEffort'))
+                              ? chosenText('codexEffort')
+                              : (chosen?.defaultEffort ?? '');
+                            return (
+                              <div className="row choice-row">
+                                <span className="caption">Default</span>
+                                <select
+                                  aria-label="Default choice"
+                                  value={chosen?.slug ?? ''}
+                                  onChange={(e) => {
+                                    const picked = models.find((m) => m.slug === e.target.value);
+                                    // A new choice brings its own level: the
+                                    // ladders are not the same from one to the next.
+                                    saveChoice(picked?.slug ?? '', picked?.defaultEffort ?? '');
+                                  }}
+                                >
+                                  <option value="">Whatever Codex uses</option>
+                                  {models.map((m) => (
+                                    <option key={m.slug} value={m.slug} title={m.description}>
+                                      {m.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                {efforts.length > 0 && (
+                                  <select
+                                    aria-label="Default reasoning level"
+                                    value={effort}
+                                    onChange={(e) => saveChoice(chosen?.slug ?? '', e.target.value)}
+                                  >
+                                    {efforts.map((e) => (
+                                      <option key={e.id} value={e.id} title={e.description}>
+                                        {effortNames[e.id] ?? titleCase(e.id)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        <div className="actions">
+                          {s.adapter === 'ready' && s.kind !== 'sample' && (
+                            <label className="switch">
+                              <input
+                                type="checkbox"
+                                checked={settings.services?.[s.id] === true}
+                                disabled={!s.available}
+                                onChange={(e) =>
+                                  void save({
+                                    ...settings,
+                                    services: { ...settings.services, [s.id]: e.target.checked },
+                                  })
+                                }
+                              />
+                              {settings.services?.[s.id] ? 'On' : 'Off'}
+                            </label>
+                          )}
+                          {s.adapter === 'ready' && (
+                            <Button tone="quiet" onClick={() => setDisclosure(s)}>
+                              What is sent
+                            </Button>
+                          )}
+                        </div>
+                      </section>
+                    ))}
                 </div>
               </>
             )}

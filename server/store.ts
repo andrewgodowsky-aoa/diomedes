@@ -33,7 +33,12 @@ import {
   textKind,
 } from './paths.js';
 import { MAX_WORK_RECEIPTS, validateWorkReceipts, type WorkAdmission } from './work-admission.js';
-import { actionDigest, MAX_APPROVAL_RECEIPTS, validateApprovalReceipts, type ApprovalAdmission } from './approval-admission.js';
+import {
+  actionDigest,
+  MAX_APPROVAL_RECEIPTS,
+  validateApprovalReceipts,
+  type ApprovalAdmission,
+} from './approval-admission.js';
 
 export const now = () => new Date().toISOString();
 export const hash = (text: string | null) =>
@@ -76,8 +81,7 @@ export function migrateConversation(
 ): void {
   // The retired 'work' mode becomes 'build' on every stored turn.
   for (const turn of conversation.turns ?? []) {
-    if ((turn as { mode?: unknown }).mode === 'work')
-      (turn as { mode?: unknown }).mode = 'build';
+    if ((turn as { mode?: unknown }).mode === 'work') (turn as { mode?: unknown }).mode = 'build';
   }
   if (conversation.taskId === undefined)
     conversation.taskId =
@@ -119,6 +123,9 @@ export function migrateConversation(
  * running Diomedes does not land on a surface they did not choose.
  */
 export function migrateSettings(settings: Settings): void {
+  settings.onboarding.setupVersion = 2;
+  settings.onboarding.discoveryConsentAt ??= null;
+  settings.onboarding.aiSkipped ??= false;
   const stored = settings.surface as string | undefined;
   if (stored === 'book') settings.surface = 'workbook';
   else if (stored === 'desk' || stored === 'technical') settings.surface = 'console';
@@ -145,8 +152,11 @@ export const emptyTeamMeta = (): TeamMeta => ({ idempotency: {}, blockedBy: {} }
 export const defaults = (): Settings => ({
   version: 1,
   detail: 'guided',
-  surface: 'workbook',
+  surface: 'console',
   onboarding: {
+    setupVersion: 2,
+    discoveryConsentAt: null,
+    aiSkipped: false,
     work: null,
     detail: null,
     familiarity: null,
@@ -273,8 +283,10 @@ export class Store extends EventEmitter {
     await this.recover();
     await this.interruptUnpreparedApprovals();
     for (const state of this.states.values()) {
-      for (const session of state.sessions.filter((item) =>
-        ![FIXTURE_ENGINE, CODEX_ENGINE].includes(item.engine.name) && ['working', 'waiting', 'queued'].includes(item.state),
+      for (const session of state.sessions.filter(
+        (item) =>
+          ![FIXTURE_ENGINE, CODEX_ENGINE].includes(item.engine.name) &&
+          ['working', 'waiting', 'queued'].includes(item.state),
       )) {
         session.state = 'stopped';
         session.endedAt = now();
@@ -340,7 +352,10 @@ export class Store extends EventEmitter {
         throw error;
       }
     });
-    this.queue = result.then(() => undefined, () => undefined);
+    this.queue = result.then(
+      () => undefined,
+      () => undefined,
+    );
     return result;
   }
   statePath(id: string) {
@@ -385,41 +400,87 @@ export class Store extends EventEmitter {
   }
   recordApprovalDecision(id: string, need: Need, admission: ApprovalAdmission) {
     const identity = need.approval;
-    if (!identity || need.approvalReceipt) throw new ApiError(409, 'This approval cannot be decided again.');
+    if (!identity || need.approvalReceipt)
+      throw new ApiError(409, 'This approval cannot be decided again.');
     const decidedAt = now();
-    if (Date.parse(decidedAt) >= Date.parse(identity.expiresAt) || Date.parse(decidedAt) < Date.parse(need.createdAt))
-      throw new ApiError(409, 'This approval window expired. Start work again for a new proposal.', { code: 'approval_expired' });
+    if (
+      Date.parse(decidedAt) >= Date.parse(identity.expiresAt) ||
+      Date.parse(decidedAt) < Date.parse(need.createdAt)
+    )
+      throw new ApiError(
+        409,
+        'This approval window expired. Start work again for a new proposal.',
+        { code: 'approval_expired' },
+      );
     const state = this.state(id);
     if (state.needs.filter((item) => item.approvalReceipt).length >= MAX_APPROVAL_RECEIPTS)
-      throw new ApiError(409, 'This project has reached its saved approval decision limit.', { code: 'approval_receipt_capacity', limit: MAX_APPROVAL_RECEIPTS });
+      throw new ApiError(409, 'This project has reached its saved approval decision limit.', {
+        code: 'approval_receipt_capacity',
+        limit: MAX_APPROVAL_RECEIPTS,
+      });
     const decision = admission.command.resolution;
     const event = this.addEntry(state, {
-      kind: 'decision', approvalId: need.id, sessionId: need.sessionId, taskId: need.taskId,
-      sentence: decision === 'go-ahead' ? `You approved the exact proposal: ${need.what}.` : `You declined: ${need.what}. No files were changed.`,
+      kind: 'decision',
+      approvalId: need.id,
+      sessionId: need.sessionId,
+      taskId: need.taskId,
+      sentence:
+        decision === 'go-ahead'
+          ? `You approved the exact proposal: ${need.what}.`
+          : `You declined: ${need.what}. No files were changed.`,
     });
     event.time = decidedAt;
     need.state = decision;
     need.decidedAt = event.time;
     need.allowForTask = false;
     need.approvalReceipt = {
-      protocolVersion: 1, commandId: admission.command.commandId, payloadDigest: admission.payloadDigest,
-      projectId: id, approvalId: need.id, taskId: need.taskId, sessionId: need.sessionId,
-      actor: 'local-client', scope: 'local-prototype', proposalDigest: identity.proposalDigest,
-      actionDigest: identity.actionDigest, baseDigest: identity.baseDigest,
-      createdAt: need.createdAt, expiresAt: identity.expiresAt, decision, decidedAt: event.time, eventId: event.id,
+      protocolVersion: 1,
+      commandId: admission.command.commandId,
+      payloadDigest: admission.payloadDigest,
+      projectId: id,
+      approvalId: need.id,
+      taskId: need.taskId,
+      sessionId: need.sessionId,
+      actor: 'local-client',
+      scope: 'local-prototype',
+      proposalDigest: identity.proposalDigest,
+      actionDigest: identity.actionDigest,
+      baseDigest: identity.baseDigest,
+      createdAt: need.createdAt,
+      expiresAt: identity.expiresAt,
+      decision,
+      decidedAt: event.time,
+      eventId: event.id,
     };
     need.execution = {
-      state: decision === 'declined' ? 'declined' : 'pending', eventId: null,
-      completedAt: decision === 'declined' ? event.time : null, reason: null, conflicts: [],
+      state: decision === 'declined' ? 'declined' : 'pending',
+      eventId: null,
+      completedAt: decision === 'declined' ? event.time : null,
+      reason: null,
+      conflicts: [],
     };
   }
   /** Completion is part of the prepared journal, not a later best-effort persist. */
-  private settleApproval(state: StoredState, need: Need, eventId: string | null, conflicts: string[] = []) {
+  private settleApproval(
+    state: StoredState,
+    need: Need,
+    eventId: string | null,
+    conflicts: string[] = [],
+  ) {
     const completedAt = now();
-    const reason = eventId === null
-      ? 'The accepted decision was interrupted before a write was prepared. Start new work for a new proposal.'
-      : conflicts.length ? 'Outside edits were preserved during recovery. Some approved changes may have applied; inspect History.' : null;
-    need.execution = { state: eventId === null ? 'not-applied' : conflicts.length ? 'conflicted' : 'applied', eventId, completedAt, reason, conflicts };
+    const reason =
+      eventId === null
+        ? 'The accepted decision was interrupted before a write was prepared. Start new work for a new proposal.'
+        : conflicts.length
+          ? 'Outside edits were preserved during recovery. Some approved changes may have applied; inspect History.'
+          : null;
+    need.execution = {
+      state: eventId === null ? 'not-applied' : conflicts.length ? 'conflicted' : 'applied',
+      eventId,
+      completedAt,
+      reason,
+      conflicts,
+    };
     // Only the harness presentation may finish its Session. A write is one step.
     if (need.harness) return;
     const session = state.sessions.find((item) => item.id === need.sessionId)!;
@@ -436,7 +497,10 @@ export class Store extends EventEmitter {
       run.endedAt = completedAt;
       run.summary = reason ?? need.why;
       const member = state.team?.members.find((item) => item.slotId === run.slotId);
-      if (member) { member.status = reason ? 'error' : 'idle'; member.lastSeenAt = completedAt; }
+      if (member) {
+        member.status = reason ? 'error' : 'idle';
+        member.lastSeenAt = completedAt;
+      }
     }
   }
   private async interruptUnpreparedApprovals() {
@@ -453,7 +517,8 @@ export class Store extends EventEmitter {
   checkWorkReceiptCapacity(id: string) {
     if (this.state(id).sessions.filter((item) => item.receipt).length >= MAX_WORK_RECEIPTS)
       throw new ApiError(409, 'This project has reached its saved Work request limit.', {
-        code: 'work_receipt_capacity', limit: MAX_WORK_RECEIPTS,
+        code: 'work_receipt_capacity',
+        limit: MAX_WORK_RECEIPTS,
       });
   }
   /** Called under locked(), immediately before the session's first durable persist. */
@@ -465,20 +530,32 @@ export class Store extends EventEmitter {
       });
     this.checkWorkReceiptCapacity(id);
     const entry = this.addEntry(this.state(id), {
-      kind: 'work-admitted', sentence: 'Diomedes accepted this Work request.', actor: 'diomedes',
-      sessionId: session.id, taskId: session.taskId, sample: session.sample,
+      kind: 'work-admitted',
+      sentence: 'Diomedes accepted this Work request.',
+      actor: 'diomedes',
+      sessionId: session.id,
+      taskId: session.taskId,
+      sample: session.sample,
     });
     session.receipt = {
-      protocolVersion: 1, ...admission, projectId: id, taskId: session.taskId,
-      sessionId: session.id, eventId: entry.id, admittedAt: entry.time,
-      route: session.sample ? 'sample' : 'codex', scope: 'local-prototype',
+      protocolVersion: 1,
+      ...admission,
+      projectId: id,
+      taskId: session.taskId,
+      sessionId: session.id,
+      eventId: entry.id,
+      admittedAt: entry.time,
+      route: session.route ?? (session.sample ? 'sample' : 'codex'),
+      scope: 'local-prototype',
     };
   }
   async object(id: string, sha: string | null) {
     if (sha === null) return null;
-    if (!/^[a-f0-9]{64}$/.test(sha)) throw new ApiError(409, 'A recorded version identifier is invalid.');
+    if (!/^[a-f0-9]{64}$/.test(sha))
+      throw new ApiError(409, 'A recorded version identifier is invalid.');
     const text = await fs.readFile(this.objectPath(id, sha), 'utf8');
-    if (hash(text) !== sha) throw new ApiError(409, 'A recorded version is damaged. Its contents were not applied.');
+    if (hash(text) !== sha)
+      throw new ApiError(409, 'A recorded version is damaged. Its contents were not applied.');
     return text;
   }
   private async saveObject(id: string, text: string | null) {
@@ -536,13 +613,15 @@ export class Store extends EventEmitter {
     const cached = this.docCache.get(id);
     if (cached?.inFlight) {
       // A walk that began before this write may miss it: walk once more when it lands.
-      void cached.inFlight.then(
-        () => {
-          cached.at = 0;
-          return this.refreshDocuments(id);
-        },
-        () => undefined,
-      ).catch(() => undefined);
+      void cached.inFlight
+        .then(
+          () => {
+            cached.at = 0;
+            return this.refreshDocuments(id);
+          },
+          () => undefined,
+        )
+        .catch(() => undefined);
       return;
     }
     if (cached) cached.at = 0;
@@ -787,10 +866,22 @@ export class Store extends EventEmitter {
   async writeRecorded(id: string, inputs: WriteInput[], options: WriteOptions = {}) {
     const source = this.state(id);
     const state = structuredClone(source);
-    const approval = options.approvalId ? state.needs.find((need) => need.id === options.approvalId) : undefined;
-    if (options.approvalId && (!approval?.approvalReceipt || approval.execution?.state !== 'pending' ||
-        approval.approvalReceipt.decision !== 'go-ahead' || approval.sessionId !== options.sessionId || approval.taskId !== options.taskId ||
-        actionDigest(inputs) !== (approval.harness ? actionDigest(harnessWrites(id, approval)) : approval.approvalReceipt.actionDigest) || options.merge !== false))
+    const approval = options.approvalId
+      ? state.needs.find((need) => need.id === options.approvalId)
+      : undefined;
+    if (
+      options.approvalId &&
+      (!approval?.approvalReceipt ||
+        approval.execution?.state !== 'pending' ||
+        approval.approvalReceipt.decision !== 'go-ahead' ||
+        approval.sessionId !== options.sessionId ||
+        approval.taskId !== options.taskId ||
+        actionDigest(inputs) !==
+          (approval.harness
+            ? actionDigest(harnessWrites(id, approval))
+            : approval.approvalReceipt.actionDigest) ||
+        options.merge !== false)
+    )
       throw new ApiError(409, 'The write does not match its exact approval receipt.');
     const checked: PendingWrite[] = [];
     if (new Set(inputs.map((i) => relativeName(i.path).toLowerCase())).size !== inputs.length)
@@ -875,11 +966,20 @@ export class Store extends EventEmitter {
     if (approval) {
       for (const source of approval.approval!.sources)
         if (hash(await this.current(id, source.path)) !== source.sha)
-          throw new ApiError(409, 'A selected source changed before the approved write was prepared.', { path: source.path });
+          throw new ApiError(
+            409,
+            'A selected source changed before the approved write was prepared.',
+            { path: source.path },
+          );
       this.settleApproval(state, approval, entry.id);
     }
-    const journal: Journal = { id: identifier(), projectId: id, writes: checked, state,
-      ...(approval ? { approvalId: approval.id } : {}) };
+    const journal: Journal = {
+      id: identifier(),
+      projectId: id,
+      writes: checked,
+      state,
+      ...(approval ? { approvalId: approval.id } : {}),
+    };
     const journalPath = path.join(this.dataDir, 'pending', `${journal.id}.json`);
     // Both images and the complete intended metadata are durable before touching a project.
     await jsonWrite(journalPath, journal);
@@ -934,17 +1034,39 @@ export class Store extends EventEmitter {
       const currentState = this.state(journal.projectId);
       validateWorkReceipts(journal.state);
       validateApprovalReceipts(journal.state);
-      const approval = journal.approvalId ? journal.state.needs.find((need) => need.id === journal.approvalId) : undefined;
-      const accepted = currentState.needs.find((need) => need.id === journal.approvalId)?.approvalReceipt;
-      if (journal.state.project.id !== journal.projectId || journal.state.project.folder !== currentState.project.folder ||
-          (!journal.approvalId && journal.state.needs.some((need) => need.execution?.state === 'applied' && currentState.needs.find((item) => item.id === need.id)?.execution?.state === 'pending')) ||
-          (journal.approvalId && (!approval?.approvalReceipt || approval.execution?.state !== 'applied' ||
+      const approval = journal.approvalId
+        ? journal.state.needs.find((need) => need.id === journal.approvalId)
+        : undefined;
+      const accepted = currentState.needs.find(
+        (need) => need.id === journal.approvalId,
+      )?.approvalReceipt;
+      if (
+        journal.state.project.id !== journal.projectId ||
+        journal.state.project.folder !== currentState.project.folder ||
+        (!journal.approvalId &&
+          journal.state.needs.some(
+            (need) =>
+              need.execution?.state === 'applied' &&
+              currentState.needs.find((item) => item.id === need.id)?.execution?.state ===
+                'pending',
+          )) ||
+        (journal.approvalId &&
+          (!approval?.approvalReceipt ||
+            approval.execution?.state !== 'applied' ||
             approval.approvalReceipt.commandId !== accepted?.commandId ||
             approval.approvalReceipt.payloadDigest !== accepted?.payloadDigest ||
             approval.approvalReceipt.eventId !== accepted?.eventId ||
             approval.approvalReceipt.decidedAt !== accepted?.decidedAt ||
-            JSON.stringify(journal.writes) !== JSON.stringify(journal.state.history.find((entry) => entry.id === approval.execution?.eventId)?.files.map(({ path, before, after }) => ({ path, before, after }))))))
-        throw new Error('A prepared write is inconsistent with its approval. No recovery write was dispatched.');
+            JSON.stringify(journal.writes) !==
+              JSON.stringify(
+                journal.state.history
+                  .find((entry) => entry.id === approval.execution?.eventId)
+                  ?.files.map(({ path, before, after }) => ({ path, before, after })),
+              )))
+      )
+        throw new Error(
+          'A prepared write is inconsistent with its approval. No recovery write was dispatched.',
+        );
       const conflicts: string[] = [];
       for (const file of journal.writes) {
         let actual: string | null = null;
@@ -977,12 +1099,18 @@ export class Store extends EventEmitter {
             reason: unreadable,
           });
           if (approval) {
-            const change = journal.state.changes.find((item) => item.entryId === approval.execution?.eventId && item.path === file.path);
-            if (change) { change.current = actual; change.changedSince = { actor: 'outside this proposal', at: entry.time }; }
+            const change = journal.state.changes.find(
+              (item) => item.entryId === approval.execution?.eventId && item.path === file.path,
+            );
+            if (change) {
+              change.current = actual;
+              change.changedSince = { actor: 'outside this proposal', at: entry.time };
+            }
           }
         }
       }
-      if (approval && conflicts.length) this.settleApproval(journal.state, approval, approval.execution!.eventId, conflicts);
+      if (approval && conflicts.length)
+        this.settleApproval(journal.state, approval, approval.execution!.eventId, conflicts);
       await this.persist(journal.state);
       this.invalidateDocuments(journal.projectId);
       await fs.unlink(path.join(pending, name));

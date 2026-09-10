@@ -8,10 +8,22 @@ import { effortFor } from '../shared/effort.js';
 import { absent, ApiError, projectFile, relativeName, textKind } from './paths.js';
 import { hash, identifier, now, Store, type WriteInput } from './store.js';
 import { TeamService } from './team/service.js';
-import { actionDigest, assertApprovalMatches, baseDigest, identifyApproval, type ApprovalAdmission } from './approval-admission.js';
+import {
+  actionDigest,
+  assertApprovalMatches,
+  baseDigest,
+  identifyApproval,
+  type ApprovalAdmission,
+} from './approval-admission.js';
 import { secretScrubber } from './secrets.js';
+import type { Route } from '../shared/types.js';
 
 export type NativeGenerator = (input: {
+  engine?: Exclude<Route, 'sample'>;
+  projectId?: string;
+  threadId?: string;
+  requestId?: string;
+  accountRoute?: string;
   prompt: string;
   documents: { path: string; text: string }[];
   signal?: AbortSignal;
@@ -39,6 +51,9 @@ interface Proposal {
   changes: ProposalFile[];
 }
 interface NativeRun {
+  engine: Exclude<Route, 'sample'>;
+  accountRoute?: string;
+  threadId: string;
   projectId: string;
   taskId: string;
   sessionId: string;
@@ -65,14 +80,17 @@ const object = (value: unknown): value is Record<string, unknown> =>
 
 export function parseProposal(text: string): Proposal {
   if (Buffer.byteLength(text) > MAX_BYTES * 8)
-    throw new ApiError(413, 'Codex returned a proposal that is too large. No files were changed.');
+    throw new ApiError(
+      413,
+      'The engine returned a proposal that is too large. No files were changed.',
+    );
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
     throw new ApiError(
       422,
-      'Codex did not return a valid file proposal. No files were changed. Start again to request a new proposal.',
+      'The engine did not return a valid file proposal. No files were changed. Start again to request a new proposal.',
     );
   }
   if (
@@ -168,6 +186,8 @@ export class NativeWorkService {
     projectId: string,
     taskId: string,
     input: {
+      engine?: Exclude<Route, 'sample'>;
+      threadId?: string;
       instruction?: string;
       sources: string[];
       consent: boolean;
@@ -179,12 +199,15 @@ export class NativeWorkService {
       admission?: WorkAdmission;
     },
   ) {
-    if (!this.store.settings.services?.codex)
-      throw new ApiError(409, 'Turn Codex on in Settings before using it.');
+    const engine = input.engine ?? 'codex';
+    if (this.store.settings.services?.[engine] !== true)
+      throw new ApiError(409, `Turn ${engine} on in Settings before using it.`);
+    if (input.team && engine !== 'codex')
+      throw new ApiError(409, 'Team tools are not supported on this route.');
     if (input.consent !== true)
       throw new ApiError(
         409,
-        'Your instruction and selected documents will be sent to Codex. Confirm before sending.',
+        `Your instruction and selected documents will be sent to ${engine}. Confirm before sending.`,
         { consentRequired: true },
       );
     const state = this.store.state(projectId);
@@ -248,6 +271,8 @@ export class NativeWorkService {
       };
     }
     const session: Session = {
+      route: engine,
+      ...(input.threadId ? { threadId: input.threadId } : {}),
       id: identifier('S'),
       taskId,
       state: 'working',
@@ -260,7 +285,7 @@ export class NativeWorkService {
       needId: null,
       ...(member ? { slotId: member.slotId } : {}),
       engine: {
-        name: 'Codex, guarded file proposals',
+        name: `${engine === 'codex' ? 'Codex' : engine}, guarded file proposals`,
         model: null,
         worker: 1,
         branch: null,
@@ -279,10 +304,16 @@ export class NativeWorkService {
     this.log(
       session,
       sources.length
-        ? `Preparing a proposal with Codex from ${sources.length} ${sources.length === 1 ? 'document' : 'documents'}.`
-        : 'Preparing a proposal with Codex.',
+        ? `Preparing a proposal with ${engine} from ${sources.length} ${sources.length === 1 ? 'document' : 'documents'}.`
+        : `Preparing a proposal with ${engine}.`,
     );
-    this.log(session, 'The engine has no file or shell access.', 'technical');
+    this.log(
+      session,
+      engine === 'codex'
+        ? 'The engine has no file or shell access.'
+        : 'The adapter disables engine tools and sends only selected text. This is not an operating-system sandbox.',
+      'technical',
+    );
     if (input.team) this.log(session, nativeWorkDisclosure(input.team), 'technical');
     if (sources.length) {
       const snapshot = this.store.addEntry(state, {
@@ -302,6 +333,12 @@ export class NativeWorkService {
       }));
     }
     const run: NativeRun = {
+      engine,
+      accountRoute:
+        typeof this.store.settings.services?.[`${engine}AccountRoute`] === 'string'
+          ? String(this.store.settings.services[`${engine}AccountRoute`])
+          : undefined,
+      threadId: input.threadId ?? input.turnId ?? session.id,
       projectId,
       taskId,
       sessionId: session.id,
@@ -351,8 +388,9 @@ export class NativeWorkService {
       // An explicit selection rides in the thread config, never in prompt text.
       // The caller resolves the thread's own choice; the saved default still
       // applies on paths that start a run without passing one.
-      const settingsModel = (this.store.settings.services as Record<string, unknown> | undefined)
-        ?.codexModel;
+      const settingsModel = (this.store.settings.services as Record<string, unknown> | undefined)?.[
+        `${run.engine}Model`
+      ];
       const savedModel =
         typeof settingsModel === 'string' && settingsModel.trim() && settingsModel.length <= 120
           ? settingsModel.trim()
@@ -360,6 +398,11 @@ export class NativeWorkService {
       const requestedModel = run.requested?.model ?? savedModel;
       const modeDef = MODES[run.mode] ?? MODES.build;
       const result = await this.generate({
+        engine: run.engine,
+        accountRoute: run.accountRoute,
+        projectId: run.projectId,
+        threadId: run.threadId,
+        requestId: run.sessionId,
         ...(requestedModel ? { model: requestedModel } : {}),
         instructions: modeDef.instructions,
         // A level chosen for the thread outranks the mode's own, but Fix holds
@@ -421,12 +464,12 @@ export class NativeWorkService {
               // `proposal.summary` is already scrubbed above.
               if (proposal.summary.trim()) turn.text = proposal.summary.trim();
               turn.helper = {
-                engine: 'codex',
+                engine: run.engine,
                 model: session.engine.model,
                 version: session.engine.version,
                 verified: session.engine.verified ?? false,
               };
-              conversation.helper = { engine: 'codex', model: session.engine.model };
+              conversation.helper = { engine: run.engine, model: session.engine.model };
               break;
             }
           }
@@ -451,7 +494,7 @@ export class NativeWorkService {
             if (exists)
               throw new ApiError(
                 403,
-                `Codex proposed replacing ${proposed.path}, which you did not select. No files were changed.`,
+                `The engine proposed replacing ${proposed.path}, which you did not select. No files were changed.`,
               );
             if (proposed.text === null)
               throw new ApiError(422, 'A proposal cannot remove a file that was not selected.');
@@ -543,16 +586,30 @@ export class NativeWorkService {
       need = state.needs.find((item) => item.id === needId);
     if (!need) throw new ApiError(404, 'This request was not found.');
     if (!admission || allowForTask || resolution !== admission.command.resolution)
-      throw new ApiError(409, 'Reload the proposal and send its version 1 exact approval identity.', { code: 'exact_approval_required' });
+      throw new ApiError(
+        409,
+        'Reload the proposal and send its version 1 exact approval identity.',
+        { code: 'exact_approval_required' },
+      );
     const replay = this.store.approvalCommand(projectId, admission);
     if (replay) return replay;
     if (need.state !== 'open') throw new ApiError(409, 'This request has already been decided.');
     assertApprovalMatches(projectId, need, admission);
     const run = this.runs.get(projectId);
     if (!run || run.sessionId !== need.sessionId || !run.writes)
-      throw new ApiError(409, 'This proposal is no longer active. Start work again for a new proposal.');
-    if (Date.now() >= Date.parse(need.approval!.expiresAt) || Date.now() < Date.parse(need.createdAt)) {
-      const error = new ApiError(409, 'This approval window expired. Start work again for a new proposal.', { code: 'approval_expired' });
+      throw new ApiError(
+        409,
+        'This proposal is no longer active. Start work again for a new proposal.',
+      );
+    if (
+      Date.now() >= Date.parse(need.approval!.expiresAt) ||
+      Date.now() < Date.parse(need.createdAt)
+    ) {
+      const error = new ApiError(
+        409,
+        'This approval window expired. Start work again for a new proposal.',
+        { code: 'approval_expired' },
+      );
       await this.fail(run, error);
       throw error;
     }
@@ -567,24 +624,43 @@ export class NativeWorkService {
       task.reason = null;
       this.log(session, 'You declined the proposal. No project files were changed.');
       this.store.moveTask(state, task, 'todo', 'diomedes');
-      this.finishTeam(run, 'cancelled', 'The person declined the proposal. No project files were changed.');
+      this.finishTeam(
+        run,
+        'cancelled',
+        'The person declined the proposal. No project files were changed.',
+      );
       await this.store.persist(state);
       this.runs.delete(projectId);
       return need;
     }
     try {
-      if (actionDigest(run.writes) !== need.approval!.actionDigest || baseDigest(run.sources) !== need.approval!.baseDigest || run.proposal?.summary !== need.why)
-        throw new ApiError(409, 'The active action no longer matches the displayed proposal. No files were changed.');
+      if (
+        actionDigest(run.writes) !== need.approval!.actionDigest ||
+        baseDigest(run.sources) !== need.approval!.baseDigest ||
+        run.proposal?.summary !== need.why
+      )
+        throw new ApiError(
+          409,
+          'The active action no longer matches the displayed proposal. No files were changed.',
+        );
       await this.store.checkFolder(state);
       if (state.project.missing)
         throw new ApiError(409, 'The project folder is missing. The proposal was not applied.');
       for (const source of run.sources) {
         if (hash(await this.store.current(projectId, source.path)) !== source.sha)
-          throw new ApiError(409, `${source.path} changed after this proposal began. Its newer contents were preserved. Start again for a proposal based on the current files.`, { path: source.path });
+          throw new ApiError(
+            409,
+            `${source.path} changed after this proposal began. Its newer contents were preserved. Start again for a proposal based on the current files.`,
+            { path: source.path },
+          );
       }
       for (const write of run.writes) {
         if (hash(await this.store.current(projectId, write.path)) !== write.expected)
-          throw new ApiError(409, `${write.path} changed after this proposal began. No proposal files were written.`, { path: write.path });
+          throw new ApiError(
+            409,
+            `${write.path} changed after this proposal began. No proposal files were written.`,
+            { path: write.path },
+          );
       }
     } catch (error) {
       await this.fail(run, error);
@@ -601,9 +677,15 @@ export class NativeWorkService {
     await this.store.persist(state);
     try {
       await this.store.writeRecorded(projectId, run.writes, {
-        actor: 'diomedes-with-ok', kind: 'changed', sentence: run.proposal?.summary,
-        sessionId: session.id, taskId: task.id, sample: false, review: true,
-        merge: false, approvalId: need.id,
+        actor: 'diomedes-with-ok',
+        kind: 'changed',
+        sentence: run.proposal?.summary,
+        sessionId: session.id,
+        taskId: task.id,
+        sample: false,
+        review: true,
+        merge: false,
+        approvalId: need.id,
       });
       return this.store.state(projectId).needs.find((item) => item.id === needId)!;
     } finally {

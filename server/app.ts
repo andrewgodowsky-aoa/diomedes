@@ -14,6 +14,7 @@ import type {
   ThreadPermission,
   Turn,
   TeamMember,
+  Route,
 } from '../shared/types.js';
 import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
 import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText } from './store.js';
@@ -35,6 +36,18 @@ import { roleInstructions } from './team/prompts.js';
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
 import { DesktopConnections } from './connections/desktop.js';
 import packageInfo from '../package.json' with { type: 'json' };
+import {
+  EXTERNAL_ENGINES,
+  ENGINE_NAMES,
+  isExternalEngine,
+  isRoute,
+  ROUTES,
+} from '../shared/engines.js';
+import { EngineService } from './engines/service.js';
+import { EngineError } from './engines/process.js';
+import { selectedEngine, selectedModel } from '../shared/ai-selection.js';
+import { EngineInstaller } from './engines/install.js';
+import { NativeLogin } from './engines/login.js';
 
 interface AppOptions {
   dataDir: string;
@@ -43,9 +56,20 @@ interface AppOptions {
   port?: number;
   clientPort?: number;
   nativeGenerator?: NativeGenerator;
+  engineService?: EngineService;
   harnessAuthority?: ResolveHarnessAuthority;
 }
-const pages: Page[] = ['home', 'ask', 'plan', 'work', 'review', 'tasks', 'documents', 'history', 'connections'];
+const pages: Page[] = [
+  'home',
+  'ask',
+  'plan',
+  'work',
+  'review',
+  'tasks',
+  'documents',
+  'history',
+  'connections',
+];
 const owners: Owner[] = ['you', 'diomedes', 'diomedes-with-ok'];
 const states: TaskState[] = ['todo', 'working', 'waiting', 'done'];
 const asString = (value: unknown, name: string, max = 10000): string => {
@@ -85,7 +109,7 @@ function parseThreadPermission(value: unknown): ThreadPermission {
  * default again. The pair is checked against the engine's own list, which keeps
  * a choice that has since been withdrawn from reaching `thread/start`.
  */
-function parseRequested(value: unknown): Conversation['requested'] {
+function parseRequested(value: unknown, engine: Route = 'codex'): Conversation['requested'] {
   if (value === null) return null;
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new ApiError(400, 'Provide a helper choice, or null to use the default.');
@@ -98,7 +122,7 @@ function parseRequested(value: unknown): Conversation['requested'] {
   if (effort !== null && (typeof effort !== 'string' || !effort.trim() || effort.length > 40))
     throw new ApiError(400, 'That is not a reasoning level.');
   const chosen = { model: model.trim(), effort: effort === null ? null : String(effort).trim() };
-  if (!isKnownChoice('codex', chosen.model, chosen.effort))
+  if (!isKnownChoice(engine, chosen.model, chosen.effort))
     throw new ApiError(400, 'That helper choice is not one this computer offers.');
   return chosen;
 }
@@ -125,8 +149,7 @@ function validateSettings(current: Settings, body: unknown): Settings {
       ['workbook', 'console', 'book', 'desk', 'technical'],
       'surface',
     );
-    result.surface =
-      named === 'book' ? 'workbook' : named === 'workbook' ? 'workbook' : 'console';
+    result.surface = named === 'book' ? 'workbook' : named === 'workbook' ? 'workbook' : 'console';
   }
   if (supplied.explanations !== undefined)
     result.explanations = choice(
@@ -164,7 +187,7 @@ function validateSettings(current: Settings, body: unknown): Settings {
     if (value.resumeAt !== undefined)
       result.onboarding.resumeAt = choice(
         value.resumeAt,
-        ['welcome', 'q1', 'q2', 'q3', 'ready', 'done'],
+        ['welcome', 'q1', 'q2', 'q3', 'ai', 'ready', 'done'],
         'setup step',
       );
     if (value.completedAt !== undefined) {
@@ -175,13 +198,34 @@ function validateSettings(current: Settings, body: unknown): Settings {
         throw new ApiError(400, 'Provide a valid completion time.');
       result.onboarding.completedAt = value.completedAt;
     }
+    if (value.setupVersion !== undefined) {
+      if (value.setupVersion !== 2) throw new ApiError(400, 'Unsupported setup version.');
+      result.onboarding.setupVersion = 2;
+    }
+    if (value.aiSkipped !== undefined) {
+      if (typeof value.aiSkipped !== 'boolean') throw new ApiError(400, 'Invalid setup choice.');
+      result.onboarding.aiSkipped = value.aiSkipped;
+    }
+    // Discovery consent is recorded only by the disclosed discovery action.
   }
   if (supplied.appearance) {
     const value = plain(supplied.appearance);
     if (value.package !== undefined)
       result.appearance.package = choice(
         value.package,
-        ['field', 'deep-field', 'graphite', 'verdigris', 'harbor', 'ember', 'moss', 'dusk', 'ink', 'paper', 'cobalt'],
+        [
+          'field',
+          'deep-field',
+          'graphite',
+          'verdigris',
+          'harbor',
+          'ember',
+          'moss',
+          'dusk',
+          'ink',
+          'paper',
+          'cobalt',
+        ],
         'appearance package',
       );
     if (value.motion !== undefined)
@@ -210,9 +254,20 @@ function validateSettings(current: Settings, body: unknown): Settings {
     for (const [key, on] of Object.entries(value)) {
       // The Codex selection is a name, not a switch; it only ever reaches
       // `thread/start` config, never the answer text.
-      if (key === 'codexModel' || key === 'codexEffort') {
+      if (key === 'defaultEngine') {
+        services[key] = choice(on, ROUTES, 'default engine');
+        continue;
+      }
+      if (
+        ['codex', ...EXTERNAL_ENGINES].some(
+          (engine) =>
+            key === `${engine}Model` ||
+            key === `${engine}Effort` ||
+            key === `${engine}AccountRoute`,
+        )
+      ) {
         if (typeof on !== 'string' || !on.trim() || on.length > 120)
-          throw new ApiError(400, 'The Codex helper choice must be up to 120 characters.');
+          throw new ApiError(400, 'The helper choice must be up to 120 characters.');
         services[key] = on.trim();
         continue;
       }
@@ -283,8 +338,35 @@ export async function createApp(options: AppOptions) {
   const store = new Store(path.resolve(options.dataDir), options.projectRoot);
   await store.init();
   const work = new WorkService(store, options.stepMs);
-  const nativeWork = new NativeWorkService(store, options.nativeGenerator);
-  const harness = createHarnessHost({ store, dataDir: store.dataDir, currentAuthority: options.harnessAuthority });
+  const engines = options.engineService ?? new EngineService(path.join(store.dataDir, 'engines'));
+  const installer = new EngineInstaller(engines.root);
+  const login = new NativeLogin(engines.root);
+  const nativeWork = new NativeWorkService(
+    store,
+    options.nativeGenerator ??
+      (async (input) => {
+        if (!isExternalEngine(input.engine)) return askCodex(input);
+        if (!input.projectId || !input.threadId || !input.requestId || !input.model)
+          throw new ApiError(409, 'Select a model and thread before requesting work.');
+        const accountRoute = input.accountRoute;
+        if (typeof accountRoute !== 'string')
+          throw new ApiError(409, 'Select this service in AI setup first.');
+        return engines.generate(input.engine, {
+          ...input,
+          projectId: input.projectId,
+          threadId: input.threadId,
+          requestId: input.requestId,
+          model: input.model,
+          instructions: input.instructions ?? '',
+          accountRoute,
+        });
+      }),
+  );
+  const harness = createHarnessHost({
+    store,
+    dataDir: store.dataDir,
+    currentAuthority: options.harnessAuthority,
+  });
   await harness.init();
   const connections = new DesktopConnections(store, harness);
   const app = express();
@@ -322,7 +404,11 @@ export async function createApp(options: AppOptions) {
   const serviceFor = (projectId: string, sessionId: string) => {
     const session = store.state(projectId).sessions.find((item) => item.id === sessionId);
     if (!session) throw new ApiError(404, 'This work session was not found.');
-    return [FIXTURE_ENGINE, CODEX_ENGINE].includes(session.engine.name) ? harness.bridge : session.sample ? work : nativeWork;
+    return [FIXTURE_ENGINE, CODEX_ENGINE].includes(session.engine.name)
+      ? harness.bridge
+      : session.sample
+        ? work
+        : nativeWork;
   };
   const port = options.port ?? Number(process.env.DIOMEDES_PORT ?? 47631),
     clientPort = options.clientPort ?? Number(process.env.DIOMEDES_CLIENT_PORT ?? 5173);
@@ -347,7 +433,11 @@ export async function createApp(options: AppOptions) {
       res.status(204).end();
       return;
     }
-    if (!req.path.startsWith('/vendor/connections/') && !['GET', 'HEAD'].includes(req.method) && req.headers['x-diomedes-client'] !== '1')
+    if (
+      !req.path.startsWith('/vendor/connections/') &&
+      !['GET', 'HEAD'].includes(req.method) &&
+      req.headers['x-diomedes-client'] !== '1'
+    )
       return next(new ApiError(403, 'The Diomedes client header is required.'));
     next();
   });
@@ -412,16 +502,106 @@ export async function createApp(options: AppOptions) {
     '/api/settings',
     route(async (req) => store.saveSettings(validateSettings(store.settings, req.body))),
   );
+  const externalEngine = (req: Request) =>
+    choice(String(req.params.engine), EXTERNAL_ENGINES, 'engine');
+  const connectionSignal = (res: Response) => {
+    const controller = new AbortController();
+    res.once('close', () => {
+      if (!res.writableEnded) controller.abort();
+    });
+    return controller.signal;
+  };
+  app.get(
+    '/api/ai/status',
+    route(async () => ({ connections: engines.status() }), false),
+  );
+  app.post(
+    '/api/ai/discover',
+    route(async (req) => {
+      if (body(req).consent !== true)
+        throw new ApiError(409, 'Confirm the local discovery disclosure first.');
+      await store.locked(() =>
+        store.saveSettings({
+          ...store.settings,
+          onboarding: {
+            ...store.settings.onboarding,
+            discoveryConsentAt: now(),
+          },
+        }),
+      );
+      return { connections: await engines.discover(true) };
+    }, false),
+  );
+  app.post(
+    '/api/ai/check/:engine',
+    route(async (req, res) => engines.check(externalEngine(req), connectionSignal(res)), false),
+  );
+  app.post(
+    '/api/ai/select',
+    route(async (req) => {
+      const b = body(req),
+        engine = choice(b.engine, EXTERNAL_ENGINES, 'engine');
+      const selected = engines.selection(engine, asString(b.model, 'a model', 120));
+      return store.saveSettings({
+        ...store.settings,
+        services: {
+          ...store.settings.services,
+          defaultEngine: engine,
+          [engine]: true,
+          [`${engine}Model`]: selected.model,
+          [`${engine}AccountRoute`]: selected.accountRoute,
+        },
+      });
+    }),
+  );
+  app.get(
+    '/api/ai/install/:engine',
+    route(async (req) => installer.offer(externalEngine(req)), false),
+  );
+  app.post(
+    '/api/ai/install/:engine',
+    route(async (req, res) => {
+      const engine = externalEngine(req);
+      if (body(req).consent !== true)
+        throw new ApiError(409, 'Review and confirm this installation first.');
+      const found = (await engines.discover(true)).find((c) => c.engine === engine)!;
+      if (found.installation === 'found')
+        return {
+          detail:
+            'An installation already exists. Diomedes will reuse it. Check compatibility and sign-in.',
+        };
+      const result = await installer.install(engine, true, connectionSignal(res));
+      await engines.discover(true);
+      return result;
+    }, false),
+  );
+  app.post(
+    '/api/ai/login/:engine',
+    route(async (req) => {
+      const engine = externalEngine(req),
+        connection = engines.status().find((c) => c.engine === engine)!;
+      return login.start(connection, body(req).consent === true);
+    }, false),
+  );
+  app.post(
+    '/api/ai/login/:engine/cancel',
+    route(async (req) => login.stop(externalEngine(req)), false),
+  );
   app.get(
     '/api/integrations',
     route(
       async (req) => ({
         integrations: (
-          await getIntegrationStatuses({ refresh: req.query.refresh === '1' })
+          await getIntegrationStatuses({
+            refresh: req.query.refresh === '1',
+            passive: !store.settings.onboarding.discoveryConsentAt,
+          })
         ).map((item) =>
-          item.adapter === 'ready' && item.kind !== 'sample'
-            ? { ...item, enabled: store.settings.services?.[item.id] === true }
-            : item,
+          isExternalEngine(item.id)
+            ? engines.integration(item.id, store.settings.services?.[item.id] === true)
+            : item.adapter === 'ready' && item.kind !== 'sample'
+              ? { ...item, enabled: store.settings.services?.[item.id] === true }
+              : item,
         ),
       }),
       false,
@@ -429,22 +609,19 @@ export async function createApp(options: AppOptions) {
   );
   app.get(
     '/api/usage',
-    route(
-      async (req) => {
-        if (req.query.fake === '1') {
-          // Test-mode only: a fixed Codex snapshot so the UI suite can assert
-          // the chip, the signal colour and the Settings bars without a real
-          // Codex session.
-          if (process.env.DIOMEDES_TEST_MODE !== '1')
-            throw new ApiError(404, 'This action was not found.');
-          const snapshot = fakeCodexSnapshot();
-          usageService.record('codex', snapshot);
-          return { usage: usageService.all() };
-        }
+    route(async (req) => {
+      if (req.query.fake === '1') {
+        // Test-mode only: a fixed Codex snapshot so the UI suite can assert
+        // the chip, the signal colour and the Settings bars without a real
+        // Codex session.
+        if (process.env.DIOMEDES_TEST_MODE !== '1')
+          throw new ApiError(404, 'This action was not found.');
+        const snapshot = fakeCodexSnapshot();
+        usageService.record('codex', snapshot);
         return { usage: usageService.all() };
-      },
-      false,
-    ),
+      }
+      return { usage: usageService.all() };
+    }, false),
   );
   app.get(
     '/api/fs/list',
@@ -864,8 +1041,13 @@ export async function createApp(options: AppOptions) {
       if (supplied.capabilityId !== undefined) {
         if (supplied.protocolVersion !== undefined || supplied.commandId !== undefined)
           throw new ApiError(400, 'Saved Work commands for native fixtures are not available yet.');
-        return harness.bridge.start(id(req), supplied.taskId === null ? null : asString(supplied.taskId, 'a task', 100),
-          asString(supplied.capabilityId, 'a capability', 100), asString(supplied.instruction, 'an instruction', 16000), localHarnessPrincipal(id(req)));
+        return harness.bridge.start(
+          id(req),
+          supplied.taskId === null ? null : asString(supplied.taskId, 'a task', 100),
+          asString(supplied.capabilityId, 'a capability', 100),
+          asString(supplied.instruction, 'an instruction', 16000),
+          localHarnessPrincipal(id(req)),
+        );
       }
       const command = parseWorkCommand(supplied);
       const b = command?.request ?? supplied;
@@ -883,19 +1065,25 @@ export async function createApp(options: AppOptions) {
         threadPermission = thread.permission ?? 'show-first';
       }
       const selectedRoute =
-        b.route === undefined ? 'sample' : choice(b.route, ['sample', 'codex'], 'service');
+        b.route === undefined
+          ? selectedEngine(
+              store.settings,
+              state.project,
+              state.conversations.find((c) => c.id === threadId),
+            )
+          : choice(b.route, ROUTES, 'service');
       const team = teamForThread(req, projectId, threadId);
       if (command && team)
         throw new ApiError(409, 'Saved Work commands for team helpers are not available yet.', {
           code: 'unsupported_work_target',
         });
-      if (selectedRoute === 'codex') {
-        if (!store.settings.services?.codex)
-          throw new ApiError(409, 'Turn Codex on in Settings before using it.');
+      if (selectedRoute !== 'sample') {
+        if (store.settings.services?.[selectedRoute] !== true)
+          throw new ApiError(409, 'Turn the selected engine on in Settings before using it.');
         if (b.consent !== true)
           throw new ApiError(
             409,
-            'Your instruction and selected documents will be sent to Codex. Confirm before sending.',
+            'Your instruction and selected documents will be sent to the selected service. Confirm before sending.',
             { consentRequired: true },
           );
         if (!Array.isArray(b.sources))
@@ -910,13 +1098,22 @@ export async function createApp(options: AppOptions) {
         throw new ApiError(404, 'This task was not found.');
       if (command) {
         const previous = store.workCommand(
-          projectId, command.admission.commandId, command.admission.payloadDigest,
+          projectId,
+          command.admission.commandId,
+          command.admission.payloadDigest,
         );
         if (previous) return structuredClone(previous);
         store.checkWorkReceiptCapacity(projectId);
       }
-      if (selectedRoute === 'codex') {
+      if (selectedRoute !== 'sample') {
         return nativeWork.start(projectId, taskId, {
+          engine: selectedRoute,
+          threadId,
+          requested: nativeChoice(
+            selectedRoute,
+            projectId,
+            state.conversations.find((c) => c.id === threadId),
+          ),
           instruction:
             b.instruction === undefined
               ? undefined
@@ -941,11 +1138,13 @@ export async function createApp(options: AppOptions) {
     '/api/projects/:id/work/commands/:commandId',
     route(async (req) => {
       const session = store.workCommand(
-        id(req), validateWorkCommandId(String(req.params.commandId)),
+        id(req),
+        validateWorkCommandId(String(req.params.commandId)),
       );
-      if (!session) throw new ApiError(404, 'This Work command was not found.', {
-        code: 'work_command_not_found',
-      });
+      if (!session)
+        throw new ApiError(404, 'This Work command was not found.', {
+          code: 'work_command_not_found',
+        });
       return structuredClone(session);
     }),
   );
@@ -969,11 +1168,14 @@ export async function createApp(options: AppOptions) {
     '/api/projects/:id/needs',
     route(async (req) => ({ needs: store.state(id(req)).needs })),
   );
-  app.get('/api/projects/:id/needs/:needId', route(async (req) => {
-    const need = store.state(id(req)).needs.find((item) => item.id === req.params.needId);
-    if (!need) throw new ApiError(404, 'This request was not found.');
-    return need;
-  }));
+  app.get(
+    '/api/projects/:id/needs/:needId',
+    route(async (req) => {
+      const need = store.state(id(req)).needs.find((item) => item.id === req.params.needId);
+      if (!need) throw new ApiError(404, 'This request was not found.');
+      return need;
+    }),
+  );
   app.post(
     '/api/projects/:id/needs/:needId/resolve',
     route(async (req) => {
@@ -984,9 +1186,21 @@ export async function createApp(options: AppOptions) {
       if (!need) throw new ApiError(404, 'This request was not found.');
       const admission = parseApprovalCommand(id(req), need.id, b);
       if (need.harness)
-        return harness.bridge.resolve(id(req), need.id, choice(b.resolution, ['go-ahead', 'declined'], 'decision'), b.allowForTask === true, admission);
+        return harness.bridge.resolve(
+          id(req),
+          need.id,
+          choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
+          b.allowForTask === true,
+          admission,
+        );
       if (need.approval || admission)
-        return nativeWork.resolve(id(req), need.id, choice(b.resolution, ['go-ahead', 'declined'], 'decision'), b.allowForTask === true, admission);
+        return nativeWork.resolve(
+          id(req),
+          need.id,
+          choice(b.resolution, ['go-ahead', 'declined'], 'decision'),
+          b.allowForTask === true,
+          admission,
+        );
       return serviceFor(id(req), need.sessionId).resolve(
         id(req),
         String(req.params.needId),
@@ -1092,8 +1306,7 @@ export async function createApp(options: AppOptions) {
           ref: asString(attached.ref, 'an attachment', 1000),
         };
       }
-      let taskId: string | null =
-        attachedTo.kind === 'task' ? attachedTo.ref : null;
+      let taskId: string | null = attachedTo.kind === 'task' ? attachedTo.ref : null;
       if (b.taskId !== undefined && b.taskId !== null) {
         const given = asString(b.taskId, 'a task', 100);
         const task = state.tasks.find((t) => t.id === given);
@@ -1109,9 +1322,7 @@ export async function createApp(options: AppOptions) {
         name = b.name.trim();
       } else {
         const task =
-          attachedTo.kind === 'task'
-            ? state.tasks.find((t) => t.id === attachedTo.ref)
-            : undefined;
+          attachedTo.kind === 'task' ? state.tasks.find((t) => t.id === attachedTo.ref) : undefined;
         name = task ? `Thread for ${task.name}` : 'New thread';
       }
       const permission: ThreadPermission =
@@ -1152,7 +1363,8 @@ export async function createApp(options: AppOptions) {
         b.name === undefined &&
         b.permission === undefined &&
         b.mode === undefined &&
-        b.requested === undefined
+        b.requested === undefined &&
+        b.engine === undefined
       )
         throw new ApiError(400, 'Provide a thread name, permission mode, mode or helper choice.');
       if (b.name !== undefined) {
@@ -1160,14 +1372,18 @@ export async function createApp(options: AppOptions) {
           throw new ApiError(400, 'Give this thread a name of up to 120 characters.');
         conversation.name = b.name.trim();
       }
-      if (b.permission !== undefined)
-        conversation.permission = parseThreadPermission(b.permission);
+      if (b.permission !== undefined) conversation.permission = parseThreadPermission(b.permission);
       if (b.mode !== undefined) {
         const parsed = modeOf(b.mode);
         if (!parsed) throw new ApiError(400, 'Choose a valid mode.');
         conversation.mode = parsed;
       }
-      if (b.requested !== undefined) conversation.requested = parseRequested(b.requested);
+      const engine =
+        b.engine === undefined
+          ? selectedEngine(store.settings, state.project, conversation)
+          : choice(b.engine, ROUTES, 'engine');
+      if (b.requested !== undefined) conversation.requested = parseRequested(b.requested, engine);
+      if (b.engine !== undefined) conversation.engine = engine;
       await store.persist(state);
       return conversation;
     }),
@@ -1197,6 +1413,23 @@ export async function createApp(options: AppOptions) {
     if (!model || !isKnownChoice('codex', model, effort ?? null)) return {};
     return { model, ...(effort ? { effort } : {}) };
   };
+  const nativeChoice = (
+    engine: Exclude<Route, 'sample'>,
+    projectId: string,
+    conversation?: Conversation | null,
+  ): { model?: string; effort?: string } => {
+    if (engine === 'codex') return codexChoice(conversation);
+    const model = selectedModel(
+      engine,
+      store.settings,
+      store.state(projectId).project,
+      conversation,
+    );
+    if (!model) throw new ApiError(409, 'Select a model for this engine in Settings.');
+    // The adapter rechecks the live catalogue before sending. Persisted overrides
+    // never disappear just because the connection is stale or unavailable.
+    return { model };
+  };
   const codexHelper = (result: {
     model?: string;
     version?: string;
@@ -1219,6 +1452,7 @@ export async function createApp(options: AppOptions) {
   const startCodexWork = async (
     input: {
       projectId: string;
+      engine?: Exclude<Route, 'sample'>;
       threadId: string | undefined;
       attachedTo: Conversation['attachedTo'];
       text: string;
@@ -1232,25 +1466,14 @@ export async function createApp(options: AppOptions) {
     },
     held = false,
   ) => {
-    const {
-      projectId,
-      threadId,
-      attachedTo,
-      text,
-      sources,
-      consent,
-      team,
-      taskId,
-      wake,
-      failing,
-    } = input;
+    const { projectId, threadId, attachedTo, text, sources, consent, team, taskId, wake, failing } =
+      input;
     const runMode = input.mode ?? 'build';
+    const engine = input.engine ?? 'codex';
     const run = async () => {
       const state = store.state(projectId);
       if (
-        state.sessions.some((session) =>
-          ['queued', 'working', 'waiting'].includes(session.state),
-        )
+        state.sessions.some((session) => ['queued', 'working', 'waiting'].includes(session.state))
       )
         throw new ApiError(409, 'This project already has work in progress.');
       const task =
@@ -1268,8 +1491,7 @@ export async function createApp(options: AppOptions) {
           ? state.conversations.find((item) => item.id === threadId)!
           : state.conversations.find(
               (item) =>
-                item.attachedTo.kind === attachedTo.kind &&
-                item.attachedTo.ref === attachedTo.ref,
+                item.attachedTo.kind === attachedTo.kind && item.attachedTo.ref === attachedTo.ref,
             );
       if (!conversation) {
         const stamped = now();
@@ -1288,6 +1510,9 @@ export async function createApp(options: AppOptions) {
         state.conversations.push(conversation);
       }
       conversation.mode = runMode;
+      if (selectedEngine(store.settings, state.project, conversation) !== engine)
+        conversation.requested = null;
+      conversation.engine = engine;
       // Fix attempts: the person is the check. Count prior helper Fix turns.
       let attempt: Turn['attempt'];
       if (runMode === 'fix' && !wake) {
@@ -1303,7 +1528,7 @@ export async function createApp(options: AppOptions) {
           );
         attempt = { n, of };
       }
-      if (!conversation.taskId) conversation.taskId = task.id;
+      conversation.taskId = task.id;
       // A Fix run is the Build run whose instruction carries the failing report.
       // The failing text rides in the instruction, never in baseInstructions.
       let instruction = text;
@@ -1323,7 +1548,7 @@ export async function createApp(options: AppOptions) {
           text,
           at: now(),
           sources,
-          route: 'codex',
+          route: engine,
           ...(attempt ? { attempt } : {}),
         };
         conversation.turns.push(youTurn);
@@ -1338,27 +1563,25 @@ export async function createApp(options: AppOptions) {
         consent: consent,
         team: team,
         turnId,
+        engine,
+        threadId: conversation.id,
         mode: runMode,
-        requested: codexChoice(conversation),
+        requested: nativeChoice(engine, projectId, conversation),
       });
-      const storedSession = store
-        .state(projectId)
-        .sessions.find((item) => item.id === session.id)!;
+      const storedSession = store.state(projectId).sessions.find((item) => item.id === session.id)!;
       storedSession.permission = conversation.permission ?? 'show-first';
       const turn: Turn = {
         id: turnId,
         role: 'diomedes',
         mode: runMode,
-        text: wake
-          ? 'Picked up a message from the team.'
-          : 'Preparing a proposal.',
+        text: wake ? 'Picked up a message from the team.' : 'Preparing a proposal.',
         at: now(),
         sources,
-        route: 'codex',
+        route: engine,
         ...(attempt ? { attempt } : {}),
         helper: {
-          engine: 'codex',
-          model: codexChoice(conversation).model ?? null,
+          engine,
+          model: nativeChoice(engine, projectId, conversation).model ?? null,
           version: null,
           verified: false,
         },
@@ -1376,12 +1599,18 @@ export async function createApp(options: AppOptions) {
   };
   app.post(
     '/api/projects/:id/ask',
-    route(async (req) => {
+    route(async (req, res) => {
       const b = body(req),
         projectId = id(req),
         text = asString(b.text, 'an instruction', 16000),
         serviceRoute =
-          b.route === undefined ? 'sample' : choice(b.route, ['sample', 'codex'], 'service');
+          b.route === undefined
+            ? selectedEngine(
+                store.settings,
+                store.state(projectId).project,
+                store.state(projectId).conversations.find((c) => c.id === b.threadId),
+              )
+            : choice(b.route, ROUTES, 'service');
       const parsedMode = modeOf(b.mode);
       if (!parsedMode) throw new ApiError(400, 'Choose a valid mode.');
       const mode = parsedMode;
@@ -1404,15 +1633,16 @@ export async function createApp(options: AppOptions) {
         !store.state(projectId).conversations.some((c) => c.id === threadId)
       )
         throw new ApiError(404, 'This thread was not found.');
-      if (serviceRoute === 'codex' && !store.settings.services?.codex)
-        throw new ApiError(409, 'Turn Codex on in Settings before using it.');
+      if (serviceRoute !== 'sample' && store.settings.services?.[serviceRoute] !== true)
+        throw new ApiError(409, 'Turn the selected engine on in Settings before using it.');
       const needsConsent =
-        serviceRoute === 'codex' &&
-        (mode === 'build' || mode === 'fix' || store.settings.permissions.sending);
+        isExternalEngine(serviceRoute) ||
+        (serviceRoute === 'codex' &&
+          (mode === 'build' || mode === 'fix' || store.settings.permissions.sending));
       if (needsConsent && b.consent !== true)
         throw new ApiError(
           409,
-          'Your instruction and selected documents will be sent to Codex. Confirm before sending.',
+          `Your instruction and selected documents will be sent to ${isExternalEngine(serviceRoute) ? ENGINE_NAMES[serviceRoute] : 'Codex'}. Confirm before sending.`,
           { consentRequired: true },
         );
       let sources: string[] = [];
@@ -1431,10 +1661,7 @@ export async function createApp(options: AppOptions) {
       if (mode === 'fix') {
         const raw = b.failing;
         const missing = () =>
-          new ApiError(
-            400,
-            'Say what is failing: pick the document or paste what went wrong.',
-          );
+          new ApiError(400, 'Say what is failing: pick the document or paste what went wrong.');
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw missing();
         const record = raw as Record<string, unknown>;
         let document: string | undefined;
@@ -1456,8 +1683,9 @@ export async function createApp(options: AppOptions) {
         if (!document && !failText) throw missing();
         failing = { ...(document ? { document } : {}), ...(failText ? { text: failText } : {}) };
       }
-      if ((mode === 'build' || mode === 'fix') && serviceRoute === 'codex')
+      if ((mode === 'build' || mode === 'fix') && serviceRoute !== 'sample')
         return startCodexWork({
+          engine: serviceRoute,
           projectId,
           threadId,
           attachedTo,
@@ -1474,8 +1702,7 @@ export async function createApp(options: AppOptions) {
           threadId !== undefined
             ? state.conversations.find((c) => c.id === threadId)!
             : state.conversations.find(
-                (c) =>
-                  c.attachedTo.kind === attachedTo.kind && c.attachedTo.ref === attachedTo.ref,
+                (c) => c.attachedTo.kind === attachedTo.kind && c.attachedTo.ref === attachedTo.ref,
               );
         if (!conversation) {
           const stamped = now();
@@ -1494,6 +1721,9 @@ export async function createApp(options: AppOptions) {
           state.conversations.push(conversation);
         }
         conversation.mode = mode;
+        if (selectedEngine(store.settings, state.project, conversation) !== serviceRoute)
+          conversation.requested = null;
+        conversation.engine = serviceRoute;
         let attempt: Turn['attempt'];
         if (mode === 'fix') {
           const prior = conversation.turns.filter(
@@ -1533,11 +1763,53 @@ export async function createApp(options: AppOptions) {
       });
       let answer: string;
       let helper: NonNullable<Turn['helper']>;
-      const runChoice = codexChoice(
-        store.state(projectId).conversations.find((c) => c.id === prepared.conversationId),
-      );
+      const runChoice =
+        serviceRoute === 'sample'
+          ? {}
+          : nativeChoice(
+              serviceRoute,
+              projectId,
+              store.state(projectId).conversations.find((c) => c.id === prepared.conversationId),
+            );
       const requestedModel = runChoice.model;
-      if (serviceRoute === 'codex') {
+      if (isExternalEngine(serviceRoute)) {
+        const accountRoute = store.settings.services?.[`${serviceRoute}AccountRoute`];
+        if (!requestedModel || typeof accountRoute !== 'string')
+          throw new ApiError(409, 'Select this service and model in AI setup first.');
+        const requestId = identifier('R');
+        const progress = (kind: 'started' | 'delta' | 'ended', text?: string) =>
+          store.emit('engine-text', {
+            projectId,
+            threadId: prepared.conversationId,
+            requestId,
+            kind,
+            ...(text ? { text } : {}),
+          });
+        progress('started');
+        try {
+          const result = await engines.generate(serviceRoute, {
+            projectId,
+            threadId: prepared.conversationId,
+            requestId,
+            prompt: text,
+            documents: prepared.documents,
+            instructions: MODES[mode].instructions,
+            model: requestedModel,
+            accountRoute,
+            signal: connectionSignal(res),
+            onDelta: (delta) => progress('delta', delta),
+          });
+          answer = result.text;
+          helper = {
+            engine: serviceRoute,
+            model: result.model,
+            version: result.version,
+            verified: true,
+          };
+        } finally {
+          progress('ended');
+        }
+      } else if (serviceRoute === 'codex') {
         try {
           const result = await askCodex({
             prompt: text,
@@ -1576,7 +1848,7 @@ export async function createApp(options: AppOptions) {
         let document: string | undefined;
         let session: Session | undefined;
         let createdTaskId: string | null = null;
-        if (mode === 'plan') {
+        if (mode === 'plan' && !isExternalEngine(serviceRoute)) {
           const safeTitle =
             text
               .split('\n')[0]
@@ -1689,9 +1961,11 @@ export async function createApp(options: AppOptions) {
       send('projects', { projects: [state.project] });
     };
     const settingsListener = (settings: Settings) => send('settings', settings);
+    const textListener = (data: unknown) => send('engine-text', data);
     const usageListener = (snapshots: UsageSnapshot[]) => send('usage', { usage: snapshots });
     store.on('change', listener);
     store.on('settings', settingsListener);
+    store.on('engine-text', textListener);
     const offUsage: () => void = usageService.subscribe(usageListener);
     // The client re-fetches /api/usage on this event, like it does for settings.
     send('ready', { ok: true });
@@ -1703,11 +1977,30 @@ export async function createApp(options: AppOptions) {
       clearInterval(heartbeat);
       store.off('change', listener);
       store.off('settings', settingsListener);
+      store.off('engine-text', textListener);
       offUsage();
     });
   });
   app.use('/api', (_req, _res, next) => next(new ApiError(404, 'This action was not found.')));
   const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, _next) => {
+    if (error instanceof EngineError) {
+      res
+        .status(
+          [
+            'CONSENT_REQUIRED',
+            'AUTH_REQUIRED',
+            'MODEL_UNAVAILABLE',
+            'STALE_STATUS',
+            'NOT_INSTALLED',
+            'UNSUPPORTED_VERSION',
+            'ACCOUNT_CHANGED',
+          ].includes(error.code)
+            ? 409
+            : 503,
+        )
+        .json({ error: error.message, code: error.code, ambiguous: error.ambiguous });
+      return;
+    }
     if (error instanceof ApiError) {
       res.status(error.status).json({ error: error.message, ...error.details });
       return;
@@ -1724,11 +2017,9 @@ export async function createApp(options: AppOptions) {
       return;
     }
     console.error(error);
-    res
-      .status(500)
-      .json({
-        error: 'The local service could not complete this action. Your saved history is preserved.',
-      });
+    res.status(500).json({
+      error: 'The local service could not complete this action. Your saved history is preserved.',
+    });
   };
   app.use(errorHandler);
   app.locals.store = store;
@@ -1737,6 +2028,8 @@ export async function createApp(options: AppOptions) {
   app.locals.harness = harness;
   app.locals.connections = connections;
   app.locals.close = async () => {
+    engines.close();
+    await login.close();
     await connections.close();
     await harness.close();
     await work.close();

@@ -1,13 +1,21 @@
 {
   "schemaVersion": 1,
   "version": "0.1.1",
-  "baseCommit": "7b1b5a61ec09a3a9b431b8fa07fdda7b812cc754",
-  "sourceStatus": "committed",
-  "sourceDigest": "e466078e30d2836e6fd5a3e931b83cf83cad04071f218a6af3146ceeccbed90a",
+  "baseCommit": "2e230c89020d1ddb4fd51720a201ad0b562fbef8",
+  "sourceStatus": "local-uncommitted",
+  "sourceDigest": "5150ad62e28c4399f78829be542df6066baf523c87bf11ee3b625cd1814ff42f",
   "source": [
     {
+      "path": "client/ai-setup.css",
+      "sha256": "63295a248784daca6d4a3c76f11dee4b0d323ece2d493f77f851aa3e5e64f95d"
+    },
+    {
+      "path": "client/AISetup.tsx",
+      "sha256": "f5f3485bd67083c1a1b2a850d02b5c15e83b01dc1cbb8cbffcb98836c7e5dbbb"
+    },
+    {
       "path": "client/api.ts",
-      "sha256": "76ffd3b442dc84a83a58664f3786b300bf1bcbb3a31e74f8b9d83b4ba3221468"
+      "sha256": "a2703c93e2d9fc64959cf35b7048689180a477bc3bd66824b7eff4a9e03d36f4"
     },
     {
       "path": "client/App.tsx",
@@ -27,11 +35,11 @@
     },
     {
       "path": "client/connections/Connections.tsx",
-      "sha256": "af96b9fa3de9404ac03e0f854c8e21c3ee6bf19465d8019b8b3bfd04d3f85973"
+      "sha256": "9e26ac52c605bc1ab72ff8b378fa30e682257278c40e8470585e77c227194c38"
     },
     {
       "path": "client/connections/desktop.css",
-      "sha256": "2ea9f2d3c84d546cde1b81b0e2b5dc173ab15efe910244411480b5b1373f4197"
+      "sha256": "5a54f18fc1fb12eb631fc3d1d1958cd1600f76eba11925cfb5eca468e082bfa8"
     },
     {
       "path": "client/connections/fixture-main.tsx",
@@ -87,7 +95,7 @@
     },
     {
       "path": "client/console/Picker.tsx",
-      "sha256": "8566897b67c7337d385bbd6d5ae570ed89bac4c045770372630b8050070052ab"
+      "sha256": "a17f68418c10523106880e9d052f5ec5765f2cce3bf60e0a13cc561fbab2a33c"
     },
     {
       "path": "client/console/Rail.tsx",
@@ -99,7 +107,7 @@
     },
     {
       "path": "client/console/Shell.tsx",
-      "sha256": "a565fa359534c76af73a903ac3aed859d859d73e316fbd2605628f759311b0d4"
+      "sha256": "79d368365b233e353b5a1b9a592a8336950b1f74bf0e124be034670a86c7b58b"
     },
     {
       "path": "client/console/team.css",
@@ -111,7 +119,7 @@
     },
     {
       "path": "client/console/ThreadView.tsx",
-      "sha256": "14fc16405b84cdec644482b1822d3a32065992ee4e0ec28d7b51b0915546ca65"
+      "sha256": "ecee6763cc6b05fb5ebc50680788cde28f1c202e95091cf4f0e6fd0d38e9c652"
     },
     {
       "path": "client/console/types.ts",
@@ -135,11 +143,11 @@
     },
     {
       "path": "client/Settings.tsx",
-      "sha256": "0175040f9f965b410e057622d786c8d9c6624e7438e0c43a3b1c9da4fbaaf33e"
+      "sha256": "1023bda97e8195ebdb12f21bea1fff088e82c266ca5cacaebc04d9c543920205"
     },
     {
       "path": "client/Setup.tsx",
-      "sha256": "29852168f9efc237a43964d67550e894aecc1a2ca1582bcd2cf014c0002e919e"
+      "sha256": "434a6462084be7a9485a28c369a2448bcd320845f7f57c25a7dc246a6fa089a1"
     },
     {
       "path": "client/styles.css",
@@ -147,19 +155,19 @@
     },
     {
       "path": "client/work-start.ts",
-      "sha256": "0e892ba185d011df72be557d97884b423ae168a841b1b69e19e44b5257e29545"
+      "sha256": "66fb800c85f612a3a72d2779bdaa5cb555ee4c689c22833e65c826bfb67b5be1"
     },
     {
       "path": "client/Workspace.tsx",
-      "sha256": "5bd7978e5b978bb41d1402589401a26c90e4a01d27c849d63d5d4ca5ac51b81a"
+      "sha256": "653a36445c2d72df039f20a86f7ebfc4bc1f3253a858ec33bc0ca6738d3dd47e"
     },
     {
       "path": "desktop/main.mjs",
-      "sha256": "3e0e90727ae955fc81d5e98c7e4fd60d555163f8356dd30983f1bacff73618b7"
+      "sha256": "c45c790ef6c346fe53cae38dcfcecf2ac46e87ebb2e6dc9529eb1c5137ba59b5"
     },
     {
       "path": "desktop/service.ts",
-      "sha256": "a13fe0e59533b534b46bb1b4abf4a66cf134ea035e7b2408f251096eed1efbe4"
+      "sha256": "f51065522c4cf4b9603284faf737f5a5794746d40140601a88fa5e65d4dc26fa"
     },
     {
       "path": "dist/assets/ibm-plex-mono-cyrillic-400-normal-BSMlKf0J.woff2",
@@ -402,12 +410,12 @@
       "sha256": "79d2a71ee35b159abc96a52116e39613a4a20e020909f7d3f8d9100fe341598f"
     },
     {
-      "path": "dist/assets/index-BKps2Gpe.css",
-      "sha256": "4ae75f9db7beca850183dba800f511922d8c3e2ed8dec6a7b7d31018faaaa880"
+      "path": "dist/assets/index-D_MB8A5t.js",
+      "sha256": "76d5b71f2c1e663ec409b5aa7478fccdf4725b4ccffb529092903467d9140695"
     },
     {
-      "path": "dist/assets/index-DHTdvl6L.js",
-      "sha256": "b7cef99e6c9c9c5ca2f9c864ac31cdb7a1870bc7c03bfc0c4e2a95ad6684b91e"
+      "path": "dist/assets/index-k3cgA_Yp.css",
+      "sha256": "8901e51fb12033892758b2f003c01ad7912070424af36fc9758e7b2a090a9ab0"
     },
     {
       "path": "dist/assets/schibsted-grotesk-latin-400-normal-BkiRe4WW.woff",
@@ -459,7 +467,7 @@
     },
     {
       "path": "dist/index.html",
-      "sha256": "847d8a43f500b7642687b481547307c981406d1ccc04f7725ffb7f6e9b6d542b"
+      "sha256": "feb511e58e6d889db980b83b5063477392152a8a829d5ee4518f0a01ecc924fb"
     },
     {
       "path": "fixtures/connections/helpdesk-openapi.json",
@@ -478,204 +486,12 @@
       "sha256": "da204181adb5715b98b141917d0bc0016ab571be3de68ae5d8ea834f9fcb6272"
     },
     {
-      "path": "fixtures/projects/Harbor Street restaurants 053ce1/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 053ce1/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 053ce1/Reopening plan.md",
-      "sha256": "4ba295eaebac2071aeaad12feede1a65598843968ac8eb6abe8504cb10bd84a5"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 12bfde/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 12bfde/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 12bfde/Reopening plan.md",
-      "sha256": "0deb789527a7b6a35468a6103e47145e3a8639202c7fe74de8058795080a8221"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 1f7c48/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 1f7c48/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 1f7c48/Reopening plan.md",
-      "sha256": "0deb789527a7b6a35468a6103e47145e3a8639202c7fe74de8058795080a8221"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 353b64/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 353b64/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 353b64/Reopening plan.md",
-      "sha256": "0deb789527a7b6a35468a6103e47145e3a8639202c7fe74de8058795080a8221"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 3835d4/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 3835d4/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 3835d4/Reopening plan.md",
-      "sha256": "0deb789527a7b6a35468a6103e47145e3a8639202c7fe74de8058795080a8221"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 425617/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 425617/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 425617/Reopening plan.md",
-      "sha256": "0deb789527a7b6a35468a6103e47145e3a8639202c7fe74de8058795080a8221"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 4e2c79/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 4e2c79/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 4e2c79/Reopening plan.md",
-      "sha256": "0deb789527a7b6a35468a6103e47145e3a8639202c7fe74de8058795080a8221"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 53a158/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 53a158/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 53a158/Reopening plan.md",
-      "sha256": "4ba295eaebac2071aeaad12feede1a65598843968ac8eb6abe8504cb10bd84a5"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 9fbe65/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 9fbe65/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 9fbe65/Reopening plan.md",
-      "sha256": "5f45c7798813108d110479ab83685e3f43ea2822be2a4e13cb814e5c57b822d6"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants 9fbe65/Sample work notes.md",
-      "sha256": "053955b97c517510569bebe95063790c6dc23ffba007e9d6c688bd5ca8aca7d9"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants b666c9/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants b666c9/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants b666c9/Reopening plan.md",
-      "sha256": "4ba295eaebac2071aeaad12feede1a65598843968ac8eb6abe8504cb10bd84a5"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants c59412/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants c59412/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants c59412/Reopening plan.md",
-      "sha256": "0deb789527a7b6a35468a6103e47145e3a8639202c7fe74de8058795080a8221"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants d277c4/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants d277c4/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants d277c4/Reopening plan.md",
-      "sha256": "f6c7f3e3e5d538d68ff84d1eecdc44d5027017e712f10cef29856eec6e8b67a8"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants d277c4/Sample work notes.md",
-      "sha256": "9b4b6f9ae7301d3c1aae9c2e1f3641e5f914c70a0cf0a4bc2ca5ebff688b89d3"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants e230ab/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants e230ab/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants e230ab/Reopening plan.md",
-      "sha256": "4ba295eaebac2071aeaad12feede1a65598843968ac8eb6abe8504cb10bd84a5"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants e7826f/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants e7826f/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants e7826f/Reopening plan.md",
-      "sha256": "0deb789527a7b6a35468a6103e47145e3a8639202c7fe74de8058795080a8221"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants eecaf3/Fall menu.md",
-      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants eecaf3/Opening notes.txt",
-      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
-    },
-    {
-      "path": "fixtures/projects/Harbor Street restaurants eecaf3/Reopening plan.md",
-      "sha256": "0deb789527a7b6a35468a6103e47145e3a8639202c7fe74de8058795080a8221"
-    },
-    {
-      "path": "fixtures/projects/Reopening the patio/Sample work notes.md",
-      "sha256": "3d51b132031be75c1260840621f922dabff2ccabd730c2038b142b39d946006d"
-    },
-    {
       "path": "LICENSE",
       "sha256": "5ad8c213095c573921d7388edf93f6a9f54490b8ebf3b165ae8ef1947cf70846"
     },
     {
       "path": "licenses/big-shoulders-display.txt",
-      "sha256": "18aabf190848725e2576eefb5c29ba06aac1029d02132252a7f312eac2e50cf3"
+      "sha256": "1efbdc9cb2d98aaa844574b5123f8d5233532c214ba259e1536e1d5702d058a1"
     },
     {
       "path": "licenses/codex-LICENSE.txt",
@@ -691,15 +507,15 @@
     },
     {
       "path": "licenses/ibm-plex-mono.txt",
-      "sha256": "23b0a9d0c6d3f140a0b77e483c5cfa6bba574325ef5cb189ed9f2fec4884533f"
+      "sha256": "03b9b5ee8909a33418aaebfa6a807da48c6edebdde79b5b026258a2463e2919b"
     },
     {
       "path": "licenses/ibm-plex-serif.txt",
-      "sha256": "b9e9c867b084f43f2bf0284808dbf394b5a027200577c246f2ac4fe2711da416"
+      "sha256": "2c22e99b9b49f512adb4d490501774afca66eb6df2b979ca4a5f36ca9a07f244"
     },
     {
       "path": "licenses/schibsted-grotesk.txt",
-      "sha256": "15222412a95d70042e66e79bfb3b985653e0693e4d41703bc131bee9c5aa1aa7"
+      "sha256": "1ac13bffaf2acec27bc5a1bf32d8bcb07c0cbe92ebcd0de67497ccdc503a3177"
     },
     {
       "path": "licenses/THIRD_PARTY_NOTICES.md",
@@ -719,7 +535,7 @@
     },
     {
       "path": "server/app.ts",
-      "sha256": "bdad5e5a47f57e8818188eb32d20a073e4258e1313aaff8794308ff028a2d705"
+      "sha256": "7d08e84224eccf471340f7b546cfc6888d982655e76eae00feb567978790fed8"
     },
     {
       "path": "server/approval-admission.ts",
@@ -727,7 +543,7 @@
     },
     {
       "path": "server/command-admission.ts",
-      "sha256": "fc99c9419b6dc34f69c34e9b3b9c9463a605f4fddc72c47295349a3b58bc82ea"
+      "sha256": "53537bbd71acc9345df3bd413bf8a125c7b408fbb305cccc42e500ae0867f014"
     },
     {
       "path": "server/connections/compiled-fixture.ts",
@@ -771,7 +587,39 @@
     },
     {
       "path": "server/discovery.ts",
-      "sha256": "0e5856c23e810957d68247fa0b419a8ef1600e22a0c35b84335896e1c0d9189b"
+      "sha256": "de01c4780377f3b7d548ab36e2cfb32daf6d70a3fce7d574986c7090a9d2d95a"
+    },
+    {
+      "path": "server/engines/claude.ts",
+      "sha256": "9ae85424146f64024f112792c15d07c9a25215d56b0ecf56185fc58b6d2b6a2a"
+    },
+    {
+      "path": "server/engines/contract.ts",
+      "sha256": "555d26bc9d6d5a7f1e437f9ee11bf9e9cc447aeb0e64f02f614511c00076af54"
+    },
+    {
+      "path": "server/engines/install.ts",
+      "sha256": "b1e1a04e02493bdec58538145bdfa267d4c0f04ad3093768f195a3ff10b4f083"
+    },
+    {
+      "path": "server/engines/login.ts",
+      "sha256": "04da7c2237a780fa4d43aaa62dfd6c03fe5de32dae04ebed965863c46584db03"
+    },
+    {
+      "path": "server/engines/omp.ts",
+      "sha256": "6ddfdf07cdd18d2caaf26a56dc3149c15893464ebc660c3f873f58122bce273f"
+    },
+    {
+      "path": "server/engines/opencode.ts",
+      "sha256": "fbbd5b3aefba445fc3964e253aca63590471a4d3ead97799b6346cff69e75ab9"
+    },
+    {
+      "path": "server/engines/process.ts",
+      "sha256": "56d0fc72265aa7480ea85f62e3398910386eb92269ee69b1191c6ba65529a7b4"
+    },
+    {
+      "path": "server/engines/service.ts",
+      "sha256": "d8def46c0cfb1cf2a98fe1c436b4470b622820cfc204da5451e3f3a38221ba18"
     },
     {
       "path": "server/harness/adapters.ts",
@@ -839,31 +687,31 @@
     },
     {
       "path": "server/index.ts",
-      "sha256": "85f485c238fee507d9c01e69599066dab260a9a5b51b5e0863cb81d4768c1a44"
+      "sha256": "5cd1d8c0d77df9e435b04d96e0b799e7e765e9ba9bd5ee893d81775e6db3f390"
     },
     {
       "path": "server/integrations.ts",
-      "sha256": "607b700f6561c36d41b1919a333b8e1f03101755281a9991d4dfcf02a89839d9"
+      "sha256": "5b35dd53d15b0804feef929f954281352476a97602aba4c387a10b8a497cac3b"
     },
     {
       "path": "server/lock.ts",
-      "sha256": "dbe2b10785db557f0551c0c81fef7adeaf61e8d4b4764d30f740f9ba900cb23e"
+      "sha256": "7a06745798b4a477ee8da3ac4bb0a0d93336303dffe482195ea06c1f3f57ddb7"
     },
     {
       "path": "server/models.ts",
-      "sha256": "9c9521b361063bb4a972d226735dbcbcff56882334ad4f7bfc4a14b9a274137e"
+      "sha256": "facef3ab7adafb689d2dd0ecc5b85cb3195b4ae405fdbd3ac778536bac888a95"
     },
     {
       "path": "server/modes.ts",
-      "sha256": "697d6b57e4f48adf83a6f1bbdd8d49be4c1b2b0abf65f56275003de308b41476"
+      "sha256": "75ed4a01d255f91a022d56ab088aacad517d2e9e08d8d1673b96b7f265eaf4aa"
     },
     {
       "path": "server/native-work.ts",
-      "sha256": "4f55f6cb89d2b0fd6825741f7a0b0c3955570641b70c8a45c4bd3c4dcf1bf09d"
+      "sha256": "898cc30db425d588d1824615ae60c4e951d150ab8bb4fd7e304a312bf32a20af"
     },
     {
       "path": "server/paths.ts",
-      "sha256": "faeb820ed84bf81584119a921cc52096b0e24514c71ce5acd7b2d05f8df00761"
+      "sha256": "836c420819b4262b7371724d24dc1cf598cbe25038d898f4bf0fff825b468dca"
     },
     {
       "path": "server/rules.ts",
@@ -875,7 +723,7 @@
     },
     {
       "path": "server/store.ts",
-      "sha256": "16974cc2cc997a0c89b02595f6d78b9941b09fc4032cab32ffd6db0b87bff6ab"
+      "sha256": "db946c1a247f64622f93e8920df309b6d6bf2ba5096907dcac434cd42e6942d2"
     },
     {
       "path": "server/team/board.ts",
@@ -899,7 +747,7 @@
     },
     {
       "path": "server/team/service.ts",
-      "sha256": "efc0f3f08e270925dcc12baaea02fd887aa470718ca2b06910c20480d2557877"
+      "sha256": "3c96038b192380e44dc510c2d933464e1a01ab19be22cdf8a3139f41c6d6d125"
     },
     {
       "path": "server/trust/authority.ts",
@@ -923,11 +771,15 @@
     },
     {
       "path": "server/work-admission.ts",
-      "sha256": "bed528b88578f4bed147da7f15a39e67b6e59cbc78515591d70f35ca673060ea"
+      "sha256": "e8a0538024efe1da35ce504b21a8e3b13d002604dd654913f7c199d7322ef292"
     },
     {
       "path": "server/work.ts",
-      "sha256": "a74f3ec1d496cce62e659ca59efc1967256f5ede285eab1e2c13d936fcce9e62"
+      "sha256": "c4e3daf69db8f879ca315e07a5a0a2450973ff03164545797e9d89bc0f79ccdb"
+    },
+    {
+      "path": "shared/ai-selection.ts",
+      "sha256": "2fc6c3bf8b4e2c4c7b4fc83652d6f846b954b26d86b1a0cf5971815275a41554"
     },
     {
       "path": "shared/connection-desktop.ts",
@@ -943,15 +795,23 @@
     },
     {
       "path": "shared/effort.ts",
-      "sha256": "ebd51f2157c4a96cab65e5d9cf82ce1b57d11cd9964d51eff207ebcfb9d664db"
+      "sha256": "0036e85a9943531be4b56e2c5aa50d0fa5f71b2207b405563f4c31f286a5715e"
+    },
+    {
+      "path": "shared/engines.ts",
+      "sha256": "10a44fd71d71b401c77edd75519f26dba86f0f4dd54d9470ee58bf28e0e338f0"
     },
     {
       "path": "shared/harness.ts",
       "sha256": "406f9ee6ecdef3046ad75525e263f973ac21e6b8bb30997b5b956693ed7a5364"
     },
     {
+      "path": "shared/onboarding.ts",
+      "sha256": "b292b30f2a4c65fc21c23f7ad7f419477a0ee8ebb9a04bb10bb0209b2bcea945"
+    },
+    {
       "path": "shared/types.ts",
-      "sha256": "d3eaed67f4d42c03f9d349fdcee2e53dea85cb376474fce2348c157ad316aa34"
+      "sha256": "eb53412d235d4f52bb183dd707e5d717fae8677a3a59b30dab57608c9495d5cb"
     }
   ],
   "nativeRuntime": {
@@ -963,5 +823,5 @@
     }
   },
   "signing": "unsigned-experimental",
-  "builtAt": "2026-09-09T12:06:43.089Z"
+  "builtAt": "2026-09-10T06:32:42.599Z"
 }

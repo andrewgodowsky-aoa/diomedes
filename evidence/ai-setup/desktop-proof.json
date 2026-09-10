@@ -1,0 +1,62 @@
+{
+  "at": "2026-09-10T06:34:38.117Z",
+  "root": "F:\\Achilles\\diomedes-wt\\ai-setup\\test-results\\ai-desktop-1789021965831",
+  "executablePath": "F:\\Achilles\\diomedes-wt\\ai-setup\\release\\Diomedes-win32-x64\\Diomedes.exe",
+  "exeSha256": "68585b58f369cd7338ea2bc52ef8ae5312e469b9e3bae88fd1a85cc360cd89bc",
+  "sourceDigest": "5150ad62e28c4399f78829be542df6066baf523c87bf11ee3b625cd1814ff42f",
+  "baseCommit": "2e230c89020d1ddb4fd51720a201ad0b562fbef8",
+  "sourceStatus": "local-uncommitted",
+  "cleanProfile": true,
+  "upgradePreferencesAndHistory": true,
+  "metadataOnly": true,
+  "modelPrompts": 0,
+  "metadata": [
+    {
+      "engine": "claude-code",
+      "version": "2.1.252",
+      "authentication": "signed-in",
+      "accountRoute": "claude-code:claude.ai",
+      "models": [
+        "sonnet",
+        "haiku"
+      ],
+      "checkedAt": "2026-09-10T06:33:21.646Z",
+      "detail": "Claude account connected. Choose a model for text and reviewed proposals."
+    },
+    {
+      "engine": "opencode",
+      "version": "1.18.4",
+      "authentication": "signed-in",
+      "accountRoute": "opencode:opencode-go",
+      "models": [
+        "opencode-go/mimo-v2.5-pro",
+        "opencode-go/kimi-k2.7-code",
+        "opencode-go/mimo-v2.5",
+        "opencode-go/kimi-k3",
+        "opencode-go/deepseek-v4-flash",
+        "opencode-go/grok-4.5",
+        "opencode-go/kimi-k2.6",
+        "opencode-go/qwen3.7-plus",
+        "opencode-go/deepseek-v4-pro",
+        "opencode-go/qwen3.7-max",
+        "opencode-go/qwen3.6-plus",
+        "opencode-go/glm-5.2",
+        "opencode-go/minimax-m3",
+        "opencode-go/glm-5.1",
+        "opencode-go/minimax-m2.7"
+      ],
+      "checkedAt": "2026-09-10T06:33:23.672Z",
+      "detail": "Native OpenCode Go account connected. Choose an explicit provider/model."
+    },
+    {
+      "engine": "oh-my-pi",
+      "version": "18.0.6",
+      "authentication": "unknown",
+      "accountRoute": null,
+      "models": [],
+      "checkedAt": "2026-09-10T06:33:25.096Z",
+      "detail": "The isolated native OMP profile exited before it could report metadata. Configure supported OpenAI API access in the native profile, then recheck."
+    }
+  ],
+  "errors": []
+}

@@ -30,7 +30,10 @@ function clockOf(iso: string): string {
 }
 
 function paragraphs(text: string): string[] {
-  return text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  return text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
 }
 
 interface ThreadViewProps {
@@ -62,6 +65,9 @@ interface ThreadViewProps {
   onPreview(need: Need): void;
   onStopSession(id: string): void;
   onOpenBoard(): void;
+  /** Live streamed text for a new external-engine Ask/Plan: ephemeral, never saved. */
+  streaming?: { requestId: string; text: string };
+  onCancelText?(): void;
 }
 
 /**
@@ -92,6 +98,8 @@ export function ThreadView({
   onPreview,
   onStopSession,
   onOpenBoard,
+  streaming,
+  onCancelText,
 }: ThreadViewProps) {
   const permission: ThreadPermission = thread.permission ?? 'show-first';
   const live = sessions.find((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? null;
@@ -99,19 +107,33 @@ export function ThreadView({
   const last = ordered.at(-1) ?? null;
   const lastHelper = [...thread.turns].reverse().find((t) => t.role === 'diomedes');
 
-  const savedModel = typeof settings.services?.codexModel === 'string' ? settings.services.codexModel : '';
-  const savedEffort = typeof settings.services?.codexEffort === 'string' ? settings.services.codexEffort : '';
-  const modelId = thread.requested?.model || savedModel || last?.engine.model || lastHelper?.helper?.model || 'default';
-  const wantedEffort = thread.requested?.effort || savedEffort || 'medium';
+  const savedModel =
+    typeof settings.services?.[`${route}Model`] === 'string'
+      ? String(settings.services[`${route}Model`])
+      : '';
+  const savedEffort =
+    route === 'codex' && typeof settings.services?.codexEffort === 'string'
+      ? settings.services.codexEffort
+      : '';
+  const modelId =
+    thread.requested?.model ||
+    savedModel ||
+    last?.engine.model ||
+    lastHelper?.helper?.model ||
+    'default';
+  const wantedEffort = route === 'codex' ? thread.requested?.effort || savedEffort || 'medium' : '';
   const runsAt = effortFor(mode, wantedEffort, wantedEffort);
   const capped = runsAt !== wantedEffort;
-  const context = live?.engine.context ?? [...ordered].reverse().find((s) => s.engine.context != null)?.engine.context;
+  const context =
+    live?.engine.context ??
+    [...ordered].reverse().find((s) => s.engine.context != null)?.engine.context;
   const ended = ordered.filter((s) => s.endedAt);
   const lastRun = ended.at(-1) ?? null;
 
   const nameOf = (slot: Slot) =>
     slot === 'owner' ? 'You' : (members.find((m) => m.slotId === slot)?.name ?? slot);
-  const worker = live?.engine.name ?? member?.name ?? (task ? (task.owner === 'you' ? 'You' : 'Diomedes') : '');
+  const worker =
+    live?.engine.name ?? member?.name ?? (task ? (task.owner === 'you' ? 'You' : 'Diomedes') : '');
   const [stateWord, stateClass]: [string, string] = !task
     ? ['', '']
     : task.state === 'todo'
@@ -121,7 +143,11 @@ export function ThreadView({
         : task.state === 'done'
           ? ['done', 'quiet']
           : [
-              task.reason === 'changes-ready' ? 'review' : task.reason === 'went-wrong' ? 'blocked' : 'needs you',
+              task.reason === 'changes-ready'
+                ? 'review'
+                : task.reason === 'went-wrong'
+                  ? 'blocked'
+                  : 'needs you',
               'attn',
             ];
 
@@ -137,7 +163,7 @@ export function ThreadView({
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
     body.current?.scrollTo({ top: body.current.scrollHeight });
-  }, [thread.turns.length, live?.id, thread.id]);
+  }, [thread.turns.length, live?.id, thread.id, streaming?.requestId, streaming?.text.length]);
 
   const items: { at: string; seq: number; node: ReactNode }[] = [];
   exchanges.forEach((group, i) => {
@@ -202,7 +228,9 @@ export function ThreadView({
                 <p key={j}>{p}</p>
               ))}
             </div>
-            {m.files && m.files.length > 0 && <p className="caption">Files: {m.files.join(', ')}</p>}
+            {m.files && m.files.length > 0 && (
+              <p className="caption">Files: {m.files.join(', ')}</p>
+            )}
           </div>
         </div>
       ),
@@ -293,12 +321,13 @@ export function ThreadView({
             <button type="button" onClick={onOpenBoard} title="Open this task on the board">
               {task.name}
             </button>{' '}
-            <span className={`st ${stateClass}`}>{stateWord}</span> <span className="lc">{worker}</span>
+            <span className={`st ${stateClass}`}>{stateWord}</span>{' '}
+            <span className="lc">{worker}</span>
           </span>
         )}
       </div>
       <p className="col permission-note">
-        {route === 'codex' || needs.some((n) => n.approval)
+        {route !== 'sample' || needs.some((n) => n.approval)
           ? 'Each proposed file change needs its own exact OK.'
           : permission === 'task'
             ? 'The first OK in a task covers the rest of it. Nothing runs without that first OK.'
@@ -310,7 +339,13 @@ export function ThreadView({
             <div id={`need-${n.id}`} key={n.id}>
               <NeedBlock
                 need={n}
-                decide={(r, a) => onResolve(n, r, n.approval ? false : a ?? (r === 'go-ahead' && permission === 'task'))}
+                decide={(r, a) =>
+                  onResolve(
+                    n,
+                    r,
+                    n.approval ? false : (a ?? (r === 'go-ahead' && permission === 'task')),
+                  )
+                }
                 show={() => onPreview(n)}
               />
             </div>
@@ -324,11 +359,41 @@ export function ThreadView({
           {items.map((entry, i) => (
             <div key={i}>{entry.node}</div>
           ))}
+          {streaming && (
+            <div className="exchange" key={`stream-${streaming.requestId}`}>
+              <div className="turn dio">
+                <div className="who">
+                  <b>Diomedes</b>
+                  <span className="mono">live</span>
+                </div>
+                <div className="body">
+                  {streaming.text ? (
+                    paragraphs(streaming.text).map((p, j) => <p key={j}>{p}</p>)
+                  ) : (
+                    <p className="caption">Preparing…</p>
+                  )}
+                </div>
+                {onCancelText && (
+                  <div>
+                    <button type="button" onClick={onCancelText}>
+                      Stop
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           {receiptNeeds.map((n) => (
             <ApprovalStatus key={n.id} need={n} />
           ))}
         </div>
       </div>
+      {route !== 'sample' && (
+        <p className="caption">
+          Sending shares this instruction and selected documents with {route}. The selected account
+          is billed under its own plan. Tools are disabled; file proposals require approval.
+        </p>
+      )}
       <Composer
         thread={thread}
         mode={mode}

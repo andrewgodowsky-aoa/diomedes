@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-10T06:03:50.463Z",
+  "engine": "opencode",
+  "version": "1.18.4",
+  "archive": "F:\\Achilles\\deliverables\\ai-setup-research\\opencode-windows-x64-baseline-1.18.4.zip",
+  "officialChecksumVerified": true,
+  "freshActivation": true,
+  "idempotentReuse": true,
+  "changedBinaryRejected": true,
+  "downloads": 1,
+  "root": "F:\\Achilles\\diomedes-wt\\ai-setup\\test-results\\install-proof-dq7FlM",
+  "modelPrompts": 0
+}

@@ -5,21 +5,34 @@ export type Detail = 'guided' | 'standard' | 'technical';
 export type Surface = 'workbook' | 'console';
 /** The four things a person can want to do; the Workbook's Home leads with these. */
 export type Intent = 'ask' | 'work' | 'plan' | 'review';
-export type Page = 'home' | 'ask' | 'plan' | 'work' | 'review' | 'tasks' | 'documents' | 'history' | 'connections';
+export type Page =
+  | 'home'
+  | 'ask'
+  | 'plan'
+  | 'work'
+  | 'review'
+  | 'tasks'
+  | 'documents'
+  | 'history'
+  | 'connections';
 export type Mode = 'ask' | 'plan' | 'build' | 'fix';
 export type TaskState = 'todo' | 'working' | 'waiting' | 'done';
 export type Owner = 'you' | 'diomedes' | 'diomedes-with-ok';
-export type Route = 'sample' | 'codex';
+export type ExternalEngine = 'claude-code' | 'opencode' | 'oh-my-pi';
+export type Route = 'sample' | 'codex' | ExternalEngine;
 export interface Settings {
   version: 1;
   detail: Detail;
   /** Missing on settings written before 2026-09-06; the server fills it: 'technical' detail becomes the Console. */
   surface?: Surface;
   onboarding: {
+    setupVersion?: 2;
+    discoveryConsentAt?: string | null;
+    aiSkipped?: boolean;
     work: 'business' | 'school' | 'software' | 'personal' | 'mix' | null;
     detail: Detail | null;
     familiarity: 'new' | 'some' | 'comfortable' | null;
-    resumeAt: 'welcome' | 'q1' | 'q2' | 'q3' | 'ready' | 'done';
+    resumeAt: 'welcome' | 'q1' | 'q2' | 'q3' | 'ai' | 'ready' | 'done';
     completedAt: string | null;
   };
   permissions: {
@@ -55,6 +68,7 @@ export interface Settings {
   services?: Record<string, boolean | string>;
 }
 export interface Project {
+  ai?: { engine: Route; model: string | null };
   id: string;
   name: string;
   folder: string;
@@ -186,6 +200,8 @@ export interface WorkReceipt {
   readonly scope: 'local-prototype';
 }
 export interface Session {
+  route?: Route;
+  threadId?: string;
   id: string;
   taskId: string;
   slotId?: Slot;
@@ -277,6 +293,7 @@ export interface Turn {
 }
 /** A thread: a named conversation that belongs to a project and, optionally, to a task. */
 export interface Conversation {
+  engine?: Route;
   id: string;
   attachedTo: { kind: 'project' | 'document' | 'plan' | 'task' | 'review'; ref: string };
   turns: Turn[];

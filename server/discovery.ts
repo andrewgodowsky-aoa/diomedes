@@ -60,7 +60,7 @@ export function commandFor(
   if (/["&|<>^%!\r\n]/.test(file) || args.some((arg) => /[\s"&|<>^%!]/.test(arg))) return undefined;
   return {
     file: process.env.ComSpec ?? 'cmd.exe',
-    args: ['/d', '/s', '/c', `"${file}" ${args.join(' ')}`],
+    args: ['/d', '/s', '/c', `""${file}" ${args.join(' ')}"`],
     verbatim: true,
   };
 }
@@ -91,11 +91,25 @@ function spawnCapture(file: string, args: string[]): Promise<SpawnCapture> {
     }
     const timer = setTimeout(() => {
       timedOut = true;
+      if (process.platform === 'win32' && child.pid) {
+        const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
+          windowsHide: true,
+          stdio: 'ignore',
+        });
+        killer.on('error', () => finish(null));
+        killer.on('close', () => finish(null));
+        setTimeout(() => {
+          killer.kill();
+          finish(null);
+        }, 1000).unref();
+        return;
+      }
       try {
         child.kill('SIGKILL');
       } catch {
         // The process is already gone; the close handler settles below.
       }
+      finish(null);
     }, SPAWN_TIMEOUT_MS);
     child.once('error', () => {
       clearTimeout(timer);
@@ -155,6 +169,12 @@ function knownFolders(deps: DiscoveryDeps): string[] {
   const folders: string[] = [];
   const localAppData = deps.env.LOCALAPPDATA;
   if (localAppData) folders.push(path.join(localAppData, 'Programs', 'OpenAI', 'Codex', 'bin'));
+  if (localAppData)
+    folders.push(
+      path.join(localAppData, 'Microsoft', 'WinGet', 'Links'),
+      path.join(localAppData, 'omp'),
+    );
+  if (deps.env.APPDATA) folders.push(path.join(deps.env.APPDATA, 'npm'));
   const home = deps.env.USERPROFILE ?? deps.env.HOME;
   if (home) {
     folders.push(path.join(home, '.local', 'bin'));
@@ -206,13 +226,44 @@ interface BinarySpec {
 }
 
 const BINARY_SPECS: BinarySpec[] = [
-  { id: 'claude-code', name: 'Claude Code', binary: 'claude', kind: 'online', signIn: 'first-use', adapter: 'planned' },
-  { id: 'opencode', name: 'OpenCode', binary: 'opencode', kind: 'online', signIn: 'first-use', adapter: 'planned' },
-  { id: 'oh-my-pi', name: 'oh-my-pi', binary: 'omp', kind: 'online', signIn: 'first-use', adapter: 'planned' },
-  { id: 'cursor', name: 'Cursor', binary: 'agent', kind: 'online', signIn: 'first-use', adapter: 'none', probeVersion: false },
+  {
+    id: 'claude-code',
+    name: 'Claude Code',
+    binary: 'claude',
+    kind: 'online',
+    signIn: 'first-use',
+    adapter: 'planned',
+  },
+  {
+    id: 'opencode',
+    name: 'OpenCode',
+    binary: 'opencode',
+    kind: 'online',
+    signIn: 'first-use',
+    adapter: 'planned',
+  },
+  {
+    id: 'oh-my-pi',
+    name: 'oh-my-pi',
+    binary: 'omp',
+    kind: 'online',
+    signIn: 'first-use',
+    adapter: 'planned',
+  },
+  {
+    id: 'cursor',
+    name: 'Cursor',
+    binary: 'agent',
+    kind: 'online',
+    signIn: 'first-use',
+    adapter: 'none',
+    probeVersion: false,
+  },
 ];
 
-function notFoundEntry(spec: Pick<BinarySpec, 'id' | 'name' | 'kind' | 'signIn' | 'adapter'>): IntegrationStatus {
+function notFoundEntry(
+  spec: Pick<BinarySpec, 'id' | 'name' | 'kind' | 'signIn' | 'adapter'>,
+): IntegrationStatus {
   return {
     id: spec.id,
     name: spec.name,
@@ -301,7 +352,9 @@ function versionedEntry(
 
 /** Roster entries before anyone has asked Diomedes to look: honest, and no process is started. */
 export function pendingDiscovery(): DiscoveryResult {
-  const pending = (spec: Pick<BinarySpec, 'id' | 'name' | 'kind' | 'signIn' | 'adapter'>): IntegrationStatus => ({
+  const pending = (
+    spec: Pick<BinarySpec, 'id' | 'name' | 'kind' | 'signIn' | 'adapter'>,
+  ): IntegrationStatus => ({
     ...notFoundEntry(spec),
     status: 'Not checked',
     detail: `Diomedes has not looked for ${spec.name} yet. Press Check connections.`,
@@ -309,7 +362,11 @@ export function pendingDiscovery(): DiscoveryResult {
   return {
     engines: [
       ...BINARY_SPECS.map(pending),
-      { ...hermesDownEntry(), status: 'Not checked', detail: 'Diomedes has not looked for Hermes yet. Press Check connections.' },
+      {
+        ...hermesDownEntry(),
+        status: 'Not checked',
+        detail: 'Diomedes has not looked for Hermes yet. Press Check connections.',
+      },
       pending(OLLAMA_SPEC),
     ],
     codexInstalledVersion: undefined,
