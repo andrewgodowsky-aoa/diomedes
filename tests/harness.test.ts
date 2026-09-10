@@ -496,12 +496,15 @@ describe('durable step boundary', () => {
     const { service } = await setup();
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => (entered = resolve));
     const d = def({ effect: 'non-idempotent' });
     const first = execute(service, d, async () => {
+      entered();
       await gate;
       return 7;
     });
-    await new Promise((r) => setTimeout(r, 20));
+    await started;
     await expect(execute(service, d, () => 99)).rejects.toThrow(/in flight/);
     release();
     expect(await first).toBe(7);
@@ -512,11 +515,14 @@ describe('durable step boundary', () => {
     const second = new RunService(new FileRunStore(dir), { clock: () => 1000 });
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => (entered = resolve));
     const first = execute(service, def(), async () => {
+      entered();
       await gate;
       return 7;
     });
-    await new Promise((r) => setTimeout(r, 20));
+    await started;
     await expect(second.step('r', 'host', def(), () => 99, principal)).rejects.toThrow(
       /in flight/,
     );

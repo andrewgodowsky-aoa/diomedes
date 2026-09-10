@@ -1,5 +1,8 @@
 # Harness host integration changes, 2026-09-09
 
+Continuation: [NR-02/NR-03 changes and proof](NR02_NR03_VERIFICATION_2026-09-09.md).
+The descriptions below apply to the earlier packet, not every subsequent source change.
+
 This integrates the runtime packet against committed main `86ee91d` and harness
 boundary `c777c41`. Main already contains the approval/foundation integration at
 `0ad3951`; the old Codex worktrees were not used as uncommitted sources.

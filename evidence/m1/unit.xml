@@ -1,0 +1,1258 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="534" failures="0" errors="0" time="110.2982101">
+    <testsuite name="tests/approval-admission.test.ts" timestamp="2026-09-09T07:49:17.919Z" hostname="Andrews-Desktop" tests="46" failures="0" errors="0" skipped="0" time="28.5981541">
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; lost response and duplicate go-ahead return one immutable decision through two restarts" time="0.6657861">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; lost response and duplicate declined return one immutable decision through two restarts" time="0.4806722">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; approval is durable before the writer and the write carries its exact event link" time="0.525941">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; rejects a changed displayed proposalDigest without using the writer" time="0.9412564">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; rejects a changed displayed actionDigest without using the writer" time="0.7317527">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; rejects a changed displayed baseDigest without using the writer" time="0.5081216">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; strict version and authority validation: {&quot;protocolVersion&quot;:2}" time="0.3579559">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; strict version and authority validation: {&quot;commandId&quot;:&quot;&quot;}" time="0.3440833">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; strict version and authority validation: {&quot;commandId&quot;:&quot;xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&quot;}" time="0.3504009">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; strict version and authority validation: {&quot;actor&quot;:&quot;owner&quot;}" time="0.3395771">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; strict version and authority validation: {&quot;scope&quot;:&quot;authenticated&quot;}" time="0.277503">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; strict version and authority validation: {&quot;allowForTask&quot;:true}" time="0.2787097">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; strict version and authority validation: {&quot;actionDigest&quot;:&quot;bad&quot;}" time="0.3049116">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; an unversioned caller cannot bypass an exact Need; sample requests remain compatible" time="0.2781427">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; denies a stale Brief.md including unchanged selected inputs and creation targets" time="0.2833853">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; denies a stale Reference.md including unchanged selected inputs and creation targets" time="0.2796352">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; denies a stale Draft.md including unchanged selected inputs and creation targets" time="0.2707452">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; competing decisions and command reuse cannot reinterpret an accepted action" time="0.3998373">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; expires at the boundary, but an accepted receipt replays after expiry without IO" time="0.3680606">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; expiry is rechecked at durable admission after asynchronous base validation" time="0.3945941">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; failed decision persistence creates no phantom receipt or write and can be retried" time="0.4239879">
+            <system-err>
+Error: Synthetic disk full.
+    at Store.&lt;anonymous&gt; (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\approval-admission.test.ts:310:67)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at NativeWorkService.resolve (F:\Achilles\diomedes-wt\codex-runtime-proof\server\native-work.ts:601:22)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:336:16
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; failure after acceptance but before journal preparation is durable not-applied and never redispatched" time="0.2898408">
+            <system-err>
+Error: Synthetic preparation failure.
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\tests\approval-admission.test.ts:323:26
+    at file:///F:/Achilles/diomedes/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; failed journal recovery blocks later mutations until recovery finishes" time="0.442263">
+            <system-err>
+Error: Synthetic finalization disk fault.
+    at Store.&lt;anonymous&gt; (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\approval-admission.test.ts:336:15)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at Store.recover (F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:986:18)
+    at Store.recoverAndReload (F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:311:5)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:339:9
+
+Error: Synthetic finalization disk fault.
+    at Store.&lt;anonymous&gt; (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\approval-admission.test.ts:336:15)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at Store.recover (F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:986:18)
+    at Store.recoverAndReload (F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:311:5)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:334:34
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; project, Host, Origin and client boundaries protect decisions and receipts" time="0.371958">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; inconsistent saved version fails closed without rewriting project state" time="0.4104962">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; inconsistent saved digest fails closed without rewriting project state" time="0.2991015">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; inconsistent saved event fails closed without rewriting project state" time="0.342648">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; inconsistent saved decision fails closed without rewriting project state" time="0.2962465">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; inconsistent saved action-bytes fails closed without rewriting project state" time="0.3527891">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; inconsistent saved execution fails closed without rewriting project state" time="0.337936">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; digests bind bytes, destination, displayed explanation and read-only source identity" time="0.1949025">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; abrupt exit at before-decision recovers once with the correct durable outcome" time="1.2195399">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; abrupt exit at after-decision recovers once with the correct durable outcome" time="1.1501524">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; abrupt exit at journal recovers once with the correct durable outcome" time="1.180362">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; abrupt exit at first-file recovers once with the correct durable outcome" time="1.1578822">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; abrupt exit at after-files recovers once with the correct durable outcome" time="1.1941838">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; abrupt exit at finalized recovers once with the correct durable outcome" time="1.1262392">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; recovery preserves an outside text replacement and reports a conflict without replaying" time="1.1546731">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; recovery preserves an outside binary replacement and reports a conflict without replaying" time="1.1252628">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; recovery preserves an outside oversized replacement and reports a conflict without replaying" time="1.1341705">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; recovery preserves an outside directory replacement and reports a conflict without replaying" time="1.1578127">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; an inconsistent prepared action fails closed before any recovery write" time="1.0129242">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; an inconsistent prepared missing-link fails closed before any recovery write" time="1.0268448">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; an inconsistent prepared receipt fails closed before any recovery write" time="1.0403651">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; a damaged content object cannot change the bytes authorized by a receipt" time="1.079648">
+        </testcase>
+        <testcase classname="tests/approval-admission.test.ts" name="exact native approval admission &gt; receipt retention is bounded without eviction and replay stays free of project IO at capacity" time="0.6929799">
+            <system-out>
+Approval replay at 1024 receipts: 50 requests in 69.3 ms, zero project IO or persistence; receipt metadata 1421150 bytes, full synthetic state 3225272 bytes.
+
+            </system-out>
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/approval-decisions-client.test.ts" timestamp="2026-09-09T07:49:17.927Z" hostname="Andrews-Desktop" tests="37" failures="0" errors="0" skipped="0" time="0.4864134">
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; legacy need without approval sends plain POST once without retries" time="0.0539675">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; legacy failure does not retry" time="0.0057965">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; new exact need stores compact pending before POST without file text" time="0.0042948">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; rejects allowForTask for new exact native need without sending" time="0.002968">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; a harness intent hash uses the existing exact decision and lost-response recovery" time="0.0034729">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; rejects invalid digest strings without sending" time="0.0054414">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; rejects unsupported approval protocol without sending" time="0.0092314">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; lost response retry reuses exactly the same command" time="0.0025728">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; both responses lost keeps pending and stops at two attempts" time="0.0021889">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; both lost plus reload reuses pending identity" time="0.0040418">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; opposite decision under pending request is refused" time="0.0020018">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; changed identity under pending request is refused" time="0.0025708">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; mere 200 without matching receipt stays uncertain" time="0.0029689">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; need.state alone without receipt is not confirmation" time="0.0024032">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; receipt scope mismatch is not confirmation" time="0.0021234">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; receipt command mismatch is not confirmation" time="0.0018434">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; valid receipt with pending execution still confirms" time="0.0017114">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; conclusive new 4xx clears only when not already uncertain" time="0.0021909">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; ambiguous failure then 4xx retains pending" time="0.0022876">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; 408 is retried as ambiguous" time="0.0018042">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; concurrent identical calls join into one request" time="0.0030985">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; storage denied blocks dispatch" time="0.0017564">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; corrupt stored record blocks dispatch and is retained" time="0.0021991">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; oversized stored record blocks dispatch" time="0.0015921">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; unknown fields in stored record are rejected" time="0.0018402">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; receipt cleanup failure surfaces without retrying confirmed send" time="0.0019698">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; pending capacity denies new command but permits existing retry" time="0.0029532">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; reconcile clears matching receipt without another request" time="0.0067108">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; reconcile keeps corrupt entry and reports error while clearing good entry" time="0.1740118">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; reconcile keeps mismatched receipt and reports error" time="0.0026225">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; reconcile keeps pending with no receipt silently" time="0.0033888">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; expired receipt window still reconciles" time="0.0023756">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; an inconsistent receipt createdAt cannot clear pending state" time="0.0026669">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; an inconsistent receipt expiresAt cannot clear pending state" time="0.1490802">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; an inconsistent receipt decidedAt cannot clear pending state" time="0.0033602">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; reconcile is per project" time="0.0026594">
+        </testcase>
+        <testcase classname="tests/approval-decisions-client.test.ts" name="approval-decisions client &gt; unavailable storage returns reportable reconcile issue" time="0.0067981">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/backend.test.ts" timestamp="2026-09-09T07:49:17.931Z" hostname="Andrews-Desktop" tests="48" failures="0" errors="0" skipped="0" time="21.9830355">
+        <testcase classname="tests/backend.test.ts" name="real project files and durable history &gt; starts empty and creates three sample documents only when requested" time="0.3377268">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="real project files and durable history &gt; editor writes require the opened version, merge, restore, and undo a restore" time="0.6512588">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="real project files and durable history &gt; empty files are distinct from absent files across restore and redo" time="0.4736882">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="real project files and durable history &gt; preserves exact UTF-8 BOM and CRLF bytes through read, edit, and restore" time="0.6254284">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="real project files and durable history &gt; detects outside changes and preserves overwritten contents before a forced restore" time="0.7187178">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="real project files and durable history &gt; restores copies without modifying newer files" time="0.4936984">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="real project files and durable history &gt; concurrent stale saves admit one winner" time="0.2434728">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="real project files and durable history &gt; a saved version restores the whole folder and later file removal can be undone" time="0.719792">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="real project files and durable history &gt; rejects invalid task edits without leaving changes in memory" time="0.244375">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="real project files and durable history &gt; recovers a durable interrupted write and complete intended history on startup" time="0.2341098">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="task, approval, sample worker, and review flow &gt; parser skips done tasks and code blocks and retains person ownership" time="0.0056952">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="task, approval, sample worker, and review flow &gt; finds real plan tasks, adds suffixes, and prevents duplicate tasks" time="0.2749271">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="task, approval, sample worker, and review flow &gt; approval propagates, disallows concurrent sessions, finishes real writes, and Keep all completes task" time="0.6682155">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="task, approval, sample worker, and review flow &gt; declines file creation while continuing the recorded plan update" time="0.4595896">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="task, approval, sample worker, and review flow &gt; stop expires needs immediately and fault preserves its partial changes" time="0.4951415">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="request and filesystem boundaries &gt; rejects foreign/null origins, missing custom headers, and DNS-rebinding hosts" time="0.0499903">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="request and filesystem boundaries &gt; rejects path traversal, credential stores, junctions, and reserved names" time="0.2472076">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="request and filesystem boundaries &gt; settings survive restart and every supported appearance validates" time="0.2124221">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="threads are first-class conversations &gt; old state without thread fields loads with fields filled and stays stable" time="0.1578418">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="threads are first-class conversations &gt; settings without surface get &apos;workbook&apos; (standard) and &apos;console&apos; (technical)" time="0.0271601">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="threads are first-class conversations &gt; POST /threads creates, PUT renames, GET lists newest-updated first" time="0.3136279">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="threads are first-class conversations &gt; POST /ask with threadId appends to that thread and bumps updatedAt" time="0.3452905">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="threads are first-class conversations &gt; Work task names use the trimmed first line at an 80-character word boundary" time="0.8364222">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="threads are first-class conversations &gt; threads default to show-first, PUT sets task, and full is rejected" time="0.2181138">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="threads are first-class conversations &gt; migration fills missing thread permission with show-first and stays stable" time="0.1406353">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="threads are first-class conversations &gt; work sessions carry the thread permission, defaulting to show-first" time="0.6446895">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="request and filesystem boundaries (continued) &gt; sample Ask is honest, sample Plan writes a real file, and Codex requires explicit settings and consent" time="0.3628339">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="the data folder lock tells a live owner from a reused pid &gt; this platform reports its own start time, and a loopback port is testable" time="0.789581">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="the data folder lock tells a live owner from a reused pid &gt; a live pid whose start time matches still owns the folder" time="2.2953676">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="the data folder lock tells a live owner from a reused pid &gt; a live pid whose start time differs is a reused pid, so the lock is stale" time="1.4753908">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="the data folder lock tells a live owner from a reused pid &gt; a dead pid leaves a stale lock that a new start clears" time="0.1861213">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="the data folder lock tells a live owner from a reused pid &gt; an unreadable start time falls back to the recorded port" time="0.0048124">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="the data folder lock tells a live owner from a reused pid &gt; a corrupt or pidless lock is cleared instead of blocking a start" time="0.0083513">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="verified helper is stored with every turn and session &gt; a Codex Ask turn carries the runtime-reported helper" time="0.0960037">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="verified helper is stored with every turn and session &gt; a Codex Plan names the verified helper in its History sentence" time="0.1444264">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="verified helper is stored with every turn and session &gt; sample work carries engine &apos;sample&apos; with verified true on the turn and session" time="0.1707286">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="verified helper is stored with every turn and session &gt; Codex Work marks the session engine and the thread turn verified once the runtime reports" time="0.1010885">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="modes belong to the thread and every turn &gt; a stored state with &apos;work&apos; turns loads as &apos;build&apos; and the thread gets mode" time="0.1094837">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="modes belong to the thread and every turn &gt; PUT /threads/:id { mode: &apos;fix&apos; } persists and { mode: &apos;x&apos; } is 400" time="0.1174936">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="modes belong to the thread and every turn &gt; POST /ask with mode: &apos;fix&apos; and no failing is 400" time="0.1239034">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="modes belong to the thread and every turn &gt; fix with failing.document in sources on the sample route carries attempt 1 of 3" time="0.1517912">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="modes belong to the thread and every turn &gt; the fourth fix in the same thread is 409" time="0.3883611">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="modes belong to the thread and every turn &gt; ask and plan turns record their mode" time="0.1625758">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="modes belong to the thread and every turn &gt; mode: &apos;work&apos; is accepted and stored as &apos;build&apos;" time="0.1274662">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="state reads stay fast with a cached documents listing &gt; (a) projectState returns quickly with a large folder" time="4.977235">
+            <system-out>
+state-speed: second /state with 3000 files took 12 ms
+
+            </system-out>
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="state reads stay fast with a cached documents listing &gt; (b) SKIPPED_FOLDERS are never listed" time="0.0987844">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="state reads stay fast with a cached documents listing &gt; (c) persisted state on disk contains no documents rows" time="0.1042588">
+        </testcase>
+        <testcase classname="tests/backend.test.ts" name="state reads stay fast with a cached documents listing &gt; (d) statePayload strips documents and the SSE state event carries no rows" time="0.1452217">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/codex-engine.test.ts" timestamp="2026-09-09T07:49:17.936Z" hostname="Andrews-Desktop" tests="24" failures="0" errors="0" skipped="0" time="6.0442664">
+        <testcase classname="tests/codex-engine.test.ts" name="durable admission, identical concurrent retry, restart, exact decision and one recorded write" time="0.4981319">
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="changed command payload and concurrent different starts cannot dispatch again" time="0.2267953">
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="consent cannot manufacture outbound permission" time="0.0310063">
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="principal cannot manufacture outbound permission" time="0.0306533">
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="sending cannot manufacture outbound permission" time="0.0457343">
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="authority cannot manufacture outbound permission" time="0.0562663">
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="admission persistence failure prevents dispatch and a retry creates one durable receipt" time="0.2849917">
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="revocation while dispatch is waiting prevents the provider send" time="0.1830691">
+            <system-err>
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="unknown provider completion stays parked and never causes redispatch" time="0.2776767">
+            <system-err>
+The harness run stopped: Error: Synthetic lost completion
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="changed source text prevents application after exact approval" time="0.5404718">
+            <system-err>
+The harness run stopped: Error: A selected source changed before the approved write was prepared.
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="current authority is required for a later exact decision" time="0.2964269">
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="lost authority pauses recovery without blocking startup or changing the saved run" time="0.6079264">
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="a expired grant or context cannot dispatch" time="0.4235472">
+            <system-err>
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="a forged grant or context cannot dispatch" time="0.4335472">
+            <system-err>
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="a cross-run grant or context cannot dispatch" time="0.1932529">
+            <system-err>
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="a cross-project grant or context cannot dispatch" time="0.1646899">
+            <system-err>
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="a destination grant or context cannot dispatch" time="0.1996822">
+            <system-err>
+The harness run stopped: [
+  {
+    &quot;code&quot;: &quot;invalid_value&quot;,
+    &quot;values&quot;: [
+      &quot;openai:chatgpt&quot;
+    ],
+    &quot;path&quot;: [
+      &quot;grant&quot;,
+      &quot;destination&quot;
+    ],
+    &quot;message&quot;: &quot;Invalid input: expected \&quot;openai:chatgpt\&quot;&quot;
+  }
+]
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="a context grant or context cannot dispatch" time="0.1554919">
+            <system-err>
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="a generation grant or context cannot dispatch" time="0.1832485">
+            <system-err>
+The harness run stopped: Error: Authority generation advanced; this run needs reconciliation.
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="a account grant or context cannot dispatch" time="0.1884116">
+            <system-err>
+The harness run stopped: HarnessError: Actual provider context or account differs from consent.
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="changing the requested model under an admitted command conflicts" time="0.2778536">
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="Stop after dispatch rejects late proposal output" time="0.2850732">
+            <system-err>
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="the host grant deadline expires without modifying the saved input" time="0.2071602">
+            <system-err>
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/codex-engine.test.ts" name="sending permission cannot accept a result after reconcile permission is revoked" time="0.25122">
+            <system-err>
+The harness run stopped: Error: Current authority lacks egress.reconcile.
+
+            </system-err>
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/discovery.test.ts" timestamp="2026-09-09T07:49:17.941Z" hostname="Andrews-Desktop" tests="25" failures="0" errors="0" skipped="0" time="5.7811681">
+        <testcase classname="tests/discovery.test.ts" name="binary engine discovery &gt; reports an engine found on PATH with a parsed version" time="0.0038136">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="binary engine discovery &gt; uses the first PATH hit when several are reported" time="0.0006673">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="binary engine discovery &gt; falls back to the known folders when PATH has nothing" time="0.0013019">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="binary engine discovery &gt; reports not installed with no location when nothing is found" time="0.000787">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="binary engine discovery &gt; a timing-out --version still yields found with no version" time="0.0007456">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="binary engine discovery &gt; reports Cursor as installed without running its launcher" time="0.000762">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="binary engine discovery &gt; runs one probe at a time" time="0.2055783">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="binary engine discovery &gt; a failing --version still yields found with no version" time="0.0007649">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="binary engine discovery &gt; garbage --version output is not thrown on" time="0.0011099">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="binary engine discovery &gt; reads the version from stderr when stdout is empty" time="0.0005596">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="binary engine discovery &gt; keeps raw output out of the entry when output is huge" time="0.0010495">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="binary engine discovery &gt; the production runner caps stdout over 4 KB" time="0.2712122">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="loopback service discovery &gt; reports Hermes running for any HTTP status, down when refused" time="0.0033362">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="loopback service discovery &gt; reports Ollama installed-not-running and running" time="0.001004">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="loopback service discovery &gt; uses GET with no redirects and a short timeout for loopback checks" time="0.0005851">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="codex drift notice &gt; appends the drift sentence when the installed copy differs" time="0.0017622">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="codex drift notice &gt; does not append the sentence when versions match or nothing is installed" time="0.0010179">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="roster composition &gt; returns the roster in order" time="0.0007752">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="roster composition &gt; gives every entry all contract fields" time="0.0035366">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="roster composition &gt; keeps available false for planned and observe-only engines" time="0.0009362">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="roster composition &gt; uses no banned word in any discovered status or detail" time="0.0014714">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="roster composition &gt; re-runs discovery only on refresh" time="0.0016385">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="roster composition &gt; GET /api/integrations keeps its shape and honours ?refresh=1" time="5.2731946">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="Windows launcher shims &gt; prefers an .exe, then a .cmd, over an extension-less shim from where" time="0.0005699">
+        </testcase>
+        <testcase classname="tests/discovery.test.ts" name="Windows launcher shims &gt; runs .cmd launchers through cmd.exe with a fixed argument list and refuses metacharacters" time="0.0004231">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/effort.test.ts" timestamp="2026-09-09T07:49:17.944Z" hostname="Andrews-Desktop" tests="7" failures="0" errors="0" skipped="0" time="0.0055413">
+        <testcase classname="tests/effort.test.ts" name="reasoning level for a run &gt; uses the mode default when nothing was chosen" time="0.001247">
+        </testcase>
+        <testcase classname="tests/effort.test.ts" name="reasoning level for a run &gt; lets a choice outrank the mode default where there is no ceiling" time="0.001166">
+        </testcase>
+        <testcase classname="tests/effort.test.ts" name="reasoning level for a run &gt; holds Fix to its ceiling however deep the choice" time="0.0005148">
+        </testcase>
+        <testcase classname="tests/effort.test.ts" name="reasoning level for a run &gt; leaves a Fix choice alone when it is already at or under the ceiling" time="0.0001681">
+        </testcase>
+        <testcase classname="tests/effort.test.ts" name="reasoning level for a run &gt; holds an unknown level to the ceiling rather than letting it through" time="0.0001554">
+        </testcase>
+        <testcase classname="tests/effort.test.ts" name="reasoning level for a run &gt; reports when the ceiling lowered a choice, so the person can be told" time="0.0002277">
+        </testcase>
+        <testcase classname="tests/effort.test.ts" name="reasoning level for a run &gt; orders the ladder weakest first, which is what makes a ceiling mean anything" time="0.0006111">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/harness-host.test.ts" timestamp="2026-09-09T07:49:17.945Z" hostname="Andrews-Desktop" tests="22" failures="0" errors="0" skipped="0" time="13.2889795">
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; one Session, exact Need, recorded write, receipt replay, and reconnect cursor survive reopening" time="0.9602425">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; an unanswered Need remains resolvable after service restart" time="0.7952003">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; expired approval is refused and the run remains waiting" time="0.9811326">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; declining cancels the run, persists the single decision, and writes no report" time="0.6249102">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; API start uses the bridge and both native and existing Work starts refuse a second active run" time="0.3420235">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; a newer run version cannot break app startup or overwrite the run file" time="0.3947606">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; routes validate the cursor, enforce project scope and client header, and cancel through the person principal" time="0.4779252">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; a malformed step record cannot break startup and is not rewritten" time="0.4396302">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; a malformed null record cannot break startup and is not rewritten" time="0.3339276">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; a malformed scope record cannot break startup and is not rewritten" time="0.3554075">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; a failed initial claim cannot be revived by a queued mirror or a restart" time="0.0911389">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; a listing that started before run creation cannot erase the new run lookup" time="0.2715198">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; duplicate run ids are refused without breaking unrelated project startup" time="0.5568473">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; atomic run replacement retries a transient lock and surfaces a permanent failure" time="0.6330737">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; outside edits invalidate the exact write and remain untouched" time="0.4090332">
+            <system-err>
+The harness run stopped: Error: This document changed since you opened it. Read its current version before saving.
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; changed identity is refused and the existing Session stop route cancels the harness" time="0.3449754">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; thread permission is mirrored while the fixture still requires exact approval" time="0.3536664">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; unknown effects stay waiting for reconciliation across failure, completion, restart, and cancellation" time="0.3469189">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; secret scrubber covers durable errors, event mirrors, and returned run records" time="0.2310737">
+            <system-err>
+The harness run stopped: [redacted]: Synthetic error [redacted]
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; abrupt exit at after-decision recovers the Store first and commits the harness observation once" time="1.438652">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; abrupt exit at journal recovers the Store first and commits the harness observation once" time="1.4682734">
+        </testcase>
+        <testcase classname="tests/harness-host.test.ts" name="native harness through the real host &gt; abrupt exit at after-write recovers the Store first and commits the harness observation once" time="1.4359025">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/harness-negative.test.ts" timestamp="2026-09-09T07:49:17.948Z" hostname="Andrews-Desktop" tests="40" failures="0" errors="0" skipped="0" time="0.6894947">
+        <testcase classname="tests/harness-negative.test.ts" name="start must not accept bad input &gt; start must not accept a run id with a space or a slash" time="0.0051388">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="start must not accept bad input &gt; start must not accept a capability with zero maxTurns" time="0.0012936">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="start must not accept bad input &gt; start must not accept a principal outside the run tenant and project" time="0.0012401">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="start must not accept bad input &gt; start must not accept a fractional wallMs budget" time="0.0012098">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="start must not accept bad input &gt; start must not accept a capability naming a tool the registry does not have" time="0.0076055">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="leases and events must not misbehave &gt; claim must not accept TTL 0 or an empty owner" time="0.0091066">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="leases and events must not misbehave &gt; claim must not leave the run queued after the first claim or thereafter" time="0.0152529">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="leases and events must not misbehave &gt; a renewal by the same live owner must not change the generation; only a new claim does" time="0.019551">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="leases and events must not misbehave &gt; events must not accept a negative cursor" time="0.0111301">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="leases and events must not misbehave &gt; events must not return anything after the last sequence" time="0.0135986">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="steps must not run without a valid intent &gt; step must not accept an unknown kind, effect or fractional maxAttempts before hooks run" time="0.0131633">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="steps must not run without a valid intent &gt; step must not run on an unknown run id" time="0.0139752">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="approvals must not be granted loosely &gt; decide must not answer a step that is not waiting" time="0.0255423">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="approvals must not be granted loosely &gt; decide must not accept TTL 0" time="0.0124691">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="approvals must not be granted loosely &gt; decide must not accept an empty decidedBy" time="0.0126517">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="approvals must not be granted loosely &gt; decide must not approve the same waiting step twice" time="0.0428968">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="approvals must not be granted loosely &gt; an approved step must not execute without consuming its approval" time="0.0269012">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="completion and failure must not break the record &gt; complete must not succeed for an owner without the lease" time="0.0105563">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="completion and failure must not break the record &gt; complete must not finish while a step is still running" time="0.0526923">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="completion and failure must not break the record &gt; complete must not write a second completed event" time="0.017022">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="completion and failure must not break the record &gt; fail must not skip the failure record and its event" time="0.0166519">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="completion and failure must not break the record &gt; fail must not change a completed run" time="0.0192139">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="completion and failure must not break the record &gt; cancel must not leave an aborted step running" time="0.0490734">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="forks and tools must not invent history &gt; fork must not accept an unknown fork point" time="0.0396201">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="forks and tools must not invent history &gt; fork must not reuse a child id" time="0.0432802">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="forks and tools must not invent history &gt; fork must not misprice the child or misnumber its first event" time="0.0468448">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="forks and tools must not invent history &gt; register must not accept an uppercase name, a negative cost or a missing execute" time="0.001449">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="forks and tools must not invent history &gt; validate must not accept an extra key on a strict schema" time="0.0021304">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="forks and tools must not invent history &gt; get must not return an unknown tool" time="0.0001282">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="the agent and budgets must not overspend &gt; NativeAgent must not accept an adapter without capabilities" time="0.0001471">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="the agent and budgets must not overspend &gt; the agent must not accept a weird model response without failing the run" time="0.0335254">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="the agent and budgets must not overspend &gt; the agent must not lose a throwing model call" time="0.038515">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="the agent and budgets must not overspend &gt; a second model step must not exceed one model call" time="0.0342223">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="the agent and budgets must not overspend &gt; a tool step must not run with zero tool calls" time="0.0197526">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="the store and presentation must not lie &gt; read must not parse a file containing not json" time="0.0044272">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="the store and presentation must not lie &gt; list must not throw on a folder that does not exist" time="0.0006044">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="the store and presentation must not lie &gt; create must not accept a duplicate run id" time="0.0233171">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="the store and presentation must not lie &gt; presentRun must not invent a reason when nothing waits inside" time="0.0005802">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="the store and presentation must not lie &gt; needFromWaitingStep must not drop the requested files" time="0.0003108">
+        </testcase>
+        <testcase classname="tests/harness-negative.test.ts" name="the store and presentation must not lie &gt; weakestGuarantee must not promise more than unsupported for fixture and codex routes" time="0.0002141">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/harness-present.test.ts" timestamp="2026-09-09T07:49:17.953Z" hostname="Andrews-Desktop" tests="8" failures="0" errors="0" skipped="0" time="0.0059006">
+        <testcase classname="tests/harness-present.test.ts" name="presenting a harness run in the existing vocabulary &gt; waiting for approval reads as a task that needs you" time="0.0014442">
+        </testcase>
+        <testcase classname="tests/harness-present.test.ts" name="presenting a harness run in the existing vocabulary &gt; an uncertain outcome is shown as something went wrong, not as done" time="0.0004087">
+        </testcase>
+        <testcase classname="tests/harness-present.test.ts" name="presenting a harness run in the existing vocabulary &gt; completed, failed and cancelled map onto done, failed and stopped" time="0.0004033">
+        </testcase>
+        <testcase classname="tests/harness-present.test.ts" name="presenting a harness run in the existing vocabulary &gt; fork lineage and evidence counts are carried through" time="0.0008014">
+        </testcase>
+        <testcase classname="tests/harness-present.test.ts" name="presenting a harness run in the existing vocabulary &gt; a waiting step becomes Need fields the host can create without new words" time="0.0003487">
+        </testcase>
+        <testcase classname="tests/harness-present.test.ts" name="adapter capability matrix &gt; every adapter labels every guarantee with one of the four words" time="0.0004787">
+        </testcase>
+        <testcase classname="tests/harness-present.test.ts" name="adapter capability matrix &gt; Codex tool calls and network are observed, never enforced" time="0.0003941">
+        </testcase>
+        <testcase classname="tests/harness-present.test.ts" name="adapter capability matrix &gt; guarantee sentences are plain and name the weakest label" time="0.0003966">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/harness-provider-outcomes.test.ts" timestamp="2026-09-09T07:49:17.954Z" hostname="Andrews-Desktop" tests="6" failures="0" errors="0" skipped="0" time="0.1454033">
+        <testcase classname="tests/harness-provider-outcomes.test.ts" name="an unknown external model read is not redispatched after an error or restart" time="0.0494729">
+        </testcase>
+        <testcase classname="tests/harness-provider-outcomes.test.ts" name="an external model in flight remains uncertain on restart and ignores late success" time="0.0209483">
+        </testcase>
+        <testcase classname="tests/harness-provider-outcomes.test.ts" name="an external model in flight remains uncertain on ownership-change and ignores late success" time="0.019975">
+        </testcase>
+        <testcase classname="tests/harness-provider-outcomes.test.ts" name="an external model in flight remains uncertain on cancel and ignores late success" time="0.0153472">
+        </testcase>
+        <testcase classname="tests/harness-provider-outcomes.test.ts" name="a completed external model observation replays without another dispatch" time="0.0164788">
+        </testcase>
+        <testcase classname="tests/harness-provider-outcomes.test.ts" name="local scripted model reads retain their existing retry behavior" time="0.0222725">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/harness.test.ts" timestamp="2026-09-09T07:49:17.955Z" hostname="Andrews-Desktop" tests="51" failures="0" errors="0" skipped="0" time="2.6017981">
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; successful steps are checkpointed and never invoked again" time="0.0355731">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a committed checkpoint survives reopening the store" time="0.018898">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; events carry a cursor and can be read from after it" time="0.025589">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; changed arguments cannot reuse an old step id" time="0.0226714">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; an unknown non-idempotent outcome is not automatically retried" time="0.0307745">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; idempotent retries keep the same effect key" time="0.0259865">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; safe retries still have a bounded attempt count" time="0.0513555">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; budget is reserved before the handler, including failed attempts" time="0.0187828">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; budget and cost reject negative and fractional units" time="0.0097355">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; approval suspends before execution and binds to the exact intent" time="0.029036">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; an expired approval cannot authorize an operation" time="0.0267061">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; an approval granted under an older identity generation is not honoured" time="0.028686">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a denied approval cancels the step and the run" time="0.0251837">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; approval rejects a different tenant" time="0.0169971">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a live lease cannot be stolen by another owner" time="0.0186595">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; renewing a live lease keeps the fence, so an in-flight step can still commit" time="0.0608367">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; cancelling while a step with an effect is in flight parks it for reconciliation" time="0.0608708">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; cancelling with a principal from another project is refused" time="0.0234009">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a run parked for reconciliation cannot be completed or overwritten by a failure" time="0.0305311">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a fresh decision after an identity rotation is consumable under the new generation" time="0.0422624">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; error messages pass through the host redaction before they are persisted" time="0.0357064">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a capability whose tool list is not a list of names cannot start" time="0.0139998">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a cancelled run cannot be completed" time="0.0277143">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; replaying a completed step does not rewrite the run file" time="0.0552702">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a stale owner cannot commit after another owner claims the expired lease" time="0.0268617">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a different tenant cannot execute a run" time="0.0112308">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a different project cannot execute a run" time="0.0110101">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a capability asking for a permission the principal lacks cannot start" time="0.0211918">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; policy denial happens before optional hooks and before the handler" time="0.0138373">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; restricted data cannot leave for an external destination" time="0.008518">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a step with no label is treated as untrusted and restricted" time="0.0129921">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; hooks run in registration order and cannot override a denial" time="0.0222095">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; caller mutation during a hook cannot alter the captured intent" time="0.0263965">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a concurrent invocation cannot poison an in-flight non-idempotent step" time="0.0359951">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; two services over the same folder cannot dispatch under the same lease generation" time="0.0298293">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; cancelling a run stops later steps and records the reason" time="0.0367025">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; completion writes the result and its event in one durable write" time="0.0245963">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a fork reuses only a completed pure prefix and no approvals" time="0.0464818">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a fork starts its own lineage without the parent transcript" time="0.0471218">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a fork refuses a prefix containing external side effects" time="0.0237415">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="durable step boundary &gt; a run file from a later contract version is refused, not migrated silently" time="0.0119712">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="crash after an external effect &gt; a process exit after the effect leaves a durable reconciliation boundary" time="0.723382">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="native loop over an injected model adapter &gt; the loop owns model, tool and final steps and reuses the recorded trajectory" time="0.1322486">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="native loop over an injected model adapter &gt; the model cannot invent a tool or choose privileged handler metadata" time="0.0796458">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="native loop over an injected model adapter &gt; invalid tool arguments are rejected before the handler runs" time="0.0558597">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="native loop over an injected model adapter &gt; the loop enforces an explicit turn budget" time="0.1445814">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="native loop over an injected model adapter &gt; a tool with an effect that fails inside the loop parks the run, and the loop does not overwrite that" time="0.0986657">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="native loop over an injected model adapter &gt; a registered tool outside the capability is not offered and cannot be called" time="0.0689189">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="native loop over an injected model adapter &gt; a tool the principal may not use is refused by the boundary, not the model" time="0.0701857">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="native loop over an injected model adapter &gt; the provider transcript is kept apart from the portable context" time="0.0794336">
+        </testcase>
+        <testcase classname="tests/harness.test.ts" name="native loop over an injected model adapter &gt; the registry refuses duplicate names and describes tools without handlers" time="0.0005707">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/integrations.test.ts" timestamp="2026-09-09T07:49:17.960Z" hostname="Andrews-Desktop" tests="68" failures="0" errors="0" skipped="0" time="2.5163521">
+        <testcase classname="tests/integrations.test.ts" name="host-bound Codex context dispatch &gt; checks the exact account and context before thread and turn dispatch" time="0.005167">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="host-bound Codex context dispatch &gt; a grant denied at the final check prevents turn/start" time="0.0018645">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="host-bound Codex context dispatch &gt; an unmediated native instruction file cannot join the authorized context" time="0.000653">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; isolates the lead config and forwards only its token" time="0.0067919">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; isolates the member config and forwards only its token" time="0.0152693">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; reports an absent or disabled team without sending a turn (%j)" time="0.0009741">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; reports an absent or disabled team without sending a turn ({&quot;name&quot;:&quot;inherited&quot;,&quot;runtimeStatus&quot;:&quot;disabled&quot;,&quot;tools&quot;:{},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[]})" time="0.000641">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; reports an absent or disabled team without sending a turn ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:&quot;disabled&quot;,&quot;tools&quot;:{&quot;team_members&quot;:{&quot;name&quot;:&quot;team_members&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0006663">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; reports an absent or disabled team without sending a turn ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:&quot;connected&quot;,&quot;tools&quot;:{&quot;team_members&quot;:{&quot;name&quot;:&quot;team_members&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;,&quot;enabled&quot;:false})" time="0.0009069">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; fails closed for unproven inventories ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:&quot;connected&quot;,&quot;tools&quot;:{&quot;team_members&quot;:{&quot;name&quot;:&quot;team_members&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0007957">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; fails closed for unproven inventories ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:&quot;connected&quot;,&quot;tools&quot;:{&quot;team_members&quot;:{&quot;name&quot;:&quot;team_members&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0009464">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; fails closed for unproven inventories ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:&quot;connected&quot;,&quot;tools&quot;:{&quot;team_members&quot;:{&quot;name&quot;:&quot;team_members&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0006557">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; fails closed for unproven inventories ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:&quot;connected&quot;,&quot;tools&quot;:{&quot;team_members&quot;:{&quot;name&quot;:&quot;team_members&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0004656">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; fails closed for unproven inventories ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:&quot;connected&quot;,&quot;tools&quot;:{&quot;team_members&quot;:{&quot;name&quot;:&quot;team_members&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0004623">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; fails closed for unproven inventories ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:&quot;connected&quot;,&quot;tools&quot;:{},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0004571">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; fails closed for unproven inventories ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:&quot;connected&quot;,&quot;tools&quot;:{&quot;another_tool&quot;:{&quot;name&quot;:&quot;another_tool&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0005093">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; fails closed for unproven inventories ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:null,&quot;tools&quot;:{&quot;team_members&quot;:{&quot;name&quot;:&quot;team_members&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0004633">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; fails closed for unproven inventories ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;tools&quot;:{&quot;team_members&quot;:{&quot;name&quot;:&quot;team_members&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0004386">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; fails closed for unproven inventories ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:&quot;unknown-state&quot;,&quot;tools&quot;:{&quot;team_members&quot;:{&quot;name&quot;:&quot;team_members&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0003153">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; fails closed for unproven inventories ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:&quot;notStarted&quot;,&quot;tools&quot;:{&quot;team_members&quot;:{&quot;name&quot;:&quot;team_members&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0004879">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; fails closed for unproven inventories ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:&quot;authenticationRequired&quot;,&quot;tools&quot;:{&quot;team_members&quot;:{&quot;name&quot;:&quot;team_members&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0006291">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; fails closed for unproven inventories ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:&quot;failed&quot;,&quot;tools&quot;:{&quot;team_members&quot;:{&quot;name&quot;:&quot;team_members&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0006928">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; fails closed for unproven inventories ({&quot;name&quot;:&quot;diomedes_team&quot;,&quot;runtimeStatus&quot;:&quot;cancelled&quot;,&quot;tools&quot;:{&quot;team_members&quot;:{&quot;name&quot;:&quot;team_members&quot;}},&quot;resources&quot;:[],&quot;resourceTemplates&quot;:[],&quot;authStatus&quot;:&quot;bearerToken&quot;})" time="0.0006456">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; re-lists a starting team until it connects before sending the turn" time="0.2185649">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; stops after five re-lists if the team stays starting" time="1.0266983">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; refuses incomplete status pages and inherited trusted-name collisions" time="0.0014005">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; accepts and reports only Diomedes team calls without logging arguments or results" time="0.0169564">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; still refuses tools outside the team boundary ({&quot;type&quot;:&quot;mcpToolCall&quot;,&quot;server&quot;:&quot;foreign&quot;,&quot;tool&quot;:&quot;team_members&quot;})" time="0.0131943">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; still refuses tools outside the team boundary ({&quot;type&quot;:&quot;mcpToolCall&quot;,&quot;server&quot;:&quot;diomedes_team_extra&quot;,&quot;tool&quot;:&quot;team_members&quot;})" time="0.0171458">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; still refuses tools outside the team boundary ({&quot;type&quot;:&quot;mcpToolCall&quot;,&quot;tool&quot;:&quot;diomedes_team__team_members&quot;})" time="0.0133223">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; still refuses tools outside the team boundary ({&quot;type&quot;:&quot;mcpToolCall&quot;,&quot;server&quot;:&quot;diomedes_team&quot;,&quot;tool&quot;:&quot;bad\nlog&quot;})" time="0.0156906">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; still refuses tools outside the team boundary ({&quot;type&quot;:&quot;commandExecution&quot;})" time="0.0149461">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; still refuses tools outside the team boundary ({&quot;type&quot;:&quot;fileChange&quot;})" time="0.0165668">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; still refuses tools outside the team boundary ({&quot;type&quot;:&quot;dynamicToolCall&quot;})" time="0.0161089">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; still refuses tools outside the team boundary ({&quot;type&quot;:&quot;webSearch&quot;})" time="0.0139291">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; never allows the team server implicitly, and preserves the default disclosure" time="0.015649">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; refuses unsafe or incomplete team options before launching ({&quot;url&quot;:&quot;https://external.example/mcp/team/project-1&quot;})" time="0.0005472">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; refuses unsafe or incomplete team options before launching ({&quot;url&quot;:&quot;http://127.0.0.1.example/mcp/team/project-1&quot;})" time="0.0001801">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; refuses unsafe or incomplete team options before launching ({&quot;url&quot;:&quot;http://user:password@127.0.0.1/mcp/team/project-1&quot;})" time="0.0001535">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; refuses unsafe or incomplete team options before launching ({&quot;url&quot;:&quot;http://127.0.0.1:4321/mcp/team/project-1?token=secret&quot;})" time="0.0003147">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; refuses unsafe or incomplete team options before launching ({&quot;url&quot;:&quot;not a URL&quot;})" time="0.0002677">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; refuses unsafe or incomplete team options before launching ({&quot;tokenEnv&quot;:&quot;OPENAI_API_KEY&quot;})" time="0.0002603">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; refuses unsafe or incomplete team options before launching ({&quot;tokenEnv&quot;:&quot;NODE_OPTIONS&quot;})" time="0.0004325">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; refuses unsafe or incomplete team options before launching ({&quot;tokenEnv&quot;:&quot;DIOMEDES_TEAM_MISSING_TOKEN&quot;})" time="0.000269">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; refuses unsafe or incomplete team options before launching ({&quot;slotId&quot;:&quot;owner&quot;})" time="0.0002454">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; refuses unsafe or incomplete team options before launching ({&quot;slotId&quot;:&quot;bad\r\nHeader: value&quot;})" time="0.0002416">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="opt-in Diomedes team boundary &gt; refuses unsafe or incomplete team options before launching ({&quot;roleInstructions&quot;:&quot;&quot;})" time="0.0004419">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; uses selected content, native account, no environment tools, and denies inherited MCP entries before a turn" time="0.0020355">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; passes an explicit model in thread/start config when given, and leaves the runtime default otherwise" time="0.0250839">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; prefers the turn-reported model when turn/completed carries one" time="0.0061288">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; never starts an engine when the real sandbox probe fails" time="0.000435">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; rejects apiKey authentication without falling back" time="0.000346">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; rejects null authentication without falling back" time="0.0002315">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; rejects amazonBedrock authentication without falling back" time="0.0002849">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; rejects provider replacement before the thread starts" time="0.0004162">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; leaves endpoint selection to native ChatGPT auth and blocks API endpoint overrides" time="0.0003225">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; accepts configured MCP entries only when the native runtime confirms they are disabled and empty" time="0.0068959">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; refuses policy drift and active MCP tools before sending context to a model" time="0.0005872">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; reports failed turns without returning partial success" time="0.0151193">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; closes only the owned client when cancelled and when the turn times out" time="0.0468159">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; rejects oversized and already-cancelled input before launching a process" time="0.0008157">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; reports live capability limits, keeps account details private, and only observes LocalAI" time="0.0030087">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; does not mistake a responding unrelated local service for LocalAI" time="0.0003787">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="native integration boundary &gt; does not inherit credentials, provider routing, or task-control variables" time="0.0000834">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="owned native JSON-line process transport &gt; correlates responses and terminates its owned subprocess" time="0.4610477">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="owned native JSON-line process transport &gt; surfaces protocol timeouts instead of success-shaped output" time="0.4757051">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="per-mode harness values &gt; sends instructions and effort when given, else today&apos;s values" time="0.0218856">
+        </testcase>
+        <testcase classname="tests/integrations.test.ts" name="per-mode harness values &gt; leaves a team run unchanged" time="0.0020618">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/models.test.ts" timestamp="2026-09-09T07:49:17.966Z" hostname="Andrews-Desktop" tests="8" failures="0" errors="0" skipped="0" time="0.0213572">
+        <testcase classname="tests/models.test.ts" name="engine catalogue &gt; reads the models the engine lists, best first, with their own ladders" time="0.0054283">
+        </testcase>
+        <testcase classname="tests/models.test.ts" name="engine catalogue &gt; never forwards the instruction text the cache carries" time="0.0026969">
+        </testcase>
+        <testcase classname="tests/models.test.ts" name="engine catalogue &gt; leaves out models the engine does not list" time="0.0016346">
+        </testcase>
+        <testcase classname="tests/models.test.ts" name="engine catalogue &gt; only offers a default the model actually supports" time="0.0014863">
+        </testcase>
+        <testcase classname="tests/models.test.ts" name="engine catalogue &gt; says so plainly when there is no cache, and when it cannot be read" time="0.0025392">
+        </testcase>
+        <testcase classname="tests/models.test.ts" name="engine catalogue &gt; reports the engines that have no catalogue without pretending otherwise" time="0.0005851">
+        </testcase>
+        <testcase classname="tests/models.test.ts" name="engine catalogue &gt; rejects a pair the engine does not offer, so a stale choice is never sent" time="0.0016928">
+        </testcase>
+        <testcase classname="tests/models.test.ts" name="engine catalogue &gt; picks up a rewritten cache rather than serving the first read forever" time="0.0040634">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/modes.test.ts" timestamp="2026-09-09T07:49:17.967Z" hostname="Andrews-Desktop" tests="5" failures="0" errors="0" skipped="0" time="0.0043919">
+        <testcase classname="tests/modes.test.ts" name="modes harness &gt; the four definitions carry the fixed harness values" time="0.0018823">
+        </testcase>
+        <testcase classname="tests/modes.test.ts" name="modes harness &gt; modeOf(&apos;work&apos;) is &apos;build&apos;" time="0.0002036">
+        </testcase>
+        <testcase classname="tests/modes.test.ts" name="modes harness &gt; modeOf(&apos;fix&apos;) is &apos;fix&apos;" time="0.0001385">
+        </testcase>
+        <testcase classname="tests/modes.test.ts" name="modes harness &gt; modeOf(&apos;x&apos;) and modeOf(1) are undefined" time="0.0000987">
+        </testcase>
+        <testcase classname="tests/modes.test.ts" name="modes harness &gt; every instructions string is under 900 characters" time="0.0001882">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/native-work.test.ts" timestamp="2026-09-09T07:49:17.968Z" hostname="Andrews-Desktop" tests="45" failures="0" errors="0" skipped="0" time="13.2422223">
+        <testcase classname="tests/native-work.test.ts" name="member thread to real adapter glue &gt; ask forwards team config and tracks completion" time="0.5666678">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="member thread to real adapter glue &gt; work/start forwards team config and tracks completion" time="0.4773148">
+            <system-out>
+Fake app-server team configuration: {&quot;url&quot;:&quot;http://127.0.0.1:49713/mcp/team/4317afade10d&quot;,&quot;tokenEnv&quot;:&quot;DIOMEDES_TEAM_S6C339C1E0413&quot;,&quot;slotId&quot;:&quot;S6c339c1e0413&quot;,&quot;role&quot;:&quot;lead&quot;,&quot;roleInstructions&quot;:&quot;You are Astra, the leader of a small team working on the project &apos;Harbor Street restaurants&apos; in Diomedes. You plan and delegate; members do the work; the person who owns the project approves anything that matters. Use the team tools: team_members to see the roster, team_task_create and team_task_update to put work on the board and hand it to a member (owner = their slot), team_send_message to give direction, team_read_messages to hear back. Diomedes applies file changes only after the person approves them, so describe changes as proposals. Keep messages short and specific. Do not claim work is done until a member reports it and the board shows it.&quot;}
+
+            </system-out>
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="member thread to real adapter glue &gt; unowned thread keeps all MCP disabled" time="0.4038618">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="member thread to real adapter glue &gt; other-engine thread keeps all MCP disabled" time="0.4104101">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="member thread to real adapter glue &gt; waits for approval, then handles go-ahead and releases token" time="0.9128893">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="member thread to real adapter glue &gt; waits for approval, then handles declined and releases token" time="0.5895384">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="member thread to real adapter glue &gt; failed generation redacts token echoes and records failure" time="0.3255036">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="member thread to real adapter glue &gt; redacts token echoes in proposal text and decoded JSON before persistence" time="0.3558302">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="member thread to real adapter glue &gt; missing secrets reject before generation or creating a run" time="0.3231242">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="member thread to real adapter glue &gt; an occupied environment is preserved and blocks a second lease" time="0.2914165">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="member thread to real adapter glue &gt; service close cancels live member work and releases its environment" time="0.3101043">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="member thread to real adapter glue &gt; stop releases the token and ignores late results; a rejected second start preserves the live token" time="0.3113285">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; returns before generation finishes and sends only explicit sources" time="0.273386">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; applies approved text through real history and review, with reversible deletion" time="0.5950566">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; declining a proposal writes no files and returns the task to To do" time="0.2759365">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; rejects stale selected text before any proposed file is written" time="0.2945605">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; checks source freshness even when that source is not modified by the proposal" time="0.2633041">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; preserves a new target created by someone else while approval was pending" time="0.2104549">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; stops immediately, aborts its generator, and ignores a late response" time="0.2684373">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; a stopped response cannot attach a proposal to a newer session" time="0.2165577">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; closing the service aborts and awaits its owned generation cleanup" time="0.220961">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; does not recreate a project folder removed while its proposal was waiting" time="0.211918">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; refuses an unselected existing file without recording or replacing its content" time="0.2840918">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; rejects a junction target during generation and when one appears before approval" time="0.2922427">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; enforces one project session across native and sample work" time="0.3194925">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; requires Codex enabled and explicit sending consent even when sending prompts are off" time="0.1798823">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; Ask Work uses the same asynchronous proposal controller and permits no-source new documents" time="0.3198698">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; keeps notes local and requires a separate exact approval for every new proposal" time="0.3567068">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="guarded native file proposals &gt; finishes a no-op proposal honestly without creating an approval or fake change" time="0.2576329">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="team native work requests &gt; forwards a private copy of team options and records technical tool calls before approval" time="0.2596678">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="team native work requests &gt; does not add team fields or callbacks to ordinary requests" time="0.1786352">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="team native work requests &gt; ignores late team logs and results after the session stops" time="0.1986582">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="team native work requests &gt; surfaces TEAM_SERVER_MISSING as failed work without a proposal" time="0.1652403">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="team native work requests &gt; surfaces MCP_NOT_ISOLATED as failed work without a proposal" time="0.1393793">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="untrusted generated proposal validation &gt; rejects prose instead of JSON without project writes" time="0.1888603">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="untrusted generated proposal validation &gt; rejects path traversal without project writes" time="0.1896773">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="untrusted generated proposal validation &gt; rejects credential file without project writes" time="0.1885886">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="untrusted generated proposal validation &gt; rejects unsupported extension without project writes" time="0.2012451">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="untrusted generated proposal validation &gt; rejects binary contents without project writes" time="0.2016108">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="untrusted generated proposal validation &gt; rejects duplicate paths without project writes" time="0.1707082">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="untrusted generated proposal validation &gt; rejects oversized contents without project writes" time="0.1715839">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="untrusted generated proposal validation &gt; rejects too many files without project writes" time="0.1715459">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="untrusted generated proposal validation &gt; rejects remove unselected file without project writes" time="0.2159163">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="team wake through the adapter &gt; a message to a member whose thread allows the task starts its run" time="0.215493">
+        </testcase>
+        <testcase classname="tests/native-work.test.ts" name="team wake through the adapter &gt; a message to a member whose thread shows first parks it until the owner wakes it" time="0.2647721">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/surface.test.ts" timestamp="2026-09-09T07:49:17.973Z" hostname="Andrews-Desktop" tests="5" failures="0" errors="0" skipped="0" time="0.0028616">
+        <testcase classname="tests/surface.test.ts" name="the surface a stored setting opens on &gt; carries the old names onto the new ones" time="0.0013315">
+        </testcase>
+        <testcase classname="tests/surface.test.ts" name="the surface a stored setting opens on &gt; still honours the detail level retired before the rename" time="0.0001462">
+        </testcase>
+        <testcase classname="tests/surface.test.ts" name="the surface a stored setting opens on &gt; leaves the current names alone" time="0.0000992">
+        </testcase>
+        <testcase classname="tests/surface.test.ts" name="the surface a stored setting opens on &gt; falls back to the detail level when nothing was stored" time="0.0001084">
+        </testcase>
+        <testcase classname="tests/surface.test.ts" name="the surface a stored setting opens on &gt; is settled after one pass, so a second load changes nothing" time="0.0000743">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/team.test.ts" timestamp="2026-09-09T07:49:17.973Z" hostname="Andrews-Desktop" tests="10" failures="0" errors="0" skipped="0" time="3.757616">
+        <testcase classname="tests/team.test.ts" name="team client routes &gt; GET /team starts empty, POST members creates threads, messages and stop work, no token leakage" time="0.2605989">
+        </testcase>
+        <testcase classname="tests/team.test.ts" name="team MCP endpoint &gt; loopback auth, method handling, and every tool with falsifiers" time="0.8110183">
+        </testcase>
+        <testcase classname="tests/team.test.ts" name="team MCP endpoint &gt; shutdown is immediate for idle members and acknowledged otherwise" time="0.2895881">
+        </testcase>
+        <testcase classname="tests/team.test.ts" name="team wake &gt; lead message to a task-permission thread starts a run" time="0.2326732">
+        </testcase>
+        <testcase classname="tests/team.test.ts" name="team wake &gt; show-first parks the member as waiting until the owner wakes it" time="0.2497917">
+        </testcase>
+        <testcase classname="tests/team.test.ts" name="team wake &gt; delivery without a starter parks the member and never fails the send" time="0.2383739">
+        </testcase>
+        <testcase classname="tests/team.test.ts" name="team wake &gt; a stopped recipient never wakes" time="0.2085309">
+        </testcase>
+        <testcase classname="tests/team.test.ts" name="team wake &gt; the sixth automatic wake inside ten minutes parks instead of starting" time="0.7432344">
+        </testcase>
+        <testcase classname="tests/team.test.ts" name="team wake &gt; wake with nothing waiting is 400, wake of a helper that cannot run here is 409" time="0.2740318">
+        </testcase>
+        <testcase classname="tests/team.test.ts" name="team persistence &gt; team persists across reload and tokens never leak" time="0.4478616">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/trust.test.ts" timestamp="2026-09-09T07:49:17.975Z" hostname="Andrews-Desktop" tests="18" failures="0" errors="0" skipped="0" time="0.0828419">
+        <testcase classname="tests/trust.test.ts" name="the bounded prototype driver &gt; is off unless armed" time="0.0015277">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="the bounded prototype driver &gt; issues a labelled, synthetic authority with only the listed capabilities" time="0.0021511">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="the bounded prototype driver &gt; refuses a label that does not match the armed grant" time="0.0002392">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="the bounded prototype driver &gt; may not be armed with project.admin" time="0.0007443">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="saved-reference resolution for the driver &gt; round-trips and preserves synthetic, assurance, capabilities and expiry" time="0.0005626">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="saved-reference resolution for the driver &gt; resolves without a backend installed" time="0.000231">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="saved-reference resolution for the driver &gt; a capability withheld at arming stays withheld across the round trip" time="0.0003068">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="saved-reference resolution for the driver &gt; an expired grant denies on re-resolution" time="0.0722813">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="saved-reference resolution for the driver &gt; revoking the prototype principal denies re-resolution" time="0.0010665">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="old references are invalidated &gt; after disable" time="0.0002346">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="old references are invalidated &gt; after re-arm with the same label and capabilities" time="0.0003246">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="old references are invalidated &gt; after a re-arm that widens capabilities, the old reference cannot claim them" time="0.0001727">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="old references are invalidated &gt; a restart is a fresh instance: a reference minted before it does not resolve" time="0.0001387">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="a prototype reference cannot launder itself into genuine authority &gt; even with a permissive backend installed" time="0.0004711">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="a prototype reference cannot launder itself into genuine authority &gt; a hand-forged reference naming a local owner is refused a prototype grant" time="0.000252">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="a prototype reference cannot launder itself into genuine authority &gt; a backend may not change the identity class a reference names" time="0.0002129">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="invariants that hold regardless of the driver &gt; a team member never receives egress.send" time="0.0002975">
+        </testcase>
+        <testcase classname="tests/trust.test.ts" name="invariants that hold regardless of the driver &gt; non-loopback is refused before any lookup" time="0.0002127">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/usage.test.ts" timestamp="2026-09-09T07:49:17.976Z" hostname="Andrews-Desktop" tests="9" failures="0" errors="0" skipped="0" time="0.1054684">
+        <testcase classname="tests/usage.test.ts" name="UsageService &gt; records and merges windows, thread and source per engine" time="0.003394">
+        </testcase>
+        <testcase classname="tests/usage.test.ts" name="UsageService &gt; notifies subscribers on change" time="0.0005625">
+        </testcase>
+        <testcase classname="tests/usage.test.ts" name="UsageService &gt; engines without data carry empty windows and a detail sentence" time="0.0006382">
+        </testcase>
+        <testcase classname="tests/usage.test.ts" name="UsageService &gt; tightest window is the highest percent used" time="0.0002202">
+        </testcase>
+        <testcase classname="tests/usage.test.ts" name="Codex filler mapping &gt; maps a GetAccountRateLimitsResponse into windows, plan and credits" time="0.0011516">
+        </testcase>
+        <testcase classname="tests/usage.test.ts" name="Codex filler mapping &gt; maps a thread/tokenUsage/updated notification into a thread meter" time="0.0004811">
+        </testcase>
+        <testcase classname="tests/usage.test.ts" name="Codex filler mapping &gt; unknown shapes map to empty windows, never guessed numbers" time="0.0002508">
+        </testcase>
+        <testcase classname="tests/usage.test.ts" name="/api/usage route &gt; returns snapshots in roster order" time="0.0698668">
+        </testcase>
+        <testcase classname="tests/usage.test.ts" name="/api/usage route &gt; ?fake=1 is 404 outside test mode and fixed inside it" time="0.027564">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/work-admission.test.ts" timestamp="2026-09-09T07:49:17.977Z" hostname="Andrews-Desktop" tests="33" failures="0" errors="0" skipped="0" time="10.8179147">
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; common admission extraction preserves the original v1 Work digest bytes" time="0.2601539">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; failed sample admission persistence returns no phantom receipt" time="0.2842889">
+            <system-err>
+Error: Synthetic disk full.
+    at Store.&lt;anonymous&gt; (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\work-admission.test.ts:122:17)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at WorkService.need (F:\Achilles\diomedes-wt\codex-runtime-proof\server\work.ts:174:22)
+    at WorkService.start (F:\Achilles\diomedes-wt\codex-runtime-proof\server\work.ts:87:69)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:336:16
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; failed codex admission persistence returns no phantom receipt" time="0.2423903">
+            <system-err>
+Error: Synthetic disk full.
+    at Store.&lt;anonymous&gt; (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\work-admission.test.ts:122:17)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at NativeWorkService.fail (F:\Achilles\diomedes-wt\codex-runtime-proof\server\native-work.ts:642:22)
+    at NativeWorkService.start (F:\Achilles\diomedes-wt\codex-runtime-proof\server\native-work.ts:334:18)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:336:16
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; concurrent identical starts, reload and retry have one run and the same receipt" time="0.2528307">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; the adapter observes the receipt, session, permission and event already on disk" time="0.268371">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; rejects invalid versioned inputs before admission: {&quot;protocolVersion&quot;:2}" time="0.1705674">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; rejects invalid versioned inputs before admission: {&quot;commandId&quot;:&quot;&quot;}" time="0.1896907">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; rejects invalid versioned inputs before admission: {&quot;commandId&quot;:&quot;xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&quot;}" time="0.2943652">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; rejects invalid versioned inputs before admission: {&quot;actor&quot;:&quot;owner&quot;}" time="0.3065847">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; rejects invalid versioned inputs before admission: {&quot;userId&quot;:&quot;owner&quot;}" time="0.3536271">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; rejects invalid versioned inputs before admission: {&quot;unknown&quot;:true}" time="0.4053365">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; rejects invalid versioned inputs before admission: {&quot;consent&quot;:&quot;true&quot;}" time="0.1819252">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; rejects invalid versioned inputs before admission: {&quot;sources&quot;:[&quot;../secret.md&quot;]}" time="0.1414875">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; rejects invalid versioned inputs before admission: {&quot;sources&quot;:[&quot;Brief.md&quot;,&quot;brief.md&quot;]}" time="0.1877838">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; rejects invalid versioned inputs before admission: {&quot;route&quot;:&quot;cloud&quot;}" time="0.1522182">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; rejects invalid versioned inputs before admission: {&quot;instruction&quot;:3}" time="0.1852764">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; rejects invalid versioned inputs before admission: {&quot;sources&quot;:&quot;Brief.md&quot;}" time="0.1856599">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; rejects cross-project tasks, threads, receipt access and unauthorized browser origins" time="0.3839318">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; rechecks service enablement and consent before a cached response" time="0.2697638">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; legacy clients work; versioned sample work also deduplicates" time="0.3410062">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; the admitted native path previews, approves once, writes and restores exact bytes without Git" time="0.4421254">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; stale approval preserves a newer file; the command still identifies the failed run" time="0.2172768">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; cancel prevents a late proposal and releases the project for a different command" time="0.2013864">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; abrupt process exit before admission recovers without unsafe redispatch" time="1.1269093">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; abrupt process exit admitted admission recovers without unsafe redispatch" time="1.1449785">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; abrupt process exit dispatched admission recovers without unsafe redispatch" time="1.1483612">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; receipt replays perform no folder listing, document read, adapter call or persistence" time="0.2276825">
+            <system-out>
+Work admission replay: 50 requests in 88.0 ms; no scans or writes.
+
+            </system-out>
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; restart expires an unapproved proposal while retaining its original receipt" time="0.1991572">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; recovers the file journal at prepared while keeping receipt and history consistent" time="0.2418344">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; recovers the file journal at applied while keeping receipt and history consistent" time="0.2071038">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; recovers the file journal at finalized while keeping receipt and history consistent" time="0.2309923">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; incompatible saved receipts stop loading before project state is rewritten" time="0.1345253">
+        </testcase>
+        <testcase classname="tests/work-admission.test.ts" name="durable task Work admission &gt; bounded receipt capacity refuses new commands without evicting existing identities" time="0.2365012">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/work-start-client.test.ts" timestamp="2026-09-09T07:49:17.982Z" hostname="Andrews-Desktop" tests="19" failures="0" errors="0" skipped="0" time="0.117029">
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; a damaged pending key broken cannot block another confirmed request" time="0.0549308">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; a damaged pending key %invalid cannot block another confirmed request" time="0.0042559">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; unavailable browser storage returns a reportable issue without throwing into state loading" time="0.0024965">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; reload reconciles an ambiguous start from host state without another request" time="0.0047268">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; a snapshot with no matching receipt keeps the unresolved request" time="0.0043125">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; lost response retry reuses exactly the same ID and body" time="0.0075582">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; exhausted ambiguous retries keep pending and stop at 2 attempts" time="0.007279">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; module reset (reload) reuses pending identity" time="0.0040187">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; concurrent identical calls join into one request" time="0.0020614">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; changed body is blocked without a new fetch or ID" time="0.0025542">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; conclusive first 4xx retries nothing and leaves no pending" time="0.0025714">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; ambiguous failure followed by 4xx retains the pending ID" time="0.0026848">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; reload pending plus later 4xx retains identity" time="0.004174">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; storage failure blocks dispatch" time="0.0021388">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; malformed stored record blocks dispatch" time="0.0018272">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; success allows a later deliberate fresh ID" time="0.0019626">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; pending capacity denies a new command but permits an existing retry" time="0.0023185">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; a response without the matching receipt stays uncertain and keeps the command" time="0.0020537">
+        </testcase>
+        <testcase classname="tests/work-start-client.test.ts" name="work-start client &gt; receipt cleanup failure is explicit and does not retry a confirmed send" time="0.0018878">
+        </testcase>
+    </testsuite>
+</testsuites>

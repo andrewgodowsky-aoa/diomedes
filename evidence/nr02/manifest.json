@@ -1,0 +1,20 @@
+{
+  "checkpoint": "NR-02",
+  "base": "eab162c58151704454867573ce2427c02559cdac",
+  "builtPackage": "F:/Achilles/deliverables/nr02-final-package-20260909",
+  "executableSha256": "99bfcd6259e19120d0717afe861f511952e29ca3df5c919264631b435dac4203",
+  "asarSha256": "f8c1c5f7dde3c470d8170f402d182972b6feab53940c084954b4fdeeb480b1f2",
+  "proofRoot": "F:/Achilles/deliverables/nr02-source-unavailable-proof-20260909",
+  "sourceFiles": {
+    "client/Workspace.tsx": "eaac7a21e1e66feba8a81883d90b90fdfe0ed9ca0c1a8e6705418e8d1ae6cc96",
+    "client/components.tsx": "54ddc44f245dae49f8231b938eaa1cb9ab5386145342dba7e4409645d7e60109",
+    "client/console/Shell.tsx": "9e3607ce3621f0aeda528a3e181c604f279ed5e0ddfc9ddc309df9a4ecadb577",
+    "scripts/package-desktop.mjs": "8f05400216b1319fbdc08b088a510c6a7c56dcab4240213ab4c0f218264aae4b",
+    "server/harness/capabilities/format-report.ts": "c6e05395d65e2591faa52629317c2a25cd6740766c1b401aa85a81003a261354"
+  },
+  "notes": [
+    "NR-02 package predates NR-03 source changes.",
+    "proof.session and proof.run are snapshots at approval; proof.events records the subsequent completed run.",
+    "Source, client, fixture and dist folders were unavailable during relocated execution."
+  ]
+}

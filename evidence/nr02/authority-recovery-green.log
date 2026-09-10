@@ -1,0 +1,127 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/codex-runtime-proof
+
+stderr | tests/codex-engine.test.ts > revocation while dispatch is waiting prevents the provider send
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > unknown provider completion stays parked and never causes redispatch
+The harness run stopped: Error: Synthetic lost completion
+
+stderr | tests/codex-engine.test.ts > changed source text prevents application after exact approval
+The harness run stopped: Error: A selected source changed before the approved write was prepared.
+
+stderr | tests/codex-engine.test.ts > a expired grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a forged grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a cross-run grant or context cannot dispatch
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+stderr | tests/codex-engine.test.ts > a cross-project grant or context cannot dispatch
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+stderr | tests/codex-engine.test.ts > a destination grant or context cannot dispatch
+The harness run stopped: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "openai:chatgpt"
+    ],
+    "path": [
+      "grant",
+      "destination"
+    ],
+    "message": "Invalid input: expected \"openai:chatgpt\""
+  }
+]
+
+stderr | tests/codex-engine.test.ts > a context grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a generation grant or context cannot dispatch
+The harness run stopped: Error: Authority generation advanced; this run needs reconciliation.
+
+stderr | tests/codex-engine.test.ts > a account grant or context cannot dispatch
+The harness run stopped: HarnessError: Actual provider context or account differs from consent.
+
+stderr | tests/codex-engine.test.ts > Stop after dispatch rejects late proposal output
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > the host grant deadline expires without modifying the saved input
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > sending permission cannot accept a result after reconcile permission is revoked
+The harness run stopped: Error: Current authority lacks egress.reconcile.
+
+ ❯ tests/codex-engine.test.ts (24 tests | 1 failed) 2888ms
+   ✓ durable admission, identical concurrent retry, restart, exact decision and one recorded write  349ms
+   ✓ changed command payload and concurrent different starts cannot dispatch again 109ms
+   ✓ consent cannot manufacture outbound permission 30ms
+   ✓ principal cannot manufacture outbound permission 31ms
+   ✓ sending cannot manufacture outbound permission 32ms
+   ✓ authority cannot manufacture outbound permission 28ms
+   ✓ admission persistence failure prevents dispatch and a retry creates one durable receipt 125ms
+   ✓ revocation while dispatch is waiting prevents the provider send 127ms
+   ✓ unknown provider completion stays parked and never causes redispatch 116ms
+   ✓ changed source text prevents application after exact approval 181ms
+   ✓ current authority is required for a later exact decision 109ms
+   × lost authority pauses recovery without blocking startup or changing the saved run 146ms
+     → promise rejected "Error: Synthetic revocation { …(2) }" instead of resolving
+   ✓ a expired grant or context cannot dispatch 112ms
+   ✓ a forged grant or context cannot dispatch 124ms
+   ✓ a cross-run grant or context cannot dispatch 123ms
+   ✓ a cross-project grant or context cannot dispatch 124ms
+   ✓ a destination grant or context cannot dispatch 108ms
+   ✓ a context grant or context cannot dispatch 122ms
+   ✓ a generation grant or context cannot dispatch 110ms
+   ✓ a account grant or context cannot dispatch 107ms
+   ✓ changing the requested model under an admitted command conflicts 173ms
+   ✓ Stop after dispatch rejects late proposal output 119ms
+   ✓ the host grant deadline expires without modifying the saved input 112ms
+   ✓ sending permission cannot accept a result after reconcile permission is revoked 172ms
+stderr | tests/harness-host.test.ts > native harness through the real host > outside edits invalidate the exact write and remain untouched
+The harness run stopped: Error: This document changed since you opened it. Read its current version before saving.
+
+stderr | tests/harness-host.test.ts > native harness through the real host > secret scrubber covers durable errors, event mirrors, and returned run records
+The harness run stopped: [redacted]: Synthetic error [redacted]
+
+ ✓ tests/harness-host.test.ts (22 tests) 8415ms
+   ✓ native harness through the real host > one Session, exact Need, recorded write, receipt replay, and reconnect cursor survive reopening  428ms
+   ✓ native harness through the real host > duplicate run ids are refused without breaking unrelated project startup  435ms
+   ✓ native harness through the real host > atomic run replacement retries a transient lock and surfaces a permanent failure  569ms
+   ✓ native harness through the real host > abrupt exit at after-decision recovers the Store first and commits the harness observation once  1217ms
+   ✓ native harness through the real host > abrupt exit at journal recovers the Store first and commits the harness observation once  1236ms
+   ✓ native harness through the real host > abrupt exit at after-write recovers the Store first and commits the harness observation once  1182ms
+ ✓ tests/harness-provider-outcomes.test.ts (6 tests) 117ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/codex-engine.test.ts > lost authority pauses recovery without blocking startup or changing the saved run
+AssertionError: promise rejected "Error: Synthetic revocation { …(2) }" instead of resolving
+ ❯ tests/codex-engine.test.ts:184:22
+    182|   const before = await fs.readFile(filename, 'utf8');
+    183|   denied = true;
+    184|   await expect(open()).resolves.toBeUndefined();
+       |                      ^
+    185|   expect(await fs.readFile(filename, 'utf8')).toBe(before);
+    186|   expect(calls).toBe(1);
+
+Caused by: Error: Synthetic revocation
+ ❯ CodexEngineAdapter.authority server/harness/codex-engine.ts:93:35
+ ❯ list server/harness/host.ts:329:51
+ ❯ Object.init server/harness/host.ts:392:42
+ ❯ open tests/codex-engine.test.ts:38:3
+ ❯ tests/codex-engine.test.ts:184:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { status: 403, details: { code: 'revoked' } }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 51 passed (52)
+   Start at  03:19:23
+   Duration  13.59s (transform 290ms, setup 0ms, collect 949ms, tests 11.42s, environment 0ms, prepare 276ms)
+

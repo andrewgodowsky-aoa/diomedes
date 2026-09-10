@@ -11,6 +11,11 @@ const manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), '
 const stage = await fs.mkdtemp(path.join(root, '.desktop-stage-'));
 try {
   await fs.mkdir(path.join(stage, 'server'));
+  await fs.mkdir(path.join(stage, 'fixtures/harness'), { recursive: true });
+  await fs.copyFile(
+    path.join(root, 'fixtures/harness/report-lines.txt'),
+    path.join(stage, 'fixtures/harness/report-lines.txt'),
+  );
   await fs.copyFile(path.join(root, 'desktop/main.mjs'), path.join(stage, 'main.mjs'));
   await fs.cp(path.join(root, 'dist'), path.join(stage, 'dist'), { recursive: true });
   await fs.cp(path.join(root, 'licenses'), path.join(stage, 'licenses'), { recursive: true });
@@ -45,6 +50,7 @@ try {
     platform: 'node',
     format: 'esm',
     target: 'node22',
+    define: { DIOMEDES_BUNDLED: 'true' },
     banner: {
       js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
     },

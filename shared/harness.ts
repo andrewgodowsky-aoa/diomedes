@@ -185,6 +185,8 @@ export interface HarnessRun {
   capabilityTools: string[];
   policyVersion: string;
   principal: HarnessPrincipal;
+  /** Optional immutable host input for capabilities that resume without a provider redispatch. */
+  input?: Json;
   state: HarnessRunState;
   budget: HarnessBudget;
   used: HarnessUsage;

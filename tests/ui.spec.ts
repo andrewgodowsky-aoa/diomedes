@@ -868,3 +868,40 @@ test('Enter sends from the Workbook composer and Shift+Enter adds a line', async
     )
     .toBe(true);
 });
+
+
+test('Usage: navigation preserves a concurrent engine setting while refresh is delayed', async ({ page }) => {
+  const headers = { 'X-Diomedes-Client': '1' };
+  const created = await page.request.post('/api/projects', { headers, data: { name: 'Usage concurrent settings' } });
+  expect(created.ok()).toBe(true);
+  const project: Project = await created.json();
+  const setup = await page.request.put('/api/settings', { headers, data: {
+    surface: 'workbook', detail: 'standard', services: { codex: false },
+    onboarding: { work: 'business', detail: 'standard', familiarity: 'new', resumeAt: 'done', completedAt: new Date().toISOString() },
+    openProjects: [project.id], lastPage: { [project.id]: 'home' },
+  } });
+  expect(setup.ok()).toBe(true);
+  await page.goto('/');
+  await expect(page.getByRole('navigation', { name: 'Project pages', exact: true })).toBeVisible();
+  let releaseRefresh!: () => void;
+  const refreshReleased = new Promise<void>(resolve => { releaseRefresh = resolve; });
+  await page.route('**/api/settings', async route => {
+    if (route.request().method() === 'GET') await refreshReleased;
+    await route.continue();
+  });
+  try {
+    // A second client changes the engine while this client's event refresh is in flight.
+    const on = await page.request.put('/api/settings', { headers, data: { services: { codex: true } } });
+    expect(on.ok()).toBe(true);
+    const navigationSaved = page.waitForResponse(response =>
+      new URL(response.url()).pathname === '/api/settings' && response.request().method() === 'PUT');
+    await navigate(page, 'Ask');
+    expect((await navigationSaved).ok()).toBe(true);
+    const saved: Settings = await (await page.request.get('/api/settings')).json();
+    expect(saved.lastPage[project.id]).toBe('ask');
+    expect(saved.services?.codex).toBe(true);
+  } finally {
+    releaseRefresh();
+  }
+  await expect(page.locator('.usage-chip')).toBeVisible();
+});

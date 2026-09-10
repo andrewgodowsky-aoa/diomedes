@@ -1,0 +1,60 @@
+[WebServer] Diomedes: http://127.0.0.1:5174. Press Ctrl+C to stop both local processes.
+
+
+[WebServer] (node:40120) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer]   VITE v7.3.6  ready in 425 ms
+[WebServer] 
+
+[WebServer]   ➜  Local:   http://127.0.0.1:5174/
+
+
+[WebServer] (node:56012) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Diomedes local service ready: http://127.0.0.1:47632
+
+[WebServer] App data: F:\Achilles\diomedes-wt\codex-runtime-proof\test-results\app-data-1788939701159-47680\data
+[WebServer] Project root: F:\Achilles\diomedes-wt\codex-runtime-proof\test-results\app-data-1788939701159-47680\projects
+
+
+Running 1 test using 1 worker
+
+(node:41324) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1/1] tests\ui.spec.ts:873:1 › Usage: navigation preserves a concurrent engine setting while refresh is delayed
+  1) tests\ui.spec.ts:873:1 › Usage: navigation preserves a concurrent engine setting while refresh is delayed 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      900 |     const saved: Settings = await (await page.request.get('/api/settings')).json();
+      901 |     expect(saved.lastPage[project.id]).toBe('ask');
+    > 902 |     expect(saved.services.codex).toBe(true);
+          |                                  ^
+      903 |   } finally {
+      904 |     releaseRefresh();
+      905 |   }
+        at F:\Achilles\diomedes-wt\codex-runtime-proof\tests\ui.spec.ts:902:34
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\browser\ui-Usage-navigation-preser-59cc2-ng-while-refresh-is-delayed\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\browser\ui-Usage-navigation-preser-59cc2-ng-while-refresh-is-delayed\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\browser\ui-Usage-navigation-preser-59cc2-ng-while-refresh-is-delayed\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\browser\ui-Usage-navigation-preser-59cc2-ng-while-refresh-is-delayed\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+  1 failed
+    tests\ui.spec.ts:873:1 › Usage: navigation preserves a concurrent engine setting while refresh is delayed 

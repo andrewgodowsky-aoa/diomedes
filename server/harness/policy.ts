@@ -106,7 +106,11 @@ export function validatePrincipal(principal: unknown): asserts principal is Harn
  * Mandatory checks on one intent for one principal. Denials are thrown; the
  * caller must run this before any hook sees the intent.
  */
-export function authorize(intent: StepIntent, principal: HarnessPrincipal): void {
+export function authorize(
+  intent: StepIntent,
+  principal: HarnessPrincipal,
+  checkEgress?: () => void | Promise<void>,
+): void | Promise<void> {
   validatePrincipal(principal);
   if (intent.permission && !principal.capabilities.includes(intent.permission))
     throw new HarnessError('missing_capability', `Missing capability: ${intent.permission}.`);
@@ -124,8 +128,13 @@ export function authorize(intent: StepIntent, principal: HarnessPrincipal): void
     throw new HarnessError('cross_project', 'Cross-project operation denied.');
   if (intent.destination !== 'local' && intent.destination !== 'external')
     throw new HarnessError('unknown_destination', 'Unknown destination.');
-  if (intent.destination === 'external' && label.confidentiality !== 'public')
-    throw new HarnessError('egress_denied', 'Confidentiality egress denied.');
   if (intent.trustedInputRequired && label.integrity !== 'trusted')
     throw new HarnessError('integrity_denied', 'Input integrity denied.');
+  if (intent.destination === 'external') {
+    // Only the trusted host supplies this checker; never a hook or request field.
+    // Labels retain their confidentiality and integrity after authorization.
+    if (checkEgress) return checkEgress();
+    if (label.confidentiality !== 'public')
+      throw new HarnessError('egress_denied', 'Confidentiality egress denied.');
+  }
 }

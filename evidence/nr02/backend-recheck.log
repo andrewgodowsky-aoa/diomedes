@@ -1,0 +1,35 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/codex-runtime-proof
+
+stdout | tests/backend.test.ts > state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder
+state-speed: second /state with 3000 files took 32 ms
+
+ ✓ tests/backend.test.ts (48 tests) 36688ms
+   ✓ real project files and durable history > editor writes require the opened version, merge, restore, and undo a restore  424ms
+   ✓ real project files and durable history > a saved version restores the whole folder and later file removal can be undone  433ms
+   ✓ task, approval, sample worker, and review flow > approval propagates, disallows concurrent sessions, finishes real writes, and Keep all completes task  484ms
+   ✓ task, approval, sample worker, and review flow > declines file creation while continuing the recorded plan update  387ms
+   ✓ task, approval, sample worker, and review flow > stop expires needs immediately and fault preserves its partial changes  464ms
+   ✓ request and filesystem boundaries > rejects path traversal, credential stores, junctions, and reserved names  353ms
+   ✓ request and filesystem boundaries > settings survive restart and every supported appearance validates  398ms
+   ✓ threads are first-class conversations > POST /threads creates, PUT renames, GET lists newest-updated first  337ms
+   ✓ threads are first-class conversations > POST /ask with threadId appends to that thread and bumps updatedAt  491ms
+   ✓ threads are first-class conversations > Work task names use the trimmed first line at an 80-character word boundary  2152ms
+   ✓ threads are first-class conversations > threads default to show-first, PUT sets task, and full is rejected  461ms
+   ✓ threads are first-class conversations > migration fills missing thread permission with show-first and stays stable  569ms
+   ✓ threads are first-class conversations > work sessions carry the thread permission, defaulting to show-first  881ms
+   ✓ request and filesystem boundaries (continued) > sample Ask is honest, sample Plan writes a real file, and Codex requires explicit settings and consent  303ms
+   ✓ the data folder lock tells a live owner from a reused pid > this platform reports its own start time, and a loopback port is testable  1209ms
+   ✓ the data folder lock tells a live owner from a reused pid > a live pid whose start time matches still owns the folder  3925ms
+   ✓ the data folder lock tells a live owner from a reused pid > a live pid whose start time differs is a reused pid, so the lock is stale  2488ms
+   ✓ modes belong to the thread and every turn > fix with failing.document in sources on the sample route carries attempt 1 of 3  459ms
+   ✓ modes belong to the thread and every turn > the fourth fix in the same thread is 409  1977ms
+   ✓ modes belong to the thread and every turn > ask and plan turns record their mode  1549ms
+   ✓ modes belong to the thread and every turn > mode: 'work' is accepted and stored as 'build'  572ms
+   ✓ state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder  12268ms
+
+ Test Files  1 passed (1)
+      Tests  48 passed (48)
+   Start at  02:05:31
+   Duration  39.10s (transform 849ms, setup 0ms, collect 1.69s, tests 36.69s, environment 0ms, prepare 123ms)
+

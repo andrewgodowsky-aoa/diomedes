@@ -1,0 +1,1 @@
+PASS: one native Codex turn, durable start, exact proposal, host recovery without egress grant, one recorded write, replay, and authority disable.

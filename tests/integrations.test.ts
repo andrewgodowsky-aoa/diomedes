@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn } from 'node:child_process';
 import {
   CODEX_WORKSPACE,
+  codexContextHash,
   createIntegrations,
   createRpcClient,
   IntegrationError,
@@ -24,6 +25,7 @@ class FakeNative implements NativeRpc {
   turnStatus = 'completed';
   customProvider = false;
   apiEndpoint: string | null = null;
+  instructionsFile: string | null = null;
   inheritedTeam: Params | undefined;
   nextCursor: string | null = null;
   items: Params[] = [];
@@ -52,6 +54,7 @@ class FakeNative implements NativeRpc {
               ? { openai: { base_url: 'https://example.invalid' } }
               : {},
             openai_base_url: this.apiEndpoint,
+            model_instructions_file: this.instructionsFile,
           },
         };
       case 'thread/start':
@@ -119,6 +122,37 @@ const request = {
   prompt: 'Summarize the selected document.',
   documents: [{ path: 'plan.md', text: 'A synthetic project plan.' }],
 };
+
+describe('host-bound Codex context dispatch', () => {
+  const context = { ...request, instructions: 'Use only these synthetic documents.', model: 'synthetic-model', effort: 'low' };
+  it('checks the exact account and context before thread and turn dispatch', async () => {
+    const integration = setup();
+    const route = await integration.readCodexAccountRoute();
+    const beforeDispatch = vi.fn(async identity => {
+      expect(identity).toEqual({ accountRoute: route, contextHash: codexContextHash(context) });
+    });
+    await integration.askCodex({ ...context, beforeDispatch });
+    expect(beforeDispatch).toHaveBeenCalledTimes(2);
+    const config = integration.client.calls.find(c => c.method === 'thread/start')!.params.config as Record<string, unknown>;
+    expect(config.developer_instructions).toBe('');
+    expect(integration.client.calls.filter(c => c.method === 'turn/start')).toHaveLength(1);
+    expect(route).not.toContain('never-retain');
+  });
+  it('a grant denied at the final check prevents turn/start', async () => {
+    const integration = setup();
+    let checks = 0;
+    await expect(integration.askCodex({ ...context, beforeDispatch: async () => {
+      if (++checks === 2) throw new Error('Grant revoked before send');
+    } })).rejects.toThrow('Grant revoked');
+    expect(integration.client.calls.filter(c => c.method === 'turn/start')).toHaveLength(0);
+  });
+  it('an unmediated native instruction file cannot join the authorized context', async () => {
+    const integration = setup();
+    integration.client.instructionsFile = 'unapproved-native-instructions.md';
+    await expect(integration.askCodex({ ...context, beforeDispatch: async () => {} })).rejects.toThrow('instruction file');
+    expect(integration.client.calls.filter(c => c.method === 'thread/start')).toHaveLength(0);
+  });
+});
 const team: NativeTeamOptions = {
   url: 'http://127.0.0.1:4321/mcp/team/project-1',
   tokenEnv: 'DIOMEDES_TEAM_TEST_TOKEN',

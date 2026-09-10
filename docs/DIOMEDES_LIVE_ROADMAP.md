@@ -1,6 +1,6 @@
 # DIOMEDES LIVE ROADMAP
 
-**Roadmap version:** 2026-09-09.4  
+**Roadmap version:** 2026-09-09.5
 **Last reconciled:** September 9, 2026  
 **Product:** Diomedes  
 **Company direction:** Diomedes Systems  
@@ -129,13 +129,14 @@ GitHub Actions still had no workflow runs and GitHub Releases had no releases wh
 - **NR-03 bounded Codex EngineAdapter proved locally:** one real native ChatGPT turn used synthetic input, durable start admission, run-scoped egress authority, exact proposal review and one recorded write. Host recreation reused the saved observation rather than repeating the provider call.
 - The Codex path keeps outbound-data authority, result acceptance, exact write approval and write permission as separate checks.
 - Ambiguous provider dispatch does not cause blind redispatch.
-- The integrated local tree records **533 passing tests** for the current runtime/Trust combination.
+- The integrated local tree passes **534 tests across 21 files**; the full browser suite passes **27/27**, including a controlled delayed-refresh Usage regression. Fresh-process authority-loss recovery preserves saved records without dispatch or client access; shutdown preserves waiting approvals. See `docs/harness/NR02_NR03_VERIFICATION_2026-09-09.md` and `evidence/m1/manifest.json`.
 - Opus's corrected prototype Trust seam is integrated in the local runtime tree: synthetic/prototype assurance stays explicit and old references are invalidated across disable/rearm/restart.
+
+- The Usage regression is closed locally: a delayed settings refresh reproduced navigation overwriting a concurrent engine setting. Navigation now writes only its owned fields; the controlled browser regression and relocated built-client check pass. Earlier intermittent failures remain preserved as historical evidence.
 
 ### PARTIAL / open
 
 - The newest NR-02/NR-03 runtime changes are **local/uncommitted/unpublished** at this roadmap checkpoint unless a newer source commit says otherwise.
-- The full browser suite has one disclosed **order-dependent Usage-chip failure**; isolated Usage and the remaining browser tests pass. Do not claim the entire browser suite is green until this is fixed and rerun.
 - The real Codex adapter proof is host/local and synthetic; it is not yet an ordinary authenticated end-user account/session path.
 - `HarnessPrincipal` alone is still a policy object supplied by trusted host code, not proof of an authenticated human/device session.
 - General credential brokerage, production tenant isolation and broader online-account identity are not yet established in published source.
@@ -166,7 +167,7 @@ These are responsibility boundaries, not instructions to create separate service
 Codex owns the current runtime continuation and run-scoped outbound-data authorization. Its immediate remaining responsibilities are:
 
 1. preserve and verify the local NR-02/NR-03 work without overwriting Opus Trust changes;
-2. fix and freshly verify the order-dependent Usage-chip browser failure;
+2. preserve the completed Usage regression proof and its delayed-refresh regression;
 3. reconcile current worktrees/remote refs and prepare the local runtime work for safe integration/publication only when authorized;
 4. keep the real Codex adapter on the single runtime/admission/approval/mutation authorities;
 5. add minimal credential-free GitHub build/test CI after the local regression state is clean, unless another branch has already done so;
@@ -242,7 +243,7 @@ Sensitive changes should support step-up verification, especially device enrollm
 
 ### M1 — close current local runtime regression
 
-Fix and freshly verify the order-dependent Usage-chip browser failure. Re-run the relevant browser suite and deterministic gates against the integrated NR-02/NR-03/Trust tree.
+VERIFIED locally. Reproduced and corrected stale navigation writes overwriting an engine setting during delayed refresh. Full browser suite 27/27; integrated runtime/Trust suite 534/534. A relocated Windows package passed all 11 checks with checkout source directories unavailable, including this race. A separate concurrency-test timing assumption now uses handler-entry synchronization. Evidence: `evidence/m1/manifest.json` and the NR-02/NR-03 verification report.
 
 ### M2 — safely integrate/publish verified runtime continuation
 
@@ -254,7 +255,7 @@ Reconcile Opus's research, select the provider/data/recovery architecture, and l
 
 ### M4 — CI / reproducible package gate
 
-Add minimal credential-free GitHub build/test CI. Signed-in provider smoke stays a controlled local/integration gate. Add signing/update infrastructure before broad public release.
+PARTIAL: `.github/workflows/build-test.yml` is prepared locally with Windows, Node 22, locked npm installation, typecheck, synthetic unit tests, client compilation, pinned action SHAs, read-only token permissions and seven-day test artifacts. Its commands are locally checked; GitHub execution awaits authorized source publication. It does not package/sign/install/release or run signed-in providers. Reproducible native packaging and signing/update infrastructure remain separate gates.
 
 ### M5 — genuine Diomedes-led proof
 
@@ -439,6 +440,8 @@ Runtime/security/account changes need verification proportional to the invariant
 Use `VERIFIED`, `PARTIAL`, `MISSING`, `DEFERRED`. Never claim a fixture proves real-provider behavior, source tests prove a packaged executable, or login proves authorization correctness.
 
 ## 24. Change ledger
+
+- **2026-09-09.5** - Reconciled the clean repository .4 and concurrent cloud .4 after the other writer finished. Preserved the final 534-test authority-loss/startup/shutdown evidence, closed M1 with 27 browser tests and a new relocated package proof, and prepared credential-free CI locally. Current remote/main is `11829e1` (license/README-only additions after the roadmap commits); runtime changes remain local/uncommitted. Opus retains the explicitly authorized full Trust/account track; no competing identity service or broader runtime authentication was added.
 
 - **2026-09-09.4** — Final clean reconciliation before new-thread handoff. Folded the concurrent native-agent north-star clarification into the clean roadmap: Diomedes-led Devin-style outcome ownership, direct-agent mode, Devin/Hermes/OMP/two-OMH reference roles, layered standing/triggered/enforced rules, typed tool standardization, general-purpose accessible UX, self-improvement/Demonstration-to-Automation and outcome-responsibility commercial thesis. Preserved NR-02 packaged proof, bounded NR-03 real Codex adapter proof, 533 integrated tests, Opus Trust/account ownership and the disclosed Usage regression. Removed stale duplicate September 8/early-September instructions from the repository mirror.
 - **2026-09-09.3** — Reconciled concurrent Codex runtime updates: NR-02 packaged proof complete; bounded real Codex adapter proved locally; 533 integrated tests; Opus prototype Trust correction; one order-dependent browser Usage failure remains; newest runtime changes local/uncommitted.

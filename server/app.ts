@@ -30,6 +30,7 @@ import { createHarnessHost } from './harness/host.js';
 import { mountHarnessRoutes } from './harness/routes.js';
 import { localHarnessPrincipal } from './harness/bridge.js';
 import { FIXTURE_ENGINE } from './harness/approval.js';
+import { CODEX_ENGINE, type ResolveHarnessAuthority } from './harness/codex-engine.js';
 import { roleInstructions } from './team/prompts.js';
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
 
@@ -40,6 +41,7 @@ interface AppOptions {
   port?: number;
   clientPort?: number;
   nativeGenerator?: NativeGenerator;
+  harnessAuthority?: ResolveHarnessAuthority;
 }
 const pages: Page[] = ['home', 'ask', 'plan', 'work', 'review', 'tasks', 'documents', 'history'];
 const owners: Owner[] = ['you', 'diomedes', 'diomedes-with-ok'];
@@ -280,7 +282,7 @@ export async function createApp(options: AppOptions) {
   await store.init();
   const work = new WorkService(store, options.stepMs);
   const nativeWork = new NativeWorkService(store, options.nativeGenerator);
-  const harness = createHarnessHost({ store, dataDir: store.dataDir });
+  const harness = createHarnessHost({ store, dataDir: store.dataDir, currentAuthority: options.harnessAuthority });
   await harness.init();
   const app = express();
   // The port this service listens on, learned from the first request's socket (listen(0)
@@ -317,7 +319,7 @@ export async function createApp(options: AppOptions) {
   const serviceFor = (projectId: string, sessionId: string) => {
     const session = store.state(projectId).sessions.find((item) => item.id === sessionId);
     if (!session) throw new ApiError(404, 'This work session was not found.');
-    return session.engine.name === FIXTURE_ENGINE ? harness.bridge : session.sample ? work : nativeWork;
+    return [FIXTURE_ENGINE, CODEX_ENGINE].includes(session.engine.name) ? harness.bridge : session.sample ? work : nativeWork;
   };
   const port = options.port ?? Number(process.env.DIOMEDES_PORT ?? 47631),
     clientPort = options.clientPort ?? Number(process.env.DIOMEDES_CLIENT_PORT ?? 5173);

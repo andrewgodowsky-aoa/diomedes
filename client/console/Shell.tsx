@@ -22,7 +22,7 @@ import type {
 import { api } from '../api';
 import { reconcileWorkStarts, startWork } from '../work-start';
 import { decideApproval, reconcileApprovals } from '../approval-decisions';
-import { ApprovalStatus, Button, Modal, time, titleCase } from '../components';
+import { ApprovalStatus, HarnessProposal, Button, Modal, time, titleCase } from '../components';
 import { Mark } from './Mark';
 import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
@@ -797,11 +797,12 @@ export function Shell({
       )}
 
       {previewNeed && (
-        <Modal title={`Diomedes wants to ${previewNeed.what}`} onClose={() => setPreviewNeed(null)}>
+        <Modal title={`Diomedes wants to ${previewNeed.what}`} wide onClose={() => setPreviewNeed(null)}>
           <p className="prose">
             {previewNeed.why} {previewNeed.consequence}
           </p>
           <ApprovalStatus need={previewNeed} />
+          <HarnessProposal need={previewNeed} />
           <div className="dialog-actions">
             <Button
               onClick={() => {

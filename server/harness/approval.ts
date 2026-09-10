@@ -7,6 +7,7 @@ import { digest } from './policy.js';
 import { payloadDigest } from '../command-admission.js';
 
 export const FIXTURE_ENGINE = 'native-fixture';
+export const CODEX_ENGINE = 'codex-harness';
 export const REPORT_PATH = 'Harness report.md';
 export const writeInputSchema = z.strictObject({
   projectId: z.string().min(1).max(100),
@@ -48,20 +49,23 @@ export function harnessWrites(projectId: string, need: Need): WriteInput[] {
   return [{ path: relativeName(input.files[0]), expected: input.expected, text: input.text }];
 }
 
-export function identifyHarnessApproval(projectId: string, need: Need): ApprovalIdentity {
+export function identifyHarnessApproval(
+  projectId: string, need: Need, sources: ApprovalIdentity['sources'] = need.approval?.sources ?? [],
+): ApprovalIdentity {
   if (!need.harness) throw new Error('A harness intent binding is required.');
   const actionDigest = digest(need.harness.intent);
   const expiresAt = new Date(Date.parse(need.createdAt) + 60 * 60 * 1000).toISOString();
   const baseDigest = payloadDigest({
     type: 'harness-write-base',
     expected: writeInputSchema.parse(need.harness.intent.input).expected,
+    ...(sources.length ? { sources } : {}),
   });
   return {
     protocolVersion: 1,
     actionDigest,
     baseDigest,
     expiresAt,
-    sources: [],
+    sources,
     proposalDigest: payloadDigest({
       type: 'harness-step-proposal',
       protocolVersion: 1,

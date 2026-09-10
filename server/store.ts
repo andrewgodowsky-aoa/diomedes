@@ -1,5 +1,5 @@
 import { assertReplay, findCommand } from './command-admission.js';
-import { FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
+import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
@@ -274,7 +274,7 @@ export class Store extends EventEmitter {
     await this.interruptUnpreparedApprovals();
     for (const state of this.states.values()) {
       for (const session of state.sessions.filter((item) =>
-        item.engine.name !== FIXTURE_ENGINE && ['working', 'waiting', 'queued'].includes(item.state),
+        ![FIXTURE_ENGINE, CODEX_ENGINE].includes(item.engine.name) && ['working', 'waiting', 'queued'].includes(item.state),
       )) {
         session.state = 'stopped';
         session.endedAt = now();

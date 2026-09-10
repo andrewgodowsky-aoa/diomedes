@@ -79,6 +79,7 @@ export type HarnessHook = (context: {
 }) => Promise<void> | void;
 
 export interface StartInput {
+  input?: Json;
   id?: string;
   tenantId: string;
   projectId: string;
@@ -104,6 +105,13 @@ const EFFECTS: Effect[] = ['pure', 'read', 'idempotent', 'non-idempotent'];
 const KINDS: StepKind[] = ['model', 'tool', 'transform', 'approval', 'wait'];
 const STEP_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
+// A provider read can disclose context, consume quota and finish remotely even
+// when its acknowledgement is lost. Its effect remains read (no local write),
+// but unknown dispatch is never safe to retry without provider reconciliation.
+const needsReconciliation = (intent: StepIntent): boolean =>
+  intent.effect === 'non-idempotent' ||
+  (intent.kind === 'model' && intent.destination === 'external');
+
 type StartOutcome =
   | { cached: Json | null }
   | { suspended: 'approval' }
@@ -117,6 +125,7 @@ export class RunService {
   private readonly clock: () => number;
   private readonly policyVersion: string;
   private readonly redact: (text: string) => string;
+  private readonly authorizeEgress?: (runId: string, intent: StepIntent, principal: HarnessPrincipal, phase: 'dispatch' | 'result') => Promise<void>;
 
   constructor(
     private readonly store: RunStore,
@@ -125,11 +134,14 @@ export class RunService {
       policyVersion?: string;
       /** Applied to every error message before it is persisted. The host passes its secret scrubber. */
       redact?: (text: string) => string;
+      /** Mandatory host grant check for external steps. Never exposed as a client capability. */
+      authorizeEgress?: (runId: string, intent: StepIntent, principal: HarnessPrincipal, phase: 'dispatch' | 'result') => Promise<void>;
     } = {},
   ) {
     this.clock = options.clock ?? Date.now;
     this.policyVersion = options.policyVersion ?? 'diomedes-policy-v1';
     this.redact = options.redact ?? ((text) => text);
+    this.authorizeEgress = options.authorizeEgress;
   }
 
   private describeError(error: unknown): { name: string; message: string } {
@@ -326,6 +338,7 @@ export class RunService {
       capabilityTools: [...new Set(capability.tools)],
       policyVersion: this.policyVersion,
       principal: copy(input.principal),
+      ...(input.input === undefined ? {} : { input: copy(input.input) }),
       state: 'queued',
       budget: copy(budget),
       used: { units: 0, modelCalls: 0, toolCalls: 0 },
@@ -380,7 +393,7 @@ export class RunService {
       run.fence += 1;
       for (const step of run.steps) {
         if (step.state !== 'running') continue;
-        step.state = step.intent.effect === 'non-idempotent' ? 'reconcile_required' : 'retry_wait';
+        step.state = needsReconciliation(step.intent) ? 'reconcile_required' : 'retry_wait';
         this.note(run, `step.${step.state}`, { why: 'exclusive host startup' }, step.intent.stepId, step.attempt);
       }
       run.state = run.steps.some((step) => step.state === 'reconcile_required') ? 'reconcile_required'
@@ -430,9 +443,12 @@ export class RunService {
   ): Promise<T> {
     this.scope(await this.load(runId), principal);
     const intent = this.intentOf(definition);
-    authorize(intent, principal);
+    const checkPolicy = (phase: 'dispatch' | 'result' = 'dispatch') => authorize(intent, principal, this.authorizeEgress
+      ? () => this.authorizeEgress!(runId, copy(intent), copy(principal), phase) : undefined);
+    await checkPolicy();
     for (const hook of this.hooks)
       await hook({ runId, step: copy(intent), principal: copy(principal) });
+    await checkPolicy();
 
     const start: StartOutcome = await this.serialize(runId, async () => {
       const run = await this.load(runId);
@@ -454,7 +470,7 @@ export class RunService {
       if (s.state === 'running' && s.leaseFence === run.fence)
         return finish({ blocked: 'step already in flight' });
       changed = true;
-      if (s.state === 'running' && intent.effect === 'non-idempotent') {
+      if (s.state === 'running' && needsReconciliation(intent)) {
         s.state = 'reconcile_required';
         run.state = 'reconcile_required';
         this.note(run, 'step.reconcile_required', { why: 'ownership changed while running' }, s.intent.stepId, s.attempt);
@@ -524,6 +540,8 @@ export class RunService {
 
     const signal = this.controller(runId).signal;
     try {
+      signal.throwIfAborted();
+      await checkPolicy();
       const output = await handler({
         input: copy(intent.input),
         idempotencyKey: start.key,
@@ -531,6 +549,7 @@ export class RunService {
         signal,
       });
       const encoded = canonical(output);
+      await checkPolicy('result');
       await this.serialize(runId, async () => {
         const run = await this.load(runId);
         this.guard(run, owner, start.fence);
@@ -554,7 +573,7 @@ export class RunService {
           this.guard(run, owner, start.fence);
           const s = run.steps.find((item) => item.intent.stepId === intent.stepId)!;
           if (s.state !== 'running' || s.attempt !== start.attempt) return;
-          const state = intent.effect === 'non-idempotent' ? 'reconcile_required' : 'retry_wait';
+          const state = needsReconciliation(intent) ? 'reconcile_required' : 'retry_wait';
           s.state = state;
           s.endedAt = this.now();
           s.error = this.describeError(error);
@@ -647,7 +666,7 @@ export class RunService {
       run.state = 'cancelled';
       run.cancelReason = reason;
       for (const s of run.steps) {
-        if (s.state === 'running' && s.intent.effect === 'non-idempotent') {
+        if (s.state === 'running' && needsReconciliation(s.intent)) {
           s.state = 'reconcile_required';
           s.endedAt = this.now();
           this.note(run, 'step.reconcile_required', { why: 'cancelled while running' }, s.intent.stepId, s.attempt);
