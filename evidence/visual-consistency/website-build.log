@@ -1,0 +1,69 @@
+npm notice run diomedes-site@0.1.0 build
+npm notice run astro check && astro build && node scripts/check-copy.mjs && npm run build:worker
+00:04:03 [content] Syncing content
+00:04:03 [content] Synced content
+00:04:03 [types] Generated 473ms
+00:04:03 [check] Getting diagnostics for Astro files in F:\Achilles\diomedes-site...
+Result (104 files): 
+- 0 errors
+- 0 warnings
+- 0 hints
+
+00:04:13 [content] Syncing content
+00:04:13 [content] Synced content
+00:04:13 [types] Generated 587ms
+00:04:13 [build] output: "static"
+00:04:13 [build] mode: "static"
+00:04:13 [build] directory: F:\Achilles\diomedes-site\dist\
+00:04:13 [build] Collecting build info...
+00:04:13 [build] ✓ Completed in 633ms.
+00:04:13 [build] Building static entrypoints...
+00:04:15 [vite] ✓ built in 1.99s
+00:04:16 [vite] ✓ built in 266ms
+00:04:16 [build] Rearranging server assets...
+
+ generating static routes 
+00:04:16   ├─ /404.html (+28ms) 
+00:04:16   ├─ /about.html (+11ms) 
+00:04:16   ├─ /business.html (+30ms) 
+00:04:16   ├─ /connections.html (+12ms) 
+00:04:16   ├─ /contact.html (+23ms) 
+00:04:16   ├─ /docs/agents.html (+8ms) 
+00:04:16   ├─ /docs/architecture.html (+4ms) 
+00:04:16   ├─ /docs/core-concepts.html (+5ms) 
+00:04:16   ├─ /docs/development.html (+4ms) 
+00:04:16   ├─ /docs/getting-started.html (+5ms) 
+00:04:16   ├─ /docs/harness.html (+5ms) 
+00:04:16   ├─ /docs/integrations.html (+3ms) 
+00:04:16   ├─ /docs/local-models.html (+5ms) 
+00:04:16   ├─ /docs/models.html (+3ms) 
+00:04:16   ├─ /docs/permissions.html (+5ms) 
+00:04:16   ├─ /docs/projects.html (+3ms) 
+00:04:16   ├─ /docs/remote.html (+5ms) 
+00:04:16   ├─ /docs/skills.html (+2ms) 
+00:04:16   ├─ /docs/task-state.html (+3ms) 
+00:04:16   ├─ /docs/tools.html (+2ms) 
+00:04:16   ├─ /docs.html (+7ms) 
+00:04:16   ├─ /download.html (+7ms) 
+00:04:16   ├─ /harness.html (+15ms) 
+00:04:16   ├─ /local-models.html (+14ms) 
+00:04:16   ├─ /product.html (+14ms) 
+00:04:16   ├─ /remote.html (+15ms) 
+00:04:16   ├─ /runtimes.html (+11ms) 
+00:04:16   ├─ /security.html (+12ms) 
+00:04:16   ├─ /skills.html (+208ms) 
+00:04:16   ├─ /workspace.html (+14ms) 
+00:04:16   ├─ /index.html (+21ms) 
+00:04:16 ✓ Completed in 569ms.
+
+00:04:16 [build] ✓ Completed in 2.95s.
+00:04:16 [@astrojs/sitemap] `sitemap-index.xml` created at `dist`
+00:04:16 [build] 31 page(s) built in 3.78s
+00:04:16 [build] Complete!
+copy check clean
+npm notice run diomedes-site@0.1.0 build:worker
+npm notice run wrangler pages functions build --outdir=./.worker/
+
+ ⛅️ wrangler 4.129.1
+────────────────────
+✨ Compiled Worker successfully

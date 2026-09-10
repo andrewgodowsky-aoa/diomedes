@@ -4,7 +4,6 @@ import '@fontsource/schibsted-grotesk/400';
 import '@fontsource/schibsted-grotesk/500';
 import '@fontsource/schibsted-grotesk/600';
 import '@fontsource/ibm-plex-mono/400';
-import '@fontsource/ibm-plex-serif/400';
 import '../styles.css';
 import './connections.css';
 import { Brand, Button } from '../components.js';

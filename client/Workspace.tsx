@@ -728,7 +728,7 @@ export function Workspace({
           <label>
             Service
             <select value={route} onChange={(e) => setRoute(e.target.value as Route)}>
-              <option value="sample">Sample work</option>
+              <option value="sample" disabled>Choose an engine</option>
               <option
                 value="codex"
                 disabled={!integrations.find((i) => i.id === 'codex')?.available}
@@ -737,9 +737,7 @@ export function Workspace({
               </option>
             </select>
           </label>
-        ) : (
-          <span className="caption">Sample work, on this computer</span>
-        )}
+        ) : null}
         {(() => {
           const tight = tightestWindow(
             usage.find((u) => u.engine === route) ?? {
@@ -1117,7 +1115,7 @@ export function Workspace({
           }}
         />
       ) : (
-        <Markdown text={doc.text} />
+        <Markdown text={doc.text} reading />
       )}
       {detail === 'technical' && (
         <details className="technical">
@@ -1460,20 +1458,18 @@ export function Workspace({
                                       ? detail === 'technical'
                                         ? 'Codex'
                                         : 'Online service'
-                                      : 'Diomedes, sample work'}
+                                      : 'Diomedes'}
                                   {t.attempt ? (
                                     <ModeChip mode={t.mode} attempt={t.attempt} />
                                   ) : null}
                                   <time>{time(t.at)}</time>
                                 </p>
                                 {t.role === 'you' ? <p>{t.text}</p> : <Markdown text={t.text} />}
-                                {t.role === 'diomedes' && t.helper && (
+                                {t.role === 'diomedes' && t.helper?.engine === 'codex' && (
                                   <p className="caption helper-caption">
-                                    {t.helper.engine === 'codex'
-                                      ? t.helper.verified && t.helper.model
+                                    {t.helper.verified && t.helper.model
                                         ? `Codex, ${t.helper.model}`
-                                        : 'Codex, name not reported'
-                                      : 'Sample work, on this computer'}
+                                        : 'Codex, name not reported'}
                                   </p>
                                 )}
                                 {t.sources?.length > 0 && (
@@ -1825,7 +1821,7 @@ export function Workspace({
                         <h3>What Diomedes says it did</h3>
                         <p className="prose">
                           {reviewSession?.sample
-                            ? 'Sample work changed the files listed below. These are scripted changes to demonstrate the workflow.'
+                            ? 'The example workflow changed the files listed below. These are scripted changes to demonstrate the workflow.'
                             : (reviewSession?.log.filter((l) => l.level === 'plain').at(-1)
                                 ?.sentence ??
                               'Changes were written to the project and recorded in History.')}
@@ -1872,7 +1868,7 @@ export function Workspace({
                             : workSession.state === 'working'
                               ? 'Working'
                               : titleCase(workSession.state)}
-                          . {workSession.sample ? 'Sample work.' : 'Diomedes, with your OK.'}
+                          . {workSession.sample ? 'Scripted example.' : 'Diomedes, with your OK.'}
                         </p>
                         {state.needs.filter((need) => need.sessionId === workSession.id && need.approvalReceipt).slice(-1).map((need) => <ApprovalStatus key={need.id} need={need} />)}
                         {workThread && (
@@ -2324,7 +2320,7 @@ export function Workspace({
             <label className="field">
               Work service
               <select value={route} onChange={(e) => setRoute(e.target.value as Route)}>
-                <option value="sample">Sample work</option>
+                <option value="sample" disabled>Choose an engine</option>
                 <option value="codex">
                   {detail === 'technical' ? 'Codex / ChatGPT subscription' : 'Online service'}
                 </option>
@@ -2455,11 +2451,11 @@ function threadMeta(c: Conversation) {
   return at ? `${turns} · ${time(at)}` : turns;
 }
 
-function Markdown({ text }: { text: string }) {
+function Markdown({ text, reading = false }: { text: string; reading?: boolean }) {
   const lines = text.split('\n');
   let inCode = false;
   return (
-    <div className="markdown prose">
+    <div className={`markdown prose${reading ? ' document-reading' : ''}`}>
       {lines.map((line, i) => {
         if (line.startsWith('```')) {
           inCode = !inCode;

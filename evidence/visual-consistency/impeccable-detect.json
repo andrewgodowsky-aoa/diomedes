@@ -1,0 +1,35 @@
+[
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "F:\\Achilles\\diomedes-wt\\settings-visual-consistency\\client\\styles.css",
+    "line": 1271,
+    "snippet": "border-left: 4px solid var(--dm-fault)"
+  },
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "F:\\Achilles\\diomedes-wt\\settings-visual-consistency\\client\\styles.css",
+    "line": 1847,
+    "snippet": "border-left: 4px solid var(--dm-fault)"
+  },
+  {
+    "antipattern": "layout-transition",
+    "name": "Layout property animation",
+    "description": "Animating width, height, padding, or margin causes layout thrash and janky performance. Use transform and opacity instead, or grid-template-rows for height animations.",
+    "severity": "warning",
+    "category": "quality",
+    "file": "F:\\Achilles\\diomedes-wt\\settings-visual-consistency\\client\\console\\team.css",
+    "line": 158,
+    "snippet": "transition: width",
+    "importedBy": [
+      "TeamView.tsx"
+    ]
+  }
+]

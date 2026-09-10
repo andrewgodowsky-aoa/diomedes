@@ -1,0 +1,32 @@
+[WebServer] npm notice run diomedes-site@0.1.0 preview
+[WebServer] npm notice run astro preview --host 127.0.0.1 --port 4321 --ignore-lock
+[WebServer] (node:36436) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 21 tests using 1 worker
+
+(node:35348) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  1 tests\responsive.spec.ts:14:3 › no overflow on / (465ms)
+  ok  2 tests\responsive.spec.ts:14:3 › no overflow on /product (379ms)
+  ok  3 tests\responsive.spec.ts:14:3 › no overflow on /harness (321ms)
+  ok  4 tests\responsive.spec.ts:14:3 › no overflow on /workspace (330ms)
+  ok  5 tests\responsive.spec.ts:14:3 › no overflow on /runtimes (337ms)
+  ok  6 tests\responsive.spec.ts:14:3 › no overflow on /connections (319ms)
+  ok  7 tests\responsive.spec.ts:14:3 › no overflow on /skills (325ms)
+  ok  8 tests\responsive.spec.ts:14:3 › no overflow on /remote (343ms)
+  ok  9 tests\responsive.spec.ts:14:3 › no overflow on /local-models (318ms)
+  ok 10 tests\responsive.spec.ts:14:3 › no overflow on /security (322ms)
+  ok 11 tests\responsive.spec.ts:14:3 › no overflow on /business (320ms)
+  ok 12 tests\responsive.spec.ts:14:3 › no overflow on /about (249ms)
+  ok 13 tests\responsive.spec.ts:14:3 › no overflow on /contact (261ms)
+  ok 14 tests\responsive.spec.ts:14:3 › no overflow on /docs (260ms)
+  ok 15 tests\responsive.spec.ts:14:3 › no overflow on /download (285ms)
+  ok 16 tests\responsive.spec.ts:14:3 › no overflow on /docs/getting-started (285ms)
+  ok 17 tests\responsive.spec.ts:34:1 › the phone table stacks into records without a label line per value (203ms)
+  ok 18 tests\responsive.spec.ts:53:1 › a collapsed demo keeps its insets and turns the rail into a strip (214ms)
+  ok 19 tests\responsive.spec.ts:74:1 › no running text exceeds a readable measure at any width (1.0s)
+  ok 20 tests\responsive.spec.ts:106:1 › the site keeps its own labels legible in the hand and its controls thumb-sized (217ms)
+  ok 21 tests\responsive.spec.ts:129:1 › the page gutter tightens as the screen narrows (322ms)
+
+  21 passed (11.2s)

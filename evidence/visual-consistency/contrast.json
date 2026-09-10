@@ -1,0 +1,26 @@
+[
+  {
+    "theme": "html[data-package='graphite']",
+    "old": "#86827c",
+    "value": "#8c8882",
+    "ratio": 4.5692612353983755
+  },
+  {
+    "theme": "html[data-package='ember']",
+    "old": "#8a7f76",
+    "value": "#90857c",
+    "ratio": 4.607749660623642
+  },
+  {
+    "theme": "html[data-package='dusk']",
+    "old": "#877f91",
+    "value": "#8b8395",
+    "ratio": 4.580830872515055
+  },
+  {
+    "theme": "html[data-package='paper']",
+    "old": "#6b7280",
+    "value": "#666d7a",
+    "ratio": 4.56029521074706
+  }
+]

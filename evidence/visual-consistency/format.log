@@ -1,0 +1,10 @@
+client/styles.css 113ms
+client/console/console.css 47ms
+client/console/board.css 13ms
+client/console/team.css 13ms
+client/console/palette.css 3ms
+client/connections/desktop.css 8ms
+client/usage-presentation.ts 40ms (unchanged)
+tests/responsive.spec.ts 24ms
+scripts/visual-consistency-proof.mjs 30ms
+playwright.responsive.config.ts 1ms (unchanged)

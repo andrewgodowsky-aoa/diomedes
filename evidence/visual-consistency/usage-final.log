@@ -1,0 +1,10 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/settings-visual-consistency
+
+ ✓ tests/usage-presentation.test.ts (5 tests) 12ms
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  00:07:45
+   Duration  2.32s (transform 26ms, setup 0ms, collect 29ms, tests 12ms, environment 0ms, prepare 84ms)
+

@@ -24,6 +24,18 @@ coordination notes. Coordinate Trust interfaces before widening them.
 
 ## Standing decisions
 
+**Approved visual exception, 2026-09-10.** Andrew selected the Engines settings
+screen as the typography and spacing reference across the existing app, including
+Workbook. Schibsted Grotesk is the face for all interface, response and document
+text; monospace remains for code and technical measurements. Remove the serif
+reading face and synthetic "Sample work" engine labels/meters. Keep every theme
+selectable: Ember is Andrew's preference, not a hardcoded product palette.
+Preserve explicit text-size controls, and contain long content at narrow widths.
+This named exception supersedes the Workbook re-skin freeze and older typography
+and cyan-only rules below for this pass; the Console migration, Runtime and Trust
+architecture are unchanged. Evidence and pending release status:
+[`docs/implementation/2026-09-10-visual-consistency.md`](docs/implementation/2026-09-10-visual-consistency.md).
+
 1. **One surface: the Console.** The Workbook is frozen and is being ported into the Console page by
    page, then deleted. **Every new feature is Console-only** — no new Workbook screens, and no
    further re-skin passes on the Workbook's half of `client/styles.css`. Full record and reasoning:

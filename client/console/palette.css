@@ -11,7 +11,9 @@
   padding-top: 12vh;
 }
 .console .palette {
-  width: min(540px, 92vw);
+  width: min(640px, calc(100vw / var(--dm-ui-scale) - 32px));
+  max-height: calc(88dvh / var(--dm-ui-scale));
+  overflow: auto;
   background: var(--raised);
   border: 1px solid var(--hair-2);
   border-radius: var(--r);
@@ -23,7 +25,7 @@
   border: 0;
   border-bottom: 1px solid var(--hair);
   color: var(--t1);
-  font: 400 15px/1.4 var(--ui);
+  font: 400 var(--dm-type-body) / 1.4 var(--ui);
   padding: 12px 14px;
   outline: none;
 }
@@ -36,20 +38,20 @@
 }
 .console .palette .group {
   padding: 8px 10px 2px;
-  font: 500 11px var(--mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font: 500 var(--dm-type-body) var(--dm-font-ui);
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--t3);
 }
 .console .palette li {
   display: grid;
-  grid-template-columns: 14px 1fr auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   gap: 0 10px;
   align-items: baseline;
   padding: 6px 8px 6px 10px;
   border-radius: var(--rb);
   cursor: pointer;
-  font-size: 13.5px;
+  font-size: var(--dm-type-caption);
   color: var(--t1);
 }
 .console .palette li.sel {
@@ -60,7 +62,7 @@
 }
 .console .palette li .sub {
   grid-column: 2;
-  font: 400 11.5px/1.5 var(--mono);
+  font: 400 var(--dm-type-body) / 1.5 var(--mono);
   color: var(--t3);
 }
 .console .palette li .acts {
@@ -71,9 +73,9 @@
   gap: 4px;
 }
 .console .palette li .acts button {
-  font: 500 11px var(--mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font: 500 var(--dm-type-body) var(--dm-font-ui);
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--t3);
   padding: 3px 7px;
   border-radius: var(--rb);

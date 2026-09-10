@@ -311,7 +311,7 @@ export function SessionStatus({
         </strong>
         <span className="muted">
           {' '}
-          {session.sample ? 'Sample work. ' : ''}Started at {time(session.startedAt)}.
+          {session.sample ? 'Scripted example. ' : ''}Started at {time(session.startedAt)}.
         </span>
         {detail === 'technical' && (
           <div className="code caption">
@@ -431,7 +431,7 @@ export function HelperLine({
         </span>
       ) : signedIn ? (
         <>
-          <span>{signedIn.name} is signed in but turned off, so Diomedes uses sample work.</span>
+          <span>{signedIn.name} is signed in but turned off.</span>
           <button
             className="text-button"
             onClick={() =>
@@ -446,7 +446,7 @@ export function HelperLine({
           <span>{signedIn.disclosure[0]}</span>
         </>
       ) : (
-        <span>Sample work, on this computer. No online service is connected.</span>
+        <span>No online service is connected.</span>
       )}
     </p>
   );

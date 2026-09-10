@@ -140,7 +140,7 @@ test('F01-F02: first run resumes, chooses a surface, and opens the selected surf
         getComputedStyle(document.documentElement).getPropertyValue('--dm-ui-scale').trim(),
       ),
     )
-    .toBe('1.1');
+    .toBe('1');
 });
 
 test('F04, F06: sample project opens and a plan edit survives reload with History', async ({ page }, testInfo) => {
@@ -341,7 +341,7 @@ test('F17, F20-F22: surface switches preserve data; visible pages meet copy and 
   const intents = page.locator('.intents');
   await expect(intents).toBeVisible();
   await expect(page.getByRole('region', { name: 'Ask box', exact: true })).toHaveCount(0);
-  await expect(intents.locator('.helper-line')).toContainText(/Sample work/);
+  await expect(intents.locator('.helper-line')).toContainText(/No online service is connected/);
   for (const name of ['Ask a question', 'Get something done', 'Make a plan', 'Look over what changed'])
     await expect(intents.getByRole('button', { name: new RegExp(`^${name}\\b`) })).toBeVisible();
   await intents.getByRole('button', { name: /^Get something done\b/ }).click();
@@ -567,12 +567,12 @@ test('Services roster: every reported engine listed with switch discipline; Guid
 
   const service = (name: string | RegExp) =>
     page.locator('.service', { has: page.getByRole('heading', { name }) });
-  // Guided shows only engines Diomedes can run: sample and codex are visible today.
-  await expect(service('Sample work')).toBeVisible();
+  // Guided lists real runnable engines; synthetic sample work is never an engine option.
+  await expect(service('Sample work')).toHaveCount(0);
   await expect(service(/Codex/)).toBeVisible();
   await expect(service('LocalAI supervisor')).toHaveCount(0);
   await expect(service('AionCore')).toHaveCount(0);
-  // The Codex entry has a switch; Sample work has none.
+  // The Codex entry has a switch; the synthetic engine is absent.
   await expect(service(/Codex/).locator('input[type="checkbox"]')).toHaveCount(1);
   await expect(service('Sample work').locator('input[type="checkbox"]')).toHaveCount(0);
   await expect(service(/Codex/).getByRole('button', { name: 'What is sent' })).toHaveCount(1);
@@ -603,7 +603,7 @@ test('Services roster: every reported engine listed with switch discipline; Guid
   await expect(deskRail.getByRole('button', { name: 'Engines', exact: true })).toBeVisible();
   await expect(deskRail.getByRole('button', { name: 'Connections', exact: true })).toHaveCount(0);
   await deskRail.getByRole('button', { name: 'Engines', exact: true }).click();
-  await expect(service('Sample work')).toBeVisible();
+  await expect(service('Sample work')).toHaveCount(0);
   await expect(service(/Codex/)).toBeVisible();
 
   const toBook = await page.request.put('/api/settings', { headers, data: { surface: 'workbook', detail: 'guided' } });
@@ -705,7 +705,8 @@ test('Verified helper: a helper turn shows its runtime caption', async ({ page }
   await askBox.getByRole('textbox', { name: 'Ask, plan, or say what to do' }).fill('Which soups are local?');
   await askBox.getByRole('button', { name: 'Send', exact: true }).click();
   const helperTurn = page.locator('.turn.diomedes').last();
-  await expect(helperTurn.locator('.helper-caption')).toContainText('Sample work, on this computer');
+  await expect(helperTurn.locator('.helper-caption')).toHaveCount(0);
+  await expect(helperTurn).not.toContainText('Sample work');
 });
 
 test('Engine choices: the list comes from the engine, and the levels follow the choice', async ({

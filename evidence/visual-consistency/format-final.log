@@ -1,0 +1,4 @@
+scripts/visual-consistency-proof.mjs 57ms
+client/Settings.tsx 85ms
+client/console/Picker.tsx 26ms
+client/usage-presentation.ts 6ms (unchanged)

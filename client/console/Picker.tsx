@@ -42,8 +42,8 @@ function available(id: string, integrations: IntegrationStatus[], settings: Sett
 }
 
 /**
- * The mono ENGINE model-id effort control. The menu groups live engine
- * catalogues (GET /engines/:id/models) plus Sample work; the choice PUTs
+ * The engine, model and effort control. The menu groups live engine
+ * catalogues (GET /engines/:id/models); the choice PUTs
  * `requested` on the thread exactly as the Console did.
  */
 export function Picker({
@@ -69,7 +69,8 @@ export function Picker({
           if (alive) setCatalogs((prev) => ({ ...prev, [id]: catalog }));
         })
         .catch(() => {
-          if (alive) setCatalogs((prev) => ({ ...prev, [id]: { engine: id, models: [], detail: '' } }));
+          if (alive)
+            setCatalogs((prev) => ({ ...prev, [id]: { engine: id, models: [], detail: '' } }));
         });
     }
     return () => {
@@ -90,20 +91,24 @@ export function Picker({
       document.removeEventListener('mousedown', close);
       document.removeEventListener('keydown', escape);
     };
-  }, [open ]);
+  }, [open]);
 
-  const savedModel = typeof settings.services?.codexModel === 'string' ? settings.services.codexModel : '';
-  const savedEffort = typeof settings.services?.codexEffort === 'string' ? settings.services.codexEffort : '';
+  const savedModel =
+    typeof settings.services?.codexModel === 'string' ? settings.services.codexModel : '';
+  const savedEffort =
+    typeof settings.services?.codexEffort === 'string' ? settings.services.codexEffort : '';
   const chosenSlug = thread.requested?.model ?? '';
   const chosen = ENGINE_IDS.flatMap((id) =>
     (catalogs[id]?.models ?? []).map((m) => ({ engine: id, model: m })),
   ).find((c) => c.model.slug === chosenSlug);
   const displayEngine = chosen?.engine ?? route;
-  const engLabel = displayEngine === 'sample'
-    ? 'Sample work'
-    : (integrations.find((i) => i.id === displayEngine)?.name ?? displayEngine);
+  const engLabel =
+    displayEngine === 'sample'
+      ? ''
+      : (integrations.find((i) => i.id === displayEngine)?.name ?? displayEngine);
   const displayModel = chosenSlug || savedModel || chosen?.model.slug || 'default';
-  const wantedEffort = thread.requested?.effort || savedEffort || chosen?.model.defaultEffort || 'medium';
+  const wantedEffort =
+    thread.requested?.effort || savedEffort || chosen?.model.defaultEffort || 'medium';
   const runsAt = effortFor(mode, wantedEffort, wantedEffort);
   const capped = runsAt !== wantedEffort;
   const ceiling = MODE_CEILING[mode];
@@ -123,11 +128,15 @@ export function Picker({
         title="Engine, model and reasoning level for this thread"
         onClick={() => setOpen(!open)}
       >
-        <span className="eng">{engLabel}</span>
-        <span className="mdl">{displayModel}</span>
-        <span className={`eff ${capped ? 'capped' : ''}`}>
-          {capped ? `${wantedEffort}, runs ${runsAt}` : runsAt}
+        {engLabel && <span className="eng">{engLabel}</span>}
+        <span className="mdl">
+          {displayEngine === 'sample' ? 'Choose an engine' : displayModel}
         </span>
+        {displayEngine !== 'sample' && (
+          <span className={`eff ${capped ? 'capped' : ''}`}>
+            {capped ? `${wantedEffort}, runs ${runsAt}` : runsAt}
+          </span>
+        )}
       </button>
       {open && (
         <div className="pmenu open" role="menu">
@@ -174,23 +183,8 @@ export function Picker({
                   </div>
                 );
               })}
-              {available('sample', integrations, settings) && (
-                <div>
-                  <h4>
-                    Sample work<span>on this computer</span>
-                  </h4>
-                  <button
-                    type="button"
-                    className={`m ${route === 'sample' && !chosenSlug ? 'on' : ''}`}
-                    role="menuitemradio"
-                    aria-checked={route === 'sample' && !chosenSlug}
-                    onClick={() => choose(null, 'sample')}
-                  >
-                    <span>Sample work</span>
-                    <span className="id">sample</span>
-                    <small>Stays on this computer</small>
-                  </button>
-                </div>
+              {!ENGINE_IDS.some((id) => available(id, integrations, settings)) && (
+                <p className="note">Connect an engine in Settings.</p>
               )}
               {chosen ? (
                 <>
@@ -201,7 +195,9 @@ export function Picker({
                         type="button"
                         title={e.description}
                         className={`${e.id === wantedEffort ? 'on' : ''} ${ceiling && effortFor(mode, e.id, e.id) !== e.id ? 'capped' : ''}`.trim()}
-                        onClick={() => choose({ model: chosen.model.slug, effort: e.id }, chosen.engine)}
+                        onClick={() =>
+                          choose({ model: chosen.model.slug, effort: e.id }, chosen.engine)
+                        }
                       >
                         {e.id}
                       </button>
@@ -212,7 +208,9 @@ export function Picker({
                       <b>Fix runs at {ceiling}.</b> Your choice still governs Ask, Plan and Build.
                     </div>
                   ) : (
-                    <div className="note">Applies to this thread. The default lives in Settings.</div>
+                    <div className="note">
+                      Applies to this thread. The default lives in Settings.
+                    </div>
                   )}
                 </>
               ) : (

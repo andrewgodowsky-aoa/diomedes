@@ -36,7 +36,7 @@
   align-items: baseline;
   gap: 10px;
   margin: 0;
-  font: 500 12.5px/1.4 var(--ui);
+  font: 500 var(--dm-type-body) / 1.4 var(--ui);
   color: var(--t1);
 }
 .console .cblock h2 .mono {
@@ -44,19 +44,19 @@
 }
 .console .cblock h3 {
   margin: 14px 0 0;
-  font: 500 12.5px/1.4 var(--ui);
+  font: 500 var(--dm-type-body) / 1.4 var(--ui);
   color: var(--t1);
 }
 .console .cblock p {
   margin: 5px 0 0;
   max-width: 68ch;
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
   line-height: 1.55;
   color: var(--t2);
 }
 .console .cblock p.quiet {
   color: var(--t3);
-  font-size: 12.5px;
+  font-size: var(--dm-type-caption);
 }
 /* The instrument line is the Console's one place for measured values; here it
    carries scope and freshness, so it drops the thread head's rule and padding. */
@@ -77,9 +77,9 @@
   gap: 5px;
   min-width: 0;
   margin-top: 12px;
-  font: 400 11px/1.6 var(--mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font: 400 var(--dm-type-body) / 1.6 var(--dm-font-ui);
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--t3);
 }
 .console .cfields label {
@@ -93,7 +93,7 @@
   border: 1px solid var(--hair-2);
   border-radius: var(--rb);
   color: var(--t1);
-  font: 400 13px/1.5 var(--ui);
+  font: 400 var(--dm-type-body) / 1.5 var(--ui);
   transition: border-color var(--quick);
 }
 .console .cblock textarea {
@@ -117,7 +117,7 @@
   padding: 3px 6px;
   border-radius: var(--rb);
   color: var(--t2);
-  font-size: 12.5px;
+  font-size: var(--dm-type-caption);
   transition:
     color var(--quick),
     background var(--quick);
@@ -146,13 +146,13 @@
 .console .ctable table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
 }
 .console .ctable th {
   padding: 0 14px 6px 0;
   border-bottom: 1px solid var(--hair-2);
   color: var(--t3);
-  font: 500 11px/1.6 var(--mono);
+  font: 500 var(--dm-type-body) / 1.6 var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   text-align: left;
@@ -185,7 +185,7 @@
 }
 .console .crules .id {
   color: var(--t2);
-  font: 400 11.5px/1.6 var(--mono);
+  font: 400 var(--dm-type-body) / 1.6 var(--mono);
   letter-spacing: 0.02em;
 }
 .console .crules p {
@@ -208,7 +208,7 @@
 }
 .console .cfacts dt {
   color: var(--t3);
-  font: 400 11px/1.7 var(--mono);
+  font: 400 var(--dm-type-body) / 1.7 var(--mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -216,7 +216,7 @@
   margin: 0;
   min-width: 0;
   color: var(--t1);
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -230,7 +230,7 @@
   border: 1px solid var(--hair);
   border-radius: var(--rb);
   color: var(--t2);
-  font: 400 11.5px/1.7 var(--mono);
+  font: 400 var(--dm-type-body) / 1.7 var(--mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -239,7 +239,7 @@
 .console .connection-desktop summary {
   padding: 4px 0;
   color: var(--t3);
-  font-size: 12.5px;
+  font-size: var(--dm-type-caption);
   cursor: pointer;
   list-style: none;
   transition: color var(--quick);
@@ -266,7 +266,7 @@
   padding: 6px 0 6px 10px;
   border-left: 1px solid var(--fail);
   color: var(--fail);
-  font-size: 12.5px;
+  font-size: var(--dm-type-caption);
 }
 
 @media (max-width: 1100px) {

@@ -1,0 +1,2270 @@
+{
+  "baseURL": "http://127.0.0.1:5186",
+  "phase": "before",
+  "errors": [],
+  "reports": [
+    {
+      "name": "settings-1280x720-1.1-ember",
+      "viewport": [
+        1280,
+        720
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400",
+        "IBM Plex Mono 500"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.prose",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "16px",
+          "lineHeight": "25.6px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right engine-state",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption push-right engine-state",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption push-right engine-state",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "projects-1280x720-1.1-ember",
+      "viewport": [
+        1280,
+        720
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "H2.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "20px",
+          "lineHeight": "26px"
+        },
+        {
+          "selector": "TEXTAREA.",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "17px",
+          "lineHeight": "27.2px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption helper-line",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "home-1280x720-1.1-ember",
+      "viewport": [
+        1280,
+        720
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "H2.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "20px",
+          "lineHeight": "26px"
+        },
+        {
+          "selector": "P.caption helper-line",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.section-title",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "19px",
+          "lineHeight": "26.6px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.section-title",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "19px",
+          "lineHeight": "26.6px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.section-title",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "19px",
+          "lineHeight": "26.6px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.section-title",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "19px",
+          "lineHeight": "26.6px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "ask-1280x720-1.1-ember",
+      "viewport": [
+        1280,
+        720
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "H2.",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "11px",
+          "lineHeight": "14.3px"
+        },
+        {
+          "selector": "SPAN.caption thread-meta",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption turn-meta",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption turn-meta",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "DIV.markdown prose",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "16px",
+          "lineHeight": "28px"
+        },
+        {
+          "selector": "P.caption helper-caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption mode-line",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "TEXTAREA.",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "16px",
+          "lineHeight": "25.6px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "review-1280x720-1.1-ember",
+      "viewport": [
+        1280,
+        720
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "H2.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "20px",
+          "lineHeight": "26px"
+        },
+        {
+          "selector": "DIV.prose muted",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "16px",
+          "lineHeight": "25.6px"
+        },
+        {
+          "selector": "P.caption mode-line",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "TEXTAREA.",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "16px",
+          "lineHeight": "25.6px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "team-1280x720-1.1-ember",
+      "viewport": [
+        1280,
+        720
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400",
+        "IBM Plex Mono 500"
+      ],
+      "type": [
+        {
+          "selector": "H2.",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "11px",
+          "lineHeight": "14.3px"
+        },
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "22.5px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "12px",
+          "lineHeight": "18px"
+        },
+        {
+          "selector": "TEXTAREA.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "15px",
+          "lineHeight": "23.25px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "connections-1280x720-1.1-ember",
+      "viewport": [
+        1280,
+        720
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400",
+        "IBM Plex Mono 500"
+      ],
+      "type": [
+        {
+          "selector": "H2.",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "11px",
+          "lineHeight": "14.3px"
+        },
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "22.5px"
+        },
+        {
+          "selector": "H2.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "12.5px",
+          "lineHeight": "17.5px"
+        },
+        {
+          "selector": "TEXTAREA.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "13px",
+          "lineHeight": "19.5px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "settings-1920x1080-1.1-ember",
+      "viewport": [
+        1920,
+        1080
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400",
+        "IBM Plex Mono 500"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.prose",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "16px",
+          "lineHeight": "25.6px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right engine-state",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption push-right engine-state",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption push-right engine-state",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "projects-1920x1080-1.1-ember",
+      "viewport": [
+        1920,
+        1080
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "H2.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "20px",
+          "lineHeight": "26px"
+        },
+        {
+          "selector": "TEXTAREA.",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "17px",
+          "lineHeight": "27.2px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption helper-line",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "home-1920x1080-1.1-ember",
+      "viewport": [
+        1920,
+        1080
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "H2.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "20px",
+          "lineHeight": "26px"
+        },
+        {
+          "selector": "P.caption helper-line",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.section-title",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "19px",
+          "lineHeight": "26.6px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.section-title",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "19px",
+          "lineHeight": "26.6px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.section-title",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "19px",
+          "lineHeight": "26.6px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.section-title",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "19px",
+          "lineHeight": "26.6px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "ask-1920x1080-1.1-ember",
+      "viewport": [
+        1920,
+        1080
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400",
+        "IBM Plex Mono 500"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "H2.",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "11px",
+          "lineHeight": "14.3px"
+        },
+        {
+          "selector": "SPAN.caption thread-meta",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption turn-meta",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption turn-meta",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "DIV.markdown prose",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "16px",
+          "lineHeight": "28px"
+        },
+        {
+          "selector": "P.caption helper-caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption mode-line",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "TEXTAREA.",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "16px",
+          "lineHeight": "25.6px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "review-1920x1080-1.1-ember",
+      "viewport": [
+        1920,
+        1080
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "H2.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "20px",
+          "lineHeight": "26px"
+        },
+        {
+          "selector": "DIV.prose muted",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "16px",
+          "lineHeight": "25.6px"
+        },
+        {
+          "selector": "P.caption mode-line",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "TEXTAREA.",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "16px",
+          "lineHeight": "25.6px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "team-1920x1080-1.1-ember",
+      "viewport": [
+        1920,
+        1080
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400",
+        "IBM Plex Mono 500"
+      ],
+      "type": [
+        {
+          "selector": "H2.",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "11px",
+          "lineHeight": "14.3px"
+        },
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "22.5px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "12px",
+          "lineHeight": "18px"
+        },
+        {
+          "selector": "TEXTAREA.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "15px",
+          "lineHeight": "23.25px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "connections-1920x1080-1.1-ember",
+      "viewport": [
+        1920,
+        1080
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400",
+        "IBM Plex Mono 500"
+      ],
+      "type": [
+        {
+          "selector": "H2.",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "11px",
+          "lineHeight": "14.3px"
+        },
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "22.5px"
+        },
+        {
+          "selector": "H2.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "12.5px",
+          "lineHeight": "17.5px"
+        },
+        {
+          "selector": "TEXTAREA.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "13px",
+          "lineHeight": "19.5px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "settings-2560x1440-1.1-ember",
+      "viewport": [
+        2560,
+        1440
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400",
+        "IBM Plex Mono 500"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.prose",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "16px",
+          "lineHeight": "25.6px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "SPAN.caption push-right engine-state",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption push-right engine-state",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption push-right engine-state",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "projects-2560x1440-1.1-ember",
+      "viewport": [
+        2560,
+        1440
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "H2.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "20px",
+          "lineHeight": "26px"
+        },
+        {
+          "selector": "TEXTAREA.",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "17px",
+          "lineHeight": "27.2px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption helper-line",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.code caption",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "20.72px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "home-2560x1440-1.1-ember",
+      "viewport": [
+        2560,
+        1440
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "H2.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "20px",
+          "lineHeight": "26px"
+        },
+        {
+          "selector": "P.caption helper-line",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.section-title",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "19px",
+          "lineHeight": "26.6px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.section-title",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "19px",
+          "lineHeight": "26.6px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.section-title",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "19px",
+          "lineHeight": "26.6px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.section-title",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "19px",
+          "lineHeight": "26.6px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "ask-2560x1440-1.1-ember",
+      "viewport": [
+        2560,
+        1440
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "H2.",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "11px",
+          "lineHeight": "14.3px"
+        },
+        {
+          "selector": "SPAN.caption thread-meta",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "SPAN.caption push-right",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption turn-meta",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption turn-meta",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "DIV.markdown prose",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "16px",
+          "lineHeight": "28px"
+        },
+        {
+          "selector": "P.caption helper-caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption mode-line",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "TEXTAREA.",
+          "font": "\"IBM Plex Serif\", Cambria, Georgia, serif",
+          "size": "16px",
+          "lineHeight": "25.6px"
+        },
+        {
+          "selector": "SPAN.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "H3.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "19.6px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "review-2560x1440-1.1-ember",
+      "viewport": [
+        2560,
+        1440
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400"
+      ],
+      "type": [
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "23.4px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "14px",
+          "lineHeight": "21px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "team-2560x1440-1.1-ember",
+      "viewport": [
+        2560,
+        1440
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400",
+        "IBM Plex Mono 500"
+      ],
+      "type": [
+        {
+          "selector": "H2.",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "11px",
+          "lineHeight": "14.3px"
+        },
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "22.5px"
+        },
+        {
+          "selector": "P.caption",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "12px",
+          "lineHeight": "18px"
+        },
+        {
+          "selector": "TEXTAREA.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "15px",
+          "lineHeight": "23.25px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    },
+    {
+      "name": "connections-2560x1440-1.1-ember",
+      "viewport": [
+        2560,
+        1440
+      ],
+      "dpr": 1,
+      "uiScale": "1.1",
+      "readingScale": "1",
+      "codeScale": "1",
+      "fonts": [
+        "Schibsted Grotesk 400",
+        "Schibsted Grotesk 500",
+        "Schibsted Grotesk 600",
+        "IBM Plex Serif 400",
+        "IBM Plex Mono 400",
+        "IBM Plex Mono 500"
+      ],
+      "type": [
+        {
+          "selector": "H2.",
+          "font": "\"IBM Plex Mono\", \"Cascadia Mono\", Consolas, monospace",
+          "size": "11px",
+          "lineHeight": "14.3px"
+        },
+        {
+          "selector": "H1.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "18px",
+          "lineHeight": "22.5px"
+        },
+        {
+          "selector": "H2.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "12.5px",
+          "lineHeight": "17.5px"
+        },
+        {
+          "selector": "TEXTAREA.",
+          "font": "\"Schibsted Grotesk\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "size": "13px",
+          "lineHeight": "19.5px"
+        }
+      ],
+      "overflow": [],
+      "documentOverflow": false
+    }
+  ]
+}
