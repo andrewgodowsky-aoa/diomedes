@@ -44,17 +44,32 @@ export const isContained = (root: string, candidate: string) => {
 };
 
 // Windows 8.3 aliases (NODEMO~1, CREDEN~1.JSO) can name guarded entries while
-// evading literal-component checks. Refuse any component whose name portion is
-// 1-8 non-space characters ending in ~digits — a plausible short name — while
+// evading literal-component checks. Treat any component whose name portion is
+// 1-8 non-space characters ending in ~digits as a plausible short name, while
 // ordinary tilde filenames (notes~backup.md, main.py~, file.txt~1) stay valid.
 const plausibleDosShortName = (part: string) => {
   const [name = ''] = part.split('.');
   return name.length > 0 && name.length <= 8 && /^\S*~\d{1,4}$/.test(name);
 };
 
+const componentsOf = (normalized: string) =>
+  normalized.split(/[\\/]+/).map((part) => part.toLowerCase());
+
+/**
+ * Does this path carry a component shaped like an 8.3 alias?
+ *
+ * The shape alone says nothing about what the component names. `NODEMO~1` may
+ * be node_modules; `RUNNER~1` is an ordinary Windows profile, and on a machine
+ * whose account name runs past eight characters it is where `%TEMP%` lives.
+ * Only expanding it answers which, and expanding needs the filesystem, so this
+ * predicate exists to decide whether that work is worth doing.
+ */
+const carriesShortName = (normalized: string) =>
+  componentsOf(normalized).some(plausibleDosShortName);
+
 export function rejectForbidden(absolute: string) {
   const normalized = path.resolve(absolute);
-  const pieces = normalized.split(/[\\/]+/).map((part) => part.toLowerCase());
+  const pieces = componentsOf(normalized);
   if (
     pieces.some(
       (part) =>
@@ -72,18 +87,38 @@ export function rejectForbidden(absolute: string) {
 /** Reject links at every existing component, including Windows junctions. */
 export async function safeAbsolute(absolute: string) {
   const result = path.resolve(absolute);
-  rejectForbidden(result);
+  // A path carrying no 8.3 alias is judged on its literal name, before any
+  // filesystem work happens. One that does carry an alias cannot be judged
+  // until the alias is expanded, which is what the tail of this function does.
+  const aliased = carriesShortName(result);
+  if (!aliased) rejectForbidden(result);
   const parsed = path.parse(result);
   let current = parsed.root;
+  let deepest = parsed.root;
   for (const component of result.slice(parsed.root.length).split(path.sep).filter(Boolean)) {
     current = path.join(current, component);
     try {
       const stat = await fs.lstat(current);
       if (stat.isSymbolicLink())
         throw new ApiError(403, 'Linked folders and files cannot be opened by Diomedes.');
+      deepest = current;
     } catch (error) {
       if (!absent(error)) throw error;
     }
+  }
+  if (aliased) {
+    // What an alias names is what the guard has to judge. Expanding the part
+    // that exists turns NODEMO~1 back into node_modules and leaves RUNNER~1 as
+    // the ordinary profile it is. A component past the deepest existing one
+    // aliases nothing, so it stays in the tail and is judged on its shape.
+    let expanded: string;
+    try {
+      expanded = path.join(await fs.realpath(deepest), path.relative(deepest, result));
+    } catch {
+      // An alias that cannot be expanded cannot be cleared.
+      throw new ApiError(403, 'This folder or file is private and cannot be opened by Diomedes.');
+    }
+    rejectForbidden(expanded);
   }
   return result;
 }
