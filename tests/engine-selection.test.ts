@@ -22,7 +22,6 @@ function settings(services: Record<string, boolean | string>): Settings {
     },
     explanations: 'persistent',
     appearance: { package: 'default', motion: 'normal' },
-    history: { keepDays: 30, maxBytesPerProject: 1_000_000 },
     seen: { onlineServiceNotice: false, guidedDescriptors: {}, firstUse: [] },
     openProjects: [],
     lastPage: {},

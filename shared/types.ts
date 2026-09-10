@@ -54,7 +54,6 @@ export interface Settings {
     readingScale?: number;
     codeScale?: number;
   };
-  history: { keepDays: number; maxBytesPerProject: number };
   seen: {
     onlineServiceNotice: boolean;
     guidedDescriptors: Record<string, number>;

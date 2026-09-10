@@ -50,11 +50,19 @@ own adapter with its own isolation proof — the Codex one took a Windows write-
 probe, an inherited-MCP disable-and-verify step and a pinned protocol schema.
 
 `../planning/2026-09-06-v6-two-views/07-engine-discovery-brief.md` recommends Claude Code
-next, driven through its CLI rather than the Agent SDK, as slices E2 and E3. Nobody has
-confirmed that, and nobody has said what the equivalent isolation proof looks like for a
-CLI that was not built to be fenced. Until one lands, "team" means "Codex talking to
-Codex", and D5 in the two-views brief — which engine leads by default — has nothing to
-decide.
+next, driven through its CLI rather than the Agent SDK, as slices E2 and E3.
+
+**The first half is decided.** Andrew, 2026-09-10: adapters are the next big piece, named
+as "acp, -p for claude". So the second adapter target is Claude Code through its own
+command interface, confirming the brief's CLI recommendation over the Agent SDK, and ACP
+is a peer target rather than a later one.
+
+**The second half is still open.** Nobody has said what the equivalent isolation proof
+looks like for a CLI that was not built to be fenced, and that proof is what the Codex
+adapter's cost actually was: a Windows write-denial probe, an inherited-MCP
+disable-and-verify step and a pinned protocol schema. Until one lands, "team" means
+"Codex talking to Codex", and D5 in the two-views brief — which engine leads by default —
+has nothing to decide.
 
 ### O4. What a member should be able to do to a run in flight
 
@@ -62,12 +70,26 @@ There is no steering a run, no branching a thread, and no handing a thread from 
 helper to another. A leader can interrupt or shut down a member, and that is all. Each
 of these is a design question before it is an implementation one.
 
-### O5. History retention is configured but not enforced
-
-`Settings.history.keepDays` (30) and `maxBytesPerProject` (2 GB) are stored and settable
-and nothing reads them. Either implement pruning or stop offering the settings.
-
 ## Resolved
+
+### R6. History retention was configured and not enforced
+
+**Settled 2026-09-10 by Andrew: preserve the evidence, remove the controls.**
+`Settings.history.keepDays` (30) and `maxBytesPerProject` (2 GB) were stored, validated
+and read by nothing. The choice was to implement pruning or stop offering the settings,
+and pruning was the wrong half to reach for first: History is evidence, and Pillars 06
+and 09 both name evidence and audit as enforced concepts, so what may be aged out is a
+policy question before it is an implementation one.
+
+Both keys are gone from `Settings`, from the defaults and from the settings validator.
+`migrateSettings` deletes a stored block, because settings load with no merge against the
+defaults and a retired key would otherwise be read back and rewritten forever. History
+now keeps everything, and the README and the website say so rather than describing a
+control that does not work.
+
+Still open, when someone wants it: what a real retention and archive policy allows. It
+has to answer whether ageing out may remove the record of an authorized effect, and if
+not, what an archive keeps instead.
 
 ### R1. Could Codex call the Diomedes team tools at all?
 

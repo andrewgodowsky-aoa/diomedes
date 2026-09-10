@@ -132,6 +132,10 @@ export function migrateSettings(settings: Settings): void {
     workspace?.kind === 'business' && typeof workspace.organizationId === 'string'
       ? { kind: 'business', organizationId: workspace.organizationId }
       : { kind: 'personal' };
+  // History retention was configured and never enforced, and History is
+  // evidence. The controls are gone until there is a policy that says what may
+  // be aged out; a stored block would otherwise be rewritten forever.
+  delete (settings as { history?: unknown }).history;
   settings.onboarding.setupVersion = 2;
   settings.onboarding.discoveryConsentAt ??= null;
   settings.onboarding.aiSkipped ??= false;
@@ -181,7 +185,6 @@ export const defaults = (): Settings => ({
   },
   explanations: 'persistent',
   appearance: { package: 'field', motion: 'normal' },
-  history: { keepDays: 30, maxBytesPerProject: 2147483648 },
   seen: { onlineServiceNotice: false, guidedDescriptors: {}, firstUse: [] },
   openProjects: [],
   lastPage: {},

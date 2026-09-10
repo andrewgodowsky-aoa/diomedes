@@ -359,7 +359,8 @@ junctions are rejected.
   required mutation header keep unrelated websites out, but any other process on this
   computer can reach it. This is a local prototype, not a remote or multi-user service.
 - **Text only.** Word, Excel, PDF, images and binary diffs are not editable, and History
-  has no automatic pruning — the retention settings exist but nothing enforces them yet.
+  keeps everything. There is no retention or archive policy yet, so nothing ages out and
+  no setting claims otherwise.
 - **No Git and no messages.** The application never commits, branches, pushes, or sends
   an email or message on your behalf.
 - **No installer, signature or updater**, and no remote access or account pairing.

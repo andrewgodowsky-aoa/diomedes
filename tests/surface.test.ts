@@ -57,3 +57,38 @@ describe('the surface a stored setting opens on', () => {
     expect(settings.surface).toBe(once);
   });
 });
+
+/**
+ * History retention was configurable and never enforced: keepDays and
+ * maxBytesPerProject were validated, stored and read by nothing. A setting that
+ * promises to age evidence out, and does not, is worse than no setting, and
+ * History is evidence. Andrew, 2026-09-10: preserve it until there is a real
+ * retention and archive policy, and take the controls out meanwhile.
+ *
+ * Settings load with no merge against the defaults, so a key left in a stored
+ * file would be read back and rewritten forever. Migration is the only thing
+ * that can retire one.
+ */
+describe('the retired history retention settings', () => {
+  const withRetention = () => {
+    const settings = defaults() as Settings & { history?: unknown };
+    settings.history = { keepDays: 30, maxBytesPerProject: 2147483648 };
+    return settings;
+  };
+
+  it('drops the stored block so it is never written back', () => {
+    const settings = withRetention();
+    migrateSettings(settings);
+    expect('history' in settings).toBe(false);
+  });
+
+  it('is settled after one pass, and a file that never had one is untouched', () => {
+    const settings = withRetention();
+    migrateSettings(settings);
+    migrateSettings(settings);
+    expect('history' in settings).toBe(false);
+    const clean = defaults() as Settings & { history?: unknown };
+    migrateSettings(clean);
+    expect('history' in clean).toBe(false);
+  });
+});

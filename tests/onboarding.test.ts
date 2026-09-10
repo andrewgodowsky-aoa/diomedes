@@ -23,7 +23,6 @@ function base(overrides?: Partial<Settings>): Settings {
     },
     explanations: 'once',
     appearance: { package: 'field', motion: 'normal' },
-    history: { keepDays: 30, maxBytesPerProject: 2147483648 },
     seen: { onlineServiceNotice: false, guidedDescriptors: {}, firstUse: [] },
     openProjects: [],
     lastPage: {},

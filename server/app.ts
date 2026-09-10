@@ -285,16 +285,6 @@ function validateSettings(current: Settings, body: unknown): Settings {
         result.appearance[key] = n;
       }
   }
-  if (supplied.history) {
-    const value = plain(supplied.history);
-    for (const key of ['keepDays', 'maxBytesPerProject'] as const)
-      if (value[key] !== undefined) {
-        const n = value[key];
-        if (typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0)
-          throw new ApiError(400, 'History settings must be positive whole numbers.');
-        result.history[key] = n;
-      }
-  }
   if (supplied.services) {
     const value = plain(supplied.services);
     const services: Record<string, boolean | string> = {};
