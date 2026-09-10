@@ -13,9 +13,6 @@ jobs:
   local-gates:
     runs-on: windows-latest
     timeout-minutes: 15
-    env:
-      # These gates use synthetic data and mocked providers, never a signed-in account.
-      CODEX_HOME: ${{ runner.temp }}/diomedes-ci-codex
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -26,7 +23,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      # The runner context is only available inside a step, never in a job-level env
+      # block, so this pair has to sit here. These gates use synthetic data and mocked
+      # providers, never a signed-in account.
       - run: node node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile=test-results/unit.xml
+        env:
+          CODEX_HOME: ${{ runner.temp }}/diomedes-ci-codex
       # npm run build also packages the desktop and requires separately staged
       # pinned native binaries. Client compilation is an independent CI gate.
       - run: node node_modules/vite/bin/vite.js build
