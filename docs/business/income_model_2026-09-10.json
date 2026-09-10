@@ -1,0 +1,32 @@
+{
+  "parameters": {"Audit": 350, "Quick Start": 299, "Local Deployment": 749, "Pilot": 1250, "Consulting per hour": 100, "Business monthly": 99, "Managed monthly": 249, "Audit credit": 200, "Payment fee assumption": 0.03, "API per business-month assumption": 15, "Hosting per business-month assumption": 5, "Tools per managed-month assumption": 10, "Contractor hourly assumption": 50, "Founder replacement hourly assumption": 50, "Basic support hours per business-month": 0.25, "Managed additional hours per managed-month": 1.5, "Weeks per year": 52},
+  "cases": [
+    {"name":"Validation","audits":4,"quick":4,"local":2,"pilots":2,"custom":0,"custom_price":4000,"consulting":8,"credits":2,"bm":30,"mm":10,"end_b":6,"end_m":2,"overhead":4000,"contractor_hours":0,"custom_hours":30,"sales_admin":100,"build_hours":350},
+    {"name":"Steady part-time","audits":8,"quick":6,"local":3,"pilots":4,"custom":3,"custom_price":4000,"consulting":20,"credits":4,"bm":75,"mm":26,"end_b":15,"end_m":6,"overhead":6000,"contractor_hours":0,"custom_hours":30,"sales_admin":225,"build_hours":500},
+    {"name":"Strong founder-led","audits":12,"quick":10,"local":5,"pilots":6,"custom":7,"custom_price":5500,"consulting":40,"credits":6,"bm":180,"mm":60,"end_b":35,"end_m":12,"overhead":10000,"contractor_hours":180,"custom_hours":40,"sales_admin":400,"build_hours":650}
+  ],
+  "results": [
+    {"scenario":"Validation","services":6994,"software":2970,"managed":2490,"revenue":12454,"cash_costs":5073.62,"cash_surplus":7380.38,"owner_hours":542.5,"weekly_hours":10.4,"economic_surplus":-19744.62,"end_mrr":1092},
+    {"scenario":"Steady part-time","services":25041,"software":7425,"managed":6474,"revenue":38940,"cash_costs":8928.2,"cash_surplus":30011.8,"owner_hours":1003.75,"weekly_hours":19.3,"economic_surplus":-20175.7,"end_mrr":2979},
+    {"scenario":"Strong founder-led","services":59735,"software":17820,"managed":14940,"revenue":92495,"cash_costs":25974.85,"cash_surplus":66520.15,"owner_hours":1498.0,"weekly_hours":28.8,"economic_surplus":-8379.85,"end_mrr":6453}
+  ],
+  "methodology": {
+    "period":"Illustrative first 12 months from the start of active commercialization; not calendar 2026.",
+    "forecast_type":"Conditional scenarios, not probability-weighted forecasts or observed results.",
+    "revenue_recognition":"Service revenue after stated credits plus actual paid customer-months. End-of-period MRR is not full-year earned revenue.",
+    "cash_surplus":"Revenue less modeled cash expenses, before founder pay, personal taxes, additional reinvestment, financing, working-capital timing, and any unmodeled expense.",
+    "economic_surplus":"Cash surplus less all founder hours valued at an assumed $50/hour. Not a GAAP measure.",
+    "payment_fees":"3% is a rough assumed blended collection cost, not a quote for any processor; fixed transaction and subscription billing fees may increase it.",
+    "api_cost":"$15 per paid business customer-month is an unverified planning allowance, not a measured average or named-provider quote.",
+    "support":"0.25 basic support hours per business-month plus 1.5 additional hours per managed-month. These are modeling assumptions, not approved public service commitments.",
+    "customer_counts":"Service transactions may overlap across the same customer. Managed subscribers are a subset of software subscribers. Revenue ramps are net active accounts, not acquisition predictions.",
+    "availability":"Paid software revenue requires working identity, entitlements, controlled API gateway, metering and a deliverable paid workflow. Delays reduce modeled customer-months.",
+    "hours":"Includes estimated delivery, ongoing support, sales/admin/free fit calls and product development; paid contractor hours replace a subset of estimated labor rather than duplicating it."
+  },
+  "service_hour_assumptions":{"audit":3,"quick_start":3,"local_single_machine":7,"bounded_pilot":12},
+  "monthly_active_examples":{
+    "Validation":{"business":[0,0,0,1,1,2,2,3,4,5,6,6],"managed":[0,0,0,0,0,1,1,1,1,2,2,2]},
+    "Steady part-time":{"business":[0,0,1,2,3,4,6,8,10,12,14,15],"managed":[0,0,0,0,1,1,2,3,4,4,5,6]},
+    "Strong founder-led":{"business":[0,0,2,4,7,10,15,20,25,30,32,35],"managed":[0,0,0,1,2,3,4,6,8,11,13,12]}
+  }
+}

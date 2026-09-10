@@ -1,229 +1,87 @@
-# Diomedes Pricing & Services — Working Draft
+# Diomedes pricing and service scope
 
-**Version:** 2026-09-10.2  
-**Status:** Approved launch-price hypothesis for public framing; services and unshipped software capabilities remain subject to availability/scope  
-**Cloud companion:** Google Doc `11EjZfmFpx0pKpISeS0s63aHr9pQLdb8d8r5UhoOaiZQ`
+Version: 2026-09-10.3
+Date: September 10, 2026
+Status: Approved launch price anchors retained; new operating recommendations are explicitly proposals.
+Canonical Drive: 11EjZfmFpx0pKpISeS0s63aHr9pQLdb8d8r5UhoOaiZQ
+Repository: docs/business/PRICING_STRATEGY_2026-09-10.md
 
-## Pricing thesis
+## What is approved
 
-Diomedes sells saved coordination, configured capability, and eventually trusted autonomous operation — not token resale.
+Andrew approved affordable entry, a genuinely free first consultation hour, paid work only after acceptance, paid-account hosted Diomedes inference through the company's commercial API account, and a configurable product across different small businesses. The outside assessment's proposed higher prices and sub-$50 tier were not blanket approvals to replace these numbers.
 
-The entry point should be easy for a business that does not know Diomedes or its founder yet. Discovery is free; the first paid yes is deliberately small; implementation work is priced high enough to respect the time/support burden; recurring software is inexpensive compared with the management capacity it should eventually return.
+| Offer | Public price anchor | Defined starting scope |
+| --- | ---: | --- |
+| Workflow Fit Call | First 60 minutes free | Initial discovery and fit, not an unlimited audit or installation. No automatic paid continuation. |
+| Continued focused consultation | $100/hour | Additional advice or troubleshooting after the client accepts the price and scope. |
+| Cloud AI Quick Start | $299 fixed | One supported model/account route, one useful example, basic configuration and handoff. Custom connectors and production multi-user systems excluded. |
+| Workflow Audit / Weak Point Map | $350 fixed | Written assessment of one recurring process, data, risks, options and next step. |
+| Local Hardware and Model Plan | $249 fixed | Review one deployment's hardware/workload, local/cloud/hybrid fit, and a written procurement/model/runtime recommendation. |
+| Local AI Deployment | From $749 plus hardware | One compatible machine, supported runtime/model, tuning, benchmark, Diomedes connection where supported, documentation and handoff. |
+| Shared/team local deployment | From $1,250 | Separately scoped shared host, access, networking and user requirements. Not enterprise security for a fixed minimum price. |
+| Bounded workflow pilot | From $1,250 | One narrowly specified, measurable workflow using available integrations or approved exports, with testing and a stopping point. |
+| Broader/custom implementation | From $2,500 | Separately quoted multi-workflow, new integration, production or complex rollout work. |
+| Diomedes Business | Planned from $99/month per organization | Software and bounded paid-agent usage as released. Organization/usage/host limits must be explicit before sale. Not unlimited users, locations, inference or support. |
+| Managed Diomedes | From $249/month, optional add-on | Agreed maintenance, health review and limited support after a working deployment. Software and other costs remain identifiable. |
 
-Core permissions, rules, attribution, drift checks, recovery, evidence, and auditability are trust foundations, not premium safety add-ons.
+The first consultation may be advertised as free. Do not advertise the product as "free for now." Early design-partner waivers are private agreements, not manufactured testimonials or evidence that someone paid the list price.
 
-Hardware, third-party subscriptions, API usage outside an included Diomedes allowance, travel, unusual licensing, and major custom integration work are disclosed separately before work begins.
+Existing credit direction is retained: a $249 local planning fee may be credited to the qualifying deployment; a $200 audit credit may apply to a qualifying $1,250+ pilot within 30 days. State eligibility and non-stacking terms in the accepted quote. A credited fee is not charged twice. For example, a $749 deployment with a fully credited $249 plan leaves $500 payable for the remaining deployment, not $998 total.
 
-Early design partners may receive private credits/waivers. Do not advertise that Diomedes is currently free. When practical, show the standard price and a separate founding/design-partner credit so the work retains a stated value.
+Hardware, travel, applicable taxes, third-party services, special vendor/API-access fees, and out-of-plan model usage must be disclosed before agreement. Client purchases hardware directly unless a separately accepted procurement service says otherwise. Do not quietly introduce a hardware markup. Standalone training/day rates and higher managed tiers remain custom quotes; earlier draft anchors are not approved public promises.
 
-## Approved launch service anchors
+## Cheap entry is not unlimited custom work
 
-### Workflow Fit Call — first 60 minutes free
+These are proposed estimating controls, not hourly promises to customers:
 
-A no-obligation conversation to understand the business, the recurring work that consumes time, existing systems, and whether there is a sensible first problem to solve. The goal is diagnosis, not a one-hour product demo.
+- Quick Start: target about 2-3 delivery hours including handoff; decline or re-scope unsupported integration work. A full custom workflow is not a Quick Start.
+- $350 audit: target one process and roughly 3-4 hours of work. Full company transformation planning is a different quote.
+- $749 local install: target about 6-8 hours on a supported, prechecked machine; hardware repair, enterprise networking and regulated-data assurance are outside the starting scope.
+- $1,250 pilot: target a reusable, bounded 10-12 hour delivery slice. New APIs, unknown data cleanup, bespoke tools, many stakeholders or substantial reliability engineering move to custom implementation.
+- Custom projects may reasonably quote $2,500-$7,500 or more when the work requires it. This is a scope-based estimating range, not a new mandatory entry price or a market-average claim.
 
-After the included hour, focused consulting is **$100/hour** when the client wants continued strategy, troubleshooting, model/tool comparison, or work outside a fixed project.
+Quote known deliverables, acceptance checks, client inputs, included revisions, expected handoff, support window and change-control process. When an unexpected dependency appears, obtain approval before expanding price or scope. Product-development overruns must not automatically be billed as client consulting.
 
-### Quick Start — Cloud AI — $299 fixed
+A low price does not make every job a loss leader; excessive labor does. Track actual preparation, travel, sales, delivery, review, rework and follow-up. Raise or narrow the package after evidence, not because a generic consulting benchmark says the founder should charge more.
 
-One supported cloud/subscription route configured with Diomedes, baseline permission/rule settings, a small number of ordinary connections where supported, one useful working example, and handoff. This is not a promise of arbitrary custom OAuth/MCP work or multi-user production deployment.
+## Recurring software versus managed service
 
-### Workflow Audit / Weak Point Map — $350 fixed
+Business software and managed service are separate recurring lines. At the approved starting anchors, Business plus Managed totals $348/month before excluded costs. Managed is optional unless a specific high-dependence deployment requires a clearly disclosed managed arrangement before acceptance. Do not attach it silently to every implementation.
 
-A written review of one meaningful workflow: where time is spent, current tools/data, automation fit, risk boundaries, candidate improvements, and a recommended next step. If a client proceeds quickly into a larger pilot, a portion may be credited toward that work; current recommended credit is **$200 toward a $1,250+ pilot within 30 days**.
+Before publishing detailed managed commitments, define named systems, maintenance cadence, a support allowance, response windows, exclusions, escalation and offboarding. The income model assumes 1.5 additional support hours per managed account-month, but this is not yet an approved contract promise. A solo founder should not promise 24/7 human response or instant resolution. Automated monitoring is not staffed incident response.
 
-### Local AI Hardware & Model Plan — $249 fixed
+A possible $39-$49 starter tier remains a validation proposal only. It would need a restricted template/use case, supported input route, bounded inference and largely self-service help. It is not a discounted managed department and is not approved for the public price table. Keep the $99 Business anchor until a lower tier's economics and entitlements are deliberately approved. Earlier $19 Personal/$49 Pro exploration is not a finalized public offering.
 
-Assess current hardware, workload, privacy/latency needs, expected concurrency, and local/cloud/hybrid fit. Deliver a hardware tier recommendation, model/runtime shortlist, expected tradeoffs, storage/power considerations, and purchasing specification. Recommended policy: **credit the $249 toward a qualifying local deployment** when the client proceeds.
+## Paid Diomedes Agent inference
 
-The client normally purchases hardware directly; Diomedes Systems should not initially make money by recommending a more expensive GPU.
+Initial native-agent reasoning may use inexpensive commercially permitted APIs through Diomedes Systems' account. Provider names such as Muse, DeepSeek and GLM are research candidates, not guaranteed product entitlements. Exact model IDs, prices, retention, regional processing and embedded-service terms require current verification; old pricing snapshots must not be treated as live quotes.
 
-### Local AI Deployment — from $749 + hardware
+The company API key remains server-side. A signed-in and entitled account gets bounded access through a controlled Diomedes service with per-customer usage accounting, concurrency limits, spend ceilings, revocation and abuse protection. A desktop paid flag alone is not an access-control boundary. Unpaid accounts do not use the company-funded hosted route under the approved plan.
 
-For one existing or newly purchased machine: install/configure a supported local runtime and model, tune context/offload/memory/concurrency, integrate it with Diomedes where supported, benchmark the actual machine, configure lifecycle/updates, document the setup, and train the owner/admin.
+Basic permissions, honest attribution, safe persistence and export are not a paid safety tier. Paid hosted inference is distinct from local-first use or a user's own authorized provider route. Expired billing must not destroy local files/history or prevent reasonable data export. Offline entitlements and cancellation behavior need an explicit design.
 
-Shared/team/networked local deployments start around **$1,250+** and increase with access-control, networking, uptime, multi-user, and support requirements.
+Do not promise unlimited hosted operation. Model costs include repeated context, retries, reviewer calls, embeddings, tool services and failed jobs, not just the final answer. Select routes on verified successful-task cost and acceptable privacy, not headline token price. No silent provider/billing change, and no provider training/data-contribution discount for private business content without appropriate explicit authorization.
 
-### Workflow Pilot — from $1,250
+Model inference hosting is not execution hosting. An online model cannot keep jobs running while the only authorized task host is asleep. Sell always-on execution only after an actual host, schedule, recovery path and cost are established. Local, cloud and hybrid are deployment choices under one product, not three unrelated products.
 
-One bounded, measurable workflow using agreed data and authority boundaries. Includes baseline measurement, configuration/build, testing or shadow period where appropriate, handoff/training, and a keep/revise/kill review.
+## Customer responsibilities and service boundaries
 
-### Broader Implementation — from $2,500
+Diomedes Systems scopes the workflow; configures supported routes/connections; translates agreed rules into enforceable controls where possible; tests; documents; trains; and performs ongoing maintenance only within a purchased support agreement. The customer approves business authority, supplies lawful data/account access, provides a responsible owner, and purchases listed hardware/vendor services.
 
-Multiple connected workflows, integrations/capabilities, business workspace configuration, permission/rule design, deployment, documentation, and training. Production-sensitive or multi-system work is quoted after discovery.
+Do not imply every POS/project tool has an available API or that all connectors ship. An export-based workflow can be a valid lower-cost first deployment. Scope must distinguish deterministic operations, reasoning, tool enforcement, external effects and human decisions. Construction examples concern administration and coordination, not licensed design approval or autonomous safety-critical decisions. Initial business work excludes unapproved payroll, payments, vendor ordering, employment decisions and public publication.
 
-### Managed Diomedes — from $249/month
+## Savings and pricing evidence
 
-Ongoing maintenance/support after a working deployment: defined health/reliability checks where supported, model/provider/runtime updates, periodic review, a small support allowance, and measured optimization. This is not unlimited consulting or unlimited emergency support.
+Use net returned time, not invented average Diomedes savings. Net time saved equals the prior process minus all new review, correction and maintenance effort. At an explicitly assumed $40/hour and 52 weeks, 2/5/10 net hours per week represents $4,160/$10,400/$20,800 of annual capacity. This is arithmetic, not an occupational wage estimate or guaranteed cash saving.
 
-More active build/optimization/support relationships should be quoted above the entry tier rather than squeezed into $249/month.
+A salaried worker still receives salary. Cash benefits require actual avoided overtime, lower expenses, collected incremental contribution or another measured change. Track these separately; do not double count a saved hour as both avoided salary and new sales. Compare incremental total costs, including setup, recurring fees, inference, new vendor-access costs and client review effort. Existing software the customer keeps is not an avoided cost.
 
-## Initial software / agent pricing direction
+Published POS, scheduling, reservations and back-office prices are willingness-to-pay context only, not proof of Diomedes demand or equivalence. Put volatile competitor statistics in a dated research note, not a hard-coded homepage claim. A normal owner needs an understandable worked example and a written quote more than a wall of competitor prices.
 
-### Diomedes Business — target from $99/month per organization
+## Validation and status
 
-The business workspace/harness and paid-account access to the Diomedes Agent as those capabilities become production-ready. Expected value includes rules/permissions, durable work/history, routing, integrations, local/BYO routes, audit/evidence, and organization controls as shipped.
+The canonical marketability assessment and reproducible income scenarios are in docs/business/MARKETABILITY_AND_INCOME_2026-09-10.md and docs/business/income_model_2026-09-10.json. They are assumptions-based planning, not promised income, market forecasts or customer results.
 
-Do not advertise unshipped capabilities as present. Until a paid plan is generally available, the site may show the intended `from $99/month` price as a pricing guide or planned business price without saying that current access is free.
+Track paid conversions, why prospects decline, deployment hours, recurring usage, 30/60/90-day retention, support time, net returned time, verification failures and contribution after servicing costs. Free fit calls and support have acquisition/retention costs. No outside warm/cold conversion rate is adopted without evidence.
 
-### Hosted Diomedes Agent — included only on paid accounts, within explicit plan limits
-
-Initial Diomedes-Agent cognition may be supplied by a low-cost API model paid through Diomedes Systems' provider account. Candidate routes include models such as DeepSeek V4 Flash, GLM-5.3-Flash, Muse Spark 1.3, or another provider that wins Diomedes-specific quality/cost/privacy evaluations.
-
-The public product contract is provider-agnostic. Do not promise one foundation model permanently. Diomedes owns the supervisory behavior, Runtime/Trust semantics, routing, rules, evidence, and user experience; the inference route may change within the plan's disclosed quality/privacy/billing policy.
-
-Hosted Diomedes inference is **not available to unpaid accounts** under the current commercial direction. Paid plans should include a bounded reasonable allowance rather than promise unlimited inference. Heavy/continuous hosted usage can later receive a higher allowance, metering, or a negotiated plan once actual workload economics are measured.
-
-Do not use a provider's training/data-contribution discount for private business data merely because it is cheaper. A route that permits provider training on prompts/completions requires an explicit, lawful data policy and customer authorization; the safe default for business data is a provider route whose commercial/privacy terms fit the deployment.
-
-Before charging customers for included inference, verify that the selected provider's current API/commercial terms permit the intended embedded/resold service. Technical API access alone is not sufficient authorization.
-
-### Local Diomedes Agent
-
-A compatible local supervisor can be included with the applicable paid software when production-ready. The customer supplies the hardware and local inference, while the subscription pays for the Diomedes harness/agent semantics, rules, routing, updates, evaluations, lifecycle management, integrations, and business workspace.
-
-### Hybrid Diomedes Agent
-
-Likely the strongest long-term default for many businesses: routine supervisory work local or on an inexpensive hosted route, with stronger specialists called selectively under explicit rules and budgets. `Hybrid` must never mean silent paid-cloud fallback.
-
-## Rough hosted-inference economics
-
-These examples exist for internal pricing discipline, not public promises. Provider pricing changes and must be rechecked before launch.
-
-As of September 10, 2026:
-
-- DeepSeek V4 Flash official API pricing uses peak/off-peak rates. Current list: cache-miss input $0.22/M off-peak or $0.44/M peak; output $0.66/M off-peak or $1.32/M peak. <https://api-docs.deepseek.com/quick_start/pricing/>
-- GLM-5.3-Flash list pricing after its launch promotion is approximately $0.15/M input and $0.50/M output; recheck Z.ai's live rate card before budgeting. <https://docs.z.ai/guides/overview/pricing>
-- Meta Muse Spark 1.3 Standard is reported at $1.25/M input and $4.25/M output; its much cheaper Contributor tier trades price for provider training rights and is not a default route for client-private data. Recheck first-party terms/rates before use.
-
-Illustrative 20M input + 4M output supervisor usage per month:
-
-- GLM-5.3-Flash at list rates: about $5.
-- DeepSeek V4 Flash: about $7 off-peak to $14 peak.
-- Muse Spark 1.3 Standard: about $42.
-
-Illustrative 50M input + 10M output per month:
-
-- GLM-5.3-Flash: about $12.50.
-- DeepSeek V4 Flash: about $17.60 off-peak to $35.20 peak.
-- Muse Spark 1.3 Standard: about $105.
-
-These numbers support a $99/month entry plan only if Diomedes meters usage, routes efficiently, caches/reuses context where appropriate, limits pathological retries, and chooses provider routes based on success-adjusted cost rather than headline token price.
-
-## What the business is paying for
-
-The commercial target is not another chat subscription. Diomedes is intended to become the operational brain across the business's existing tools: assemble the right context, route work, enforce scopes/rules, watch for drift, recover from routine failures, coordinate deterministic automation and models, request human judgment only when needed, verify outcomes, and retain evidence/history.
-
-Diomedes should usually sit above/between existing systems rather than replace every system of record. A restaurant may keep its POS, scheduling, reservations, inventory/back-office and accounting platforms. A construction company may keep its project-management, estimating, accounting, email/document and field systems. The value is reducing the manual coordination between them.
-
-## What I/Diomedes Systems manage in a typical engagement
-
-- Discovery and selection of one useful workflow.
-- Cloud/local/hybrid model and engine recommendation.
-- Diomedes installation/configuration and supported integrations.
-- Permission scopes, standing rules, approval boundaries, and drift/correction behavior.
-- Local hardware/model selection and tuning when local AI is chosen.
-- Testing/benchmarking and a clear handoff.
-- Documentation and user/admin training.
-- Ongoing updates/health review only when Managed Diomedes is purchased.
-
-The client remains responsible for business decisions, purchasing hardware/third-party services, designating authorized users/data/actions, and maintaining vendor accounts/terms unless a written engagement says otherwise.
-
-## Market anchors — software businesses already buy
-
-These are context, not direct feature-for-feature competitors.
-
-### Restaurants / hospitality
-
-- **Toast:** core Point of Sale currently starts at **$69/month** for a single location; broader configurations are custom, and hardware, payment processing and add-ons can add cost. <https://pos.toasttab.com/pricing>
-- **Square:** restaurant software currently lists **$0 / $49 / $149 per location per month** for Free / Plus / Premium, plus payment processing. Square Restaurant Inventory by MarketMan is listed at **$99/location/month** on Plus/Premium. <https://squareup.com/us/en/point-of-sale/restaurants/pricing>
-- **7shifts:** monthly scheduling/operations tiers are approximately **$34.99 / $76.99 / $150 per location** for Entrée / The Works / Gourmet, with lower annual rates. <https://www.7shifts.com/pricing-3yrqxy5fot96nknbq6y20z98oo77832o/>
-- **Resy:** current restaurant plans list **$289/month** for Platform/Essential and **$459/month** for Platform 360/Premium. Resy says it does not charge reservation cover fees; prepaid experiences can carry separate fees. <https://resy.com/join/plans-pricing/>
-- **OpenTable:** current US plans list **$149 / $299 / $499 per month** for Basic / Core / Pro, plus network cover fees ($1.50 on Basic; $1 on Core/Pro) and some Basic website-reservation charges. <https://www.opentable.com/restaurant-solutions/plans/>
-- **MarginEdge:** **$350/location/month**. It is not a POS or reservation system; it is restaurant back-office/management software for invoice processing, inventory, food-cost/price tracking, daily P&L, bill pay, ordering, menu/recipe costing, and POS/accounting/labor integrations. <https://www.marginedge.com/pricing/> <https://www.marginedge.com/how-it-works>
-
-For three locations, software subscription math alone can quickly reach hundreds or thousands per month before card processing, hardware and add-ons. That does not prove Diomedes ROI, but it establishes that $99/month is not an unusual category of business-software spend if the product returns useful management capacity.
-
-### Field service / construction-adjacent businesses
-
-- **Jobber:** current no-commitment pricing spans roughly **$49/month** for Core, **$139/month** Connect for one user, **$199/month** Grow for one user, and **$499/month** Plus for five users, with larger team configurations higher. <https://www.getjobber.com/pricing/>
-- **Buildertrend:** currently uses customized pricing based on builder type, revenue and needs rather than posting a single public rate. <https://buildertrend.com/pricing/>
-
-Diomedes should not pitch itself as a replacement for either category. The stronger thesis is coordination across systems and workflows.
-
-## Rough value of returned time
-
-Do not call recovered capacity guaranteed cash savings. A salaried manager still receives the same salary when a workflow saves five hours. The value may appear as capacity, less overtime/rework, faster turnaround, fewer errors, better follow-up, delayed hiring, more field/floor/client time, or actual avoided labor depending on the workflow.
-
-The U.S. Bureau of Labor Statistics reported average **full-time private-industry total employer compensation of $54.00/hour** in June 2026. At that broad benchmark:
-
-- 2 hours/week returned = 104 hours/year ≈ **$5,616/year of employer capacity**.
-- 5 hours/week returned = 260 hours/year ≈ **$14,040/year**.
-- 10 hours/week returned = 520 hours/year ≈ **$28,080/year**.
-
-Source: <https://www.bls.gov/news.release/ecec.nr0.htm>
-
-Occupation-specific salary examples, before benefits:
-
-- Food service managers: 2025 median $69,390/year (about $33.36/hour on a 2,080-hour convention); 5 hours/week is roughly **$8,700/year of salary-time capacity**. <https://www.bls.gov/ooh/management/food-service-managers.htm>
-- General and operations managers: 2025 median $105,770/year (about $50.85/hour); 5 hours/week is roughly **$13,200/year**. <https://www.bls.gov/ooh/management/top-executives.htm>
-- Construction managers: 2025 median $114,990/year (about $55.28/hour); 5 hours/week is roughly **$14,400/year** before benefits. <https://www.bls.gov/ooh/management/construction-managers.htm>
-- Project management specialists: 2025 median $102,320/year; the construction-industry median listed by BLS is $98,730. <https://www.bls.gov/ooh/business-and-financial/project-management-specialists.htm>
-
-A mature website may show the broad 2/5/10-hour examples with the explicit `capacity, not guaranteed savings` caveat. Do not publish a claim that Diomedes itself saves any particular number of hours until measured deployments support it.
-
-Vendor case studies can be useful context but not Diomedes promises. For example, 7shifts reports a restaurant case saving at least five hours/week on scheduling, while Square reports a customer saving three to four hours/week by automating third-party order entry. <https://www.7shifts.com/blog/case-study-beechwood-doughnuts/> <https://squareup.com/us/en/the-bottom-line/case-studies/how-torch-pressed-sushi-saves-staff-time-with-automated-ordering>
-
-## Public website pricing structure
-
-Keep the page simple and confidence-building rather than turning it into a SaaS matrix.
-
-**Start with a conversation — first 60 minutes free**  
-Show me where time goes. If there is not a useful problem to solve, say so. Continued focused consulting after the included hour is $100/hour.
-
-**Quick Start — $299**  
-Configure one supported cloud AI route with sensible Diomedes rules/permissions and one useful working example.
-
-**Workflow Audit — $350**  
-Map one recurring process and provide a written recommendation for what should be automated, assisted, or left alone.
-
-**Local AI — plan $249; deployment from $749 + hardware**  
-Recommend the hardware/model/runtime and, if requested, install, tune, benchmark and connect it to Diomedes. Credit the planning fee toward a qualifying deployment.
-
-**Workflow Pilot — from $1,250**  
-Build and measure one bounded workflow before a broader rollout.
-
-**Broader implementation — from $2,500**  
-For multi-workflow or multi-system deployments.
-
-**Diomedes Business — planned from $99/month**  
-Business workspace/harness and paid-account Diomedes-Agent access as shipped. Hosted inference is included within plan limits; local and hybrid configurations remain first-class.
-
-**Managed Diomedes — from $249/month**  
-Ongoing maintenance, support and measured optimization after deployment.
-
-Hardware, travel, third-party subscriptions and out-of-plan provider/API usage are separate and agreed before work.
-
-Do not say the product is currently free. Do not create checkout for unshipped paid tiers. Use a contact/audit CTA and honest availability wording until billing and entitlements exist.
-
-## Website business story
-
-A good business page should explain five things in this order:
-
-1. **What problem Diomedes solves:** disconnected software and repetitive coordination consume expensive human attention.
-2. **What Diomedes does:** acts as the operational layer across existing systems, models and workflows rather than demanding wholesale replacement.
-3. **What an engagement costs:** the public anchors above.
-4. **What the client should expect:** what Diomedes Systems manages vs what remains the client's responsibility.
-5. **What the economics can look like:** rough time-capacity examples with strong caveats, not invented ROI claims.
-
-Use examples beyond restaurants: construction/project operations, field service, professional services, retail/hospitality and general office/operations work. Any named integration must be labeled according to actual shipped connector capability.
-
-## Validation and repricing
-
-1. Track actual time spent on every early engagement, even if discounted/waived.
-2. Measure the client's real before/after metric: hours, turnaround, errors, missed follow-ups, rework, etc.
-3. Re-price after 2–3 meaningful deployments rather than preserving introductory prices forever.
-4. Meter hosted-agent tokens, cache hits, retries, model route, latency, acceptance/verification rate and support burden by customer.
-5. Compare models by successful task cost, not token price alone.
-6. Keep provider/commercial/privacy terms in the route-selection gate.
-7. Treat local/hybrid support burden as a real cost even when inference itself is local.
+Software, billing, signing, production identity, a connector or a service-level guarantee is available only when verified. Publish planned prices with honest availability; do not add checkout for unready infrastructure. This revision keeps the approved price ladder while narrowing scope. New tier/rate/allowance suggestions remain proposals.

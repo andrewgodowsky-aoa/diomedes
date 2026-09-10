@@ -1,259 +1,76 @@
 # DIOMEDES PROJECT MEMORY — CANONICAL
 
-**Version:** 2026-09-10.2  
-**Last reconciled:** September 10, 2026  
-**Status:** Binding product-definition and current-direction companion to the live roadmap  
-**Cloud canonical:** Google Doc `13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw`
+Version: 2026-09-10.3
+Last reconciled: September 10, 2026
+Cloud canonical: 13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw
+Repository mirror: docs/DIOMEDES_PROJECT_MEMORY.md
 
-## Purpose
+## How this memory is organized
 
-This document exists to prevent definition drift across ChatGPT, Astra, Codex, Claude Code, local models, planning threads, website work, and implementation worktrees. It records current product meanings and owner decisions. It does not replace implementation evidence: current source and verification reports remain authority for what is actually built.
+This is the current definition and decision index. The complete previous standing-memory body is retained unchanged at docs/reference/DIOMEDES_PROJECT_MEMORY_BASE_2026-09-10.2.md, with a cloud snapshot at https://docs.google.com/document/d/1VEqHFWvKNVGLcLP88GNnQmWqcddWTj940Aw15U7WEN8/edit. Its detailed product requirements remain incorporated where not explicitly superseded here. They have not been discarded or relabeled as implemented. Use this current index first; retrieve the detailed base sections relevant to the task rather than injecting every past discussion indiscriminately.
 
-Authority when sources disagree:
+Authority: Andrew's newest explicit decision governs intent; the current roadmap governs sequencing; this memory governs definitions; actual source and verification govern implementation facts. Pricing approval and research conclusions are separately labeled. No pasted assistant report, Mem0 banner or successful model response proves a running integration or persisted memory update.
 
-1. Andrew's newest explicit decision.
-2. The newest live roadmap for strategy and sequencing.
-3. This project-memory document for canonical names, UX/product meanings, and cross-thread decisions.
-4. Current source and verification for implemented reality.
-5. Older focused plans and historical Achilles documents only for rationale that has not been superseded.
+## Stable meanings
 
-## Canonical product definitions
+Diomedes is a general-purpose agent/harness and human workspace, not a restaurant-only product, chatbot, external-agent launcher or workflow builder alone. Company direction is Diomedes Systems. Historical Achilles paths may remain; do not mass-rename live data or namespaces without a migration.
 
-**Diomedes Desktop** — the downloadable human workspace. One product, not a collection of unrelated front ends. It presents projects, conversations, plans, work, review, tasks / Auto To Do, documents and artifacts, history, settings, connections, permissions, and later business/team surfaces.
+Desktop is the human workspace. Core owns model/agent routing, context, profiles, skills, rules, memory, advisors and supervisory behavior. Runtime owns durable admission, runs/steps/events, workflows, budgets, waits, cancellation, recovery and external effects. Trust owns identity, capabilities, scoped grants, approvals, credentials, revocation, client boundaries and information-flow policy. Observatory owns observed evidence, usage/cost provenance and evaluations. Interop covers supported APIs, MCP/MCP Apps, webhooks, and ACP/A2A where useful. These are responsibility boundaries, not instructions to create six separate services.
 
-**Diomedes Core** — model/agent semantics: routing, context, layered rules, skills/capabilities, memory, profiles, delegation behavior, advisor behavior, native Diomedes-Agent semantics, and learning interfaces. Core does not own durable mutation authority merely because it decides what should happen.
+Diomedes Agent is the native supervisory operation: understand the goal, plan, assemble context, choose routes/tools/workers, monitor, correct, request authority where needed, verify and preserve progress. It can use external API cognition initially and later a tuned local or hosted supervisor model. The model weights are not the entire agent or the authority to execute effects.
 
-**Diomedes Runtime** — durable execution authority: command admission, runs/steps, receipts, event state, waits, retries/timeouts, cancellation, queues, budgets, workflows, recovery/resume, external-effect reconciliation, replay/forks, and execution-state truth.
+Direct-agent mode lets an explicitly chosen external engine be primary executor/reasoner while Diomedes keeps surrounding project state and the control guarantees its adapter actually provides. Engine, model, provider/account route and worker are distinct. Preserve actual runtime-reported attribution per turn/proposal/event; do not rename history when the picker changes. Unknown model identity remains unknown. Reserve Diomedes reasoning attribution for Diomedes-led work; application infrastructure actions may still truthfully use the Diomedes name.
 
-**Diomedes Trust** — identity, authorization, credentials, capabilities, scoped grants, exact approvals, revocation, client/tenant boundaries, information-flow policy, device/session authority, and package/update trust. Authentication and authorization remain separate.
+Memory/preferences, retrieved business knowledge, reusable skills, behavioral rules, enforced policy, pending runtime state, evaluations and governed training data remain distinct. A remembered preference is not permission, and a prose summary is not the record of pending work.
 
-**Diomedes Observatory** — observable traces, usage/cost provenance, outcomes, failures, corrections, evaluations, replay, and evidence used for measured improvement. It does not depend on hidden chain-of-thought.
+## Experience and autonomy
 
-**Diomedes Interop** — MCP, MCP Apps, APIs, webhooks, ACP/A2A where useful, external events, and integrations with business/personal software.
+One primary Console surface; retire Workbook functionality into it without breaking existing work. The latest Settings > Engines screenshot is the reference for typography, readability, spacing and controls. Preserve selected appearance rather than forcing an older cyan palette. Flat restrained surfaces, thin separators, crisp sans-serif app prose, code-appropriate monospace, optional intentional document reading typography. Avoid decorative noise and generic chat-bubble UI. Guided/Standard/Technical control information density, never authority.
 
-**Diomedes Agent** — the Diomedes-led supervisory agent. It owns the operational loop: understand the objective, plan, choose routes/workers, assemble context, delegate, monitor, react to failures/rule triggers, request authority, verify, synthesize, and preserve durable work state. At launch its reasoning may come from external subscription-backed models, APIs, or local models. Long term it may use a Diomedes-tuned local supervisor model; that model is an implementation beneath Diomedes Agent, not the definition of the product.
+No routine babysitting is the goal. Scoped grants, standing guidance, triggered correction, pre-effect policy, drift detection, retry/resource limits, verification, evidence and restart/reconciliation are immediate foundations. An uncertain result or an authority crossing should escalate intelligently. Do not claim an untested model can safely run everything unattended.
 
-**Direct-agent mode** — the user intentionally chooses an external agent/runtime such as Codex, Claude Code, OpenCode, Hermes, or another supported engine as the primary reasoner/executor for a task or thread. Diomedes retains project state, permissions, rules, evidence, and whatever interception/control the adapter can truthfully enforce. Direct-agent mode must not be described as native Diomedes-agent work.
+Permission choices remain Review changes; Work in this project; Approve for me through a separate bounded reviewer; and explicit Full access for a clearly identified environment. Distinguish access scope from escalation reviewer. A grant can cover routine work without repeated clicks, but automatic allowance must not be recorded as an exact human review. Effort, repeated approvals and self-improvement cannot enlarge authority. Worktrees are edit isolation, not OS containment; inherited shell/network tools can invalidate a narrow enforcement claim.
 
-**Engine** — the execution harness/runtime or integration, e.g. Codex, Claude Code, OpenCode, Hermes. **Model** — the foundation/local model that actually generated a turn, e.g. GPT, Claude, Muse, Qwen. **Provider/account route** — the account or service through which the model is reached, including subscriptions, BYO API, local endpoint, or approved hosted route. These are separate fields even if the normal UI combines them cleanly.
+Preserve Thread/Board/Team as views of the same work, Auto To Do ordinary-user language, compact route/permission/effort controls, honest Steer/Queue/Stop, a Needs you inbox, review feedback as a correction task, artifact/result panes, explicit context inclusion and fresh-thread handoffs, clear worker assignments, budgeted advisors and predictable scheduling/host lifecycle. The detailed base retains these requirements.
 
-**Worker** — a bounded participant assigned a job. A worker can use an engine/model, but is not itself the engine or model.
+## Setup, local AI and improvement
 
-**Skill/capability** — reusable procedure/tooling available to a run. **Workflow** — durable multi-step execution semantics. **Rule** — standing guidance, triggered correction, or enforced policy. **Permission/grant** — authority already delegated to a scope. **Approval** — a decision about a particular consequential request or a defined bounded scope. These terms are not interchangeable.
+First-run setup should discover existing supported engines after disclosure, then install only selected missing tools through trusted distribution, use supported authentication and distinguish found/compatible/signed-in/enabled/capable/ready. Discovery must not secretly send a paid prompt, copy credentials or change billing. Permissions are separate from onboarding expertise answers.
 
-## One desktop surface and visual language
+Local models are first-class: hardware/acceleration/RAM/VRAM/unified-memory/disk discovery; reuse existing models/endpoints; ask quality/speed/privacy/context/coexistence priorities; explain a short model shortlist; trusted model/runtime download with license/provenance; sensible context/offload/KV/concurrency defaults; local benchmark and capability check; named profiles; safe load/unload, eviction and process ownership. Runtime-specific flags and advanced controls remain available. No fixed model or runtime lock-in.
 
-The long-term desktop has one primary surface: the Console. The old Workbook is being retired into the Console rather than maintained as a second product. Guided / Standard / Technical are information-density/detail choices over the same product and must never silently change authority.
+Business deployment can be local, hosted or hybrid based on workload, privacy, concurrency, uptime, maintenance and total cost. Cloud inference alone is not a persistent execution host. Later Diomedes-tuned supervisor weights should specialize in orchestration/tool use/verification and delegate hard reasoning appropriately. Customer facts preferably stay in governed retrieval/configuration; customer-specific adapters require explicit data governance.
 
-The visual reference approved on September 10, 2026 is the current **Settings > Engines** screen: crisp sans-serif UI typography, readable sizing, disciplined spacing, thin separators, flat graphite/dark surfaces, restrained accent use, compact but legible controls, and coherent hierarchy. Apply the same visual grammar across Home, Projects, Ask, Plan, Work, Review, Tasks, Documents, History, Team, Connections, onboarding, dialogs, and Settings. Appearance/theme remains user-selectable; consistency concerns typography, hierarchy, spacing, controls, and semantics rather than forcing one permanent accent color.
+Recursive improvement remains observed failure/correction -> candidate rule/skill/prompt/routing/workflow change -> replay/eval -> versioned promotion -> monitor/rollback. Weight tuning follows sufficient legitimate data and measured gains; it is not the first implementation milestone. Candidates cannot self-promote, rewrite permissions or change data access/billing/tenant scope. Keep provenance, held-out evaluations, independent checks where warranted and rollback. Never train on private customer material merely because it was processed during a job.
 
-Monospace is reserved for code and genuinely technical values. A serif reading face can remain for intentional document/plan reading, but ordinary app prose must not accidentally look like a separate product. Avoid generic chat bubbles, ambient glow, glass, decorative cards, and visual noise. Preserve readability at common Windows scaling and split-screen sizes.
+## Current business correction — variety is the thesis
 
-## Website communication
+One configurable product should serve multiple kinds of small business. Hospitality and remodeling/construction administration are initial validation contexts, not competing company identities. Generic primitives include intake, classification, retrieval, comparisons, drafts/quotes, follow-ups, weekly briefs, invoice capture and scheduling coordination. Industry packs should reuse the core through configurations, mappings, tools, skills and rules; new vendor semantics still need real integration work and tests. Two examples do not prove universal compatibility.
 
-The public website must explain the outcome before the architecture. Several nontechnical viewers could not understand the current site even with explanation, so primary copy should use ordinary language and recognizable examples.
+Services-assisted software adoption is an intended route. Locally delivered SaaS is a sales/setup/support model, not a requirement that all inference be local. Do not assume software must earn zero for 18 months, and do not claim recurring revenue before actual paid access and renewal evidence. Consultation, implementations, software and managed support have distinct costs but may reinforce one product business.
 
-The first screen should answer: What is Diomedes? What can it help me do? What does the result look like? What do I click next? Do not lead with terms such as harness, adapter, runtime, orchestration, ledger, worker lanes, or rule classes.
+Andrew's current hospitality relationships are in North Carolina's Triangle. Employer/prospect relationships do not establish ownership, signed pilot status, lawful data access, purchasing approval, references or endorsement. A remodeling contact is also a prospect/example unless separately authorized. Keep names/logos and internal revenue projections off public marketing without permission. Do not infer willingness to buy from a named establishment's size or presumed software sophistication.
 
-Show the real current application where possible, with a reproducible sample task and honest capture provenance. Do not use a constructed marketing UI as though it were the downloadable app. A good first demonstration is a recognizable request becoming a reviewed result, such as notes becoming a clear checklist or a project task becoming an inspected set of proposed changes. Technical architecture belongs on secondary pages.
+Andrew is willing to hire. A support/implementation hire is an option after measured workload and cash contribution justify it, not an immediate commitment or proof of unlimited capacity. Preserve affordable entry and scope larger work honestly instead of simply multiplying every price.
 
-## Permissions — authorize useful work, not every click
+## Commercial decisions and research status
 
-Human control remains a product principle, but control does not mean interrupting the user for every file edit. Diomedes should support scoped authority that can cover a whole task or project when the user explicitly chooses it.
+Approved public anchors remain first hour free; $100/hour agreed continuation; $299 Quick Start; $350 audit; $249 local plan; from $749 single-machine local deployment; from $1,250 shared local or bounded pilot; from $2,500 broader/custom implementation; planned Business from $99/month per organization; optional Managed from $249/month. Consult docs/business/PRICING_STRATEGY_2026-09-10.md for scopes and credits. Free discovery is distinct from private pilot waivers and from saying the product is free for now.
 
-Recommended user-facing permission presets:
+A $39-$49 starter, blanket $175-$225 hourly rate, and high minimum replacement prices from the outside assessment remain proposals, not approved prices. Larger scope-based implementation quotes are possible under the existing custom line. Monthly managed support is not unlimited labor or a 24/7 staffed guarantee.
 
-- **Review changes** — prepare related changes and ask before applying the relevant change set.
-- **Work in this project** — recommended default for capable users. Allow supported reads, writes, and approved checks inside the project scope; ask only when the operation requires additional authority.
-- **Approve for me** — eligible requests are evaluated by a separate bounded reviewer under existing rules. Deterministically already-allowed actions should not require a model call. The acting model must not simply approve its own escalation.
-- **Full access…** — deliberate broad execution authority for the selected environment/scope, with a clear warning, persistent indicator, and revocation. Distinguish full access inside an isolated environment from full access to the user's actual OS account/machine.
+Company-funded hosted Diomedes inference is paid-account-only through a server-controlled, commercially permitted API route with identity, entitlements, metering, budgets and revocation. Do not embed company keys or trust a client-side paid flag. Model selection is provider-agnostic and evidence-driven. Cheap inference does not remove support, acquisition, maintenance or liability costs. Local/BYO routes retain separate authority and economics. Billing changes must not erase local records or reasonable export.
 
-Keep two dimensions separate internally: what the run is authorized to access/do, and who evaluates a request that exceeds current authority. "Auto" must not erase this distinction.
+No measured average savings, sales conversion rate, signed design partner, customer count or probability-weighted income forecast was established in the supplied material. Use scenarios and collect actual evidence. Time returned is net of new review/correction/maintenance, and salary capacity is not automatically cash savings.
 
-Task/project grants should be explicit capability/resource scopes, not vague authorization inferred solely from the English task title. A user can approve a practical scope once, then routine actions proceed. Crossing to another folder, publishing externally, installing software, changing credentials, changing billing routes, or performing another consequential class may require new authority.
+Marketability/income analysis: docs/business/MARKETABILITY_AND_INCOME_2026-09-10.md; cloud https://docs.google.com/document/d/17-_I4q-h95yVQiY-G8mrySVM6V92BRnYcg8XnQsJNV4/edit. Scenario inputs: docs/business/income_model_2026-09-10.json. These are planning assumptions, not customer-facing promises.
 
-Keep evidence even when clicks are reduced. Durable records should distinguish: the user approved this exact action; this action matched a prior grant; an authorized reviewer approved the escalation; or an organization policy allowed/denied it. Never record an automatic decision as though the person inspected exact resulting contents.
+## Website and execution handoff
 
-Do not allow learned preferences, repeated approvals, or model-generated rules to silently expand authority, tenant scope, billing class, credential access, or external-effect permissions.
+Plain outcomes before architecture; authentic app captures with build identity; honest released/development/planned status; a few cross-industry examples; simple price scopes; what is managed versus customer-owned; net-time value with explicit assumptions; free fit-call CTA. Preserve personal/power-user product access, technical depth on secondary pages, responsive readability, valid forms and actual release downloads. No fake customer logos, capabilities, ROI, supported model catalogue or checkout.
 
-## Actor and model attribution
+Opus 5 is explicitly requested for the current bounded website handoff; this supersedes the earlier Astra-only website assignment for this task, not a global change of application ownership. Use docs/business/OPUS_5_WEBSITE_PROMPT_2026-09-10.md; cloud https://docs.google.com/document/d/1S4892244vJ-zyMkbf15VO055J4qPFGiGiu8O6BuhmtQ/edit. Default to one thread/high effort, bounded independent helpers and concrete acceptance rather than repeated assurance rituals.
 
-Do not say "Diomedes wants to change this item" when the request actually came from a direct external engine/model. Attribution is part of correctness, not decoration.
+The four reported Muse research runs were not located in published sources during this reconciliation. Their local paths are leads, not completed evidence. Read local results if they exist; do not recreate claims of dispatch/completion or block unrelated work merely because reports are missing.
 
-For direct-agent work, show the actual runtime-reported model prominently when known, with the engine secondary where useful. Intended pattern: `GPT via Codex proposes updating six files`, `Claude via Claude Code needs permission to run a command`, `Muse via OpenCode finished the draft`. These are display-pattern examples, not hard-coded model assumptions.
-
-Use **Diomedes** as the reasoning actor when the native Diomedes Agent actually owns the supervisory operation. Infrastructure actions can also truthfully be described as Diomedes application actions, e.g. Diomedes restored a saved version or detected an installed engine.
-
-Preserve attribution per turn, proposal, approval request, history event, worker, and result. Changing a model picker later must never retroactively rename old work. If runtime metadata did not verify the model identity, show the known engine or an honest unknown; never trust self-identification inside generated prose as metadata.
-
-## Harness / workbench refinements to preserve
-
-These are desired direction, not claims that all are implemented:
-
-1. Compact run control near the composer: who is doing the work, which engine/provider route, permission scope, and effort level. Example: `GPT via Codex · Work in this project · Balanced`. Deeper details may expose tools, sources, active rules, budgets, and adapter guarantees.
-2. Clear **Steer / Queue / Stop** semantics. If an engine cannot truly steer an active run, do not pretend that queuing a new instruction changed it live.
-3. One **Needs you** inbox for approvals, blocked work, unresolved questions, uncertain external outcomes, and genuinely actionable interruptions. Avoid duplicate alerts and routine-noise mixing.
-4. Review feedback as a coherent next unit of work: keep accepted changes, mark corrections, send one bounded correction task, preserve history.
-5. Artifact/result pane beside the thread where useful so users inspect the actual document, diff, report, table, image, or output rather than only a message describing it.
-6. Context visibility: show what documents, prior threads, rules, skills, and sources are included. Support deliberate fresh-thread handoffs carrying goals, decisions, artifacts, unresolved questions, and evidence while permissions/pending operations remain in durable Runtime state.
-7. Budget-aware routing/delegation: explicit allowed model/provider lanes, worker/retry limits, no silent separately billed fallback, and no automatic use of scarce premium models merely for routine review.
-8. Team clarity: each worker gets a recognizable assignment, conversation, state, engine/model attribution, and result. Team / Board / Thread remain views of the same durable work object rather than separate project-management systems.
-9. Advisor/reviewer roles at meaningful checkpoints, not automatically on every turn. Use deterministic policy first and model judgment only where it adds value.
-10. Rules should intervene usefully: stop repeated bad retries, narrow tools/context, inject targeted corrections where supported, and record the intervention. Bound retry loops.
-11. **Quick / Balanced / Thorough** user-facing effort choices may map to engine-specific reasoning controls, but effort never changes permissions.
-12. Scheduling/background execution should state where it runs, what happens if the host is asleep/offline, budget and permission scope, retry/missed-run behavior, and evidence of completion.
-13. **Auto To Do** remains ordinary-user language for task organization. Do not require ordinary users to learn formal Kanban or workflow-builder concepts.
-
-## Engine setup / onboarding
-
-Initial setup should discover supported existing engines and local inference services after clear disclosure, without sending a model prompt, reading credential stores, or starting long-running inference merely to discover them.
-
-Separate these states: installed, protocol/version compatible, account/sign-in available, model available, enabled, capability-supported, and ready for the selected task. `Found` does not mean `ready`.
-
-If an engine is missing, offer to install only the one the user chooses, using verified official distribution and explaining source/publisher, destination, dependencies, privilege needs, and account/usage requirements. Do not silently install every supported harness.
-
-Reuse existing authorized installations. Do not scrape/copy credentials or silently switch from subscription use to API billing. Setup should guide discovery → install if selected → supported sign-in → capability verification → default route selection.
-
-## Local-model onboarding — first-class product direction
-
-Local models should be as easy to configure as cloud/subscription routes, not an expert-only text field.
-
-Desired setup flow:
-
-1. Detect local hardware and operating environment with consent: CPU/architecture, installed RAM, GPU(s), usable VRAM or unified memory, relevant acceleration support, free disk space, and existing local inference runtimes/endpoints.
-2. Detect already installed/running local servers and models before downloading duplicates.
-3. Ask what matters: fastest response, balanced, highest local quality, privacy/offline use, long context, coding/tool use, low RAM/VRAM impact, or ability to keep gaming/other applications responsive.
-4. Recommend a small shortlist, not one unexplained "best model." Show why each fits the hardware and expected tradeoffs.
-5. Offer managed installation/download from trusted sources with model identity, license, approximate disk/RAM/VRAM requirements, quantization, context target, and checksum/provenance where practical.
-6. Configure memory fitting, GPU/CPU offload, KV-cache type/size, context length, concurrency, flash attention or equivalent supported acceleration, and safe defaults appropriate to the runtime/hardware.
-7. Run a short local benchmark/health check after setup and record actual prompt-processing speed, generation speed, memory/VRAM usage, context configuration, startup time, and whether tool-calling/structured-output behavior is adequate for the selected role.
-8. Let users save profiles such as **Quick / Balanced / High Quality / Low Impact** instead of requiring raw flags.
-9. Own model lifecycle cleanly: load/unload, keep-warm policy, idle eviction, concurrency, RAM/VRAM budgets, crash cleanup, and coexistence with other applications. Avoid keeping every installed model resident.
-10. Make local-server adapters model-agnostic. Initial support can include llama.cpp, Ollama, LM Studio, vLLM/SGLang, or OpenAI-compatible endpoints, but Diomedes should not permanently depend on one local runtime.
-
-Hermes is a useful current reference for desktop local-model management, model downloads, memory fitting/context sizing, and endpoint/model detection. Hardware-aware automatic recommendation is a Diomedes requirement regardless of any one Hermes release's exact implementation.
-
-## Business local-AI onboarding
-
-During consulting or Business onboarding, local inference should be a first-class deployment option where privacy, ongoing inference cost, latency, offline operation, or predictable capacity makes it useful. Do not force every business to local AI; hybrid/cloud routes remain valid.
-
-A business consultation should classify deployment by hardware capability and workload rather than model marketing names alone: current hardware; sensible upgrade; dedicated local workstation/server; or later managed remote compute. Recommendation should consider concurrent users, context size, workflow frequency, uptime, latency, privacy, and support burden.
-
-The owner should be able to choose a recommended local Diomedes configuration without becoming a model-serving expert. Advanced users can inspect/edit lower-level runtime settings.
-
-## Long-term Diomedes local supervisor model
-
-Long term, Diomedes Agent may be backed by a smaller efficient model tuned specifically for supervisory/orchestration behavior and capable of running on decent through high-end local hardware. Exact parameter count, base model, quantization, and hardware floor remain evidence-driven; do not lock the architecture to Muse, Qwen, or another current candidate.
-
-The model's specialty should be operational intelligence rather than replacing frontier specialists at every task: intent understanding, decomposition, route/worker selection, context selection, tool/capability use, approval recognition, budget/quality tradeoffs, monitoring, retry/correction decisions, workflow progress, verification, and synthesis. Difficult specialist work can be delegated to stronger cloud or local models.
-
-For businesses, a future local Diomedes supervisor can become the normal primary Diomedes Agent for that deployment while still delegating selected work to other models/engines. This can reduce marginal inference cost at scale, improve privacy and predictable latency, and make a configured Diomedes system more economical. It does not eliminate Runtime/Trust boundaries; the local model never becomes the authority simply because it is called Diomedes.
-
-## Recursive self-improvement — measured, versioned, reversible
-
-The long-term goal includes recursive improvement, but it must be evidence-driven rather than an unconstrained model rewriting itself in production.
-
-Preferred progression:
-
-**A. Behavioral improvement before weight training.** Observed problem/human correction → candidate change to rule, prompt, skill, routing, workflow, or deterministic procedure → replay/evaluation on stored cases → compare quality/cost/latency/failure/corrections → approve where appropriate → versioned adoption → monitor → rollback if worse.
-
-**B. Build privacy-appropriate training/evaluation data.** Use observable state/action/outcome traces, explicit corrections, tool results, verification outcomes, and successful procedures. Do not collect hidden chain-of-thought as training data. Do not train on client or personal data without explicit lawful permission and retention/provenance policy.
-
-**C. Parameter-efficient adaptation/fine-tuning only after enough evidence exists.** Adapters/LoRA or another controlled method may target orchestration/tool-use/domain behavior. Training occurs in an isolated staged pipeline with reproducible datasets/evals and model/version provenance.
-
-**D. Full/deeper training or distillation only when economics, data quality, licensing, and measured gains justify it.**
-
-The recursive loop may propose better prompts, skills, workflows, rules, routing policies, evals, and future training examples. It may not silently expand credentials, external-data access, tenant scope, permissions, billing class, resource budgets, or deployment authority. It may not replace deployed weights merely because the current model generated a new checkpoint. Candidate model versions should pass offline evals, shadow/canary testing where appropriate, explicit promotion criteria, and retain rollback.
-
-For business-specific adaptation, prefer a common Diomedes supervisor base plus customer/workspace-specific knowledge, retrieval, rules, skills, and potentially small adapters rather than opaque fully retrained models per customer by default. Customer data isolation and deletion/offboarding must remain possible.
-
-A future training/eval system should track dataset/version provenance, base model/license, training recipe, adapter/checkpoint identity, eval suite, regression results, hardware target, quantization compatibility, deployment cohort, and rollback target.
-
-## Self-improvement and memory definitions
-
-Keep these concepts separate:
-
-- **Memory/preferences:** facts and choices to help future reasoning.
-- **Workspace/business knowledge:** source material and operational context.
-- **Skills/capabilities:** reusable procedures/tools.
-- **Rules/policies:** behavior constraints and authority boundaries.
-- **Runtime state:** what work is actually pending/running/done.
-- **Observatory evidence/evals:** what happened and whether approaches worked.
-- **Model training data/checkpoints:** explicitly governed material used to adapt weights.
-
-Never collapse all of these into one giant memory file. Remembered preference is not permission. Successful behavior is not proof that a new model version is safe. A summary is not the source of truth for a pending approval.
-
-## Business / consulting direction
-
-Company direction: **Diomedes Systems**. Product: **Diomedes**. Consulting remains an early revenue and product-discovery layer, especially while capital is limited.
-
-Core principle: **Find the weak point. Fix the workflow.**
-
-Lead with measurable outcomes: hours returned, repetitive steps removed, fewer errors, faster turnaround, cross-location consistency, easier knowledge access, and visible human control. Do not lead ordinary business conversations with model names, tokens, MCP, context windows, or benchmark scores.
-
-The preferred first design-partner shape remains a locally owned three-restaurant group. First pilots should use high-frequency, measurable, reviewable, low-to-moderate-risk work and preferably exports/lower-risk data before broad production credentials. No autonomous payroll, payments, hiring/firing/discipline, unapproved public posting, or vendor ordering in the first pilot.
-
-Consulting can include workflow audit, fixed-scope pilot, implementation, Diomedes configuration, selected agent/local-model setup, MCP/OAuth integrations, capabilities/skills, rules/approvals, training, managed support, and optional hardware/local-AI deployment advice.
-
-## Product / implementation priority
-
-Preserve the universal north star while proving narrow connected slices. Near-term priorities should not become ten parallel subsystem rewrites.
-
-Current preferred sequence:
-
-1. Unify the Console around the approved Settings-derived visual language and retire Workbook functionality into it deliberately.
-2. Implement shared permission scopes and accurate actor/model attribution before each engine invents incompatible semantics.
-3. Complete selected real engine adapters and first-run setup using the shared permission/attribution contract.
-4. Add an easy local-model setup vertical slice: hardware discovery, existing-runtime detection, recommendation, managed install/configuration, benchmark, and lifecycle management for one or two well-supported backends before broadening.
-5. Prove one genuine Diomedes-led workflow end to end: real model route, typed tools, useful rule/correction, scoped authority or exact approval, interruption/recovery, verification, evidence/history.
-6. Prove the same durable semantics with a second model/engine route.
-7. Expand workbench controls: Needs you, steer/queue/stop, review/correction, artifact pane, context visibility, and budget-aware delegation.
-8. Simplify the website around plain-language outcomes and captures of the actual packaged product, without advertising unshipped development work.
-9. Build Observatory/eval evidence sufficient to justify more advanced self-improvement and only later local supervisor fine-tuning/training.
-
-## Guardrails
-
-- Do not build a generic new agent loop solely for ownership; Diomedes-owned semantics must have measurable value.
-- Do not stack whole competing orchestrators inside one another so state/policy/routing ownership becomes ambiguous.
-- Do not equate model obedience with policy enforcement.
-- Do not claim worktree isolation is an OS sandbox.
-- Do not silently switch billing routes or providers after quota/error conditions.
-- Do not use a premium model automatically as reviewer/fallback without an explicit budget policy.
-- Do not make interface-detail/expertise settings change authority.
-- Do not make Full access a cosmetic label; it must state what environment actually receives broad authority.
-- Do not let automatic learning or fine-tuning change permissions, credentials, billing, tenant scope, or external-effect policy.
-- Do not present roadmap intent, simulated tests, or development branches as shipped product capability.
-
-## Reference systems to keep studying
-
-- Hermes: personal-agent continuity, memory, skills, schedules, messaging, multiple backends, local-model UX.
-- Codex: scoped sandbox/permission modes, auto-review, durable coding-agent flows.
-- Claude Code/Desktop: permission modes, plan-to-execution flow, scheduling, desktop agent UX.
-- OpenCode: allow/ask/deny permission semantics and model/provider routing.
-- OMP / oh-my-pi: layered rules, hooks/intervention, advisor/worker patterns, checked editing.
-- witt3rd/oh-my-hermes: planning discipline and verified execution/iterate composition.
-- rlaope/oh-my-hermes: natural-language intent → explicit capability/workflow/evidence gates.
-- Vibe Kanban: review comments and correction workflows.
-- AionUI: agent discovery, organized conversations/teams, artifact preview.
-- Omnigent: heterogeneous-agent execution with explicit policy/budget/host distinctions.
-- Amp: specialist workers, context separation, effort modes, steer/queue/interruption semantics.
-
-## Autonomy target — no routine babysitting
-
-The end-state business experience is deliberately more autonomous than today's prototype. A person should be able to state an outcome, define or accept the relevant operating boundaries, and let Diomedes carry ordinary work through to a verified result without sitting beside it clicking through routine changes or repeatedly steering it back onto the same rails.
-
-**No babysitting does not mean no controls.** Trust is the mechanism that makes unattended operation possible. The system should increasingly absorb routine supervision through scoped durable grants, standing guidance, triggered correction, pre-effect policy, drift detection, retry/error limits, tool/context narrowing, verification, recovery/reconciliation, evidence/history, and escalation only when authority is exceeded, state is ambiguous, or judgment genuinely belongs to a person.
-
-This is why rule injection, scopes, drift checks, corrective hooks/loops, explicit capability semantics, attribution, and verifiable completion are near-term architecture rather than polish to add after autonomy. A more capable model without these controls would increase business risk instead of reducing coordination burden.
-
-The long-term native **Diomedes Agent** should be genuinely Devin-like in outcome ownership: Diomedes owns planning, routing, delegation, monitoring, correction, permissions/escalation, verification, and durable progress. The cognition underneath may be Diomedes-hosted weights, a Diomedes-tuned local model, or an interchangeable model route. Hosted and local deployments should preserve the same Core/Runtime/Trust semantics even when capabilities, latency, privacy, cost, uptime, and model quality differ.
-
-Business onboarding and consultation should make those deployment tradeoffs explicit. Local can improve data locality, offline behavior, predictable marginal inference cost, and customer control but requires suitable hardware, lifecycle management, and accepts a hardware-dependent capability ceiling. Hosted avoids customer GPU requirements and can offer stronger/elastic intelligence and easier remote availability but introduces recurring compute cost, service/network dependency, and different data-handling considerations. Hybrid should remain first-class and is likely attractive for many businesses: routine supervisory work local when appropriate, stronger hosted specialists used selectively under explicit rules and budgets.
-
-Do not market complete autonomy before evidence supports it. The product direction is nevertheless explicit: every release should reduce avoidable user supervision while increasing the quality of policy, drift detection, correction, verification, and evidence.
-
-## Pricing strategy reference
-
-A provisional services/software pricing plan is maintained separately so experimental prices do not become product-definition facts merely by appearing in memory. Current working draft: Google Doc `11EjZfmFpx0pKpISeS0s63aHr9pQLdb8d8r5UhoOaiZQ`; GitHub mirror `docs/business/PRICING_STRATEGY_2026-09-10.md`. Prices remain proposals until Andrew approves them for public use.
-
-This file records direction. Verify current implementation before claiming any item is shipped.
+Full prior detailed requirements remain in the incorporated base. This index supersedes stale pricing approval wording, restaurant-only positioning and older status/assignment assumptions where stated. Application builds, tests, deploys and paid account readiness remain separate from these documentation updates.
