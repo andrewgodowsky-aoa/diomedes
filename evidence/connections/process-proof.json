@@ -1,0 +1,44 @@
+{
+  "at": "2026-09-09T09:10:59.044Z",
+  "phases": [
+    {
+      "mode": "seed",
+      "pid": 47296,
+      "pending": 1,
+      "issues": 0,
+      "readRun": "cn-12dd01fe-03cc-4cec-acdc-aee6ce62ca73",
+      "exitCode": 73,
+      "stderr": ""
+    },
+    {
+      "mode": "recover",
+      "pid": 4796,
+      "issues": 1,
+      "issueId": "T1",
+      "triage": "completed",
+      "exitCode": 0,
+      "stderr": "Skipped a harness run whose capability is unavailable."
+    },
+    {
+      "mode": "replay-revoke",
+      "pid": 47088,
+      "issues": 1,
+      "issueId": "T1",
+      "duplicate": true,
+      "revokedReadsAndEvents": true,
+      "exitCode": 0,
+      "stderr": "Skipped a harness run whose capability is unavailable.\nSkipped a harness run whose capability is unavailable."
+    }
+  ],
+  "scannedFiles": 6,
+  "credentialLeaks": 0,
+  "candidate": {
+    "active": false,
+    "operations": [
+      "list_pets"
+    ],
+    "allowedOrigins": []
+  },
+  "profile": "test-results\\connections-process-5pHTFS",
+  "boundary": "Three local processes; synthetic credential, source and model; no provider or packaged desktop."
+}

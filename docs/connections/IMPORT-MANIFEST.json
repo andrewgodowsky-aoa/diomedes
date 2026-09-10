@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 1,
+  "status": "frozen-for-import",
+  "frozenAt": "2026-09-09T09:27:56.2678795Z",
+  "baseCommit": "11829e1962b448360d3fc7aaba7c38fda6833a84",
+  "branch": "codex/connections-proof-20260909",
+  "sourceRoot": "F:/Achilles/diomedes-wt/connections-proof",
+  "trackedFilesModified": 0,
+  "files": [
+    {
+      "path": "client/connections/connections.css",
+      "bytes": 4691,
+      "sha256": "5d945fb1a96ab105e8ebed2938599615d3ae7cbc670e76597c1fb04a249faf71"
+    },
+    {
+      "path": "client/connections/fixture-main.tsx",
+      "bytes": 14111,
+      "sha256": "d094f90ebae5770aa7b5c329f8ae10b4f1f004fec082fe7e51d8031817f84d40"
+    },
+    {
+      "path": "docs/connections/ARCHITECTURE.md",
+      "bytes": 11230,
+      "sha256": "b24eef50510b0cc8cd38500c2e6c9ca3db8af4f21a4ee2f373c95b4435154173"
+    },
+    {
+      "path": "docs/connections/HANDOFF.md",
+      "bytes": 17626,
+      "sha256": "01a536b8c16a3ef81d858c17356e8671d13067f4c550a62125d7743607b01fc8"
+    },
+    {
+      "path": "docs/connections/RESEARCH.md",
+      "bytes": 13860,
+      "sha256": "dc5220aad9c294ee29fd8de344566d9bb800a31dce5c6e2eab545353957ba2ae"
+    },
+    {
+      "path": "evidence/connections/connections-desktop.png",
+      "bytes": 169329,
+      "sha256": "c8d3d77d8421ac8a58dbdd327a7e1b198d3ee9eec99c04e2fcd1e37e1ff31747"
+    },
+    {
+      "path": "evidence/connections/connections-narrow.png",
+      "bytes": 166269,
+      "sha256": "1af576747659cc1c3b0fa654f37e5df4b1ca3afe145c6276e5797f1185dd2b46"
+    },
+    {
+      "path": "evidence/connections/connector-tests.json",
+      "bytes": 18672,
+      "sha256": "b744ea497bc3e4e3423ffcc0db26b2404e8b384b26c0b73abc008dab864f4154"
+    },
+    {
+      "path": "evidence/connections/petstore-candidate.json",
+      "bytes": 2103,
+      "sha256": "fb01bb3c0a3f8673cbb0a40915acd88052ebfe6e2059c2dbdd4853a1c4047665"
+    },
+    {
+      "path": "evidence/connections/process-proof.json",
+      "bytes": 1120,
+      "sha256": "c1950ee91169744fd23a8b7a50f449c1bcbee29459c713fd975f6b3575863167"
+    },
+    {
+      "path": "evidence/connections/ui-proof.json",
+      "bytes": 744,
+      "sha256": "69df45adadd2c0445973fce0a8c40d81a79e7a9bb58494a7a7432c0ff165f07e"
+    },
+    {
+      "path": "evidence/connections/unit-tests.json",
+      "bytes": 180925,
+      "sha256": "083ab728f214fd924bf59768cd545f85611e7d270441bd6cb1b9edb14302b5d3"
+    },
+    {
+      "path": "evidence/connections/verification.json",
+      "bytes": 3574,
+      "sha256": "b7d01ae1ad72190acb67b52f95a5885ab09afa57cf3758d31cf7c739ac84fc26"
+    },
+    {
+      "path": "fixtures/connections/petstore.openapi.json",
+      "bytes": 2607,
+      "sha256": "7d97d03e22e7c0f2db99fb1243647c6ec9f7482095b9bd9c57898b1ea2c664d8"
+    },
+    {
+      "path": "scripts/connections-demo.ts",
+      "bytes": 7925,
+      "sha256": "eedfec28d9a7ceadcfe21906513d555c6169ece4442dbbffd2163fe791c34e9d"
+    },
+    {
+      "path": "scripts/connections-process-proof.ts",
+      "bytes": 7114,
+      "sha256": "39e83fdf9c1584c3f56fc5dcdcc88da9d4f58fc9a494ee506bf51a27430dc0bf"
+    },
+    {
+      "path": "scripts/connections-ui-proof.ts",
+      "bytes": 7367,
+      "sha256": "a1f164ca253db840fdb26bc71f6f6e41608084403973c8bf719c63e0f672e7f0"
+    },
+    {
+      "path": "server/connections/credentials.ts",
+      "bytes": 1938,
+      "sha256": "c2a50956784b6eab7471ab4b34bf7fedbabc3756dfad3a2638907cbd3f8d322b"
+    },
+    {
+      "path": "server/connections/fixture-model.ts",
+      "bytes": 1665,
+      "sha256": "46c548a7755df1d3a8e4997988ccceec60553028a15863734583a072154e8616"
+    },
+    {
+      "path": "server/connections/fixture.ts",
+      "bytes": 5510,
+      "sha256": "3967a4547b153f7ea7aac09250d74421baf8dafc6a23024e465abf0523252ef2"
+    },
+    {
+      "path": "server/connections/openapi-candidate.ts",
+      "bytes": 14655,
+      "sha256": "0f0c9991a273ddbeb0a7d6a9d0b51d65ac30145fcd503e2d4024f54cceba7c70"
+    },
+    {
+      "path": "server/connections/service.ts",
+      "bytes": 41671,
+      "sha256": "66bcae4647a647d96c4d88dcea52ebcc36757e83f10222b020dadb3ced8ba5da"
+    },
+    {
+      "path": "server/connections/toast.ts",
+      "bytes": 8618,
+      "sha256": "558dc981447d52ccea92aa063a22751dd5b8f375f03028421029b61c0d8e9462"
+    },
+    {
+      "path": "server/rules.ts",
+      "bytes": 6574,
+      "sha256": "bedbd92b76c9cd84d8b6b445985097b69512f83df492f28d839822361b0eddf9"
+    },
+    {
+      "path": "shared/connection-rules.ts",
+      "bytes": 2547,
+      "sha256": "48b9fadce859653b8897c8c4cb9176148376be51ff6fbe0c8e735522f1c1d611"
+    },
+    {
+      "path": "shared/connections.ts",
+      "bytes": 4882,
+      "sha256": "5055585ddb68508820787dc10704c77a58f366bd05ae9852ebe989151b9a5ea9"
+    },
+    {
+      "path": "tests/connections.test.ts",
+      "bytes": 33938,
+      "sha256": "ba4996b68163a74225b8a643a08257f49745485e531a402aaaf803efea087879"
+    },
+    {
+      "path": "tests/openapi-candidate.test.ts",
+      "bytes": 6407,
+      "sha256": "c9afad1ef39f3575d11a7e66408b49477b6e4e2eda05448cf5ec22efb1864b3a"
+    }
+  ],
+  "exclude": [
+    "This manifest itself",
+    "node_modules junction",
+    "test-results scratch profiles and logs",
+    "F:/Achilles/planning coordination note"
+  ],
+  "integration": "Import only these additions, preserve Runtime/Trust ownership and rerun verification in the integration checkout."
+}

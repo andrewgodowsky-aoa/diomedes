@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-09T09:24:45.899Z",
+  "checks": [
+    "stale and read-only visible",
+    "healthy, unknown quantity and all locations rendered",
+    "natural-language proposal remains inactive before explicit activation",
+    "signed event and duplicate produce one issue with rule/source evidence",
+    "HTTP 202 after durable inbox and before held triage (20 ms locally)",
+    "narrow layout has no horizontal overflow",
+    "pause/disconnect disable controls and server denies reads",
+    "reauthorization and reconnect freshness are truthful",
+    "fixture controls and webhook validation reject invalid requests"
+  ],
+  "errors": [],
+  "proof": "Source fixture UI in Edge; no packaged desktop, production credentials or live provider."
+}
