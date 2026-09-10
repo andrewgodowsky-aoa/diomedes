@@ -1,6 +1,6 @@
 # DIOMEDES LIVE ROADMAP
 
-Roadmap version: 2026-09-10.3
+Roadmap version: 2026-09-10.4
 Last reconciled: September 10, 2026
 Product: Diomedes
 Company direction: Diomedes Systems
@@ -24,6 +24,22 @@ A genuine general-purpose, Diomedes-led agent with its own harness/runtime and c
 Direct external-engine use remains first-class. Native-agent semantics do not require proprietary weights at launch. Initial cognition may use commercially permitted API models; later local or hosted specialized supervisor models are options beneath the same agent. Desktop/Core/Runtime/Trust/Observatory/Interop keep their existing responsibility boundaries. Model, engine, account/provider route and worker are distinct.
 
 One configurable product spans different businesses and personal/technical work. Restaurants, remodeling/construction administration, field service and office operations are examples, not separate products or a restaurant-only strategy. Industry mappings, workflows, skills and connectors reuse common primitives; unsupported integrations still need real engineering and permission.
+
+### Personal / Business — immediate owner decision, 2026-09-10.4
+
+Diomedes Personal is a genuinely capable free, self-managed local/BYO harness. Diomedes Business is the paid, configured organization experience on the same Core and Console, with managed Diomedes Agent access, maintained organization Agents/Teams/rules, supported connections, governance and scoped operational services. Do not create separate forks or weaken Personal safety/correctness to sell Business. This is a deliberate edition strategy, not a claim that the whole product is temporarily free or that paid features already ship.
+
+Keep the person's identity and Personal workspace separate from organization membership, organization-owned Business configuration, entitlement, usage balance and execution authority. The Business questionnaire runs only in an explicitly selected Business workspace for an authorized owner/admin starting or resuming setup. Ordinary invitees join existing configuration; Personal never receives company intake. Legacy onboarding work=business is only a preference, not registration, payment or permission.
+
+Agent is a first-class, versioned Diomedes-owned worker contract distinct from Mode, model and runtime. Teams compose Agents. Branded Diomedes Agent supervision remains distinct from direct external-engine execution and actual underlying model attribution. Business configuration composes existing Trust, rules, context, tools, evidence and budgets rather than adding parallel systems.
+
+Self-configuration proceeds through structured facts, a proposed configuration, deterministic validation, review, rehearsal and versioned activation. Questionnaire/model output never grants authority. Configuration changes and rollback cannot revive revoked access or spent credit. Start with a supported approved-files draft workflow and small synthetic industry variants, not universal live integrations.
+
+Andrew's $300/month including $100 managed inference is a candidate package, not a replacement for approved price anchors. Company-funded access requires server-side identity/entitlement and reserve/settle spend control; Personal local/BYO remains separate. Include all applicable setup, Team, reviewer and correction costs in disclosed accounting. No embedded company keys, automatic overage, silent payer change or fake production checkout. Existing Apache-2.0 rights remain unchanged; managed service differentiation is not a noncommercial restriction on published code.
+
+Immediate sequence after the active Opus Trust/Agent checkpoint: PB-01 identity/intake; PB-02 reviewed configuration and harness integration; PB-03 bounded managed-usage contracts; PB-04 usable Console integration/handoff; then the planned GLM corrective-loop slice with Business scope and budget invariants. Missing production credentials must not block a clearly labeled local proof or expand this into a full billing platform before GLM.
+
+Focused specifications and short prompts: docs/product/personal-business/README.md. Drive package: https://drive.google.com/drive/folders/1-U8m3jRRbVs28vsVw5zgtj-t0Tlxl62_. This amendment records approved intent and proposed implementation details, not completed app functionality or deployment.
 
 ## 3. Current published evidence checkpoint
 
@@ -109,6 +125,8 @@ Current focused documents:
 - docs/business/OPUS_5_WEBSITE_PROMPT_2026-09-10.md (bounded website execution; cloud 1S4892244vJ-zyMkbf15VO055J4qPFGiGiu8O6BuhmtQ).
 
 ## 10. Change record and proof boundary
+
+2026-09-10.4: added the owner-approved Personal/Business edition direction, organization-bound Business-only onboarding, first-class Agent/Team integration, governed self-configuration, candidate managed allowance and staged pre-GLM implementation package. Existing prices, implementation evidence and concurrent worker ownership remain unchanged. Documentation only.
 
 2026-09-10.3: reconciled cloud/repository roadmap divergence; preserved full historical bodies; indexed complete standing memory; recorded cross-industry configurable-product intent and services-assisted recurring adoption; retained accessible approved prices with scope controls; added source-aware market analysis, explicit income/cost/labor scenarios and the current Opus website handoff. Corrected EV-signing shortcut and forms-database-as-entitlements assumptions in research, not application code.
 

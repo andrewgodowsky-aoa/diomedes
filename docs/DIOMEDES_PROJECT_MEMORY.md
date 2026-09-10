@@ -1,6 +1,6 @@
 # DIOMEDES PROJECT MEMORY — CANONICAL
 
-Version: 2026-09-10.3
+Version: 2026-09-10.4
 Last reconciled: September 10, 2026
 Cloud canonical: 13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw
 Repository mirror: docs/DIOMEDES_PROJECT_MEMORY.md
@@ -10,6 +10,24 @@ Repository mirror: docs/DIOMEDES_PROJECT_MEMORY.md
 This is the current definition and decision index. The complete previous standing-memory body is retained unchanged at docs/reference/DIOMEDES_PROJECT_MEMORY_BASE_2026-09-10.2.md, with a cloud snapshot at https://docs.google.com/document/d/1VEqHFWvKNVGLcLP88GNnQmWqcddWTj940Aw15U7WEN8/edit. Its detailed product requirements remain incorporated where not explicitly superseded here. They have not been discarded or relabeled as implemented. Use this current index first; retrieve the detailed base sections relevant to the task rather than injecting every past discussion indiscriminately.
 
 Authority: Andrew's newest explicit decision governs intent; the current roadmap governs sequencing; this memory governs definitions; actual source and verification govern implementation facts. Pricing approval and research conclusions are separately labeled. No pasted assistant report, Mem0 banner or successful model response proves a running integration or persisted memory update.
+
+## Personal / Business and Agent contracts — 2026-09-10.4
+
+Personal is the strong free self-managed local/BYO harness. Business is a configured organization workspace and managed service on the same Core/Console, not a separate fork or deliberately less-safe Personal runtime. Core Agents, Teams foundations, guidance/correction/policy, permissions, evidence and recovery remain shared. Business differentiates through maintained organization configuration, managed Diomedes Agent inference, supported connections, organization governance and operational services. Published Apache-2.0 code is not restricted to noncommercial use by an edition label; no relicensing is authorized here.
+
+Person, Personal workspace, Organization, Membership, organization-owned Business profile, member preferences, Entitlement, Usage account and execution principal remain separate. One person can retain Personal and join several businesses; a sole proprietor can use Business. A business registration does not claim legal incorporation verification. An old onboarding work=business answer is a preference only. Company data/configuration do not silently become personal property on cancellation or account deletion.
+
+The Business questionnaire never runs in Personal. Authorized organization owners/admins start or resume the company intake; ordinary invitees join the existing configuration and may supply optional role preferences. Gate this at the host/API as well as the UI. Answers describe goals, sources, roles, processing limits, host availability and budgets; they are not permission grants, secret fields or billing approval.
+
+Mode → Agent → Model → Effort is the conceptual control model, not a rigid execution pipeline. Agent definitions are stable/versioned worker contracts composing existing instruction/rule, capability, context, model, Trust, evidence and collaboration policies. Teams compose Agent identities with explicit scoped handoffs. Branded Diomedes Agent is the native supervisor using those workers; direct engine work retains actual model/runtime attribution. Changing Agent/model/Team cannot grant authority or evade budgets.
+
+Self-configuration means structured facts → reviewable candidate → deterministic validation → rehearsal and approval → versioned activation → observed operation → reviewed improvements. Use deterministic templates with optional model assistance, existing mutation/admission services and expected-base checks. Missing connections stay unsupported; rollback never restores revoked grants or old credit. Corrections change an attempt, not silently the Agent or organization's governing rules.
+
+The illustrative $300/month with $100 inference allowance is a commercial candidate; existing approved price anchors remain until explicitly superseded. Entitlement, Trust permission and budget admission are different checks. Managed inference uses company-held server credentials and tenant-bound reserve/settle accounting including Team/reviewer/correction calls. Local/BYO is not silently charged against that allowance. No unlimited usage, automatic overage, invisible payer fallback or assumption that online inference provides an always-on execution host.
+
+Standing Opus 5 prompting preference: complete context, explicit scope/end state, short milestone prompts and repository references. Avoid giant phase-by-phase instructions, repeated warnings, exhaustive checks in every prompt and redundant self-verification/subagent review. Mandatory repository checks still apply. GLM implementation prompts may use Goal / Context / Constraints / Done when. See docs/product/personal-business/08_SOURCES_AND_LICENSING.md for checked first-party guidance.
+
+Execute PB-01 through PB-04 after the current Opus Trust/Agent checkpoint and before the planned GLM correction run, without expanding into unready production services. Package: docs/product/personal-business/README.md; Drive https://drive.google.com/drive/folders/1-U8m3jRRbVs28vsVw5zgtj-t0Tlxl62_. These are current product decisions and implementation contracts, not evidence that the requested features have landed.
 
 ## Stable meanings
 

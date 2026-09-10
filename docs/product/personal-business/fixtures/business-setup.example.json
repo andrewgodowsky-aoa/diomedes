@@ -1,0 +1,53 @@
+{
+  "version": "PB-2026-09-10.1",
+  "purpose": "synthetic design fixture, not a runtime wire format or authorization",
+  "workspaceKind": "business",
+  "organizationId": "example-org-a",
+  "setupActorRole": "owner",
+  "firstJob": "approved-files-weekly-brief",
+  "sources": [
+    {
+      "kind": "approved-export",
+      "pathLabel": "Selected reports folder"
+    }
+  ],
+  "variants": [
+    {
+      "industry": "restaurant",
+      "locations": [
+        "Location A",
+        "Location B"
+      ],
+      "output": "Internal weekly operations draft"
+    },
+    {
+      "industry": "professional-services",
+      "locations": [
+        "Project A"
+      ],
+      "output": "Internal project status draft"
+    }
+  ],
+  "activation": {
+    "state": "draft",
+    "permissionGranted": false,
+    "cloudProcessingAllowed": false,
+    "sendingAllowed": false,
+    "scheduledExecutionEnabled": false
+  },
+  "capabilityGaps": [
+    {
+      "name": "Toast",
+      "state": "not-connected",
+      "fallback": "approved export"
+    }
+  ],
+  "candidatePlan": {
+    "currency": "USD",
+    "monthlyPriceMicros": 300000000,
+    "includedInferenceMicros": 100000000,
+    "approvedForSale": false,
+    "liveBillingEnabled": false,
+    "autoOverage": false
+  }
+}
