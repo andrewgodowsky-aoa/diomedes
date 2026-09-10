@@ -7,8 +7,19 @@ re-litigate.
 
 ## The plan of record
 
-Before substantial work, read **both** the canonical live roadmap and the canonical project-memory
-companion, or the latest documented local snapshots, and report their versions.
+Before substantial work, read the **Core Pillars**, the canonical live roadmap and the canonical
+project-memory companion, or the latest documented local snapshots, and report their versions.
+
+Core Pillars canonical document:
+`https://docs.google.com/document/d/1O0bWr5HEryEQmtOsUput0sgzLhk2c_Ze6MaXoMfKta4/edit`
+Repository mirror: `docs/DIOMEDES_CORE_PILLARS.md`.
+
+The Core Pillars are the compact binding drift-check layer for product, business, agent, harness,
+UX, support, sales and website work. A substantial proposal that materially conflicts with a pillar
+must identify the conflict before proceeding; only Andrew's newer explicit decision may supersede a
+pillar. For material work where drift is plausible, include a concise **PILLAR IMPACT** in planning
+or reporting: pillars advanced, risks/conflicts, and observable proof. Do not mechanically enumerate
+all pillars on trivial patches.
 
 Live roadmap canonical document:
 `https://docs.google.com/document/d/1bRhz3zQPXOYuVlt95U1EIkz7pcm1dtSsoBvkDrLR3zE/edit`
@@ -19,13 +30,13 @@ Project-memory canonical document:
 `https://docs.google.com/document/d/13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw/edit`
 Repository mirror: `docs/DIOMEDES_PROJECT_MEMORY.md`.
 
-The live roadmap governs strategy and sequencing. `DIOMEDES_PROJECT_MEMORY.md` is the standing
-product-definition/terminology/UX companion: it records meanings such as Desktop/Core/Runtime/Trust,
-Diomedes Agent versus direct-agent mode, engine/model/provider distinctions, permission semantics,
-actor attribution, local-model onboarding, the long-term local supervisor model, recursive
-self-improvement guardrails, workbench ideas, website communication, and current business direction.
-Do not invent a conflicting definition in an implementation thread when either canonical document
-already answers it.
+The Core Pillars govern durable product/business constraints. The live roadmap governs strategy and
+sequencing. `DIOMEDES_PROJECT_MEMORY.md` is the standing product-definition/terminology/UX companion:
+it records meanings such as Desktop/Core/Runtime/Trust, Diomedes Agent versus direct-agent mode,
+engine/model/provider distinctions, permission semantics, actor attribution, local-model onboarding,
+the long-term local supervisor model, recursive self-improvement guardrails, workbench ideas,
+website communication, and current business direction. Do not invent a conflicting definition in an
+implementation thread when these canonical documents already answer it.
 
 The cloud roadmap and repository roadmap mirror should carry the same explicit version and materially
 equivalent decisions. The planning cache is not a third authority. The project-memory cloud document
@@ -55,8 +66,11 @@ coordination notes. Coordinate Trust interfaces before widening them.
    marketing artifacts built to look like Diomedes; they are not Diomedes. Never port them into the
    app, never treat the site's sample catalogue as an operational authority, and never let a site
    component decide an app control's behaviour. Shared tokens and semantics are fine; shared
-   implementations are not. Current website direction is to simplify around plain-language outcomes
-   and honest captures of the real packaged app; see the project-memory document.
+   implementations are not. Current website direction is plain-language outcomes plus honest captures
+   or state sequences produced by the real Diomedes harness/product using reproducible synthetic or
+   explicitly approved data. Public pillar copy uses human language first with optional technical
+   depth; a fabricated marketing mock must never be presented as a shipped product capture. See
+   `docs/DIOMEDES_CORE_PILLARS.md` and the project-memory document.
 4. **Diomedes says a thing once.** Do not add a sentence that restates what a caption, a mode
    contract or an invariant already says, and do not narrate the app's own state when a point or a
    record already shows it. Standing copy doctrine and rewrite table:
@@ -85,11 +99,12 @@ coordination notes. Coordinate Trust interfaces before widening them.
 
 ## Not yours to decide
 
-Take these to Andrew rather than choosing: any material new meaning for Guided density; changes to
-core permission preset meanings; the minimum window width; whether a click runs an action or selects
-it; any claim that a development capability is shipped; or any architectural definition that
-conflicts with the roadmap/project-memory documents. **Commits, pushes and releases require Andrew's
-explicit approval for the current patch** — "build" alone is not permission to publish.
+Take these to Andrew rather than choosing: any semantic change to a Core Pillar; any material new
+meaning for Guided density; changes to core permission preset meanings; the minimum window width;
+whether a click runs an action or selects it; any claim that a development capability is shipped; or
+any architectural definition that conflicts with the pillars/roadmap/project-memory documents.
+**Commits, pushes and releases require Andrew's explicit approval for the current patch** — "build"
+alone is not permission to publish.
 
 ## Coordination rules
 
@@ -108,12 +123,13 @@ explicit approval for the current patch** — "build" alone is not permission to
 
 ## Reporting
 
-After a meaningful slice, include **ROADMAP IMPACT** with exact status changes and evidence, and
-separate **BUILD / PUBLICATION / DEPLOYMENT STATUS**. Refresh the cloud roadmap before an
-authorised write and use `requiredRevisionId`; otherwise leave an exact proposed patch and state
-that cloud synchronisation is pending. If a product-definition decision changes, update both the
-roadmap impact and `DIOMEDES_PROJECT_MEMORY.md` rather than leaving the new definition buried only
-in a handoff conversation.
+After a meaningful slice, include **PILLAR IMPACT** when material drift is plausible, then
+**ROADMAP IMPACT** with exact status changes and evidence, and separate **BUILD / PUBLICATION /
+DEPLOYMENT STATUS**. Refresh the cloud roadmap before an authorised write and use
+`requiredRevisionId`; otherwise leave an exact proposed patch and state that cloud synchronisation is
+pending. If a product-definition decision changes, update the Core Pillars when applicable, the
+roadmap impact and `DIOMEDES_PROJECT_MEMORY.md` rather than leaving the new definition buried only in
+a handoff conversation.
 
 ## Gates before any merge to `main`
 
