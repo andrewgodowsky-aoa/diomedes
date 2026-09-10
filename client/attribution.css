@@ -1,0 +1,36 @@
+/* Shared actor/authorization attribution.
+   Inherits surrounding typography and themes; no font, color-scheme or
+   layout rules beyond keeping long machine strings inside their surface. */
+.attribution {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  gap: 0.35em;
+  align-items: baseline;
+  vertical-align: baseline;
+}
+.attribution b,
+.attribution .attribution-secondary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attribution .attribution-secondary {
+  flex-shrink: 2;
+}
+/* Long ids, hashes, paths and model names wrap instead of overflowing. */
+.approval-facts dd,
+.attribution-wrap {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+/* Fixed-width lane and ledger surfaces truncate rather than overflow. */
+.lane header .mono,
+.ledger .mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

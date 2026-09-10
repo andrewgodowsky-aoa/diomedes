@@ -10,7 +10,7 @@ import type {
 import { MODE_CEILING, effortFor } from '../../shared/effort';
 import { api } from '../api';
 
-const ENGINE_IDS = ['codex', 'claude-code', 'opencode'] as const;
+const ENGINE_IDS = ['codex', 'claude-code', 'opencode', 'oh-my-pi'] as const;
 
 interface PickerProps {
   thread: Conversation;
@@ -69,7 +69,8 @@ export function Picker({
           if (alive) setCatalogs((prev) => ({ ...prev, [id]: catalog }));
         })
         .catch(() => {
-          if (alive) setCatalogs((prev) => ({ ...prev, [id]: { engine: id, models: [], detail: '' } }));
+          if (alive)
+            setCatalogs((prev) => ({ ...prev, [id]: { engine: id, models: [], detail: '' } }));
         });
     }
     return () => {
@@ -90,20 +91,29 @@ export function Picker({
       document.removeEventListener('mousedown', close);
       document.removeEventListener('keydown', escape);
     };
-  }, [open ]);
+  }, [open]);
 
-  const savedModel = typeof settings.services?.codexModel === 'string' ? settings.services.codexModel : '';
-  const savedEffort = typeof settings.services?.codexEffort === 'string' ? settings.services.codexEffort : '';
+  const savedModel =
+    typeof settings.services?.[`${route}Model`] === 'string'
+      ? String(settings.services[`${route}Model`])
+      : '';
+  const savedEffort =
+    route === 'codex' && typeof settings.services?.codexEffort === 'string'
+      ? settings.services.codexEffort
+      : '';
   const chosenSlug = thread.requested?.model ?? '';
-  const chosen = ENGINE_IDS.flatMap((id) =>
-    (catalogs[id]?.models ?? []).map((m) => ({ engine: id, model: m })),
-  ).find((c) => c.model.slug === chosenSlug);
-  const displayEngine = chosen?.engine ?? route;
-  const engLabel = displayEngine === 'sample'
-    ? 'Sample work'
-    : (integrations.find((i) => i.id === displayEngine)?.name ?? displayEngine);
+  const chosenModel = catalogs[route]?.models.find((m) => m.slug === (chosenSlug || savedModel));
+  const chosen = chosenModel ? { engine: route, model: chosenModel } : undefined;
+  const displayEngine = route;
+  const engLabel =
+    displayEngine === 'sample'
+      ? ''
+      : (integrations.find((i) => i.id === displayEngine)?.name ?? displayEngine);
   const displayModel = chosenSlug || savedModel || chosen?.model.slug || 'default';
-  const wantedEffort = thread.requested?.effort || savedEffort || chosen?.model.defaultEffort || 'medium';
+  const wantedEffort =
+    route === 'codex'
+      ? thread.requested?.effort || savedEffort || chosen?.model.defaultEffort || 'medium'
+      : '';
   const runsAt = effortFor(mode, wantedEffort, wantedEffort);
   const capped = runsAt !== wantedEffort;
   const ceiling = MODE_CEILING[mode];
@@ -123,11 +133,13 @@ export function Picker({
         title="Engine, model and reasoning level for this thread"
         onClick={() => setOpen(!open)}
       >
-        <span className="eng">{engLabel}</span>
-        <span className="mdl">{displayModel}</span>
-        <span className={`eff ${capped ? 'capped' : ''}`}>
-          {capped ? `${wantedEffort}, runs ${runsAt}` : runsAt}
-        </span>
+        {engLabel && <span className="eng">{engLabel}</span>}
+        <span className="mdl">{displayEngine === 'sample' ? 'Choose an engine' : displayModel}</span>
+        {wantedEffort && (
+          <span className={`eff ${capped ? 'capped' : ''}`}>
+            {capped ? `${wantedEffort}, runs ${runsAt}` : runsAt}
+          </span>
+        )}
       </button>
       {open && (
         <div className="pmenu open" role="menu">
@@ -174,25 +186,10 @@ export function Picker({
                   </div>
                 );
               })}
-              {available('sample', integrations, settings) && (
-                <div>
-                  <h4>
-                    Sample work<span>on this computer</span>
-                  </h4>
-                  <button
-                    type="button"
-                    className={`m ${route === 'sample' && !chosenSlug ? 'on' : ''}`}
-                    role="menuitemradio"
-                    aria-checked={route === 'sample' && !chosenSlug}
-                    onClick={() => choose(null, 'sample')}
-                  >
-                    <span>Sample work</span>
-                    <span className="id">sample</span>
-                    <small>Stays on this computer</small>
-                  </button>
-                </div>
+              {!ENGINE_IDS.some((id) => available(id, integrations, settings)) && (
+                <p className="note">Connect an engine in Settings.</p>
               )}
-              {chosen ? (
+              {chosen && chosen.model.efforts.length > 0 ? (
                 <>
                   <div className="ladder" role="radiogroup" aria-label="Reasoning level">
                     {chosen.model.efforts.map((e) => (
@@ -201,7 +198,9 @@ export function Picker({
                         type="button"
                         title={e.description}
                         className={`${e.id === wantedEffort ? 'on' : ''} ${ceiling && effortFor(mode, e.id, e.id) !== e.id ? 'capped' : ''}`.trim()}
-                        onClick={() => choose({ model: chosen.model.slug, effort: e.id }, chosen.engine)}
+                        onClick={() =>
+                          choose({ model: chosen.model.slug, effort: e.id }, chosen.engine)
+                        }
                       >
                         {e.id}
                       </button>
@@ -212,7 +211,9 @@ export function Picker({
                       <b>Fix runs at {ceiling}.</b> Your choice still governs Ask, Plan and Build.
                     </div>
                   ) : (
-                    <div className="note">Applies to this thread. The default lives in Settings.</div>
+                    <div className="note">
+                      Applies to this thread. The default lives in Settings.
+                    </div>
                   )}
                 </>
               ) : (

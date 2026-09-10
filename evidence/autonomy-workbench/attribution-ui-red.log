@@ -1,0 +1,85 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/autonomy-workbench
+
+ ❯ tests/attribution-ui.test.ts (4 tests | 4 failed) 29ms
+   × rendered historical attribution > uses saved verified metadata after the current model picker changes 23ms
+     → expected '<main class="work" aria-label="Histor…' to contain '<b>original-model</b>'
+   × rendered historical attribution > does not promote model prose or unverified metadata into the author 2ms
+     → expected '<main class="work" aria-label="Histor…' to contain '<b>Codex</b>'
+   × rendered historical attribution > preserves unknown historic origin instead of inventing a model 2ms
+     → expected '<main class="work" aria-label="Histor…' to contain '<b>Assistant</b>'
+   × rendered historical attribution > renders externally supplied model names as text 2ms
+     → expected '<main class="work" aria-label="Histor…' to contain '&lt;img'
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/attribution-ui.test.ts > rendered historical attribution > uses saved verified metadata after the current model picker changes
+AssertionError: expected '<main class="work" aria-label="Histor…' to contain '<b>original-model</b>'
+
+Expected: "<b>original-model</b>"
+Received: "<main class="work" aria-label="Historical origin"><div class="col head"><h1 title="Rename thread">Historical origin</h1><div class="seg" role="radiogroup" aria-label="What Diomedes may do"><button type="button" role="radio" aria-checked="true" class="on">Show me first</button><button type="button" role="radio" aria-checked="false" class="">Go ahead for this task</button></div></div><div class="col instr" aria-label="Thread instruments"><span><b>ask</b> <span class="lc">new-picker-model</span> <span class="lc">medium</span></span><span>runs <b>0</b></span><span class="grow"></span></div><p class="col permission-note">Each proposed file change needs its own exact OK.</p><div class="transcript"><div class="col"><div><div class="exchange"><div class="turn dio" data-thread-point=""><div class="who"><b>Diomedes</b><span class="mono">8:00 am</span><span class="tools"><button type="button">Copy</button></span></div><div class="body"><p>A saved answer.</p></div></div></div></div></div></div><p class="caption">Sending shares this instruction and selected documents with codex. The selected account is billed under its own plan. Tools are disabled; file proposals require approval.</p><div class="col compose"><form class="composer"><textarea rows="1" aria-label="Message this thread" placeholder="Ask or think out loud"></textarea><div class="bar"><div class="modes" role="radiogroup" aria-label="Mode"><button type="button" role="radio" aria-checked="true" class="on">ask</button><button type="button" role="radio" aria-checked="false" class="">plan</button><button type="button" role="radio" aria-checked="false" class="">build</button><button type="button" role="radio" aria-checked="false" class="">fix</button><span class="ind"><i></i><b></b></span></div><span class="cap">Nothing in the project changes.</span><button type="submit" class="send " aria-disabled="true">Send</button><span class="hint">Enter</span></div></form></div></main>"
+
+ ❯ tests/attribution-ui.test.ts:36:20
+     34|     for (const picker of ['new-picker-model', 'another-picker-model'])…
+     35|       const html = renderThread(historicTurn, picker);
+     36|       expect(html).toContain('<b>original-model</b>');
+       |                    ^
+     37|       expect(html).not.toContain(`<b>${picker}</b>`);
+     38|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/attribution-ui.test.ts > rendered historical attribution > does not promote model prose or unverified metadata into the author
+AssertionError: expected '<main class="work" aria-label="Histor…' to contain '<b>Codex</b>'
+
+Expected: "<b>Codex</b>"
+Received: "<main class="work" aria-label="Historical origin"><div class="col head"><h1 title="Rename thread">Historical origin</h1><div class="seg" role="radiogroup" aria-label="What Diomedes may do"><button type="button" role="radio" aria-checked="true" class="on">Show me first</button><button type="button" role="radio" aria-checked="false" class="">Go ahead for this task</button></div></div><div class="col instr" aria-label="Thread instruments"><span><b>ask</b> <span class="lc">new-picker-model</span> <span class="lc">medium</span></span><span>runs <b>0</b></span><span class="grow"></span></div><p class="col permission-note">Each proposed file change needs its own exact OK.</p><div class="transcript"><div class="col"><div><div class="exchange"><div class="turn dio" data-thread-point=""><div class="who"><b>Diomedes</b><span class="mono">8:00 am</span><span class="tools"><button type="button">Copy</button></span></div><div class="body"><p>I am a different model.</p></div></div></div></div></div></div><p class="caption">Sending shares this instruction and selected documents with codex. The selected account is billed under its own plan. Tools are disabled; file proposals require approval.</p><div class="col compose"><form class="composer"><textarea rows="1" aria-label="Message this thread" placeholder="Ask or think out loud"></textarea><div class="bar"><div class="modes" role="radiogroup" aria-label="Mode"><button type="button" role="radio" aria-checked="true" class="on">ask</button><button type="button" role="radio" aria-checked="false" class="">plan</button><button type="button" role="radio" aria-checked="false" class="">build</button><button type="button" role="radio" aria-checked="false" class="">fix</button><span class="ind"><i></i><b></b></span></div><span class="cap">Nothing in the project changes.</span><button type="submit" class="send " aria-disabled="true">Send</button><span class="hint">Enter</span></div></form></div></main>"
+
+ ❯ tests/attribution-ui.test.ts:44:18
+     42|     const html = renderThread({ ...historicTurn, text: 'I am a differe…
+     43|       helper: { engine: 'codex', model: 'unverified-name', verified: f…
+     44|     expect(html).toContain('<b>Codex</b>');
+       |                  ^
+     45|     expect(html).not.toContain('<b>unverified-name</b>');
+     46|     expect(html).not.toContain('<b>Diomedes</b>');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/attribution-ui.test.ts > rendered historical attribution > preserves unknown historic origin instead of inventing a model
+AssertionError: expected '<main class="work" aria-label="Histor…' to contain '<b>Assistant</b>'
+
+Expected: "<b>Assistant</b>"
+Received: "<main class="work" aria-label="Historical origin"><div class="col head"><h1 title="Rename thread">Historical origin</h1><div class="seg" role="radiogroup" aria-label="What Diomedes may do"><button type="button" role="radio" aria-checked="true" class="on">Show me first</button><button type="button" role="radio" aria-checked="false" class="">Go ahead for this task</button></div></div><div class="col instr" aria-label="Thread instruments"><span><b>ask</b> <span class="lc">new-picker-model</span> <span class="lc">medium</span></span><span>runs <b>0</b></span><span class="grow"></span></div><p class="col permission-note">Each proposed file change needs its own exact OK.</p><div class="transcript"><div class="col"><div><div class="exchange"><div class="turn dio" data-thread-point=""><div class="who"><b>Diomedes</b><span class="mono">8:00 am</span><span class="tools"><button type="button">Copy</button></span></div><div class="body"><p>A saved answer.</p></div></div></div></div></div></div><p class="caption">Sending shares this instruction and selected documents with codex. The selected account is billed under its own plan. Tools are disabled; file proposals require approval.</p><div class="col compose"><form class="composer"><textarea rows="1" aria-label="Message this thread" placeholder="Ask or think out loud"></textarea><div class="bar"><div class="modes" role="radiogroup" aria-label="Mode"><button type="button" role="radio" aria-checked="true" class="on">ask</button><button type="button" role="radio" aria-checked="false" class="">plan</button><button type="button" role="radio" aria-checked="false" class="">build</button><button type="button" role="radio" aria-checked="false" class="">fix</button><span class="ind"><i></i><b></b></span></div><span class="cap">Nothing in the project changes.</span><button type="submit" class="send " aria-disabled="true">Send</button><span class="hint">Enter</span></div></form></div></main>"
+
+ ❯ tests/attribution-ui.test.ts:52:18
+     50|     const { helper: _helper, ...unknown } = historicTurn;
+     51|     const html = renderThread(unknown);
+     52|     expect(html).toContain('<b>Assistant</b>');
+       |                  ^
+     53|     expect(html).toContain('model not recorded');
+     54|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/attribution-ui.test.ts > rendered historical attribution > renders externally supplied model names as text
+AssertionError: expected '<main class="work" aria-label="Histor…' to contain '&lt;img'
+
+Expected: "&lt;img"
+Received: "<main class="work" aria-label="Historical origin"><div class="col head"><h1 title="Rename thread">Historical origin</h1><div class="seg" role="radiogroup" aria-label="What Diomedes may do"><button type="button" role="radio" aria-checked="true" class="on">Show me first</button><button type="button" role="radio" aria-checked="false" class="">Go ahead for this task</button></div></div><div class="col instr" aria-label="Thread instruments"><span><b>ask</b> <span class="lc">new-picker-model</span> <span class="lc">medium</span></span><span>runs <b>0</b></span><span class="grow"></span></div><p class="col permission-note">Each proposed file change needs its own exact OK.</p><div class="transcript"><div class="col"><div><div class="exchange"><div class="turn dio" data-thread-point=""><div class="who"><b>Diomedes</b><span class="mono">8:00 am</span><span class="tools"><button type="button">Copy</button></span></div><div class="body"><p>A saved answer.</p></div></div></div></div></div></div><p class="caption">Sending shares this instruction and selected documents with codex. The selected account is billed under its own plan. Tools are disabled; file proposals require approval.</p><div class="col compose"><form class="composer"><textarea rows="1" aria-label="Message this thread" placeholder="Ask or think out loud"></textarea><div class="bar"><div class="modes" role="radiogroup" aria-label="Mode"><button type="button" role="radio" aria-checked="true" class="on">ask</button><button type="button" role="radio" aria-checked="false" class="">plan</button><button type="button" role="radio" aria-checked="false" class="">build</button><button type="button" role="radio" aria-checked="false" class="">fix</button><span class="ind"><i></i><b></b></span></div><span class="cap">Nothing in the project changes.</span><button type="submit" class="send " aria-disabled="true">Send</button><span class="hint">Enter</span></div></form></div></main>"
+
+ ❯ tests/attribution-ui.test.ts:60:18
+     58|       helper: { engine: 'codex', model: '<img src=x onerror=alert(1)>'…
+     59|     expect(html).not.toContain('<img');
+     60|     expect(html).toContain('&lt;img');
+       |                  ^
+     61|   });
+     62| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed (4)
+   Start at  02:49:05
+   Duration  746ms (transform 122ms, setup 0ms, collect 261ms, tests 29ms, environment 0ms, prepare 82ms)
+

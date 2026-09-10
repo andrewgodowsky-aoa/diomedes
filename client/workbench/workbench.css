@@ -1,0 +1,94 @@
+.console .run-inspector {
+  min-width: 0;
+  border-block: 1px solid var(--hair);
+  color: var(--t2);
+  font: 400 var(--dm-type-body, 14px) / 1.5 var(--ui);
+}
+.console .run-inspector summary {
+  cursor: pointer;
+  padding: 8px 0;
+  color: var(--t1);
+}
+.console .run-inspector summary span {
+  margin-left: 12px;
+  color: var(--t3);
+  font-size: var(--dm-type-caption, 14px);
+}
+.console .run-inspector-body {
+  padding-bottom: 12px;
+}
+.console .run-inspector dl {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(0, 3fr);
+  gap: 6px 16px;
+  margin: 8px 0;
+}
+.console .run-inspector dt {
+  color: var(--t3);
+}
+.console .run-inspector dd {
+  margin: 0;
+}
+.console .run-inspector :is(dd, li, p, span, h3, small) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.console .run-inspector-code {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.console .run-inspector section {
+  border-top: 1px solid var(--hair);
+  padding-top: 10px;
+  margin-top: 10px;
+}
+.console .run-inspector h3 {
+  font: 500 var(--dm-type-caption, 14px) / 1.5 var(--ui);
+  margin: 0;
+  color: var(--t1);
+}
+.console .run-inspector p {
+  margin: 6px 0;
+}
+.console .run-inspector-record + .run-inspector-record {
+  border-top: 1px solid var(--hair);
+  padding-top: 8px;
+}
+.console .run-inspector :is(ul, ol) {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+.console .run-inspector li {
+  margin-block: 6px;
+}
+.console .run-inspector small {
+  display: block;
+  color: var(--t3);
+}
+.console .run-inspector-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+}
+.console .run-inspector button {
+  color: var(--light);
+  font: inherit;
+}
+.console .run-inspector button:disabled {
+  color: var(--t3);
+}
+.console .run-inspector :is(button, summary):focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 2px;
+}
+@container (max-width: 500px) {
+  .console .run-inspector dl {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .console .run-inspector dd {
+    margin-bottom: 6px;
+  }
+}

@@ -1,9 +1,15 @@
 import { createHash } from 'node:crypto';
+import { validateScopedAuthorization } from './trust/scope-grants.js';
 import { z } from 'zod';
 import type { ApprovalCommand, ApprovalIdentity, Need, ProjectState } from '../shared/types.js';
 import { ApiError, relativeName } from './paths.js';
 import type { WriteInput } from './store.js';
-import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites, identifyHarnessApproval } from './harness/approval.js';
+import {
+  CODEX_ENGINE,
+  FIXTURE_ENGINE,
+  harnessWrites,
+  identifyHarnessApproval,
+} from './harness/approval.js';
 
 import {
   commandIdSchema as commandId,
@@ -200,14 +206,17 @@ const incompatible = () =>
 
 /** Validate at load/recovery, not on every state read or duplicate command. */
 export function validateApprovalReceipts(state: ProjectState) {
-  const commands = new Set(
-    state.sessions.flatMap((session) => (session.receipt ? [session.receipt.commandId] : [])),
-  );
+  // One project-scoped command namespace: an exact receipt cannot reuse a Work
+  // or scope-grant command, and exact receipts cannot repeat each other.
+  const commands = new Set([
+    ...state.sessions.flatMap((session) => (session.receipt ? [session.receipt.commandId] : [])),
+    ...(state.scopeGrants ?? []).map((record) => record.grant.commandId),
+  ]);
   const events = new Map(state.history.map((entry) => [entry.id, entry]));
   const sessions = new Map(state.sessions.map((session) => [session.id, session]));
   for (const need of state.needs) {
     if (!need.approval) {
-      if (need.approvalReceipt || need.execution) throw incompatible();
+      if (need.approvalReceipt || need.execution || need.authorization) throw incompatible();
       continue;
     }
     if (
@@ -219,8 +228,10 @@ export function validateApprovalReceipts(state: ProjectState) {
     try {
       if (need.harness) {
         const engine = sessions.get(need.sessionId)?.engine.name;
-        if (![FIXTURE_ENGINE, CODEX_ENGINE].includes(engine ?? '')
-          || (engine === FIXTURE_ENGINE && need.approval.sources.length))
+        if (
+          ![FIXTURE_ENGINE, CODEX_ENGINE].includes(engine ?? '') ||
+          (engine === FIXTURE_ENGINE && need.approval.sources.length)
+        )
           throw incompatible();
         harnessWrites(state.project.id, need);
       }
@@ -238,6 +249,10 @@ export function validateApprovalReceipts(state: ProjectState) {
       throw incompatible();
     }
     const receipt = need.approvalReceipt;
+    if (need.authorization) {
+      validateScopedAuthorization(state, need);
+      continue;
+    }
     if (!receipt) {
       if (need.execution || need.state === 'go-ahead' || need.state === 'declined')
         throw incompatible();
@@ -303,7 +318,10 @@ export function validateApprovalReceipts(state: ProjectState) {
             before: file.before,
             after: file.after,
           })),
-        }) !== (need.harness ? actionDigest(harnessWrites(state.project.id, need)) : receipt.actionDigest)
+        }) !==
+          (need.harness
+            ? actionDigest(harnessWrites(state.project.id, need))
+            : receipt.actionDigest)
       )
         throw incompatible();
     }

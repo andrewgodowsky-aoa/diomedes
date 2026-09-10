@@ -1,0 +1,10 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/autonomy-workbench
+
+ ✓ tests/attribution-ui.test.ts (4 tests) 23ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  02:56:43
+   Duration  796ms (transform 153ms, setup 0ms, collect 313ms, tests 23ms, environment 0ms, prepare 96ms)
+

@@ -1,0 +1,12 @@
+npm notice run diomedes@0.1.1 npx
+npm notice run vitest run tests/harness-host.test.ts -t expired approval is refused
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/autonomy-workbench
+
+ ✓ tests/harness-host.test.ts (22 tests | 21 skipped) 262ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 21 skipped (22)
+   Start at  04:36:39
+   Duration  3.36s (transform 389ms, setup 0ms, collect 944ms, tests 262ms, environment 0ms, prepare 91ms)
+

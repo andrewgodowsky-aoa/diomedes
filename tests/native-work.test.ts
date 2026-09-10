@@ -1003,7 +1003,7 @@ describe('team wake through the adapter', () => {
       permission: 'task',
     });
     const thread = current.conversations.find((item) => item.id === identity.member.threadId)!;
-    expect(thread.turns.map((item) => item.role)).toEqual(['diomedes']);
+    expect(thread.turns.map((item) => item.role)).toEqual(['assistant']);
     expect(thread.turns[0].text).toContain('Picked up a message from the team');
     fake.client.finish();
     current = await until((value) => value.sessions[0].state === 'done');

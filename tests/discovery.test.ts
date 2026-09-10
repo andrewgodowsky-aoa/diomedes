@@ -76,7 +76,9 @@ function localAiOkFetch(): typeof globalThis.fetch {
     })) as typeof globalThis.fetch;
 }
 
-function noRuntimeIntegrations(discovery: () => Promise<{ engines: never[] } & Record<string, unknown>>) {
+function noRuntimeIntegrations(
+  discovery: () => Promise<{ engines: never[] } & Record<string, unknown>>,
+) {
   return createIntegrations({
     createClient: (async () => {
       throw new Error('The synthetic runtime is unavailable.');
@@ -561,7 +563,7 @@ describe('Windows launcher shims', () => {
     expect(plain.verbatim).toBe(false);
     const wrapped = commandFor('C:\\a b\\agent.cmd', ['--version'])!;
     expect(wrapped.file.toLowerCase()).toMatch(/cmd\.exe$/);
-    expect(wrapped.args).toEqual(['/d', '/s', '/c', '"C:\\a b\\agent.cmd" --version']);
+    expect(wrapped.args).toEqual(['/d', '/s', '/c', '""C:\\a b\\agent.cmd" --version"']);
     expect(wrapped.verbatim).toBe(true);
     expect(commandFor('C:\\x\\a"b & calc\\agent.cmd', ['--version'])).toBeUndefined();
     expect(commandFor('C:\\x\\agent.cmd', ['--version', '& calc'])).toBeUndefined();

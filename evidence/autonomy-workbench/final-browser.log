@@ -1,0 +1,68 @@
+npm notice run diomedes@0.1.1 npx
+npm notice run playwright test --workers=1
+[WebServer] Diomedes: http://127.0.0.1:5174. Press Ctrl+C to stop both local processes.
+[WebServer] (node:3324) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer]   VITE v7.3.6  ready in 380 ms
+[WebServer] 
+[WebServer]   ➜  Local:   http://127.0.0.1:5174/
+[WebServer] (node:7892) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Diomedes local service ready: http://127.0.0.1:47632
+[WebServer] App data: F:\Achilles\diomedes-wt\autonomy-workbench\test-results\app-data-1789028755362-19936\data
+[WebServer] Project root: F:\Achilles\diomedes-wt\autonomy-workbench\test-results\app-data-1789028755362-19936\projects
+
+Running 32 tests using 1 worker
+
+(node:38348) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Error: fixture request cancelled
+    at AbortSignal.abort (file:///F:/Achilles/diomedes-wt/autonomy-workbench/tests/ai-engines-ui.spec.ts:85:20)
+    at AbortSignal.[nodejs.internal.kHybridDispatch] (node:internal/event_target:843:20)
+    at AbortSignal.dispatchEvent (node:internal/event_target:776:26)
+    at runAbort (node:internal/abort_controller:486:10)
+    at abortSignal (node:internal/abort_controller:463:5)
+    at AbortController.abort (node:internal/abort_controller:505:5)
+    at ServerResponse.<anonymous> (file:///F:/Achilles/diomedes-wt/autonomy-workbench/server/app.ts:543:42)
+    at Object.onceWrapper (node:events:633:28)
+    at ServerResponse.emit (node:events:519:28)
+    at emitCloseNT (node:_http_server:1066:10)
+    at Socket.onServerResponseClose (node:_http_server:285:5)
+    at Socket.emit (node:events:531:35)
+    at TCP.<anonymous> (node:net:347:12)
+    at TCP.callbackTrampoline (node:internal/async_hooks:130:17)
+  ok  1 tests\ai-engines-ui.spec.ts:233:1 › Console discovers, selects, streams, cancels, and approves all three fixture engines (4.6s)
+  ok  2 tests\app-updates-ui.spec.ts:159:1 › Settings > App updates checks, downloads, verifies and hands off (540ms)
+  ok  3 tests\autonomy-ui.spec.ts:216:1 › scope confirmation covers the same task; recorded actor survives a picker mutation (1.7s)
+  ok  4 tests\autonomy-ui.spec.ts:317:1 › out-of-scope proposals wait for exact review; revocation forces exact approval again (1.3s)
+  ok  5 tests\autonomy-ui.spec.ts:392:1 › long names hold at 800px; Stop is truthful and inspector refresh stays honest (936ms)
+  ok  6 tests\field.spec.ts:102:1 › C01: the rail lists threads, carries New, marks the selection, and offers the three views (1.4s)
+  ok  7 tests\field.spec.ts:122:1 › C02: the view switch swaps Thread, Board, and Team (470ms)
+  ok  8 tests\field.spec.ts:137:1 › C03: the Board shows the Ready task, and Show-me-first confirms instead of starting (543ms)
+  ok  9 tests\field.spec.ts:167:1 › C04: the palette finds and filters, Escape closes, and the Workbook keeps its own search (770ms)
+  ok 10 tests\field.spec.ts:203:1 › C05: the wake is skipped under automation (392ms)
+  ok 11 tests\field.spec.ts:210:1 › C06: the Ember scheme applies its package and token, then Field is restored (719ms)
+  ok 12 tests\field.spec.ts:235:1 › C07: the thread head states the exact-OK rule while an approval is open (589ms)
+  ok 13 tests\native-ui.spec.ts:115:1 › Native UI: consent, exact proposal preview, approval, Review and History with an injected generator (1.3s)
+  ok 14 tests\native-ui.spec.ts:207:1 › Console task Start recovers both lost responses from state without duplicating Work (1.2s)
+  ok 15 tests\native-ui.spec.ts:273:1 › Console exact approval recovers both lost responses from durable state even with task permission (1.0s)
+  ok 16 tests\ui.spec.ts:60:1 › F01-F02: first run preserves detail and approvals, supports AI skip, and resumes (1.9s)
+  ok 17 tests\ui.spec.ts:172:1 › F04, F06: sample project opens and a plan edit survives reload with History (869ms)
+  ok 18 tests\ui.spec.ts:232:1 › F10: plan steps become real tasks with provenance and a History entry (901ms)
+  ok 19 tests\ui.spec.ts:273:1 › F11-F13: work asks twice, decline skips creation, and the remaining change is recorded (5.1s)
+  ok 20 tests\ui.spec.ts:368:1 › F15-F16: Review keeps the changed file and History exposes the recorded change (716ms)
+  ok 21 tests\ui.spec.ts:402:1 › F07-F08: restore and Undo recover both versions; newer edits expose conflict choices (1.2s)
+  ok 22 tests\ui.spec.ts:468:1 › F14: Stop settles a started sample promptly and expires its approval (1.0s)
+  ok 23 tests\ui.spec.ts:496:1 › F17, F20-F22: surface switches preserve data; visible pages meet copy and layout checks (2.1s)
+  ok 24 tests\ui.spec.ts:695:1 › Draft recovery: Settings, reload and same-named files in separate projects preserve writing and stale-save conflicts (2.1s)
+  ok 25 tests\ui.spec.ts:827:1 › Services roster: every reported engine listed with switch discipline; Guided hides non-ready adapters; Console has no Connections (3.4s)
+  ok 26 tests\ui.spec.ts:903:1 › Usage: chip, signal bar and Settings bars from the test-mode snapshot (739ms)
+  ok 27 tests\ui.spec.ts:977:1 › Landing: ask box carries a draft into the chosen project (497ms)
+  ok 28 tests\ui.spec.ts:1032:1 › Unavailable helper: the application notice has no invented runtime caption (564ms)
+  ok 29 tests\ui.spec.ts:1047:1 › Engine choices: the list comes from the engine, and the levels follow the choice (672ms)
+  ok 30 tests\ui.spec.ts:1130:1 › Modes: the Workbook composer shows four modes and Fix needs what is failing (667ms)
+  ok 31 tests\ui.spec.ts:1199:1 › Enter sends from the Workbook composer and Shift+Enter adds a line (580ms)
+  ok 32 tests\ui.spec.ts:1227:1 › Usage: navigation preserves a concurrent engine setting while refresh is delayed (474ms)
+
+  32 passed (46.6s)

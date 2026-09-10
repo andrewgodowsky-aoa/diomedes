@@ -198,7 +198,7 @@ function taskEntries(ctx: PaletteContext): PaletteEntry[] {
       }
     }
     if (state === 'working') {
-      actions.push({ label: 'Pause', run: () => void h.pauseTask(task) });
+      actions.push({ label: 'Stop', run: () => void h.pauseTask(task) });
       actions.push({ label: 'Team', run: () => h.openTeam(task) });
     }
     if (state === 'review') {

@@ -1,0 +1,10 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/autonomy-workbench
+
+········································
+
+ Test Files  4 passed (4)
+      Tests  40 passed (40)
+   Start at  03:47:58
+   Duration  1.37s (transform 219ms, setup 0ms, collect 854ms, tests 72ms, environment 1ms, prepare 444ms)
+

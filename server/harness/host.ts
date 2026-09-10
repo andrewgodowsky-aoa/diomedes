@@ -27,6 +27,25 @@ const stamp = z.string().refine((value) => Number.isFinite(Date.parse(value)));
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
 const errorRecord = z.object({ name: z.string(), message: z.string() }).nullable();
 const usage = z.object({ units: integer, modelCalls: integer, toolCalls: integer });
+// Per-step provenance from trustworthy adapter/runtime metadata. Optional so
+// legacy records without origin remain readable; unknown is never invented.
+// When present it is validated but never alters intent hashes or approvals.
+const stepOrigin = z
+  .object({
+    protocolVersion: z.literal(1),
+    mode: z.enum(['direct', 'supervisor', 'application']),
+    engine: z.object({ id: z.string(), version: z.string().nullable() }).nullable(),
+    model: z.object({
+      requested: z.string().nullable(),
+      reported: z.string().nullable(),
+      source: z.enum(['runtime', 'not-recorded']),
+    }),
+    worker: z.object({ id: z.string(), name: z.string() }).optional(),
+    producerId: z.string().optional(),
+    executorId: z.string().optional(),
+    accountRoute: z.string().nullable().optional(),
+  })
+  .optional();
 const readableRun = z.object({
   v: z.literal(1),
   id: z.string(),
@@ -118,6 +137,7 @@ const readableRun = z.object({
       ]),
       output: z.json(),
       outputHash: sha.nullable(),
+      origin: stepOrigin,
       leaseFence: integer,
       startedAt: stamp.nullable(),
       endedAt: stamp.nullable(),
@@ -276,9 +296,18 @@ class HostRunService extends RunService {
   }
 }
 
-export function createHarnessHost({ store, dataDir, currentAuthority, codexGenerator, codexAccountRoute }: {
-  store: Store; dataDir: string; currentAuthority?: ResolveHarnessAuthority;
-  codexGenerator?: typeof askCodex; codexAccountRoute?: () => Promise<string>;
+export function createHarnessHost({
+  store,
+  dataDir,
+  currentAuthority,
+  codexGenerator,
+  codexAccountRoute,
+}: {
+  store: Store;
+  dataDir: string;
+  currentAuthority?: ResolveHarnessAuthority;
+  codexGenerator?: typeof askCodex;
+  codexAccountRoute?: () => Promise<string>;
 }) {
   if (path.resolve(dataDir) !== store.dataDir)
     throw new Error('The harness must use the Store data folder.');
@@ -290,7 +319,8 @@ export function createHarnessHost({ store, dataDir, currentAuthority, codexGener
     clock: Date.now,
     policyVersion: HARNESS_POLICY_VERSION,
     redact,
-    authorizeEgress: (runId, intent, principal, phase) => codex.authorize(runId, intent, principal, phase),
+    authorizeEgress: (runId, intent, principal, phase) =>
+      codex.authorize(runId, intent, principal, phase),
   });
   const tools = new ToolRegistry();
   const adapter = new ScriptedModelAdapter(async (runId) => {
@@ -301,9 +331,15 @@ export function createHarnessHost({ store, dataDir, currentAuthority, codexGener
     };
   });
   registerFormatReport(tools, store, runs);
-  codex = new CodexEngineAdapter(store, runs, tools, HARNESS_POLICY_VERSION,
+  codex = new CodexEngineAdapter(
+    store,
+    runs,
+    tools,
+    HARNESS_POLICY_VERSION,
     currentAuthority ?? resolveTrustAuthority,
-    codexGenerator, codexAccountRoute);
+    codexGenerator,
+    codexAccountRoute,
+  );
   const adapters = { 'native-fixture': adapter, codex };
   const bridge = new HarnessBridge(store, runs, tools, adapter, redact, codex);
   files.saved = (run) => bridge.enqueue(run);
@@ -356,31 +392,59 @@ export function createHarnessHost({ store, dataDir, currentAuthority, codexGener
     codex,
     /** Host-only until authenticated client admission is supplied by Trust.
      * Reuses the same command parser, collision check, receipt and Store lock. */
-    startCodexReport(projectId: string, body: Record<string, unknown>, selection: { model: string; effort: string }) {
+    startCodexReport(
+      projectId: string,
+      body: Record<string, unknown>,
+      selection: { model: string; effort: string },
+    ) {
       return store.locked(async () => {
-        const command = parseWorkCommand({ ...body, model: selection.model, effort: selection.effort });
-        if (!command || command.request.capabilityId !== CODEX_REPORT.id
-          || command.request.route !== 'codex' || command.request.consent !== true
-          || !command.request.instruction || command.request.threadId)
-          throw new ApiError(400, 'Provide an explicit versioned Codex report command without team context.');
+        const command = parseWorkCommand({
+          ...body,
+          model: selection.model,
+          effort: selection.effort,
+        });
+        if (
+          !command ||
+          command.request.capabilityId !== CODEX_REPORT.id ||
+          command.request.route !== 'codex' ||
+          command.request.consent !== true ||
+          !command.request.instruction ||
+          command.request.threadId
+        )
+          throw new ApiError(
+            400,
+            'Provide an explicit versioned Codex report command without team context.',
+          );
         const authority = await codex.authority(projectId);
         if (!store.settings.services?.codex || !store.settings.permissions.sending)
           throw new ApiError(403, 'Current sending permission is disabled.');
-        const previous = store.workCommand(projectId, command.admission.commandId, command.admission.payloadDigest);
+        const previous = store.workCommand(
+          projectId,
+          command.admission.commandId,
+          command.admission.payloadDigest,
+        );
         if (previous) return structuredClone(previous);
         const state = store.state(projectId);
-        if (!state.tasks.some(t => t.id === command.request.taskId && !t.deletedAt))
+        if (!state.tasks.some((t) => t.id === command.request.taskId && !t.deletedAt))
           throw new ApiError(404, 'This task was not found.');
-        if (state.sessions.some(s => ['queued', 'working', 'waiting'].includes(s.state)))
+        if (state.sessions.some((s) => ['queued', 'working', 'waiting'].includes(s.state)))
           throw new ApiError(409, 'This project already has work in progress.');
         store.checkWorkReceiptCapacity(projectId);
         const runId = identifier('R');
         const input = await codex.prepare(runId, projectId, {
-          instruction: command.request.instruction, sources: command.request.sources,
-          consent: true, ...selection,
+          instruction: command.request.instruction,
+          sources: command.request.sources,
+          consent: true,
+          ...selection,
         });
-        return bridge.start(projectId, command.request.taskId, CODEX_REPORT.id, command.request.instruction,
-          authority.principal, { runId, input, admission: command.admission });
+        return bridge.start(
+          projectId,
+          command.request.taskId,
+          CODEX_REPORT.id,
+          command.request.instruction,
+          authority.principal,
+          { runId, input, admission: command.admission },
+        );
       });
     },
     redact,

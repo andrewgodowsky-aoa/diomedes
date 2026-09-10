@@ -1,0 +1,42 @@
+/* Settings > App updates. Scoped to .app-updates; the shared Console
+   system owns typography, surfaces and controls. */
+.app-updates {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.app-updates .version-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.app-updates .version-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.app-updates .version-row > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.app-updates .notes-row a {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.app-updates .code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.app-updates .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

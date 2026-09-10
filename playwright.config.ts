@@ -52,7 +52,14 @@ fs.writeFileSync(
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: ['ui.spec.ts', 'native-ui.spec.ts', 'field.spec.ts'],
+  testMatch: [
+    'ui.spec.ts',
+    'native-ui.spec.ts',
+    'field.spec.ts',
+    'ai-engines-ui.spec.ts',
+    'autonomy-ui.spec.ts',
+    'app-updates-ui.spec.ts',
+  ],
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
@@ -63,9 +70,11 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${clientPort}`,
     browserName: 'chromium',
     launchOptions: {
-      executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH ?? (process.platform === 'win32'
-        ? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
-        : undefined),
+      executablePath:
+        process.env.PLAYWRIGHT_EXECUTABLE_PATH ??
+        (process.platform === 'win32'
+          ? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
+          : undefined),
     },
     viewport: { width: 1440, height: 900 },
     screenshot: 'only-on-failure',

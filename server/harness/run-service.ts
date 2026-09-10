@@ -11,6 +11,7 @@
  * happened needs sink-specific protection or reconciliation, never a guess.
  */
 import { randomBytes } from 'node:crypto';
+import type { OriginSnapshot } from '../../shared/attribution.js';
 import type {
   CapabilityManifest,
   Destination,
@@ -64,12 +65,27 @@ export interface StepDefinition {
   destination?: Destination;
   trustedInputRequired?: boolean;
   label?: HarnessLabel | null;
+  /**
+   * Host-only provenance for this step, from trustworthy adapter/runtime
+   * metadata. Never derived from generated prose or a model-returned JSON
+   * self-identification, never part of the intent hash, never a grant.
+   * When given it is stored once and never overwritten by later calls.
+   */
+  origin?: OriginSnapshot;
 }
 export interface StepContext {
   input: Json;
   idempotencyKey: string;
   attempt: number;
   signal: AbortSignal;
+  /**
+   * Host-only channel for runtime-reported provenance discovered during the
+   * handler (for example a transcript model id). Host code calls this with
+   * adapter/runtime metadata only; generated text is never parsed here.
+   * The service persists the first snapshot and ignores later reports,
+   * so replays never relabel an existing step.
+   */
+  reportOrigin?: (origin: OriginSnapshot) => void;
 }
 export type StepHandler<T> = (context: StepContext) => Promise<T> | T;
 export type HarnessHook = (context: {
@@ -105,6 +121,46 @@ const EFFECTS: Effect[] = ['pure', 'read', 'idempotent', 'non-idempotent'];
 const KINDS: StepKind[] = ['model', 'tool', 'transform', 'approval', 'wait'];
 const STEP_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
+/** Host-supplied provenance only. Shape-checked here; the readableRun schema re-checks on read. */
+function validateOrigin(origin: unknown): asserts origin is OriginSnapshot {
+  const o = origin as Partial<OriginSnapshot> | null;
+  if (!o || typeof o !== 'object' || o.protocolVersion !== 1)
+    throw new HarnessError('invalid_origin', 'A step origin needs protocol version 1.');
+  if (o.mode !== 'direct' && o.mode !== 'supervisor' && o.mode !== 'application')
+    throw new HarnessError('invalid_origin', 'Unknown origin mode.');
+  if (o.engine !== null && o.engine !== undefined) {
+    const e = o.engine as { id?: unknown; version?: unknown };
+    if (
+      typeof e.id !== 'string' ||
+      !e.id ||
+      (e.version !== null && e.version !== undefined && typeof e.version !== 'string')
+    )
+      throw new HarnessError('invalid_origin', 'Invalid origin engine.');
+  } else if (o.engine !== null && o.engine !== undefined)
+    throw new HarnessError('invalid_origin', 'Invalid origin engine.');
+  const m = o.model as { requested?: unknown; reported?: unknown; source?: unknown } | null;
+  if (
+    !m ||
+    (m.source !== 'runtime' && m.source !== 'not-recorded') ||
+    (m.requested !== null && m.requested !== undefined && typeof m.requested !== 'string') ||
+    (m.reported !== null && m.reported !== undefined && typeof m.reported !== 'string')
+  )
+    throw new HarnessError('invalid_origin', 'Invalid origin model.');
+  if (o.worker !== undefined) {
+    const w = o.worker as { id?: unknown; name?: unknown };
+    if (!w || typeof w.id !== 'string' || !w.id || typeof w.name !== 'string' || !w.name)
+      throw new HarnessError('invalid_origin', 'Invalid origin worker.');
+  }
+  for (const key of ['producerId', 'executorId'] as const) {
+    const v = (o as Record<string, unknown>)[key];
+    if (v !== undefined && (typeof v !== 'string' || !v))
+      throw new HarnessError('invalid_origin', `Invalid origin ${key}.`);
+  }
+  const route = (o as Record<string, unknown>).accountRoute;
+  if (route !== undefined && route !== null && typeof route !== 'string')
+    throw new HarnessError('invalid_origin', 'Invalid origin account route.');
+}
+
 // A provider read can disclose context, consume quota and finish remotely even
 // when its acknowledgement is lost. Its effect remains read (no local write),
 // but unknown dispatch is never safe to retry without provider reconciliation.
@@ -125,7 +181,12 @@ export class RunService {
   private readonly clock: () => number;
   private readonly policyVersion: string;
   private readonly redact: (text: string) => string;
-  private readonly authorizeEgress?: (runId: string, intent: StepIntent, principal: HarnessPrincipal, phase: 'dispatch' | 'result') => Promise<void>;
+  private readonly authorizeEgress?: (
+    runId: string,
+    intent: StepIntent,
+    principal: HarnessPrincipal,
+    phase: 'dispatch' | 'result',
+  ) => Promise<void>;
 
   constructor(
     private readonly store: RunStore,
@@ -135,7 +196,12 @@ export class RunService {
       /** Applied to every error message before it is persisted. The host passes its secret scrubber. */
       redact?: (text: string) => string;
       /** Mandatory host grant check for external steps. Never exposed as a client capability. */
-      authorizeEgress?: (runId: string, intent: StepIntent, principal: HarnessPrincipal, phase: 'dispatch' | 'result') => Promise<void>;
+      authorizeEgress?: (
+        runId: string,
+        intent: StepIntent,
+        principal: HarnessPrincipal,
+        phase: 'dispatch' | 'result',
+      ) => Promise<void>;
     } = {},
   ) {
     this.clock = options.clock ?? Date.now;
@@ -234,6 +300,7 @@ export class RunService {
   }
 
   private intentOf(definition: StepDefinition): StepIntent {
+    if (definition.origin !== undefined) validateOrigin(definition.origin);
     const d = {
       kind: 'tool' as StepKind,
       effect: 'pure' as Effect,
@@ -244,7 +311,15 @@ export class RunService {
       trustedInputRequired: false,
       ...definition,
     };
-    if (typeof d.id !== 'string' || !STEP_ID.test(d.id) || typeof d.version !== 'string' || !d.version)
+    // Provenance never enters the intent hash: the intent below copies only
+    // authority fields, so v1 approvals stay bound to the exact intent while
+    // origin stays alongside.
+    if (
+      typeof d.id !== 'string' ||
+      !STEP_ID.test(d.id) ||
+      typeof d.version !== 'string' ||
+      !d.version
+    )
       throw new HarnessError('invalid_step', 'A stable step id and version are required.');
     if (!EFFECTS.includes(d.effect)) throw new HarnessError('invalid_step', 'Unknown effect.');
     if (!KINDS.includes(d.kind)) throw new HarnessError('invalid_step', 'Unknown step kind.');
@@ -271,12 +346,14 @@ export class RunService {
     return copy(intent);
   }
 
-  private ensure(run: HarnessRun, intent: StepIntent): StepRecord {
+  private ensure(run: HarnessRun, intent: StepIntent, origin?: OriginSnapshot): StepRecord {
     const intentHash = digest(intent);
     const existing = run.steps.find((s) => s.intent.stepId === intent.stepId);
     if (existing) {
       if (existing.intentHash !== intentHash)
         throw new HarnessError('intent_mismatch', 'step intent mismatch; fork instead');
+      // Replays never reinterpret: an existing snapshot wins, a legacy record
+      // without one stays unknown rather than inventing provenance.
       return existing;
     }
     const record: StepRecord = {
@@ -286,6 +363,7 @@ export class RunService {
       state: 'pending',
       output: null,
       outputHash: null,
+      ...(origin === undefined ? {} : { origin: copy(origin) }),
       leaseFence: 0,
       startedAt: null,
       endedAt: null,
@@ -322,9 +400,16 @@ export class RunService {
       for (const name of capability.tools)
         if (!input.tools.has(name))
           throw new HarnessError('unknown_tool', `Unknown tool named by the capability: ${name}.`);
-    if (input.tenantId !== input.principal.tenantId || input.projectId !== input.principal.projectId)
-      throw new HarnessError('scope_mismatch', 'The principal does not belong to this tenant and project.');
-    const id = input.id === undefined ? `R${randomBytes(6).toString('hex')}` : validateRunId(input.id);
+    if (
+      input.tenantId !== input.principal.tenantId ||
+      input.projectId !== input.principal.projectId
+    )
+      throw new HarnessError(
+        'scope_mismatch',
+        'The principal does not belong to this tenant and project.',
+      );
+    const id =
+      input.id === undefined ? `R${randomBytes(6).toString('hex')}` : validateRunId(input.id);
     const at = this.now();
     const run: HarnessRun = {
       v: HARNESS_CONTRACT_VERSION,
@@ -394,10 +479,19 @@ export class RunService {
       for (const step of run.steps) {
         if (step.state !== 'running') continue;
         step.state = needsReconciliation(step.intent) ? 'reconcile_required' : 'retry_wait';
-        this.note(run, `step.${step.state}`, { why: 'exclusive host startup' }, step.intent.stepId, step.attempt);
+        this.note(
+          run,
+          `step.${step.state}`,
+          { why: 'exclusive host startup' },
+          step.intent.stepId,
+          step.attempt,
+        );
       }
-      run.state = run.steps.some((step) => step.state === 'reconcile_required') ? 'reconcile_required'
-        : run.steps.some((step) => step.state === 'waiting_approval') ? 'waiting' : 'queued';
+      run.state = run.steps.some((step) => step.state === 'reconcile_required')
+        ? 'reconcile_required'
+        : run.steps.some((step) => step.state === 'waiting_approval')
+          ? 'waiting'
+          : 'queued';
       this.note(run, 'run.recovered', { fence: run.fence });
       await this.commit(run);
     });
@@ -443,8 +537,14 @@ export class RunService {
   ): Promise<T> {
     this.scope(await this.load(runId), principal);
     const intent = this.intentOf(definition);
-    const checkPolicy = (phase: 'dispatch' | 'result' = 'dispatch') => authorize(intent, principal, this.authorizeEgress
-      ? () => this.authorizeEgress!(runId, copy(intent), copy(principal), phase) : undefined);
+    const checkPolicy = (phase: 'dispatch' | 'result' = 'dispatch') =>
+      authorize(
+        intent,
+        principal,
+        this.authorizeEgress
+          ? () => this.authorizeEgress!(runId, copy(intent), copy(principal), phase)
+          : undefined,
+      );
     await checkPolicy();
     for (const hook of this.hooks)
       await hook({ runId, step: copy(intent), principal: copy(principal) });
@@ -453,10 +553,13 @@ export class RunService {
     const start: StartOutcome = await this.serialize(runId, async () => {
       const run = await this.load(runId);
       if (run.state === 'cancelled')
-        throw new HarnessError('run_cancelled', `This run was cancelled: ${run.cancelReason ?? ''}`.trim());
+        throw new HarnessError(
+          'run_cancelled',
+          `This run was cancelled: ${run.cancelReason ?? ''}`.trim(),
+        );
       this.guard(run, owner);
       const before = run.steps.length;
-      const s = this.ensure(run, intent);
+      const s = this.ensure(run, intent, definition.origin);
       let changed = run.steps.length !== before;
       const finish = async (outcome: StartOutcome) => {
         // A replayed observation is a read; only a new record or a state change is written.
@@ -473,7 +576,13 @@ export class RunService {
       if (s.state === 'running' && needsReconciliation(intent)) {
         s.state = 'reconcile_required';
         run.state = 'reconcile_required';
-        this.note(run, 'step.reconcile_required', { why: 'ownership changed while running' }, s.intent.stepId, s.attempt);
+        this.note(
+          run,
+          'step.reconcile_required',
+          { why: 'ownership changed while running' },
+          s.intent.stepId,
+          s.attempt,
+        );
         return finish({ blocked: 'reconciliation required' });
       }
       if (s.attempt >= intent.maxAttempts) {
@@ -493,7 +602,13 @@ export class RunService {
         if (!approval) {
           s.state = 'waiting_approval';
           run.state = 'waiting';
-          this.note(run, 'step.waiting_approval', { intentHash: s.intentHash }, s.intent.stepId, s.attempt);
+          this.note(
+            run,
+            'step.waiting_approval',
+            { intentHash: s.intentHash },
+            s.intent.stepId,
+            s.attempt,
+          );
           return finish({ suspended: 'approval' });
         }
         approval.consumedAt ??= this.now();
@@ -539,6 +654,12 @@ export class RunService {
     if ('blocked' in start) throw new HarnessError('blocked', start.blocked);
 
     const signal = this.controller(runId).signal;
+    let reportedOrigin: OriginSnapshot | undefined;
+    const reportOrigin = (origin: OriginSnapshot) => {
+      validateOrigin(origin);
+      // First report wins within one attempt; replays never reach the handler.
+      reportedOrigin ??= copy(origin);
+    };
     try {
       signal.throwIfAborted();
       await checkPolicy();
@@ -547,6 +668,7 @@ export class RunService {
         idempotencyKey: start.key,
         attempt: start.attempt,
         signal,
+        reportOrigin,
       });
       const encoded = canonical(output);
       await checkPolicy('result');
@@ -559,6 +681,16 @@ export class RunService {
         s.state = 'succeeded';
         s.output = JSON.parse(encoded) as Json;
         s.outputHash = digest(s.output);
+        // Immutable provenance: only a step without a snapshot gains one, from
+        // the host-only channel (definition first, handler report second).
+        // Generated output never sets it; a replay never reaches this commit.
+        if (s.origin === undefined) {
+          const first = reportedOrigin ?? definition.origin;
+          if (first !== undefined) {
+            validateOrigin(first);
+            s.origin = copy(first);
+          }
+        }
         s.endedAt = this.now();
         this.note(run, 'step.succeeded', { outputHash: s.outputHash }, s.intent.stepId, s.attempt);
         await this.commit(run);
@@ -577,6 +709,12 @@ export class RunService {
           s.state = state;
           s.endedAt = this.now();
           s.error = this.describeError(error);
+          // A failed attempt keeps dispatch-time provenance when the step has
+          // none yet; runtime-reported details wait for a successful attempt.
+          if (s.origin === undefined && definition.origin !== undefined) {
+            validateOrigin(definition.origin);
+            s.origin = copy(definition.origin);
+          }
           if (state === 'reconcile_required') run.state = 'reconcile_required';
           this.note(run, `step.${state}`, { errorType: s.error.name }, s.intent.stepId, s.attempt);
           await this.commit(run);
@@ -596,8 +734,10 @@ export class RunService {
       throw new HarnessError('invalid_decision', 'A decision is approved or denied.');
     if (units(decision.ttlMs, 'Approval TTL') === 0)
       throw new HarnessError('invalid_decision', 'A positive approval TTL is required.');
-    const deadline = Math.min(this.clock() + decision.ttlMs,
-      decision.expiresAt === undefined ? Infinity : Date.parse(decision.expiresAt));
+    const deadline = Math.min(
+      this.clock() + decision.ttlMs,
+      decision.expiresAt === undefined ? Infinity : Date.parse(decision.expiresAt),
+    );
     if (!Number.isFinite(deadline))
       throw new HarnessError('invalid_decision', 'A valid approval deadline is required.');
     return this.serialize(decision.runId, async () => {
@@ -608,7 +748,10 @@ export class RunService {
         throw new HarnessError('not_waiting', 'Step is not waiting for approval.');
       const now = this.clock();
       if (now >= deadline)
-        throw new HarnessError('approval_expired', 'The approval window expired before its decision could be saved.');
+        throw new HarnessError(
+          'approval_expired',
+          'The approval window expired before its decision could be saved.',
+        );
       // The approval binds to the authority current at decision time: the
       // deciding principal's generation. A step consumes it only under that
       // same generation, so a rotation needs a fresh decision, and a fresh
@@ -631,7 +774,12 @@ export class RunService {
       this.note(
         run,
         'approval.decided',
-        { decision: approval.decision, intentHash: approval.intentHash, expiresAt: approval.expiresAt, decidedBy: approval.decidedBy },
+        {
+          decision: approval.decision,
+          intentHash: approval.intentHash,
+          expiresAt: approval.expiresAt,
+          decidedBy: approval.decidedBy,
+        },
         s.intent.stepId,
         s.attempt,
       );
@@ -669,8 +817,18 @@ export class RunService {
         if (s.state === 'running' && needsReconciliation(s.intent)) {
           s.state = 'reconcile_required';
           s.endedAt = this.now();
-          this.note(run, 'step.reconcile_required', { why: 'cancelled while running' }, s.intent.stepId, s.attempt);
-        } else if (['running', 'pending', 'waiting_approval', 'waiting_event', 'retry_wait'].includes(s.state)) {
+          this.note(
+            run,
+            'step.reconcile_required',
+            { why: 'cancelled while running' },
+            s.intent.stepId,
+            s.attempt,
+          );
+        } else if (
+          ['running', 'pending', 'waiting_approval', 'waiting_event', 'retry_wait'].includes(
+            s.state,
+          )
+        ) {
           s.state = 'cancelled';
           s.endedAt = this.now();
         }
@@ -689,7 +847,10 @@ export class RunService {
       if (run.state === 'completed') return;
       if (run.state === 'cancelled')
         throw new HarnessError('run_cancelled', 'This run was cancelled and cannot complete.');
-      if (run.state === 'reconcile_required' || run.steps.some((s) => s.state === 'reconcile_required'))
+      if (
+        run.state === 'reconcile_required' ||
+        run.steps.some((s) => s.state === 'reconcile_required')
+      )
         throw new HarnessError(
           'reconcile_required',
           'A step needs reconciliation before this run can complete.',
@@ -731,7 +892,11 @@ export class RunService {
       this.guard(run, owner);
       run.transcripts[providerId] = copy(transcript);
       run.contextRevision += 1;
-      this.note(run, 'transcript.recorded', { providerId, lineageId: transcript.lineageId, prefixHash: transcript.prefixHash });
+      this.note(run, 'transcript.recorded', {
+        providerId,
+        lineageId: transcript.lineageId,
+        prefixHash: transcript.prefixHash,
+      });
       await this.commit(run);
     });
   }

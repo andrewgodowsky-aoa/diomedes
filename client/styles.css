@@ -32,7 +32,7 @@
   --dm-text-1: var(--t1);
   --dm-text-2: var(--t2);
   --dm-text-3: var(--t3);
-  --dm-text-4: color-mix(in srgb, var(--t3) 80%, transparent);
+  --dm-text-4: var(--t3);
   --dm-glacier: var(--light);
   --dm-glacier-ink: var(--chrome);
   --dm-signal: var(--attn);
@@ -43,8 +43,14 @@
   --dm-second: var(--t2);
   --dm-font-brand: 'Schibsted Grotesk', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --dm-font-ui: 'Schibsted Grotesk', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
-  --dm-font-read: 'IBM Plex Serif', Cambria, Georgia, serif;
+  --dm-font-read: var(--dm-font-ui);
   --dm-font-code: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
+  --dm-type-body: 14px;
+  --dm-type-caption: 14px;
+  --dm-type-section: 16px;
+  --dm-type-title: 18px;
+  --dm-line-body: 1.5;
+  --dm-measure: 880px;
   --dm-ui-scale: 1;
   --dm-read-scale: 1;
   --dm-code-scale: 1;
@@ -90,7 +96,7 @@ html[data-package='graphite'] {
   --hair-2: rgba(255, 255, 255, 0.12);
   --t1: #ebe9e6;
   --t2: #aaa7a2;
-  --t3: #86827c;
+  --t3: #8c8882;
   --light: #f0e6d2;
   --attn: #e0a94a;
   --fail: #e06c6c;
@@ -142,7 +148,7 @@ html[data-package='ember'] {
   --hair-2: rgba(255, 255, 255, 0.12);
   --t1: #ede7e2;
   --t2: #b0a59c;
-  --t3: #8a7f76;
+  --t3: #90857c;
   --light: #ff8a5b;
   --attn: #e0a94a;
   --fail: #e06c6c;
@@ -168,7 +174,7 @@ html[data-package='dusk'] {
   --hair-2: rgba(255, 255, 255, 0.12);
   --t1: #ebe6ef;
   --t2: #aea6b6;
-  --t3: #877f91;
+  --t3: #8b8395;
   --light: #e58fb1;
   --attn: #e0a94a;
   --fail: #e06c6c;
@@ -195,7 +201,7 @@ html[data-package='paper'] {
   --hair-2: rgba(0, 0, 0, 0.14);
   --t1: #1a1d21;
   --t2: #4b5563;
-  --t3: #6b7280;
+  --t3: #666d7a;
   --light: #0e7c86;
   --attn: #b7791f;
   --fail: #c53030;
@@ -212,7 +218,8 @@ body {
   background: var(--dm-frame);
   color: var(--dm-text-1);
   /* 14 px floor: tests/ui.spec.ts flags any text-bearing element under 14 px. */
-  font: 14px / 1.5 var(--dm-font-ui);
+  font: var(--dm-type-body) / var(--dm-line-body) var(--dm-font-ui);
+  overflow-wrap: anywhere;
   font-synthesis: none;
 }
 /* Tabular figures only where numbers line up; in running text they widen the punctuation. */
@@ -332,16 +339,16 @@ p {
   margin: 0;
 }
 h1 {
-  font: 500 18px / 1.3 var(--dm-font-ui);
+  font: 500 var(--dm-type-title) / 1.3 var(--dm-font-ui);
   letter-spacing: -0.01em;
 }
 h2 {
-  font: 600 20px / 1.3 var(--dm-font-ui);
+  font: 600 var(--dm-type-section) / 1.4 var(--dm-font-ui);
   letter-spacing: -0.01em;
   margin: 0 0 12px;
 }
 h3 {
-  font: 600 14px / 1.4 var(--dm-font-ui);
+  font: 600 var(--dm-type-body) / 1.4 var(--dm-font-ui);
   display: flex;
   gap: 10px;
   align-items: center;
@@ -353,18 +360,18 @@ a {
   color: var(--dm-glacier);
 }
 .prose {
-  font: 400 calc(16px * var(--dm-read-scale)) / 1.6 var(--dm-font-read);
+  font: 400 var(--dm-type-body) / var(--dm-line-body) var(--dm-font-ui);
   max-width: 72ch;
 }
 .prose.small {
-  font-size: calc(15px * var(--dm-read-scale));
+  font-size: var(--dm-type-body);
   line-height: 1.55;
 }
 .prose strong {
   font-weight: 600;
 }
 .caption {
-  font: 400 14px / 1.5 var(--dm-font-ui);
+  font: 400 var(--dm-type-body) / 1.5 var(--dm-font-ui);
   color: var(--dm-text-3);
 }
 .muted {
@@ -380,7 +387,7 @@ a {
 }
 /* Technical-only hint; no text-bearing use on the size-checked pages. */
 .key-hint {
-  font: 400 12px / 1.5 var(--dm-font-code);
+  font: 400 var(--dm-type-body) / 1.5 var(--dm-font-code);
   letter-spacing: 0.06em;
 }
 .row,
@@ -494,15 +501,16 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   background: var(--dm-fault);
 }
 .app {
+  container: app / inline-size;
   height: calc(100dvh / var(--dm-ui-scale));
-  min-height: 480px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 .top-bar {
   min-height: 40px;
-  height: 40px;
+  height: auto;
   display: flex;
   align-items: stretch;
   flex: none;
@@ -534,7 +542,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   flex-direction: column;
   justify-content: center;
   width: max-content;
-  font: 400 14px / 1 var(--dm-font-brand);
+  font: 400 var(--dm-type-body) / 1 var(--dm-font-brand);
   letter-spacing: 0.32em;
 }
 .project-tabs {
@@ -571,7 +579,8 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   gap: 8px;
   align-items: center;
   padding-right: 12px;
-  flex: none;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 .top-status {
   display: flex;
@@ -579,7 +588,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   gap: 10px;
   padding: 0 12px;
   color: var(--dm-text-2);
-  white-space: nowrap;
+  min-width: 0;
 }
 /* Settings is a quiet --t2 link that lifts to --t1 on hover. */
 .top-right .button {
@@ -708,11 +717,11 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 /* Counts are tabular mono system labels, held at the 14 px floor. */
 .rail-count {
   font-family: var(--dm-font-code);
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   letter-spacing: 0.02em;
 }
 .rail-description {
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   line-height: 1.43;
   font-weight: 400;
   color: var(--dm-text-3);
@@ -752,7 +761,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 }
 .workbook-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) 440px;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
   min-height: 0;
   flex: 1;
   overflow: auto;
@@ -766,6 +775,9 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   position: relative;
   min-height: 100%;
   overflow-wrap: anywhere;
+}
+.reading > * {
+  max-width: var(--dm-measure);
 }
 .reading::before {
   content: '';
@@ -819,7 +831,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   padding: 14px 16px;
   background: var(--dm-well);
   border: 1px solid var(--dm-rule-2);
-  border-left: 4px solid var(--dm-glacier);
+  border-left: 1px solid var(--dm-glacier);
   margin-bottom: 16px;
 }
 .notice.needs {
@@ -832,7 +844,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   margin-bottom: 10px;
 }
 .notice .prose {
-  font-size: calc(15px * var(--dm-read-scale));
+  font-size: var(--dm-type-body);
   line-height: 1.55;
   margin: 0 0 12px;
 }
@@ -909,7 +921,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   color: var(--dm-text-1);
 }
 .reference-row > .caption {
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   text-align: right;
   max-width: 155px;
 }
@@ -977,7 +989,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   margin: 18px 0 24px;
   border: 1px solid var(--dm-rule-2);
   border-radius: 6px;
-  background: var(--dm-raised);
+  background: transparent;
   padding: 4px 14px 12px;
 }
 /* Quiet segmented controls everywhere (Board/List toggle, Settings): the
@@ -1014,7 +1026,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   padding: 6px 10px;
 }
 /* The Ask mode control is a mono strip like the Console composer strip:
-   ASK PLAN BUILD FIX at 11 px uppercase; the current one is --t1 with a
+   Ask, Plan, Build and Fix at the shared UI size; the current one is --t1 with a
    1 px --light ink line under it, the rest --t3. */
 .composer .segmented {
   border: 0;
@@ -1029,8 +1041,8 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   margin-bottom: -1px;
   padding: 11px 10px 11px;
   min-width: 0;
-  font-family: var(--dm-font-code);
-  font-size: 11px;
+  font-family: var(--dm-font-ui);
+  font-size: var(--dm-type-body);
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1053,7 +1065,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   width: 100%;
   height: 68px;
   min-height: 68px;
-  font: 400 calc(16px * var(--dm-read-scale)) / 1.6 var(--dm-font-read);
+  font: 400 var(--dm-type-body) / var(--dm-line-body) var(--dm-font-ui);
   background: transparent;
   border-color: transparent;
   padding: 8px 0;
@@ -1082,7 +1094,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   align-items: center;
   gap: 8px;
   color: var(--dm-text-3);
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
 }
 .route-line select {
   flex: 1;
@@ -1092,7 +1104,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   justify-content: space-between;
   gap: 10px;
   padding: 6px 0;
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   color: var(--dm-glacier);
 }
 .attachment button {
@@ -1102,7 +1114,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .capability {
   margin: 24px 0 0 !important;
   color: var(--dm-text-3);
-  font-size: calc(15px * var(--dm-read-scale));
+  font-size: var(--dm-type-body);
 }
 .empty {
   padding: 16px 0 40px;
@@ -1120,7 +1132,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   margin-top: 24px;
 }
 .projects-page > .workbook-layout {
-  grid-template-columns: minmax(320px, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
 }
 .project-list {
   margin-top: 20px;
@@ -1139,10 +1151,10 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   color: var(--dm-text-1);
 }
 .project-row > div {
-  min-width: 160px;
+  min-width: 0;
 }
 .project-row strong {
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   font-weight: 600;
 }
 .project-row .code {
@@ -1155,7 +1167,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   align-items: center;
   gap: 8px;
   color: var(--dm-text-2);
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
 }
 .project-row > .caption {
   flex: none;
@@ -1328,7 +1340,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   margin-top: 4px;
 }
 .radio-row strong {
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   font-weight: 600;
   display: block;
 }
@@ -1430,7 +1442,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 }
 .task-column h2 {
   font-family: var(--dm-font-code);
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1440,7 +1452,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 }
 .task-column > header .caption {
   font-family: var(--dm-font-code);
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   letter-spacing: 0.02em;
 }
 /* Workbook task rows read as bare rows over hairlines, like the Console's
@@ -1483,7 +1495,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   padding: 0;
   min-height: 24px;
   display: block;
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   line-height: 1.42;
   font-weight: 600;
   width: 100%;
@@ -1508,7 +1520,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 }
 .task-card .button {
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   padding: 6px 10px;
 }
 .task-move {
@@ -1521,7 +1533,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   flex: 1;
   width: 100%;
   min-height: 32px;
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   padding: 4px 6px;
 }
 .column-empty {
@@ -1569,7 +1581,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   background: transparent;
   border-color: transparent;
   padding: 4px 0;
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   width: 100%;
 }
 .candidate > div > input:focus {
@@ -1602,22 +1614,32 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   margin: 0 0 16px -14px;
 }
 .markdown {
+  font: 400 var(--dm-type-body) / var(--dm-line-body) var(--dm-font-ui);
+  max-width: 72ch;
   overflow-wrap: anywhere;
-  line-height: 1.75;
+}
+.document-reading {
+  font: 400 calc(16px * var(--dm-read-scale)) / 1.75 var(--dm-font-read);
 }
 .markdown p {
   margin: 0;
 }
 .markdown h2 {
   margin: 20px 0 12px;
+  font: 600 var(--dm-type-section) / 1.4 var(--dm-font-ui);
+}
+.document-reading h2 {
   font: 600 calc(24px * var(--dm-read-scale)) / 1.4 var(--dm-font-read);
 }
-.markdown h2.document-title {
+.document-reading h2.document-title {
   margin-top: 0;
   font-size: calc(28px * var(--dm-read-scale));
 }
 .markdown h3 {
   margin: 16px 0 10px;
+  font: 600 var(--dm-type-body) / 1.4 var(--dm-font-ui);
+}
+.document-reading h3 {
   font: 600 calc(17px * var(--dm-read-scale)) / 1.42 var(--dm-font-read);
 }
 .paragraph-space {
@@ -1648,7 +1670,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   margin-bottom: 18px;
 }
 .turn.you {
-  font-size: calc(16px * var(--dm-read-scale));
+  font-size: var(--dm-type-body);
   border-left: 2px solid var(--dm-glacier);
   padding-left: 16px;
 }
@@ -1761,7 +1783,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   align-items: baseline;
   gap: 8px;
   margin: 0;
-  font: 400 13.5px / 1.5 var(--dm-font-ui);
+  font: 400 var(--dm-type-body) / 1.5 var(--dm-font-ui);
   color: var(--dm-text-1);
   overflow-wrap: anywhere;
 }
@@ -1778,7 +1800,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .approval-pending,
 .approval-recorded {
   margin: 0;
-  font: 400 11.5px / 1.7 var(--dm-font-code);
+  font: 400 var(--dm-type-body) / 1.7 var(--dm-font-code);
   color: var(--dm-text-3);
   overflow-wrap: anywhere;
 }
@@ -1786,7 +1808,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   margin-top: 6px;
 }
 .approval-summary {
-  font: 500 11px / 1.6 var(--dm-font-code);
+  font: 500 var(--dm-type-body) / 1.6 var(--dm-font-code);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--dm-text-3);
@@ -1804,7 +1826,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 2px 10px;
   margin: 6px 0 0;
-  font: 400 11.5px / 1.7 var(--dm-font-code);
+  font: 400 var(--dm-type-body) / 1.7 var(--dm-font-code);
   overflow-wrap: anywhere;
 }
 .approval-facts dt {
@@ -1927,7 +1949,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     padding-right: 64px;
   }
   .workbook-layout {
-    grid-template-columns: minmax(400px, 1fr) 440px;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
   }
   .reading > .prose,
   .reading > .markdown {
@@ -1939,7 +1961,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 }
 @media (max-width: 1350px) {
   .workbook-layout {
-    grid-template-columns: minmax(300px, 1fr) 340px;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
   }
   .margin {
     padding-left: 24px;
@@ -1950,8 +1972,8 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   }
   .top-status {
     max-width: 350px;
-    white-space: normal;
-    font-size: 14px;
+    white-space: nowrap;
+    font-size: var(--dm-type-caption);
   }
   .page-header {
     gap: 12px;
@@ -1993,7 +2015,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     grid-template-columns: 200px minmax(0, 1fr);
   }
   .workbook-layout {
-    grid-template-columns: minmax(260px, 1fr) 300px;
+    grid-template-columns: minmax(0, 1fr);
   }
   .page-frame {
     margin-left: 12px;
@@ -2013,7 +2035,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     padding-left: 30px;
   }
   .rail-description {
-    font-size: 14px;
+    font-size: var(--dm-type-caption);
   }
   .reading {
     padding: 24px 24px 40px 32px;
@@ -2033,7 +2055,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     grid-template-columns: repeat(4, minmax(170px, 1fr));
   }
   .projects-page > .workbook-layout {
-    grid-template-columns: minmax(260px, 1fr) 300px;
+    grid-template-columns: minmax(0, 1fr);
   }
   .project-row {
     flex-wrap: wrap;
@@ -2051,7 +2073,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     gap: 6px;
   }
   .page-header .button {
-    font-size: 14px;
+    font-size: var(--dm-type-caption);
     padding: 6px 10px;
     min-width: 0;
   }
@@ -2100,7 +2122,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   }
   .project-row-status {
     flex: none;
-    font-size: 14px;
+    font-size: var(--dm-type-caption);
   }
 }
 @media (max-width: 600px) {
@@ -2175,7 +2197,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     gap: 6px;
   }
   .rail-count {
-    font-size: 14px;
+    font-size: var(--dm-type-caption);
   }
   .main {
     flex: 1;
@@ -2186,7 +2208,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     gap: 12px;
   }
   .page-header h1 {
-    font-size: 19px;
+    font-size: var(--dm-type-title);
   }
   .workbook-layout {
     display: block;
@@ -2219,7 +2241,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   }
   .notice .button {
     min-width: 0;
-    font-size: 14px;
+    font-size: var(--dm-type-caption);
   }
   .notice .button:nth-child(2) {
     grid-column: 1/-1;
@@ -2249,7 +2271,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     margin-left: auto;
   }
   .project-row strong {
-    font-size: 14px;
+    font-size: var(--dm-type-caption);
   }
   .dotted-leader {
     min-width: 4px;
@@ -2257,7 +2279,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   .document-row {
     flex-wrap: wrap;
     gap: 6px;
-    font-size: 14px;
+    font-size: var(--dm-type-caption);
   }
   .document-row > span:first-child {
     overflow-wrap: anywhere;
@@ -2277,7 +2299,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     min-height: 0;
   }
   .task-card .button {
-    font-size: 14px;
+    font-size: var(--dm-type-caption);
     min-height: 40px;
   }
   .task-column > header {
@@ -2328,7 +2350,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   }
   .work-log time {
     min-width: 68px;
-    font-size: 14px;
+    font-size: var(--dm-type-caption);
   }
   .service > .row {
     flex-wrap: wrap;
@@ -2343,7 +2365,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     display: none;
   }
   .task-title {
-    font-size: 14px;
+    font-size: var(--dm-type-caption);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -2367,7 +2389,6 @@ html[data-motion='reduced'] *::after {
   transition: none !important;
   scroll-behavior: auto !important;
 }
-
 
 /* ---- Home: what do you want to do? (the Workbook's door) ---- */
 .intents {
@@ -2417,7 +2438,7 @@ html[data-motion='reduced'] *::after {
 .intent span {
   display: block;
   color: var(--dm-text-2);
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   margin-top: 4px;
   line-height: 1.5;
 }
@@ -2445,8 +2466,8 @@ html[data-motion='reduced'] *::after {
   padding: 4px 0 8px;
 }
 .console-side-header h2 {
-  font-family: var(--dm-font-code);
-  font-size: 11px;
+  font-family: var(--dm-font-ui);
+  font-size: var(--dm-type-body);
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -2544,7 +2565,7 @@ html[data-motion='reduced'] *::after {
   display: inline;
   margin-top: 0;
   font-family: var(--dm-font-code);
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
@@ -2577,7 +2598,7 @@ html[data-motion='reduced'] *::after {
   color: var(--dm-text-1);
 }
 
-/* ---- Home: one column, one right edge, a reading face on the section titles ---- */
+/* ---- Home: one column, one right edge, shared UI typography ---- */
 .workbook-layout.home {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -2585,13 +2606,13 @@ html[data-motion='reduced'] *::after {
   display: none;
 }
 .workbook-layout.home .reading {
-  max-width: 844px;
+  width: min(100%, calc(var(--dm-measure) + 80px));
 }
 .workbook-layout.home .reading > * {
-  max-width: 760px;
+  max-width: var(--dm-measure);
 }
 .workbook-layout.home .section-title {
-  font: 500 calc(19px * var(--dm-read-scale)) / 1.4 var(--dm-font-read);
+  font: 600 var(--dm-type-section) / 1.4 var(--dm-font-ui);
   color: var(--dm-text-1);
   margin-bottom: 10px;
 }
@@ -2626,7 +2647,7 @@ html[data-motion='reduced'] *::after {
 .landing-ask > textarea {
   width: 100%;
   min-height: 64px;
-  font: 400 calc(17px * var(--dm-read-scale)) / 1.6 var(--dm-font-read);
+  font: 400 var(--dm-type-body) / var(--dm-line-body) var(--dm-font-ui);
   background: transparent;
   padding: 12px 14px;
 }
@@ -2642,7 +2663,7 @@ html[data-motion='reduced'] *::after {
   flex-direction: column;
   gap: 6px;
   flex: 1;
-  min-width: 220px;
+  min-width: 0;
   color: var(--dm-text-2);
 }
 .landing-project select {
@@ -2707,7 +2728,7 @@ html[data-motion='reduced'] *::after {
   align-items: center;
   gap: 8px;
   font: inherit;
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   color: var(--dm-text-2);
   background: transparent;
   border: 1px solid transparent;
@@ -2716,6 +2737,28 @@ html[data-motion='reduced'] *::after {
   min-height: 36px;
   white-space: nowrap;
   cursor: pointer;
+  min-width: 0;
+  max-width: 100%;
+}
+.usage-chip > span:first-child,
+.project-tab-name,
+.top-status > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-tab {
+  min-width: 0;
+  flex: 0 0 auto;
+  max-width: 32ch;
+}
+.top-status {
+  flex: 0 1 auto;
+}
+.top-right > .button,
+.top-right > .account-wrap {
+  flex: none;
 }
 button.usage-chip:hover {
   color: var(--dm-text-1);
@@ -2736,7 +2779,8 @@ button.usage-chip:hover {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
+  flex-wrap: wrap;
 }
 .usage-block .caption {
   margin: 0;
@@ -2747,7 +2791,6 @@ button.usage-chip:hover {
   gap: 8px;
 }
 
-
 /* ---- Modes ---- */
 /* Mode names are mono text, not chips: no box, no pill. (The label text
    itself is untouched; tests read "Fix, try 1 of 3".) */
@@ -2756,7 +2799,7 @@ button.usage-chip:hover {
   border: 0;
   padding: 0;
   font-family: var(--dm-font-code);
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   line-height: 1.5;
   letter-spacing: 0.02em;
   color: var(--dm-text-3);
@@ -2776,4 +2819,162 @@ button.usage-chip:hover {
 }
 .failing-row textarea {
   min-height: 56px;
+}
+
+/* Content owns its line breaks. Flex/grid items must be allowed to shrink before
+   paths, translated labels or increased text size can fit their allotted space. */
+input:not([type='checkbox']):not([type='radio']),
+textarea,
+select {
+  min-width: 0;
+  max-width: 100%;
+}
+:where(
+    .row,
+    .actions,
+    .page-header,
+    .history-entry,
+    .project-row,
+    .document-row,
+    .reference-row,
+    .turn-meta,
+    .session-status,
+    .route-line,
+    .dialog-heading,
+    .attachment,
+    .field
+  )
+  > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.row,
+.turn-meta {
+  flex-wrap: wrap;
+}
+.reference-row,
+.document-row {
+  flex-wrap: wrap;
+}
+.reference-row > :first-child:not(.mark):not(.usage-bar):not(.engine-meter) {
+  min-width: min(100%, 18ch);
+}
+.account-menu {
+  max-width: calc(100vw / var(--dm-ui-scale) - 24px);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.settings-layout .reading,
+.workbook-layout.home .reading {
+  width: 100%;
+  max-width: calc(var(--dm-measure) + 80px);
+}
+.workbook-layout.home .reading > * {
+  max-width: var(--dm-measure);
+}
+
+/* Container widths include the user's UI zoom; viewport breakpoints do not.
+   Reflow earlier when the interface is enlarged instead of shrinking the type. */
+@container app (max-width: 1100px) {
+  .workbook-layout,
+  .projects-page > .workbook-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .reading {
+    min-height: 0;
+  }
+  .margin {
+    border-left: 0;
+    border-top: 1px solid var(--dm-rule-2);
+  }
+  .top-status {
+    display: none;
+  }
+}
+@container app (max-width: 700px) {
+  .workspace,
+  .settings-layout {
+    display: flex;
+    flex-direction: column;
+  }
+  .rail {
+    flex: none;
+    flex-direction: row;
+    overflow: auto;
+    padding: 0;
+    max-height: 120px;
+    border-right: 0;
+    border-bottom: 1px solid var(--dm-rule-2);
+  }
+  .rail > div {
+    display: flex;
+    flex: none;
+  }
+  .rail::before,
+  .rail-separator,
+  .rail-description,
+  .key-hint {
+    display: none;
+  }
+  .rail-link {
+    width: auto;
+    flex: none;
+    white-space: nowrap;
+    padding: 8px 16px;
+  }
+  .rail-link.active::before {
+    display: none;
+  }
+  .rail-link.active {
+    border-bottom: 2px solid var(--dm-glacier);
+  }
+  .main {
+    flex: 1;
+    height: auto;
+  }
+  .page-header {
+    flex-wrap: wrap;
+    padding: 12px 16px;
+  }
+  .page-header > .actions {
+    flex-wrap: wrap;
+  }
+  .workbook-layout {
+    display: block;
+  }
+  .reading {
+    padding: 20px 20px 32px 28px;
+  }
+  .reading::before {
+    left: 12px;
+  }
+  .top-bar {
+    flex-wrap: wrap;
+  }
+  .project-tabs {
+    order: 3;
+    flex-basis: 100%;
+    border-top: 1px solid var(--dm-rule-2);
+  }
+  .top-right {
+    margin-left: auto;
+  }
+  .brand-button {
+    min-height: 40px;
+  }
+  .task-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .intent-rail,
+  .projects-page .intent-rail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .landing-project {
+    flex-basis: 100%;
+  }
+  .reference-row > .caption,
+  .document-row > .caption {
+    white-space: normal;
+    flex-shrink: 1;
+  }
 }

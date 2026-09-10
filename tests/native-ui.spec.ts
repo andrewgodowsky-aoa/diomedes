@@ -237,7 +237,7 @@ test('Console task Start recovers both lost responses from state without duplica
   await expect.poll(() => commands.length).toBe(2);
   expect(commands[0]).toBeTruthy();
   expect(commands[1]).toBe(commands[0]);
-  await expect(board.getByRole('radio', { name: 'Go ahead for tasks', exact: true })).toBeEnabled();
+  await expect(board.getByLabel('Start confirmation')).toBeVisible();
   await expect.poll(() => page.evaluate(() => Object.keys(sessionStorage)
     .filter(key => key.startsWith('diomedes.work-start.pending.')).length)).toBe(0);
   await page.reload();
@@ -249,7 +249,7 @@ test('Console task Start recovers both lost responses from state without duplica
   // No second native generation was hidden behind the sample task flow.
   expect(generationCount).toBe(1);
   await rail.getByRole('button', { name: /^Board/ }).click();
-  await expect(board.getByRole('radio', { name: 'Show me first', exact: true })).toBeEnabled();
+  await expect(board.getByLabel('Start confirmation')).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('console-admission-recovered.png'), animations: 'disabled', fullPage: true });
   await page.screenshot({ path: 'evidence/screenshots/work-admission-console.png', animations: 'disabled', fullPage: true });
   await api(`/projects/${sample.id}/team/members`, 'POST', {

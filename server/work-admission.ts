@@ -1,14 +1,20 @@
 import { z } from 'zod';
 import { ApiError, relativeName } from './paths.js';
 import type { ProjectState } from '../shared/types.js';
+import { ROUTES } from '../shared/engines.js';
 
-import { commandIdSchema as commandId, digestSchema, payloadDigest, usesCommandProtocol } from './command-admission.js';
+import {
+  commandIdSchema as commandId,
+  digestSchema,
+  payloadDigest,
+  usesCommandProtocol,
+} from './command-admission.js';
 const id = z.string().trim().min(1).max(100);
 const requestSchema = z.strictObject({
   protocolVersion: z.literal(1),
   commandId,
   taskId: id,
-  route: z.enum(['sample', 'codex']).default('sample'),
+  route: z.enum(ROUTES).default('sample'),
   capabilityId: z.literal('codex-report').optional(),
   model: z.string().trim().min(1).max(120).optional(),
   effort: z.string().trim().min(1).max(40).optional(),
@@ -34,10 +40,14 @@ export function parseWorkCommand(body: Record<string, unknown>) {
     });
   const request = parsed.data;
   if (request.capabilityId && request.route !== 'codex')
-    throw new ApiError(400, 'This capability requires the Codex route.', { code: 'invalid_work_command' });
+    throw new ApiError(400, 'This capability requires the Codex route.', {
+      code: 'invalid_work_command',
+    });
   if ((request.model || request.effort) && !request.capabilityId)
-    throw new ApiError(400, 'Explicit capability selections require a capability command.', { code: 'invalid_work_command' });
-  if (request.route === 'codex' && request.sources === undefined)
+    throw new ApiError(400, 'Explicit capability selections require a capability command.', {
+      code: 'invalid_work_command',
+    });
+  if (request.route !== 'sample' && request.sources === undefined)
     throw new ApiError(400, 'Provide the explicitly selected source documents, or an empty list.', {
       code: 'invalid_work_command',
     });
@@ -53,7 +63,13 @@ export function parseWorkCommand(body: Record<string, unknown>) {
     protocolVersion: 1,
     taskId: request.taskId,
     route: request.route,
-    ...(request.capabilityId ? { capabilityId: request.capabilityId, model: request.model ?? null, effort: request.effort ?? null } : {}),
+    ...(request.capabilityId
+      ? {
+          capabilityId: request.capabilityId,
+          model: request.model ?? null,
+          effort: request.effort ?? null,
+        }
+      : {}),
     instruction: request.instruction ?? null,
     sources,
     consent: request.consent,
@@ -91,13 +107,20 @@ const receiptSchema = z.strictObject({
     .string()
     .max(40)
     .refine((value) => Number.isFinite(Date.parse(value))),
-  route: z.enum(['sample', 'codex']),
+  route: z.enum(ROUTES),
   scope: z.literal('local-prototype'),
 });
 
 /** Additive format: old sessions need no migration; incompatible receipts fail closed. */
 export function validateWorkReceipts(state: ProjectState) {
-  const commands = new Set<string>();
+  // One project-scoped command namespace: a Work receipt cannot reuse a scope
+  // grant or exact-approval command, and Work receipts cannot repeat each other.
+  const commands = new Set<string>([
+    ...(state.scopeGrants ?? []).map((record) => record.grant.commandId),
+    ...state.needs.flatMap((need) =>
+      need.approvalReceipt ? [need.approvalReceipt.commandId] : [],
+    ),
+  ]);
   const events = new Map(state.history.map((event) => [event.id, event]));
   for (const session of state.sessions) {
     if (session.receipt === undefined) continue;
@@ -110,7 +133,7 @@ export function validateWorkReceipts(state: ProjectState) {
       receipt.projectId !== state.project.id ||
       receipt.sessionId !== session.id ||
       receipt.taskId !== session.taskId ||
-      receipt.route !== (session.sample ? 'sample' : 'codex') ||
+      receipt.route !== (session.route ?? (session.sample ? 'sample' : 'codex')) ||
       event?.kind !== 'work-admitted' ||
       event.sessionId !== session.id ||
       event.taskId !== session.taskId ||

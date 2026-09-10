@@ -1,0 +1,30 @@
+npm notice run diomedes@0.1.1 npx
+npm notice run playwright test --config playwright.responsive.config.ts --workers=1
+[WebServer] Diomedes: http://127.0.0.1:5174. Press Ctrl+C to stop both local processes.
+[WebServer] (node:20064) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer]   VITE v7.3.6  ready in 415 ms
+[WebServer] 
+[WebServer]   ➜  Local:   http://127.0.0.1:5174/
+[WebServer] (node:47612) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Diomedes local service ready: http://127.0.0.1:47632
+[WebServer] App data: F:\Achilles\diomedes-wt\autonomy-workbench\test-results\app-data-1789029128733-30240\data
+[WebServer] Project root: F:\Achilles\diomedes-wt\autonomy-workbench\test-results\app-data-1789029128733-30240\projects
+
+Running 9 tests using 1 worker
+
+(node:31932) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 1 tests\responsive.spec.ts:82:3 › Workbook and Settings contain long content at 1280px and 1 scale (2.1s)
+  ok 2 tests\responsive.spec.ts:126:3 › Console navigation and populated Team fit 1280px and 1 scale (605ms)
+  ok 3 tests\responsive.spec.ts:82:3 › Workbook and Settings contain long content at 960px and 1.25 scale (953ms)
+  ok 4 tests\responsive.spec.ts:126:3 › Console navigation and populated Team fit 960px and 1.25 scale (618ms)
+  ok 5 tests\responsive.spec.ts:82:3 › Workbook and Settings contain long content at 640px and 1.5 scale (916ms)
+  ok 6 tests\responsive.spec.ts:126:3 › Console navigation and populated Team fit 640px and 1.5 scale (621ms)
+  ok 7 tests\responsive.spec.ts:82:3 › Workbook and Settings contain long content at 390px and 1 scale (995ms)
+  ok 8 tests\responsive.spec.ts:126:3 › Console navigation and populated Team fit 390px and 1 scale (606ms)
+  ok 9 tests\responsive.spec.ts:178:1 › document scale stays separate from UI, and themes keep their selected accent (1.2s)
+
+  9 passed (12.0s)

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
+  Change,
   Conversation,
+  HistoryEntry,
   MailboxMessage,
   Mode,
   Need,
@@ -14,7 +16,10 @@ import type {
   Turn,
 } from '../../shared/types';
 import { effortFor } from '../../shared/effort';
+import { formatOrigin, originForSession, originForTurn } from '../../shared/attribution';
 import { ApprovalStatus, time } from '../components';
+import { RunInspector } from '../workbench/RunInspector';
+import { taskEvidence } from '../workbench/task-evidence';
 import { Composer } from './Composer';
 import { NeedBlock } from './Need';
 
@@ -30,7 +35,10 @@ function clockOf(iso: string): string {
 }
 
 function paragraphs(text: string): string[] {
-  return text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  return text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
 }
 
 interface ThreadViewProps {
@@ -43,6 +51,13 @@ interface ThreadViewProps {
   member: TeamMember | null;
   needs: Need[];
   receiptNeeds?: Need[];
+  projectId?: string;
+  history?: HistoryEntry[];
+  allNeeds?: Need[];
+  changes?: Change[];
+  permissionControl?: ReactNode;
+  onScope?(): void;
+  grantActive?: boolean;
   settings: Settings;
   mode: Mode;
   route: Route;
@@ -62,6 +77,9 @@ interface ThreadViewProps {
   onPreview(need: Need): void;
   onStopSession(id: string): void;
   onOpenBoard(): void;
+  /** Live streamed text for a new external-engine Ask/Plan: ephemeral, never saved. */
+  streaming?: { requestId: string; text: string; engine: string };
+  onCancelText?(): void;
 }
 
 /**
@@ -79,6 +97,13 @@ export function ThreadView({
   member,
   needs,
   receiptNeeds = [],
+  projectId,
+  history = [],
+  allNeeds,
+  changes = [],
+  permissionControl,
+  onScope,
+  grantActive = false,
   settings,
   mode,
   route,
@@ -92,38 +117,40 @@ export function ThreadView({
   onPreview,
   onStopSession,
   onOpenBoard,
+  streaming,
+  onCancelText,
 }: ThreadViewProps) {
   const permission: ThreadPermission = thread.permission ?? 'show-first';
   const live = sessions.find((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? null;
   const ordered = [...sessions].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
   const last = ordered.at(-1) ?? null;
-  const lastHelper = [...thread.turns].reverse().find((t) => t.role === 'diomedes');
 
-  const savedModel = typeof settings.services?.codexModel === 'string' ? settings.services.codexModel : '';
-  const savedEffort = typeof settings.services?.codexEffort === 'string' ? settings.services.codexEffort : '';
-  const modelId = thread.requested?.model || savedModel || last?.engine.model || lastHelper?.helper?.model || 'default';
-  const wantedEffort = thread.requested?.effort || savedEffort || 'medium';
+  const savedModel =
+    typeof settings.services?.[`${route}Model`] === 'string'
+      ? String(settings.services[`${route}Model`])
+      : '';
+  const savedEffort =
+    route === 'codex' && typeof settings.services?.codexEffort === 'string'
+      ? settings.services.codexEffort
+      : '';
+  const modelId = thread.requested?.model || savedModel || 'engine default';
+  const wantedEffort = route === 'codex' ? thread.requested?.effort || savedEffort || 'medium' : '';
   const runsAt = effortFor(mode, wantedEffort, wantedEffort);
   const capped = runsAt !== wantedEffort;
-  const context = live?.engine.context ?? [...ordered].reverse().find((s) => s.engine.context != null)?.engine.context;
+  const context =
+    live?.engine.context ??
+    [...ordered].reverse().find((s) => s.engine.context != null)?.engine.context;
   const ended = ordered.filter((s) => s.endedAt);
   const lastRun = ended.at(-1) ?? null;
 
   const nameOf = (slot: Slot) =>
     slot === 'owner' ? 'You' : (members.find((m) => m.slotId === slot)?.name ?? slot);
-  const worker = live?.engine.name ?? member?.name ?? (task ? (task.owner === 'you' ? 'You' : 'Diomedes') : '');
-  const [stateWord, stateClass]: [string, string] = !task
-    ? ['', '']
-    : task.state === 'todo'
-      ? ['ready', 'quiet']
-      : task.state === 'working'
-        ? ['working', '']
-        : task.state === 'done'
-          ? ['done', 'quiet']
-          : [
-              task.reason === 'changes-ready' ? 'review' : task.reason === 'went-wrong' ? 'blocked' : 'needs you',
-              'attn',
-            ];
+  const worker =
+    (live ? formatOrigin(originForSession(live)).label : member?.name) ??
+    (last ? formatOrigin(originForSession(last)).label : task?.owner === 'you' ? 'You' : '');
+  const evidence = task ? taskEvidence(task, sessions, allNeeds ?? needs, changes) : null;
+  const stateWord = evidence?.column.toLowerCase() ?? '';
+  const stateClass = stateWord === 'review' || stateWord === 'blocked' ? 'attn' : '';
 
   // Group turns into exchanges: a you-turn opens one, following Diomedes
   // turns join it, and a Diomedes turn with no preceding you-turn stands alone.
@@ -137,7 +164,7 @@ export function ThreadView({
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
     body.current?.scrollTo({ top: body.current.scrollHeight });
-  }, [thread.turns.length, live?.id, thread.id]);
+  }, [thread.turns.length, live?.id, thread.id, streaming?.requestId, streaming?.text.length]);
 
   const items: { at: string; seq: number; node: ReactNode }[] = [];
   exchanges.forEach((group, i) => {
@@ -150,12 +177,17 @@ export function ThreadView({
             <div
               className={`turn ${t.role === 'you' ? 'you' : 'dio'}`}
               key={t.id || `${thread.id}:${i}`}
-              data-thread-point={t.role === 'diomedes' ? '' : undefined}
+              data-thread-point={t.role !== 'you' ? '' : undefined}
             >
               <div className="who">
-                <b>{t.role === 'you' ? 'You' : 'Diomedes'}</b>
+                <b>{t.role === 'you' ? 'You' : formatOrigin(originForTurn(t)).primary}</b>
+                {t.role !== 'you' && (
+                  <span title={formatOrigin(originForTurn(t)).detail}>
+                    {formatOrigin(originForTurn(t)).secondary}
+                  </span>
+                )}
                 <span className="mono">{time(t.at).toLowerCase()}</span>
-                {t.role === 'diomedes' && (
+                {t.role !== 'you' && (
                   <span className="tools">
                     <button
                       type="button"
@@ -192,7 +224,7 @@ export function ThreadView({
         <div className="exchange" key={m.id}>
           <div className={`turn ${fromOwner ? 'you' : 'dio'}`}>
             <div className="who">
-              <b>{fromOwner ? 'You' : 'Diomedes'}</b>
+              <b>{fromOwner ? 'You' : nameOf(m.from)}</b>
               <span className="mono">
                 {nameOf(m.from)} to {nameOf(m.to)} · {time(m.createdAt).toLowerCase()}
               </span>
@@ -202,7 +234,9 @@ export function ThreadView({
                 <p key={j}>{p}</p>
               ))}
             </div>
-            {m.files && m.files.length > 0 && <p className="caption">Files: {m.files.join(', ')}</p>}
+            {m.files && m.files.length > 0 && (
+              <p className="caption">Files: {m.files.join(', ')}</p>
+            )}
           </div>
         </div>
       ),
@@ -239,32 +273,34 @@ export function ThreadView({
         <h1 onClick={onRename} title="Rename thread">
           {title}
         </h1>
-        <div className="seg" role="radiogroup" aria-label="What Diomedes may do">
-          <button
-            type="button"
-            role="radio"
-            aria-checked={permission === 'show-first'}
-            className={permission === 'show-first' ? 'on' : ''}
-            disabled={busy}
-            onClick={() => permission !== 'show-first' && onPermission('show-first')}
-          >
-            Show me first
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={permission === 'task'}
-            className={permission === 'task' ? 'on' : ''}
-            disabled={busy}
-            onClick={() => permission !== 'task' && onPermission('task')}
-          >
-            Go ahead for this task
-          </button>
-        </div>
+        {permissionControl ?? (
+          <div className="seg" role="radiogroup" aria-label="What Diomedes may do">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={permission === 'show-first'}
+              className={permission === 'show-first' ? 'on' : ''}
+              disabled={busy}
+              onClick={() => permission !== 'show-first' && onPermission('show-first')}
+            >
+              Show me first
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={permission === 'task'}
+              className={permission === 'task' ? 'on' : ''}
+              disabled={busy}
+              onClick={() => permission !== 'task' && onPermission('task')}
+            >
+              Go ahead for this task
+            </button>
+          </div>
+        )}
       </div>
       <div className="col instr" aria-label="Thread instruments">
         <span>
-          <b>{mode}</b> <span className="lc">{modelId}</span>{' '}
+          next request <b>{mode}</b> <span className="lc">{modelId}</span>{' '}
           <span className="lc">
             {runsAt}
             {capped ? ', capped' : ''}
@@ -293,24 +329,43 @@ export function ThreadView({
             <button type="button" onClick={onOpenBoard} title="Open this task on the board">
               {task.name}
             </button>{' '}
-            <span className={`st ${stateClass}`}>{stateWord}</span> <span className="lc">{worker}</span>
+            <span className={`st ${stateClass}`}>{stateWord}</span>{' '}
+            <span className="lc">{worker}</span>
           </span>
         )}
       </div>
-      <p className="col permission-note">
-        {route === 'codex' || needs.some((n) => n.approval)
-          ? 'Each proposed file change needs its own exact OK.'
-          : permission === 'task'
-            ? 'The first OK in a task covers the rest of it. Nothing runs without that first OK.'
-            : 'Every change waits for your OK.'}
-      </p>
-      <div className="transcript">
-        <div className="col" ref={body}>
+      <div className="transcript" ref={body}>
+        <div className="col">
+          <p className="permission-note">
+            {grantActive
+              ? 'Supported writes for this task use its confirmed scope. Sending remains a separate decision.'
+              : route !== 'sample' || needs.some((n) => n.approval)
+                ? 'Each proposed file change needs its own exact OK.'
+                : permission === 'task'
+                  ? 'The first OK in a task covers the rest of it. Nothing runs without that first OK.'
+                  : 'Every change waits for your OK.'}
+          </p>
+          {projectId && (
+            <RunInspector
+              projectId={projectId}
+              session={live ?? last}
+              needs={allNeeds ?? needs}
+              history={history}
+            />
+          )}
           {needs.map((n) => (
             <div id={`need-${n.id}`} key={n.id}>
               <NeedBlock
                 need={n}
-                decide={(r, a) => onResolve(n, r, n.approval ? false : a ?? (r === 'go-ahead' && permission === 'task'))}
+                session={sessions.find((session) => session.id === n.sessionId)}
+                onScope={onScope}
+                decide={(r, a) =>
+                  onResolve(
+                    n,
+                    r,
+                    n.approval ? false : (a ?? (r === 'go-ahead' && permission === 'task')),
+                  )
+                }
                 show={() => onPreview(n)}
               />
             </div>
@@ -324,11 +379,42 @@ export function ThreadView({
           {items.map((entry, i) => (
             <div key={i}>{entry.node}</div>
           ))}
+          {streaming && (
+            <div className="exchange" key={`stream-${streaming.requestId}`}>
+              <div className="turn dio">
+                <div className="who">
+                  <b>{formatOrigin(undefined, { engine: streaming.engine }).primary}</b>
+                  <span className="mono">live</span>
+                </div>
+                <div className="body">
+                  {streaming.text ? (
+                    paragraphs(streaming.text).map((p, j) => <p key={j}>{p}</p>)
+                  ) : (
+                    <p className="caption">Preparing…</p>
+                  )}
+                </div>
+                {onCancelText && (
+                  <div>
+                    <button type="button" onClick={onCancelText}>
+                      Stop
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           {receiptNeeds.map((n) => (
             <ApprovalStatus key={n.id} need={n} />
           ))}
         </div>
       </div>
+      {route !== 'sample' && (
+        <p className="caption">
+          Sending shares this instruction and selected documents with {route}. The selected account
+          is billed under its own plan. Engine tools are disabled; file proposals follow the task's
+          authority.
+        </p>
+      )}
       <Composer
         thread={thread}
         mode={mode}
@@ -364,6 +450,7 @@ function RunRecord({ session, onStop }: { session: Session; onStop(): void }) {
   }
   return (
     <div className={`record open ${live ? 'live' : ''}`}>
+      <div className="run-origin">{formatOrigin(originForSession(session)).label}</div>
       {lines.map((l, i) => (
         <div key={i}>
           <b>{clockOf(l.time)}</b> <span>{l.sentence}</span>

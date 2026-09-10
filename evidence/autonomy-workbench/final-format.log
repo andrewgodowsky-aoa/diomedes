@@ -1,0 +1,3 @@
+npm notice run diomedes@0.1.1 npx
+npm notice run prettier --write server/app.ts
+server/app.ts 238ms

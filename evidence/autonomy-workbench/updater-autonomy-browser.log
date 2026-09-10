@@ -1,0 +1,27 @@
+npm notice run diomedes@0.1.1 npx
+npm notice run playwright test tests/app-updates-ui.spec.ts tests/autonomy-ui.spec.ts --workers=1
+[WebServer] Diomedes: http://127.0.0.1:5174. Press Ctrl+C to stop both local processes.
+[WebServer] (node:47136) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer]   VITE v7.3.6  ready in 385 ms
+[WebServer] 
+[WebServer]   ➜  Local:   http://127.0.0.1:5174/
+[WebServer] 4:13:34 AM [vite] http proxy error: /api/settings
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:47632
+[WebServer]     at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1638:16)
+[WebServer] (node:35564) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Diomedes local service ready: http://127.0.0.1:47632
+[WebServer] App data: F:\Achilles\diomedes-wt\autonomy-workbench\test-results\app-data-1789028013380-26840\data
+[WebServer] Project root: F:\Achilles\diomedes-wt\autonomy-workbench\test-results\app-data-1789028013380-26840\projects
+
+Running 3 tests using 1 worker
+
+(node:29444) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 1 tests\autonomy-ui.spec.ts:216:1 › scope confirmation covers the same task; recorded actor survives a picker mutation (2.0s)
+  ok 2 tests\autonomy-ui.spec.ts:317:1 › out-of-scope proposals wait for exact review; revocation forces exact approval again (1.4s)
+  ok 3 tests\autonomy-ui.spec.ts:392:1 › long names hold at 800px; Stop is truthful and inspector refresh stays honest (903ms)
+
+  3 passed (9.0s)

@@ -18,6 +18,7 @@ import type {
   UsageSnapshot,
 } from '../shared/types';
 import { api, ApiError } from './api';
+import { formatOrigin, originForSession, originForTurn } from '../shared/attribution';
 import { reconcileWorkStarts, startWork } from './work-start';
 import { decideApproval, reconcileApprovals } from './approval-decisions';
 import {
@@ -415,7 +416,14 @@ export function Workspace({
     await perform(async () => {
       const decided = await decideApproval(projectId, need, resolution, allowForTask);
       await load();
-      say(decided.execution?.reason ?? (decided.execution?.state === 'pending' ? 'Decision saved. Execution has not been confirmed.' : resolution === 'go-ahead' ? 'You said go ahead.' : 'That step will not be done.'));
+      say(
+        decided.execution?.reason ??
+          (decided.execution?.state === 'pending'
+            ? 'Decision saved. Execution has not been confirmed.'
+            : resolution === 'go-ahead'
+              ? 'You said go ahead.'
+              : 'That step will not be done.'),
+      );
     });
   }
   function showNeed(need: Need) {
@@ -436,6 +444,7 @@ export function Workspace({
         need={n}
         decide={(r, a) => void resolveNeed(n, r, a)}
         show={() => showNeed(n)}
+        session={state?.sessions.find((s) => s.id === n.sessionId)}
       />
     );
   }
@@ -566,8 +575,7 @@ export function Workspace({
       say('Thread renamed.');
     });
   }
-  const fixReady =
-    mode !== 'fix' || failingDocument.trim() !== '' || failingText.trim() !== '';
+  const fixReady = mode !== 'fix' || failingDocument.trim() !== '' || failingText.trim() !== '';
   async function send() {
     if (!prompt.trim()) return;
     if (mode === 'fix' && !fixReady) return;
@@ -637,8 +645,9 @@ export function Workspace({
   const workTask = state?.tasks.find((t) => t.id === workSession?.taskId);
   const reviewTask = state?.tasks.find((t) => t.id === changes[0]?.taskId);
   const reviewSession = state?.sessions.find((s) => s.id === changes[0]?.sessionId);
-  const workThread =
-    workTask ? (state?.conversations.find((c) => c.taskId === workTask.id) ?? null) : null;
+  const workThread = workTask
+    ? (state?.conversations.find((c) => c.taskId === workTask.id) ?? null)
+    : null;
   const taskDetailThread = taskDetail
     ? (state?.conversations.find((c) => c.taskId === taskDetail.id) ?? null)
     : null;
@@ -728,7 +737,9 @@ export function Workspace({
           <label>
             Service
             <select value={route} onChange={(e) => setRoute(e.target.value as Route)}>
-              <option value="sample">Sample work</option>
+              <option value="sample" disabled>
+                Choose an engine
+              </option>
               <option
                 value="codex"
                 disabled={!integrations.find((i) => i.id === 'codex')?.available}
@@ -737,9 +748,7 @@ export function Workspace({
               </option>
             </select>
           </label>
-        ) : (
-          <span className="caption">Sample work, on this computer</span>
-        )}
+        ) : null}
         {(() => {
           const tight = tightestWindow(
             usage.find((u) => u.engine === route) ?? {
@@ -950,18 +959,20 @@ export function Workspace({
               >
                 Go ahead
               </Button>
-              {!state!.needs.find((n) => n.id === task.needId)?.approval && (<Button
-                disabled={busy}
-                onClick={() =>
-                  void resolveNeed(
-                    state!.needs.find((n) => n.id === task.needId)!,
-                    'go-ahead',
-                    true,
-                  )
-                }
-              >
-                Go ahead for this whole task
-              </Button>)}
+              {!state!.needs.find((n) => n.id === task.needId)?.approval && (
+                <Button
+                  disabled={busy}
+                  onClick={() =>
+                    void resolveNeed(
+                      state!.needs.find((n) => n.id === task.needId)!,
+                      'go-ahead',
+                      true,
+                    )
+                  }
+                >
+                  Go ahead for this whole task
+                </Button>
+              )}
               <Button
                 disabled={busy}
                 onClick={() =>
@@ -1007,9 +1018,16 @@ export function Workspace({
       const task = state.tasks.find((t) => t.id === entry.taskId);
       const files = [...new Set(group.flatMap((e) => e.files.map((f) => f.path)))];
       const latestWithFiles = group.find((e) => e.files.length > 0);
+      const actorEntry = latestWithFiles ?? entry;
+      const actorSession = actorEntry.sessionId
+        ? state.sessions.find((s) => s.id === actorEntry.sessionId)
+        : undefined;
+      const actorSnapshot =
+        actorEntry.origin ?? (actorSession ? originForSession(actorSession) : undefined);
       const parts = [
         task ? stateNames[task.state] : null,
         files.length ? `${files.length} ${files.length === 1 ? 'file' : 'files'} changed` : null,
+        actorSnapshot ? formatOrigin(actorSnapshot).label : null,
       ].filter(Boolean);
       rows.push(
         <div key={entry.taskId ?? entry.id} className="history-entry compact">
@@ -1039,14 +1057,14 @@ export function Workspace({
   const codex = integrations.find((i) => i.id === 'codex');
   void codex;
   function historyRow(entry: HistoryEntry) {
-    // The verified helper behind this entry, looked up from its session engine.
+    // The recorded origin behind this entry, looked up from its own snapshot
+    // first, then its session engine. The current picker never renames it.
     const entrySession = entry.sessionId
       ? state?.sessions.find((s) => s.id === entry.sessionId)
       : undefined;
-    const entryHelper =
-      entrySession?.engine.verified && entrySession.engine.model
-        ? `, Codex, ${entrySession.engine.model}`
-        : '';
+    const entrySnapshot =
+      entry.origin ?? (entrySession ? originForSession(entrySession) : undefined);
+    const entryOrigin = entrySnapshot ? `, ${formatOrigin(entrySnapshot).label}` : '';
     return (
       <div key={entry.id} className="history-entry">
         <time dateTime={entry.time}>{time(entry.time)}</time>
@@ -1059,7 +1077,7 @@ export function Workspace({
             <p className="code caption">
               {entry.versionId}, {entry.id}
               {entry.commit ? `, maps to commit ${entry.commit}` : ''}
-              {entryHelper}
+              {entryOrigin}
             </p>
           )}
         </div>
@@ -1117,7 +1135,7 @@ export function Workspace({
           }}
         />
       ) : (
-        <Markdown text={doc.text} />
+        <Markdown text={doc.text} reading />
       )}
       {detail === 'technical' && (
         <details className="technical">
@@ -1234,10 +1252,26 @@ export function Workspace({
                         <div className="intent-rail">
                           {(
                             [
-                              ['ask', 'Ask a question', 'Talk it through. Nothing in the project changes.'],
-                              ['work', 'Get something done', 'Give Diomedes a job. It asks before anything that matters.'],
-                              ['plan', 'Make a plan', 'Write down what should happen, in order, before any work.'],
-                              ['review', 'Look over what changed', 'See every change waiting for you. Keep it or undo it.'],
+                              [
+                                'ask',
+                                'Ask a question',
+                                'Talk it through. Nothing in the project changes.',
+                              ],
+                              [
+                                'work',
+                                'Get something done',
+                                'Give Diomedes a job. It asks before anything that matters.',
+                              ],
+                              [
+                                'plan',
+                                'Make a plan',
+                                'Write down what should happen, in order, before any work.',
+                              ],
+                              [
+                                'review',
+                                'Look over what changed',
+                                'See every change waiting for you. Keep it or undo it.',
+                              ],
                             ] as const
                           ).map(([intent, title, line]) => (
                             <button
@@ -1255,12 +1289,14 @@ export function Workspace({
                                 <span>{line}</span>
                                 {intent === 'review' && changes.length > 0 && (
                                   <span className="caption signal-text">
-                                    {changes.length} {changes.length === 1 ? 'change' : 'changes'} waiting
+                                    {changes.length} {changes.length === 1 ? 'change' : 'changes'}{' '}
+                                    waiting
                                   </span>
                                 )}
                                 {intent === 'work' && running.length > 0 && (
                                   <span className="caption">
-                                    Working on {running.length} {running.length === 1 ? 'task' : 'tasks'} now
+                                    Working on {running.length}{' '}
+                                    {running.length === 1 ? 'task' : 'tasks'} now
                                   </span>
                                 )}
                               </span>
@@ -1388,8 +1424,7 @@ export function Workspace({
                             onClick={() => void saveSettings({ ...settings, surface: 'console' })}
                           >
                             Open the Console
-                          </button>
-                          {' '}
+                          </button>{' '}
                           to see every thread, every helper and every change at once.
                         </p>
                       )}
@@ -1441,9 +1476,7 @@ export function Workspace({
                             >
                               {threadName(selectedThread, state)}
                             </button>
-                            <span className="caption push-right">
-                              {threadMeta(selectedThread)}
-                            </span>
+                            <span className="caption push-right">{threadMeta(selectedThread)}</span>
                           </div>
                           {!selectedThread.turns.length ? (
                             <p className="caption">Nothing here yet.</p>
@@ -1456,26 +1489,29 @@ export function Workspace({
                                 <p className="caption turn-meta">
                                   {t.role === 'you'
                                     ? 'You'
-                                    : t.route === 'codex'
-                                      ? detail === 'technical'
-                                        ? 'Codex'
-                                        : 'Online service'
-                                      : 'Diomedes, sample work'}
+                                    : (() => {
+                                        const snapshot = originForTurn(t);
+                                        return formatOrigin(snapshot).primary;
+                                      })()}
                                   {t.attempt ? (
                                     <ModeChip mode={t.mode} attempt={t.attempt} />
                                   ) : null}
                                   <time>{time(t.at)}</time>
                                 </p>
                                 {t.role === 'you' ? <p>{t.text}</p> : <Markdown text={t.text} />}
-                                {t.role === 'diomedes' && t.helper && (
-                                  <p className="caption helper-caption">
-                                    {t.helper.engine === 'codex'
-                                      ? t.helper.verified && t.helper.model
-                                        ? `Codex, ${t.helper.model}`
-                                        : 'Codex, name not reported'
-                                      : 'Sample work, on this computer'}
-                                  </p>
-                                )}
+                                {t.role !== 'you' &&
+                                  (() => {
+                                    const snapshot = originForTurn(t);
+                                    if (snapshot?.mode === 'application') return null;
+                                    return (
+                                      <p
+                                        className="caption helper-caption"
+                                        title={formatOrigin(snapshot).detail}
+                                      >
+                                        {formatOrigin(snapshot).secondary}
+                                      </p>
+                                    );
+                                  })()}
                                 {t.sources?.length > 0 && (
                                   <p className="caption">Sources: {t.sources.join(', ')}</p>
                                 )}
@@ -1632,9 +1668,11 @@ export function Workspace({
                     <>
                       {waiting.map(needCard)}
                       {!changes.length ? (
-                        waiting.length ? null : <Empty title="Nothing to review">
-                          <p>Changes appear here after Diomedes works on a task.</p>
-                        </Empty>
+                        waiting.length ? null : (
+                          <Empty title="Nothing to review">
+                            <p>Changes appear here after Diomedes works on a task.</p>
+                          </Empty>
+                        )
                       ) : (
                         <>
                           <p className="prose">
@@ -1670,7 +1708,11 @@ export function Workspace({
                           <p className="caption">
                             {date(historyView.entry.time)}, {time(historyView.entry.time)}
                           </p>
-                          {state.needs.filter((need) => need.id === historyView.entry.approvalId).map((need) => <ApprovalStatus key={need.id} need={need} />)}
+                          {state.needs
+                            .filter((need) => need.id === historyView.entry.approvalId)
+                            .map((need) => (
+                              <ApprovalStatus key={need.id} need={need} />
+                            ))}
                           {historyView.files.map((c, i) => (
                             <ChangeCard
                               key={`${c.path}:${i}`}
@@ -1825,7 +1867,7 @@ export function Workspace({
                         <h3>What Diomedes says it did</h3>
                         <p className="prose">
                           {reviewSession?.sample
-                            ? 'Sample work changed the files listed below. These are scripted changes to demonstrate the workflow.'
+                            ? 'The example workflow changed the files listed below. These are scripted changes to demonstrate the workflow.'
                             : (reviewSession?.log.filter((l) => l.level === 'plain').at(-1)
                                 ?.sentence ??
                               'Changes were written to the project and recorded in History.')}
@@ -1872,9 +1914,16 @@ export function Workspace({
                             : workSession.state === 'working'
                               ? 'Working'
                               : titleCase(workSession.state)}
-                          . {workSession.sample ? 'Sample work.' : 'Diomedes, with your OK.'}
+                          . {workSession.sample ? 'Scripted example.' : 'Diomedes, with your OK.'}
                         </p>
-                        {state.needs.filter((need) => need.sessionId === workSession.id && need.approvalReceipt).slice(-1).map((need) => <ApprovalStatus key={need.id} need={need} />)}
+                        {state.needs
+                          .filter(
+                            (need) => need.sessionId === workSession.id && need.approvalReceipt,
+                          )
+                          .slice(-1)
+                          .map((need) => (
+                            <ApprovalStatus key={need.id} need={need} />
+                          ))}
                         {workThread && (
                           <div className="actions">
                             <Button tone="quiet" onClick={() => openThread(workThread.id)}>
@@ -2212,14 +2261,16 @@ export function Workspace({
             >
               Don't do this
             </Button>
-            {!previewNeed.approval && (<Button
-              onClick={() => {
-                void resolveNeed(previewNeed, 'go-ahead', true);
-                setPreviewNeed(null);
-              }}
-            >
-              Go ahead for this whole task
-            </Button>)}
+            {!previewNeed.approval && (
+              <Button
+                onClick={() => {
+                  void resolveNeed(previewNeed, 'go-ahead', true);
+                  setPreviewNeed(null);
+                }}
+              >
+                Go ahead for this whole task
+              </Button>
+            )}
             <Button
               tone="signal"
               onClick={() => {
@@ -2324,7 +2375,9 @@ export function Workspace({
             <label className="field">
               Work service
               <select value={route} onChange={(e) => setRoute(e.target.value as Route)}>
-                <option value="sample">Sample work</option>
+                <option value="sample" disabled>
+                  Choose an engine
+                </option>
                 <option value="codex">
                   {detail === 'technical' ? 'Codex / ChatGPT subscription' : 'Online service'}
                 </option>
@@ -2455,11 +2508,11 @@ function threadMeta(c: Conversation) {
   return at ? `${turns} · ${time(at)}` : turns;
 }
 
-function Markdown({ text }: { text: string }) {
+function Markdown({ text, reading = false }: { text: string; reading?: boolean }) {
   const lines = text.split('\n');
   let inCode = false;
   return (
-    <div className="markdown prose">
+    <div className={`markdown prose${reading ? ' document-reading' : ''}`}>
       {lines.map((line, i) => {
         if (line.startsWith('```')) {
           inCode = !inCode;

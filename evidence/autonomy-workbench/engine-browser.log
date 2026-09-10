@@ -1,0 +1,81 @@
+[WebServer] Diomedes: http://127.0.0.1:5174. Press Ctrl+C to stop both local processes.
+[WebServer] (node:5484) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer]   VITE v7.3.6  ready in 385 ms
+[WebServer] 
+[WebServer]   ➜  Local:   http://127.0.0.1:5174/
+[WebServer] 3:39:20 AM [vite] http proxy error: /api/settings
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:47632
+[WebServer]     at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1638:16)
+[WebServer] (node:31972) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Diomedes local service ready: http://127.0.0.1:47632
+[WebServer] App data: F:\Achilles\diomedes-wt\autonomy-workbench\test-results\app-data-1789025959579-36580\data
+[WebServer] Project root: F:\Achilles\diomedes-wt\autonomy-workbench\test-results\app-data-1789025959579-36580\projects
+
+Running 1 test using 1 worker
+
+(node:26460) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Error: fixture request cancelled
+    at AbortSignal.abort (file:///F:/Achilles/diomedes-wt/autonomy-workbench/tests/ai-engines-ui.spec.ts:85:20)
+    at AbortSignal.[nodejs.internal.kHybridDispatch] (node:internal/event_target:843:20)
+    at AbortSignal.dispatchEvent (node:internal/event_target:776:26)
+    at runAbort (node:internal/abort_controller:486:10)
+    at abortSignal (node:internal/abort_controller:463:5)
+    at AbortController.abort (node:internal/abort_controller:505:5)
+    at ServerResponse.<anonymous> (file:///F:/Achilles/diomedes-wt/autonomy-workbench/server/app.ts:513:42)
+    at Object.onceWrapper (node:events:633:28)
+    at ServerResponse.emit (node:events:519:28)
+    at emitCloseNT (node:_http_server:1066:10)
+    at Socket.onServerResponseClose (node:_http_server:285:5)
+    at Socket.emit (node:events:531:35)
+    at TCP.<anonymous> (node:net:347:12)
+    at TCP.callbackTrampoline (node:internal/async_hooks:130:17)
+  x  1 tests\ai-engines-ui.spec.ts:233:1 › Console discovers, selects, streams, cancels, and approves all three fixture engines (17.8s)
+
+
+  1) tests\ai-engines-ui.spec.ts:233:1 › Console discovers, selects, streams, cancels, and approves all three fixture engines 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  locator('.history-entry').filter({ hasText: 'Diomedes changed' })
+    Expected: 3
+    Received: 0
+    Timeout:  12000ms
+
+    Call log:
+      - Expect "toHaveCount" locator('.history-entry').filter({ hasText: 'Diomedes changed' }) with timeout 12000ms
+      - waiting for locator('.history-entry').filter({ hasText: 'Diomedes changed' })
+        27 × locator resolved to 0 elements
+           - unexpected value "0"
+
+
+      376 |
+      377 |   await page.getByRole('button', { name: 'History', exact: true }).click();
+    > 378 |   await expect(page.locator('.history-entry').filter({ hasText: 'Diomedes changed' })).toHaveCount(
+          |                                                                                        ^
+      379 |     3,
+      380 |   );
+      381 |   expect(errors).toEqual([]);
+        at F:\Achilles\diomedes-wt\autonomy-workbench\tests\ai-engines-ui.spec.ts:378:88
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\browser\ai-engines-ui-Console-disc-c93f0-s-all-three-fixture-engines\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\browser\ai-engines-ui-Console-disc-c93f0-s-all-three-fixture-engines\error-context.md
+
+    Error Context: test-results\browser\ai-engines-ui-Console-disc-c93f0-s-all-three-fixture-engines\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\browser\ai-engines-ui-Console-disc-c93f0-s-all-three-fixture-engines\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\browser\ai-engines-ui-Console-disc-c93f0-s-all-three-fixture-engines\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests\ai-engines-ui.spec.ts:233:1 › Console discovers, selects, streams, cancels, and approves all three fixture engines 

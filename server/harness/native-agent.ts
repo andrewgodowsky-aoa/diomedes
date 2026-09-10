@@ -19,6 +19,7 @@ import type {
   PortableMessage,
   ProviderTranscriptRef,
 } from '../../shared/harness.js';
+import { applicationOrigin, directOrigin } from '../../shared/attribution.js';
 import { z } from 'zod';
 import { copy, digest, HarnessError, units } from './policy.js';
 import { RunService, Suspended } from './run-service.js';
@@ -74,6 +75,16 @@ function validResponse(value: unknown): value is ModelResponse {
   if (r.type === 'final') return typeof (r as { text?: unknown }).text === 'string';
   if (r.type === 'tool') return typeof (r as { name?: unknown }).name === 'string' && 'input' in r;
   return false;
+}
+
+/**
+ * Scripted local work is an application action, never model authorship.
+ * The fixture adapter and the synthetic test adapter named `fixture` are both
+ * fixed scripts; every other adapter id is treated as a direct engine whose
+ * reported model comes only from its transcript reference.
+ */
+function isScriptedAdapter(id: string): boolean {
+  return id === 'native-fixture' || id === 'fixture';
 }
 
 export class NativeAgent {
@@ -172,6 +183,7 @@ export class NativeAgent {
                   name: 'prepare_model_context',
                   input: z.json().parse(original),
                   cost: 0,
+                  origin: applicationOrigin(),
                 },
                 async ({ signal }) =>
                   validatePrepared(original, await prepare(copy(original), signal)),
@@ -202,11 +214,28 @@ export class NativeAgent {
                   tools: descriptors,
                 } as unknown as Json),
           },
-          async ({ signal }) => {
+          async ({ signal, reportOrigin }) => {
             await this.adapter.validatePrepared?.(copy(effective));
             const result = await this.adapter.complete(copy(effective), signal);
             if (!result || !validResponse(result.response))
               throw new HarnessError('invalid_model_response', 'Invalid model response schema.');
+            // Provenance comes only from adapter/runtime metadata here: the
+            // transcript model id when the adapter reports one, never from
+            // generated prose or a model-returned JSON self-identification.
+            // Scripted adapters stay application actions.
+            if (reportOrigin) {
+              if (isScriptedAdapter(this.adapter.id)) reportOrigin(applicationOrigin());
+              else {
+                const reported = result.transcript?.modelId ?? null;
+                reportOrigin(
+                  directOrigin({
+                    engine: this.adapter.id,
+                    reportedModel: reported,
+                    version: this.adapter.version,
+                  }),
+                );
+              }
+            }
             return {
               response: result.response,
               usage: result.usage ?? null,
@@ -256,6 +285,7 @@ export class NativeAgent {
                   effect: 'pure',
                   name: 'inspect_model_output',
                   cost: 0,
+                  origin: applicationOrigin(),
                   input: z.json().parse({
                     request: effective,
                     text: response.text,
@@ -316,6 +346,7 @@ export class NativeAgent {
             destination: tool.destination,
             trustedInputRequired: tool.trustedInputRequired,
             label: tool.label ?? null,
+            origin: applicationOrigin(),
             input,
           },
           (context) => tool.execute({ ...context, input: context.input }),

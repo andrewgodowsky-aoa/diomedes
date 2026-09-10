@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import type { ScopeGrantRecord } from '../shared/permissions.js';
 import type { Need, ProjectState, Session } from '../shared/types.js';
 import { ApiError } from './paths.js';
 
@@ -23,9 +24,10 @@ export function usesCommandProtocol(body: Record<string, unknown>, family: 'work
 
 type CommandRecord =
   | { type: 'work.start'; subject: Session; digest: string }
-  | { type: 'approval.decide'; subject: Need; digest: string };
+  | { type: 'approval.decide'; subject: Need; digest: string }
+  | { type: 'scope.issue'; subject: ScopeGrantRecord; digest: string };
 
-/** One project-scoped namespace: a key cannot be reused by another adapter. */
+/** One project-scoped namespace: a key cannot be reused by another operation family. */
 export function findCommand(state: ProjectState, commandId: string): CommandRecord | undefined {
   const session = state.sessions.find((item) => item.receipt?.commandId === commandId);
   if (session?.receipt)
@@ -33,6 +35,8 @@ export function findCommand(state: ProjectState, commandId: string): CommandReco
   const need = state.needs.find((item) => item.approvalReceipt?.commandId === commandId);
   if (need?.approvalReceipt)
     return { type: 'approval.decide', subject: need, digest: need.approvalReceipt.payloadDigest };
+  const grant = state.scopeGrants?.find((item) => item.grant.commandId === commandId);
+  if (grant) return { type: 'scope.issue', subject: grant, digest: grant.grant.payloadDigest };
 }
 export function assertReplay(
   record: CommandRecord | undefined,
@@ -41,6 +45,11 @@ export function assertReplay(
 ) {
   if (record && (record.type !== type || (digest !== undefined && record.digest !== digest)))
     throw new ApiError(409, 'This command already names a different request.', {
-      code: type === 'work.start' ? 'work_command_conflict' : 'approval_command_conflict',
+      code:
+        type === 'work.start'
+          ? 'work_command_conflict'
+          : type === 'approval.decide'
+            ? 'approval_command_conflict'
+            : 'scope_command_conflict',
     });
 }

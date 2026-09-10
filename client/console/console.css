@@ -1,4 +1,4 @@
-/* The Field shell: 1:1 with 05-instrumented-density-prototype.html.
+/* The Field shell, with the approved Settings typography and responsive sizing.
    Every rule is prefixed with `.console`; the prototype's `.app` grid is the
    `.console` root. Tokens come from client/styles.css `:root`. No gradients,
    no shadows except the picker menu and palette, radii 6/5 px only, glow only
@@ -6,17 +6,18 @@
 html[data-surface='console'] body {
   background: var(--chrome);
 }
+
 .console {
   position: relative;
   z-index: 1;
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-rows: 40px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
   background: var(--chrome);
   color: var(--t1);
-  font: 400 13px/1.5 var(--ui);
+  font: 400 var(--dm-type-body) / 1.5 var(--ui);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
   /* `scrollbar-color` inherits; `scrollbar-width` does not, so it is set on the
@@ -58,7 +59,7 @@ html[data-surface='console'] body {
 }
 .console .mono {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--dm-type-caption);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--t3);
@@ -67,7 +68,7 @@ html[data-surface='console'] body {
 .console .mono.lc {
   text-transform: none;
   letter-spacing: 0.01em;
-  font-size: 11.5px;
+  font-size: var(--dm-type-caption);
 }
 .console .pt {
   display: inline-block;
@@ -126,7 +127,8 @@ html[data-surface='console'] body {
 /* ---- frame ---- */
 .console .top {
   display: grid;
-  grid-template-columns: 232px 1fr max-content;
+  grid-template-columns: 232px minmax(0, 1fr) minmax(0, max-content);
+  min-height: 40px;
   align-items: center;
   border-bottom: 1px solid var(--hair);
   -webkit-app-region: drag;
@@ -206,6 +208,7 @@ html[data-surface='console'] body {
   flex-direction: column;
   min-height: 0;
   background: var(--chrome);
+  overflow-y: auto;
 }
 .console .rail-head {
   display: flex;
@@ -215,16 +218,16 @@ html[data-surface='console'] body {
 }
 .console .rail-head h2 {
   margin: 0;
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--dm-font-ui);
+  font-size: var(--dm-type-caption);
   font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--t3);
 }
 .console .rail-head button {
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
 }
 .console .rail-head button:hover {
   color: var(--t1);
@@ -296,7 +299,7 @@ html[data-surface='console'] body {
 .console .spine small {
   display: block;
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -365,7 +368,7 @@ html[data-surface='console'] body {
    it cannot, so head, instrument line, transcript and composer stay on the
    same two edges at every width. */
 .console .col {
-  width: min(760px, 100% - 96px);
+  width: min(var(--dm-measure), 100% - 64px);
   margin-inline: auto;
 }
 .console .head {
@@ -377,7 +380,7 @@ html[data-surface='console'] body {
 }
 .console .head h1 {
   margin: 0;
-  font: 500 18px/1.25 var(--ui);
+  font: 500 var(--dm-type-title) / 1.25 var(--ui);
   cursor: pointer;
 }
 /* instrumentation lives on one mono line under the title, never inside the conversation */
@@ -388,7 +391,7 @@ html[data-surface='console'] body {
   align-items: baseline;
   padding: 6px 0 12px;
   border-bottom: 1px solid var(--hair);
-  font: 400 11px/1.6 var(--mono);
+  font: 400 var(--dm-type-body) / 1.6 var(--mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--t3);
@@ -426,7 +429,7 @@ html[data-surface='console'] body {
 }
 /* Permission explainer: one quiet line under the instrument line, not a control. */
 .console .permission-note {
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
   color: var(--t2);
   /* block only: the shorthand would reset `.col`'s auto inline margins and pull
      this line out of the centred measure */
@@ -442,7 +445,7 @@ html[data-surface='console'] body {
 }
 .console .seg button {
   padding: 3px 9px;
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
   color: var(--t3);
 }
 .console .seg button + button {
@@ -491,7 +494,7 @@ html[data-surface='console'] body {
   margin: 4px 0 8px;
   padding: 2px 0 2px 10px;
   border-left: 1px solid var(--hair-2);
-  font: 400 11.5px/1.7 var(--mono);
+  font: 400 var(--dm-type-body) / 1.7 var(--mono);
   color: var(--t3);
   white-space: pre-wrap;
 }
@@ -548,7 +551,7 @@ html[data-surface='console'] body {
 }
 .console .who b {
   font-weight: 500;
-  font-size: 12.5px;
+  font-size: var(--dm-type-caption);
   color: var(--t2);
 }
 .console .who .mono,
@@ -571,7 +574,7 @@ html[data-surface='console'] body {
 }
 .console .who .tools button {
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
 }
 .console .who .tools button:hover {
   color: var(--t1);
@@ -581,8 +584,8 @@ html[data-surface='console'] body {
   opacity: 1;
 }
 .console .body {
-  font-size: 16px;
-  line-height: 1.65;
+  font-size: var(--dm-type-body);
+  line-height: var(--dm-line-body);
 }
 .console .turn.you .body {
   color: color-mix(in srgb, var(--t1) 73%, var(--t2));
@@ -599,8 +602,8 @@ html[data-surface='console'] body {
 }
 .console .greeting p {
   margin: 0;
-  font-size: 16px;
-  line-height: 1.65;
+  font-size: var(--dm-type-body);
+  line-height: var(--dm-line-body);
   color: var(--t2);
 }
 .console .greeting p:first-child {
@@ -650,14 +653,14 @@ html[data-surface='console'] body {
 }
 .console .need .ask {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--dm-type-caption);
   line-height: 1.55;
   color: var(--t1);
   max-width: 62ch;
 }
 .console .need .why {
   margin: 5px 0 0;
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
   line-height: 1.6;
   color: var(--t2);
   max-width: 62ch;
@@ -671,7 +674,7 @@ html[data-surface='console'] body {
 /* the board's verb language: text, no chrome. Ink stays 12 px; the hit area is
    pushed out to 24 px with padding the negative margin takes back. */
 .console .need .verbs .verb {
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
   color: var(--t2);
   padding: 6px 6px;
   margin: -6px -6px;
@@ -690,7 +693,6 @@ html[data-surface='console'] body {
   margin: 14px 0 0;
   border-left-color: var(--hair-2);
 }
-
 
 .console .compose {
   padding: 0 0 20px;
@@ -711,7 +713,7 @@ html[data-surface='console'] body {
   background: transparent;
   border: 0;
   color: var(--t1);
-  font: 400 15px/1.55 var(--ui);
+  font: 400 var(--dm-type-body) / 1.55 var(--ui);
   padding: 11px 14px 4px;
   min-height: 42px;
   max-height: 220px;
@@ -725,7 +727,7 @@ html[data-surface='console'] body {
   gap: 10px;
   padding: 4px 14px 8px;
   color: var(--t3);
-  font-size: 12.5px;
+  font-size: var(--dm-type-caption);
   align-items: center;
 }
 .console .aux.show {
@@ -745,7 +747,7 @@ html[data-surface='console'] body {
   border-radius: var(--rb);
   padding: 3px 8px;
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--dm-type-caption);
 }
 .console .bar {
   display: flex;
@@ -760,9 +762,9 @@ html[data-surface='console'] body {
 }
 .console .modes button {
   padding: 11px 10px 12px;
-  font: 500 11px/1 var(--mono);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font: 500 var(--dm-type-body) / 1 var(--dm-font-ui);
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--t3);
   transition: color var(--quick);
 }
@@ -804,14 +806,14 @@ html[data-surface='console'] body {
 .console .bar .cap {
   margin-left: 14px;
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
 }
 .console .bar .send {
   margin-left: auto;
   padding: 5px 10px;
   border-radius: var(--rb);
   color: var(--t3);
-  font-size: 12.5px;
+  font-size: var(--dm-type-caption);
   font-weight: 500;
 }
 .console .bar .send[aria-disabled='true'] {
@@ -825,7 +827,7 @@ html[data-surface='console'] body {
 }
 .console .bar .hint {
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: var(--dm-type-caption);
   margin-left: 10px;
 }
 
@@ -839,13 +841,13 @@ html[data-surface='console'] body {
 }
 .console .ledger h2 {
   margin: 0;
-  font: 500 11px/1.4 var(--mono);
+  font: 500 var(--dm-type-body) / 1.4 var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .console .ledger .sub {
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
   margin: 3px 0 0;
 }
 /* hierarchy by type and hairline weight: the thread's own work leads, section labels recede to mono */
@@ -858,7 +860,7 @@ html[data-surface='console'] body {
   display: flex;
   gap: 10px;
   align-items: baseline;
-  font-size: 13.5px;
+  font-size: var(--dm-type-caption);
   font-weight: 500;
   color: var(--t1);
 }
@@ -871,15 +873,17 @@ html[data-surface='console'] body {
   align-items: baseline;
   margin: 3px 0 0 18px;
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
 }
 .console .ledger .focus .m .mono {
   text-transform: none;
   letter-spacing: 0;
 }
 .console .ledger .focus .m button {
+  flex: none;
+  white-space: nowrap;
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
   border-bottom: 1px solid var(--hair-2);
 }
 .console .ledger .focus .m button:hover {
@@ -896,7 +900,7 @@ html[data-surface='console'] body {
 }
 .console .ledger h3 {
   margin: 0 0 8px;
-  font: 500 11px/1.4 var(--mono);
+  font: 500 var(--dm-type-body) / 1.4 var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--t3);
@@ -916,7 +920,7 @@ html[data-surface='console'] body {
   gap: 0 8px;
   align-items: baseline;
   padding: 5px 0;
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
   color: var(--t1);
 }
 .console .ledger li .mono {
@@ -925,7 +929,7 @@ html[data-surface='console'] body {
 }
 .console .ledger li .sub {
   grid-column: 2 / -1;
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
   color: var(--t3);
 }
 .console .ledger li.quiet {
@@ -934,21 +938,22 @@ html[data-surface='console'] body {
 }
 .console .ledger li button {
   color: var(--attn);
-  font-size: 12.5px;
+  font-size: var(--dm-type-caption);
 }
 .console .ledger .ev {
-  font: 400 11.5px/1.7 var(--mono);
+  font: 400 var(--dm-type-body) / 1.7 var(--mono);
   color: var(--t3);
 }
 .console .ledger .ev li {
   display: grid;
-  grid-template-columns: 40px 1fr;
+  grid-template-columns: 5ch minmax(0, 1fr);
   gap: 0 10px;
   padding: 0;
   font: inherit;
   color: inherit;
 }
 .console .ledger .ev b {
+  white-space: nowrap;
   color: var(--t2);
   font-weight: 500;
 }
@@ -957,23 +962,28 @@ html[data-surface='console'] body {
   font-style: normal;
 }
 .console #secRecent li.quiet {
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
 }
 
 /* ---- model picker: full name in every mode ---- */
 .console .picker {
   position: relative;
+  min-width: 0;
+  max-width: 100%;
 }
 .console .picker > button {
   display: inline-flex;
   align-items: baseline;
   gap: 8px;
-  white-space: nowrap;
+  white-space: normal;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
   padding: 4px 8px;
   border-radius: var(--rb);
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-family: var(--dm-font-ui);
+  font-size: var(--dm-type-caption);
+  letter-spacing: normal;
   color: var(--t2);
   transition:
     background var(--quick),
@@ -985,17 +995,17 @@ html[data-surface='console'] body {
 }
 .console .picker > button .eng {
   color: var(--t3);
-  text-transform: uppercase;
+  text-transform: none;
 }
 .console .picker > button .mdl {
   color: var(--t1);
   text-transform: none;
-  letter-spacing: 0.02em;
+  letter-spacing: normal;
 }
 .console .picker > button .eff {
   color: var(--t3);
   text-transform: none;
-  letter-spacing: 0.02em;
+  letter-spacing: normal;
 }
 .console .picker > button .eff.capped {
   color: var(--attn);
@@ -1009,7 +1019,7 @@ html[data-surface='console'] body {
   right: 0;
   top: calc(100% + 6px);
   width: 340px;
-  max-width: calc(100vw - 32px);
+  max-width: calc(100vw / var(--dm-ui-scale) - 32px);
   max-height: min(70vh, 640px);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1029,9 +1039,9 @@ html[data-surface='console'] body {
 }
 .console .pmenu h4 {
   margin: 8px 8px 4px;
-  font: 500 11px var(--mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font: 500 var(--dm-type-body) var(--dm-font-ui);
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--t3);
   display: flex;
 }
@@ -1044,7 +1054,7 @@ html[data-surface='console'] body {
   color: var(--t3);
   font-weight: 400;
   text-transform: none;
-  letter-spacing: 0;
+  letter-spacing: normal;
 }
 .console .pmenu .m {
   display: grid;
@@ -1056,7 +1066,7 @@ html[data-surface='console'] body {
   padding: 6px 8px;
   border-radius: var(--rb);
   color: var(--t1);
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
 }
 .console .pmenu .m:hover {
   background: var(--surface);
@@ -1072,7 +1082,7 @@ html[data-surface='console'] body {
 }
 .console .pmenu .m .id {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--dm-type-caption);
   color: var(--t2);
   max-width: 190px;
   overflow: hidden;
@@ -1084,7 +1094,7 @@ html[data-surface='console'] body {
 }
 .console .pmenu .m small {
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
   line-height: 1.45;
   grid-column: 1 / -1;
   margin-top: -1px;
@@ -1100,7 +1110,7 @@ html[data-surface='console'] body {
 .console .pmenu .ladder button {
   padding: 4px 8px;
   border-radius: var(--rb);
-  font: 500 11px var(--mono);
+  font: 500 var(--dm-type-body) var(--mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--t3);
@@ -1120,7 +1130,7 @@ html[data-surface='console'] body {
 .console .pmenu .note {
   padding: 4px 8px 6px;
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
 }
 .console .pmenu .note b {
   color: var(--attn);
@@ -1136,7 +1146,7 @@ html[data-surface='console'] body {
   border: 1px solid var(--hair-2);
   padding: 7px 12px;
   border-radius: var(--rb);
-  font-size: 12.5px;
+  font-size: var(--dm-type-caption);
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--quick);
@@ -1151,7 +1161,7 @@ html[data-surface='console'] body {
   padding: 12px 0;
 }
 .console .board-placeholder h3 {
-  font: 500 11px/1.4 var(--mono);
+  font: 500 var(--dm-type-body) / 1.4 var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--t3);
@@ -1164,7 +1174,7 @@ html[data-surface='console'] body {
   align-items: baseline;
   padding: 6px 0;
   border-bottom: 1px solid var(--hair);
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
 }
 .console .board-row .actions,
 .console .team-row .actions {
@@ -1175,7 +1185,7 @@ html[data-surface='console'] body {
 .console .board-row .actions button,
 .console .team-row .actions button {
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
 }
 .console .board-row .actions button:hover,
 .console .team-row .actions button:hover {
@@ -1183,7 +1193,7 @@ html[data-surface='console'] body {
 }
 .console .caption {
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
 }
 /* Approval decision record: the shared instrument register from
    client/styles.css, set here in the transcript's rhythm. */
@@ -1198,7 +1208,7 @@ html[data-surface='console'] body {
 }
 .console .surface-menu > button {
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
   padding: 4px 6px;
   border-radius: var(--rb);
 }
@@ -1217,7 +1227,7 @@ html[data-surface='console'] body {
   align-items: baseline;
   padding: 6px 8px;
   border-radius: var(--rb);
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
   color: var(--t1);
 }
 .console .surface-menu .pmenu button:hover {
@@ -1259,14 +1269,12 @@ html[data-surface='console'] body {
     flex-basis: 100%;
     width: max-content;
   }
-  .console .rail,
-  .console .ledger,
-  .console .top-right {
+  .console .ledger {
     display: none;
   }
-  .console .top,
   .console .stage {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
   .console #scrThread {
     grid-template-columns: 1fr;
@@ -1301,3 +1309,162 @@ html[data-motion='reduced'] .console .modes .ind b {
     animation: none;
   }
 }
+
+/* The shell and the Workbook share type and controls. Technical measurement
+   keeps its mono face, while navigation and explanatory copy use the UI face. */
+.console
+  :where(
+    .stage,
+    .screen,
+    .work,
+    .rail,
+    .col,
+    .head,
+    .body,
+    .top-right,
+    .who,
+    .bar,
+    .aux,
+    .instr,
+    .need,
+    .ev,
+    .team,
+    .lane,
+    .columns,
+    .column,
+    .palette,
+    .connection-desktop
+  ) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console :where(.head, .who, .bar, .aux, .top-right) {
+  flex-wrap: wrap;
+}
+.console :where(.head, .who, .bar, .aux, .top-right, .task, .lanetop, .ctx) > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.console
+  :where(
+    .rail-head h2,
+    .modes button,
+    .picker > button,
+    .pmenu h4,
+    .pmenu .note,
+    .palette .group,
+    .palette .acts button,
+    .cblock label
+  ) {
+  font-family: var(--dm-font-ui);
+  letter-spacing: normal;
+  text-transform: none;
+}
+.console :where(.head h1, .task h1, .boardhead h1) {
+  overflow-wrap: anywhere;
+}
+
+@container app (max-width: 1100px) {
+  .console #scrThread {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .console .ledger {
+    display: none;
+  }
+  .console .top {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .console .top-right {
+    grid-column: 1 / -1;
+    padding-block: 6px;
+  }
+  .console .crumb {
+    padding-left: 16px;
+  }
+  .console .top-right .picker {
+    margin-right: auto;
+  }
+}
+@container app (max-width: 700px) {
+  .console .stage {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .console .rail {
+    display: flex;
+    flex-direction: row;
+    max-height: 140px;
+    overflow: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--hair);
+  }
+  .console .rail .rail-head {
+    flex-direction: column;
+    justify-content: center;
+  }
+  .console .rail .spine {
+    min-width: 200px;
+    max-width: 240px;
+    overflow: auto;
+  }
+  .console .rail .views,
+  .console .rail .foot {
+    display: flex;
+    flex-direction: column;
+    flex: none;
+    margin: 0;
+    padding: 4px;
+    border-top: 0;
+    border-left: 1px solid var(--hair);
+  }
+  .console .rail .views button,
+  .console .rail .foot button {
+    white-space: nowrap;
+    min-height: 28px;
+  }
+  .console .col {
+    width: calc(100% - 32px);
+  }
+  .console .top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .console .top .dm-mark {
+    min-height: 40px;
+  }
+  .console .crumb {
+    padding: 4px 12px;
+  }
+  .console .top-right {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-start;
+  }
+  .console .pmenu {
+    position: fixed;
+    top: 120px;
+    right: 12px;
+    max-height: calc(100dvh / var(--dm-ui-scale) - 144px);
+  }
+  .console .palette li {
+    grid-template-columns: 14px minmax(0, 1fr);
+  }
+  .console .palette li .acts {
+    grid-column: 2;
+    grid-row: auto;
+    flex-wrap: wrap;
+  }
+}
+/* Shared task authority controls follow the Settings typography and theme. */
+.console .task-permission { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.console .who > b, .console .who > span { min-width: 0; overflow-wrap: anywhere; }
+.console .run-origin { overflow-wrap: anywhere; color: var(--fg-2, inherit); }
+.permission-panel { min-width: 0; font-family: inherit; font-size: 14px; line-height: 1.5; }
+.permission-panel p { margin: 8px 0; }
+.permission-panel-title { display: flex; justify-content: space-between; gap: 12px; min-width: 0; overflow-wrap: anywhere; }
+.permission-presets > div { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.permission-active { display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 10px 0; }
+.permission-active span { min-width: 0; overflow-wrap: anywhere; }
+.permission-panel details { margin: 12px 0; }
+.permission-panel label { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
+.permission-panel textarea, .permission-panel input { box-sizing: border-box; width: 100%; min-width: 0; font: inherit; }
+.permission-panel button { font: inherit; }

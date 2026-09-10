@@ -1,0 +1,59 @@
+[WebServer] Diomedes: http://127.0.0.1:5174. Press Ctrl+C to stop both local processes.
+[WebServer] (node:46044) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer]   VITE v7.3.6  ready in 367 ms
+[WebServer] 
+[WebServer]   ➜  Local:   http://127.0.0.1:5174/
+[WebServer] 3:49:35 AM [vite] http proxy error: /api/settings
+[WebServer] Error: connect ECONNREFUSED 127.0.0.1:47632
+[WebServer]     at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1638:16)
+[WebServer] (node:40628) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Diomedes local service ready: http://127.0.0.1:47632
+[WebServer] App data: F:\Achilles\diomedes-wt\autonomy-workbench\test-results\app-data-1789026574559-22168\data
+[WebServer] Project root: F:\Achilles\diomedes-wt\autonomy-workbench\test-results\app-data-1789026574559-22168\projects
+
+Running 3 tests using 1 worker
+
+(node:15028) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  x  1 tests\autonomy-ui.spec.ts:216:1 › scope confirmation covers the same task; recorded actor survives a picker mutation (0ms)
+  -  2 tests\autonomy-ui.spec.ts:317:1 › out-of-scope proposals wait for exact review; revocation forces exact approval again
+  -  3 tests\autonomy-ui.spec.ts:392:1 › long names hold at 800px; Stop is truthful and inspector refresh stays honest
+
+
+  1) tests\autonomy-ui.spec.ts:216:1 › scope confirmation covers the same task; recorded actor survives a picker mutation 
+
+    Error: dist is older than client\console\console.css, so this spec would test the previous build. Run "npm run build" first.
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 1789026555493.7058
+    Received:   1789026120155.0342
+
+      41 |     built,
+      42 |     `dist is older than ${newestPath}, so this spec would test the previous build. Run "npm run build" first.`,
+    > 43 |   ).toBeGreaterThan(newest);
+         |     ^
+      44 | }
+      45 |
+      46 | test.describe.configure({ mode: 'serial' });
+        at expectFreshBundle (F:\Achilles\diomedes-wt\autonomy-workbench\tests\autonomy-ui.spec.ts:43:5)
+        at F:\Achilles\diomedes-wt\autonomy-workbench\tests\autonomy-ui.spec.ts:153:3
+
+    Error Context: test-results\browser\autonomy-ui-scope-confirma-5c575--survives-a-picker-mutation\error-context.md
+
+    Error Context: test-results\browser\autonomy-ui-scope-confirma-5c575--survives-a-picker-mutation\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\browser\autonomy-ui-scope-confirma-5c575--survives-a-picker-mutation\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\browser\autonomy-ui-scope-confirma-5c575--survives-a-picker-mutation\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests\autonomy-ui.spec.ts:216:1 › scope confirmation covers the same task; recorded actor survives a picker mutation 
+  2 did not run

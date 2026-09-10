@@ -1,0 +1,72 @@
+diff --git a/docs/DIOMEDES_LIVE_ROADMAP.md b/docs/DIOMEDES_LIVE_ROADMAP.md
+index 3732523..0240628 100644
+--- a/docs/DIOMEDES_LIVE_ROADMAP.md
++++ b/docs/DIOMEDES_LIVE_ROADMAP.md
+@@ -1,16 +1,18 @@
+ # DIOMEDES LIVE ROADMAP
+ 
+-**Roadmap version:** 2026-09-09.7 (local reconciliation; cloud patch not applied)
+-**Last reconciled:** September 9, 2026  
++**Roadmap version:** 2026-09-10.1 (local candidate reconciliation; cloud patch not applied)
++**Last reconciled:** September 10, 2026
+ **Product:** Diomedes  
+ **Company direction:** Diomedes Systems  
+ **Cloud canonical:** Google Doc `1bRhz3zQPXOYuVlt95U1EIkz7pcm1dtSsoBvkDrLR3zE`  
+ **Repository mirror:** `docs/DIOMEDES_LIVE_ROADMAP.md`
+ 
+-Cloud basis: version 2026-09-09.6, refreshed unchanged during final verification.
+-The exact revision-guarded proposed update is `docs/releases/ROADMAP_PATCH.json`.
+-This local checkpoint adds verified implementation facts and preserves the .6
+-product decisions; it does not claim cloud synchronization or source publication.
++Last recorded cloud basis: version 2026-09-09.6 from the September 9 verification.
++It has not been refreshed in this implementation pass. The earlier proposed update
++is `docs/releases/ROADMAP_PATCH.json`; the new candidate delta and required refresh
++are described in `docs/workbench/ROADMAP_PATCH_2026-09-10.md`. This local checkpoint
++preserves the existing product decisions and does not claim cloud synchronization,
++source publication or a new installed release.
+ 
+ ## 1. Authority and synchronization
+ 
+@@ -112,7 +114,41 @@ Routing is capability-aware. A task requiring enforced pre-send approval must no
+ 
+ ## 7. Current implementation checkpoint
+ 
+-### Published GitHub state
++### September 10 isolated candidate
++
++`codex/autonomy-workbench-20260910` at `F:/Achilles/diomedes-wt/autonomy-workbench`
++is based on fetched origin/main `0299f5154e5ed2b1fa07789cfc6c3728cc068a0a`.
++The primary checkout remains at `2e230c89020d1ddb4fd51720a201ad0b562fbef8`.
++The candidate selectively incorporates the idle AI-setup and visual-consistency
++work, preserving both original worktrees and the installed application. Source
++provenance is in `evidence/autonomy-workbench/dependency-source.json`.
++
++The bounded permission and workbench implementation adds:
++
++- Version 2 task grants for direct Codex/ChatGPT text creates and updates through
++  the existing Store writer. Version 1 exact approvals retain their meaning.
++  Grants bind folders, task/project, route, file/byte budget and lifetime, with
++  durable per-effect evidence, current checks, revocation and restart invalidation.
++- Historical model/engine origin on turns, proposals, steps, run records and
++  result History, including explicit unknown and application-owned cases.
++- A saved run inspector and Board/sidebar projections of recorded execution.
++  Stop means cancellation; manual completion does not imply verification.
++- Independent first-run familiarity, presentation and authority, plus the imported
++  bounded Claude Code, OpenCode and OMP text/proposal adapters. Those routes still
++  use exact review; they do not inherit the new direct Codex task grant.
++
++The implementation and final evidence are recorded in
++`docs/implementation/2026-09-10-autonomy-workbench.md`. Auto-review, Full access,
++general live supervisor parity, live steering/queueing, wider remembered grants,
++and OS containment remain unavailable or deferred with their specific boundaries.
++The new permission workflow uses synthetic model generation in browser and compiled
++desktop proof; no new live application inference or public release is claimed.
++
++Andrew additionally requested a quick installed-app update path. That separate
++follow-up is tracked in `docs/implementation/2026-09-10-app-updates.md`; the public
++release channel, signing and real distributed-upgrade proof remain separate gates.
++
++### September 9 recorded publication checkpoint (historical)
+ 
+ The implementation/history checkpoint before roadmap-only commits was `eab162c58151704454867573ce2427c02559cdac`, containing the published native-harness work whose substantive runtime commit is `f6f0460f3e4c1571fa86b95280d191f29e133892`.
+ 

@@ -3,9 +3,16 @@
    on the live point (in its own light via color-mix). Imported by TeamView. */
 .console .team {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 0;
   background: var(--surface);
+}
+.console .team > *,
+.console .lane > *,
+.console .lane header > * {
+  min-width: 0;
+  max-width: 100%;
 }
 .console .task {
   position: relative;
@@ -16,7 +23,7 @@
 }
 .console .task h1 {
   margin: 0;
-  font: 500 18px/1.25 var(--ui);
+  font: 500 var(--dm-type-title) / 1.25 var(--ui);
 }
 .console .task .pt {
   align-self: center;
@@ -33,7 +40,7 @@
 .console .task .hands {
   margin-left: auto;
   color: var(--t3);
-  font-size: 12.5px;
+  font-size: var(--dm-type-caption);
 }
 .console .lanes {
   position: relative;
@@ -81,12 +88,7 @@
   background: repeating-linear-gradient(180deg, var(--hair-2) 0 3px, transparent 3px 7px);
 }
 .console .lane.blocked::before {
-  background: linear-gradient(
-    180deg,
-    var(--hair-2) 0 46%,
-    transparent 46% 54%,
-    var(--hair-2) 54%
-  );
+  background: linear-gradient(180deg, var(--hair-2) 0 46%, transparent 46% 54%, var(--hair-2) 54%);
 }
 .console .lane header {
   position: relative;
@@ -103,12 +105,12 @@
 }
 .console .lane header b {
   font-weight: 500;
-  font-size: 13.5px;
+  font-size: var(--dm-type-caption);
   color: var(--t1);
 }
 .console .lane header .role {
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
 }
 .console .lane header .mono {
   margin-left: auto;
@@ -117,7 +119,7 @@
 }
 .console .lane header .state {
   flex-basis: 100%;
-  font-size: 12.5px;
+  font-size: var(--dm-type-caption);
   color: var(--t2);
 }
 .console .lane.working header .state {
@@ -169,7 +171,7 @@
   align-items: baseline;
   padding: 6px 0 10px;
   border-bottom: 1px solid var(--hair);
-  font-size: 13.5px;
+  font-size: var(--dm-type-caption);
   line-height: 1.45;
   color: var(--t1);
 }
@@ -186,7 +188,7 @@
 .console .lane.waiting .action .mono {
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  font-size: 10.5px;
+  font-size: var(--dm-type-caption);
 }
 .console .lane.blocked .action .mono {
   color: var(--attn);
@@ -195,7 +197,7 @@
   grid-column: 1 / -1;
   display: flex;
   gap: 14px;
-  font-size: 12.5px;
+  font-size: var(--dm-type-caption);
 }
 .console .lane .action .acts button {
   color: var(--t2);
@@ -210,7 +212,7 @@
   list-style: none;
   margin: 0;
   padding: 8px 4px 8px 0;
-  font: 400 11.5px/1.7 var(--mono);
+  font: 400 var(--dm-type-body) / 1.7 var(--mono);
   color: var(--t3);
   overflow: auto;
   min-height: 0;
@@ -218,7 +220,7 @@
 }
 .console .ev3 li {
   display: grid;
-  grid-template-columns: 40px 56px minmax(0, 1fr);
+  grid-template-columns: 6ch 7ch minmax(0, 1fr);
   gap: 0 8px;
   align-items: baseline;
   position: relative;
@@ -272,7 +274,7 @@
 .console .lane .msg {
   padding: 10px 0 4px;
   border-top: 1px solid var(--hair);
-  font-size: 13.5px;
+  font-size: var(--dm-type-caption);
   line-height: 1.5;
   color: var(--t1);
   max-width: 52ch;
@@ -300,7 +302,7 @@
 }
 .console .lane .ctl button {
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
 }
 .console .lane .ctl button:hover {
   color: var(--t1);
@@ -327,20 +329,27 @@
 }
 .console .teamcompose .composer .to {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
   padding: 0 14px 8px;
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
 }
 .console .teamcompose .to select {
+  flex: 1 1 180px;
+  width: 100%;
   background: var(--surface);
   color: var(--t1);
   border: 1px solid var(--hair-2);
   border-radius: var(--rb);
   padding: 2px 6px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
+}
+.console .teamcompose .to > span:last-child {
+  flex: 1 1 200px;
+  min-width: 0;
 }
 .console .lane-empty {
   margin: 0 32px 0 56px;
@@ -349,12 +358,12 @@
 }
 .console .lane-empty .caption {
   color: var(--t3);
-  font-size: 12px;
+  font-size: var(--dm-type-caption);
   margin: 0 0 10px;
 }
 .console .lane-empty button {
   color: var(--t2);
-  font-size: 12.5px;
+  font-size: var(--dm-type-caption);
   border-bottom: 1px solid var(--hair-2);
 }
 .console .lane-empty button:hover {
