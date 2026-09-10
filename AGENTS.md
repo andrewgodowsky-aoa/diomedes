@@ -7,15 +7,30 @@ re-litigate.
 
 ## The plan of record
 
-Before substantial work, read the canonical live roadmap or the latest documented local snapshot and
-report its version. Canonical document:
+Before substantial work, read **both** the canonical live roadmap and the canonical project-memory
+companion, or the latest documented local snapshots, and report their versions.
+
+Live roadmap canonical document:
 `https://docs.google.com/document/d/1bRhz3zQPXOYuVlt95U1EIkz7pcm1dtSsoBvkDrLR3zE/edit`
 Repository mirror: `docs/DIOMEDES_LIVE_ROADMAP.md`. Planning cache:
 `F:\Achilles\planning\DIOMEDES-LIVE-ROADMAP.md`.
 
-The cloud document and the repository mirror must carry the same explicit version and materially
-equivalent decisions. The planning cache is not a third authority. Reconcile concurrent edits after
-their writer is idle; never force-overwrite live work.
+Project-memory canonical document:
+`https://docs.google.com/document/d/13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw/edit`
+Repository mirror: `docs/DIOMEDES_PROJECT_MEMORY.md`.
+
+The live roadmap governs strategy and sequencing. `DIOMEDES_PROJECT_MEMORY.md` is the standing
+product-definition/terminology/UX companion: it records meanings such as Desktop/Core/Runtime/Trust,
+Diomedes Agent versus direct-agent mode, engine/model/provider distinctions, permission semantics,
+actor attribution, local-model onboarding, the long-term local supervisor model, recursive
+self-improvement guardrails, workbench ideas, website communication, and current business direction.
+Do not invent a conflicting definition in an implementation thread when either canonical document
+already answers it.
+
+The cloud roadmap and repository roadmap mirror should carry the same explicit version and materially
+equivalent decisions. The planning cache is not a third authority. The project-memory cloud document
+and its repository mirror likewise should remain materially equivalent. Reconcile concurrent edits
+after their writer is idle; never force-overwrite live work.
 
 Reconcile planned direction with current code and evidence. Read `docs/harness/RUNTIME_VERIFICATION.md`
 and `docs/harness/CHANGES.md` before the historical `CURRENT_STATE.md` inspection. Preserve active
@@ -28,41 +43,53 @@ coordination notes. Coordinate Trust interfaces before widening them.
    page, then deleted. **Every new feature is Console-only** — no new Workbook screens, and no
    further re-skin passes on the Workbook's half of `client/styles.css`. Full record and reasoning:
    [`docs/implementation/2026-09-09-one-surface.md`](docs/implementation/2026-09-09-one-surface.md).
-2. **The design authority is the app's prototype**, not your taste, not the running app, and **not
-   the website**:
-   `planning/2026-09-08-field-visual-system/05-instrumented-density-prototype.html`.
-   Flat, cool, dark by default, sharp (radii 6/5 only), mono uppercase micro-labels for anything
-   measured, one cyan accent with one job, yellow only on go-ahead and needs-you, no cards, no
-   bubbles, no glass, no gradients. Ceremony only at boot, reconnect and handoff. **Every deviation
-   is approved by name, never discovered in a diff.**
+2. **The current visual reference is the Settings > Engines screen**, interpreted through the shared
+   Console visual system and the current owner's explicit September 10 direction. Preserve its crisp
+   readable typography, disciplined spacing, flat graphite/dark surfaces, thin separators, restrained
+   accent use and compact controls across the Console migration. The active appearance/theme package
+   remains user-selectable. Do not resurrect a second Workbook design language. The historical
+   prototype remains useful rationale, but where it conflicts with the owner's newer screenshot-based
+   decision, the newer decision wins. See `docs/DIOMEDES_PROJECT_MEMORY.md`.
 3. **The website is not a design source for the app.** `F:\Achilles\diomedes-site` (diomedes.net) is
-   a separate Astro repository with its own marketing rendition of this app's language — including
-   "living chrome" (`src/components/chrome/Spine.astro`, `Wake.astro`, `CommandPalette.astro`,
-   branch `muse/living-chrome`) and demo scripts `model-picker.ts`, `menu.ts`, `mode-rail.ts`,
-   `console-frame.ts` over a hardcoded `src/data/engines.ts`. **Those are marketing artifacts built
-   to look like Diomedes; they are not Diomedes.** Never port them into the app, never treat the
-   site's sample catalogue as an operational authority, and never let a site component decide an app
-   control's behaviour. The app's controls live in `client/console/` and answer to the prototype.
-   Shared *tokens* and *semantics* are fine; shared implementations are not.
+   a separate Astro repository with its own marketing rendition of this app's language. Those are
+   marketing artifacts built to look like Diomedes; they are not Diomedes. Never port them into the
+   app, never treat the site's sample catalogue as an operational authority, and never let a site
+   component decide an app control's behaviour. Shared tokens and semantics are fine; shared
+   implementations are not. Current website direction is to simplify around plain-language outcomes
+   and honest captures of the real packaged app; see the project-memory document.
 4. **Diomedes says a thing once.** Do not add a sentence that restates what a caption, a mode
    contract or an invariant already says, and do not narrate the app's own state when a point or a
    record already shows it. Standing copy doctrine and rewrite table:
    `planning/2026-09-09-advisor/00-fable-advisor-opinion.md` §3.
 5. **A machine string never enters a fixed-width surface without a policy.** Any flex or grid child
    that can carry a path, URL, slug, model name or thread title gets `min-width: 0` and truncation
-   or wrapping *where it is written*. Popups inherit typography from their ancestors even though
+   or wrapping where it is written. Popups inherit typography from their ancestors even though
    they escape their layout box — reset `white-space` at the panel edge.
 6. **The page column has exactly one rule.** `.console .col` owns the measure and centres it;
    nothing else sets a page column's inline margin. A `margin` shorthand on a `.col` element
    silently resets it.
+7. **Permissions are scoped authority, not approval spam.** Exact approvals remain available and
+   evidenced, but user-approved task/project grants may cover routine work inside an explicit scope.
+   Keep access scope separate from who reviews escalation. Never let automatic review, repeated
+   approvals, learned preferences or interface-detail settings silently increase authority. See
+   `docs/DIOMEDES_PROJECT_MEMORY.md` before changing approval semantics.
+8. **Actor attribution must be truthful.** Direct-agent work is attributed to its runtime-reported
+   model/engine rather than casually described as Diomedes reasoning. Use Diomedes as reasoning actor
+   only when the native Diomedes Agent owns the supervisory operation; infrastructure actions may
+   still truthfully be Diomedes application actions. Preserve attribution historically.
+9. **Local models are first-class.** Setup direction includes hardware/runtime discovery, a small
+   explained model shortlist, managed configuration, benchmark/health verification, saved profiles,
+   and lifecycle/resource ownership. Long term a smaller tuned local supervisor may back Diomedes
+   Agent, but Runtime/Trust remain authority and model evolution is evidence-driven, versioned,
+   reversible, and never permission-expanding. See the project-memory document for the full contract.
 
 ## Not yours to decide
 
-Take these to Andrew rather than choosing: what "Guided" means as a Console density; any change to a
-user-facing string's voice; which verbs an approval offers; the minimum window width; whether a
-click runs an action or selects it; anything that deviates from the prototype. **Commits, pushes and
-releases require Andrew's explicit approval for the current patch** — "build" alone is not
-permission to publish.
+Take these to Andrew rather than choosing: any material new meaning for Guided density; changes to
+core permission preset meanings; the minimum window width; whether a click runs an action or selects
+it; any claim that a development capability is shipped; or any architectural definition that
+conflicts with the roadmap/project-memory documents. **Commits, pushes and releases require Andrew's
+explicit approval for the current patch** — "build" alone is not permission to publish.
 
 ## Coordination rules
 
@@ -82,9 +109,11 @@ permission to publish.
 ## Reporting
 
 After a meaningful slice, include **ROADMAP IMPACT** with exact status changes and evidence, and
-separate **BUILD / PUBLICATION / DEPLOYMENT STATUS**. Refresh the cloud document before an
+separate **BUILD / PUBLICATION / DEPLOYMENT STATUS**. Refresh the cloud roadmap before an
 authorised write and use `requiredRevisionId`; otherwise leave an exact proposed patch and state
-that cloud synchronisation is pending.
+that cloud synchronisation is pending. If a product-definition decision changes, update both the
+roadmap impact and `DIOMEDES_PROJECT_MEMORY.md` rather than leaving the new definition buried only
+in a handoff conversation.
 
 ## Gates before any merge to `main`
 
