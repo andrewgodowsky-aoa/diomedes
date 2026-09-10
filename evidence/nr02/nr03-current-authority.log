@@ -1,0 +1,80 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/codex-runtime-proof
+
+stderr | tests/harness-host.test.ts > native harness through the real host > outside edits invalidate the exact write and remain untouched
+The harness run stopped: Error: This document changed since you opened it. Read its current version before saving.
+
+stderr | tests/harness-host.test.ts > native harness through the real host > secret scrubber covers durable errors, event mirrors, and returned run records
+The harness run stopped: [redacted]: Synthetic error [redacted]
+
+ ✓ tests/harness-host.test.ts (22 tests) 9646ms
+   ✓ native harness through the real host > one Session, exact Need, recorded write, receipt replay, and reconnect cursor survive reopening  473ms
+   ✓ native harness through the real host > an unanswered Need remains resolvable after service restart  334ms
+   ✓ native harness through the real host > routes validate the cursor, enforce project scope and client header, and cancel through the person principal  302ms
+   ✓ native harness through the real host > duplicate run ids are refused without breaking unrelated project startup  515ms
+   ✓ native harness through the real host > atomic run replacement retries a transient lock and surfaces a permanent failure  576ms
+   ✓ native harness through the real host > outside edits invalidate the exact write and remain untouched  345ms
+   ✓ native harness through the real host > abrupt exit at after-decision recovers the Store first and commits the harness observation once  1345ms
+   ✓ native harness through the real host > abrupt exit at journal recovers the Store first and commits the harness observation once  1561ms
+   ✓ native harness through the real host > abrupt exit at after-write recovers the Store first and commits the harness observation once  1566ms
+stderr | tests/codex-engine.test.ts > revocation while dispatch is waiting prevents the provider send
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > unknown provider completion stays parked and never causes redispatch
+The harness run stopped: Error: Synthetic lost completion
+
+stderr | tests/codex-engine.test.ts > changed source text prevents application after exact approval
+The harness run stopped: Error: A selected source changed before the approved write was prepared.
+
+stderr | tests/codex-engine.test.ts > a expired grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a forged grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a cross-run grant or context cannot dispatch
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+stderr | tests/codex-engine.test.ts > a cross-project grant or context cannot dispatch
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+stderr | tests/codex-engine.test.ts > a destination grant or context cannot dispatch
+The harness run stopped: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "openai:chatgpt"
+    ],
+    "path": [
+      "grant",
+      "destination"
+    ],
+    "message": "Invalid input: expected \"openai:chatgpt\""
+  }
+]
+
+stderr | tests/codex-engine.test.ts > a context grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a generation grant or context cannot dispatch
+The harness run stopped: Error: Authority generation advanced; this run needs reconciliation.
+
+stderr | tests/codex-engine.test.ts > a account grant or context cannot dispatch
+The harness run stopped: HarnessError: Actual provider context or account differs from consent.
+
+stderr | tests/codex-engine.test.ts > Stop after dispatch rejects late proposal output
+The harness run stopped: AbortError: This operation was aborted
+
+ ✓ tests/codex-engine.test.ts (21 tests) 2520ms
+   ✓ durable admission, identical concurrent retry, restart, exact decision and one recorded write  360ms
+ ✓ tests/integrations.test.ts (65 tests) 2356ms
+   ✓ opt-in Diomedes team boundary > stops after five re-lists if the team stays starting  1026ms
+   ✓ owned native JSON-line process transport > correlates responses and terminates its owned subprocess  388ms
+   ✓ owned native JSON-line process transport > surfaces protocol timeouts instead of success-shaped output  374ms
+ ✓ tests/harness-provider-outcomes.test.ts (6 tests) 145ms
+
+ Test Files  4 passed (4)
+      Tests  114 passed (114)
+   Start at  02:42:45
+   Duration  17.69s (transform 327ms, setup 0ms, collect 1.16s, tests 14.67s, environment 0ms, prepare 450ms)
+

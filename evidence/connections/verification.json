@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-09-09T09:27:02.4889727Z",
+  "baseCommit": "11829e1962b448360d3fc7aaba7c38fda6833a84",
+  "node": "v22.23.2",
+  "dependencySetup": "Reused existing node_modules through a junction; no install, dependency or lockfile changes.",
+  "checks": [
+    {
+      "command": "npm run check",
+      "exitCode": 0,
+      "result": "TypeScript passed"
+    },
+    {
+      "command": "npx --no-install vitest run --no-file-parallelism --reporter=json --outputFile=evidence/connections/unit-tests.json",
+      "exitCode": 0,
+      "tests": 537,
+      "passed": 537,
+      "files": 20
+    },
+    {
+      "command": "npx --no-install vitest run tests/connections.test.ts tests/openapi-candidate.test.ts --reporter=json --outputFile=evidence/connections/connector-tests.json",
+      "exitCode": 0,
+      "tests": 54,
+      "passed": 54
+    },
+    {
+      "command": "npx --no-install tsx scripts/connections-process-proof.ts",
+      "exitCode": 0,
+      "processes": 3,
+      "durableFilesScanned": 6,
+      "credentialLeaks": 0,
+      "proof": "evidence/connections/process-proof.json"
+    },
+    {
+      "command": "npx --no-install tsx scripts/connections-ui-proof.ts",
+      "exitCode": 0,
+      "checks": 9,
+      "pageErrors": 0,
+      "personallyInspected": [
+        "connections-desktop.png",
+        "connections-narrow.png"
+      ],
+      "proof": "evidence/connections/ui-proof.json"
+    },
+    {
+      "command": "npx --no-install vite build --outDir test-results/connections-client-build",
+      "exitCode": 0,
+      "scope": "Existing app client; no package postbuild"
+    },
+    {
+      "command": "node --input-type=module -e \"import { build } from 'vite'; import react from '@vitejs/plugin-react'; await build({ configFile: false, plugins: [react()], build: { outDir: 'test-results/connections-fixture-build', rollupOptions: { input: 'client/connections/fixture-main.tsx' } } });\"",
+      "exitCode": 0,
+      "scope": "New fixture entry compilation; no package postbuild"
+    },
+    {
+      "command": "npx --no-install prettier --check <all added source, test and documentation files>",
+      "exitCode": 0
+    }
+  ],
+  "earlierParallelAttempts": [
+    {
+      "report": "test-results/connections-review/unit-tests-first-pass.json",
+      "passed": 534,
+      "failed": 2,
+      "failures": [
+        "typed contracts and pre-effect boundaries Runtime rejects an external write proposal before its handler, even with public-labelled input",
+        "durable task Work admission restart expires an unapproved proposal while retaining its original receipt"
+      ]
+    },
+    {
+      "report": "test-results/connections-review/unit-tests-parallel.json",
+      "passed": 535,
+      "failed": 1,
+      "failures": [
+        "durable task Work admission abrupt process exit dispatched admission recovers without unsafe redispatch"
+      ]
+    }
+  ],
+  "regressionNote": "Untouched Work-admission tests showed timing-sensitive failures in parallel runs. All 33 passed on an isolated rerun; all 537 final tests passed with file parallelism disabled. Existing tests were not changed.",
+  "limitations": [
+    "No authenticated Toast calls, real subscriptions or external writes.",
+    "No production identity, credential broker, arbitrary-code sandbox or always-on receiver.",
+    "Source fixture and client bundles only; not packaged desktop or installer verification.",
+    "Current Runtime/Trust integration must be validated by its owner."
+  ]
+}

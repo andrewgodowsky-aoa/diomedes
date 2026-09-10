@@ -1,0 +1,28 @@
+[WebServer] Diomedes: http://127.0.0.1:5174. Press Ctrl+C to stop both local processes.
+
+
+[WebServer] (node:54732) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer]   VITE v7.3.6  ready in 440 ms
+[WebServer] 
+
+[WebServer]   ➜  Local:   http://127.0.0.1:5174/
+
+
+[WebServer] (node:44536) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Diomedes local service ready: http://127.0.0.1:47632
+
+[WebServer] App data: F:\Achilles\diomedes-wt\codex-runtime-proof\test-results\app-data-1788939721921-42592\data
+[WebServer] Project root: F:\Achilles\diomedes-wt\codex-runtime-proof\test-results\app-data-1788939721921-42592\projects
+
+
+Running 1 test using 1 worker
+
+(node:51592) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1/1] tests\ui.spec.ts:873:1 › Usage: navigation preserves a concurrent engine setting while refresh is delayed
+  1 passed (4.9s)

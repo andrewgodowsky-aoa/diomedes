@@ -1,0 +1,79 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/codex-runtime-proof
+
+stderr | tests/codex-engine.test.ts > revocation while dispatch is waiting prevents the provider send
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > unknown provider completion stays parked and never causes redispatch
+The harness run stopped: Error: Synthetic lost completion
+
+stderr | tests/codex-engine.test.ts > changed source text prevents application after exact approval
+The harness run stopped: Error: A selected source changed before the approved write was prepared.
+
+stderr | tests/codex-engine.test.ts > a expired grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a forged grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a cross-run grant or context cannot dispatch
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+stderr | tests/codex-engine.test.ts > a cross-project grant or context cannot dispatch
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+stderr | tests/codex-engine.test.ts > a destination grant or context cannot dispatch
+The harness run stopped: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "openai:chatgpt"
+    ],
+    "path": [
+      "grant",
+      "destination"
+    ],
+    "message": "Invalid input: expected \"openai:chatgpt\""
+  }
+]
+
+stderr | tests/codex-engine.test.ts > a context grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a generation grant or context cannot dispatch
+The harness run stopped: Error: Authority generation advanced; this run needs reconciliation.
+
+stderr | tests/codex-engine.test.ts > a account grant or context cannot dispatch
+The harness run stopped: HarnessError: Actual provider context or account differs from consent.
+
+stderr | tests/codex-engine.test.ts > Stop after dispatch rejects late proposal output
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > the host grant deadline expires without modifying the saved input
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > sending permission cannot accept a result after reconcile permission is revoked
+The harness run stopped: Error: Current authority lacks egress.reconcile.
+
+ ✓ tests/codex-engine.test.ts (24 tests) 2675ms
+   ✓ durable admission, identical concurrent retry, restart, exact decision and one recorded write  322ms
+stderr | tests/harness-host.test.ts > native harness through the real host > outside edits invalidate the exact write and remain untouched
+The harness run stopped: Error: This document changed since you opened it. Read its current version before saving.
+
+stderr | tests/harness-host.test.ts > native harness through the real host > secret scrubber covers durable errors, event mirrors, and returned run records
+The harness run stopped: [redacted]: Synthetic error [redacted]
+
+ ✓ tests/harness-host.test.ts (22 tests) 8068ms
+   ✓ native harness through the real host > one Session, exact Need, recorded write, receipt replay, and reconnect cursor survive reopening  441ms
+   ✓ native harness through the real host > duplicate run ids are refused without breaking unrelated project startup  431ms
+   ✓ native harness through the real host > atomic run replacement retries a transient lock and surfaces a permanent failure  574ms
+   ✓ native harness through the real host > abrupt exit at after-decision recovers the Store first and commits the harness observation once  1175ms
+   ✓ native harness through the real host > abrupt exit at journal recovers the Store first and commits the harness observation once  1181ms
+   ✓ native harness through the real host > abrupt exit at after-write recovers the Store first and commits the harness observation once  1197ms
+ ✓ tests/harness-provider-outcomes.test.ts (6 tests) 138ms
+
+ Test Files  3 passed (3)
+      Tests  52 passed (52)
+   Start at  03:20:20
+   Duration  12.95s (transform 277ms, setup 0ms, collect 897ms, tests 10.88s, environment 0ms, prepare 263ms)
+

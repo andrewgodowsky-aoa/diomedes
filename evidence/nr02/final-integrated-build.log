@@ -1,0 +1,87 @@
+npm notice run diomedes@0.1.0 build
+npm notice run tsc --noEmit && vite build
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 67 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                                      0.46 kB │ gzip:   0.31 kB
+dist/assets/ibm-plex-mono-vietnamese-500-normal-C8zxqsMH.woff        5.62 kB
+dist/assets/ibm-plex-mono-vietnamese-400-normal-DDuiU_S-.woff        5.62 kB
+dist/assets/ibm-plex-mono-cyrillic-ext-500-normal-BIfNGwUT.woff      5.77 kB
+dist/assets/ibm-plex-mono-cyrillic-ext-400-normal-DMdlQ8Kv.woff      5.82 kB
+dist/assets/ibm-plex-mono-vietnamese-400-normal-BulugwFq.woff2       5.87 kB
+dist/assets/ibm-plex-mono-vietnamese-500-normal-DZ4AoWbu.woff2       6.04 kB
+dist/assets/ibm-plex-serif-vietnamese-400-normal-BY9Vij9A.woff       6.11 kB
+dist/assets/ibm-plex-serif-vietnamese-400-normal-DGubAMUE.woff2      6.15 kB
+dist/assets/ibm-plex-serif-vietnamese-600-normal-DZRaS25B.woff       6.19 kB
+dist/assets/ibm-plex-serif-vietnamese-600-normal-BBruYZNA.woff2      6.26 kB
+dist/assets/ibm-plex-serif-vietnamese-400-italic-BSp0Db6W.woff2      6.40 kB
+dist/assets/ibm-plex-serif-vietnamese-400-italic-1VBVfWB7.woff       6.40 kB
+dist/assets/ibm-plex-serif-vietnamese-600-italic-CMORQUaI.woff       6.50 kB
+dist/assets/ibm-plex-serif-vietnamese-600-italic-BrdqYGAq.woff2      6.58 kB
+dist/assets/ibm-plex-mono-cyrillic-ext-400-normal-xuaO2J-f.woff2     6.91 kB
+dist/assets/ibm-plex-mono-cyrillic-ext-500-normal-BqneJy0T.woff2     6.97 kB
+dist/assets/ibm-plex-mono-cyrillic-400-normal-CEL4l2ZJ.woff          7.20 kB
+dist/assets/ibm-plex-mono-cyrillic-500-normal-Ael50iVv.woff          7.21 kB
+dist/assets/ibm-plex-serif-cyrillic-ext-600-normal-CDMeBxaJ.woff     7.35 kB
+dist/assets/ibm-plex-serif-cyrillic-ext-400-normal-BcBv-TKp.woff     7.38 kB
+dist/assets/ibm-plex-mono-cyrillic-400-normal-BSMlKf0J.woff2         8.36 kB
+dist/assets/ibm-plex-mono-cyrillic-500-normal-Bq9vWWag.woff2         8.46 kB
+dist/assets/ibm-plex-serif-cyrillic-ext-400-italic-CPw2or01.woff     8.51 kB
+dist/assets/ibm-plex-serif-cyrillic-ext-600-italic-D7qEpmay.woff     8.64 kB
+dist/assets/ibm-plex-serif-cyrillic-ext-600-normal-DXSZftVr.woff2    8.74 kB
+dist/assets/ibm-plex-serif-cyrillic-ext-400-normal-CxUI4jC_.woff2    8.92 kB
+dist/assets/ibm-plex-serif-cyrillic-ext-400-italic-o20Cx6Xj.woff2   10.07 kB
+dist/assets/ibm-plex-serif-cyrillic-ext-600-italic-CbP060Js.woff2   10.26 kB
+dist/assets/ibm-plex-serif-cyrillic-600-normal-C8YEAlRA.woff        10.86 kB
+dist/assets/ibm-plex-serif-cyrillic-400-normal-C7IY3oUc.woff        10.91 kB
+dist/assets/schibsted-grotesk-latin-ext-400-normal-DHVTfbSM.woff2   11.50 kB
+dist/assets/schibsted-grotesk-latin-ext-500-normal-Ch1izu81.woff2   11.66 kB
+dist/assets/schibsted-grotesk-latin-ext-600-normal-C5pQPdUJ.woff2   11.73 kB
+dist/assets/ibm-plex-mono-latin-ext-400-normal-D3D2R8hC.woff        11.77 kB
+dist/assets/ibm-plex-mono-latin-ext-500-normal-CZ70TYgx.woff        11.77 kB
+dist/assets/ibm-plex-serif-cyrillic-600-normal-6oiym5iu.woff2       12.20 kB
+dist/assets/ibm-plex-serif-cyrillic-400-normal-CPQ8oqB-.woff2       12.28 kB
+dist/assets/ibm-plex-serif-cyrillic-400-italic-CygxzOWU.woff        12.64 kB
+dist/assets/ibm-plex-serif-cyrillic-600-italic-B5nQ1Dzp.woff        12.87 kB
+dist/assets/ibm-plex-mono-latin-400-normal-CvHOgSBP.woff            13.14 kB
+dist/assets/ibm-plex-mono-latin-500-normal-CB9ihrfo.woff            13.16 kB
+dist/assets/ibm-plex-mono-latin-ext-400-normal-BmRBH3aV.woff2       13.35 kB
+dist/assets/ibm-plex-mono-latin-ext-500-normal-CAhNIIs5.woff2       13.43 kB
+dist/assets/ibm-plex-serif-latin-ext-400-normal-DwktX9jl.woff       13.78 kB
+dist/assets/ibm-plex-serif-latin-ext-600-normal-D1-_Ic5L.woff       13.87 kB
+dist/assets/ibm-plex-serif-cyrillic-400-italic-C_ad97oI.woff2       14.22 kB
+dist/assets/ibm-plex-serif-cyrillic-600-italic-B-MUfNoF.woff2       14.40 kB
+dist/assets/ibm-plex-mono-latin-400-normal-DMJ8VG8y.woff2           14.71 kB
+dist/assets/ibm-plex-mono-latin-500-normal-DSY6xOcd.woff2           14.89 kB
+dist/assets/ibm-plex-serif-latin-ext-400-italic-4IJS-XHX.woff       14.91 kB
+dist/assets/ibm-plex-serif-latin-ext-600-italic-DM7htMZM.woff       15.07 kB
+dist/assets/schibsted-grotesk-latin-ext-400-normal-DUPvg9bQ.woff    15.36 kB
+dist/assets/ibm-plex-serif-latin-ext-400-normal-CNMooFZX.woff2      15.48 kB
+dist/assets/ibm-plex-serif-latin-ext-600-normal-CU6LeQOd.woff2      15.56 kB
+dist/assets/schibsted-grotesk-latin-ext-500-normal-BjmYCtCC.woff    15.65 kB
+dist/assets/schibsted-grotesk-latin-ext-600-normal-DQsnXf5q.woff    15.66 kB
+dist/assets/ibm-plex-serif-latin-ext-400-italic-hOoDEQwh.woff2      16.30 kB
+dist/assets/ibm-plex-serif-latin-ext-600-italic-CwtNJA7M.woff2      16.53 kB
+dist/assets/ibm-plex-serif-latin-400-normal-BB-zNvJB.woff           18.50 kB
+dist/assets/ibm-plex-serif-latin-600-normal-D3rpGdkS.woff           19.58 kB
+dist/assets/ibm-plex-serif-latin-400-normal-BIGslYFI.woff2          19.58 kB
+dist/assets/ibm-plex-serif-latin-400-italic-Dd68USph.woff           20.12 kB
+dist/assets/ibm-plex-serif-latin-600-normal-DAxitmSu.woff2          20.52 kB
+dist/assets/ibm-plex-serif-latin-400-italic-BCf4TsCA.woff2          20.90 kB
+dist/assets/ibm-plex-serif-latin-600-italic-BD9tANRL.woff           21.29 kB
+dist/assets/ibm-plex-serif-latin-600-italic--nwoHQXg.woff2          22.02 kB
+dist/assets/schibsted-grotesk-latin-400-normal-DPhJBilQ.woff2       24.34 kB
+dist/assets/schibsted-grotesk-latin-600-normal-Czv9Obfv.woff2       25.18 kB
+dist/assets/schibsted-grotesk-latin-500-normal-rf9C4Thp.woff2       25.22 kB
+dist/assets/schibsted-grotesk-latin-400-normal-BkiRe4WW.woff        29.93 kB
+dist/assets/schibsted-grotesk-latin-500-normal-Ba39e-CX.woff        30.80 kB
+dist/assets/schibsted-grotesk-latin-600-normal-BieE9YjJ.woff        30.88 kB
+dist/assets/index-m1_PNqTt.css                                      92.04 kB │ gzip:  16.48 kB
+dist/assets/index-Cl7f_OPG.js                                      365.66 kB │ gzip: 110.46 kB
+✓ built in 923ms
+npm notice run diomedes@0.1.0 postbuild
+npm notice run node --use-system-ca scripts/package-desktop.mjs
+Packaging app for platform win32 x64 using electron v44.2.0
+Desktop release: F:\Achilles\diomedes-wt\codex-runtime-proof\release\Diomedes-win32-x64

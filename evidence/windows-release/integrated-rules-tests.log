@@ -1,0 +1,24 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/windows-release
+
+stderr | tests/connections.test.ts > Connections end-to-end and durability > three scoped locations -> typed Runtime read -> signed event -> one durable Task -> restart -> revoke
+Skipped a harness run whose capability is unavailable.
+Skipped a harness run whose capability is unavailable.
+
+stderr | tests/connections.test.ts > Connections end-to-end and durability > crash after issue commit but before Runtime checkpoint recovers through the same receipt
+Skipped a harness run whose capability is unavailable.
+
+stderr | tests/connections.test.ts > Connections end-to-end and durability > interruption after Runtime start retains an exact recoverable binding
+Skipped a harness run whose capability is unavailable.
+
+stderr | tests/connections.test.ts > Connections end-to-end and durability > an ignored-event receipt also completes its Runtime checkpoint after interruption
+Skipped a harness run whose capability is unavailable.
+Skipped a harness run whose capability is unavailable.
+
+··············································
+
+ Test Files  2 passed (2)
+      Tests  46 passed (46)
+   Start at  05:45:01
+   Duration  4.94s (transform 288ms, setup 0ms, collect 621ms, tests 2.50s, environment 0ms, prepare 184ms)
+

@@ -1,0 +1,17 @@
+{
+  "newProcess": true,
+  "oldRunId": "R59a0410f455e",
+  "unarmed": {
+    "denied": true,
+    "status": 403,
+    "code": "synthetic-refused",
+    "reason": "The prototype authority driver is not armed; this saved reference cannot be resolved."
+  },
+  "rearmed": {
+    "denied": true,
+    "status": 409,
+    "code": "generation-advanced",
+    "reason": "The prototype driver was re-armed or restarted since this reference was minted."
+  },
+  "providerCalls": 0
+}

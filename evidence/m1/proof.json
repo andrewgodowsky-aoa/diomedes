@@ -1,0 +1,2367 @@
+{
+  "checkedAt": "2026-09-09T07:47:48.458Z",
+  "executablePath": "F:\\Achilles\\deliverables\\m1-usage-package-20260909\\Diomedes.exe",
+  "root": "F:\\Achilles\\deliverables\\m1-usage-package-verified-proof-20260909",
+  "checks": [
+    "Checkout server, client, fixtures and dist directories unavailable during packaged execution",
+    "Packaged fixture reached exact approval",
+    "Exact harness proposal text is inspectable in Workbook",
+    "Review presents the pending harness Need",
+    "Console Board opens the owning thread and exact proposal",
+    "Restart preserves waiting Need; lost decision response replays one receipt and one exact write",
+    "Visible decline and Stop prevent additional file writes",
+    "History restore removes a newly created file and records its own restore entry",
+    "Built navigation preserves a concurrent engine setting during a delayed refresh; no provider call",
+    "Restored state survives restart; renderer isolation settings and built UI checked",
+    "Owned package server stopped and data lock released"
+  ],
+  "errors": [],
+  "session": {
+    "id": "Sbd998d444180",
+    "taskId": "T1",
+    "sample": false,
+    "state": "waiting",
+    "permission": "show-first",
+    "startedAt": "2026-09-09T07:47:50.107Z",
+    "endedAt": null,
+    "log": [
+      {
+        "time": "2026-09-09T07:47:50.107Z",
+        "level": "plain",
+        "sentence": "Requested: Format the shipped synthetic fixture."
+      },
+      {
+        "time": "2026-09-09T07:47:50.114Z",
+        "level": "plain",
+        "sentence": "Waiting to start."
+      },
+      {
+        "time": "2026-09-09T07:47:50.114Z",
+        "level": "technical",
+        "sentence": "{\"v\":1,\"seq\":1,\"runId\":\"R4c7a29629c1e\",\"at\":\"2026-09-09T07:47:50.114Z\",\"type\":\"run.created\",\"attributes\":{\"capabilityId\":\"format-report\",\"capabilityVersion\":\"v1\",\"taskId\":\"T1\"}}"
+      },
+      {
+        "time": "2026-09-09T07:47:50.125Z",
+        "level": "plain",
+        "sentence": "Working."
+      },
+      {
+        "time": "2026-09-09T07:47:50.125Z",
+        "level": "technical",
+        "sentence": "{\"v\":1,\"seq\":2,\"runId\":\"R4c7a29629c1e\",\"at\":\"2026-09-09T07:47:50.125Z\",\"type\":\"run.claimed\",\"attributes\":{\"owner\":\"harness-7af48456e658\",\"fence\":1,\"expiresAt\":1788940130125}}"
+      },
+      {
+        "time": "2026-09-09T07:47:50.143Z",
+        "level": "technical",
+        "sentence": "Before step model:0: native-fixture."
+      },
+      {
+        "time": "2026-09-09T07:47:50.152Z",
+        "level": "plain",
+        "sentence": "Working."
+      },
+      {
+        "time": "2026-09-09T07:47:50.152Z",
+        "level": "technical",
+        "sentence": "{\"v\":1,\"seq\":3,\"runId\":\"R4c7a29629c1e\",\"at\":\"2026-09-09T07:47:50.152Z\",\"type\":\"step.started\",\"stepId\":\"model:0\",\"attempt\":1,\"attributes\":{\"fence\":1,\"reservedUnits\":1,\"effect\":\"read\"}}"
+      },
+      {
+        "time": "2026-09-09T07:47:50.159Z",
+        "level": "plain",
+        "sentence": "Working."
+      },
+      {
+        "time": "2026-09-09T07:47:50.159Z",
+        "level": "technical",
+        "sentence": "{\"v\":1,\"seq\":4,\"runId\":\"R4c7a29629c1e\",\"at\":\"2026-09-09T07:47:50.159Z\",\"type\":\"step.succeeded\",\"stepId\":\"model:0\",\"attempt\":1,\"attributes\":{\"outputHash\":\"8f998f2630f1749e5efc11f28d0c92dfa1ff71c14ffaafe6ca084bf5871ac132\"}}"
+      },
+      {
+        "time": "2026-09-09T07:47:50.174Z",
+        "level": "technical",
+        "sentence": "Before step tool:0: read_fixture."
+      },
+      {
+        "time": "2026-09-09T07:47:50.182Z",
+        "level": "plain",
+        "sentence": "Working."
+      },
+      {
+        "time": "2026-09-09T07:47:50.182Z",
+        "level": "technical",
+        "sentence": "{\"v\":1,\"seq\":5,\"runId\":\"R4c7a29629c1e\",\"at\":\"2026-09-09T07:47:50.182Z\",\"type\":\"step.started\",\"stepId\":\"tool:0\",\"attempt\":1,\"attributes\":{\"fence\":1,\"reservedUnits\":0,\"effect\":\"pure\"}}"
+      },
+      {
+        "time": "2026-09-09T07:47:50.187Z",
+        "level": "plain",
+        "sentence": "Working."
+      },
+      {
+        "time": "2026-09-09T07:47:50.187Z",
+        "level": "technical",
+        "sentence": "{\"v\":1,\"seq\":6,\"runId\":\"R4c7a29629c1e\",\"at\":\"2026-09-09T07:47:50.187Z\",\"type\":\"step.succeeded\",\"stepId\":\"tool:0\",\"attempt\":1,\"attributes\":{\"outputHash\":\"9c904749ed807aa29106706493778012d28dc584b221824dbe92218244abecc7\"}}"
+      },
+      {
+        "time": "2026-09-09T07:47:50.200Z",
+        "level": "technical",
+        "sentence": "Before step model:1: native-fixture."
+      },
+      {
+        "time": "2026-09-09T07:47:50.207Z",
+        "level": "plain",
+        "sentence": "Working."
+      },
+      {
+        "time": "2026-09-09T07:47:50.207Z",
+        "level": "technical",
+        "sentence": "{\"v\":1,\"seq\":7,\"runId\":\"R4c7a29629c1e\",\"at\":\"2026-09-09T07:47:50.207Z\",\"type\":\"step.started\",\"stepId\":\"model:1\",\"attempt\":1,\"attributes\":{\"fence\":1,\"reservedUnits\":1,\"effect\":\"read\"}}"
+      },
+      {
+        "time": "2026-09-09T07:47:50.216Z",
+        "level": "plain",
+        "sentence": "Working."
+      },
+      {
+        "time": "2026-09-09T07:47:50.216Z",
+        "level": "technical",
+        "sentence": "{\"v\":1,\"seq\":8,\"runId\":\"R4c7a29629c1e\",\"at\":\"2026-09-09T07:47:50.216Z\",\"type\":\"step.succeeded\",\"stepId\":\"model:1\",\"attempt\":1,\"attributes\":{\"outputHash\":\"ae3df9401c2e36b2bc267e3995b3f64d7ab7ffb95db1e0fd1702c7e3a70dcfa8\"}}"
+      },
+      {
+        "time": "2026-09-09T07:47:50.228Z",
+        "level": "technical",
+        "sentence": "Before step tool:1: format_lines."
+      },
+      {
+        "time": "2026-09-09T07:47:50.233Z",
+        "level": "plain",
+        "sentence": "Working."
+      },
+      {
+        "time": "2026-09-09T07:47:50.233Z",
+        "level": "technical",
+        "sentence": "{\"v\":1,\"seq\":9,\"runId\":\"R4c7a29629c1e\",\"at\":\"2026-09-09T07:47:50.233Z\",\"type\":\"step.started\",\"stepId\":\"tool:1\",\"attempt\":1,\"attributes\":{\"fence\":1,\"reservedUnits\":0,\"effect\":\"pure\"}}"
+      },
+      {
+        "time": "2026-09-09T07:47:50.237Z",
+        "level": "plain",
+        "sentence": "Working."
+      },
+      {
+        "time": "2026-09-09T07:47:50.237Z",
+        "level": "technical",
+        "sentence": "{\"v\":1,\"seq\":10,\"runId\":\"R4c7a29629c1e\",\"at\":\"2026-09-09T07:47:50.237Z\",\"type\":\"step.succeeded\",\"stepId\":\"tool:1\",\"attempt\":1,\"attributes\":{\"outputHash\":\"b08068b0e54462f819ad85e3e5bd954b024d0cb25314a7a833b073948538af70\"}}"
+      },
+      {
+        "time": "2026-09-09T07:47:50.256Z",
+        "level": "technical",
+        "sentence": "Before step model:2: native-fixture."
+      },
+      {
+        "time": "2026-09-09T07:47:50.263Z",
+        "level": "plain",
+        "sentence": "Working."
+      },
+      {
+        "time": "2026-09-09T07:47:50.263Z",
+        "level": "technical",
+        "sentence": "{\"v\":1,\"seq\":11,\"runId\":\"R4c7a29629c1e\",\"at\":\"2026-09-09T07:47:50.263Z\",\"type\":\"step.started\",\"stepId\":\"model:2\",\"attempt\":1,\"attributes\":{\"fence\":1,\"reservedUnits\":1,\"effect\":\"read\"}}"
+      },
+      {
+        "time": "2026-09-09T07:47:50.274Z",
+        "level": "plain",
+        "sentence": "Working."
+      },
+      {
+        "time": "2026-09-09T07:47:50.274Z",
+        "level": "technical",
+        "sentence": "{\"v\":1,\"seq\":12,\"runId\":\"R4c7a29629c1e\",\"at\":\"2026-09-09T07:47:50.274Z\",\"type\":\"step.succeeded\",\"stepId\":\"model:2\",\"attempt\":1,\"attributes\":{\"outputHash\":\"66bfda55ce9d57cf93f0ffe04dc31d33fa24edcd5139499a3b9b54932cc1db8b\"}}"
+      },
+      {
+        "time": "2026-09-09T07:47:50.289Z",
+        "level": "technical",
+        "sentence": "Before step tool:2: propose_write."
+      },
+      {
+        "time": "2026-09-09T07:47:50.299Z",
+        "level": "plain",
+        "sentence": "Waiting for your OK: propose_write."
+      },
+      {
+        "time": "2026-09-09T07:47:50.299Z",
+        "level": "technical",
+        "sentence": "{\"v\":1,\"seq\":13,\"runId\":\"R4c7a29629c1e\",\"at\":\"2026-09-09T07:47:50.299Z\",\"type\":\"step.waiting_approval\",\"stepId\":\"tool:2\",\"attempt\":0,\"attributes\":{\"intentHash\":\"ae3eb35f42c07012171abf4f9830776e1a4ffd3f04417ddc596f8bda1cc1430e\"}}"
+      }
+    ],
+    "entryIds": [],
+    "needId": "N3e29312de33a",
+    "engine": {
+      "name": "native-fixture",
+      "model": null,
+      "worker": 1,
+      "branch": null,
+      "context": null,
+      "events": 13,
+      "version": "v1",
+      "verified": false
+    }
+  },
+  "runs": {
+    "runs": [
+      {
+        "id": "R4c7a29629c1e",
+        "state": "waiting",
+        "capabilityId": "format-report",
+        "capabilityVersion": "v1",
+        "taskId": "T1",
+        "sessionId": "Sbd998d444180"
+      }
+    ]
+  },
+  "run": {
+    "v": 1,
+    "id": "R4c7a29629c1e",
+    "tenantId": "local",
+    "projectId": "cecf5d7c49e4",
+    "taskId": "T1",
+    "sessionId": "Sbd998d444180",
+    "capabilityId": "format-report",
+    "capabilityVersion": "v1",
+    "capabilityTools": [
+      "read_fixture",
+      "format_lines",
+      "propose_write"
+    ],
+    "policyVersion": "diomedes-host-policy-v1",
+    "principal": {
+      "capabilities": [
+        "write-project-file"
+      ],
+      "id": "local-client",
+      "identityGeneration": 1,
+      "projectId": "cecf5d7c49e4",
+      "tenantId": "local"
+    },
+    "state": "waiting",
+    "budget": {
+      "modelCalls": 6,
+      "toolCalls": 6,
+      "units": 6,
+      "wallMs": null
+    },
+    "used": {
+      "units": 3,
+      "modelCalls": 3,
+      "toolCalls": 2
+    },
+    "owner": "harness-7af48456e658",
+    "fence": 1,
+    "leaseExpiresAt": 1788940130125,
+    "parentRunId": null,
+    "forkPoint": null,
+    "contextRevision": 1,
+    "transcripts": {},
+    "result": null,
+    "failure": null,
+    "cancelReason": null,
+    "createdAt": "2026-09-09T07:47:50.114Z",
+    "updatedAt": "2026-09-09T07:47:50.299Z",
+    "steps": [
+      {
+        "intent": {
+          "approval": false,
+          "cost": 1,
+          "destination": "local",
+          "effect": "read",
+          "input": {
+            "messages": [
+              {
+                "role": "user",
+                "text": "Format the shipped synthetic fixture."
+              }
+            ],
+            "provider": "native-fixture",
+            "tools": [
+              {
+                "approval": false,
+                "cost": 0,
+                "description": "Read the shipped synthetic report lines.",
+                "destination": "local",
+                "effect": "pure",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                },
+                "name": "read_fixture",
+                "permission": null,
+                "trustedInputRequired": false,
+                "version": "v1"
+              },
+              {
+                "approval": false,
+                "cost": 0,
+                "description": "Turn lines into a deterministic Markdown report.",
+                "destination": "local",
+                "effect": "pure",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {
+                    "text": {
+                      "maxLength": 128000,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "format_lines",
+                "permission": null,
+                "trustedInputRequired": false,
+                "version": "v1"
+              },
+              {
+                "approval": true,
+                "cost": 0,
+                "description": "Write the exact report after the person approves it.",
+                "destination": "local",
+                "effect": "idempotent",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {
+                    "expected": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "files": {
+                      "items": false,
+                      "maxItems": 1,
+                      "minItems": 1,
+                      "prefixItems": [
+                        {
+                          "const": "Harness report.md",
+                          "type": "string"
+                        }
+                      ],
+                      "type": "array"
+                    },
+                    "projectId": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "runId": {
+                      "pattern": "^R[a-f0-9]{12}$",
+                      "type": "string"
+                    },
+                    "text": {
+                      "maxLength": 128000,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "runId",
+                    "files",
+                    "expected",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "propose_write",
+                "permission": "write-project-file",
+                "trustedInputRequired": false,
+                "version": "v1"
+              }
+            ]
+          },
+          "kind": "model",
+          "label": null,
+          "maxAttempts": 3,
+          "name": "native-fixture",
+          "permission": null,
+          "policyVersion": "diomedes-host-policy-v1",
+          "stepId": "model:0",
+          "stepVersion": "v1",
+          "trustedInputRequired": false
+        },
+        "intentHash": "1e0c60d0ed383d5baa1d70c0d1ba1b320b662ac8ec7f68047a3d68c171c23691",
+        "attempt": 1,
+        "state": "succeeded",
+        "output": {
+          "response": {
+            "input": {},
+            "name": "read_fixture",
+            "type": "tool"
+          },
+          "usage": null
+        },
+        "outputHash": "8f998f2630f1749e5efc11f28d0c92dfa1ff71c14ffaafe6ca084bf5871ac132",
+        "leaseFence": 1,
+        "startedAt": "2026-09-09T07:47:50.152Z",
+        "endedAt": "2026-09-09T07:47:50.159Z",
+        "error": null
+      },
+      {
+        "intent": {
+          "approval": false,
+          "cost": 0,
+          "destination": "local",
+          "effect": "pure",
+          "input": {},
+          "kind": "tool",
+          "label": null,
+          "maxAttempts": 3,
+          "name": "read_fixture",
+          "permission": null,
+          "policyVersion": "diomedes-host-policy-v1",
+          "stepId": "tool:0",
+          "stepVersion": "v1",
+          "trustedInputRequired": false
+        },
+        "intentHash": "b5dda6cb40e921a4a7687a1bdf82ff6b330c6bfe5d69f76956b8df6076662c40",
+        "attempt": 1,
+        "state": "succeeded",
+        "output": {
+          "text": "  Inspect the saved report\r\n\r\nReview the exact change\r\n  Keep the recorded result\r\n"
+        },
+        "outputHash": "9c904749ed807aa29106706493778012d28dc584b221824dbe92218244abecc7",
+        "leaseFence": 1,
+        "startedAt": "2026-09-09T07:47:50.182Z",
+        "endedAt": "2026-09-09T07:47:50.187Z",
+        "error": null
+      },
+      {
+        "intent": {
+          "approval": false,
+          "cost": 1,
+          "destination": "local",
+          "effect": "read",
+          "input": {
+            "messages": [
+              {
+                "role": "user",
+                "text": "Format the shipped synthetic fixture."
+              },
+              {
+                "input": {},
+                "role": "assistant",
+                "tool": "read_fixture"
+              },
+              {
+                "name": "read_fixture",
+                "output": {
+                  "text": "  Inspect the saved report\r\n\r\nReview the exact change\r\n  Keep the recorded result\r\n"
+                },
+                "role": "tool"
+              }
+            ],
+            "provider": "native-fixture",
+            "tools": [
+              {
+                "approval": false,
+                "cost": 0,
+                "description": "Read the shipped synthetic report lines.",
+                "destination": "local",
+                "effect": "pure",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                },
+                "name": "read_fixture",
+                "permission": null,
+                "trustedInputRequired": false,
+                "version": "v1"
+              },
+              {
+                "approval": false,
+                "cost": 0,
+                "description": "Turn lines into a deterministic Markdown report.",
+                "destination": "local",
+                "effect": "pure",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {
+                    "text": {
+                      "maxLength": 128000,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "format_lines",
+                "permission": null,
+                "trustedInputRequired": false,
+                "version": "v1"
+              },
+              {
+                "approval": true,
+                "cost": 0,
+                "description": "Write the exact report after the person approves it.",
+                "destination": "local",
+                "effect": "idempotent",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {
+                    "expected": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "files": {
+                      "items": false,
+                      "maxItems": 1,
+                      "minItems": 1,
+                      "prefixItems": [
+                        {
+                          "const": "Harness report.md",
+                          "type": "string"
+                        }
+                      ],
+                      "type": "array"
+                    },
+                    "projectId": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "runId": {
+                      "pattern": "^R[a-f0-9]{12}$",
+                      "type": "string"
+                    },
+                    "text": {
+                      "maxLength": 128000,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "runId",
+                    "files",
+                    "expected",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "propose_write",
+                "permission": "write-project-file",
+                "trustedInputRequired": false,
+                "version": "v1"
+              }
+            ]
+          },
+          "kind": "model",
+          "label": null,
+          "maxAttempts": 3,
+          "name": "native-fixture",
+          "permission": null,
+          "policyVersion": "diomedes-host-policy-v1",
+          "stepId": "model:1",
+          "stepVersion": "v1",
+          "trustedInputRequired": false
+        },
+        "intentHash": "b3ccfdd8eaa12858ee58c91e04e88de889201524bdab34b5b90bd8e1382618ec",
+        "attempt": 1,
+        "state": "succeeded",
+        "output": {
+          "response": {
+            "input": {
+              "text": "  Inspect the saved report\r\n\r\nReview the exact change\r\n  Keep the recorded result\r\n"
+            },
+            "name": "format_lines",
+            "type": "tool"
+          },
+          "usage": null
+        },
+        "outputHash": "ae3df9401c2e36b2bc267e3995b3f64d7ab7ffb95db1e0fd1702c7e3a70dcfa8",
+        "leaseFence": 1,
+        "startedAt": "2026-09-09T07:47:50.207Z",
+        "endedAt": "2026-09-09T07:47:50.216Z",
+        "error": null
+      },
+      {
+        "intent": {
+          "approval": false,
+          "cost": 0,
+          "destination": "local",
+          "effect": "pure",
+          "input": {
+            "text": "  Inspect the saved report\r\n\r\nReview the exact change\r\n  Keep the recorded result\r\n"
+          },
+          "kind": "tool",
+          "label": null,
+          "maxAttempts": 3,
+          "name": "format_lines",
+          "permission": null,
+          "policyVersion": "diomedes-host-policy-v1",
+          "stepId": "tool:1",
+          "stepVersion": "v1",
+          "trustedInputRequired": false
+        },
+        "intentHash": "2d20ca3c20a2908529aa100be76fd473bca9eb5b7db6d73b0c717dbb20c0c071",
+        "attempt": 1,
+        "state": "succeeded",
+        "output": {
+          "text": "# Fixture report\n\n- Inspect the saved report\n- Review the exact change\n- Keep the recorded result\n"
+        },
+        "outputHash": "b08068b0e54462f819ad85e3e5bd954b024d0cb25314a7a833b073948538af70",
+        "leaseFence": 1,
+        "startedAt": "2026-09-09T07:47:50.233Z",
+        "endedAt": "2026-09-09T07:47:50.237Z",
+        "error": null
+      },
+      {
+        "intent": {
+          "approval": false,
+          "cost": 1,
+          "destination": "local",
+          "effect": "read",
+          "input": {
+            "messages": [
+              {
+                "role": "user",
+                "text": "Format the shipped synthetic fixture."
+              },
+              {
+                "input": {},
+                "role": "assistant",
+                "tool": "read_fixture"
+              },
+              {
+                "name": "read_fixture",
+                "output": {
+                  "text": "  Inspect the saved report\r\n\r\nReview the exact change\r\n  Keep the recorded result\r\n"
+                },
+                "role": "tool"
+              },
+              {
+                "input": {
+                  "text": "  Inspect the saved report\r\n\r\nReview the exact change\r\n  Keep the recorded result\r\n"
+                },
+                "role": "assistant",
+                "tool": "format_lines"
+              },
+              {
+                "name": "format_lines",
+                "output": {
+                  "text": "# Fixture report\n\n- Inspect the saved report\n- Review the exact change\n- Keep the recorded result\n"
+                },
+                "role": "tool"
+              }
+            ],
+            "provider": "native-fixture",
+            "tools": [
+              {
+                "approval": false,
+                "cost": 0,
+                "description": "Read the shipped synthetic report lines.",
+                "destination": "local",
+                "effect": "pure",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                },
+                "name": "read_fixture",
+                "permission": null,
+                "trustedInputRequired": false,
+                "version": "v1"
+              },
+              {
+                "approval": false,
+                "cost": 0,
+                "description": "Turn lines into a deterministic Markdown report.",
+                "destination": "local",
+                "effect": "pure",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {
+                    "text": {
+                      "maxLength": 128000,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "format_lines",
+                "permission": null,
+                "trustedInputRequired": false,
+                "version": "v1"
+              },
+              {
+                "approval": true,
+                "cost": 0,
+                "description": "Write the exact report after the person approves it.",
+                "destination": "local",
+                "effect": "idempotent",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {
+                    "expected": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "files": {
+                      "items": false,
+                      "maxItems": 1,
+                      "minItems": 1,
+                      "prefixItems": [
+                        {
+                          "const": "Harness report.md",
+                          "type": "string"
+                        }
+                      ],
+                      "type": "array"
+                    },
+                    "projectId": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "runId": {
+                      "pattern": "^R[a-f0-9]{12}$",
+                      "type": "string"
+                    },
+                    "text": {
+                      "maxLength": 128000,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "runId",
+                    "files",
+                    "expected",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "propose_write",
+                "permission": "write-project-file",
+                "trustedInputRequired": false,
+                "version": "v1"
+              }
+            ]
+          },
+          "kind": "model",
+          "label": null,
+          "maxAttempts": 3,
+          "name": "native-fixture",
+          "permission": null,
+          "policyVersion": "diomedes-host-policy-v1",
+          "stepId": "model:2",
+          "stepVersion": "v1",
+          "trustedInputRequired": false
+        },
+        "intentHash": "fa392d6c5079957608ad52d77af1bfb1a53e074c8d69218cbae56fc0c7cf1375",
+        "attempt": 1,
+        "state": "succeeded",
+        "output": {
+          "response": {
+            "input": {
+              "expected": null,
+              "files": [
+                "Harness report.md"
+              ],
+              "projectId": "cecf5d7c49e4",
+              "runId": "R4c7a29629c1e",
+              "text": "# Fixture report\n\n- Inspect the saved report\n- Review the exact change\n- Keep the recorded result\n"
+            },
+            "name": "propose_write",
+            "type": "tool"
+          },
+          "usage": null
+        },
+        "outputHash": "66bfda55ce9d57cf93f0ffe04dc31d33fa24edcd5139499a3b9b54932cc1db8b",
+        "leaseFence": 1,
+        "startedAt": "2026-09-09T07:47:50.263Z",
+        "endedAt": "2026-09-09T07:47:50.274Z",
+        "error": null
+      },
+      {
+        "intent": {
+          "approval": true,
+          "cost": 0,
+          "destination": "local",
+          "effect": "idempotent",
+          "input": {
+            "expected": null,
+            "files": [
+              "Harness report.md"
+            ],
+            "projectId": "cecf5d7c49e4",
+            "runId": "R4c7a29629c1e",
+            "text": "# Fixture report\n\n- Inspect the saved report\n- Review the exact change\n- Keep the recorded result\n"
+          },
+          "kind": "tool",
+          "label": null,
+          "maxAttempts": 3,
+          "name": "propose_write",
+          "permission": "write-project-file",
+          "policyVersion": "diomedes-host-policy-v1",
+          "stepId": "tool:2",
+          "stepVersion": "v1",
+          "trustedInputRequired": false
+        },
+        "intentHash": "ae3eb35f42c07012171abf4f9830776e1a4ffd3f04417ddc596f8bda1cc1430e",
+        "attempt": 0,
+        "state": "waiting_approval",
+        "output": null,
+        "outputHash": null,
+        "leaseFence": 0,
+        "startedAt": null,
+        "endedAt": null,
+        "error": null
+      }
+    ],
+    "approvals": [],
+    "events": [
+      {
+        "v": 1,
+        "seq": 1,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.114Z",
+        "type": "run.created",
+        "attributes": {
+          "capabilityId": "format-report",
+          "capabilityVersion": "v1",
+          "taskId": "T1"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 2,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.125Z",
+        "type": "run.claimed",
+        "attributes": {
+          "owner": "harness-7af48456e658",
+          "fence": 1,
+          "expiresAt": 1788940130125
+        }
+      },
+      {
+        "v": 1,
+        "seq": 3,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.152Z",
+        "type": "step.started",
+        "stepId": "model:0",
+        "attempt": 1,
+        "attributes": {
+          "fence": 1,
+          "reservedUnits": 1,
+          "effect": "read"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 4,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.159Z",
+        "type": "step.succeeded",
+        "stepId": "model:0",
+        "attempt": 1,
+        "attributes": {
+          "outputHash": "8f998f2630f1749e5efc11f28d0c92dfa1ff71c14ffaafe6ca084bf5871ac132"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 5,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.182Z",
+        "type": "step.started",
+        "stepId": "tool:0",
+        "attempt": 1,
+        "attributes": {
+          "fence": 1,
+          "reservedUnits": 0,
+          "effect": "pure"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 6,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.187Z",
+        "type": "step.succeeded",
+        "stepId": "tool:0",
+        "attempt": 1,
+        "attributes": {
+          "outputHash": "9c904749ed807aa29106706493778012d28dc584b221824dbe92218244abecc7"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 7,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.207Z",
+        "type": "step.started",
+        "stepId": "model:1",
+        "attempt": 1,
+        "attributes": {
+          "fence": 1,
+          "reservedUnits": 1,
+          "effect": "read"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 8,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.216Z",
+        "type": "step.succeeded",
+        "stepId": "model:1",
+        "attempt": 1,
+        "attributes": {
+          "outputHash": "ae3df9401c2e36b2bc267e3995b3f64d7ab7ffb95db1e0fd1702c7e3a70dcfa8"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 9,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.233Z",
+        "type": "step.started",
+        "stepId": "tool:1",
+        "attempt": 1,
+        "attributes": {
+          "fence": 1,
+          "reservedUnits": 0,
+          "effect": "pure"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 10,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.237Z",
+        "type": "step.succeeded",
+        "stepId": "tool:1",
+        "attempt": 1,
+        "attributes": {
+          "outputHash": "b08068b0e54462f819ad85e3e5bd954b024d0cb25314a7a833b073948538af70"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 11,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.263Z",
+        "type": "step.started",
+        "stepId": "model:2",
+        "attempt": 1,
+        "attributes": {
+          "fence": 1,
+          "reservedUnits": 1,
+          "effect": "read"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 12,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.274Z",
+        "type": "step.succeeded",
+        "stepId": "model:2",
+        "attempt": 1,
+        "attributes": {
+          "outputHash": "66bfda55ce9d57cf93f0ffe04dc31d33fa24edcd5139499a3b9b54932cc1db8b"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 13,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.299Z",
+        "type": "step.waiting_approval",
+        "stepId": "tool:2",
+        "attempt": 0,
+        "attributes": {
+          "intentHash": "ae3eb35f42c07012171abf4f9830776e1a4ffd3f04417ddc596f8bda1cc1430e"
+        }
+      }
+    ],
+    "lastSeq": 13
+  },
+  "startup": {
+    "version": "0.1.0",
+    "executable": "F:\\Achilles\\deliverables\\m1-usage-package-20260909\\Diomedes.exe",
+    "pid": 40288,
+    "url": "http://127.0.0.1:53803",
+    "startedAt": "2026-09-09T07:47:49.984Z",
+    "packaged": true
+  },
+  "decision": {
+    "protocolVersion": 1,
+    "commandId": "14b1123d-0f1e-415b-8057-2b789efefd1b",
+    "payloadDigest": "sha256:8e2743c4e39da24f038d4043a9e21d8b76730a0458616ae8d2df1d4a767db218",
+    "projectId": "cecf5d7c49e4",
+    "approvalId": "N3e29312de33a",
+    "taskId": "T1",
+    "sessionId": "Sbd998d444180",
+    "actor": "local-client",
+    "scope": "local-prototype",
+    "proposalDigest": "sha256:f5031b1277534ef29785e78486a1a8ed1d2ae1f4dd89c2c25ad61788ce351998",
+    "actionDigest": "ae3eb35f42c07012171abf4f9830776e1a4ffd3f04417ddc596f8bda1cc1430e",
+    "baseDigest": "sha256:81e0aa9f0d5a67fdeb6ca634ea10736da917fe22af60e5fcf17cb5e8c98b5047",
+    "createdAt": "2026-09-09T07:47:50.308Z",
+    "expiresAt": "2026-09-09T08:47:50.308Z",
+    "decision": "go-ahead",
+    "decidedAt": "2026-09-09T07:47:53.025Z",
+    "eventId": "E9eec2b430033"
+  },
+  "execution": {
+    "state": "applied",
+    "eventId": "Ea4a63e6b9bae",
+    "completedAt": "2026-09-09T07:47:53.096Z",
+    "reason": null,
+    "conflicts": []
+  },
+  "events": {
+    "events": [
+      {
+        "v": 1,
+        "seq": 14,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:51.908Z",
+        "type": "run.recovered",
+        "attributes": {
+          "fence": 2
+        }
+      },
+      {
+        "v": 1,
+        "seq": 15,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:53.031Z",
+        "type": "approval.decided",
+        "stepId": "tool:2",
+        "attempt": 0,
+        "attributes": {
+          "decision": "approved",
+          "intentHash": "ae3eb35f42c07012171abf4f9830776e1a4ffd3f04417ddc596f8bda1cc1430e",
+          "expiresAt": "2026-09-09T08:47:50.308Z",
+          "decidedBy": "local-client"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 16,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:53.036Z",
+        "type": "run.claimed",
+        "attributes": {
+          "owner": "harness-790ab9a17ce2",
+          "fence": 3,
+          "expiresAt": 1788940133036
+        }
+      },
+      {
+        "v": 1,
+        "seq": 17,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:53.073Z",
+        "type": "step.started",
+        "stepId": "tool:2",
+        "attempt": 1,
+        "attributes": {
+          "fence": 3,
+          "reservedUnits": 0,
+          "effect": "idempotent"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 18,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:53.117Z",
+        "type": "step.succeeded",
+        "stepId": "tool:2",
+        "attempt": 1,
+        "attributes": {
+          "outputHash": "c02f3a2a3b0e77826e6b4a3b3f2587afc52895cb3a54723e29d9299842ca93cb"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 19,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:53.135Z",
+        "type": "step.started",
+        "stepId": "model:3",
+        "attempt": 1,
+        "attributes": {
+          "fence": 3,
+          "reservedUnits": 1,
+          "effect": "read"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 20,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:53.142Z",
+        "type": "step.succeeded",
+        "stepId": "model:3",
+        "attempt": 1,
+        "attributes": {
+          "outputHash": "b0446ef068e6eef3ee6529e7039835465ebed4e7b31ff0385ad5ecb9fbd36db7"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 21,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:53.151Z",
+        "type": "run.completed",
+        "attributes": {
+          "resultHash": "205da93126c4b9b584b0d779f0c17d64d96f8e4844e6ceefdf22d69278fb9628"
+        }
+      }
+    ],
+    "lastSeq": 21
+  },
+  "renderer": {
+    "nodeIntegration": false,
+    "contextIsolation": true,
+    "sandbox": true
+  },
+  "stateLatencyMs": [
+    9.893000000000029,
+    10.418400000000474,
+    16.68029999999999,
+    7.117200000000594,
+    6.759799999999814,
+    16.33759999999893,
+    14.50590000000011,
+    14.659700000000157,
+    16.79869999999937,
+    14.536799999999857
+  ],
+  "runBytes": 19329,
+  "metrics": [
+    {
+      "type": "Browser",
+      "cpu": {
+        "cumulativeCPUUsage": 0.569739,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "memory": {
+        "workingSetSize": 134228,
+        "peakWorkingSetSize": 135064,
+        "privateBytes": 95908
+      }
+    },
+    {
+      "type": "GPU",
+      "cpu": {
+        "cumulativeCPUUsage": 0.419962,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "memory": {
+        "workingSetSize": 102876,
+        "peakWorkingSetSize": 104736,
+        "privateBytes": 113132
+      }
+    },
+    {
+      "type": "Utility",
+      "cpu": {
+        "cumulativeCPUUsage": 0.091342,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "memory": {
+        "workingSetSize": 53352,
+        "peakWorkingSetSize": 53372,
+        "privateBytes": 14028
+      }
+    },
+    {
+      "type": "Tab",
+      "cpu": {
+        "cumulativeCPUUsage": 0.254514,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "memory": {
+        "workingSetSize": 111868,
+        "peakWorkingSetSize": 111868,
+        "privateBytes": 50656
+      }
+    }
+  ],
+  "finalRun": {
+    "v": 1,
+    "id": "R4c7a29629c1e",
+    "tenantId": "local",
+    "projectId": "cecf5d7c49e4",
+    "taskId": "T1",
+    "sessionId": "Sbd998d444180",
+    "capabilityId": "format-report",
+    "capabilityVersion": "v1",
+    "capabilityTools": [
+      "read_fixture",
+      "format_lines",
+      "propose_write"
+    ],
+    "policyVersion": "diomedes-host-policy-v1",
+    "principal": {
+      "capabilities": [
+        "write-project-file"
+      ],
+      "id": "local-client",
+      "identityGeneration": 1,
+      "projectId": "cecf5d7c49e4",
+      "tenantId": "local"
+    },
+    "state": "completed",
+    "budget": {
+      "modelCalls": 6,
+      "toolCalls": 6,
+      "units": 6,
+      "wallMs": null
+    },
+    "used": {
+      "units": 4,
+      "modelCalls": 4,
+      "toolCalls": 3
+    },
+    "owner": "harness-790ab9a17ce2",
+    "fence": 3,
+    "leaseExpiresAt": 1788940133036,
+    "parentRunId": null,
+    "forkPoint": null,
+    "contextRevision": 1,
+    "transcripts": {},
+    "result": {
+      "text": "Formatted Harness report.md. The recorded change is in History."
+    },
+    "failure": null,
+    "cancelReason": null,
+    "createdAt": "2026-09-09T07:47:50.114Z",
+    "updatedAt": "2026-09-09T07:47:53.151Z",
+    "steps": [
+      {
+        "intent": {
+          "approval": false,
+          "cost": 1,
+          "destination": "local",
+          "effect": "read",
+          "input": {
+            "messages": [
+              {
+                "role": "user",
+                "text": "Format the shipped synthetic fixture."
+              }
+            ],
+            "provider": "native-fixture",
+            "tools": [
+              {
+                "approval": false,
+                "cost": 0,
+                "description": "Read the shipped synthetic report lines.",
+                "destination": "local",
+                "effect": "pure",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                },
+                "name": "read_fixture",
+                "permission": null,
+                "trustedInputRequired": false,
+                "version": "v1"
+              },
+              {
+                "approval": false,
+                "cost": 0,
+                "description": "Turn lines into a deterministic Markdown report.",
+                "destination": "local",
+                "effect": "pure",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {
+                    "text": {
+                      "maxLength": 128000,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "format_lines",
+                "permission": null,
+                "trustedInputRequired": false,
+                "version": "v1"
+              },
+              {
+                "approval": true,
+                "cost": 0,
+                "description": "Write the exact report after the person approves it.",
+                "destination": "local",
+                "effect": "idempotent",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {
+                    "expected": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "files": {
+                      "items": false,
+                      "maxItems": 1,
+                      "minItems": 1,
+                      "prefixItems": [
+                        {
+                          "const": "Harness report.md",
+                          "type": "string"
+                        }
+                      ],
+                      "type": "array"
+                    },
+                    "projectId": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "runId": {
+                      "pattern": "^R[a-f0-9]{12}$",
+                      "type": "string"
+                    },
+                    "text": {
+                      "maxLength": 128000,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "runId",
+                    "files",
+                    "expected",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "propose_write",
+                "permission": "write-project-file",
+                "trustedInputRequired": false,
+                "version": "v1"
+              }
+            ]
+          },
+          "kind": "model",
+          "label": null,
+          "maxAttempts": 3,
+          "name": "native-fixture",
+          "permission": null,
+          "policyVersion": "diomedes-host-policy-v1",
+          "stepId": "model:0",
+          "stepVersion": "v1",
+          "trustedInputRequired": false
+        },
+        "intentHash": "1e0c60d0ed383d5baa1d70c0d1ba1b320b662ac8ec7f68047a3d68c171c23691",
+        "attempt": 1,
+        "state": "succeeded",
+        "output": {
+          "response": {
+            "input": {},
+            "name": "read_fixture",
+            "type": "tool"
+          },
+          "usage": null
+        },
+        "outputHash": "8f998f2630f1749e5efc11f28d0c92dfa1ff71c14ffaafe6ca084bf5871ac132",
+        "leaseFence": 1,
+        "startedAt": "2026-09-09T07:47:50.152Z",
+        "endedAt": "2026-09-09T07:47:50.159Z",
+        "error": null
+      },
+      {
+        "intent": {
+          "approval": false,
+          "cost": 0,
+          "destination": "local",
+          "effect": "pure",
+          "input": {},
+          "kind": "tool",
+          "label": null,
+          "maxAttempts": 3,
+          "name": "read_fixture",
+          "permission": null,
+          "policyVersion": "diomedes-host-policy-v1",
+          "stepId": "tool:0",
+          "stepVersion": "v1",
+          "trustedInputRequired": false
+        },
+        "intentHash": "b5dda6cb40e921a4a7687a1bdf82ff6b330c6bfe5d69f76956b8df6076662c40",
+        "attempt": 1,
+        "state": "succeeded",
+        "output": {
+          "text": "  Inspect the saved report\r\n\r\nReview the exact change\r\n  Keep the recorded result\r\n"
+        },
+        "outputHash": "9c904749ed807aa29106706493778012d28dc584b221824dbe92218244abecc7",
+        "leaseFence": 1,
+        "startedAt": "2026-09-09T07:47:50.182Z",
+        "endedAt": "2026-09-09T07:47:50.187Z",
+        "error": null
+      },
+      {
+        "intent": {
+          "approval": false,
+          "cost": 1,
+          "destination": "local",
+          "effect": "read",
+          "input": {
+            "messages": [
+              {
+                "role": "user",
+                "text": "Format the shipped synthetic fixture."
+              },
+              {
+                "input": {},
+                "role": "assistant",
+                "tool": "read_fixture"
+              },
+              {
+                "name": "read_fixture",
+                "output": {
+                  "text": "  Inspect the saved report\r\n\r\nReview the exact change\r\n  Keep the recorded result\r\n"
+                },
+                "role": "tool"
+              }
+            ],
+            "provider": "native-fixture",
+            "tools": [
+              {
+                "approval": false,
+                "cost": 0,
+                "description": "Read the shipped synthetic report lines.",
+                "destination": "local",
+                "effect": "pure",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                },
+                "name": "read_fixture",
+                "permission": null,
+                "trustedInputRequired": false,
+                "version": "v1"
+              },
+              {
+                "approval": false,
+                "cost": 0,
+                "description": "Turn lines into a deterministic Markdown report.",
+                "destination": "local",
+                "effect": "pure",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {
+                    "text": {
+                      "maxLength": 128000,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "format_lines",
+                "permission": null,
+                "trustedInputRequired": false,
+                "version": "v1"
+              },
+              {
+                "approval": true,
+                "cost": 0,
+                "description": "Write the exact report after the person approves it.",
+                "destination": "local",
+                "effect": "idempotent",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {
+                    "expected": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "files": {
+                      "items": false,
+                      "maxItems": 1,
+                      "minItems": 1,
+                      "prefixItems": [
+                        {
+                          "const": "Harness report.md",
+                          "type": "string"
+                        }
+                      ],
+                      "type": "array"
+                    },
+                    "projectId": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "runId": {
+                      "pattern": "^R[a-f0-9]{12}$",
+                      "type": "string"
+                    },
+                    "text": {
+                      "maxLength": 128000,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "runId",
+                    "files",
+                    "expected",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "propose_write",
+                "permission": "write-project-file",
+                "trustedInputRequired": false,
+                "version": "v1"
+              }
+            ]
+          },
+          "kind": "model",
+          "label": null,
+          "maxAttempts": 3,
+          "name": "native-fixture",
+          "permission": null,
+          "policyVersion": "diomedes-host-policy-v1",
+          "stepId": "model:1",
+          "stepVersion": "v1",
+          "trustedInputRequired": false
+        },
+        "intentHash": "b3ccfdd8eaa12858ee58c91e04e88de889201524bdab34b5b90bd8e1382618ec",
+        "attempt": 1,
+        "state": "succeeded",
+        "output": {
+          "response": {
+            "input": {
+              "text": "  Inspect the saved report\r\n\r\nReview the exact change\r\n  Keep the recorded result\r\n"
+            },
+            "name": "format_lines",
+            "type": "tool"
+          },
+          "usage": null
+        },
+        "outputHash": "ae3df9401c2e36b2bc267e3995b3f64d7ab7ffb95db1e0fd1702c7e3a70dcfa8",
+        "leaseFence": 1,
+        "startedAt": "2026-09-09T07:47:50.207Z",
+        "endedAt": "2026-09-09T07:47:50.216Z",
+        "error": null
+      },
+      {
+        "intent": {
+          "approval": false,
+          "cost": 0,
+          "destination": "local",
+          "effect": "pure",
+          "input": {
+            "text": "  Inspect the saved report\r\n\r\nReview the exact change\r\n  Keep the recorded result\r\n"
+          },
+          "kind": "tool",
+          "label": null,
+          "maxAttempts": 3,
+          "name": "format_lines",
+          "permission": null,
+          "policyVersion": "diomedes-host-policy-v1",
+          "stepId": "tool:1",
+          "stepVersion": "v1",
+          "trustedInputRequired": false
+        },
+        "intentHash": "2d20ca3c20a2908529aa100be76fd473bca9eb5b7db6d73b0c717dbb20c0c071",
+        "attempt": 1,
+        "state": "succeeded",
+        "output": {
+          "text": "# Fixture report\n\n- Inspect the saved report\n- Review the exact change\n- Keep the recorded result\n"
+        },
+        "outputHash": "b08068b0e54462f819ad85e3e5bd954b024d0cb25314a7a833b073948538af70",
+        "leaseFence": 1,
+        "startedAt": "2026-09-09T07:47:50.233Z",
+        "endedAt": "2026-09-09T07:47:50.237Z",
+        "error": null
+      },
+      {
+        "intent": {
+          "approval": false,
+          "cost": 1,
+          "destination": "local",
+          "effect": "read",
+          "input": {
+            "messages": [
+              {
+                "role": "user",
+                "text": "Format the shipped synthetic fixture."
+              },
+              {
+                "input": {},
+                "role": "assistant",
+                "tool": "read_fixture"
+              },
+              {
+                "name": "read_fixture",
+                "output": {
+                  "text": "  Inspect the saved report\r\n\r\nReview the exact change\r\n  Keep the recorded result\r\n"
+                },
+                "role": "tool"
+              },
+              {
+                "input": {
+                  "text": "  Inspect the saved report\r\n\r\nReview the exact change\r\n  Keep the recorded result\r\n"
+                },
+                "role": "assistant",
+                "tool": "format_lines"
+              },
+              {
+                "name": "format_lines",
+                "output": {
+                  "text": "# Fixture report\n\n- Inspect the saved report\n- Review the exact change\n- Keep the recorded result\n"
+                },
+                "role": "tool"
+              }
+            ],
+            "provider": "native-fixture",
+            "tools": [
+              {
+                "approval": false,
+                "cost": 0,
+                "description": "Read the shipped synthetic report lines.",
+                "destination": "local",
+                "effect": "pure",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                },
+                "name": "read_fixture",
+                "permission": null,
+                "trustedInputRequired": false,
+                "version": "v1"
+              },
+              {
+                "approval": false,
+                "cost": 0,
+                "description": "Turn lines into a deterministic Markdown report.",
+                "destination": "local",
+                "effect": "pure",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {
+                    "text": {
+                      "maxLength": 128000,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "format_lines",
+                "permission": null,
+                "trustedInputRequired": false,
+                "version": "v1"
+              },
+              {
+                "approval": true,
+                "cost": 0,
+                "description": "Write the exact report after the person approves it.",
+                "destination": "local",
+                "effect": "idempotent",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {
+                    "expected": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "files": {
+                      "items": false,
+                      "maxItems": 1,
+                      "minItems": 1,
+                      "prefixItems": [
+                        {
+                          "const": "Harness report.md",
+                          "type": "string"
+                        }
+                      ],
+                      "type": "array"
+                    },
+                    "projectId": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "runId": {
+                      "pattern": "^R[a-f0-9]{12}$",
+                      "type": "string"
+                    },
+                    "text": {
+                      "maxLength": 128000,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "runId",
+                    "files",
+                    "expected",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "propose_write",
+                "permission": "write-project-file",
+                "trustedInputRequired": false,
+                "version": "v1"
+              }
+            ]
+          },
+          "kind": "model",
+          "label": null,
+          "maxAttempts": 3,
+          "name": "native-fixture",
+          "permission": null,
+          "policyVersion": "diomedes-host-policy-v1",
+          "stepId": "model:2",
+          "stepVersion": "v1",
+          "trustedInputRequired": false
+        },
+        "intentHash": "fa392d6c5079957608ad52d77af1bfb1a53e074c8d69218cbae56fc0c7cf1375",
+        "attempt": 1,
+        "state": "succeeded",
+        "output": {
+          "response": {
+            "input": {
+              "expected": null,
+              "files": [
+                "Harness report.md"
+              ],
+              "projectId": "cecf5d7c49e4",
+              "runId": "R4c7a29629c1e",
+              "text": "# Fixture report\n\n- Inspect the saved report\n- Review the exact change\n- Keep the recorded result\n"
+            },
+            "name": "propose_write",
+            "type": "tool"
+          },
+          "usage": null
+        },
+        "outputHash": "66bfda55ce9d57cf93f0ffe04dc31d33fa24edcd5139499a3b9b54932cc1db8b",
+        "leaseFence": 1,
+        "startedAt": "2026-09-09T07:47:50.263Z",
+        "endedAt": "2026-09-09T07:47:50.274Z",
+        "error": null
+      },
+      {
+        "intent": {
+          "approval": true,
+          "cost": 0,
+          "destination": "local",
+          "effect": "idempotent",
+          "input": {
+            "expected": null,
+            "files": [
+              "Harness report.md"
+            ],
+            "projectId": "cecf5d7c49e4",
+            "runId": "R4c7a29629c1e",
+            "text": "# Fixture report\n\n- Inspect the saved report\n- Review the exact change\n- Keep the recorded result\n"
+          },
+          "kind": "tool",
+          "label": null,
+          "maxAttempts": 3,
+          "name": "propose_write",
+          "permission": "write-project-file",
+          "policyVersion": "diomedes-host-policy-v1",
+          "stepId": "tool:2",
+          "stepVersion": "v1",
+          "trustedInputRequired": false
+        },
+        "intentHash": "ae3eb35f42c07012171abf4f9830776e1a4ffd3f04417ddc596f8bda1cc1430e",
+        "attempt": 1,
+        "state": "succeeded",
+        "output": {
+          "entryId": "Ea4a63e6b9bae",
+          "path": "Harness report.md",
+          "sha": "14a4907a8ffdb38a4f8c76c742ae7e17c24969c72ad2009173abbde4b95a935f"
+        },
+        "outputHash": "c02f3a2a3b0e77826e6b4a3b3f2587afc52895cb3a54723e29d9299842ca93cb",
+        "leaseFence": 3,
+        "startedAt": "2026-09-09T07:47:53.073Z",
+        "endedAt": "2026-09-09T07:47:53.117Z",
+        "error": null
+      },
+      {
+        "intent": {
+          "approval": false,
+          "cost": 1,
+          "destination": "local",
+          "effect": "read",
+          "input": {
+            "messages": [
+              {
+                "role": "user",
+                "text": "Format the shipped synthetic fixture."
+              },
+              {
+                "input": {},
+                "role": "assistant",
+                "tool": "read_fixture"
+              },
+              {
+                "name": "read_fixture",
+                "output": {
+                  "text": "  Inspect the saved report\r\n\r\nReview the exact change\r\n  Keep the recorded result\r\n"
+                },
+                "role": "tool"
+              },
+              {
+                "input": {
+                  "text": "  Inspect the saved report\r\n\r\nReview the exact change\r\n  Keep the recorded result\r\n"
+                },
+                "role": "assistant",
+                "tool": "format_lines"
+              },
+              {
+                "name": "format_lines",
+                "output": {
+                  "text": "# Fixture report\n\n- Inspect the saved report\n- Review the exact change\n- Keep the recorded result\n"
+                },
+                "role": "tool"
+              },
+              {
+                "input": {
+                  "expected": null,
+                  "files": [
+                    "Harness report.md"
+                  ],
+                  "projectId": "cecf5d7c49e4",
+                  "runId": "R4c7a29629c1e",
+                  "text": "# Fixture report\n\n- Inspect the saved report\n- Review the exact change\n- Keep the recorded result\n"
+                },
+                "role": "assistant",
+                "tool": "propose_write"
+              },
+              {
+                "name": "propose_write",
+                "output": {
+                  "entryId": "Ea4a63e6b9bae",
+                  "path": "Harness report.md",
+                  "sha": "14a4907a8ffdb38a4f8c76c742ae7e17c24969c72ad2009173abbde4b95a935f"
+                },
+                "role": "tool"
+              }
+            ],
+            "provider": "native-fixture",
+            "tools": [
+              {
+                "approval": false,
+                "cost": 0,
+                "description": "Read the shipped synthetic report lines.",
+                "destination": "local",
+                "effect": "pure",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                },
+                "name": "read_fixture",
+                "permission": null,
+                "trustedInputRequired": false,
+                "version": "v1"
+              },
+              {
+                "approval": false,
+                "cost": 0,
+                "description": "Turn lines into a deterministic Markdown report.",
+                "destination": "local",
+                "effect": "pure",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {
+                    "text": {
+                      "maxLength": 128000,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "format_lines",
+                "permission": null,
+                "trustedInputRequired": false,
+                "version": "v1"
+              },
+              {
+                "approval": true,
+                "cost": 0,
+                "description": "Write the exact report after the person approves it.",
+                "destination": "local",
+                "effect": "idempotent",
+                "inputSchema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "additionalProperties": false,
+                  "properties": {
+                    "expected": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[a-f0-9]{64}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "files": {
+                      "items": false,
+                      "maxItems": 1,
+                      "minItems": 1,
+                      "prefixItems": [
+                        {
+                          "const": "Harness report.md",
+                          "type": "string"
+                        }
+                      ],
+                      "type": "array"
+                    },
+                    "projectId": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "runId": {
+                      "pattern": "^R[a-f0-9]{12}$",
+                      "type": "string"
+                    },
+                    "text": {
+                      "maxLength": 128000,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "runId",
+                    "files",
+                    "expected",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "name": "propose_write",
+                "permission": "write-project-file",
+                "trustedInputRequired": false,
+                "version": "v1"
+              }
+            ]
+          },
+          "kind": "model",
+          "label": null,
+          "maxAttempts": 3,
+          "name": "native-fixture",
+          "permission": null,
+          "policyVersion": "diomedes-host-policy-v1",
+          "stepId": "model:3",
+          "stepVersion": "v1",
+          "trustedInputRequired": false
+        },
+        "intentHash": "901274e0aad52b4ed70dc525e8e523ea624a981fd37b956d89d69533a7f08eee",
+        "attempt": 1,
+        "state": "succeeded",
+        "output": {
+          "response": {
+            "text": "Formatted Harness report.md. The recorded change is in History.",
+            "type": "final"
+          },
+          "usage": null
+        },
+        "outputHash": "b0446ef068e6eef3ee6529e7039835465ebed4e7b31ff0385ad5ecb9fbd36db7",
+        "leaseFence": 3,
+        "startedAt": "2026-09-09T07:47:53.135Z",
+        "endedAt": "2026-09-09T07:47:53.142Z",
+        "error": null
+      }
+    ],
+    "approvals": [
+      {
+        "runId": "R4c7a29629c1e",
+        "stepId": "tool:2",
+        "intentHash": "ae3eb35f42c07012171abf4f9830776e1a4ffd3f04417ddc596f8bda1cc1430e",
+        "principalId": "local-client",
+        "identityGeneration": 1,
+        "executionGeneration": 2,
+        "decision": "approved",
+        "decidedBy": "local-client",
+        "decidedAt": "2026-09-09T07:47:53.031Z",
+        "expiresAt": "2026-09-09T08:47:50.308Z",
+        "consumedAt": "2026-09-09T07:47:53.073Z"
+      }
+    ],
+    "events": [
+      {
+        "v": 1,
+        "seq": 1,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.114Z",
+        "type": "run.created",
+        "attributes": {
+          "capabilityId": "format-report",
+          "capabilityVersion": "v1",
+          "taskId": "T1"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 2,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.125Z",
+        "type": "run.claimed",
+        "attributes": {
+          "owner": "harness-7af48456e658",
+          "fence": 1,
+          "expiresAt": 1788940130125
+        }
+      },
+      {
+        "v": 1,
+        "seq": 3,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.152Z",
+        "type": "step.started",
+        "stepId": "model:0",
+        "attempt": 1,
+        "attributes": {
+          "fence": 1,
+          "reservedUnits": 1,
+          "effect": "read"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 4,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.159Z",
+        "type": "step.succeeded",
+        "stepId": "model:0",
+        "attempt": 1,
+        "attributes": {
+          "outputHash": "8f998f2630f1749e5efc11f28d0c92dfa1ff71c14ffaafe6ca084bf5871ac132"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 5,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.182Z",
+        "type": "step.started",
+        "stepId": "tool:0",
+        "attempt": 1,
+        "attributes": {
+          "fence": 1,
+          "reservedUnits": 0,
+          "effect": "pure"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 6,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.187Z",
+        "type": "step.succeeded",
+        "stepId": "tool:0",
+        "attempt": 1,
+        "attributes": {
+          "outputHash": "9c904749ed807aa29106706493778012d28dc584b221824dbe92218244abecc7"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 7,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.207Z",
+        "type": "step.started",
+        "stepId": "model:1",
+        "attempt": 1,
+        "attributes": {
+          "fence": 1,
+          "reservedUnits": 1,
+          "effect": "read"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 8,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.216Z",
+        "type": "step.succeeded",
+        "stepId": "model:1",
+        "attempt": 1,
+        "attributes": {
+          "outputHash": "ae3df9401c2e36b2bc267e3995b3f64d7ab7ffb95db1e0fd1702c7e3a70dcfa8"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 9,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.233Z",
+        "type": "step.started",
+        "stepId": "tool:1",
+        "attempt": 1,
+        "attributes": {
+          "fence": 1,
+          "reservedUnits": 0,
+          "effect": "pure"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 10,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.237Z",
+        "type": "step.succeeded",
+        "stepId": "tool:1",
+        "attempt": 1,
+        "attributes": {
+          "outputHash": "b08068b0e54462f819ad85e3e5bd954b024d0cb25314a7a833b073948538af70"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 11,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.263Z",
+        "type": "step.started",
+        "stepId": "model:2",
+        "attempt": 1,
+        "attributes": {
+          "fence": 1,
+          "reservedUnits": 1,
+          "effect": "read"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 12,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.274Z",
+        "type": "step.succeeded",
+        "stepId": "model:2",
+        "attempt": 1,
+        "attributes": {
+          "outputHash": "66bfda55ce9d57cf93f0ffe04dc31d33fa24edcd5139499a3b9b54932cc1db8b"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 13,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:50.299Z",
+        "type": "step.waiting_approval",
+        "stepId": "tool:2",
+        "attempt": 0,
+        "attributes": {
+          "intentHash": "ae3eb35f42c07012171abf4f9830776e1a4ffd3f04417ddc596f8bda1cc1430e"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 14,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:51.908Z",
+        "type": "run.recovered",
+        "attributes": {
+          "fence": 2
+        }
+      },
+      {
+        "v": 1,
+        "seq": 15,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:53.031Z",
+        "type": "approval.decided",
+        "stepId": "tool:2",
+        "attempt": 0,
+        "attributes": {
+          "decision": "approved",
+          "intentHash": "ae3eb35f42c07012171abf4f9830776e1a4ffd3f04417ddc596f8bda1cc1430e",
+          "expiresAt": "2026-09-09T08:47:50.308Z",
+          "decidedBy": "local-client"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 16,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:53.036Z",
+        "type": "run.claimed",
+        "attributes": {
+          "owner": "harness-790ab9a17ce2",
+          "fence": 3,
+          "expiresAt": 1788940133036
+        }
+      },
+      {
+        "v": 1,
+        "seq": 17,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:53.073Z",
+        "type": "step.started",
+        "stepId": "tool:2",
+        "attempt": 1,
+        "attributes": {
+          "fence": 3,
+          "reservedUnits": 0,
+          "effect": "idempotent"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 18,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:53.117Z",
+        "type": "step.succeeded",
+        "stepId": "tool:2",
+        "attempt": 1,
+        "attributes": {
+          "outputHash": "c02f3a2a3b0e77826e6b4a3b3f2587afc52895cb3a54723e29d9299842ca93cb"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 19,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:53.135Z",
+        "type": "step.started",
+        "stepId": "model:3",
+        "attempt": 1,
+        "attributes": {
+          "fence": 3,
+          "reservedUnits": 1,
+          "effect": "read"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 20,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:53.142Z",
+        "type": "step.succeeded",
+        "stepId": "model:3",
+        "attempt": 1,
+        "attributes": {
+          "outputHash": "b0446ef068e6eef3ee6529e7039835465ebed4e7b31ff0385ad5ecb9fbd36db7"
+        }
+      },
+      {
+        "v": 1,
+        "seq": 21,
+        "runId": "R4c7a29629c1e",
+        "at": "2026-09-09T07:47:53.151Z",
+        "type": "run.completed",
+        "attributes": {
+          "resultHash": "205da93126c4b9b584b0d779f0c17d64d96f8e4844e6ceefdf22d69278fb9628"
+        }
+      }
+    ],
+    "lastSeq": 21
+  },
+  "finalSessions": [
+    {
+      "id": "Sbd998d444180",
+      "state": "done"
+    },
+    {
+      "id": "S4d32d282e8b2",
+      "state": "stopped"
+    },
+    {
+      "id": "Sa9227643db1a",
+      "state": "stopped"
+    }
+  ],
+  "asarSha256": "68a36fd126d4f9e3126decad7bf262cfe3343885581f909aed7d07346835665c"
+}

@@ -1,0 +1,5 @@
+npm error code EUNKNOWNCONFIG
+npm error Unknown cli flag:
+npm error   - --reporter
+npm error Run `npm help config` for supported options.
+npm error A complete log of this run can be found in: C:\Users\andre\AppData\Local\npm-cache\_logs\2026-09-09T09_14_10_795Z-debug-0.log

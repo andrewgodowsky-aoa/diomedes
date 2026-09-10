@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "detail": "guided",
+  "surface": "workbook",
+  "onboarding": {
+    "work": null,
+    "detail": null,
+    "familiarity": null,
+    "resumeAt": "welcome",
+    "completedAt": null
+  },
+  "permissions": {
+    "changingFiles": true,
+    "deleting": true,
+    "sending": true,
+    "workingOutside": true,
+    "spending": true
+  },
+  "explanations": "persistent",
+  "appearance": {
+    "package": "field",
+    "motion": "normal"
+  },
+  "history": {
+    "keepDays": 30,
+    "maxBytesPerProject": 2147483648
+  },
+  "seen": {
+    "onlineServiceNotice": false,
+    "guidedDescriptors": {},
+    "firstUse": []
+  },
+  "openProjects": [
+    "9c92769a6954"
+  ],
+  "lastPage": {},
+  "tasksView": {},
+  "services": {
+    "codex": true
+  }
+}

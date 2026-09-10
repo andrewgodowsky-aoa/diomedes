@@ -1,0 +1,767 @@
+{
+  "project": {
+    "id": "9c92769a6954",
+    "name": "Synthetic harness proof",
+    "folder": "F:\\Achilles\\diomedes-wt\\windows-release\\evidence\\windows-release\\provider-smoke-sol-1\\projects\\Synthetic harness proof",
+    "createdAt": "2026-09-09T09:55:23.874Z",
+    "lastOpenedAt": "2026-09-09T09:55:23.874Z",
+    "plans": [],
+    "references": [],
+    "repository": {
+      "present": false
+    },
+    "leftOff": null,
+    "counts": {
+      "running": 0,
+      "changesWaiting": 1,
+      "waitingForYou": 0,
+      "historyToday": 4
+    },
+    "status": {
+      "needsYou": 0,
+      "working": 0,
+      "tasksDone": 1,
+      "tasksTotal": 1
+    },
+    "missing": false
+  },
+  "documents": [],
+  "tasks": [
+    {
+      "id": "T1",
+      "name": "Synthetic count report",
+      "description": "Bounded native provider proof",
+      "from": null,
+      "owner": "diomedes-with-ok",
+      "state": "done",
+      "reason": null,
+      "needId": null,
+      "sessionIds": [
+        "S96a0c8a97e8e"
+      ],
+      "changeIds": [
+        "E0d43921ab3f9:0"
+      ],
+      "createdBy": "you",
+      "createdAt": "2026-09-09T09:55:23.984Z",
+      "moves": []
+    }
+  ],
+  "needs": [
+    {
+      "id": "N8dbecdf4e636",
+      "taskId": "T1",
+      "sessionId": "S96a0c8a97e8e",
+      "what": "Go ahead with propose_write?",
+      "why": "This step asks for your OK before it runs. Nothing happens until you say go ahead, and your OK covers exactly this step and nothing else.",
+      "consequence": "This makes a change that is safe to repeat. Diomedes records it.",
+      "files": [
+        "Harness report.md"
+      ],
+      "state": "go-ahead",
+      "createdAt": "2026-09-09T09:55:31.366Z",
+      "decidedAt": "2026-09-09T09:55:31.471Z",
+      "decidedFrom": "",
+      "allowForTask": false,
+      "preview": [],
+      "harness": {
+        "runId": "Rde9354acff50",
+        "intent": {
+          "approval": true,
+          "cost": 0,
+          "destination": "local",
+          "effect": "idempotent",
+          "input": {
+            "expected": null,
+            "files": [
+              "Harness report.md"
+            ],
+            "projectId": "9c92769a6954",
+            "runId": "Rde9354acff50",
+            "text": "# Synthetic availability report\n\n- Three approved restaurants.\n- Reported tracked quantity: 9 at each restaurant.\n- IN_STOCK quantity: not tracked.\n- No ingredient count inferred.\n"
+          },
+          "kind": "tool",
+          "label": null,
+          "maxAttempts": 3,
+          "name": "propose_write",
+          "permission": "write-project-file",
+          "policyVersion": "diomedes-host-policy-v1",
+          "stepId": "codex:write",
+          "stepVersion": "v1",
+          "trustedInputRequired": false
+        }
+      },
+      "approval": {
+        "protocolVersion": 1,
+        "actionDigest": "0d5e6358277b9a842d7a1ab4f3bbb41f293ab40dd4adfe90b2cc982d0a5e4c91",
+        "baseDigest": "sha256:19d85239456a6267bb36a60f8b249bc07813fdf831ce26fe7ec5684d1935defc",
+        "expiresAt": "2026-09-09T10:55:31.366Z",
+        "sources": [
+          {
+            "path": "Synthetic.txt",
+            "sha": "90a46895a43753864d17c20da108206f739fff51d2d54f3c4cf39c5141b01114"
+          }
+        ],
+        "proposalDigest": "sha256:41a114e289c45170525a2cc6b195878d5df93e5f2459639267d1f9113254eaab"
+      },
+      "approvalReceipt": {
+        "protocolVersion": 1,
+        "commandId": "nr03-exact-synthetic-decision",
+        "payloadDigest": "sha256:f17e5596e03b0bef4d526f927846ca100ae45fcd23efa5e2be5c34050b9c7e19",
+        "projectId": "9c92769a6954",
+        "approvalId": "N8dbecdf4e636",
+        "taskId": "T1",
+        "sessionId": "S96a0c8a97e8e",
+        "actor": "local-client",
+        "scope": "local-prototype",
+        "proposalDigest": "sha256:41a114e289c45170525a2cc6b195878d5df93e5f2459639267d1f9113254eaab",
+        "actionDigest": "0d5e6358277b9a842d7a1ab4f3bbb41f293ab40dd4adfe90b2cc982d0a5e4c91",
+        "baseDigest": "sha256:19d85239456a6267bb36a60f8b249bc07813fdf831ce26fe7ec5684d1935defc",
+        "createdAt": "2026-09-09T09:55:31.366Z",
+        "expiresAt": "2026-09-09T10:55:31.366Z",
+        "decision": "go-ahead",
+        "decidedAt": "2026-09-09T09:55:31.471Z",
+        "eventId": "E6f12cd932f7f"
+      },
+      "execution": {
+        "state": "applied",
+        "eventId": "E0d43921ab3f9",
+        "completedAt": "2026-09-09T09:55:31.519Z",
+        "reason": null,
+        "conflicts": []
+      }
+    }
+  ],
+  "sessions": [
+    {
+      "id": "S96a0c8a97e8e",
+      "taskId": "T1",
+      "sample": false,
+      "state": "done",
+      "permission": "show-first",
+      "startedAt": "2026-09-09T09:55:24.221Z",
+      "endedAt": "2026-09-09T09:55:31.544Z",
+      "log": [
+        {
+          "time": "2026-09-09T09:55:24.221Z",
+          "level": "plain",
+          "sentence": "Requested: Use the supplied synthetic counts. Propose exactly this complete file text, including its final newline: \"# Synthetic availability report\\n\\n- Three approved restaurants.\\n- Reported tracked quantity: 9 at each restaurant.\\n- IN_STOCK quantity: not tracked.\\n- No ingredient count inferred.\\n\". Return the required JSON proposal."
+        },
+        {
+          "time": "2026-09-09T09:55:24.221Z",
+          "level": "technical",
+          "sentence": "Codex adapter guarantees: {\"engineId\":\"codex\",\"engineVersion\":\"0.153.4\",\"protocolVersion\":\"codex app-server 0.153.4\",\"modelCalls\":\"observed\",\"toolCalls\":\"observed\",\"filesystemWrites\":\"enforced\",\"networkEgress\":\"observed\",\"approvals\":\"enforced\",\"resumability\":\"unsupported\",\"cancellability\":\"observed\",\"checkpointGranularity\":\"task\",\"notes\":[\"Model calls happen inside the pinned app-server; Diomedes sees turn events and the reported model, it does not dispatch each call (server/integrations.ts askCodex).\",\"Every tool feature is switched off in the thread configuration and the model has no shell or file tool; that inventory is the model's own report, not a protocol-level proof (evidence/codex-team-real-binary-2026-09-06.md, D8).\",\"Project files cannot be written by the engine: the Windows read-only sandbox passes a write-denial probe before each run, and a proposal is applied only by Store.writeRecorded after the person says go ahead.\",\"The runtime echoes networkAccess=false in the policy check; no outbound probe has been run.\",\"There is no checkpoint inside a Codex turn. The host-only codex-report capability persists a completed outer-turn observation; unknown dispatch stays parked for reconciliation and is never automatically resent.\",\"Stopping sends an abort and ends the process; the engine reports the interruption.\"]}"
+        },
+        {
+          "time": "2026-09-09T09:55:24.225Z",
+          "level": "plain",
+          "sentence": "Waiting to start."
+        },
+        {
+          "time": "2026-09-09T09:55:24.225Z",
+          "level": "technical",
+          "sentence": "{\"v\":1,\"seq\":1,\"runId\":\"Rde9354acff50\",\"at\":\"2026-09-09T09:55:24.225Z\",\"type\":\"run.created\",\"attributes\":{\"capabilityId\":\"codex-report\",\"capabilityVersion\":\"v1\",\"taskId\":\"T1\"}}"
+        },
+        {
+          "time": "2026-09-09T09:55:24.228Z",
+          "level": "plain",
+          "sentence": "Working."
+        },
+        {
+          "time": "2026-09-09T09:55:24.228Z",
+          "level": "technical",
+          "sentence": "{\"v\":1,\"seq\":2,\"runId\":\"Rde9354acff50\",\"at\":\"2026-09-09T09:55:24.228Z\",\"type\":\"run.claimed\",\"attributes\":{\"owner\":\"harness-03a92eec349b\",\"fence\":1,\"expiresAt\":1788948024228}}"
+        },
+        {
+          "time": "2026-09-09T09:55:24.241Z",
+          "level": "technical",
+          "sentence": "Before step codex:turn: codex."
+        },
+        {
+          "time": "2026-09-09T09:55:24.247Z",
+          "level": "plain",
+          "sentence": "Working."
+        },
+        {
+          "time": "2026-09-09T09:55:24.247Z",
+          "level": "technical",
+          "sentence": "{\"v\":1,\"seq\":3,\"runId\":\"Rde9354acff50\",\"at\":\"2026-09-09T09:55:24.247Z\",\"type\":\"step.started\",\"stepId\":\"codex:turn\",\"attempt\":1,\"attributes\":{\"fence\":1,\"reservedUnits\":1,\"effect\":\"read\"}}"
+        },
+        {
+          "time": "2026-09-09T09:55:31.341Z",
+          "level": "plain",
+          "sentence": "Working."
+        },
+        {
+          "time": "2026-09-09T09:55:31.341Z",
+          "level": "technical",
+          "sentence": "{\"v\":1,\"seq\":4,\"runId\":\"Rde9354acff50\",\"at\":\"2026-09-09T09:55:31.341Z\",\"type\":\"step.succeeded\",\"stepId\":\"codex:turn\",\"attempt\":1,\"attributes\":{\"outputHash\":\"7456c759fab30895a8c982ad483007e62990a82b1a6fb3e1daf266f9c410a2c3\"}}"
+        },
+        {
+          "time": "2026-09-09T09:55:31.353Z",
+          "level": "plain",
+          "sentence": "Working."
+        },
+        {
+          "time": "2026-09-09T09:55:31.353Z",
+          "level": "technical",
+          "sentence": "{\"v\":1,\"seq\":5,\"runId\":\"Rde9354acff50\",\"at\":\"2026-09-09T09:55:31.353Z\",\"type\":\"transcript.recorded\",\"attributes\":{\"providerId\":\"codex\",\"lineageId\":\"Rde9354acff50\",\"prefixHash\":\"07cade50f22e59ba06a29f5616664fbf5aa92d945acbdb22af9495c0a74e8547\"}}"
+        },
+        {
+          "time": "2026-09-09T09:55:31.360Z",
+          "level": "technical",
+          "sentence": "Before step codex:write: propose_write."
+        },
+        {
+          "time": "2026-09-09T09:55:31.363Z",
+          "level": "plain",
+          "sentence": "Waiting for your OK: propose_write."
+        },
+        {
+          "time": "2026-09-09T09:55:31.363Z",
+          "level": "technical",
+          "sentence": "{\"v\":1,\"seq\":6,\"runId\":\"Rde9354acff50\",\"at\":\"2026-09-09T09:55:31.363Z\",\"type\":\"step.waiting_approval\",\"stepId\":\"codex:write\",\"attempt\":0,\"attributes\":{\"intentHash\":\"0d5e6358277b9a842d7a1ab4f3bbb41f293ab40dd4adfe90b2cc982d0a5e4c91\"}}"
+        },
+        {
+          "time": "2026-09-09T09:55:31.463Z",
+          "level": "plain",
+          "sentence": "Waiting for your OK: propose_write."
+        },
+        {
+          "time": "2026-09-09T09:55:31.463Z",
+          "level": "technical",
+          "sentence": "{\"v\":1,\"seq\":7,\"runId\":\"Rde9354acff50\",\"at\":\"2026-09-09T09:55:31.463Z\",\"type\":\"run.recovered\",\"attributes\":{\"fence\":2}}"
+        },
+        {
+          "time": "2026-09-09T09:55:31.475Z",
+          "level": "plain",
+          "sentence": "Waiting for something outside Diomedes."
+        },
+        {
+          "time": "2026-09-09T09:55:31.475Z",
+          "level": "technical",
+          "sentence": "{\"v\":1,\"seq\":8,\"runId\":\"Rde9354acff50\",\"at\":\"2026-09-09T09:55:31.475Z\",\"type\":\"approval.decided\",\"stepId\":\"codex:write\",\"attempt\":0,\"attributes\":{\"decision\":\"approved\",\"intentHash\":\"0d5e6358277b9a842d7a1ab4f3bbb41f293ab40dd4adfe90b2cc982d0a5e4c91\",\"expiresAt\":\"2026-09-09T10:55:31.366Z\",\"decidedBy\":\"local-client\"}}"
+        },
+        {
+          "time": "2026-09-09T09:55:31.480Z",
+          "level": "plain",
+          "sentence": "Waiting for something outside Diomedes."
+        },
+        {
+          "time": "2026-09-09T09:55:31.480Z",
+          "level": "technical",
+          "sentence": "{\"v\":1,\"seq\":9,\"runId\":\"Rde9354acff50\",\"at\":\"2026-09-09T09:55:31.480Z\",\"type\":\"run.claimed\",\"attributes\":{\"owner\":\"harness-3d7afee39356\",\"fence\":3,\"expiresAt\":1788948031480}}"
+        },
+        {
+          "time": "2026-09-09T09:55:31.495Z",
+          "level": "technical",
+          "sentence": "Before step codex:write: propose_write."
+        },
+        {
+          "time": "2026-09-09T09:55:31.499Z",
+          "level": "plain",
+          "sentence": "Working."
+        },
+        {
+          "time": "2026-09-09T09:55:31.499Z",
+          "level": "technical",
+          "sentence": "{\"v\":1,\"seq\":10,\"runId\":\"Rde9354acff50\",\"at\":\"2026-09-09T09:55:31.499Z\",\"type\":\"step.started\",\"stepId\":\"codex:write\",\"attempt\":1,\"attributes\":{\"fence\":3,\"reservedUnits\":0,\"effect\":\"idempotent\"}}"
+        },
+        {
+          "time": "2026-09-09T09:55:31.536Z",
+          "level": "plain",
+          "sentence": "Working."
+        },
+        {
+          "time": "2026-09-09T09:55:31.536Z",
+          "level": "technical",
+          "sentence": "{\"v\":1,\"seq\":11,\"runId\":\"Rde9354acff50\",\"at\":\"2026-09-09T09:55:31.536Z\",\"type\":\"step.succeeded\",\"stepId\":\"codex:write\",\"attempt\":1,\"attributes\":{\"outputHash\":\"b548a07721c9098a27bf11a792f41d6e452f41e62b5a7c9fb0f25f4ca20fdb1f\"}}"
+        },
+        {
+          "time": "2026-09-09T09:55:31.544Z",
+          "level": "plain",
+          "sentence": "Finished."
+        },
+        {
+          "time": "2026-09-09T09:55:31.544Z",
+          "level": "technical",
+          "sentence": "{\"v\":1,\"seq\":12,\"runId\":\"Rde9354acff50\",\"at\":\"2026-09-09T09:55:31.544Z\",\"type\":\"run.completed\",\"attributes\":{\"resultHash\":\"b548a07721c9098a27bf11a792f41d6e452f41e62b5a7c9fb0f25f4ca20fdb1f\"}}"
+        }
+      ],
+      "entryIds": [
+        "E0d43921ab3f9"
+      ],
+      "needId": null,
+      "engine": {
+        "name": "codex-harness",
+        "model": "gpt-5.6-sol",
+        "worker": 1,
+        "branch": null,
+        "context": null,
+        "events": 12,
+        "version": "0.153.4",
+        "verified": true
+      },
+      "receipt": {
+        "protocolVersion": 1,
+        "commandId": "nr03-single-synthetic-command",
+        "payloadDigest": "sha256:a74f59886ea7d3fc24d20ce4bde1ae569f939b8485b8e108857ebe9824760fce",
+        "projectId": "9c92769a6954",
+        "taskId": "T1",
+        "sessionId": "S96a0c8a97e8e",
+        "eventId": "E63b223cbaa26",
+        "admittedAt": "2026-09-09T09:55:24.221Z",
+        "route": "codex",
+        "scope": "local-prototype"
+      }
+    }
+  ],
+  "history": [
+    {
+      "id": "E178eb0a8946d",
+      "time": "2026-09-09T09:55:23.994Z",
+      "actor": "you",
+      "kind": "observed",
+      "sentence": "Diomedes recorded the first version it read of Synthetic.txt",
+      "sessionId": null,
+      "taskId": null,
+      "sample": false,
+      "files": [
+        {
+          "path": "Synthetic.txt",
+          "op": "modified",
+          "before": "90a46895a43753864d17c20da108206f739fff51d2d54f3c4cf39c5141b01114",
+          "after": "90a46895a43753864d17c20da108206f739fff51d2d54f3c4cf39c5141b01114",
+          "recorded": true,
+          "reason": null
+        }
+      ],
+      "label": null,
+      "restoreOf": null,
+      "replaced": null,
+      "versionId": "v0001",
+      "commit": null
+    },
+    {
+      "id": "E63b223cbaa26",
+      "time": "2026-09-09T09:55:24.221Z",
+      "actor": "diomedes",
+      "kind": "work-admitted",
+      "sentence": "Diomedes accepted this Work request.",
+      "sessionId": "S96a0c8a97e8e",
+      "taskId": "T1",
+      "sample": false,
+      "files": [],
+      "label": null,
+      "restoreOf": null,
+      "replaced": null,
+      "versionId": "v0002",
+      "commit": null
+    },
+    {
+      "id": "E6f12cd932f7f",
+      "time": "2026-09-09T09:55:31.471Z",
+      "actor": "you",
+      "kind": "decision",
+      "sentence": "You approved the exact proposal: Go ahead with propose_write?.",
+      "sessionId": "S96a0c8a97e8e",
+      "taskId": "T1",
+      "sample": false,
+      "files": [],
+      "label": null,
+      "restoreOf": null,
+      "replaced": null,
+      "versionId": "v0003",
+      "commit": null,
+      "approvalId": "N8dbecdf4e636"
+    },
+    {
+      "id": "E0d43921ab3f9",
+      "time": "2026-09-09T09:55:31.514Z",
+      "actor": "diomedes-with-ok",
+      "kind": "changed",
+      "sentence": "Diomedes changed 1 file",
+      "sessionId": "S96a0c8a97e8e",
+      "taskId": "T1",
+      "sample": false,
+      "files": [
+        {
+          "path": "Harness report.md",
+          "before": null,
+          "after": "4fd01b5b50e230326095bb76bba556d7cda737622c0425c9516d0833c10abf01",
+          "op": "created",
+          "recorded": true,
+          "reason": null
+        }
+      ],
+      "label": "0fa0b145a920a4260590a25a5b2d0b1942920d196c6be9503db98d49485fd111",
+      "restoreOf": null,
+      "replaced": null,
+      "versionId": "v0004",
+      "commit": null,
+      "approvalId": "N8dbecdf4e636"
+    }
+  ],
+  "changes": [
+    {
+      "id": "E0d43921ab3f9:0",
+      "entryId": "E0d43921ab3f9",
+      "sessionId": "S96a0c8a97e8e",
+      "taskId": "T1",
+      "path": "Harness report.md",
+      "op": "created",
+      "summary": "Added Harness report.md",
+      "before": null,
+      "after": "# Synthetic availability report\n\n- Three approved restaurants.\n- Reported tracked quantity: 9 at each restaurant.\n- IN_STOCK quantity: not tracked.\n- No ingredient count inferred.\n",
+      "current": "# Synthetic availability report\n\n- Three approved restaurants.\n- Reported tracked quantity: 9 at each restaurant.\n- IN_STOCK quantity: not tracked.\n- No ingredient count inferred.\n",
+      "changedSince": null,
+      "hunks": [
+        {
+          "count": 6,
+          "added": true,
+          "removed": false,
+          "value": "# Synthetic availability report\n\n- Three approved restaurants.\n- Reported tracked quantity: 9 at each restaurant.\n- IN_STOCK quantity: not tracked.\n- No ingredient count inferred.\n"
+        }
+      ],
+      "state": "waiting"
+    }
+  ],
+  "conversations": [],
+  "autoUpdate": false,
+  "team": {
+    "members": [],
+    "messages": [],
+    "runs": []
+  },
+  "teamMeta": {
+    "idempotency": {},
+    "blockedBy": {}
+  },
+  "connections": {
+    "version": 1,
+    "instances": [
+      {
+        "id": "provider-smoke",
+        "connectorId": "toast",
+        "version": "1.0.0",
+        "manifestDigest": "f691255e327a77794eb0972799180feea6c8afc79b9823a92ea4876da8d3288e",
+        "tenantId": "local",
+        "projectId": "9c92769a6954",
+        "name": "Synthetic provider smoke",
+        "resources": [
+          {
+            "id": "10000000-0000-4000-8000-000000000001",
+            "name": "Downtown"
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000002",
+            "name": "North Hills"
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000003",
+            "name": "Cary"
+          }
+        ],
+        "vendorScopes": [
+          "stock:read"
+        ],
+        "operations": [
+          "get_item_availability"
+        ],
+        "mode": "fixture",
+        "status": "connected",
+        "generation": 1,
+        "staleAfterMs": 300000,
+        "lastEventAt": null,
+        "lastReconciledAt": "2026-09-09T09:55:23.954Z",
+        "reconciledResources": {
+          "10000000-0000-4000-8000-000000000001": "2026-09-09T09:55:23.954Z",
+          "10000000-0000-4000-8000-000000000002": "2026-09-09T09:55:23.954Z",
+          "10000000-0000-4000-8000-000000000003": "2026-09-09T09:55:23.954Z"
+        },
+        "problem": null
+      }
+    ],
+    "inbox": [],
+    "observations": {
+      "b45df285e614b927ef87df14842b95dfc2481966faadd8c0b8be3c737698fab6": {
+        "resourceId": "10000000-0000-4000-8000-000000000001",
+        "key": "101",
+        "sourceAt": null,
+        "receivedAt": "2026-09-09T09:55:23.954Z",
+        "facts": {
+          "itemId": "20000000-0000-4000-8000-000000000001",
+          "availability": "available",
+          "status": "QUANTITY",
+          "quantity": 9,
+          "quantityState": "reported",
+          "quantityUnknown": false,
+          "sourceKind": "menu-availability"
+        },
+        "source": "Toast menu-item/modifier stock (fixture)"
+      },
+      "379d561b7490ee690ddeafa6e964ebc1005003f24b1d4bc256ff4d4bc2d51099": {
+        "resourceId": "10000000-0000-4000-8000-000000000001",
+        "key": "102",
+        "sourceAt": null,
+        "receivedAt": "2026-09-09T09:55:23.954Z",
+        "facts": {
+          "itemId": "20000000-0000-4000-8000-000000000002",
+          "availability": "available",
+          "status": "IN_STOCK",
+          "quantity": null,
+          "quantityState": "not-tracked",
+          "quantityUnknown": true,
+          "sourceKind": "menu-availability"
+        },
+        "source": "Toast menu-item/modifier stock (fixture)"
+      },
+      "c0968388d38a004a5b170141659d526528bedafd568b84f09ad4055e73f50987": {
+        "resourceId": "10000000-0000-4000-8000-000000000001",
+        "key": "103",
+        "sourceAt": null,
+        "receivedAt": "2026-09-09T09:55:23.954Z",
+        "facts": {
+          "itemId": "20000000-0000-4000-8000-000000000003",
+          "availability": "unavailable",
+          "status": "OUT_OF_STOCK",
+          "quantity": null,
+          "quantityState": "unknown",
+          "quantityUnknown": true,
+          "sourceKind": "menu-availability"
+        },
+        "source": "Toast menu-item/modifier stock (fixture)"
+      },
+      "ea5fe52c750f82998c19493b79f9ba2a703cd5e80a8fb15aef40432ede0fbb7a": {
+        "resourceId": "10000000-0000-4000-8000-000000000002",
+        "key": "101",
+        "sourceAt": null,
+        "receivedAt": "2026-09-09T09:55:23.954Z",
+        "facts": {
+          "itemId": "20000000-0000-4000-8000-000000000001",
+          "availability": "available",
+          "status": "QUANTITY",
+          "quantity": 9,
+          "quantityState": "reported",
+          "quantityUnknown": false,
+          "sourceKind": "menu-availability"
+        },
+        "source": "Toast menu-item/modifier stock (fixture)"
+      },
+      "d82592df77c8d783cd3145e679eba80780f5a8ba7a9eba6707e8968c004cd709": {
+        "resourceId": "10000000-0000-4000-8000-000000000002",
+        "key": "102",
+        "sourceAt": null,
+        "receivedAt": "2026-09-09T09:55:23.954Z",
+        "facts": {
+          "itemId": "20000000-0000-4000-8000-000000000002",
+          "availability": "available",
+          "status": "IN_STOCK",
+          "quantity": null,
+          "quantityState": "not-tracked",
+          "quantityUnknown": true,
+          "sourceKind": "menu-availability"
+        },
+        "source": "Toast menu-item/modifier stock (fixture)"
+      },
+      "bc95ecea36bf36118cc7209f4b6e77c4e3fa90181e15d51171caa238368bbfeb": {
+        "resourceId": "10000000-0000-4000-8000-000000000002",
+        "key": "103",
+        "sourceAt": null,
+        "receivedAt": "2026-09-09T09:55:23.954Z",
+        "facts": {
+          "itemId": "20000000-0000-4000-8000-000000000003",
+          "availability": "unavailable",
+          "status": "OUT_OF_STOCK",
+          "quantity": null,
+          "quantityState": "unknown",
+          "quantityUnknown": true,
+          "sourceKind": "menu-availability"
+        },
+        "source": "Toast menu-item/modifier stock (fixture)"
+      },
+      "e5cbd820a0da7accc9a8f185dd3e8d7302d73f7c08491285ba02faff3c185ff1": {
+        "resourceId": "10000000-0000-4000-8000-000000000003",
+        "key": "101",
+        "sourceAt": null,
+        "receivedAt": "2026-09-09T09:55:23.954Z",
+        "facts": {
+          "itemId": "20000000-0000-4000-8000-000000000001",
+          "availability": "available",
+          "status": "QUANTITY",
+          "quantity": 9,
+          "quantityState": "reported",
+          "quantityUnknown": false,
+          "sourceKind": "menu-availability"
+        },
+        "source": "Toast menu-item/modifier stock (fixture)"
+      },
+      "5ed2e773c34be4b1aae2648b4dd3d015997083e0b58f5c5835efc30f901a9272": {
+        "resourceId": "10000000-0000-4000-8000-000000000003",
+        "key": "102",
+        "sourceAt": null,
+        "receivedAt": "2026-09-09T09:55:23.954Z",
+        "facts": {
+          "itemId": "20000000-0000-4000-8000-000000000002",
+          "availability": "available",
+          "status": "IN_STOCK",
+          "quantity": null,
+          "quantityState": "not-tracked",
+          "quantityUnknown": true,
+          "sourceKind": "menu-availability"
+        },
+        "source": "Toast menu-item/modifier stock (fixture)"
+      },
+      "3a027b41de332ddb8d5f8ec3152fbbd0192266bf25a31360aecb7c43be17c300": {
+        "resourceId": "10000000-0000-4000-8000-000000000003",
+        "key": "103",
+        "sourceAt": null,
+        "receivedAt": "2026-09-09T09:55:23.954Z",
+        "facts": {
+          "itemId": "20000000-0000-4000-8000-000000000003",
+          "availability": "unavailable",
+          "status": "OUT_OF_STOCK",
+          "quantity": null,
+          "quantityState": "unknown",
+          "quantityUnknown": true,
+          "sourceKind": "menu-availability"
+        },
+        "source": "Toast menu-item/modifier stock (fixture)"
+      }
+    },
+    "issues": {},
+    "bindings": {
+      "cn-9fccc118-2cdf-4808-8efc-66b048683015": {
+        "connectionId": "provider-smoke",
+        "generation": 1,
+        "resources": [
+          "10000000-0000-4000-8000-000000000001",
+          "10000000-0000-4000-8000-000000000002",
+          "10000000-0000-4000-8000-000000000003"
+        ],
+        "operations": [
+          "get_item_availability"
+        ],
+        "role": "Stock investigator",
+        "principalId": "prototype:codex-report-driver:mttxaa1h-1-s5yqign0",
+        "identityGeneration": 0
+      }
+    },
+    "contextEvidence": [
+      {
+        "runId": "cn-9fccc118-2cdf-4808-8efc-66b048683015",
+        "role": "Stock investigator",
+        "resources": [
+          "10000000-0000-4000-8000-000000000001",
+          "10000000-0000-4000-8000-000000000002",
+          "10000000-0000-4000-8000-000000000003"
+        ],
+        "tools": [
+          "conn_toast_get_item_availability"
+        ],
+        "rules": [
+          {
+            "id": "toast-stock-semantics",
+            "version": 1,
+            "provenance": {
+              "source": "https://doc.toasttab.com/doc/devguide/apiStock.html",
+              "connectorVersion": "1.0.0",
+              "trust": "host-reviewed"
+            },
+            "scope": {
+              "connectorId": "toast"
+            },
+            "predicate": null,
+            "action": "context",
+            "text": "Toast reports menu-item and modifier availability. It does not establish physical ingredient inventory. Unknown quantity is not zero or unlimited.",
+            "input": {}
+          }
+        ]
+      }
+    ]
+  },
+  "rules": {
+    "version": 1,
+    "active": [
+      {
+        "id": "toast-stock-semantics",
+        "version": 1,
+        "enabled": true,
+        "scope": {
+          "connectorId": "toast"
+        },
+        "provenance": {
+          "source": "https://doc.toasttab.com/doc/devguide/apiStock.html",
+          "connectorVersion": "1.0.0",
+          "trust": "host-reviewed"
+        },
+        "type": "standing",
+        "text": "Toast reports menu-item and modifier availability. It does not establish physical ingredient inventory. Unknown quantity is not zero or unlimited.",
+        "predicate": null,
+        "action": "context"
+      },
+      {
+        "id": "toast-unknown-quantity",
+        "version": 1,
+        "enabled": true,
+        "scope": {
+          "connectorId": "toast"
+        },
+        "provenance": {
+          "source": "https://doc.toasttab.com/doc/devguide/apiStock.html",
+          "connectorVersion": "1.0.0",
+          "trust": "host-reviewed"
+        },
+        "type": "correction",
+        "text": "Quantity is not reported by this source. Do not infer a numeric count.",
+        "predicate": {
+          "field": "quantityUnknown",
+          "operator": "eq",
+          "value": true
+        },
+        "action": "correct"
+      }
+    ],
+    "proposals": [],
+    "revisions": [
+      {
+        "id": "toast-stock-semantics",
+        "version": 1,
+        "enabled": true,
+        "scope": {
+          "connectorId": "toast"
+        },
+        "provenance": {
+          "source": "https://doc.toasttab.com/doc/devguide/apiStock.html",
+          "connectorVersion": "1.0.0",
+          "trust": "host-reviewed"
+        },
+        "type": "standing",
+        "text": "Toast reports menu-item and modifier availability. It does not establish physical ingredient inventory. Unknown quantity is not zero or unlimited.",
+        "predicate": null,
+        "action": "context"
+      },
+      {
+        "id": "toast-unknown-quantity",
+        "version": 1,
+        "enabled": true,
+        "scope": {
+          "connectorId": "toast"
+        },
+        "provenance": {
+          "source": "https://doc.toasttab.com/doc/devguide/apiStock.html",
+          "connectorVersion": "1.0.0",
+          "trust": "host-reviewed"
+        },
+        "type": "correction",
+        "text": "Quantity is not reported by this source. Do not infer a numeric count.",
+        "predicate": {
+          "field": "quantityUnknown",
+          "operator": "eq",
+          "value": true
+        },
+        "action": "correct"
+      }
+    ]
+  }
+}

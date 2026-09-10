@@ -1,0 +1,21 @@
+{
+  "finishedAt": "2026-09-09T11:04:01.3941754Z",
+  "releaseId": "diomedes-0.1.1-windows-experimental-20260909-09e551958dfa",
+  "sourceTests": 615,
+  "appInputsAndNoticeHashesVerified": true,
+  "packagedConnectionsScenarios": 11,
+  "packagedNegativeScenarios": 4,
+  "relocatedChecks": 10,
+  "installedRuntime": true,
+  "repairUninstallPreservedData": true,
+  "actualProfileUpgrade": "0.1.0 to 0.1.1",
+  "realSyntheticSolReport": true,
+  "launcherTested": true,
+  "publicMetadataHasNoLocalPaths": true,
+  "previousPackagePreserved": true,
+  "trustPreserved": true,
+  "commitMade": false,
+  "publication": "unpublished",
+  "cloudSync": "exact unapplied patch",
+  "websiteAcknowledgment": "pending"
+}

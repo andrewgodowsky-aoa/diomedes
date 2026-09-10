@@ -1,0 +1,10 @@
+locator.click: Timeout 15000ms exceeded.
+Call log:
+  - waiting for getByRole('button', { name: 'Show me first', exact: true }).first()
+
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\scripts\harness-desktop-smoke.mjs:74:84 {
+  log: [
+    "  - waiting for getByRole('button', { name: 'Show me first', exact: true }).first()"
+  ],
+  name: 'TimeoutError'
+}

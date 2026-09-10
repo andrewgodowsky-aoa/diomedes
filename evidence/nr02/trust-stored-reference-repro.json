@@ -1,0 +1,16 @@
+{
+  "admission": {
+    "synthetic": true,
+    "capabilities": [
+      "egress.send",
+      "egress.reconcile"
+    ],
+    "expiresAt": "2026-09-09T07:01:24.375Z"
+  },
+  "storedReference": {
+    "denied": true,
+    "status": 403,
+    "code": "no-resolver",
+    "reason": "The production Trust resolver is not installed; stored reference authority cannot be issued."
+  }
+}

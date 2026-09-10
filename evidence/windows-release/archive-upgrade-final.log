@@ -1,0 +1,11 @@
+file:///F:/Achilles/diomedes-wt/windows-release/scripts/upgrade-desktop-smoke.mjs:21
+{"passed":false,"checks":[],"error":"TypeError: response.ok is not a function"}
+  expect(response.ok(), await response.clone().text()).toBe(true); return response.json();
+                  ^
+
+TypeError: response.ok is not a function
+    at api (file:///F:/Achilles/diomedes-wt/windows-release/scripts/upgrade-desktop-smoke.mjs:21:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async file:///F:/Achilles/diomedes-wt/windows-release/scripts/upgrade-desktop-smoke.mjs:31:30
+
+Node.js v22.23.2

@@ -1,0 +1,17 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/windows-release
+
+ ✓ tests/connections-desktop.test.ts > actual app routes require exact completed review and current session authority 392ms
+ ✓ tests/connections-desktop.test.ts > ordinary app dispatch preserves raw bad output, freezes context, then adopts and rolls back a scoped revision 563ms
+stderr | tests/connections-desktop.test.ts > durable signed ingress coalesces replay, rejects conflicts, and registered write never dispatches
+Skipped a harness run whose capability is unavailable.
+Skipped a harness run whose capability is unavailable.
+
+ ✓ tests/connections-desktop.test.ts > durable signed ingress coalesces replay, rejects conflicts, and registered write never dispatches 370ms
+ ✓ tests/connections-desktop.test.ts > service window AND numeric threshold is deterministic across days, overnight and missing source time 22ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  05:46:43
+   Duration  4.63s (transform 383ms, setup 0ms, collect 1.06s, tests 1.35s, environment 0ms, prepare 107ms)
+

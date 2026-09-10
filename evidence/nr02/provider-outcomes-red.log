@@ -1,0 +1,92 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/codex-runtime-proof
+
+ ❯ tests/harness-provider-outcomes.test.ts (6 tests | 4 failed) 142ms
+   × an unknown external model read is not redispatched after an error or restart 28ms
+     → expected 'running' to be 'reconcile_required' // Object.is equality
+   × an external model in flight remains uncertain on restart and ignores late success 18ms
+     → expected 'retry_wait' to be 'reconcile_required' // Object.is equality
+   × an external model in flight remains uncertain on ownership-change and ignores late success 28ms
+     → promise resolved "'duplicate'" instead of rejecting
+   × an external model in flight remains uncertain on cancel and ignores late success 18ms
+     → expected 'cancelled' to be 'reconcile_required' // Object.is equality
+   ✓ a completed external model observation replays without another dispatch 19ms
+   ✓ local scripted model reads retain their existing retry behavior 30ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/harness-provider-outcomes.test.ts > an unknown external model read is not redispatched after an error or restart
+AssertionError: expected 'running' to be 'reconcile_required' // Object.is equality
+
+Expected: "reconcile_required"
+Received: "running"
+
+ ❯ tests/harness-provider-outcomes.test.ts:46:49
+     44|   const dispatch = () => { dispatches++; throw new Error('Acknowledgem…
+     45|   await expect(runtime.step('test-run', 'host', model, dispatch, princ…
+     46|   expect((await runtime.get('test-run')).state).toBe('reconcile_requir…
+       |                                                 ^
+     47|   const restarted = new RunService(files, options);
+     48|   await restarted.recover('test-run', principal);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/harness-provider-outcomes.test.ts > an external model in flight remains uncertain on restart and ignores late success
+AssertionError: expected 'retry_wait' to be 'reconcile_required' // Object.is equality
+
+Expected: "reconcile_required"
+Received: "retry_wait"
+
+ ❯ tests/harness-provider-outcomes.test.ts:80:34
+     78|     expect(await observed).toBeInstanceOf(Error);
+     79|     const saved = await current.get('test-run');
+     80|     expect(saved.steps[0].state).toBe('reconcile_required');
+       |                                  ^
+     81|     expect(saved.steps[0].output).toBeNull();
+     82|     expect(saved.events.some(e => e.type === 'step.succeeded')).toBe(f…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/harness-provider-outcomes.test.ts > an external model in flight remains uncertain on ownership-change and ignores late success
+AssertionError: promise resolved "'duplicate'" instead of rejecting
+
+- Expected: 
+Error {
+  "message": "rejected promise",
+}
+
++ Received: 
+"duplicate"
+
+ ❯ tests/harness-provider-outcomes.test.ts:74:119
+     72|       expire();
+     73|       await runtime.claim('test-run', 'new-host');
+     74|       await expect(runtime.step('test-run', 'new-host', model, () => {…
+       |                                                                                                                       ^
+     75|         .rejects.toThrow('reconciliation');
+     76|     } else await runtime.cancel('test-run', 'Synthetic Stop', principa…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/harness-provider-outcomes.test.ts > an external model in flight remains uncertain on cancel and ignores late success
+AssertionError: expected 'cancelled' to be 'reconcile_required' // Object.is equality
+
+Expected: "reconcile_required"
+Received: "cancelled"
+
+ ❯ tests/harness-provider-outcomes.test.ts:80:34
+     78|     expect(await observed).toBeInstanceOf(Error);
+     79|     const saved = await current.get('test-run');
+     80|     expect(saved.steps[0].state).toBe('reconcile_required');
+       |                                  ^
+     81|     expect(saved.steps[0].output).toBeNull();
+     82|     expect(saved.events.some(e => e.type === 'step.succeeded')).toBe(f…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 2 passed (6)
+   Start at  02:21:47
+   Duration  739ms (transform 60ms, setup 0ms, collect 75ms, tests 142ms, environment 0ms, prepare 112ms)
+

@@ -1,0 +1,261 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/codex-runtime-proof
+
+ ✓ tests/work-start-client.test.ts (19 tests) 159ms
+ ✓ tests/trust.test.ts (18 tests) 73ms
+ ✓ tests/harness-provider-outcomes.test.ts (6 tests) 161ms
+ ✓ tests/approval-decisions-client.test.ts (37 tests) 668ms
+   ✓ approval-decisions client > reconcile keeps pending with no receipt silently  308ms
+ ✓ tests/models.test.ts (8 tests) 29ms
+ ✓ tests/harness-negative.test.ts (40 tests) 664ms
+ ✓ tests/modes.test.ts (5 tests) 3ms
+ ✓ tests/harness-present.test.ts (8 tests) 6ms
+ ✓ tests/effort.test.ts (7 tests) 5ms
+ ✓ tests/surface.test.ts (5 tests) 4ms
+ ✓ tests/usage.test.ts (9 tests) 97ms
+ ✓ tests/harness.test.ts (51 tests) 2209ms
+   ✓ crash after an external effect > a process exit after the effect leaves a durable reconciliation boundary  626ms
+ ✓ tests/integrations.test.ts (68 tests) 2607ms
+   ✓ opt-in Diomedes team boundary > stops after five re-lists if the team stays starting  1037ms
+   ✓ owned native JSON-line process transport > correlates responses and terminates its owned subprocess  574ms
+   ✓ owned native JSON-line process transport > surfaces protocol timeouts instead of success-shaped output  435ms
+stderr | tests/codex-engine.test.ts > revocation while dispatch is waiting prevents the provider send
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/work-admission.test.ts > durable task Work admission > failed sample admission persistence returns no phantom receipt
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\work-admission.test.ts:122:17)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at WorkService.need (F:\Achilles\diomedes-wt\codex-runtime-proof\server\work.ts:174:22)
+    at WorkService.start (F:\Achilles\diomedes-wt\codex-runtime-proof\server\work.ts:87:69)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:336:16
+
+stdout | tests/native-work.test.ts > member thread to real adapter glue > work/start forwards team config and tracks completion
+Fake app-server team configuration: {"url":"http://127.0.0.1:60312/mcp/team/7c7c33ae0b7c","tokenEnv":"DIOMEDES_TEAM_S23D71FB2D837","slotId":"S23d71fb2d837","role":"lead","roleInstructions":"You are Astra, the leader of a small team working on the project 'Harbor Street restaurants' in Diomedes. You plan and delegate; members do the work; the person who owns the project approves anything that matters. Use the team tools: team_members to see the roster, team_task_create and team_task_update to put work on the board and hand it to a member (owner = their slot), team_send_message to give direction, team_read_messages to hear back. Diomedes applies file changes only after the person approves them, so describe changes as proposals. Keep messages short and specific. Do not claim work is done until a member reports it and the board shows it."}
+
+stderr | tests/codex-engine.test.ts > unknown provider completion stays parked and never causes redispatch
+The harness run stopped: Error: Synthetic lost completion
+
+stderr | tests/work-admission.test.ts > durable task Work admission > failed codex admission persistence returns no phantom receipt
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\work-admission.test.ts:122:17)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at NativeWorkService.fail (F:\Achilles\diomedes-wt\codex-runtime-proof\server\native-work.ts:642:22)
+    at NativeWorkService.start (F:\Achilles\diomedes-wt\codex-runtime-proof\server\native-work.ts:334:18)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:336:16
+
+stderr | tests/codex-engine.test.ts > changed source text prevents application after exact approval
+The harness run stopped: Error: A selected source changed before the approved write was prepared.
+
+stderr | tests/codex-engine.test.ts > a expired grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a forged grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a cross-run grant or context cannot dispatch
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+stderr | tests/codex-engine.test.ts > a cross-project grant or context cannot dispatch
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+ ✓ tests/team.test.ts (10 tests) 3104ms
+   ✓ team client routes > GET /team starts empty, POST members creates threads, messages and stop work, no token leakage  305ms
+   ✓ team MCP endpoint > loopback auth, method handling, and every tool with falsifiers  771ms
+   ✓ team MCP endpoint > shutdown is immediate for idle members and acknowledged otherwise  339ms
+   ✓ team wake > the sixth automatic wake inside ten minutes parks instead of starting  372ms
+stderr | tests/codex-engine.test.ts > a destination grant or context cannot dispatch
+The harness run stopped: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "openai:chatgpt"
+    ],
+    "path": [
+      "grant",
+      "destination"
+    ],
+    "message": "Invalid input: expected \"openai:chatgpt\""
+  }
+]
+
+stderr | tests/codex-engine.test.ts > a context grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a generation grant or context cannot dispatch
+The harness run stopped: Error: Authority generation advanced; this run needs reconciliation.
+
+stderr | tests/codex-engine.test.ts > a account grant or context cannot dispatch
+The harness run stopped: HarnessError: Actual provider context or account differs from consent.
+
+stderr | tests/codex-engine.test.ts > Stop after dispatch rejects late proposal output
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > the host grant deadline expires without modifying the saved input
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > sending permission cannot accept a result after reconcile permission is revoked
+The harness run stopped: Error: Current authority lacks egress.reconcile.
+
+ ✓ tests/codex-engine.test.ts (24 tests) 5025ms
+   ✓ durable admission, identical concurrent retry, restart, exact decision and one recorded write  405ms
+   ✓ changed source text prevents application after exact approval  451ms
+   ✓ lost authority pauses recovery without blocking startup or changing the saved run  309ms
+ ✓ tests/discovery.test.ts (25 tests) 5363ms
+   ✓ roster composition > GET /api/integrations keeps its shape and honours ?refresh=1  4907ms
+stderr | tests/harness-host.test.ts > native harness through the real host > outside edits invalidate the exact write and remain untouched
+The harness run stopped: Error: This document changed since you opened it. Read its current version before saving.
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed decision persistence creates no phantom receipt or write and can be retried
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\approval-admission.test.ts:310:67)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at NativeWorkService.resolve (F:\Achilles\diomedes-wt\codex-runtime-proof\server\native-work.ts:601:22)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:336:16
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failure after acceptance but before journal preparation is durable not-applied and never redispatched
+Error: Synthetic preparation failure.
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\tests\approval-admission.test.ts:323:26
+    at file:///F:/Achilles/diomedes/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+
+stderr | tests/harness-host.test.ts > native harness through the real host > secret scrubber covers durable errors, event mirrors, and returned run records
+The harness run stopped: [redacted]: Synthetic error [redacted]
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed journal recovery blocks later mutations until recovery finishes
+Error: Synthetic finalization disk fault.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\approval-admission.test.ts:336:15)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at Store.recover (F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:986:18)
+    at Store.recoverAndReload (F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:311:5)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:339:9
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed journal recovery blocks later mutations until recovery finishes
+Error: Synthetic finalization disk fault.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\approval-admission.test.ts:336:15)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at Store.recover (F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:986:18)
+    at Store.recoverAndReload (F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:311:5)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:334:34
+
+stdout | tests/work-admission.test.ts > durable task Work admission > receipt replays perform no folder listing, document read, adapter call or persistence
+Work admission replay: 50 requests in 92.7 ms; no scans or writes.
+
+ ✓ tests/work-admission.test.ts (33 tests) 10120ms
+   ✓ durable task Work admission > failed sample admission persistence returns no phantom receipt  314ms
+   ✓ durable task Work admission > rejects cross-project tasks, threads, receipt access and unauthorized browser origins  398ms
+   ✓ durable task Work admission > the admitted native path previews, approves once, writes and restores exact bytes without Git  397ms
+   ✓ durable task Work admission > abrupt process exit before admission recovers without unsafe redispatch  1071ms
+   ✓ durable task Work admission > abrupt process exit admitted admission recovers without unsafe redispatch  1094ms
+   ✓ durable task Work admission > abrupt process exit dispatched admission recovers without unsafe redispatch  1105ms
+   ✓ durable task Work admission > bounded receipt capacity refuses new commands without evicting existing identities  324ms
+ ✓ tests/native-work.test.ts (45 tests) 12443ms
+   ✓ member thread to real adapter glue > ask forwards team config and tracks completion  548ms
+   ✓ member thread to real adapter glue > work/start forwards team config and tracks completion  385ms
+   ✓ member thread to real adapter glue > unowned thread keeps all MCP disabled  301ms
+   ✓ member thread to real adapter glue > other-engine thread keeps all MCP disabled  307ms
+   ✓ member thread to real adapter glue > waits for approval, then handles go-ahead and releases token  502ms
+   ✓ member thread to real adapter glue > waits for approval, then handles declined and releases token  375ms
+   ✓ member thread to real adapter glue > failed generation redacts token echoes and records failure  355ms
+   ✓ member thread to real adapter glue > service close cancels live member work and releases its environment  313ms
+   ✓ member thread to real adapter glue > stop releases the token and ignores late results; a rejected second start preserves the live token  339ms
+   ✓ guarded native file proposals > applies approved text through real history and review, with reversible deletion  619ms
+   ✓ guarded native file proposals > enforces one project session across native and sample work  343ms
+   ✓ guarded native file proposals > Ask Work uses the same asynchronous proposal controller and permits no-source new documents  324ms
+   ✓ guarded native file proposals > keeps notes local and requires a separate exact approval for every new proposal  383ms
+   ✓ team native work requests > forwards a private copy of team options and records technical tool calls before approval  304ms
+ ✓ tests/harness-host.test.ts (22 tests) 12573ms
+   ✓ native harness through the real host > one Session, exact Need, recorded write, receipt replay, and reconnect cursor survive reopening  838ms
+   ✓ native harness through the real host > an unanswered Need remains resolvable after service restart  719ms
+   ✓ native harness through the real host > expired approval is refused and the run remains waiting  406ms
+   ✓ native harness through the real host > declining cancels the run, persists the single decision, and writes no report  458ms
+   ✓ native harness through the real host > API start uses the bridge and both native and existing Work starts refuse a second active run  357ms
+   ✓ native harness through the real host > a newer run version cannot break app startup or overwrite the run file  439ms
+   ✓ native harness through the real host > routes validate the cursor, enforce project scope and client header, and cancel through the person principal  478ms
+   ✓ native harness through the real host > a malformed step record cannot break startup and is not rewritten  397ms
+   ✓ native harness through the real host > a malformed null record cannot break startup and is not rewritten  411ms
+   ✓ native harness through the real host > a malformed scope record cannot break startup and is not rewritten  302ms
+   ✓ native harness through the real host > duplicate run ids are refused without breaking unrelated project startup  595ms
+   ✓ native harness through the real host > atomic run replacement retries a transient lock and surfaces a permanent failure  647ms
+   ✓ native harness through the real host > outside edits invalidate the exact write and remain untouched  405ms
+   ✓ native harness through the real host > changed identity is refused and the existing Session stop route cancels the harness  366ms
+   ✓ native harness through the real host > unknown effects stay waiting for reconciliation across failure, completion, restart, and cancellation  369ms
+   ✓ native harness through the real host > abrupt exit at after-decision recovers the Store first and commits the harness observation once  1610ms
+   ✓ native harness through the real host > abrupt exit at journal recovers the Store first and commits the harness observation once  1493ms
+   ✓ native harness through the real host > abrupt exit at after-write recovers the Store first and commits the harness observation once  1444ms
+stdout | tests/backend.test.ts > state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder
+state-speed: second /state with 3000 files took 19 ms
+
+ ✓ tests/backend.test.ts (48 tests) 22170ms
+   ✓ real project files and durable history > starts empty and creates three sample documents only when requested  331ms
+   ✓ real project files and durable history > editor writes require the opened version, merge, restore, and undo a restore  513ms
+   ✓ real project files and durable history > empty files are distinct from absent files across restore and redo  413ms
+   ✓ real project files and durable history > preserves exact UTF-8 BOM and CRLF bytes through read, edit, and restore  409ms
+   ✓ real project files and durable history > detects outside changes and preserves overwritten contents before a forced restore  363ms
+   ✓ real project files and durable history > restores copies without modifying newer files  358ms
+   ✓ real project files and durable history > a saved version restores the whole folder and later file removal can be undone  703ms
+   ✓ task, approval, sample worker, and review flow > approval propagates, disallows concurrent sessions, finishes real writes, and Keep all completes task  685ms
+   ✓ task, approval, sample worker, and review flow > declines file creation while continuing the recorded plan update  490ms
+   ✓ task, approval, sample worker, and review flow > stop expires needs immediately and fault preserves its partial changes  425ms
+   ✓ threads are first-class conversations > POST /threads creates, PUT renames, GET lists newest-updated first  310ms
+   ✓ threads are first-class conversations > POST /ask with threadId appends to that thread and bumps updatedAt  379ms
+   ✓ threads are first-class conversations > Work task names use the trimmed first line at an 80-character word boundary  765ms
+   ✓ threads are first-class conversations > work sessions carry the thread permission, defaulting to show-first  688ms
+   ✓ request and filesystem boundaries (continued) > sample Ask is honest, sample Plan writes a real file, and Codex requires explicit settings and consent  347ms
+   ✓ the data folder lock tells a live owner from a reused pid > this platform reports its own start time, and a loopback port is testable  828ms
+   ✓ the data folder lock tells a live owner from a reused pid > a live pid whose start time matches still owns the folder  2374ms
+   ✓ the data folder lock tells a live owner from a reused pid > a live pid whose start time differs is a reused pid, so the lock is stale  1642ms
+   ✓ modes belong to the thread and every turn > the fourth fix in the same thread is 409  445ms
+   ✓ state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder  5602ms
+stdout | tests/approval-admission.test.ts > exact native approval admission > receipt retention is bounded without eviction and replay stays free of project IO at capacity
+Approval replay at 1024 receipts: 50 requests in 62.4 ms, zero project IO or persistence; receipt metadata 1421150 bytes, full synthetic state 3225272 bytes.
+
+ ✓ tests/approval-admission.test.ts (46 tests) 29006ms
+   ✓ exact native approval admission > lost response and duplicate go-ahead return one immutable decision through two restarts  680ms
+   ✓ exact native approval admission > lost response and duplicate declined return one immutable decision through two restarts  397ms
+   ✓ exact native approval admission > approval is durable before the writer and the write carries its exact event link  471ms
+   ✓ exact native approval admission > rejects a changed displayed proposalDigest without using the writer  510ms
+   ✓ exact native approval admission > rejects a changed displayed actionDigest without using the writer  479ms
+   ✓ exact native approval admission > rejects a changed displayed baseDigest without using the writer  479ms
+   ✓ exact native approval admission > strict version and authority validation: {"protocolVersion":2}  341ms
+   ✓ exact native approval admission > strict version and authority validation: {"commandId":""}  349ms
+   ✓ exact native approval admission > strict version and authority validation: {"actor":"owner"}  340ms
+   ✓ exact native approval admission > strict version and authority validation: {"allowForTask":true}  311ms
+   ✓ exact native approval admission > competing decisions and command reuse cannot reinterpret an accepted action  370ms
+   ✓ exact native approval admission > expires at the boundary, but an accepted receipt replays after expiry without IO  425ms
+   ✓ exact native approval admission > expiry is rechecked at durable admission after asynchronous base validation  301ms
+   ✓ exact native approval admission > failed decision persistence creates no phantom receipt or write and can be retried  423ms
+   ✓ exact native approval admission > failure after acceptance but before journal preparation is durable not-applied and never redispatched  308ms
+   ✓ exact native approval admission > failed journal recovery blocks later mutations until recovery finishes  477ms
+   ✓ exact native approval admission > project, Host, Origin and client boundaries protect decisions and receipts  352ms
+   ✓ exact native approval admission > inconsistent saved version fails closed without rewriting project state  360ms
+   ✓ exact native approval admission > inconsistent saved digest fails closed without rewriting project state  398ms
+   ✓ exact native approval admission > inconsistent saved event fails closed without rewriting project state  446ms
+   ✓ exact native approval admission > inconsistent saved decision fails closed without rewriting project state  331ms
+   ✓ exact native approval admission > inconsistent saved action-bytes fails closed without rewriting project state  337ms
+   ✓ exact native approval admission > inconsistent saved execution fails closed without rewriting project state  319ms
+   ✓ exact native approval admission > abrupt exit at before-decision recovers once with the correct durable outcome  1236ms
+   ✓ exact native approval admission > abrupt exit at after-decision recovers once with the correct durable outcome  1291ms
+   ✓ exact native approval admission > abrupt exit at journal recovers once with the correct durable outcome  1348ms
+   ✓ exact native approval admission > abrupt exit at first-file recovers once with the correct durable outcome  1283ms
+   ✓ exact native approval admission > abrupt exit at after-files recovers once with the correct durable outcome  1293ms
+   ✓ exact native approval admission > abrupt exit at finalized recovers once with the correct durable outcome  1238ms
+   ✓ exact native approval admission > recovery preserves an outside text replacement and reports a conflict without replaying  1134ms
+   ✓ exact native approval admission > recovery preserves an outside binary replacement and reports a conflict without replaying  1143ms
+   ✓ exact native approval admission > recovery preserves an outside oversized replacement and reports a conflict without replaying  1284ms
+   ✓ exact native approval admission > recovery preserves an outside directory replacement and reports a conflict without replaying  1141ms
+   ✓ exact native approval admission > an inconsistent prepared action fails closed before any recovery write  1092ms
+   ✓ exact native approval admission > an inconsistent prepared missing-link fails closed before any recovery write  1051ms
+   ✓ exact native approval admission > an inconsistent prepared receipt fails closed before any recovery write  1143ms
+   ✓ exact native approval admission > a damaged content object cannot change the bytes authorized by a receipt  1154ms
+   ✓ exact native approval admission > receipt retention is bounded without eviction and replay stays free of project IO at capacity  762ms
+
+ Test Files  21 passed (21)
+      Tests  534 passed (534)
+   Start at  03:45:34
+   Duration  33.85s (transform 2.56s, setup 0ms, collect 22.06s, tests 106.49s, environment 4ms, prepare 5.83s)
+

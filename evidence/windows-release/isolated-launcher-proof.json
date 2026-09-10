@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "pid": 36260,
+  "profile": "C:\\Users\\andre\\AppData\\Local\\Diomedes Experimental Evaluations\\4e43b9a8d61142cea2a577a3160e8e3a",
+  "health": {
+    "ok": true,
+    "name": "Diomedes",
+    "version": "0.1.1",
+    "dataDir": "C:\\Users\\andre\\AppData\\Local\\Diomedes Experimental Evaluations\\4e43b9a8d61142cea2a577a3160e8e3a\\data",
+    "projectRoot": "C:\\Users\\andre\\AppData\\Local\\Diomedes Experimental Evaluations\\4e43b9a8d61142cea2a577a3160e8e3a\\projects",
+    "service": "local",
+    "port": 51624
+  },
+  "exited": true,
+  "credentialFileAbsent": true,
+  "scriptSha256": "a910a5bcac5d9a537aea697253c63d3e32e2d0e2d037e3be9e8759a30b389ce2"
+}

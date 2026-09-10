@@ -1,0 +1,3 @@
+npm notice run diomedes@0.1.0 test:desktop
+npm notice run node scripts/desktop-smoke.mjs
+PASS: packaged desktop, task board, font scaling, Workbook and Console lost-response recovery, team threads and messages, renderer isolation, shutdown, and receipt persistence after restart.

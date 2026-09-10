@@ -1,0 +1,103 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/codex-runtime-proof
+
+stderr | tests/work-admission.test.ts > durable task Work admission > failed sample admission persistence returns no phantom receipt
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\work-admission.test.ts:122:17)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at WorkService.need (F:\Achilles\diomedes-wt\codex-runtime-proof\server\work.ts:174:22)
+    at WorkService.start (F:\Achilles\diomedes-wt\codex-runtime-proof\server\work.ts:87:69)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:336:16
+
+stderr | tests/work-admission.test.ts > durable task Work admission > failed codex admission persistence returns no phantom receipt
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\work-admission.test.ts:122:17)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at NativeWorkService.fail (F:\Achilles\diomedes-wt\codex-runtime-proof\server\native-work.ts:642:22)
+    at NativeWorkService.start (F:\Achilles\diomedes-wt\codex-runtime-proof\server\native-work.ts:334:18)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:336:16
+
+stdout | tests/work-admission.test.ts > durable task Work admission > receipt replays perform no folder listing, document read, adapter call or persistence
+Work admission replay: 50 requests in 209.2 ms; no scans or writes.
+
+ ✓ tests/work-admission.test.ts (33 tests) 15993ms
+   ✓ durable task Work admission > concurrent identical starts, reload and retry have one run and the same receipt  714ms
+   ✓ durable task Work admission > the adapter observes the receipt, session, permission and event already on disk  940ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"actor":"owner"}  320ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"unknown":true}  416ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"consent":"true"}  691ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"sources":["../secret.md"]}  356ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"sources":["Brief.md","brief.md"]}  562ms
+   ✓ durable task Work admission > rejects cross-project tasks, threads, receipt access and unauthorized browser origins  352ms
+   ✓ durable task Work admission > the admitted native path previews, approves once, writes and restores exact bytes without Git  717ms
+   ✓ durable task Work admission > stale approval preserves a newer file; the command still identifies the failed run  476ms
+   ✓ durable task Work admission > cancel prevents a late proposal and releases the project for a different command  940ms
+   ✓ durable task Work admission > abrupt process exit before admission recovers without unsafe redispatch  2015ms
+   ✓ durable task Work admission > abrupt process exit admitted admission recovers without unsafe redispatch  1721ms
+   ✓ durable task Work admission > abrupt process exit dispatched admission recovers without unsafe redispatch  1565ms
+   ✓ durable task Work admission > receipt replays perform no folder listing, document read, adapter call or persistence  422ms
+ ✓ tests/harness.test.ts (51 tests) 2117ms
+   ✓ crash after an external effect > a process exit after the effect leaves a durable reconciliation boundary  804ms
+ ✓ tests/harness-negative.test.ts (40 tests) 577ms
+stderr | tests/codex-engine.test.ts > revocation while dispatch is waiting prevents the provider send
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > unknown provider completion stays parked and never causes redispatch
+The harness run stopped: Error: Synthetic lost completion
+
+stderr | tests/codex-engine.test.ts > changed source text prevents application after exact approval
+The harness run stopped: Error: A selected source changed before the approved write was prepared.
+
+stderr | tests/codex-engine.test.ts > a expired grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a forged grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a cross-run grant or context cannot dispatch
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+stderr | tests/codex-engine.test.ts > a cross-project grant or context cannot dispatch
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+stderr | tests/codex-engine.test.ts > a destination grant or context cannot dispatch
+The harness run stopped: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "openai:chatgpt"
+    ],
+    "path": [
+      "grant",
+      "destination"
+    ],
+    "message": "Invalid input: expected \"openai:chatgpt\""
+  }
+]
+
+stderr | tests/codex-engine.test.ts > a context grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a generation grant or context cannot dispatch
+The harness run stopped: Error: Authority generation advanced; this run needs reconciliation.
+
+stderr | tests/codex-engine.test.ts > a account grant or context cannot dispatch
+The harness run stopped: HarnessError: Actual provider context or account differs from consent.
+
+stderr | tests/codex-engine.test.ts > Stop after dispatch rejects late proposal output
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+ ✓ tests/codex-engine.test.ts (21 tests) 3270ms
+   ✓ durable admission, identical concurrent retry, restart, exact decision and one recorded write  564ms
+ ✓ tests/integrations.test.ts (68 tests) 2643ms
+   ✓ opt-in Diomedes team boundary > stops after five re-lists if the team stays starting  1010ms
+   ✓ owned native JSON-line process transport > correlates responses and terminates its owned subprocess  623ms
+   ✓ owned native JSON-line process transport > surfaces protocol timeouts instead of success-shaped output  436ms
+
+ Test Files  5 passed (5)
+      Tests  213 passed (213)
+   Start at  02:49:31
+   Duration  30.45s (transform 841ms, setup 0ms, collect 2.33s, tests 24.60s, environment 1ms, prepare 933ms)
+

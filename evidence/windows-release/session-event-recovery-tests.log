@@ -1,0 +1,20 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/windows-release
+
+stderr | tests/connections-desktop.test.ts > durable signed ingress coalesces replay, rejects conflicts, and registered write never dispatches
+Skipped a harness run whose capability is unavailable.
+Skipped a harness run whose capability is unavailable.
+
+stderr | tests/connections-desktop.test.ts > fresh session recovers accepted event at before-triage without replaying old authority
+Skipped a harness run whose capability is unavailable.
+
+stderr | tests/connections-desktop.test.ts > fresh session recovers accepted event at after-task-commit without replaying old authority
+Skipped a harness run whose capability is unavailable.
+
+··········
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  06:11:26
+   Duration  5.37s (transform 350ms, setup 0ms, collect 942ms, tests 2.15s, environment 0ms, prepare 93ms)
+

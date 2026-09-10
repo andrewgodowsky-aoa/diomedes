@@ -1,0 +1,771 @@
+{
+  "schemaVersion": 1,
+  "version": "0.1.1",
+  "baseCommit": "11829e1962b448360d3fc7aaba7c38fda6833a84",
+  "sourceStatus": "local-uncommitted",
+  "sourceDigest": "09e551958dfab590f12dc4678664a32c9244f88ef1982723d8fe97b35b292803",
+  "source": [
+    {
+      "path": "client/api.ts",
+      "sha256": "a2703c93e2d9fc64959cf35b7048689180a477bc3bd66824b7eff4a9e03d36f4"
+    },
+    {
+      "path": "client/App.tsx",
+      "sha256": "c71c7ae8ffe0e4affaf58054e027942bd8a12644445ba37e4e39bf8af14bb7d8"
+    },
+    {
+      "path": "client/approval-decisions.ts",
+      "sha256": "f5423d771bc3ac79c939db6c335bc500cfffb68814320441719359108696daf6"
+    },
+    {
+      "path": "client/components.tsx",
+      "sha256": "974d7542e5396b3c2272788546d4d8908e12fe28b1e22faba8903914b61eb32f"
+    },
+    {
+      "path": "client/connections/connections.css",
+      "sha256": "5d945fb1a96ab105e8ebed2938599615d3ae7cbc670e76597c1fb04a249faf71"
+    },
+    {
+      "path": "client/connections/Connections.tsx",
+      "sha256": "486ba25d4011e1f584c336810e300a3f5d36502954eb305ff236a486139d8fc6"
+    },
+    {
+      "path": "client/connections/desktop.css",
+      "sha256": "8ffc19657a1c1ec5413c6838c7176f2c13ed70598c45bb757be17819e1de7c35"
+    },
+    {
+      "path": "client/connections/fixture-main.tsx",
+      "sha256": "d094f90ebae5770aa7b5c329f8ae10b4f1f004fec082fe7e51d8031817f84d40"
+    },
+    {
+      "path": "client/console/board.css",
+      "sha256": "f0111fa9d122d3fd9b4871ee9b047eff20a2115144923ebb00d7e6c364292f53"
+    },
+    {
+      "path": "client/console/BoardView.tsx",
+      "sha256": "1f2a04507e3249489cdfff4e20405d0705217d59de4d81125d20779ead7f23fd"
+    },
+    {
+      "path": "client/console/Composer.tsx",
+      "sha256": "0fa4f6a59a9d857b93dbc206b2c3d12837458728f88782946f8e4e4a28a46dae"
+    },
+    {
+      "path": "client/console/console.css",
+      "sha256": "fab6bd6fe4792c5a3abae6f93d71f655a3cc40ce2ea5998d23a8b73c4faa6f33"
+    },
+    {
+      "path": "client/console/Ledger.tsx",
+      "sha256": "132222c833f15343d4fadf88ff6fd59b0386da90a19d34a01bf1f6b4b4a66379"
+    },
+    {
+      "path": "client/console/Mark.tsx",
+      "sha256": "1d7e1fc5b7b6d7d5b3f27836bd9ee165130236e28cbc08211e64f7b8d6f19579"
+    },
+    {
+      "path": "client/console/motion.css",
+      "sha256": "05e0489c44ed5a5dc457b2b5327d26ace02cc7e7faad3c77304026f3e9b1fe2c"
+    },
+    {
+      "path": "client/console/motion.ts",
+      "sha256": "d9e445bb87e69afb3751c72c3382c67d05970162601b0459687902ec7c75d9b3"
+    },
+    {
+      "path": "client/console/palette.css",
+      "sha256": "0fc704514ed11ed7980d3a2977cc75fc7402c0b8f239fbb34f4319b8871c9e9f"
+    },
+    {
+      "path": "client/console/Palette.tsx",
+      "sha256": "06640d8e5405e7b9fd11752377c4e20bcb70bec68ceddcbc1ec4cce6574431e9"
+    },
+    {
+      "path": "client/console/paletteEntries.ts",
+      "sha256": "3519935ac96d1e3a65b4cc781125668d6998e6317136a28788d36c60e5484f3b"
+    },
+    {
+      "path": "client/console/Picker.tsx",
+      "sha256": "2beecce451670368664dd59660a120205bacb496a4c8aff3f1015d708d1982a7"
+    },
+    {
+      "path": "client/console/Rail.tsx",
+      "sha256": "5773495b4facf2dd82a5a1208ba3ad4f6d458ec7376f4a68a9dcf37886700d55"
+    },
+    {
+      "path": "client/console/schemes.ts",
+      "sha256": "51d0d34c217edd6cd9f98e1a25568757cb94ce06225c7b1aaaff44c070667309"
+    },
+    {
+      "path": "client/console/Shell.tsx",
+      "sha256": "e78e0126f8761ea30097963ba2f20426b988c47a29de428990530595e98bd0fe"
+    },
+    {
+      "path": "client/console/team.css",
+      "sha256": "fb0aec5af5c27991ac271f66bea3d03b01f71d40aea5514ce0b50a6e9201cd43"
+    },
+    {
+      "path": "client/console/TeamView.tsx",
+      "sha256": "dad1ef57bc47cda3620f96d3989279b22d150a366dcdddbe76e0872031dfe1b4"
+    },
+    {
+      "path": "client/console/ThreadView.tsx",
+      "sha256": "e27d2703ee01729d7a1afd8316489f6737c041e82044f3d90fc3fbd477fe6405"
+    },
+    {
+      "path": "client/console/types.ts",
+      "sha256": "f0f9882bedd131d5f0bd567c4df4fa5a9106c05c75dcf314482356215e84cb05"
+    },
+    {
+      "path": "client/console/useWake.ts",
+      "sha256": "de22af50d1a18450f1968a8f8e7d1f2793f63a249b76eb48978d7c6a6a01ccfb"
+    },
+    {
+      "path": "client/console/wake.css",
+      "sha256": "1efdefcbea305b8da807c0802f718db816d33c35743097cd2913e6de0be335b7"
+    },
+    {
+      "path": "client/console/Wake.tsx",
+      "sha256": "bc90e60f0ed665c816863dc5206af48100448492ed186872f33590ca42113f26"
+    },
+    {
+      "path": "client/main.tsx",
+      "sha256": "61188af1167a22fd33002afb6fbb41b381c3ee93d4b16d13fb0cf252c906f684"
+    },
+    {
+      "path": "client/Settings.tsx",
+      "sha256": "0175040f9f965b410e057622d786c8d9c6624e7438e0c43a3b1c9da4fbaaf33e"
+    },
+    {
+      "path": "client/Setup.tsx",
+      "sha256": "13db4a391b791d155d1640c6e4f2dd712e6d2de6c7f259f564b0f58c9351d6f4"
+    },
+    {
+      "path": "client/styles.css",
+      "sha256": "ddc1912bc4f8e3db28b86092466c1a5f078226be15b1ecee333aea7d85f198e2"
+    },
+    {
+      "path": "client/work-start.ts",
+      "sha256": "379376aef3f5592c25cfe4c86836944b4f47bf270ba85e66083a4b26c1c966e6"
+    },
+    {
+      "path": "client/Workspace.tsx",
+      "sha256": "889ab06da5bede538d0c96b2b7936f9aa843cea388c931a4b7a4dbaf2dc5d935"
+    },
+    {
+      "path": "desktop/main.mjs",
+      "sha256": "8033e556afaf9b69c91c4f397db9847512f31486ef5713361971bb19a844e387"
+    },
+    {
+      "path": "desktop/service.ts",
+      "sha256": "f51065522c4cf4b9603284faf737f5a5794746d40140601a88fa5e65d4dc26fa"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-cyrillic-400-normal-BSMlKf0J.woff2",
+      "sha256": "7635422bd10ddbbcb0e0caa1154b928298f5c8319b8c00b30978d4395f4783ce"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-cyrillic-400-normal-CEL4l2ZJ.woff",
+      "sha256": "42da81a28bbcddda6768a25a4b3105ee291e69d5fa6c74747bc51bbc6718c538"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-cyrillic-500-normal-Ael50iVv.woff",
+      "sha256": "55a3af5e5ba0f565b4e66149cfe077ba88ac42cc3f68650a901d58eadbf9cd9b"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-cyrillic-500-normal-Bq9vWWag.woff2",
+      "sha256": "1d89462e86cb8e87e7e9d6f6635605bd7c3081baca6caaecee84916bf7b60edc"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-cyrillic-ext-400-normal-DMdlQ8Kv.woff",
+      "sha256": "0e4a2393e8ed3185ae300e4a202b6d9149d47d8a0e5bb8f1d1db33e76b86ecd1"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-cyrillic-ext-400-normal-xuaO2J-f.woff2",
+      "sha256": "f8c22ec1804bd6966b70f43ac7c327025645b4c09597117fca2a5a6c750106fe"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-cyrillic-ext-500-normal-BIfNGwUT.woff",
+      "sha256": "eadb2c427859b185761380143d1f42187fd7cbd94704b543e4c76c6368fbab52"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-cyrillic-ext-500-normal-BqneJy0T.woff2",
+      "sha256": "3febe5c7f22e4b07b4552738673c3dbe8bced2dc5f48b866edf7ccd9552d109a"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-latin-400-normal-CvHOgSBP.woff",
+      "sha256": "328d50b6ece9ca25c46eea3e885ba497f6237f2fb84ef7b92f88e14a1a25e381"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-latin-400-normal-DMJ8VG8y.woff2",
+      "sha256": "08949f728dc52d528e69b1667d15c89a5686a4ee9a296ff90983985f99c380f7"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-latin-500-normal-CB9ihrfo.woff",
+      "sha256": "09f018c58556e5801ecc49d5b5275dcff4c73311c2af6b88e31c51d76d076a9d"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-latin-500-normal-DSY6xOcd.woff2",
+      "sha256": "01d285447409c8a588692162439a038b8cbd7871309ee20267b0d2d91c6e8e22"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-latin-ext-400-normal-BmRBH3aV.woff2",
+      "sha256": "6bc0f226a5b7884a8170e3f62c63d7675609d4631bdc5931b5cdab81821f00eb"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-latin-ext-400-normal-D3D2R8hC.woff",
+      "sha256": "f8ddaa0ab9d3c052c9fe035751c8214b7e0d59e6e7b69b045f8659c2fe4dced2"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-latin-ext-500-normal-CAhNIIs5.woff2",
+      "sha256": "6bb06407c97584b0867a959e05e8874693bfeb8c317de190811c51598f2d99ea"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-latin-ext-500-normal-CZ70TYgx.woff",
+      "sha256": "ff5da89c3ee20d38359943b61a7aae9200d2a0f61cf95ca10a7cccef81da2ff5"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-vietnamese-400-normal-BulugwFq.woff2",
+      "sha256": "62632b6375305e70ddcafdd895218e6ae41a184fcd280a69c739460604ca00a9"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-vietnamese-400-normal-DDuiU_S-.woff",
+      "sha256": "bced561d991e3f81c150c08e71f7fa849fcbff523560f6059245f2edce19b600"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-vietnamese-500-normal-C8zxqsMH.woff",
+      "sha256": "755f62b418df17518aa0ea16b4232e546ce949a4ab7acc577071fa9be9e3dc88"
+    },
+    {
+      "path": "dist/assets/ibm-plex-mono-vietnamese-500-normal-DZ4AoWbu.woff2",
+      "sha256": "781633d95de88040fb77141d1e65d928c87c0144691fbc74da5a64d137a7e910"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-400-italic-C_ad97oI.woff2",
+      "sha256": "8fcac7ce093cbed5b49219d6fdd36ec79e56c3e846d6884ecc4f6b6c96d1eaea"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-400-italic-CygxzOWU.woff",
+      "sha256": "10cda8bba7ad484d74645f6a957d931b23adc29e19281f79110ca3e189906190"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-400-normal-C7IY3oUc.woff",
+      "sha256": "123a09c6dde8bea61d68012d8aa0638a7f6df99ab13a8edc5216560d6da2fd88"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-400-normal-CPQ8oqB-.woff2",
+      "sha256": "1b706597c0169c04847649fe445491c73d674bdbfcf82b258d0ef1b59ade5f0d"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-600-italic-B-MUfNoF.woff2",
+      "sha256": "bd0be160ece46b44cb2a5c16cc9d66e7745d7016d0c6e1782c6135c8f569b99c"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-600-italic-B5nQ1Dzp.woff",
+      "sha256": "9993cd5374166cf6bf81f9c4cf5ef2e041c33083ff2ae005b426412914f86edd"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-600-normal-6oiym5iu.woff2",
+      "sha256": "19e51b19bd700917b553ab861cc5a4d48362e090e9a0f538625428312f6f1853"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-600-normal-C8YEAlRA.woff",
+      "sha256": "107af1ab42825aed3f9a206d538a4057ae895363825248521fb36613271144ba"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-ext-400-italic-CPw2or01.woff",
+      "sha256": "692946ef40e5d4a81d473425716710f91a8333000bfc811b0bbea58036268616"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-ext-400-italic-o20Cx6Xj.woff2",
+      "sha256": "ae15cfd77c01a64fba7ba8a7d103a9af142260acf70e69cc61673dcef98b2099"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-ext-400-normal-BcBv-TKp.woff",
+      "sha256": "83f1751f197b6fb74432c708a7971b1f192831e293a6348746edb51d206f0132"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-ext-400-normal-CxUI4jC_.woff2",
+      "sha256": "6737de90a1acf5779c59625cf9f29aa8d31e969d8e2b1162926ef35d32e0bf03"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-ext-600-italic-CbP060Js.woff2",
+      "sha256": "a4853cf1aa120b6b79de723e9a7f7d1dc5f63d1ed3c703869ca8875f704ff137"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-ext-600-italic-D7qEpmay.woff",
+      "sha256": "66cf25301be714330a21b7075140b9f6911e9d3bcd54cfd3984929f65a07191c"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-ext-600-normal-CDMeBxaJ.woff",
+      "sha256": "10e8bdbcae470ffde5fee4cf9d149f71d03bb71902eeec69748f140f53c2ebda"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-cyrillic-ext-600-normal-DXSZftVr.woff2",
+      "sha256": "1ca6b912bb9b69cf4dac6cbf528382575d959655cc577b25f63f4198b3e88962"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-400-italic-BCf4TsCA.woff2",
+      "sha256": "d3f861b1ca55e50ca94de4c1756cb0d67c73de615172adf6b5b2078d939c723a"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-400-italic-Dd68USph.woff",
+      "sha256": "cfdb67c98bf01ffd070d620d8a3d1916acb5f6cdf44f4a1a46e2529750ce0900"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-400-normal-BB-zNvJB.woff",
+      "sha256": "f07bac43258030e1b40b7e749e97989f3d14e12e8ca01f6d8b01889a437de4c9"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-400-normal-BIGslYFI.woff2",
+      "sha256": "cb2c5eee2c0a43ff30d2365407c7bc8b20e3bd90720a4a64102ba0b328022a02"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-600-italic--nwoHQXg.woff2",
+      "sha256": "e43f7c35d41c62cc622f73f72deb8d36688f2bdd1421cc68cf72fdf92cda99d8"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-600-italic-BD9tANRL.woff",
+      "sha256": "342f1ebf47e860b3a40f73e3948e4f98d001fbf545066647ad0c900816334809"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-600-normal-D3rpGdkS.woff",
+      "sha256": "7eb38acb67bd726cb059f8fae9edbcc58eef8e69594443f80825a1229ab32560"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-600-normal-DAxitmSu.woff2",
+      "sha256": "e279e4f8baa0d4634d98868092f2198ae0dcd9e142c935822c385b9843352a9b"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-ext-400-italic-4IJS-XHX.woff",
+      "sha256": "e6ed89669badde3ec4a6aa69ffe9555b3435951a60ff1d9454b6e6b57ab99c44"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-ext-400-italic-hOoDEQwh.woff2",
+      "sha256": "68091cb647810f7ac24fb72fe7ac506ffc4769ef51435a87969345249fc7f035"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-ext-400-normal-CNMooFZX.woff2",
+      "sha256": "8b4077bd28d36819590924090252e811d4d0b2c78cb4bf1e4abe46d7428a2781"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-ext-400-normal-DwktX9jl.woff",
+      "sha256": "7e4f16e2649a7c2f2040ffba45810e1a4593b0d89af8af61ef2f5cac042bdbd6"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-ext-600-italic-CwtNJA7M.woff2",
+      "sha256": "4da786eeda09100a7c686082bb44d9aa1c2c427cbba46299ba54818aba8cd6d5"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-ext-600-italic-DM7htMZM.woff",
+      "sha256": "ecb5aea26f7f126ceb1f794f0893be8e0f2881c1b14b8f8cba5d8ffae3f48362"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-ext-600-normal-CU6LeQOd.woff2",
+      "sha256": "3c56fe27718921294dd8573acbe5a2822d34dd55f5313437514e8bb33e00a6b7"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-latin-ext-600-normal-D1-_Ic5L.woff",
+      "sha256": "d1ec67aabc5b7c33283b0b12f1dc52830a3304e5c18eca8423780f7fa5e33f43"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-vietnamese-400-italic-1VBVfWB7.woff",
+      "sha256": "1d702cfd9e49b57fc03da667478161e79b1c3dbc9e27f328d209a51394ac5c72"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-vietnamese-400-italic-BSp0Db6W.woff2",
+      "sha256": "a01556d53076486669503cbcaa951a2ae5314297da86c67bdc8c63afd46a12cf"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-vietnamese-400-normal-BY9Vij9A.woff",
+      "sha256": "07761f347b47ab393afcaa203131dfe2fc85828603a425395d6e6823d26d6fd0"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-vietnamese-400-normal-DGubAMUE.woff2",
+      "sha256": "014631fa7a2ace77bd59bee8450426a891fe6c735d883e6cbec7522de16114f8"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-vietnamese-600-italic-BrdqYGAq.woff2",
+      "sha256": "696f5ec9194426694897d18a49033ea6f20c576d9cc1db7e1af821537dea3c3d"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-vietnamese-600-italic-CMORQUaI.woff",
+      "sha256": "84a05b6a2686e44af38c085270e5bf44b4fcf89cd4da7afd334fc1f2edba62eb"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-vietnamese-600-normal-BBruYZNA.woff2",
+      "sha256": "2d3f9317a0890b7abcd831dd72a6a2b2676e9bb04dd718c31dfc59d2777d47e3"
+    },
+    {
+      "path": "dist/assets/ibm-plex-serif-vietnamese-600-normal-DZRaS25B.woff",
+      "sha256": "79d2a71ee35b159abc96a52116e39613a4a20e020909f7d3f8d9100fe341598f"
+    },
+    {
+      "path": "dist/assets/index-B_Xj8q3s.css",
+      "sha256": "ad5f0259ea6f8164b40fc798e2a0fb24bb28d9906db3790d944bc72128185d3e"
+    },
+    {
+      "path": "dist/assets/index-BOpAcByS.js",
+      "sha256": "e7d8e0d5e5fb288b3986efcd2db848908d749f4455b06ab1f47d5210c9a3974b"
+    },
+    {
+      "path": "dist/assets/schibsted-grotesk-latin-400-normal-BkiRe4WW.woff",
+      "sha256": "9d78d3131c3eea961075fb408021e6d06cb92726d04dfa73ef1c911ecbbcf116"
+    },
+    {
+      "path": "dist/assets/schibsted-grotesk-latin-400-normal-DPhJBilQ.woff2",
+      "sha256": "437cd97c802be9f10f60b4db8a723261e5c35dfe1529de0562981871028bd670"
+    },
+    {
+      "path": "dist/assets/schibsted-grotesk-latin-500-normal-Ba39e-CX.woff",
+      "sha256": "e451e8ee4e075011b179482dda585bf4c14cc49594b985f4253cf75bb3405661"
+    },
+    {
+      "path": "dist/assets/schibsted-grotesk-latin-500-normal-rf9C4Thp.woff2",
+      "sha256": "83c497a1c028bfc2ae231f88c49ec7da542e1e4bbdfe23ad207a6dbb91d4f15d"
+    },
+    {
+      "path": "dist/assets/schibsted-grotesk-latin-600-normal-BieE9YjJ.woff",
+      "sha256": "b43390b06d1f86f88b7ca2afedb4ff3b789707e3914e1ef2231ca13fceb3c382"
+    },
+    {
+      "path": "dist/assets/schibsted-grotesk-latin-600-normal-Czv9Obfv.woff2",
+      "sha256": "d00ac8735bf6b96cc4cfbfb22576c4168645547a264bd22d127c46519cab3250"
+    },
+    {
+      "path": "dist/assets/schibsted-grotesk-latin-ext-400-normal-DHVTfbSM.woff2",
+      "sha256": "d37d8b7c08e7ee28c961ec575c3b5ca62e978f0c452ace32be6df3ddfd0e5c7a"
+    },
+    {
+      "path": "dist/assets/schibsted-grotesk-latin-ext-400-normal-DUPvg9bQ.woff",
+      "sha256": "af231b4d1aa2c08b67c8ce8565af8f0e84b977d17d5c80ed0bbb5e5551d80ee8"
+    },
+    {
+      "path": "dist/assets/schibsted-grotesk-latin-ext-500-normal-BjmYCtCC.woff",
+      "sha256": "9b5fa203dec0abb48a7531cd798d78b14f0a4f7329d1bbb59b4cb42e74ca61f0"
+    },
+    {
+      "path": "dist/assets/schibsted-grotesk-latin-ext-500-normal-Ch1izu81.woff2",
+      "sha256": "b3e2598cc25fc6b98438b105d08e9becdc297d5458594b0976996d1da3e3ec04"
+    },
+    {
+      "path": "dist/assets/schibsted-grotesk-latin-ext-600-normal-C5pQPdUJ.woff2",
+      "sha256": "5c1011a86ece901a4f0704e71335948d7496809deb371b44add9ae5fd2f283b4"
+    },
+    {
+      "path": "dist/assets/schibsted-grotesk-latin-ext-600-normal-DQsnXf5q.woff",
+      "sha256": "156b5c50524f24132336b28dc640f1df9b44510b8cfdba983a5955017ae42ea0"
+    },
+    {
+      "path": "dist/index.html",
+      "sha256": "7f062b19af47800b13d188d2436f106f31f1c9070d5a9b1063c2ddc410894a4f"
+    },
+    {
+      "path": "fixtures/connections/helpdesk-openapi.json",
+      "sha256": "40a2a14da4831c21a3512a0a824eb861b162eb52888a31d9b3556c846dfab0d9"
+    },
+    {
+      "path": "fixtures/connections/library-openapi.json",
+      "sha256": "7cd06b7800e389849974e9f776a572ed4d865189491d3957a453ad0493dd253d"
+    },
+    {
+      "path": "fixtures/connections/petstore.openapi.json",
+      "sha256": "7d97d03e22e7c0f2db99fb1243647c6ec9f7482095b9bd9c57898b1ea2c664d8"
+    },
+    {
+      "path": "fixtures/harness/report-lines.txt",
+      "sha256": "da204181adb5715b98b141917d0bc0016ab571be3de68ae5d8ea834f9fcb6272"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "5ad8c213095c573921d7388edf93f6a9f54490b8ebf3b165ae8ef1947cf70846"
+    },
+    {
+      "path": "licenses/big-shoulders-display.txt",
+      "sha256": "1efbdc9cb2d98aaa844574b5123f8d5233532c214ba259e1536e1d5702d058a1"
+    },
+    {
+      "path": "licenses/codex-LICENSE.txt",
+      "sha256": "d17f227e4df5da1600391338865ce0f3055211760a36688f816941d58232d8dc"
+    },
+    {
+      "path": "licenses/codex-NOTICE.txt",
+      "sha256": "9d71575ecfd9a843fc1677b0efb08053c6ba9fd686a0de1a6f5382fd3c220915"
+    },
+    {
+      "path": "licenses/DEPENDENCIES.txt",
+      "sha256": "55b5368123d863ea0bb8f8fe10979fa9edf0e0df9686ae7834caed47dd644e35"
+    },
+    {
+      "path": "licenses/ibm-plex-mono.txt",
+      "sha256": "03b9b5ee8909a33418aaebfa6a807da48c6edebdde79b5b026258a2463e2919b"
+    },
+    {
+      "path": "licenses/ibm-plex-serif.txt",
+      "sha256": "2c22e99b9b49f512adb4d490501774afca66eb6df2b979ca4a5f36ca9a07f244"
+    },
+    {
+      "path": "licenses/schibsted-grotesk.txt",
+      "sha256": "1ac13bffaf2acec27bc5a1bf32d8bcb07c0cbe92ebcd0de67497ccdc503a3177"
+    },
+    {
+      "path": "licenses/THIRD_PARTY_NOTICES.md",
+      "sha256": "6ce909a9efe1e45cf9156658c9852de989f04d250af748031b45ff5c731530c3"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "5291fbfd4a9e68c2d7ebad705226b7cc9c2c1de4403bbb7e46f52e8acfbc0e1d"
+    },
+    {
+      "path": "package.json",
+      "sha256": "96ee04e5489780a9910188646132d3a215c8edb76de2eb847bef45c6980e23b3"
+    },
+    {
+      "path": "scripts/package-desktop.mjs",
+      "sha256": "e4d7d532e7728a55d48c39c215d1aac0326010c7929b10da42a95b3d5443dd92"
+    },
+    {
+      "path": "server/app.ts",
+      "sha256": "eada4956faacc077c7f226de29d8b968096020c14deb4b1285c2c95fa5cbe6df"
+    },
+    {
+      "path": "server/approval-admission.ts",
+      "sha256": "098102ea7c5e59ba0021399d889f98911eb23bb1ddfa5d31af81decdddd51b79"
+    },
+    {
+      "path": "server/command-admission.ts",
+      "sha256": "53537bbd71acc9345df3bd413bf8a125c7b408fbb305cccc42e500ae0867f014"
+    },
+    {
+      "path": "server/connections/compiled-fixture.ts",
+      "sha256": "f8106d4a517315bfbf2671fd804db6a7796e461cb71eb1ae8e53f2f93dcfc76c"
+    },
+    {
+      "path": "server/connections/compiler-demo.ts",
+      "sha256": "c3074cdec0e6547d20a052f2f3d97c66342780b0f64fcc9d68848b37e3093990"
+    },
+    {
+      "path": "server/connections/credentials.ts",
+      "sha256": "c2a50956784b6eab7471ab4b34bf7fedbabc3756dfad3a2638907cbd3f8d322b"
+    },
+    {
+      "path": "server/connections/desktop.ts",
+      "sha256": "95a2abb10494f43191f403669e53ba157743a2b7f754de4ea1acbe002498274b"
+    },
+    {
+      "path": "server/connections/fixture-model.ts",
+      "sha256": "9137aaa502332eb405c70b0629fbff34a41eba4f89e9002564f819603a6e0ae8"
+    },
+    {
+      "path": "server/connections/fixture.ts",
+      "sha256": "3967a4547b153f7ea7aac09250d74421baf8dafc6a23024e465abf0523252ef2"
+    },
+    {
+      "path": "server/connections/mcp-projection.ts",
+      "sha256": "1e6cb103ceea48d6de0a290961525d2f7e76248d3178be8e1d4e9c435f3200b3"
+    },
+    {
+      "path": "server/connections/openapi-candidate.ts",
+      "sha256": "0f0c9991a273ddbeb0a7d6a9d0b51d65ac30145fcd503e2d4024f54cceba7c70"
+    },
+    {
+      "path": "server/connections/service.ts",
+      "sha256": "591c85465754747cfd343dbe5b067a6e84e1f3da116ad9031ed0189baa7d3fb6"
+    },
+    {
+      "path": "server/connections/toast.ts",
+      "sha256": "558dc981447d52ccea92aa063a22751dd5b8f375f03028421029b61c0d8e9462"
+    },
+    {
+      "path": "server/discovery.ts",
+      "sha256": "0e5856c23e810957d68247fa0b419a8ef1600e22a0c35b84335896e1c0d9189b"
+    },
+    {
+      "path": "server/harness/adapters.ts",
+      "sha256": "b6482c8eb5001f2b95bdbc878fe4ee4c844aa71c68c51538592a15f2d25b49a3"
+    },
+    {
+      "path": "server/harness/approval.ts",
+      "sha256": "1893d2564e76834522b8abc439db5bee60ec17e64613e4dc76bdc027e64084fb"
+    },
+    {
+      "path": "server/harness/bridge.ts",
+      "sha256": "d18edf8c179014597b580572c0e5b45a5f45a97cbc188a8e8a1243a527982db4"
+    },
+    {
+      "path": "server/harness/capabilities/format-report.ts",
+      "sha256": "c6e05395d65e2591faa52629317c2a25cd6740766c1b401aa85a81003a261354"
+    },
+    {
+      "path": "server/harness/codex-engine.ts",
+      "sha256": "5f5915ceea7b4333e94de0f423a26561d3f65c8a52605733e82f91b3ff225b52"
+    },
+    {
+      "path": "server/harness/fixture-adapter.ts",
+      "sha256": "165942eb3a6eb72ac2d7c749849961d72e7a52c4936503c3d3e620a929e00922"
+    },
+    {
+      "path": "server/harness/host.ts",
+      "sha256": "83ded54e6451c57e52fe5253e6b8129203bbfce14b3887b8448e2c967759f4c0"
+    },
+    {
+      "path": "server/harness/index.ts",
+      "sha256": "1b8a17b6ebd9f3398af0972b9f67c1954bcd8c34871f2720ad4a56ef35d044ad"
+    },
+    {
+      "path": "server/harness/native-agent.ts",
+      "sha256": "15b53e7097f690f19154c49470ce8d0ee7d78690b9695cb6d50750fd65607f0a"
+    },
+    {
+      "path": "server/harness/policy.ts",
+      "sha256": "59c7e1c864cba20c9b1b83abde405eb4944b3bec260e7bab5ccefe35ce2a0b49"
+    },
+    {
+      "path": "server/harness/present.ts",
+      "sha256": "1f85a11e9346a554ae8985f7759561fe1253c752793a6d62c95f8f2618ccaf66"
+    },
+    {
+      "path": "server/harness/routes.ts",
+      "sha256": "27ee8ba89fe194fd12718c88bc60c00b901e13235c67c13771cea758ba143f60"
+    },
+    {
+      "path": "server/harness/run-service.ts",
+      "sha256": "85d58e4300e65ba4d07190697b68820eddee3a995703fec3c8e82b0b42e6da73"
+    },
+    {
+      "path": "server/harness/run-store.ts",
+      "sha256": "a65572637092a3930a1d09e71f31572fd75055309baadbc70b6b3cc894a0dd40"
+    },
+    {
+      "path": "server/harness/tools.ts",
+      "sha256": "7cdaa4fa5bc36b40e110ba28a0dbc8eef2f2f739ec9ceb7cff4727a442b8ea21"
+    },
+    {
+      "path": "server/harness/trust-port.ts",
+      "sha256": "976f9f1f74980d6ab65e72a48678853487616d9f9007b9aa2ea93a3e17e22607"
+    },
+    {
+      "path": "server/index.ts",
+      "sha256": "5cd1d8c0d77df9e435b04d96e0b799e7e765e9ba9bd5ee893d81775e6db3f390"
+    },
+    {
+      "path": "server/integrations.ts",
+      "sha256": "5c5d44d03b4734da8589b83262fa3bf58f1f9899c1f4bc94502a75a38377fe51"
+    },
+    {
+      "path": "server/lock.ts",
+      "sha256": "7a06745798b4a477ee8da3ac4bb0a0d93336303dffe482195ea06c1f3f57ddb7"
+    },
+    {
+      "path": "server/models.ts",
+      "sha256": "eedba1c002e01f193f8061011d0465feb4a95a2226f8e24bee8032fcd872d3cb"
+    },
+    {
+      "path": "server/modes.ts",
+      "sha256": "75ed4a01d255f91a022d56ab088aacad517d2e9e08d8d1673b96b7f265eaf4aa"
+    },
+    {
+      "path": "server/native-work.ts",
+      "sha256": "52320c0e3cbe2314e30cb9e6c00bbc34f356f283851925904fbe2e0492bb4c66"
+    },
+    {
+      "path": "server/paths.ts",
+      "sha256": "836c420819b4262b7371724d24dc1cf598cbe25038d898f4bf0fff825b468dca"
+    },
+    {
+      "path": "server/rules.ts",
+      "sha256": "1aa517125c8a9ff1732875a6fefe4ec8b9e09d24e8c404f4ed0c2482f7944ba7"
+    },
+    {
+      "path": "server/secrets.ts",
+      "sha256": "7dae0ae9dfe44f29edf4718db9f53cbc4bda33d9bf1a4cca07d75e833fc4fed8"
+    },
+    {
+      "path": "server/store.ts",
+      "sha256": "b187cb9851f8865b7be77c40e8c1f504cd971503fe2987deec623936d2158b75"
+    },
+    {
+      "path": "server/team/board.ts",
+      "sha256": "74b9dee409dfa492eb084b39d26a4d2ea2006aef23bc2171a1c85bc1553d5c97"
+    },
+    {
+      "path": "server/team/mailbox.ts",
+      "sha256": "fe33141f2eb2d7d07dcd73a8e6fe5d218f16668b736f86e3a213b7632f96f51b"
+    },
+    {
+      "path": "server/team/mcp.ts",
+      "sha256": "def302d8a841453c7bc77d5371ea13526e2ebacf46713a03ccd488caedac4a36"
+    },
+    {
+      "path": "server/team/prompts.ts",
+      "sha256": "cd080e70c0002ad78f31c0980da25f1921e2285129ad917d19f8a97820a84d0f"
+    },
+    {
+      "path": "server/team/routes.ts",
+      "sha256": "58a34828f0e0e3a7ebfeb5662d3fcb5ef5214520211a5aebe8c21bdd59f37d7a"
+    },
+    {
+      "path": "server/team/service.ts",
+      "sha256": "3c96038b192380e44dc510c2d933464e1a01ab19be22cdf8a3139f41c6d6d125"
+    },
+    {
+      "path": "server/trust/authority.ts",
+      "sha256": "7a467a940ee2da9fa18b4e1bd1dcc8a7501bddd4a02731243ec1987c080b37b3"
+    },
+    {
+      "path": "server/trust/index.ts",
+      "sha256": "d2c0fac1970370ac0c2b9a752ae62c0942396d607284a5c2de4330e68f002f5e"
+    },
+    {
+      "path": "server/trust/revocation.ts",
+      "sha256": "dede329925db90ea0915a8700ec3f747e78082331cd5fd3935705e66ad052b82"
+    },
+    {
+      "path": "server/trust/types.ts",
+      "sha256": "6873376ca3f30fcee2ccdafa25e487efbf31388b8f14141706b6bcc20bb2f2a5"
+    },
+    {
+      "path": "server/usage.ts",
+      "sha256": "1c31fe9d483db6849732c83476f26083b815d0e01d724424c1c5916cfe541ab4"
+    },
+    {
+      "path": "server/work-admission.ts",
+      "sha256": "09ea270110a2d03b59ff67826cf4da2973e496232edc44f31ff0c40660234e0a"
+    },
+    {
+      "path": "server/work.ts",
+      "sha256": "c4e3daf69db8f879ca315e07a5a0a2450973ff03164545797e9d89bc0f79ccdb"
+    },
+    {
+      "path": "shared/connection-desktop.ts",
+      "sha256": "1f451b40589404cefbc8ab01e17ba1456cf900c2053a62ea893c3a1c794e8f00"
+    },
+    {
+      "path": "shared/connection-rules.ts",
+      "sha256": "a4392414b39d81301f7c9bac0867f746d26bda448111be004f610ddae8aa51f0"
+    },
+    {
+      "path": "shared/connections.ts",
+      "sha256": "086bac33a5d6d3cc09330b01416e99d54f25da472170ddde750e1769e4bd8f19"
+    },
+    {
+      "path": "shared/effort.ts",
+      "sha256": "0036e85a9943531be4b56e2c5aa50d0fa5f71b2207b405563f4c31f286a5715e"
+    },
+    {
+      "path": "shared/harness.ts",
+      "sha256": "b833314ae02479ac74635c20a8ef93e4cced2d56d384595662cd0d4cc97c40de"
+    },
+    {
+      "path": "shared/types.ts",
+      "sha256": "52599b216b001142132a24b3f9e29c894bfc90a09f7a66fab4a5e7186d8c6560"
+    }
+  ],
+  "nativeRuntime": {
+    "version": "0.153.4",
+    "sha256": {
+      "codex.exe": "a1cf6360ca71918d5466bc3a32d9f18b7044c9128756d1949e715d277b88c9b6",
+      "codex-command-runner.exe": "08b56828cca57c83d14f03eb9ec62c73a2cd6648248cc731ae8fedd5fa3ae566",
+      "codex-windows-sandbox-setup.exe": "682cf7b351a871f3479b78fe3b7ea7348554de655bd98b0f322cef2d006a8d62"
+    }
+  },
+  "signing": "unsigned-experimental",
+  "builtAt": "2026-09-09T10:15:52.981Z"
+}

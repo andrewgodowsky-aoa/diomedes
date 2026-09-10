@@ -1,0 +1,131 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/windows-release
+
+stderr | tests/codex-engine.test.ts > revocation while dispatch is waiting prevents the provider send
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > unknown provider completion stays parked and never causes redispatch
+The harness run stopped: Error: Synthetic lost completion
+
+stderr | tests/work-admission.test.ts > durable task Work admission > failed sample admission persistence returns no phantom receipt
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\windows-release\tests\work-admission.test.ts:122:17)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at WorkService.need (F:\Achilles\diomedes-wt\windows-release\server\work.ts:174:22)
+    at WorkService.start (F:\Achilles\diomedes-wt\windows-release\server\work.ts:87:69)
+    at F:\Achilles\diomedes-wt\windows-release\server\store.ts:336:16
+
+stderr | tests/codex-engine.test.ts > changed source text prevents application after exact approval
+The harness run stopped: Error: A selected source changed before the approved write was prepared.
+
+stderr | tests/work-admission.test.ts > durable task Work admission > failed codex admission persistence returns no phantom receipt
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\windows-release\tests\work-admission.test.ts:122:17)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at NativeWorkService.fail (F:\Achilles\diomedes-wt\windows-release\server\native-work.ts:642:22)
+    at NativeWorkService.start (F:\Achilles\diomedes-wt\windows-release\server\native-work.ts:334:18)
+    at F:\Achilles\diomedes-wt\windows-release\server\store.ts:336:16
+
+···············································································································································································································································································································stdout | tests/native-work.test.ts > member thread to real adapter glue > work/start forwards team config and tracks completion
+Fake app-server team configuration: {"url":"http://127.0.0.1:60756/mcp/team/806751e7a3cc","tokenEnv":"DIOMEDES_TEAM_S6D916BC3D965","slotId":"S6d916bc3d965","role":"lead","roleInstructions":"You are Astra, the leader of a small team working on the project 'Harbor Street restaurants' in Diomedes. You plan and delegate; members do the work; the person who owns the project approves anything that matters. Use the team tools: team_members to see the roster, team_task_create and team_task_update to put work on the board and hand it to a member (owner = their slot), team_send_message to give direction, team_read_messages to hear back. Diomedes applies file changes only after the person approves them, so describe changes as proposals. Keep messages short and specific. Do not claim work is done until a member reports it and the board shows it."}
+
+stderr | tests/codex-engine.test.ts > a expired grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a forged grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a cross-run grant or context cannot dispatch
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+stderr | tests/codex-engine.test.ts > a cross-project grant or context cannot dispatch
+The harness run stopped: HarnessError: The provider step does not match current authorized scope.
+
+stderr | tests/codex-engine.test.ts > a destination grant or context cannot dispatch
+The harness run stopped: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "openai:chatgpt"
+    ],
+    "path": [
+      "grant",
+      "destination"
+    ],
+    "message": "Invalid input: expected \"openai:chatgpt\""
+  }
+]
+
+stderr | tests/codex-engine.test.ts > a context grant or context cannot dispatch
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > a generation grant or context cannot dispatch
+The harness run stopped: Error: Authority generation advanced; this run needs reconciliation.
+
+stderr | tests/codex-engine.test.ts > a account grant or context cannot dispatch
+The harness run stopped: HarnessError: Actual provider context or account differs from consent.
+
+stderr | tests/codex-engine.test.ts > Stop after dispatch rejects late proposal output
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > the host grant deadline expires without modifying the saved input
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > sending permission cannot accept a result after reconcile permission is revoked
+The harness run stopped: Error: Current authority lacks egress.reconcile.
+
+stderr | tests/harness-host.test.ts > native harness through the real host > outside edits invalidate the exact write and remain untouched
+The harness run stopped: Error: This document changed since you opened it. Read its current version before saving.
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed decision persistence creates no phantom receipt or write and can be retried
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\windows-release\tests\approval-admission.test.ts:310:67)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at NativeWorkService.resolve (F:\Achilles\diomedes-wt\windows-release\server\native-work.ts:601:22)
+    at F:\Achilles\diomedes-wt\windows-release\server\store.ts:336:16
+
+stderr | tests/harness-host.test.ts > native harness through the real host > secret scrubber covers durable errors, event mirrors, and returned run records
+The harness run stopped: [redacted]: Synthetic error [redacted]
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failure after acceptance but before journal preparation is durable not-applied and never redispatched
+Error: Synthetic preparation failure.
+    at F:\Achilles\diomedes-wt\windows-release\tests\approval-admission.test.ts:323:26
+    at file:///F:/Achilles/diomedes/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed journal recovery blocks later mutations until recovery finishes
+Error: Synthetic finalization disk fault.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\windows-release\tests\approval-admission.test.ts:336:15)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at Store.recover (F:\Achilles\diomedes-wt\windows-release\server\store.ts:986:18)
+    at Store.recoverAndReload (F:\Achilles\diomedes-wt\windows-release\server\store.ts:311:5)
+    at F:\Achilles\diomedes-wt\windows-release\server\store.ts:339:9
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed journal recovery blocks later mutations until recovery finishes
+Error: Synthetic finalization disk fault.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\windows-release\tests\approval-admission.test.ts:336:15)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at Store.recover (F:\Achilles\diomedes-wt\windows-release\server\store.ts:986:18)
+    at Store.recoverAndReload (F:\Achilles\diomedes-wt\windows-release\server\store.ts:311:5)
+    at F:\Achilles\diomedes-wt\windows-release\server\store.ts:334:34
+
+···························································································································································stdout | tests/work-admission.test.ts > durable task Work admission > receipt replays perform no folder listing, document read, adapter call or persistence
+Work admission replay: 50 requests in 63.9 ms; no scans or writes.
+
+································································stdout | tests/backend.test.ts > state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder
+state-speed: second /state with 3000 files took 14 ms
+
+···········stdout | tests/approval-admission.test.ts > exact native approval admission > receipt retention is bounded without eviction and replay stays free of project IO at capacity
+Approval replay at 1024 receipts: 50 requests in 53.3 ms, zero project IO or persistence; receipt metadata 1421150 bytes, full synthetic state 3225268 bytes.
+
+·
+
+ Test Files  21 passed (21)
+      Tests  534 passed (534)
+   Start at  05:14:44
+   Duration  32.39s (transform 1.70s, setup 0ms, collect 18.55s, tests 108.96s, environment 3ms, prepare 4.86s)
+

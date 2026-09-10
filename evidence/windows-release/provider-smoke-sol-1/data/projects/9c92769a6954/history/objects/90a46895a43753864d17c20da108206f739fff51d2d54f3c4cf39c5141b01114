@@ -1,0 +1,291 @@
+{
+  "note": "Synthetic fixture observations and scoped rules. The later report capability has separate explicit egress consent.",
+  "guidance": "Role: Stock investigator.\nRun: cn-9fccc118-2cdf-4808-8efc-66b048683015. Connection: provider-smoke.\nApproved locations: Downtown (10000000-0000-4000-8000-000000000001), North Hills (10000000-0000-4000-8000-000000000002), Cary (10000000-0000-4000-8000-000000000003).\nUse only the supplied read capabilities. No external writes or model-provider egress are authorized.\n[toast-stock-semantics v1] Toast reports menu-item and modifier availability. It does not establish physical ingredient inventory. Unknown quantity is not zero or unlimited.",
+  "observation": {
+    "assurance": "fixture-only",
+    "connectorVersion": "1.0.0",
+    "corrections": [
+      {
+        "action": "correct",
+        "id": "toast-unknown-quantity",
+        "input": {
+          "quantityUnknown": true
+        },
+        "predicate": {
+          "field": "quantityUnknown",
+          "operator": "eq",
+          "value": true
+        },
+        "provenance": {
+          "connectorVersion": "1.0.0",
+          "source": "https://doc.toasttab.com/doc/devguide/apiStock.html",
+          "trust": "host-reviewed"
+        },
+        "scope": {
+          "connectorId": "toast"
+        },
+        "text": "Quantity is not reported by this source. Do not infer a numeric count.",
+        "version": 1
+      },
+      {
+        "action": "correct",
+        "id": "toast-unknown-quantity",
+        "input": {
+          "quantityUnknown": true
+        },
+        "predicate": {
+          "field": "quantityUnknown",
+          "operator": "eq",
+          "value": true
+        },
+        "provenance": {
+          "connectorVersion": "1.0.0",
+          "source": "https://doc.toasttab.com/doc/devguide/apiStock.html",
+          "trust": "host-reviewed"
+        },
+        "scope": {
+          "connectorId": "toast"
+        },
+        "text": "Quantity is not reported by this source. Do not infer a numeric count.",
+        "version": 1
+      },
+      {
+        "action": "correct",
+        "id": "toast-unknown-quantity",
+        "input": {
+          "quantityUnknown": true
+        },
+        "predicate": {
+          "field": "quantityUnknown",
+          "operator": "eq",
+          "value": true
+        },
+        "provenance": {
+          "connectorVersion": "1.0.0",
+          "source": "https://doc.toasttab.com/doc/devguide/apiStock.html",
+          "trust": "host-reviewed"
+        },
+        "scope": {
+          "connectorId": "toast"
+        },
+        "text": "Quantity is not reported by this source. Do not infer a numeric count.",
+        "version": 1
+      },
+      {
+        "action": "correct",
+        "id": "toast-unknown-quantity",
+        "input": {
+          "quantityUnknown": true
+        },
+        "predicate": {
+          "field": "quantityUnknown",
+          "operator": "eq",
+          "value": true
+        },
+        "provenance": {
+          "connectorVersion": "1.0.0",
+          "source": "https://doc.toasttab.com/doc/devguide/apiStock.html",
+          "trust": "host-reviewed"
+        },
+        "scope": {
+          "connectorId": "toast"
+        },
+        "text": "Quantity is not reported by this source. Do not infer a numeric count.",
+        "version": 1
+      },
+      {
+        "action": "correct",
+        "id": "toast-unknown-quantity",
+        "input": {
+          "quantityUnknown": true
+        },
+        "predicate": {
+          "field": "quantityUnknown",
+          "operator": "eq",
+          "value": true
+        },
+        "provenance": {
+          "connectorVersion": "1.0.0",
+          "source": "https://doc.toasttab.com/doc/devguide/apiStock.html",
+          "trust": "host-reviewed"
+        },
+        "scope": {
+          "connectorId": "toast"
+        },
+        "text": "Quantity is not reported by this source. Do not infer a numeric count.",
+        "version": 1
+      },
+      {
+        "action": "correct",
+        "id": "toast-unknown-quantity",
+        "input": {
+          "quantityUnknown": true
+        },
+        "predicate": {
+          "field": "quantityUnknown",
+          "operator": "eq",
+          "value": true
+        },
+        "provenance": {
+          "connectorVersion": "1.0.0",
+          "source": "https://doc.toasttab.com/doc/devguide/apiStock.html",
+          "trust": "host-reviewed"
+        },
+        "scope": {
+          "connectorId": "toast"
+        },
+        "text": "Quantity is not reported by this source. Do not infer a numeric count.",
+        "version": 1
+      }
+    ],
+    "result": {
+      "coverage": "selected-items",
+      "observations": [
+        {
+          "facts": {
+            "availability": "available",
+            "itemId": "20000000-0000-4000-8000-000000000001",
+            "quantity": 9,
+            "quantityState": "reported",
+            "quantityUnknown": false,
+            "sourceKind": "menu-availability",
+            "status": "QUANTITY"
+          },
+          "key": "101",
+          "receivedAt": "2026-09-09T09:55:23.954Z",
+          "resourceId": "10000000-0000-4000-8000-000000000001",
+          "source": "Toast menu-item/modifier stock (fixture)",
+          "sourceAt": null
+        },
+        {
+          "facts": {
+            "availability": "available",
+            "itemId": "20000000-0000-4000-8000-000000000002",
+            "quantity": null,
+            "quantityState": "not-tracked",
+            "quantityUnknown": true,
+            "sourceKind": "menu-availability",
+            "status": "IN_STOCK"
+          },
+          "key": "102",
+          "receivedAt": "2026-09-09T09:55:23.954Z",
+          "resourceId": "10000000-0000-4000-8000-000000000001",
+          "source": "Toast menu-item/modifier stock (fixture)",
+          "sourceAt": null
+        },
+        {
+          "facts": {
+            "availability": "unavailable",
+            "itemId": "20000000-0000-4000-8000-000000000003",
+            "quantity": null,
+            "quantityState": "unknown",
+            "quantityUnknown": true,
+            "sourceKind": "menu-availability",
+            "status": "OUT_OF_STOCK"
+          },
+          "key": "103",
+          "receivedAt": "2026-09-09T09:55:23.954Z",
+          "resourceId": "10000000-0000-4000-8000-000000000001",
+          "source": "Toast menu-item/modifier stock (fixture)",
+          "sourceAt": null
+        },
+        {
+          "facts": {
+            "availability": "available",
+            "itemId": "20000000-0000-4000-8000-000000000001",
+            "quantity": 9,
+            "quantityState": "reported",
+            "quantityUnknown": false,
+            "sourceKind": "menu-availability",
+            "status": "QUANTITY"
+          },
+          "key": "101",
+          "receivedAt": "2026-09-09T09:55:23.954Z",
+          "resourceId": "10000000-0000-4000-8000-000000000002",
+          "source": "Toast menu-item/modifier stock (fixture)",
+          "sourceAt": null
+        },
+        {
+          "facts": {
+            "availability": "available",
+            "itemId": "20000000-0000-4000-8000-000000000002",
+            "quantity": null,
+            "quantityState": "not-tracked",
+            "quantityUnknown": true,
+            "sourceKind": "menu-availability",
+            "status": "IN_STOCK"
+          },
+          "key": "102",
+          "receivedAt": "2026-09-09T09:55:23.954Z",
+          "resourceId": "10000000-0000-4000-8000-000000000002",
+          "source": "Toast menu-item/modifier stock (fixture)",
+          "sourceAt": null
+        },
+        {
+          "facts": {
+            "availability": "unavailable",
+            "itemId": "20000000-0000-4000-8000-000000000003",
+            "quantity": null,
+            "quantityState": "unknown",
+            "quantityUnknown": true,
+            "sourceKind": "menu-availability",
+            "status": "OUT_OF_STOCK"
+          },
+          "key": "103",
+          "receivedAt": "2026-09-09T09:55:23.954Z",
+          "resourceId": "10000000-0000-4000-8000-000000000002",
+          "source": "Toast menu-item/modifier stock (fixture)",
+          "sourceAt": null
+        },
+        {
+          "facts": {
+            "availability": "available",
+            "itemId": "20000000-0000-4000-8000-000000000001",
+            "quantity": 9,
+            "quantityState": "reported",
+            "quantityUnknown": false,
+            "sourceKind": "menu-availability",
+            "status": "QUANTITY"
+          },
+          "key": "101",
+          "receivedAt": "2026-09-09T09:55:23.954Z",
+          "resourceId": "10000000-0000-4000-8000-000000000003",
+          "source": "Toast menu-item/modifier stock (fixture)",
+          "sourceAt": null
+        },
+        {
+          "facts": {
+            "availability": "available",
+            "itemId": "20000000-0000-4000-8000-000000000002",
+            "quantity": null,
+            "quantityState": "not-tracked",
+            "quantityUnknown": true,
+            "sourceKind": "menu-availability",
+            "status": "IN_STOCK"
+          },
+          "key": "102",
+          "receivedAt": "2026-09-09T09:55:23.954Z",
+          "resourceId": "10000000-0000-4000-8000-000000000003",
+          "source": "Toast menu-item/modifier stock (fixture)",
+          "sourceAt": null
+        },
+        {
+          "facts": {
+            "availability": "unavailable",
+            "itemId": "20000000-0000-4000-8000-000000000003",
+            "quantity": null,
+            "quantityState": "unknown",
+            "quantityUnknown": true,
+            "sourceKind": "menu-availability",
+            "status": "OUT_OF_STOCK"
+          },
+          "key": "103",
+          "receivedAt": "2026-09-09T09:55:23.954Z",
+          "resourceId": "10000000-0000-4000-8000-000000000003",
+          "source": "Toast menu-item/modifier stock (fixture)",
+          "sourceAt": null
+        }
+      ]
+    }
+  }
+}

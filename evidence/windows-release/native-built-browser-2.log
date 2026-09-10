@@ -1,0 +1,22 @@
+[WebServer] Diomedes: http://127.0.0.1:5188. Press Ctrl+C to stop both local processes.
+[WebServer] (node:55596) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer]   VITE v7.3.6  ready in 443 ms
+[WebServer] 
+[WebServer]   ➜  Local:   http://127.0.0.1:5188/
+[WebServer] (node:44940) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Diomedes local service ready: http://127.0.0.1:47648
+[WebServer] App data: F:\Achilles\diomedes-wt\windows-release\test-results\app-data-1788947862848-56060\data
+[WebServer] Project root: F:\Achilles\diomedes-wt\windows-release\test-results\app-data-1788947862848-56060\projects
+
+Running 3 tests using 1 worker
+
+(node:27512) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 1 tests\native-ui.spec.ts:115:1 › Native UI: consent, exact proposal preview, approval, Review and History with an injected generator (1.6s)
+  ok 2 tests\native-ui.spec.ts:207:1 › Console task Start recovers both lost responses from state without duplicating Work (1.2s)
+  ok 3 tests\native-ui.spec.ts:273:1 › Console exact approval recovers both lost responses from durable state even with task permission (1.0s)
+
+  3 passed (8.5s)

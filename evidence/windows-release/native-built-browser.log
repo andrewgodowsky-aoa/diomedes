@@ -1,0 +1,17 @@
+[WebServer] Diomedes: http://127.0.0.1:5188. Press Ctrl+C to stop both local processes.
+[WebServer] (node:49344) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer]   VITE v7.3.6  ready in 432 ms
+[WebServer] 
+[WebServer]   ➜  Local:   http://127.0.0.1:5188/
+[WebServer] (node:39600) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Diomedes local service ready: http://127.0.0.1:47648
+[WebServer] App data: F:\Achilles\diomedes-wt\windows-release\test-results\app-data-1788947833206-31508\data
+[WebServer] Project root: F:\Achilles\diomedes-wt\windows-release\test-results\app-data-1788947833206-31508\projects
+TypeError: Module "file:///F:/Achilles/diomedes-wt/windows-release/package.json" needs an import attribute of "type: json"
+Error: No tests found.
+Make sure that arguments are regular expressions matching test files.
+You may need to escape symbols like "$" or "*" and quote the arguments.
+

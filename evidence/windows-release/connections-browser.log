@@ -1,0 +1,21 @@
+[WebServer] Diomedes: http://127.0.0.1:5186. Press Ctrl+C to stop both local processes.
+[WebServer] (node:29572) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 5:50:19 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+[WebServer] 
+[WebServer]   VITE v7.3.6  ready in 485 ms
+[WebServer] 
+[WebServer]   ➜  Local:   http://127.0.0.1:5186/
+[WebServer] (node:32496) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Diomedes local service ready: http://127.0.0.1:47646
+[WebServer] App data: F:\Achilles\diomedes-wt\windows-release\test-results\app-data-1788947418890-47352\data
+[WebServer] Project root: F:\Achilles\diomedes-wt\windows-release\test-results\app-data-1788947418890-47352\projects
+
+Running 1 test using 1 worker
+
+(node:24800) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 1 tests\connections-ui.spec.ts:4:1 › Connections works through ordinary Console and Workbook navigation (23.6s)
+
+  1 passed (27.2s)

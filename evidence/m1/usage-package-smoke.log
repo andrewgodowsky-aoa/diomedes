@@ -1,0 +1,11 @@
+node:internal/process/promises:394
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+route.continue: Route is already handled!
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\scripts\harness-desktop-smoke.mjs:198:27 {
+  log: [],
+  name: 'Error'
+}
+
+Node.js v22.23.2

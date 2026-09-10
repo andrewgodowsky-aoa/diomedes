@@ -1,0 +1,18 @@
+[
+  {
+    "source": "F:\\Achilles\\diomedes-wt\\windows-release\\server",
+    "backup": "F:\\Achilles\\diomedes-wt\\windows-release\\server.source-unavailable-proof"
+  },
+  {
+    "source": "F:\\Achilles\\diomedes-wt\\windows-release\\client",
+    "backup": "F:\\Achilles\\diomedes-wt\\windows-release\\client.source-unavailable-proof"
+  },
+  {
+    "source": "F:\\Achilles\\diomedes-wt\\windows-release\\fixtures",
+    "backup": "F:\\Achilles\\diomedes-wt\\windows-release\\fixtures.source-unavailable-proof"
+  },
+  {
+    "source": "F:\\Achilles\\diomedes-wt\\windows-release\\dist",
+    "backup": "F:\\Achilles\\diomedes-wt\\windows-release\\dist.source-unavailable-proof"
+  }
+]

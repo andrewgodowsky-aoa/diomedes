@@ -1,0 +1,90 @@
+npm notice run diomedes@0.1.0 test:ui
+npm notice run playwright test
+[WebServer] Diomedes: http://127.0.0.1:5174. Press Ctrl+C to stop both local processes.
+[WebServer] (node:40672) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 2:07:29 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+[WebServer] 
+[WebServer]   VITE v7.3.6  ready in 575 ms
+[WebServer] 
+[WebServer]   ➜  Local:   http://127.0.0.1:5174/
+[WebServer] (node:32964) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Diomedes local service ready: http://127.0.0.1:47632
+[WebServer] App data: F:\Achilles\diomedes-wt\codex-runtime-proof\test-results\app-data-1788934048133-41552\data
+[WebServer] Project root: F:\Achilles\diomedes-wt\codex-runtime-proof\test-results\app-data-1788934048133-41552\projects
+
+Running 26 tests using 1 worker
+
+(node:35020) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  1 tests\field.spec.ts:102:1 › C01: the rail lists threads, carries New, marks the selection, and offers the three views (2.6s)
+  ok  2 tests\field.spec.ts:122:1 › C02: the view switch swaps Thread, Board, and Team (693ms)
+  ok  3 tests\field.spec.ts:137:1 › C03: the Board shows the Ready task, and Show-me-first confirms instead of starting (846ms)
+  ok  4 tests\field.spec.ts:165:1 › C04: the palette finds and filters, Escape closes, and the Workbook keeps its own search (1.4s)
+  ok  5 tests\field.spec.ts:201:1 › C05: the wake is skipped under automation (624ms)
+  ok  6 tests\field.spec.ts:208:1 › C06: the Ember scheme applies its package and token, then Field is restored (979ms)
+  ok  7 tests\field.spec.ts:233:1 › C07: the thread head states the exact-OK rule while an approval is open (869ms)
+  ok  8 tests\native-ui.spec.ts:115:1 › Native UI: consent, exact proposal preview, approval, Review and History with an injected generator (2.3s)
+  ok  9 tests\native-ui.spec.ts:207:1 › Console task Start recovers both lost responses from state without duplicating Work (1.5s)
+  ok 10 tests\native-ui.spec.ts:273:1 › Console exact approval recovers both lost responses from durable state even with task permission (1.3s)
+  ok 11 tests\ui.spec.ts:55:1 › F01-F02: first run resumes, chooses a surface, and opens the selected surface (2.1s)
+  ok 12 tests\ui.spec.ts:146:1 › F04, F06: sample project opens and a plan edit survives reload with History (1.1s)
+  ok 13 tests\ui.spec.ts:186:1 › F10: plan steps become real tasks with provenance and a History entry (1.1s)
+  ok 14 tests\ui.spec.ts:213:1 › F11-F13: work asks twice, decline skips creation, and the remaining change is recorded (5.4s)
+  ok 15 tests\ui.spec.ts:256:1 › F15-F16: Review keeps the changed file and History exposes the recorded change (852ms)
+  ok 16 tests\ui.spec.ts:271:1 › F07-F08: restore and Undo recover both versions; newer edits expose conflict choices (1.5s)
+  ok 17 tests\ui.spec.ts:312:1 › F14: Stop settles a started sample promptly and expires its approval (1.1s)
+  ok 18 tests\ui.spec.ts:327:1 › F17, F20-F22: surface switches preserve data; visible pages meet copy and layout checks (2.9s)
+  ok 19 tests\ui.spec.ts:458:1 › Draft recovery: Settings, reload and same-named files in separate projects preserve writing and stale-save conflicts (3.1s)
+[WebServer] 2:08:11 AM [vite] (client) hmr update /client/Workspace.tsx
+  ok 20 tests\ui.spec.ts:554:1 › Services roster: every reported engine listed with switch discipline; Guided hides non-ready adapters; Console has no Connections (5.1s)
+  x  21 tests\ui.spec.ts:613:1 › Usage: chip, signal bar and Settings bars from the test-mode snapshot (12.9s)
+  -  22 tests\ui.spec.ts:661:1 › Landing: ask box carries a draft into the chosen project
+  -  23 tests\ui.spec.ts:701:1 › Verified helper: a helper turn shows its runtime caption
+  -  24 tests\ui.spec.ts:711:1 › Engine choices: the list comes from the engine, and the levels follow the choice
+  -  25 tests\ui.spec.ts:794:1 › Modes: the Workbook composer shows four modes and Fix needs what is failing
+  -  26 tests\ui.spec.ts:844:1 › Enter sends from the Workbook composer and Shift+Enter adds a line
+
+
+  1) tests\ui.spec.ts:613:1 › Usage: chip, signal bar and Settings bars from the test-mode snapshot 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('.usage-chip')
+    Expected: visible
+    Timeout: 12000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" locator('.usage-chip') with timeout 12000ms
+      - waiting for locator('.usage-chip')
+
+
+      635 |   await page.reload();
+      636 |   const chip = page.locator('.usage-chip');
+    > 637 |   await expect(chip).toBeVisible();
+          |                      ^
+      638 |   await expect(chip).toContainText(/Codex with ChatGPT, week, 9% left/);
+      639 |   // Bars fill with what is left; under 20 percent left takes the signal colour.
+      640 |   await expect(chip.locator('.usage-fill.signal')).toBeVisible();
+        at F:\Achilles\diomedes-wt\codex-runtime-proof\tests\ui.spec.ts:637:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\browser\ui-Usage-chip-signal-bar-a-f84b1-from-the-test-mode-snapshot\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\browser\ui-Usage-chip-signal-bar-a-f84b1-from-the-test-mode-snapshot\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\browser\ui-Usage-chip-signal-bar-a-f84b1-from-the-test-mode-snapshot\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\browser\ui-Usage-chip-signal-bar-a-f84b1-from-the-test-mode-snapshot\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests\ui.spec.ts:613:1 › Usage: chip, signal bar and Settings bars from the test-mode snapshot ─
+  5 did not run
+  20 passed (58.0s)

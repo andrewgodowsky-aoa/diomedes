@@ -1,0 +1,120 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/codex-runtime-proof
+
+stderr | tests/work-admission.test.ts > durable task Work admission > failed sample admission persistence returns no phantom receipt
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\work-admission.test.ts:122:17)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at WorkService.need (F:\Achilles\diomedes-wt\codex-runtime-proof\server\work.ts:174:22)
+    at WorkService.start (F:\Achilles\diomedes-wt\codex-runtime-proof\server\work.ts:87:69)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:336:16
+
+stderr | tests/work-admission.test.ts > durable task Work admission > failed codex admission persistence returns no phantom receipt
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\work-admission.test.ts:122:17)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at NativeWorkService.fail (F:\Achilles\diomedes-wt\codex-runtime-proof\server\native-work.ts:642:22)
+    at NativeWorkService.start (F:\Achilles\diomedes-wt\codex-runtime-proof\server\native-work.ts:334:18)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:336:16
+
+stdout | tests/work-admission.test.ts > durable task Work admission > receipt replays perform no folder listing, document read, adapter call or persistence
+Work admission replay: 50 requests in 187.3 ms; no scans or writes.
+
+ ❯ tests/work-admission.test.ts (33 tests | 1 failed) 11529ms
+   ✓ durable task Work admission > common admission extraction preserves the original v1 Work digest bytes 165ms
+   ✓ durable task Work admission > failed sample admission persistence returns no phantom receipt 209ms
+   ✓ durable task Work admission > failed codex admission persistence returns no phantom receipt 163ms
+   ✓ durable task Work admission > concurrent identical starts, reload and retry have one run and the same receipt 157ms
+   ✓ durable task Work admission > the adapter observes the receipt, session, permission and event already on disk 143ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"protocolVersion":2} 96ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"commandId":""} 124ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"commandId":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"} 124ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"actor":"owner"} 109ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"userId":"owner"} 106ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"unknown":true} 109ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"consent":"true"} 108ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"sources":["../secret.md"]} 93ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"sources":["Brief.md","brief.md"]} 112ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"route":"cloud"} 170ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"instruction":3} 140ms
+   ✓ durable task Work admission > rejects invalid versioned inputs before admission: {"sources":"Brief.md"} 214ms
+   ✓ durable task Work admission > rejects cross-project tasks, threads, receipt access and unauthorized browser origins  308ms
+   ✓ durable task Work admission > rechecks service enablement and consent before a cached response 220ms
+   ✓ durable task Work admission > legacy clients work; versioned sample work also deduplicates 206ms
+   ✓ durable task Work admission > the admitted native path previews, approves once, writes and restores exact bytes without Git  341ms
+   ✓ durable task Work admission > stale approval preserves a newer file; the command still identifies the failed run 193ms
+   ✓ durable task Work admission > cancel prevents a late proposal and releases the project for a different command 194ms
+   ✓ durable task Work admission > abrupt process exit before admission recovers without unsafe redispatch  1756ms
+   ✓ durable task Work admission > abrupt process exit admitted admission recovers without unsafe redispatch  1484ms
+   ✓ durable task Work admission > abrupt process exit dispatched admission recovers without unsafe redispatch  2169ms
+   ✓ durable task Work admission > receipt replays perform no folder listing, document read, adapter call or persistence  383ms
+   × durable task Work admission > restart expires an unapproved proposal while retaining its original receipt 225ms
+     → Cannot read properties of undefined (reading 'state')
+   ✓ durable task Work admission > recovers the file journal at prepared while keeping receipt and history consistent  311ms
+   ✓ durable task Work admission > recovers the file journal at applied while keeping receipt and history consistent 286ms
+   ✓ durable task Work admission > recovers the file journal at finalized while keeping receipt and history consistent  350ms
+   ✓ durable task Work admission > incompatible saved receipts stop loading before project state is rewritten 218ms
+   ✓ durable task Work admission > bounded receipt capacity refuses new commands without evicting existing identities  539ms
+ ✓ tests/integrations.test.ts (65 tests) 2562ms
+   ✓ opt-in Diomedes team boundary > stops after five re-lists if the team stays starting  1056ms
+   ✓ owned native JSON-line process transport > correlates responses and terminates its owned subprocess  484ms
+   ✓ owned native JSON-line process transport > surfaces protocol timeouts instead of success-shaped output  476ms
+stderr | tests/codex-engine.test.ts > revocation while dispatch is waiting prevents the provider send
+The harness run stopped: HarnessError: The run grant is absent, expired, revoked, or changed.
+
+stderr | tests/codex-engine.test.ts > unknown provider completion stays parked and never causes redispatch
+The harness run stopped: Error: Synthetic lost completion
+
+stderr | tests/codex-engine.test.ts > changed source text prevents application after exact approval
+The harness run stopped: Error: A selected source changed before the approved write was prepared.
+
+ ❯ tests/codex-engine.test.ts (11 tests | 1 failed) 1451ms
+   × durable admission, identical concurrent retry, restart, exact decision and one recorded write 241ms
+     → This request has already been decided.
+   ✓ changed command payload and concurrent different starts cannot dispatch again 171ms
+   ✓ consent cannot manufacture outbound permission 30ms
+   ✓ principal cannot manufacture outbound permission 28ms
+   ✓ sending cannot manufacture outbound permission 28ms
+   ✓ authority cannot manufacture outbound permission 33ms
+   ✓ admission persistence failure prevents dispatch and a retry creates one durable receipt 189ms
+   ✓ revocation while dispatch is waiting prevents the provider send 124ms
+   ✓ unknown provider completion stays parked and never causes redispatch 139ms
+   ✓ changed source text prevents application after exact approval 298ms
+   ✓ current authority is required for a later exact decision 169ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/codex-engine.test.ts > durable admission, identical concurrent retry, restart, exact decision and one recorded write
+Error: This request has already been decided.
+ ❯ HarnessBridge.resolve server/harness/bridge.ts:370:38
+    368|     const replay = this.store.approvalCommand(projectId, admission);
+    369|     if (replay) return structuredClone(replay);
+    370|     if (need.state !== 'open') throw new ApiError(409, 'This request h…
+       |                                      ^
+    371|     assertApprovalMatches(projectId, need, admission);
+    372|     const run = await this.runs.get(need.harness.runId);
+ ❯ tests/codex-engine.test.ts:48:41
+ ❯ server/store.ts:336:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/work-admission.test.ts > durable task Work admission > restart expires an unapproved proposal while retaining its original receipt
+TypeError: Cannot read properties of undefined (reading 'state')
+ ❯ tests/work-admission.test.ts:419:17
+    417|     });
+    418|     const need = current().needs[0];
+    419|     expect(need.state).toBe('expired');
+       |                 ^
+    420|     expect(
+    421|       (
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 1 passed (3)
+      Tests  2 failed | 107 passed (109)
+   Start at  02:34:58
+   Duration  18.81s (transform 489ms, setup 0ms, collect 1.52s, tests 15.54s, environment 1ms, prepare 447ms)
+

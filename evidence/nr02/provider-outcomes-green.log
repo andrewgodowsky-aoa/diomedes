@@ -1,0 +1,13 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/codex-runtime-proof
+
+ ✓ tests/harness-provider-outcomes.test.ts (6 tests) 132ms
+ ✓ tests/harness.test.ts (51 tests) 1518ms
+   ✓ crash after an external effect > a process exit after the effect leaves a durable reconciliation boundary  472ms
+ ✓ tests/harness-negative.test.ts (40 tests) 461ms
+
+ Test Files  3 passed (3)
+      Tests  97 passed (97)
+   Start at  02:22:47
+   Duration  3.72s (transform 113ms, setup 0ms, collect 332ms, tests 2.11s, environment 0ms, prepare 296ms)
+

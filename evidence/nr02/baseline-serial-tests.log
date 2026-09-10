@@ -1,0 +1,240 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/codex-runtime-proof
+
+stdout | tests/backend.test.ts > state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder
+state-speed: second /state with 3000 files took 32 ms
+
+ ❯ tests/backend.test.ts (48 tests | 1 failed) 31569ms
+   ✓ real project files and durable history > starts empty and creates three sample documents only when requested 292ms
+   ✓ real project files and durable history > editor writes require the opened version, merge, restore, and undo a restore  422ms
+   ✓ real project files and durable history > empty files are distinct from absent files across restore and redo 254ms
+   ✓ real project files and durable history > preserves exact UTF-8 BOM and CRLF bytes through read, edit, and restore 254ms
+   ✓ real project files and durable history > detects outside changes and preserves overwritten contents before a forced restore 254ms
+   ✓ real project files and durable history > restores copies without modifying newer files 262ms
+   ✓ real project files and durable history > concurrent stale saves admit one winner  342ms
+   ✓ real project files and durable history > a saved version restores the whole folder and later file removal can be undone  721ms
+   ✓ real project files and durable history > rejects invalid task edits without leaving changes in memory 203ms
+   ✓ real project files and durable history > recovers a durable interrupted write and complete intended history on startup 182ms
+   ✓ task, approval, sample worker, and review flow > parser skips done tasks and code blocks and retains person ownership 26ms
+   ✓ task, approval, sample worker, and review flow > finds real plan tasks, adds suffixes, and prevents duplicate tasks  1427ms
+   ✓ task, approval, sample worker, and review flow > approval propagates, disallows concurrent sessions, finishes real writes, and Keep all completes task  639ms
+   ✓ task, approval, sample worker, and review flow > declines file creation while continuing the recorded plan update  471ms
+   ✓ task, approval, sample worker, and review flow > stop expires needs immediately and fault preserves its partial changes  512ms
+   ✓ request and filesystem boundaries > rejects foreign/null origins, missing custom headers, and DNS-rebinding hosts 54ms
+   ✓ request and filesystem boundaries > rejects path traversal, credential stores, junctions, and reserved names 229ms
+   ✓ request and filesystem boundaries > settings survive restart and every supported appearance validates 210ms
+   ✓ threads are first-class conversations > old state without thread fields loads with fields filled and stays stable 163ms
+   ✓ threads are first-class conversations > settings without surface get 'workbook' (standard) and 'console' (technical) 38ms
+   ✓ threads are first-class conversations > POST /threads creates, PUT renames, GET lists newest-updated first  429ms
+   ✓ threads are first-class conversations > POST /ask with threadId appends to that thread and bumps updatedAt  356ms
+   ✓ threads are first-class conversations > Work task names use the trimmed first line at an 80-character word boundary  1017ms
+   ✓ threads are first-class conversations > threads default to show-first, PUT sets task, and full is rejected 249ms
+   ✓ threads are first-class conversations > migration fills missing thread permission with show-first and stays stable 172ms
+   ✓ threads are first-class conversations > work sessions carry the thread permission, defaulting to show-first  700ms
+   ✓ request and filesystem boundaries (continued) > sample Ask is honest, sample Plan writes a real file, and Codex requires explicit settings and consent  321ms
+   ✓ the data folder lock tells a live owner from a reused pid > this platform reports its own start time, and a loopback port is testable  1424ms
+   ✓ the data folder lock tells a live owner from a reused pid > a live pid whose start time matches still owns the folder  4468ms
+   ✓ the data folder lock tells a live owner from a reused pid > a live pid whose start time differs is a reused pid, so the lock is stale  2488ms
+   ✓ the data folder lock tells a live owner from a reused pid > a dead pid leaves a stale lock that a new start clears 275ms
+   ✓ the data folder lock tells a live owner from a reused pid > an unreadable start time falls back to the recorded port 7ms
+   ✓ the data folder lock tells a live owner from a reused pid > a corrupt or pidless lock is cleared instead of blocking a start 15ms
+   ✓ verified helper is stored with every turn and session > a Codex Ask turn carries the runtime-reported helper 169ms
+   ✓ verified helper is stored with every turn and session > a Codex Plan names the verified helper in its History sentence 170ms
+   ✓ verified helper is stored with every turn and session > sample work carries engine 'sample' with verified true on the turn and session 236ms
+   ✓ verified helper is stored with every turn and session > Codex Work marks the session engine and the thread turn verified once the runtime reports 165ms
+   ✓ modes belong to the thread and every turn > a stored state with 'work' turns loads as 'build' and the thread gets mode 116ms
+   ✓ modes belong to the thread and every turn > PUT /threads/:id { mode: 'fix' } persists and { mode: 'x' } is 400 164ms
+   ✓ modes belong to the thread and every turn > POST /ask with mode: 'fix' and no failing is 400 141ms
+   ✓ modes belong to the thread and every turn > fix with failing.document in sources on the sample route carries attempt 1 of 3 229ms
+   ✓ modes belong to the thread and every turn > the fourth fix in the same thread is 409  543ms
+   ✓ modes belong to the thread and every turn > ask and plan turns record their mode 229ms
+   ✓ modes belong to the thread and every turn > mode: 'work' is accepted and stored as 'build' 221ms
+   ✓ state reads stay fast with a cached documents listing > (a) projectState returns quickly with a large folder  9836ms
+   × state reads stay fast with a cached documents listing > (b) SKIPPED_FOLDERS are never listed 130ms
+     → expected false to be true // Object.is equality
+   ✓ state reads stay fast with a cached documents listing > (c) persisted state on disk contains no documents rows 158ms
+   ✓ state reads stay fast with a cached documents listing > (d) statePayload strips documents and the SSE state event carries no rows 180ms
+stderr | tests/harness-host.test.ts > native harness through the real host > outside edits invalidate the exact write and remain untouched
+The harness run stopped: Error: This document changed since you opened it. Read its current version before saving.
+
+stderr | tests/harness-host.test.ts > native harness through the real host > secret scrubber covers durable errors, event mirrors, and returned run records
+The harness run stopped: [redacted]: Synthetic error [redacted]
+
+ ✓ tests/harness-host.test.ts (22 tests) 10893ms
+   ✓ native harness through the real host > one Session, exact Need, recorded write, receipt replay, and reconnect cursor survive reopening  831ms
+   ✓ native harness through the real host > an unanswered Need remains resolvable after service restart  428ms
+   ✓ native harness through the real host > duplicate run ids are refused without breaking unrelated project startup  449ms
+   ✓ native harness through the real host > atomic run replacement retries a transient lock and surfaces a permanent failure  573ms
+   ✓ native harness through the real host > outside edits invalidate the exact write and remain untouched  473ms
+   ✓ native harness through the real host > abrupt exit at after-decision recovers the Store first and commits the harness observation once  1632ms
+   ✓ native harness through the real host > abrupt exit at journal recovers the Store first and commits the harness observation once  1774ms
+   ✓ native harness through the real host > abrupt exit at after-write recovers the Store first and commits the harness observation once  1743ms
+stderr | tests/work-admission.test.ts > durable task Work admission > failed sample admission persistence returns no phantom receipt
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\work-admission.test.ts:122:17)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at WorkService.need (F:\Achilles\diomedes-wt\codex-runtime-proof\server\work.ts:174:22)
+    at WorkService.start (F:\Achilles\diomedes-wt\codex-runtime-proof\server\work.ts:87:69)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:336:16
+
+stderr | tests/work-admission.test.ts > durable task Work admission > failed codex admission persistence returns no phantom receipt
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\work-admission.test.ts:122:17)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at NativeWorkService.fail (F:\Achilles\diomedes-wt\codex-runtime-proof\server\native-work.ts:642:22)
+    at NativeWorkService.start (F:\Achilles\diomedes-wt\codex-runtime-proof\server\native-work.ts:334:18)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:336:16
+
+stdout | tests/work-admission.test.ts > durable task Work admission > receipt replays perform no folder listing, document read, adapter call or persistence
+Work admission replay: 50 requests in 226.7 ms; no scans or writes.
+
+ ✓ tests/work-admission.test.ts (33 tests) 11623ms
+   ✓ durable task Work admission > the admitted native path previews, approves once, writes and restores exact bytes without Git  416ms
+   ✓ durable task Work admission > abrupt process exit before admission recovers without unsafe redispatch  1790ms
+   ✓ durable task Work admission > abrupt process exit admitted admission recovers without unsafe redispatch  2013ms
+   ✓ durable task Work admission > abrupt process exit dispatched admission recovers without unsafe redispatch  1944ms
+   ✓ durable task Work admission > receipt replays perform no folder listing, document read, adapter call or persistence  398ms
+   ✓ durable task Work admission > bounded receipt capacity refuses new commands without evicting existing identities  341ms
+ ✓ tests/harness-negative.test.ts (40 tests) 751ms
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed decision persistence creates no phantom receipt or write and can be retried
+Error: Synthetic disk full.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\approval-admission.test.ts:310:67)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at NativeWorkService.resolve (F:\Achilles\diomedes-wt\codex-runtime-proof\server\native-work.ts:601:22)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:336:16
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failure after acceptance but before journal preparation is durable not-applied and never redispatched
+Error: Synthetic preparation failure.
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\tests\approval-admission.test.ts:323:26
+    at file:///F:/Achilles/diomedes/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed journal recovery blocks later mutations until recovery finishes
+Error: Synthetic finalization disk fault.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\approval-admission.test.ts:336:15)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at Store.recover (F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:986:18)
+    at Store.recoverAndReload (F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:311:5)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:339:9
+
+stderr | tests/approval-admission.test.ts > exact native approval admission > failed journal recovery blocks later mutations until recovery finishes
+Error: Synthetic finalization disk fault.
+    at Store.<anonymous> (F:\Achilles\diomedes-wt\codex-runtime-proof\tests\approval-admission.test.ts:336:15)
+    at Store.mockCall (file:///F:/Achilles/diomedes/node_modules/@vitest/spy/dist/index.js:96:15)
+    at Store.persist (file:///F:/Achilles/diomedes/node_modules/tinyspy/dist/index.js:47:80)
+    at Store.recover (F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:986:18)
+    at Store.recoverAndReload (F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:311:5)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\server\store.ts:334:34
+
+stdout | tests/approval-admission.test.ts > exact native approval admission > receipt retention is bounded without eviction and replay stays free of project IO at capacity
+Approval replay at 1024 receipts: 50 requests in 114.7 ms, zero project IO or persistence; receipt metadata 1421150 bytes, full synthetic state 3225272 bytes.
+
+ ✓ tests/approval-admission.test.ts (46 tests) 45272ms
+   ✓ exact native approval admission > lost response and duplicate go-ahead return one immutable decision through two restarts  656ms
+   ✓ exact native approval admission > lost response and duplicate declined return one immutable decision through two restarts  414ms
+   ✓ exact native approval admission > approval is durable before the writer and the write carries its exact event link  464ms
+   ✓ exact native approval admission > rejects a changed displayed proposalDigest without using the writer  428ms
+   ✓ exact native approval admission > rejects a changed displayed actionDigest without using the writer  554ms
+   ✓ exact native approval admission > rejects a changed displayed baseDigest without using the writer  383ms
+   ✓ exact native approval admission > strict version and authority validation: {"protocolVersion":2}  438ms
+   ✓ exact native approval admission > strict version and authority validation: {"commandId":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}  1414ms
+   ✓ exact native approval admission > strict version and authority validation: {"actor":"owner"}  1063ms
+   ✓ exact native approval admission > strict version and authority validation: {"scope":"authenticated"}  834ms
+   ✓ exact native approval admission > strict version and authority validation: {"allowForTask":true}  473ms
+   ✓ exact native approval admission > strict version and authority validation: {"actionDigest":"bad"}  400ms
+   ✓ exact native approval admission > an unversioned caller cannot bypass an exact Need; sample requests remain compatible  305ms
+   ✓ exact native approval admission > denies a stale Brief.md including unchanged selected inputs and creation targets  303ms
+   ✓ exact native approval admission > denies a stale Draft.md including unchanged selected inputs and creation targets  345ms
+   ✓ exact native approval admission > competing decisions and command reuse cannot reinterpret an accepted action  487ms
+   ✓ exact native approval admission > expires at the boundary, but an accepted receipt replays after expiry without IO  465ms
+   ✓ exact native approval admission > expiry is rechecked at durable admission after asynchronous base validation  372ms
+   ✓ exact native approval admission > failed decision persistence creates no phantom receipt or write and can be retried  488ms
+   ✓ exact native approval admission > failure after acceptance but before journal preparation is durable not-applied and never redispatched  340ms
+   ✓ exact native approval admission > failed journal recovery blocks later mutations until recovery finishes  456ms
+   ✓ exact native approval admission > project, Host, Origin and client boundaries protect decisions and receipts  325ms
+   ✓ exact native approval admission > inconsistent saved version fails closed without rewriting project state  457ms
+   ✓ exact native approval admission > inconsistent saved digest fails closed without rewriting project state  655ms
+   ✓ exact native approval admission > inconsistent saved event fails closed without rewriting project state  368ms
+   ✓ exact native approval admission > inconsistent saved decision fails closed without rewriting project state  397ms
+   ✓ exact native approval admission > inconsistent saved action-bytes fails closed without rewriting project state  382ms
+   ✓ exact native approval admission > inconsistent saved execution fails closed without rewriting project state  396ms
+   ✓ exact native approval admission > abrupt exit at before-decision recovers once with the correct durable outcome  1370ms
+   ✓ exact native approval admission > abrupt exit at after-decision recovers once with the correct durable outcome  1606ms
+   ✓ exact native approval admission > abrupt exit at journal recovers once with the correct durable outcome  2314ms
+   ✓ exact native approval admission > abrupt exit at first-file recovers once with the correct durable outcome  2383ms
+   ✓ exact native approval admission > abrupt exit at after-files recovers once with the correct durable outcome  2851ms
+   ✓ exact native approval admission > abrupt exit at finalized recovers once with the correct durable outcome  2268ms
+   ✓ exact native approval admission > recovery preserves an outside text replacement and reports a conflict without replaying  1779ms
+   ✓ exact native approval admission > recovery preserves an outside binary replacement and reports a conflict without replaying  2609ms
+   ✓ exact native approval admission > recovery preserves an outside oversized replacement and reports a conflict without replaying  3081ms
+   ✓ exact native approval admission > recovery preserves an outside directory replacement and reports a conflict without replaying  2055ms
+   ✓ exact native approval admission > an inconsistent prepared action fails closed before any recovery write  1645ms
+   ✓ exact native approval admission > an inconsistent prepared missing-link fails closed before any recovery write  1608ms
+   ✓ exact native approval admission > an inconsistent prepared receipt fails closed before any recovery write  1977ms
+   ✓ exact native approval admission > a damaged content object cannot change the bytes authorized by a receipt  1706ms
+   ✓ exact native approval admission > receipt retention is bounded without eviction and replay stays free of project IO at capacity  1154ms
+stdout | tests/native-work.test.ts > member thread to real adapter glue > work/start forwards team config and tracks completion
+Fake app-server team configuration: {"url":"http://127.0.0.1:63186/mcp/team/d9bf23d36492","tokenEnv":"DIOMEDES_TEAM_S9D53CCB93E0F","slotId":"S9d53ccb93e0f","role":"lead","roleInstructions":"You are Astra, the leader of a small team working on the project 'Harbor Street restaurants' in Diomedes. You plan and delegate; members do the work; the person who owns the project approves anything that matters. Use the team tools: team_members to see the roster, team_task_create and team_task_update to put work on the board and hand it to a member (owner = their slot), team_send_message to give direction, team_read_messages to hear back. Diomedes applies file changes only after the person approves them, so describe changes as proposals. Keep messages short and specific. Do not claim work is done until a member reports it and the board shows it."}
+
+ ✓ tests/native-work.test.ts (45 tests) 13298ms
+   ✓ member thread to real adapter glue > ask forwards team config and tracks completion  1437ms
+   ✓ member thread to real adapter glue > work/start forwards team config and tracks completion  310ms
+   ✓ member thread to real adapter glue > unowned thread keeps all MCP disabled  1418ms
+   ✓ member thread to real adapter glue > other-engine thread keeps all MCP disabled  372ms
+   ✓ member thread to real adapter glue > waits for approval, then handles go-ahead and releases token  391ms
+   ✓ member thread to real adapter glue > waits for approval, then handles declined and releases token  347ms
+   ✓ guarded native file proposals > applies approved text through real history and review, with reversible deletion  658ms
+   ✓ guarded native file proposals > enforces one project session across native and sample work  330ms
+   ✓ guarded native file proposals > Ask Work uses the same asynchronous proposal controller and permits no-source new documents  313ms
+   ✓ guarded native file proposals > keeps notes local and requires a separate exact approval for every new proposal  403ms
+ ✓ tests/discovery.test.ts (25 tests) 9911ms
+   ✓ roster composition > GET /api/integrations keeps its shape and honours ?refresh=1  9487ms
+ ✓ tests/harness.test.ts (51 tests) 1871ms
+   ✓ crash after an external effect > a process exit after the effect leaves a durable reconciliation boundary  590ms
+ ✓ tests/integrations.test.ts (65 tests) 2457ms
+   ✓ opt-in Diomedes team boundary > stops after five re-lists if the team stays starting  1041ms
+   ✓ owned native JSON-line process transport > correlates responses and terminates its owned subprocess  471ms
+   ✓ owned native JSON-line process transport > surfaces protocol timeouts instead of success-shaped output  346ms
+ ✓ tests/team.test.ts (10 tests) 2825ms
+   ✓ team client routes > GET /team starts empty, POST members creates threads, messages and stop work, no token leakage  461ms
+   ✓ team MCP endpoint > loopback auth, method handling, and every tool with falsifiers  641ms
+   ✓ team wake > the sixth automatic wake inside ten minutes parks instead of starting  601ms
+ ✓ tests/work-start-client.test.ts (19 tests) 70ms
+ ✓ tests/approval-decisions-client.test.ts (37 tests) 107ms
+ ✓ tests/usage.test.ts (9 tests) 116ms
+ ✓ tests/models.test.ts (8 tests) 30ms
+ ✓ tests/harness-present.test.ts (8 tests) 8ms
+ ✓ tests/effort.test.ts (7 tests) 7ms
+ ✓ tests/modes.test.ts (5 tests) 4ms
+ ✓ tests/surface.test.ts (5 tests) 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/backend.test.ts > state reads stay fast with a cached documents listing > (b) SKIPPED_FOLDERS are never listed
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/backend.test.ts:1220:51
+    1218|     expect(paths.some((p) => p === 'artifacts/x.txt')).toBe(false);
+    1219|     expect(paths.some((p) => p === 'dist/y.md')).toBe(false);
+    1220|     expect(paths.some((p) => p === 'notes/z.md')).toBe(true);
+       |                                                   ^
+    1221|   });
+    1222|   test('(c) persisted state on disk contains no documents rows', async…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 17 passed (18)
+      Tests  1 failed | 482 passed (483)
+   Start at  01:57:50
+   Duration  151.33s (transform 958ms, setup 0ms, collect 8.20s, tests 130.81s, environment 4ms, prepare 3.15s)
+

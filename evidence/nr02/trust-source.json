@@ -1,0 +1,11 @@
+{
+  "source": "opus/trust-v1-20260909",
+  "commit": "5f1c69c412e8637a248d9524e39462a394c1fb8d",
+  "files": {
+    "server/trust/types.ts": "0bceea11e2fad673a807285f78511497fdbbfe2e",
+    "server/trust/revocation.ts": "19370b4d43abdf6c50d269d67bdd720019263364",
+    "server/trust/authority.ts": "40eee8b248aa3e5060bc5d42bc9e00f3c5b023e8",
+    "server/trust/index.ts": "94aabb066d2a0982d92dae864e8137e04ca2872e",
+    "tests/trust.test.ts": "7f868f4a2f7a55921b0884c9a814f2a5df60e1c3"
+  }
+}

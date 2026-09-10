@@ -1,0 +1,155 @@
+ExpectError: expect(locator).toHaveText(expected) failed
+
+Locator: getByRole('dialog').locator('pre')
+Expected: "# Fixture report·
+- Inspect the saved report
+- Review the exact change
+- Keep the recorded result
+"
+Timeout: 5000ms
+Error: element(s) not found
+
+Call log:
+  - Expect "toHaveText" getByRole('dialog').locator('pre') with timeout 5000ms
+  - waiting for getByRole('dialog').locator('pre')
+
+    at captureRawStack (F:\Achilles\diomedes\node_modules\playwright-core\lib\coreBundle.js:8588:17)
+    at callMatcherAsStep (F:\Achilles\diomedes\node_modules\playwright\lib\matchers\expect.js:13310:57)
+    at Object.toHaveText (F:\Achilles\diomedes\node_modules\playwright\lib\matchers\expect.js:13302:23)
+    at F:\Achilles\diomedes-wt\codex-runtime-proof\scripts\harness-desktop-smoke.mjs:76:59 {
+  matcherResult: {
+    name: 'toHaveText',
+    expected: '# Fixture report\n' +
+      '\n' +
+      '- Inspect the saved report\n' +
+      '- Review the exact change\n' +
+      '- Keep the recorded result\n',
+    message: 'expect(locator).toHaveText(expected) failed\n' +
+      '\n' +
+      "Locator: getByRole('dialog').locator('pre')\n" +
+      'Expected: "# Fixture report·\n' +
+      '- Inspect the saved report\n' +
+      '- Review the exact change\n' +
+      '- Keep the recorded result\n' +
+      '"\n' +
+      'Timeout: 5000ms\n' +
+      'Error: element(s) not found\n' +
+      '\n' +
+      'Call log:\n' +
+      `  - Expect "toHaveText" getByRole('dialog').locator('pre') with timeout 5000ms\n` +
+      "  - waiting for getByRole('dialog').locator('pre')\n",
+    pass: false,
+    actual: undefined,
+    log: [
+      `  - Expect "toHaveText" getByRole('dialog').locator('pre') with timeout 5000ms`,
+      "  - waiting for getByRole('dialog').locator('pre')"
+    ],
+    timeout: 5000,
+    ariaSnapshot: '- banner:\n' +
+      '  - button "Diomedes projects": DIOMEDES\n' +
+      '  - navigation "Open projects":\n' +
+      '    - button "Projects"\n' +
+      '    - button "Harbor Street restaurants"\n' +
+      '  - status: Something needs your OK in Harbor Street restaurants.\n' +
+      '  - button "Settings"\n' +
+      '  - button "Interface detail menu"\n' +
+      '- navigation "Project pages":\n' +
+      '  - button "Home Ctrl+1"\n' +
+      '  - button "Ask Ctrl+2"\n' +
+      '  - button "Plan Ctrl+3"\n' +
+      '  - button "Work 1"\n' +
+      '  - button "Review Ctrl+5"\n' +
+      '  - button "Tasks 1"\n' +
+      '  - button "Documents Ctrl+7"\n' +
+      '  - button "History 1"\n' +
+      '- main:\n' +
+      '  - heading "Format a fixture report" [level=1]\n' +
+      '  - text: Work, started 2:01 AM\n' +
+      '  - button "Stop"\n' +
+      '  - region "Needs your OK":\n' +
+      '    - heading "Needs your OK" [level=3]\n' +
+      '    - paragraph: Diomedes wants to Go ahead with propose_write?. This step asks for your OK before it runs. Nothing happens until you say go ahead, and your OK covers exactly this step and nothing else. This makes a change that is safe to repeat. Diomedes records it.\n' +
+      '    - button "Go ahead"\n' +
+      `    - button "Don't do this"\n` +
+      '    - button "Show me first"\n' +
+      '    - paragraph: Diomedes is paused until you decide.\n' +
+      '    - paragraph: This OK covers only this proposal. Expires 9/9/2026, 3:01:50 AM.\n' +
+      '  - strong: Waiting for your OK.\n' +
+      '  - text: Started at 2:01 AM. native-fixture, no model, session Se60a595a11a1, 13 events\n' +
+      '  - button "Stop"\n' +
+      '  - time: 2:01 AM\n' +
+      '  - paragraph: "Requested: Format the shipped synthetic fixture."\n' +
+      '  - time: 2:01 AM\n' +
+      '  - paragraph: Waiting to start.\n' +
+      '  - time: 2:01 AM\n' +
+      '  - paragraph: Working.\n' +
+      '  - time: 2:01 AM\n' +
+      '  - paragraph: Working.\n' +
+      '  - time: 2:01 AM\n' +
+      '  - paragraph: Working.\n' +
+      '  - time: 2:01 AM\n' +
+      '  - paragraph: Working.\n' +
+      '  - time: 2:01 AM\n' +
+      '  - paragraph: Working.\n' +
+      '  - time: 2:01 AM\n' +
+      '  - paragraph: Working.\n' +
+      '  - time: 2:01 AM\n' +
+      '  - paragraph: Working.\n' +
+      '  - time: 2:01 AM\n' +
+      '  - paragraph: Working.\n' +
+      '  - time: 2:01 AM\n' +
+      '  - paragraph: Working.\n' +
+      '  - time: 2:01 AM\n' +
+      '  - paragraph: Working.\n' +
+      '  - time: 2:01 AM\n' +
+      '  - paragraph: Working.\n' +
+      '  - time: 2:01 AM\n' +
+      '  - paragraph: "Waiting for your OK: propose_write."\n' +
+      '  - complementary:\n' +
+      '    - heading "Format a fixture report" [level=3]\n' +
+      '    - paragraph: Waiting for your OK. Diomedes, with your OK.\n' +
+      '    - paragraph: native-fixture, session Se60a595a11a1\n' +
+      '    - heading "Changes so far" [level=3]\n' +
+      '    - paragraph: No files have changed yet.\n' +
+      '    - heading "Details" [level=3]\n' +
+      '    - checkbox "Show log"\n' +
+      '    - text: Show log\n' +
+      '    - term: engine\n' +
+      '    - definition: native-fixture\n' +
+      '    - term: worker\n' +
+      '    - definition: "1"\n' +
+      '    - term: repository\n' +
+      '    - definition: none\n' +
+      '    - term: context\n' +
+      '    - definition: not reported\n' +
+      '    - term: events\n' +
+      '    - definition: "13"\n' +
+      '    - term: usage\n' +
+      '    - definition: ChatGPT subscription\n' +
+      '    - group: Leave a note\n' +
+      '    - region "Ask box":\n' +
+      '      - group "Work mode":\n' +
+      '        - button "Ask"\n' +
+      '        - button "Plan"\n' +
+      '        - button "Build"\n' +
+      '        - button "Fix"\n' +
+      '      - paragraph: Diomedes answers. Nothing in the project changes.\n' +
+      '      - textbox "Ask, plan, or say what to do":\n' +
+      '        - /placeholder: Ask a question about this project...\n' +
+      '      - button "Attach a document"\n' +
+      '      - button "Send" [disabled]\n' +
+      '      - text: Sample work, on this computer\n' +
+      '- dialog "Format a fixture report":\n' +
+      '  - heading "Format a fixture report" [level=2]\n' +
+      '  - button "Close dialog"\n' +
+      '  - paragraph: Format the shipped synthetic fixture.\n' +
+      '  - text: Move to\n' +
+      '  - combobox "Move to" [disabled]:\n' +
+      '    - option "To do"\n' +
+      '    - option "Working"\n' +
+      '    - option "Waiting for you" [selected]\n' +
+      '    - option "Done"\n' +
+      '  - paragraph: T1, 1 sessions\n' +
+      '  - button "Close"'
+  }
+}

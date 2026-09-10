@@ -1,0 +1,10 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/windows-release
+
+··························································
+
+ Test Files  2 passed (2)
+      Tests  58 passed (58)
+   Start at  06:02:01
+   Duration  3.65s (transform 121ms, setup 0ms, collect 355ms, tests 1.56s, environment 0ms, prepare 190ms)
+

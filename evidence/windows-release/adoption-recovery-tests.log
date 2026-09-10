@@ -1,0 +1,14 @@
+
+ RUN  v3.2.7 F:/Achilles/diomedes-wt/windows-release
+
+stderr | tests/connections-desktop.test.ts > durable signed ingress coalesces replay, rejects conflicts, and registered write never dispatches
+Skipped a harness run whose capability is unavailable.
+Skipped a harness run whose capability is unavailable.
+
+········
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  06:05:46
+   Duration  4.83s (transform 358ms, setup 0ms, collect 937ms, tests 1.74s, environment 0ms, prepare 99ms)
+

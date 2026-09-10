@@ -1,0 +1,362 @@
+MakeNSIS v3.12 - Copyright 1999-2026 Contributors
+See the file COPYING for license details.
+Credits can be found in the Users Manual.
+
+Processing config: F:\Achilles\diomedes-wt\windows-release\test-results\installer-tools\nsis-3.12\nsis-3.12\nsisconf.nsh
+Processing default plugins: "F:\Achilles\diomedes-wt\windows-release\test-results\installer-tools\nsis-3.12\nsis-3.12\Plugins\x86-unicode\*.dll"
+ + AdvSplash::show
+ + Banner::destroy
+ + Banner::getWindow
+ + Banner::show
+ + BgImage::AddImage
+ + BgImage::AddText
+ + BgImage::Clear
+ + BgImage::Destroy
+ + BgImage::Redraw
+ + BgImage::SetBg
+ + BgImage::SetReturn
+ + BgImage::Sound
+ + Dialer::AttemptConnect
+ + Dialer::AutodialHangup
+ + Dialer::AutodialOnline
+ + Dialer::AutodialUnattended
+ + Dialer::GetConnectedState
+ + InstallOptions::dialog
+ + InstallOptions::initDialog
+ + InstallOptions::make_unicode
+ + InstallOptions::show
+ + LangDLL::LangDialog
+ + Math::Script
+ + NSISdl::download
+ + NSISdl::download_quiet
+ + Splash::show
+ + StartMenu::Init
+ + StartMenu::Select
+ + StartMenu::Show
+ + System::Alloc
+ + System::Call
+ + System::Copy
+ + System::Free
+ + System::Get
+ + System::Int64Op
+ + System::Store
+ + System::StrAlloc
+ + TypeLib::GetLibVersion
+ + TypeLib::Register
+ + TypeLib::UnRegister
+ + UserInfo::GetAccountType
+ + UserInfo::GetName
+ + UserInfo::GetOriginalAccountType
+ + VPatch::GetFileCRC32
+ + VPatch::GetFileMD5
+ + VPatch::vpatchfile
+ + nsDialogs::Create
+ + nsDialogs::CreateControl
+ + nsDialogs::CreateItem
+ + nsDialogs::CreateTimer
+ + nsDialogs::GetUserData
+ + nsDialogs::KillTimer
+ + nsDialogs::OnBack
+ + nsDialogs::OnChange
+ + nsDialogs::OnClick
+ + nsDialogs::OnNotify
+ + nsDialogs::SelectFileDialog
+ + nsDialogs::SelectFolderDialog
+ + nsDialogs::SetRTL
+ + nsDialogs::SetUserData
+ + nsDialogs::Show
+ + nsExec::Exec
+ + nsExec::ExecToLog
+ + nsExec::ExecToStack
+
+!define: "MUI_INSERT_NSISCONF"=""
+
+Changing directory to: "F:\Achilles\diomedes-wt\windows-release\test-results\installer-tools\generated"
+
+Processing script file: "F:\Achilles\diomedes-wt\windows-release\test-results\installer-tools\generated\Diomedes-Experimental-0.1.1-unsigned-setup.nsi" (ACP)
+Unicode: true
+Processing default plugins: "F:\Achilles\diomedes-wt\windows-release\test-results\installer-tools\nsis-3.12\nsis-3.12\Plugins\x86-unicode\*.dll"
+
+SetCompressor: /SOLID zlib
+!include: "F:\Achilles\diomedes-wt\windows-release\test-results\installer-tools\nsis-3.12\nsis-3.12\Include\MUI2.nsh" (UTF8)
+!include: "F:\Achilles\diomedes-wt\windows-release\test-results\installer-tools\nsis-3.12\nsis-3.12\Contrib\Modern UI 2\MUI2.nsh" (UTF8)
+NSIS Modern User Interface version 2.1 - Copyright 2002-2026 Joost Verburg (F:\Achilles\diomedes-wt\windows-release\test-results\installer-tools\nsis-3.12\nsis-3.12\Contrib\Modern UI 2\MUI2.nsh:14)
+!include: closed: "F:\Achilles\diomedes-wt\windows-release\test-results\installer-tools\nsis-3.12\nsis-3.12\Contrib\Modern UI 2\MUI2.nsh"
+!include: closed: "F:\Achilles\diomedes-wt\windows-release\test-results\installer-tools\nsis-3.12\nsis-3.12\Include\MUI2.nsh"
+!define: "PRODUCT_ID"="Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001"
+!define: "PRODUCT_NAME"="Diomedes Experimental 2026-09-09 (Unsigned)"
+!define: "APP_VERSION"="0.1.1"
+!define: "MARKER"=".diomedes-experimental-20260909"
+!define: "PRODUCT_KEY"="Software\Diomedes\Experimental\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001"
+!define: "UNINSTALL_KEY"="Software\Microsoft\Windows\CurrentVersion\Uninstall\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001"
+Name: "Diomedes Experimental 2026-09-09 (Unsigned)"
+OutFile: "F:\Achilles\deliverables\windows-release-20260909\Diomedes-Experimental-0.1.1-unsigned-setup.exe"
+InstallDir: "$LOCALAPPDATA\Programs\Diomedes Experimental 20260909"
+InstallRegKey: "HKCU\Software\Diomedes\Experimental\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001\InstallDir"
+BrandingText: "Experimental unsigned build"
+ShowInstDetails: show
+ShowUninstDetails: show
+VIAddVersionKey: "ProductName" "Diomedes Experimental 2026-09-09 (Unsigned)"
+VIAddVersionKey: "FileDescription" "Unsigned experimental per-user installer"
+VIAddVersionKey: "FileVersion" "0.1.1"
+VIAddVersionKey: "ProductVersion" "0.1.1"
+VIAddVersionKey: "CompanyName" "Diomedes"
+VIAddVersionKey: "LegalCopyright" "Copyright (C) 2026 Diomedes contributors"
+!define: "MUI_ABORTWARNING"=""
+!define: "MUI_FINISHPAGE_NOAUTOCLOSE"=""
+!insertmacro: MUI_PAGE_WELCOME
+!insertmacro: end of MUI_PAGE_WELCOME
+!insertmacro: MUI_PAGE_DIRECTORY
+!insertmacro: end of MUI_PAGE_DIRECTORY
+!insertmacro: MUI_PAGE_INSTFILES
+!insertmacro: end of MUI_PAGE_INSTFILES
+!insertmacro: MUI_PAGE_FINISH
+!insertmacro: end of MUI_PAGE_FINISH
+!insertmacro: MUI_UNPAGE_CONFIRM
+!insertmacro: end of MUI_UNPAGE_CONFIRM
+!insertmacro: MUI_UNPAGE_INSTFILES
+!insertmacro: end of MUI_UNPAGE_INSTFILES
+!insertmacro: MUI_LANGUAGE
+!insertmacro: end of MUI_LANGUAGE
+Function: "EnsureSafeInstallDir"
+IfFileExists: "$INSTDIR\.diomedes-experimental-20260909" ? marker_present : 
+IfFileExists: "$INSTDIR\*.*" ? unsafe : safe
+FileOpen: $INSTDIR\.diomedes-experimental-20260909 as r -> $0
+IfErrors ?unsafe:
+FileRead: $0->$1 (max:)
+FileClose: $0
+StrCmp "$1" "Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001" equal=safe, nonequal=unsafe
+MessageBox: 16: "This folder is not an empty Diomedes experimental install owned by Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001. Choose an empty folder."
+SetErrorLevel: 2
+Quit
+FunctionEnd
+Section: "Install Diomedes experimental app" ->(SectionInstall)
+SetShellVarContext: current
+Call "EnsureSafeInstallDir"
+SetOutPath: "$INSTDIR\app"
+File: "chrome_100_percent.pak" 719654 bytes
+File: "chrome_200_percent.pak" 1269017 bytes
+File: "d3dcompiler_47.dll" 4741488 bytes
+File: "Diomedes.exe" 246201856 bytes
+File: "dxcompiler.dll" 25745408 bytes
+File: "dxil.dll" 1509760 bytes
+File: "ffmpeg.dll" 3113472 bytes
+File: "icudtl.dat" 10876560 bytes
+File: "LICENSE" 1096 bytes
+File: "LICENSES.chromium.html" 20472830 bytes
+SetOutPath: "$INSTDIR\app\locales"
+File: "af.pak" 636155 bytes
+File: "am.pak" 1029450 bytes
+File: "ar.pak" 1130933 bytes
+File: "bg.pak" 1178203 bytes
+File: "bn.pak" 1513545 bytes
+File: "ca.pak" 716908 bytes
+File: "cs.pak" 743351 bytes
+File: "da.pak" 666465 bytes
+File: "de.pak" 717834 bytes
+File: "el.pak" 1295538 bytes
+File: "en-GB.pak" 580030 bytes
+File: "en-US.pak" 586582 bytes
+File: "es-419.pak" 707635 bytes
+File: "es.pak" 703926 bytes
+File: "et.pak" 642216 bytes
+File: "fa.pak" 1063054 bytes
+File: "fi.pak" 655113 bytes
+File: "fil.pak" 741385 bytes
+File: "fr.pak" 763453 bytes
+File: "gu.pak" 1495625 bytes
+File: "he.pak" 928748 bytes
+File: "hi.pak" 1586592 bytes
+File: "hr.pak" 715279 bytes
+File: "hu.pak" 765640 bytes
+File: "id.pak" 635080 bytes
+File: "it.pak" 693990 bytes
+File: "ja.pak" 842132 bytes
+File: "kn.pak" 1720240 bytes
+File: "ko.pak" 718709 bytes
+File: "lt.pak" 777281 bytes
+File: "lv.pak" 774751 bytes
+File: "ml.pak" 1767850 bytes
+File: "mr.pak" 1467313 bytes
+File: "ms.pak" 668356 bytes
+File: "nb.pak" 638121 bytes
+File: "nl.pak" 664767 bytes
+File: "pl.pak" 742064 bytes
+File: "pt-BR.pak" 697044 bytes
+File: "pt-PT.pak" 701056 bytes
+File: "ro.pak" 728144 bytes
+File: "ru.pak" 1200996 bytes
+File: "sk.pak" 755475 bytes
+File: "sl.pak" 722720 bytes
+File: "sr.pak" 1112919 bytes
+File: "sv.pak" 646537 bytes
+File: "sw.pak" 685130 bytes
+File: "ta.pak" 1758067 bytes
+File: "te.pak" 1629379 bytes
+File: "th.pak" 1368866 bytes
+File: "tr.pak" 697368 bytes
+File: "uk.pak" 1211565 bytes
+File: "ur.pak" 1047994 bytes
+File: "vi.pak" 830059 bytes
+File: "zh-CN.pak" 592116 bytes
+File: "zh-TW.pak" 583860 bytes
+SetOutPath: "$INSTDIR\app\resources"
+File: "app.asar" 4826233 bytes
+SetOutPath: "$INSTDIR\app\resources\native-runtime"
+File: "codex-command-runner.exe" 8204592 bytes
+File: "codex-windows-sandbox-setup.exe" 15413040 bytes
+File: "codex.exe" 295408944 bytes
+SetOutPath: "$INSTDIR\app"
+File: "resources.pak" 12435436 bytes
+File: "snapshot_blob.bin" 368776 bytes
+File: "v8_context_snapshot.bin" 742208 bytes
+File: "version" 6 bytes
+File: "vk_swiftshader_icd.json" 106 bytes
+File: "vk_swiftshader.dll" 5520384 bytes
+File: "vulkan-1.dll" 939008 bytes
+FileOpen: $INSTDIR\.diomedes-experimental-20260909 as w -> $0
+FileWrite: Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001->$0
+FileClose: $0
+WriteUninstaller: "$INSTDIR\Uninstall Diomedes Experimental.exe"
+CreateDirectory: "$SMPROGRAMS\Diomedes Experimental 20260909"
+CreateShortcut: "$SMPROGRAMS\Diomedes Experimental 20260909\Diomedes Experimental.lnk"->"$INSTDIR\app\Diomedes.exe"  icon:,0, nwd=0, showmode=0x0, hotkey=0x0, comment=
+WriteRegStr: HKCU\Software\Diomedes\Experimental\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001\InstallDir=$INSTDIR
+WriteRegStr: HKCU\Software\Diomedes\Experimental\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001\ProductId=Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001
+WriteRegStr: HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001\DisplayName=Diomedes Experimental 2026-09-09 (Unsigned)
+WriteRegStr: HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001\DisplayVersion=0.1.1
+WriteRegStr: HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001\DisplayIcon=$INSTDIR\app\Diomedes.exe
+WriteRegStr: HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001\InstallLocation=$INSTDIR
+WriteRegStr: HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001\UninstallString="$INSTDIR\Uninstall Diomedes Experimental.exe"
+WriteRegDWORD: HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001\NoModify=1
+WriteRegDWORD: HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001\NoRepair=1
+SectionEnd
+Function: "un.VerifyOwnership"
+IfFileExists: "$INSTDIR\.diomedes-experimental-20260909" ? marker_present : 
+Goto: unsafe
+FileOpen: $INSTDIR\.diomedes-experimental-20260909 as r -> $0
+IfErrors ?unsafe:
+FileRead: $0->$1 (max:)
+FileClose: $0
+StrCmp "$1" "Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001" equal=safe, nonequal=unsafe
+MessageBox: 16: "The experimental ownership marker is missing or does not match. Nothing was removed."
+SetErrorLevel: 2
+Quit
+FunctionEnd
+Section: "Uninstall"
+SetShellVarContext: current
+Call "un.VerifyOwnership"
+Delete: "$SMPROGRAMS\Diomedes Experimental 20260909\Diomedes Experimental.lnk"
+RMDir: "$SMPROGRAMS\Diomedes Experimental 20260909"
+Delete: "$INSTDIR\app\chrome_100_percent.pak"
+Delete: "$INSTDIR\app\chrome_200_percent.pak"
+Delete: "$INSTDIR\app\d3dcompiler_47.dll"
+Delete: "$INSTDIR\app\Diomedes.exe"
+Delete: "$INSTDIR\app\dxcompiler.dll"
+Delete: "$INSTDIR\app\dxil.dll"
+Delete: "$INSTDIR\app\ffmpeg.dll"
+Delete: "$INSTDIR\app\icudtl.dat"
+Delete: "$INSTDIR\app\LICENSE"
+Delete: "$INSTDIR\app\LICENSES.chromium.html"
+Delete: "$INSTDIR\app\locales\af.pak"
+Delete: "$INSTDIR\app\locales\am.pak"
+Delete: "$INSTDIR\app\locales\ar.pak"
+Delete: "$INSTDIR\app\locales\bg.pak"
+Delete: "$INSTDIR\app\locales\bn.pak"
+Delete: "$INSTDIR\app\locales\ca.pak"
+Delete: "$INSTDIR\app\locales\cs.pak"
+Delete: "$INSTDIR\app\locales\da.pak"
+Delete: "$INSTDIR\app\locales\de.pak"
+Delete: "$INSTDIR\app\locales\el.pak"
+Delete: "$INSTDIR\app\locales\en-GB.pak"
+Delete: "$INSTDIR\app\locales\en-US.pak"
+Delete: "$INSTDIR\app\locales\es-419.pak"
+Delete: "$INSTDIR\app\locales\es.pak"
+Delete: "$INSTDIR\app\locales\et.pak"
+Delete: "$INSTDIR\app\locales\fa.pak"
+Delete: "$INSTDIR\app\locales\fi.pak"
+Delete: "$INSTDIR\app\locales\fil.pak"
+Delete: "$INSTDIR\app\locales\fr.pak"
+Delete: "$INSTDIR\app\locales\gu.pak"
+Delete: "$INSTDIR\app\locales\he.pak"
+Delete: "$INSTDIR\app\locales\hi.pak"
+Delete: "$INSTDIR\app\locales\hr.pak"
+Delete: "$INSTDIR\app\locales\hu.pak"
+Delete: "$INSTDIR\app\locales\id.pak"
+Delete: "$INSTDIR\app\locales\it.pak"
+Delete: "$INSTDIR\app\locales\ja.pak"
+Delete: "$INSTDIR\app\locales\kn.pak"
+Delete: "$INSTDIR\app\locales\ko.pak"
+Delete: "$INSTDIR\app\locales\lt.pak"
+Delete: "$INSTDIR\app\locales\lv.pak"
+Delete: "$INSTDIR\app\locales\ml.pak"
+Delete: "$INSTDIR\app\locales\mr.pak"
+Delete: "$INSTDIR\app\locales\ms.pak"
+Delete: "$INSTDIR\app\locales\nb.pak"
+Delete: "$INSTDIR\app\locales\nl.pak"
+Delete: "$INSTDIR\app\locales\pl.pak"
+Delete: "$INSTDIR\app\locales\pt-BR.pak"
+Delete: "$INSTDIR\app\locales\pt-PT.pak"
+Delete: "$INSTDIR\app\locales\ro.pak"
+Delete: "$INSTDIR\app\locales\ru.pak"
+Delete: "$INSTDIR\app\locales\sk.pak"
+Delete: "$INSTDIR\app\locales\sl.pak"
+Delete: "$INSTDIR\app\locales\sr.pak"
+Delete: "$INSTDIR\app\locales\sv.pak"
+Delete: "$INSTDIR\app\locales\sw.pak"
+Delete: "$INSTDIR\app\locales\ta.pak"
+Delete: "$INSTDIR\app\locales\te.pak"
+Delete: "$INSTDIR\app\locales\th.pak"
+Delete: "$INSTDIR\app\locales\tr.pak"
+Delete: "$INSTDIR\app\locales\uk.pak"
+Delete: "$INSTDIR\app\locales\ur.pak"
+Delete: "$INSTDIR\app\locales\vi.pak"
+Delete: "$INSTDIR\app\locales\zh-CN.pak"
+Delete: "$INSTDIR\app\locales\zh-TW.pak"
+Delete: "$INSTDIR\app\resources\app.asar"
+Delete: "$INSTDIR\app\resources\native-runtime\codex-command-runner.exe"
+Delete: "$INSTDIR\app\resources\native-runtime\codex-windows-sandbox-setup.exe"
+Delete: "$INSTDIR\app\resources\native-runtime\codex.exe"
+Delete: "$INSTDIR\app\resources.pak"
+Delete: "$INSTDIR\app\snapshot_blob.bin"
+Delete: "$INSTDIR\app\v8_context_snapshot.bin"
+Delete: "$INSTDIR\app\version"
+Delete: "$INSTDIR\app\vk_swiftshader_icd.json"
+Delete: "$INSTDIR\app\vk_swiftshader.dll"
+Delete: "$INSTDIR\app\vulkan-1.dll"
+RMDir: "$INSTDIR\app\resources\native-runtime"
+RMDir: "$INSTDIR\app\resources"
+RMDir: "$INSTDIR\app\locales"
+RMDir: "$INSTDIR\app"
+DeleteRegKey: HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001
+DeleteRegKey: HKCU\Software\Diomedes\Experimental\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001
+Delete: "$INSTDIR\.diomedes-experimental-20260909"
+Delete: "$INSTDIR\Uninstall Diomedes Experimental.exe"
+RMDir: "$INSTDIR"
+SectionEnd
+
+Processed 1 file, writing output (x86-unicode):
+Adding plug-ins initializing function... Done!
+Processing pages... Done!
+Removing unused resources... Done!
+Generating language tables... Done!
+Generating uninstaller... Done!
+
+Output: "F:\Achilles\deliverables\windows-release-20260909\Diomedes-Experimental-0.1.1-unsigned-setup.exe"
+Install: 4 pages (256 bytes), 1 section (2072 bytes), 463 instructions (12964 bytes), 270 strings (8762 bytes), 1 language table (302 bytes).
+Uninstall: 2 pages (192 bytes), 1 section (2072 bytes), 148 instructions (4144 bytes), 185 strings (7308 bytes), 1 language table (250 bytes).
+Datablock optimizer saved 26498 bytes (~0.0%).
+
+Using zlib (compress whole) compression.
+
+EXE header size:               54784 / 40960 bytes
+Install code:                          (24820 bytes)
+Install data:                          (709202309 bytes)
+Uninstall code+data:                   (28330 bytes)
+Compressed data:           266216813 / 709255459 bytes
+CRC (0x1CE90010):                  4 / 4 bytes
+
+Total size:                266271601 / 709296423 bytes (37.5%)
+Installer: F:\Achilles\deliverables\windows-release-20260909\Diomedes-Experimental-0.1.1-unsigned-setup.exe
+Manifest: F:\Achilles\deliverables\windows-release-20260909\Diomedes-Experimental-0.1.1-unsigned-setup.exe.json
+SHA-256: e487e62f50a6aabb7ecc0244d1c0ce997420a8c1a48eb0e87bb1770d1622f07f
+Authenticode: NotSigned (experimental build)

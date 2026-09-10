@@ -1,0 +1,24 @@
+docs/releases/INSTALLER_HANDOFF.md:3: trailing whitespace.
++**Roadmap basis:** initial repository `.5`; final local reconciliation `.7` over cloud `.6`.  
+docs/releases/INSTALLER_HANDOFF.md:4: trailing whitespace.
++**Product identifier:** `Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001`  
+docs/releases/INSTALLER_HANDOFF.md:79: trailing whitespace.
++**BUILD STATUS:** real 0.1.1 payload and installer verified.  
+docs/releases/INSTALLER_HANDOFF.md:80: trailing whitespace.
++**PUBLICATION STATUS:** not published.  
+docs/releases/NATIVE_NOTICE_REVIEW.md:3: trailing whitespace.
++**Reviewed:** 2026-09-09  
+docs/releases/NATIVE_NOTICE_REVIEW.md:4: trailing whitespace.
++**Upstream release:** `openai/codex` tag `rust-v0.153.4`  
+docs/releases/NOTICES_HANDOFF.md:3: trailing whitespace.
++**Roadmap basis:** initial mirror `.5`; final local reconciliation `.7` over cloud `.6`.  
+docs/releases/NOTICES_HANDOFF.md:4: trailing whitespace.
++**Application version:** `0.1.1`  
+docs/releases/NOTICES_HANDOFF.md:96: trailing whitespace.
++**BUILD STATUS:** available notices included in final package/ZIP/installer.  
+docs/releases/NOTICES_HANDOFF.md:97: trailing whitespace.
++**PUBLICATION STATUS:** unpublished; complete native dependency inventory remains an evidence gap.  
+licenses/DEPENDENCIES.txt:732: new blank line at EOF.
+licenses/THIRD_PARTY_NOTICES.md:3260: trailing whitespace.
++Copyright (c) 2019 
+licenses/THIRD_PARTY_NOTICES.md:3280: new blank line at EOF.

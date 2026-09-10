@@ -1,0 +1,27 @@
+[
+  {
+    "id": "9c92769a6954",
+    "name": "Synthetic harness proof",
+    "folder": "F:\\Achilles\\diomedes-wt\\windows-release\\evidence\\windows-release\\provider-smoke-sol-1\\projects\\Synthetic harness proof",
+    "createdAt": "2026-09-09T09:55:23.874Z",
+    "lastOpenedAt": "2026-09-09T09:55:23.874Z",
+    "plans": [],
+    "references": [],
+    "repository": {
+      "present": false
+    },
+    "leftOff": null,
+    "counts": {
+      "running": 0,
+      "changesWaiting": 0,
+      "waitingForYou": 0,
+      "historyToday": 0
+    },
+    "status": {
+      "needsYou": 0,
+      "working": 0,
+      "tasksDone": 0,
+      "tasksTotal": 0
+    }
+  }
+]
