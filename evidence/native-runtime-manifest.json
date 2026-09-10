@@ -1,28 +1,28 @@
 {
-  "preparedAt": "2026-09-05T08:32:36.206Z",
+  "preparedAt": "2026-09-08T10:31:39.657Z",
   "version": "codex-cli 0.153.4",
   "scope": "Local copy of three matching installed binaries; no global installation or credential changes.",
   "files": [
     {
       "name": "codex.exe",
-      "source": "C:\\Users\\andre\\AppData\\Local\\OpenAI\\Codex\\bin\\27d6a192e9c98618\\codex.exe",
-      "destination": "F:\\Achilles\\diomedes\\.data\\native-runtime\\codex.exe",
+      "source": "F:\\Achilles\\diomedes\\.data\\native-runtime\\codex.exe",
+      "destination": "F:\\Achilles\\diomedes-wt\\codex-foundation\\.data\\native-runtime\\codex.exe",
       "sha256": "a1cf6360ca71918d5466bc3a32d9f18b7044c9128756d1949e715d277b88c9b6",
-      "copied": false
+      "copied": true
     },
     {
       "name": "codex-command-runner.exe",
-      "source": "C:\\Users\\andre\\AppData\\Local\\OpenAI\\Codex\\bin\\27d6a192e9c98618\\codex-command-runner.exe",
-      "destination": "F:\\Achilles\\diomedes\\.data\\native-runtime\\codex-command-runner.exe",
+      "source": "F:\\Achilles\\diomedes\\.data\\native-runtime\\codex-command-runner.exe",
+      "destination": "F:\\Achilles\\diomedes-wt\\codex-foundation\\.data\\native-runtime\\codex-command-runner.exe",
       "sha256": "08b56828cca57c83d14f03eb9ec62c73a2cd6648248cc731ae8fedd5fa3ae566",
-      "copied": false
+      "copied": true
     },
     {
       "name": "codex-windows-sandbox-setup.exe",
-      "source": "C:\\Users\\andre\\AppData\\Local\\OpenAI\\Codex\\bin\\27d6a192e9c98618\\codex-windows-sandbox-setup.exe",
-      "destination": "F:\\Achilles\\diomedes\\.data\\native-runtime\\codex-windows-sandbox-setup.exe",
+      "source": "F:\\Achilles\\diomedes\\.data\\native-runtime\\codex-windows-sandbox-setup.exe",
+      "destination": "F:\\Achilles\\diomedes-wt\\codex-foundation\\.data\\native-runtime\\codex-windows-sandbox-setup.exe",
       "sha256": "682cf7b351a871f3479b78fe3b7ea7348554de655bd98b0f322cef2d006a8d62",
-      "copied": false
+      "copied": true
     }
   ]
 }

@@ -6,6 +6,7 @@ import type {
   Conversation,
   Owner,
   Page,
+  ProjectState,
   Session,
   Settings,
   TaskState,
@@ -25,6 +26,7 @@ import { effortFor } from '../shared/effort.js';
 import type { UsageSnapshot } from '../shared/types.js';
 import { mountTeamRoutes } from './team/routes.js';
 import { roleInstructions } from './team/prompts.js';
+import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
 
 interface AppOptions {
   dataDir: string;
@@ -57,6 +59,13 @@ const choice = <const T extends string>(value: unknown, values: readonly T[], na
 };
 const THREAD_PERMISSIONS: readonly ThreadPermission[] = ['show-first', 'task'];
 const PERMISSION_UNAVAILABLE = 'That permission mode is not available in this version.';
+/**
+ * The SSE `state` fan-out never carries the documents listing: it can hold
+ * 10,000 rows and the client already refetches after any event.
+ */
+export function statePayload(state: ProjectState): ProjectState {
+  return { ...state, documents: [] };
+}
 function parseThreadPermission(value: unknown): ThreadPermission {
   if (typeof value !== 'string' || !THREAD_PERMISSIONS.includes(value as ThreadPermission))
     throw new ApiError(400, PERMISSION_UNAVAILABLE);
@@ -836,8 +845,12 @@ export async function createApp(options: AppOptions) {
   app.post(
     '/api/projects/:id/work/start',
     route(async (req) => {
-      const b = body(req);
+      const supplied = body(req);
+      const command = parseWorkCommand(supplied);
+      const b = command?.request ?? supplied;
       const projectId = id(req);
+      const state = store.state(projectId);
+      const taskId = asString(b.taskId, 'a task', 100);
       const threadId =
         b.threadId === undefined || b.threadId === null
           ? undefined
@@ -850,7 +863,14 @@ export async function createApp(options: AppOptions) {
       }
       const selectedRoute =
         b.route === undefined ? 'sample' : choice(b.route, ['sample', 'codex'], 'service');
+      const team = teamForThread(req, projectId, threadId);
+      if (command && team)
+        throw new ApiError(409, 'Saved Work commands for team helpers are not available yet.', {
+          code: 'unsupported_work_target',
+        });
       if (selectedRoute === 'codex') {
+        if (!store.settings.services?.codex)
+          throw new ApiError(409, 'Turn Codex on in Settings before using it.');
         if (b.consent !== true)
           throw new ApiError(
             409,
@@ -862,30 +882,50 @@ export async function createApp(options: AppOptions) {
             400,
             'Provide the explicitly selected source documents, or an empty list to propose new files.',
           );
-        const started = await nativeWork.start(projectId, asString(b.taskId, 'a task', 100), {
+      }
+      // Recheck the current local scope and service consent before returning a cached
+      // receipt. Replay never scans source files or dispatches another adapter call.
+      if (!state.tasks.some((task) => task.id === taskId && !task.deletedAt))
+        throw new ApiError(404, 'This task was not found.');
+      if (command) {
+        const previous = store.workCommand(
+          projectId, command.admission.commandId, command.admission.payloadDigest,
+        );
+        if (previous) return structuredClone(previous);
+        store.checkWorkReceiptCapacity(projectId);
+      }
+      if (selectedRoute === 'codex') {
+        return nativeWork.start(projectId, taskId, {
           instruction:
             b.instruction === undefined
               ? undefined
               : asString(b.instruction, 'an instruction', 16000),
-          sources: b.sources.map(relativeName),
+          sources: Array.isArray(b.sources) ? b.sources.map(relativeName) : [],
           consent: true,
-          team: teamForThread(req, projectId, threadId),
+          team,
+          permission: threadPermission,
+          admission: command?.admission,
         });
-        const stored = store.state(projectId).sessions.find((s) => s.id === started.id)!;
-        stored.permission = threadPermission;
-        await store.persist(store.state(projectId));
-        return stored;
       }
-      const started = await work.start(
+      return work.start(
         projectId,
-        asString(b.taskId, 'a task', 100),
+        taskId,
         typeof b.instruction === 'string' ? b.instruction : '',
         b.demo === 'fault',
+        { permission: threadPermission, admission: command?.admission },
       );
-      const stored = store.state(projectId).sessions.find((s) => s.id === started.id)!;
-      stored.permission = threadPermission;
-      await store.persist(store.state(projectId));
-      return stored;
+    }),
+  );
+  app.get(
+    '/api/projects/:id/work/commands/:commandId',
+    route(async (req) => {
+      const session = store.workCommand(
+        id(req), validateWorkCommandId(String(req.params.commandId)),
+      );
+      if (!session) throw new ApiError(404, 'This Work command was not found.', {
+        code: 'work_command_not_found',
+      });
+      return structuredClone(session);
     }),
   );
   app.post(
@@ -1588,7 +1628,7 @@ export async function createApp(options: AppOptions) {
     };
     const listener = (projectId: string) => {
       const state = store.state(projectId);
-      send('state', { projectId, state });
+      send('state', { projectId, state: statePayload(state) });
       for (const event of [
         'project',
         'tasks',

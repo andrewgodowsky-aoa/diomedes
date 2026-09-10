@@ -12,6 +12,21 @@ remote service of its own. When you switch a helper on, that helper's own sign-i
 
 Diomedes Systems LLC. Version 0.1.0, a working prototype.
 
+## Task Work recovery
+
+Task Start in Workbook and Console now saves a command identity before sending it.
+If a response is lost, the same request finds the original Work session instead of
+starting another one. The receipt, session and admission History event are saved
+together before the native helper is called. A host restart retains the receipt and
+marks interrupted Work stopped; it does not silently repeat a model call or apply a
+pending proposal.
+
+This first foundation slice covers task Start on this computer. Composer sends,
+team starts and approval decisions do not yet share these command receipts. Device
+authentication, durable event replay and approval expiry remain later foundation
+work. See [the implementation and verification record](docs/implementation/2026-09-08-work-admission.md)
+for acceptance gates, limits and evidence.
+
 ## Two surfaces over one project
 
 There is one model underneath and two ways to see it. Switch in the top-right menu or

@@ -120,11 +120,26 @@ export interface Need {
   preview?: Change[];
 }
 export type ThreadPermission = 'show-first' | 'task';
+/** Immutable receipt for one admitted task Work command in the local prototype. */
+export interface WorkReceipt {
+  readonly protocolVersion: 1;
+  readonly commandId: string;
+  readonly payloadDigest: string;
+  readonly projectId: string;
+  readonly taskId: string;
+  readonly sessionId: string;
+  readonly eventId: string;
+  readonly admittedAt: string;
+  readonly route: Route;
+  /** This is the existing loopback trust boundary, not a device authentication claim. */
+  readonly scope: 'local-prototype';
+}
 export interface Session {
   id: string;
   taskId: string;
   slotId?: Slot;
   permission?: ThreadPermission;
+  receipt?: WorkReceipt;
   state: 'queued' | 'working' | 'waiting' | 'done' | 'stopped' | 'failed';
   startedAt: string;
   endedAt: string | null;

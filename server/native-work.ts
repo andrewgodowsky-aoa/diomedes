@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import { diffLines } from 'diff';
-import type { Change, Need, Session } from '../shared/types.js';
+import type { Change, Need, Session, ThreadPermission } from '../shared/types.js';
+import type { WorkAdmission } from './work-admission.js';
 import { askCodex, nativeWorkDisclosure, type NativeTeamOptions } from './integrations.js';
 import { MODES } from './modes.js';
 import { effortFor } from '../shared/effort.js';
@@ -172,6 +173,8 @@ export class NativeWorkService {
       turnId?: string;
       mode?: 'build' | 'fix';
       requested?: { model?: string; effort?: string };
+      permission?: ThreadPermission;
+      admission?: WorkAdmission;
     },
   ) {
     if (!this.store.settings.services?.codex)
@@ -249,6 +252,7 @@ export class NativeWorkService {
       startedAt: now(),
       endedAt: null,
       sample: false,
+      permission: input.permission ?? 'show-first',
       log: [],
       entryIds: [],
       needId: null,
@@ -312,6 +316,7 @@ export class NativeWorkService {
     };
     this.runs.set(projectId, run);
     try {
+      this.store.recordWorkAdmission(projectId, session, input.admission);
       if (member)
         run.teamRunId = new TeamService(this.store).acceptRun(
           projectId,

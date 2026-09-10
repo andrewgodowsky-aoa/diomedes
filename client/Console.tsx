@@ -21,6 +21,7 @@ import type {
   UsageSnapshot,
 } from '../shared/types';
 import { api } from './api';
+import { reconcileWorkStarts, startWork } from './work-start';
 import { effortFor } from '../shared/effort';
 import {
   Button,
@@ -130,12 +131,18 @@ export function Console({
   const [teamAvailable, setTeamAvailable] = useState(false);
   const [adding, setAdding] = useState<null | { name: string; role: 'lead' | 'member'; engine: TeamMember['engine']; model: string }>(null);
   const currentId = useRef(projectId);
+  const reconciliationIssue = useRef<string | undefined>(undefined);
   currentId.current = projectId;
   const base = `/projects/${projectId}`;
 
   const load = useCallback(async () => {
     const data = await api<ProjectState>(`/projects/${projectId}/state`);
     if (currentId.current === projectId) setState(data);
+    const issue = reconcileWorkStarts(projectId, data.sessions);
+    if (issue?.message !== reconciliationIssue.current) {
+      reconciliationIssue.current = issue?.message;
+      if (issue) report(issue);
+    }
     try {
       const t = await api<TeamState>(`/projects/${projectId}/team`);
       if (currentId.current === projectId) {
@@ -147,7 +154,7 @@ export function Console({
       if (!isMissingRoute(e)) throw e;
       if (currentId.current === projectId) setTeamAvailable(false);
     }
-  }, [projectId]);
+  }, [projectId, report]);
   const perform = useCallback(
     async (fn: () => Promise<void>) => {
       setBusy(true);
@@ -321,7 +328,7 @@ export function Console({
   }
   async function startTask(task: Task, route: Route) {
     await perform(async () => {
-      await api(`${base}/work/start`, 'POST', { taskId: task.id, route, sources: [], consent: true });
+      await startWork(projectId, { taskId: task.id, route, sources: [], consent: true });
       await load();
     });
   }

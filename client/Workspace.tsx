@@ -18,6 +18,7 @@ import type {
   UsageSnapshot,
 } from '../shared/types';
 import { api, ApiError } from './api';
+import { reconcileWorkStarts, startWork } from './work-start';
 import {
   Button,
   ChangeCard,
@@ -134,6 +135,7 @@ export function Workspace({
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
   const [showMore, setShowMore] = useState(false);
   const currentId = useRef(projectId);
+  const reconciliationIssue = useRef<string | undefined>(undefined);
   currentId.current = projectId;
   const openedDraft = useRef(false);
   const dirty = !!doc && buffer !== doc.text;
@@ -142,7 +144,12 @@ export function Workspace({
   const load = useCallback(async () => {
     const data = await api<ProjectState>(`/projects/${projectId}/state`);
     if (currentId.current === projectId) setState(data);
-  }, [projectId]);
+    const issue = reconcileWorkStarts(projectId, data.sessions);
+    if (issue?.message !== reconciliationIssue.current) {
+      reconciliationIssue.current = issue?.message;
+      if (issue) report(issue);
+    }
+  }, [projectId, report]);
   const perform = useCallback(
     async (fn: () => Promise<void>) => {
       setBusy(true);
@@ -374,7 +381,7 @@ export function Workspace({
   async function startTask(task: Task) {
     await perform(async () => {
       const sources = attached ? [attached] : task.from ? [task.from.plan] : [];
-      await api(`${base}/work/start`, 'POST', { taskId: task.id, route, sources, consent: true });
+      await startWork(projectId, { taskId: task.id, route, sources, consent: true });
       setWorkSessionId('');
       navigate('work');
       await load();

@@ -17,7 +17,9 @@ import {
   START_TIME_TOLERANCE_MS,
 } from '../server/lock.js';
 import { findTasks, hash, Store } from '../server/store.js';
-import type { ProjectState } from '../shared/types.js';
+import { SKIPPED_FOLDERS } from '../server/store.js';
+import { statePayload } from '../server/app.js';
+import type { DocumentInfo, ProjectState } from '../shared/types.js';
 
 // The Codex runtime is stubbed: no binary launches, no quota is spent. The stub
 // reports a runtime engine the way `thread/start` metadata does, and its text is
@@ -58,6 +60,13 @@ async function sample() {
 async function state(id: string): Promise<ProjectState> {
   return (await request(`/projects/${id}/state`)).data;
 }
+// The explicit list awaits a fresh walk; /state serves the cache. Call this
+// first to make documents assertions deterministic.
+async function documentsOf(id: string): Promise<DocumentInfo[]> {
+  const result = await request(`/projects/${id}/documents`);
+  expect(result.status).toBe(200);
+  return result.data.documents as DocumentInfo[];
+}
 async function until(id: string, predicate: (state: ProjectState) => boolean) {
   for (let attempt = 0; attempt < 100; attempt++) {
     const current = await state(id);
@@ -90,6 +99,7 @@ describe('real project files and durable history', () => {
   test('starts empty and creates three sample documents only when requested', async () => {
     expect((await request('/projects')).data.projects).toEqual([]);
     const id = await sample();
+    await documentsOf(id);
     const result = await state(id);
     expect(result.documents).toHaveLength(3);
     expect(result.history[0].sample).toBe(true);
@@ -390,6 +400,8 @@ describe('task, approval, sample worker, and review flow', () => {
     await request(`/projects/${id}/needs/${need.id}/resolve`, 'POST', { resolution: 'declined' });
     current = await until(id, (s) => s.sessions[0].state === 'done');
     expect(current.changes).toHaveLength(1);
+    await documentsOf(id);
+    current = await state(id);
     expect(current.documents.some((d) => d.path === 'Sample work notes.md')).toBe(false);
   });
   test('stop expires needs immediately and fault preserves its partial changes', async () => {
@@ -1157,5 +1169,125 @@ describe('modes belong to the thread and every turn', () => {
       'build',
       'build',
     ]);
+  });
+});
+
+describe('state reads stay fast with a cached documents listing', () => {
+  test('(a) projectState returns quickly with a large folder', async () => {
+    const big = path.join(temp, 'big-project');
+    await fs.mkdir(big, { recursive: true });
+    const dirs = 30,
+      perDir = 100;
+    for (let dir = 0; dir < dirs; dir++) {
+      const folder = path.join(big, `section-${dir}`);
+      await fs.mkdir(folder, { recursive: true });
+      await Promise.all(
+        Array.from({ length: perDir }, (_, file) =>
+          fs.writeFile(path.join(folder, `note-${file}.md`), `# note ${dir}/${file}\n`),
+        ),
+      );
+    }
+    const created = await request('/projects', 'POST', { name: 'big', folder: big });
+    expect(created.status).toBe(200);
+    const id = created.data.id as string;
+    // First call starts the background walk; force it via the explicit list.
+    await request(`/projects/${id}/state`);
+    const listed = await documentsOf(id);
+    expect(listed.length).toBe(dirs * perDir);
+    const started = Date.now();
+    const second = await request(`/projects/${id}/state`);
+    const elapsed = Date.now() - started;
+    console.info(`state-speed: second /state with 3000 files took ${elapsed} ms`);
+    expect(second.status).toBe(200);
+    expect(elapsed).toBeLessThan(200);
+    expect(second.data.documents).toHaveLength(dirs * perDir);
+  });
+  test('(b) SKIPPED_FOLDERS are never listed', async () => {
+    expect(SKIPPED_FOLDERS.has('artifacts')).toBe(true);
+    expect(SKIPPED_FOLDERS.has('dist')).toBe(true);
+    const id = await sample();
+    const folder = (await state(id)).project.folder as string;
+    await fs.mkdir(path.join(folder, 'artifacts'), { recursive: true });
+    await fs.mkdir(path.join(folder, 'dist'), { recursive: true });
+    await fs.mkdir(path.join(folder, 'notes'), { recursive: true });
+    await fs.writeFile(path.join(folder, 'artifacts', 'x.txt'), 'game data');
+    await fs.writeFile(path.join(folder, 'dist', 'y.md'), '# built');
+    await fs.writeFile(path.join(folder, 'notes', 'z.md'), '# kept');
+    const listed = await documentsOf(id);
+    const paths = listed.map((d) => d.path);
+    expect(paths.some((p) => p === 'artifacts/x.txt')).toBe(false);
+    expect(paths.some((p) => p === 'dist/y.md')).toBe(false);
+    expect(paths.some((p) => p === 'notes/z.md')).toBe(true);
+  });
+  test('(c) persisted state on disk contains no documents rows', async () => {
+    const id = await sample();
+    const listed = await documentsOf(id);
+    expect(listed.length).toBeGreaterThan(0);
+    const raw = JSON.parse(
+      await fs.readFile(path.join(temp, 'data', 'projects', id, 'state.json'), 'utf8'),
+    );
+    expect((raw.documents ?? [])).toHaveLength(0);
+    const again = await documentsOf(id);
+    expect(again.length).toBeGreaterThan(0);
+  });
+  test('(d) statePayload strips documents and the SSE state event carries no rows', async () => {
+    const id = await sample();
+    await documentsOf(id);
+    const current = await state(id);
+    expect(current.documents.length).toBeGreaterThan(0);
+    const payload = statePayload(current);
+    expect(payload.documents).toEqual([]);
+    expect(payload.project.id).toBe(current.project.id);
+    expect(payload.history).toHaveLength(current.history.length);
+    // Live fan-out: open the stream, trigger a change, read the state event.
+    const controller = new AbortController();
+    const response = await fetch(`${url}/api/events`, {
+      signal: controller.signal,
+      headers: { Accept: 'text/event-stream' },
+    });
+    expect(response.status).toBe(200);
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const nextEvent = async (timeoutMs = 5000): Promise<{ event: string; data: string }> => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const chunk = await reader.read();
+        if (chunk.done) throw new Error('The SSE stream ended before the state event arrived.');
+        buffer += decoder.decode(chunk.value, { stream: true });
+        const boundary = buffer.indexOf('\n\n');
+        if (boundary >= 0) {
+          const block = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          const event = (block.match(/^event: (.+)$/m)?.[1] ?? '').trim();
+          const data = (block.match(/^data: ([\s\S]+)$/m)?.[1] ?? '').trim();
+          if (event === ': keep-alive' || event === '') continue;
+          return { event, data };
+        }
+      }
+      throw new Error('Timed out waiting for the SSE state event.');
+    };
+    try {
+      const ready = await nextEvent();
+      expect(ready.event).toBe('ready');
+      await request(`/projects/${id}/tasks`, 'POST', { name: 'SSE probe' });
+      for (let attempt = 0; attempt < 25; attempt++) {
+        const { event, data } = await nextEvent();
+        if (event !== 'state') continue;
+        const parsed = JSON.parse(data) as { projectId: string; state: ProjectState };
+        if (parsed.projectId !== id) continue;
+        expect(parsed.state.documents).toEqual([]);
+        expect(parsed.state.project.id).toBe(id);
+        return;
+      }
+      throw new Error('The SSE stream never sent the state event for this project.');
+    } finally {
+      controller.abort();
+      try {
+        await reader.cancel();
+      } catch {
+        // The stream is already torn down when the test aborts it.
+      }
+    }
   });
 });
