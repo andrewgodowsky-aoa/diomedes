@@ -1,6 +1,6 @@
 # DIOMEDES PROJECT MEMORY — CANONICAL
 
-Version: 2026-09-10.4
+Version: 2026-09-10.5
 Last reconciled: September 10, 2026
 Cloud canonical: 13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw
 Repository mirror: docs/DIOMEDES_PROJECT_MEMORY.md
@@ -29,6 +29,14 @@ Standing Opus 5 prompting preference: complete context, explicit scope/end state
 
 Execute PB-01 through PB-04 after the current Opus Trust/Agent checkpoint and before the planned GLM correction run, without expanding into unready production services. Package: docs/product/personal-business/README.md; Drive https://drive.google.com/drive/folders/1-U8m3jRRbVs28vsVw5zgtj-t0Tlxl62_. These are current product decisions and implementation contracts, not evidence that the requested features have landed.
 
+### What PB-01 actually implemented — 2026-09-10.5
+
+A workspace is `{ kind: 'personal' }` or `{ kind: 'business', organizationId }`, held as a personal preference in `Settings.activeWorkspace` and writable only by the membership-checking switch route: `validateSettings` preserves whatever is stored, so echoing settings back cannot move anyone into a business. Organizations, memberships and single-use invitations live in `<data>/workspaces/`; each organization owns a `tenantId`, and revoking a membership bumps that tenant's Trust identity generation so references minted under it stop resolving. A stored Business reference is honoured only while the membership behind it is active, so a stale settings file reads as Personal.
+
+The Business intake is gated by one host predicate requiring an active Business workspace, an active membership, owner-or-admin authority and a setup that is new or explicitly resumed. Personal has no route into it at all. Answers are typed facts with origin, timestamp, tenant and schema revision; unresolved answers stay unresolved; credential-shaped and card-shaped free text is refused rather than stored; a concurrent administrator gets a conflict rather than last-write-wins. Reaching a complete draft produces a proposal, and the host says plainly that compiling, validating, rehearsing and activating are not implemented.
+
+Production identity is still absent. `trustBackendInstalled()` is the single source for whether hosted Business is available, and it is false, so every organization created here is a `development-fixture` labelled as one in the interface. Entitlement is computed, never stored, and always `none` with a reason: nothing local can grant a plan. `onboarding.work === 'business'` yields a sentence of explanation and nothing else.
+
 ## Stable meanings
 
 Diomedes is a general-purpose agent/harness and human workspace, not a restaurant-only product, chatbot, external-agent launcher or workflow builder alone. Company direction is Diomedes Systems. Historical Achilles paths may remain; do not mass-rename live data or namespaces without a migration.
@@ -36,6 +44,8 @@ Diomedes is a general-purpose agent/harness and human workspace, not a restauran
 Desktop is the human workspace. Core owns model/agent routing, context, profiles, skills, rules, memory, advisors and supervisory behavior. Runtime owns durable admission, runs/steps/events, workflows, budgets, waits, cancellation, recovery and external effects. Trust owns identity, capabilities, scoped grants, approvals, credentials, revocation, client boundaries and information-flow policy. Observatory owns observed evidence, usage/cost provenance and evaluations. Interop covers supported APIs, MCP/MCP Apps, webhooks, and ACP/A2A where useful. These are responsibility boundaries, not instructions to create six separate services.
 
 Diomedes Agent is the native supervisory operation: understand the goal, plan, assemble context, choose routes/tools/workers, monitor, correct, request authority where needed, verify and preserve progress. It can use external API cognition initially and later a tuned local or hosted supervisor model. The model weights are not the entire agent or the authority to execute effects.
+
+An Agent (2026-09-10) is a versioned, capability-aware, policy-governed worker identity that can operate through interchangeable compatible models and participate in durable work and Teams under Diomedes Trust, Rules, Permissions, Evidence and Approval. The control model is Mode -> Agent -> Model -> Effort, and the four stay distinct: a Model is interchangeable intelligence, an Agent is a durable Diomedes-owned worker contract, a Mode is the person's current relationship to the work, and a Team is a composition of Agents. The Agent belongs to Diomedes and the model remains replaceable: `Code Reviewer` is the same Agent whichever compatible runtime executes it. An Agent references the existing mode, capability, tool, rule, permission, model and evidence systems rather than duplicating them, and owns only its bounded `role` sentence. Changing Agent or model never grants authority; a handoff cannot launder permission. Auto records whether the final Agent and model were chosen automatically or by hand.
 
 Direct-agent mode lets an explicitly chosen external engine be primary executor/reasoner while Diomedes keeps surrounding project state and the control guarantees its adapter actually provides. Engine, model, provider/account route and worker are distinct. Preserve actual runtime-reported attribution per turn/proposal/event; do not rename history when the picker changes. Unknown model identity remains unknown. Reserve Diomedes reasoning attribution for Diomedes-led work; application infrastructure actions may still truthfully use the Diomedes name.
 
