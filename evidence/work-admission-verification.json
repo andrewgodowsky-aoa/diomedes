@@ -1,0 +1,148 @@
+{
+  "checkedAt": "2026-09-08T11:02:01.174Z",
+  "workspace": "F:\\Achilles\\diomedes-wt\\codex-foundation",
+  "integrationBaseline": "218f325",
+  "selectedGate": "F01: durable admission and replay for task Work",
+  "selectedGatePassed": true,
+  "fullM1Complete": false,
+  "checks": {
+    "typeAndProductionBuild": {
+      "exitCode": 0
+    },
+    "unitIntegration": {
+      "exitCode": 0,
+      "passed": 278,
+      "files": 12,
+      "admissionTests": 32,
+      "clientTests": 19
+    },
+    "builtBrowser": {
+      "exitCode": 0,
+      "passed": 18,
+      "fontsServedFromBundle": true
+    },
+    "packagedDesktop": {
+      "exitCode": 0,
+      "ownProfile": true,
+      "receiptRestartVerified": true
+    },
+    "realNative": {
+      "exitCode": 0,
+      "generationRequests": 1,
+      "model": "gpt-5.6-luna",
+      "proof": "evidence/native-work-proof.json"
+    }
+  },
+  "sourceHashes": [
+    {
+      "file": "shared/types.ts",
+      "sha256": "d8cdf1212adfd142b1c6d0cd210492c0d4dd4f51fab72bd7e908239372779deb"
+    },
+    {
+      "file": "server/work-admission.ts",
+      "sha256": "bc903ac06fe451ebe6e1ef2292aba38a8aa552f2e9973a05cd45d22dba9d4c2c"
+    },
+    {
+      "file": "server/store.ts",
+      "sha256": "d72abae88e11ba07f749fcd2ee12358934c5ebb9805a0f0a76d322f8a20ea433"
+    },
+    {
+      "file": "server/app.ts",
+      "sha256": "fce643ba8b29dd69b7f4ced48b4c989d4b98d8145063535f8b5e957344f05d45"
+    },
+    {
+      "file": "server/work.ts",
+      "sha256": "a74f3ec1d496cce62e659ca59efc1967256f5ede285eab1e2c13d936fcce9e62"
+    },
+    {
+      "file": "server/native-work.ts",
+      "sha256": "71b178dc3853c124cebf87ef41a5fbcc15af99642e395f2cc8f26bc5372f0fa4"
+    },
+    {
+      "file": "client/work-start.ts",
+      "sha256": "0e892ba185d011df72be557d97884b423ae168a841b1b69e19e44b5257e29545"
+    },
+    {
+      "file": "client/Workspace.tsx",
+      "sha256": "389c64600b7a672c2d263cf553723bb97286037b8bedf866f3fbad4bcb2489ef"
+    },
+    {
+      "file": "client/Console.tsx",
+      "sha256": "498c6edac00ef171e421838fe842ec22cf0965644921c9b00ecc782a08ddd965"
+    },
+    {
+      "file": "tests/work-admission.test.ts",
+      "sha256": "ee4ff355e9cc7d6c9ca6cdf46be9bcc7cf281dbf35e70628d46fddc24fb13153"
+    },
+    {
+      "file": "tests/work-admission-child.ts",
+      "sha256": "d0c668fa8ef11362f8846a00be0f90b7bd8882ea9e5e60e070b22d356353639b"
+    },
+    {
+      "file": "tests/work-start-client.test.ts",
+      "sha256": "6b0d40652c81c7162b4f1f427639a1bc601f02db7b884a42a8678bc8b985c67e"
+    },
+    {
+      "file": "tests/native-ui.spec.ts",
+      "sha256": "5dbc9abbaf3a585535c0fda1d827909300f813cc898981d11d2e0c6b308f2f7d"
+    },
+    {
+      "file": "scripts/native-work-smoke.ts",
+      "sha256": "ce34945958d531d4d0a85b9a136b4dc8cbba0b10b49cbccd981bd4fda03d3156"
+    },
+    {
+      "file": "scripts/desktop-smoke.mjs",
+      "sha256": "df73f9df92fc645954deb7bf0d54b820f11f240e138566aed3d4d47275ae5a04"
+    }
+  ],
+  "evidenceHashes": [
+    {
+      "file": "output/foundation/build.log",
+      "sha256": "ae42d6f9ed716079a606214150985393c80a1f53c5fa597867e4b843e3dfaf81"
+    },
+    {
+      "file": "output/foundation/tests.log",
+      "sha256": "b98ed641aa713325e727cc28806d4259c2dc2d5dcfc449cf3d6d6a8fbf03f0f2"
+    },
+    {
+      "file": "output/foundation/browser-built.log",
+      "sha256": "59d5736d9be751c4eb02f96af40b8b915880e69d7af3a2cb7afee05105955685"
+    },
+    {
+      "file": "output/foundation/desktop.log",
+      "sha256": "f0a5d141e2f7052e63f27dfd038c9b9336706f07fac4a2e3600c83ec479707c8"
+    },
+    {
+      "file": "evidence/native-work-proof.json",
+      "sha256": "fc735e67c2aa7c8c60a41f62cdea461c139751b5d2098893c53fdd3717698d3d"
+    },
+    {
+      "file": "evidence/desktop-proof.json",
+      "sha256": "b891b0b6972775e9c9a71d124ff2da2c5b6fd31c75a1f6e31ba7454ece19f6ea"
+    },
+    {
+      "file": "evidence/work-admission-performance.json",
+      "sha256": "585f358489eb1e7345650c2aae5170751333fc1f2d7c00b46761fb0c0ac1d9f0"
+    }
+  ],
+  "packageHashes": [
+    {
+      "file": "release/Diomedes-win32-x64/resources/app.asar",
+      "sha256": "e2540a8336e5a64fc6a9cf7679669c222d64ef62985dbcc639d6f25a284cd5d4"
+    },
+    {
+      "file": "release/Diomedes-win32-x64/resources/app.asar!/dist\\assets\\index-BcjwuTd6.js",
+      "sha256": "20b0a0a7d46631498115770fd02c82b59787d349a7a29f32e052ac0118ec55f3"
+    },
+    {
+      "file": "release/Diomedes-win32-x64/resources/app.asar!/server\\app.mjs",
+      "sha256": "39ede28491a1ac2549498b509870a1832ce7fab6e8ee3bf4319abdaa5998a9ab"
+    }
+  ],
+  "notes": [
+    "All final verification commands exited zero; deterministic generators are separate from the real native smoke.",
+    "Packaged client bytes match the production bundle used for browser verification.",
+    "No commit, amend, push or live-checkout merge was made.",
+    "Local prototype only; see the implementation report for uncompleted acceptance gates."
+  ]
+}

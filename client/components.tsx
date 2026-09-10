@@ -193,6 +193,34 @@ export function Modal({
     </dialog>
   );
 }
+export function ApprovalStatus({ need }: { need: Need }) {
+  if (!need.approval) return null;
+  const receipt = need.approvalReceipt;
+  if (!receipt)
+    return <p className="caption">This OK covers only this proposal. Expires {new Date(need.approval.expiresAt).toLocaleString()}.</p>;
+  const outcomes = {
+    pending: 'Decision saved. Execution has not been confirmed.',
+    applied: 'Approved changes applied. Their versions are in History.',
+    conflicted: 'Outside edits preserved. Some approved changes may have applied; check History.',
+    'not-applied': 'Decision saved, but the write was not prepared. Start new work for a new proposal.',
+    declined: 'Proposal declined. No changes were applied.',
+  };
+  return (
+    <div className="approval-status" aria-label="Approval record">
+      <p className="caption">{need.execution ? outcomes[need.execution.state] : 'Decision saved. Execution has not been confirmed.'}</p>
+      <details>
+        <summary className="caption">Decision record</summary>
+        <p className="caption">Recorded by the local service at {new Date(receipt.decidedAt).toLocaleString()}.</p>
+        <dl className="facts code caption" style={{ overflowWrap: 'anywhere' }}>
+          <dt>Request</dt><dd>{receipt.commandId}</dd>
+          <dt>Proposal</dt><dd>{receipt.proposalDigest}</dd>
+          <dt>Action</dt><dd>{receipt.actionDigest}</dd>
+          <dt>Source versions</dt><dd>{receipt.baseDigest}</dd>
+        </dl>
+      </details>
+    </div>
+  );
+}
 export function Notice({
   need,
   decide,
@@ -215,13 +243,14 @@ export function Notice({
         <Button tone="signal" onClick={() => decide('go-ahead')}>
           Go ahead
         </Button>
-        <Button onClick={() => decide('go-ahead', true)}>Go ahead for this whole task</Button>
+        {!need.approval && <Button onClick={() => decide('go-ahead', true)}>Go ahead for this whole task</Button>}
         <Button onClick={() => decide('declined')}>Don't do this</Button>
         <Button tone="quiet" onClick={show}>
           Show me first
         </Button>
       </div>
       <p className="caption">Diomedes is paused until you decide.</p>
+      <ApprovalStatus need={need} />
     </section>
   );
 }

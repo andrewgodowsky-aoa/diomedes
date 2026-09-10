@@ -21,8 +21,11 @@ import type {
   UsageSnapshot,
 } from '../shared/types';
 import { api } from './api';
+import { reconcileWorkStarts, startWork } from './work-start';
+import { decideApproval, reconcileApprovals } from './approval-decisions';
 import { effortFor } from '../shared/effort';
 import {
+  ApprovalStatus,
   Button,
   ChangeCard,
   Empty,
@@ -130,12 +133,20 @@ export function Console({
   const [teamAvailable, setTeamAvailable] = useState(false);
   const [adding, setAdding] = useState<null | { name: string; role: 'lead' | 'member'; engine: TeamMember['engine']; model: string }>(null);
   const currentId = useRef(projectId);
+  const reconciliationIssue = useRef<string | undefined>(undefined);
   currentId.current = projectId;
   const base = `/projects/${projectId}`;
 
   const load = useCallback(async () => {
     const data = await api<ProjectState>(`/projects/${projectId}/state`);
     if (currentId.current === projectId) setState(data);
+    const workIssue = reconcileWorkStarts(projectId, data.sessions);
+    const approvalIssue = reconcileApprovals(projectId, data.needs);
+    const issue = workIssue ?? approvalIssue;
+    if (issue?.message !== reconciliationIssue.current) {
+      reconciliationIssue.current = issue?.message;
+      if (issue) report(issue);
+    }
     try {
       const t = await api<TeamState>(`/projects/${projectId}/team`);
       if (currentId.current === projectId) {
@@ -147,7 +158,7 @@ export function Console({
       if (!isMissingRoute(e)) throw e;
       if (currentId.current === projectId) setTeamAvailable(false);
     }
-  }, [projectId]);
+  }, [projectId, report]);
   const perform = useCallback(
     async (fn: () => Promise<void>) => {
       setBusy(true);
@@ -303,7 +314,7 @@ export function Console({
   }
   async function resolveNeed(need: Need, resolution: 'go-ahead' | 'declined', allowForTask = false) {
     await perform(async () => {
-      await api(`${base}/needs/${need.id}/resolve`, 'POST', { resolution, allowForTask });
+      await decideApproval(projectId, need, resolution, allowForTask);
       await load();
     });
   }
@@ -321,7 +332,7 @@ export function Console({
   }
   async function startTask(task: Task, route: Route) {
     await perform(async () => {
-      await api(`${base}/work/start`, 'POST', { taskId: task.id, route, sources: [], consent: true });
+      await startWork(projectId, { taskId: task.id, route, sources: [], consent: true });
       await load();
     });
   }
@@ -785,6 +796,7 @@ export function Console({
           {previewNeed.files.length > 0 && (
             <p className="caption">Files: {previewNeed.files.join(', ')}</p>
           )}
+          <ApprovalStatus need={previewNeed} />
           {previewNeed.preview?.map((c) => (
             <ChangeCard key={c.id} change={c} detail="technical">
               {null}
@@ -799,14 +811,14 @@ export function Console({
             >
               Don't do this
             </Button>
-            <Button
+            {!previewNeed.approval && (<Button
               onClick={() => {
                 void resolveNeed(previewNeed, 'go-ahead', true);
                 setPreviewNeed(null);
               }}
             >
               Go ahead for this whole task
-            </Button>
+            </Button>)}
             <Button
               tone="primary"
               onClick={() => {
@@ -1143,7 +1155,7 @@ function Pane({
             </button>
           </div>
           <span className="caption">
-            {permission === 'task'
+            {route === 'codex' || waiting.some((need) => need.approval) ? 'Each proposed file change needs its own exact OK.' : permission === 'task'
               ? 'The first OK in a task covers the rest of it. Nothing runs without that first OK.'
               : 'Every change waits for your OK.'}
           </span>
@@ -1164,7 +1176,7 @@ function Pane({
           <Notice
             key={n.id}
             need={n}
-            decide={(r, a) => decide(n, r, a ?? (r === 'go-ahead' && permission === 'task'))}
+            decide={(r, a) => decide(n, r, n.approval ? false : a ?? (r === 'go-ahead' && permission === 'task'))}
             show={() => show(n)}
           />
         ))}
@@ -1180,6 +1192,7 @@ function Pane({
           </p>
         )}
         {timeline.map((entry) => entry.node)}
+        {state.needs.filter((need) => need.approvalReceipt && threadOwnsNeed(thread, need, state)).slice(-1).map((need) => <ApprovalStatus key={need.id} need={need} />)}
         {live && (
           <section className="work-session compact">
             <SessionStatus session={live} detail="technical" name={task?.name} stop={() => stop(live.id)} />

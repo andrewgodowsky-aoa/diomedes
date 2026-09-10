@@ -53,11 +53,19 @@ async function main() {
     current = await state();
     const session = current.sessions.at(-1);
     const openNeed = current.needs.find((need) => need.state === 'open');
-    if (openNeed)
-      await api(`/projects/${project.id}/needs/${openNeed.id}/resolve`, 'POST', {
-        resolution: 'go-ahead',
-        allowForTask: true,
-      });
+    if (openNeed) {
+      const body = openNeed.approval
+        ? {
+            protocolVersion: 1,
+            commandId: `team-codex-smoke-${openNeed.id}`,
+            resolution: 'go-ahead',
+            proposalDigest: openNeed.approval.proposalDigest,
+            actionDigest: openNeed.approval.actionDigest,
+            baseDigest: openNeed.approval.baseDigest,
+          }
+        : { resolution: 'go-ahead', allowForTask: false };
+      await api(`/projects/${project.id}/needs/${openNeed.id}/resolve`, 'POST', body);
+    }
     if (session && ['done', 'failed', 'stopped'].includes(session.state)) break;
   }
 

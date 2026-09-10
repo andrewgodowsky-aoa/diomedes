@@ -1,12 +1,12 @@
 {
-  "checkedAt": "2026-09-07T10:27:49.719Z",
-  "executablePath": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
+  "checkedAt": "2026-09-08T12:05:44.423Z",
+  "executablePath": "F:\\Achilles\\diomedes-wt\\codex-approvals\\release\\Diomedes-win32-x64\\Diomedes.exe",
   "startup": {
     "version": "0.1.0",
-    "executable": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
-    "pid": 32860,
-    "url": "http://127.0.0.1:58641",
-    "startedAt": "2026-09-07T10:27:46.427Z",
+    "executable": "F:\\Achilles\\diomedes-wt\\codex-approvals\\release\\Diomedes-win32-x64\\Diomedes.exe",
+    "pid": 31320,
+    "url": "http://127.0.0.1:61609",
+    "startedAt": "2026-09-08T12:05:38.880Z",
     "packaged": true
   },
   "taskCount": 4,
@@ -26,5 +26,43 @@
   "serviceStopsOnClose": true,
   "dataLockReleased": true,
   "persistedOnRestart": true,
+  "workAdmission": {
+    "lostResponsesRecovered": true,
+    "receiptsRetainedOnRestart": true,
+    "runs": [
+      {
+        "surface": "workbook",
+        "requests": 2,
+        "receipt": {
+          "protocolVersion": 1,
+          "commandId": "216267e0-f836-4809-b28b-f8a8ca86bb20",
+          "payloadDigest": "sha256:fadcf63690b2b3db42ae6d4235215abcca34c2ec981e85fb099ae14967a4380b",
+          "projectId": "80c11116468a",
+          "taskId": "T1",
+          "sessionId": "S433227edd61e",
+          "eventId": "E8f169356b67c",
+          "admittedAt": "2026-09-08T12:05:39.731Z",
+          "route": "sample",
+          "scope": "local-prototype"
+        }
+      },
+      {
+        "surface": "console",
+        "requests": 2,
+        "receipt": {
+          "protocolVersion": 1,
+          "commandId": "ce5c56e9-2a43-4b2c-ad81-b8269dec1360",
+          "payloadDigest": "sha256:c54fc3a39939f69aa3a84c980ea9f1958fea1384906bab71ed501b1853d707f8",
+          "projectId": "80c11116468a",
+          "taskId": "T1",
+          "sessionId": "S2af4e5cab2c9",
+          "eventId": "Edae27095acc8",
+          "admittedAt": "2026-09-08T12:05:42.314Z",
+          "route": "sample",
+          "scope": "local-prototype"
+        }
+      }
+    ]
+  },
   "pageErrors": []
 }

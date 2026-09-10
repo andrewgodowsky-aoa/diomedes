@@ -1,4 +1,5 @@
-import type { Need, Session } from '../shared/types.js';
+import type { Need, Session, ThreadPermission } from '../shared/types.js';
+import type { WorkAdmission } from './work-admission.js';
 import { ApiError } from './paths.js';
 import { hash, identifier, now, Store } from './store.js';
 
@@ -24,7 +25,10 @@ export class WorkService {
   running(id: string) {
     return this.runs.has(id);
   }
-  async start(projectId: string, taskId: string, instruction = '', demo = false) {
+  async start(
+    projectId: string, taskId: string, instruction = '', demo = false,
+    options: { permission?: ThreadPermission; admission?: WorkAdmission } = {},
+  ) {
     const state = this.store.state(projectId);
     if (
       this.runs.has(projectId) ||
@@ -48,6 +52,7 @@ export class WorkService {
       startedAt: now(),
       endedAt: null,
       sample: true,
+      permission: options.permission ?? 'show-first',
       log: [],
       entryIds: [],
       needId: null,
@@ -76,6 +81,7 @@ export class WorkService {
       await this.store.snapshot(projectId, null, session.id);
       const fresh = this.store.state(projectId);
       fresh.sessions.push(session);
+      this.store.recordWorkAdmission(projectId, session, options.admission);
       task.sessionIds.push(session.id);
       task.reason = null;
       if (this.store.settings.permissions.changingFiles) await this.need(run, 'start');

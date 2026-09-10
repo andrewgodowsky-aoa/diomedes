@@ -1,12 +1,14 @@
 import fs from 'node:fs/promises';
 import { diffLines } from 'diff';
-import type { Change, Need, Session } from '../shared/types.js';
+import type { Change, Need, Session, ThreadPermission } from '../shared/types.js';
+import type { WorkAdmission } from './work-admission.js';
 import { askCodex, nativeWorkDisclosure, type NativeTeamOptions } from './integrations.js';
 import { MODES } from './modes.js';
 import { effortFor } from '../shared/effort.js';
 import { absent, ApiError, projectFile, relativeName, textKind } from './paths.js';
 import { hash, identifier, now, Store, type WriteInput } from './store.js';
 import { TeamService } from './team/service.js';
+import { actionDigest, assertApprovalMatches, baseDigest, identifyApproval, type ApprovalAdmission } from './approval-admission.js';
 
 export type NativeGenerator = (input: {
   prompt: string;
@@ -172,6 +174,8 @@ export class NativeWorkService {
       turnId?: string;
       mode?: 'build' | 'fix';
       requested?: { model?: string; effort?: string };
+      permission?: ThreadPermission;
+      admission?: WorkAdmission;
     },
   ) {
     if (!this.store.settings.services?.codex)
@@ -249,6 +253,7 @@ export class NativeWorkService {
       startedAt: now(),
       endedAt: null,
       sample: false,
+      permission: input.permission ?? 'show-first',
       log: [],
       entryIds: [],
       needId: null,
@@ -312,6 +317,7 @@ export class NativeWorkService {
     };
     this.runs.set(projectId, run);
     try {
+      this.store.recordWorkAdmission(projectId, session, input.admission);
       if (member)
         run.teamRunId = new TeamService(this.store).acceptRun(
           projectId,
@@ -503,6 +509,7 @@ export class NativeWorkService {
           allowForTask: false,
           preview: previews,
         };
+        need.approval = identifyApproval(run.projectId, need, run.sources);
         state.needs.push(need);
         session.needId = need.id;
         session.state = 'waiting';
@@ -529,110 +536,80 @@ export class NativeWorkService {
     needId: string,
     resolution: 'go-ahead' | 'declined',
     allowForTask = false,
+    admission?: ApprovalAdmission,
   ) {
     const state = this.store.state(projectId),
       need = state.needs.find((item) => item.id === needId);
     if (!need) throw new ApiError(404, 'This request was not found.');
+    if (!admission || allowForTask || resolution !== admission.command.resolution)
+      throw new ApiError(409, 'Reload the proposal and send its version 1 exact approval identity.', { code: 'exact_approval_required' });
+    const replay = this.store.approvalCommand(projectId, admission);
+    if (replay) return replay;
     if (need.state !== 'open') throw new ApiError(409, 'This request has already been decided.');
+    assertApprovalMatches(projectId, need, admission);
     const run = this.runs.get(projectId);
     if (!run || run.sessionId !== need.sessionId || !run.writes)
-      throw new ApiError(
-        409,
-        'This proposal is no longer active. Start work again for a new proposal.',
-      );
+      throw new ApiError(409, 'This proposal is no longer active. Start work again for a new proposal.');
+    if (Date.now() >= Date.parse(need.approval!.expiresAt) || Date.now() < Date.parse(need.createdAt)) {
+      const error = new ApiError(409, 'This approval window expired. Start work again for a new proposal.', { code: 'approval_expired' });
+      await this.fail(run, error);
+      throw error;
+    }
     const session = this.session(run),
       task = state.tasks.find((item) => item.id === run.taskId)!;
     if (resolution === 'declined') {
-      need.state = 'declined';
-      need.decidedAt = now();
-      need.allowForTask = false;
+      this.store.recordApprovalDecision(projectId, need, admission);
       session.state = 'stopped';
       session.endedAt = now();
       session.needId = null;
       task.needId = null;
       task.reason = null;
-      this.store.addEntry(state, {
-        kind: 'decision',
-        sentence: `You declined: ${need.what}. No files were changed.`,
-        sessionId: session.id,
-        taskId: task.id,
-      });
       this.log(session, 'You declined the proposal. No project files were changed.');
       this.store.moveTask(state, task, 'todo', 'diomedes');
-      this.runs.delete(projectId);
-      this.finishTeam(
-        run,
-        'cancelled',
-        'The person declined the proposal. No project files were changed.',
-      );
+      this.finishTeam(run, 'cancelled', 'The person declined the proposal. No project files were changed.');
       await this.store.persist(state);
+      this.runs.delete(projectId);
       return need;
     }
     try {
+      if (actionDigest(run.writes) !== need.approval!.actionDigest || baseDigest(run.sources) !== need.approval!.baseDigest || run.proposal?.summary !== need.why)
+        throw new ApiError(409, 'The active action no longer matches the displayed proposal. No files were changed.');
       await this.store.checkFolder(state);
       if (state.project.missing)
         throw new ApiError(409, 'The project folder is missing. The proposal was not applied.');
       for (const source of run.sources) {
         if (hash(await this.store.current(projectId, source.path)) !== source.sha)
-          throw new ApiError(
-            409,
-            `${source.path} changed after this proposal began. Its newer contents were preserved. Start again for a proposal based on the current files.`,
-            { path: source.path },
-          );
+          throw new ApiError(409, `${source.path} changed after this proposal began. Its newer contents were preserved. Start again for a proposal based on the current files.`, { path: source.path });
       }
       for (const write of run.writes) {
         if (hash(await this.store.current(projectId, write.path)) !== write.expected)
-          throw new ApiError(
-            409,
-            `${write.path} changed after this proposal began. No proposal files were written.`,
-            { path: write.path },
-          );
+          throw new ApiError(409, `${write.path} changed after this proposal began. No proposal files were written.`, { path: write.path });
       }
-      need.state = 'go-ahead';
-      need.decidedAt = now();
-      need.allowForTask = allowForTask;
-      session.state = 'working';
-      if (run.teamRunId && run.team)
-        new TeamService(this.store).setMemberStatus(projectId, run.team.slotId, 'working');
-      session.needId = null;
-      task.needId = null;
-      task.reason = null;
-      this.store.addEntry(state, {
-        kind: 'decision',
-        sentence: `You said go ahead: ${need.what}. This OK covers only the displayed proposal.`,
-        sessionId: session.id,
-        taskId: task.id,
-      });
-      this.store.moveTask(state, task, 'working', 'diomedes');
-      await this.store.persist(state);
-      await this.store.writeRecorded(projectId, run.writes, {
-        actor: 'diomedes-with-ok',
-        kind: 'changed',
-        sentence: run.proposal?.summary,
-        sessionId: session.id,
-        taskId: task.id,
-        sample: false,
-        review: true,
-        merge: false,
-      });
-      const fresh = this.store.state(projectId),
-        completed = this.session(run),
-        completedTask = fresh.tasks.find((item) => item.id === run.taskId)!;
-      completed.state = 'done';
-      completed.endedAt = now();
-      this.log(
-        completed,
-        `Applied ${run.writes.length} approved ${run.writes.length === 1 ? 'change' : 'changes'}. Every before and after version is in History. The changes are ready to review.`,
-      );
-      this.store.moveTask(fresh, completedTask, 'waiting', 'diomedes');
-      completedTask.reason = 'changes-ready';
-      this.runs.delete(projectId);
-      this.finishTeam(run, 'completed', run.proposal?.summary ?? 'Applied the approved proposal.');
-      await this.store.persist(fresh);
-      return fresh.needs.find((item) => item.id === needId)!;
     } catch (error) {
       await this.fail(run, error);
       throw error;
+    }
+    this.store.recordApprovalDecision(projectId, need, admission);
+    session.state = 'working';
+    session.needId = null;
+    task.needId = null;
+    task.reason = null;
+    this.store.moveTask(state, task, 'working', 'diomedes');
+    // Do not catch a failed admission persist and accidentally persist its mutated
+    // receipt through fail(). locked() reloads the last durable state on rejection.
+    await this.store.persist(state);
+    try {
+      await this.store.writeRecorded(projectId, run.writes, {
+        actor: 'diomedes-with-ok', kind: 'changed', sentence: run.proposal?.summary,
+        sessionId: session.id, taskId: task.id, sample: false, review: true,
+        merge: false, approvalId: need.id,
+      });
+      return this.store.state(projectId).needs.find((item) => item.id === needId)!;
+    } finally {
+      // The journal owns durable completion, including team state. A failed write
+      // is settled by locked() recovery; no retry can enter the writer again.
+      this.runs.delete(projectId);
+      run.releaseToken?.();
     }
   }
   private async fail(run: NativeRun, error: unknown) {
