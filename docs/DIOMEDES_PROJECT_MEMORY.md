@@ -1,6 +1,6 @@
 # DIOMEDES PROJECT MEMORY — CANONICAL
 
-**Version:** 2026-09-10.1  
+**Version:** 2026-09-10.2  
 **Last reconciled:** September 10, 2026  
 **Status:** Binding product-definition and current-direction companion to the live roadmap  
 **Cloud canonical:** Google Doc `13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw`
@@ -237,5 +237,23 @@ Current preferred sequence:
 - AionUI: agent discovery, organized conversations/teams, artifact preview.
 - Omnigent: heterogeneous-agent execution with explicit policy/budget/host distinctions.
 - Amp: specialist workers, context separation, effort modes, steer/queue/interruption semantics.
+
+## Autonomy target — no routine babysitting
+
+The end-state business experience is deliberately more autonomous than today's prototype. A person should be able to state an outcome, define or accept the relevant operating boundaries, and let Diomedes carry ordinary work through to a verified result without sitting beside it clicking through routine changes or repeatedly steering it back onto the same rails.
+
+**No babysitting does not mean no controls.** Trust is the mechanism that makes unattended operation possible. The system should increasingly absorb routine supervision through scoped durable grants, standing guidance, triggered correction, pre-effect policy, drift detection, retry/error limits, tool/context narrowing, verification, recovery/reconciliation, evidence/history, and escalation only when authority is exceeded, state is ambiguous, or judgment genuinely belongs to a person.
+
+This is why rule injection, scopes, drift checks, corrective hooks/loops, explicit capability semantics, attribution, and verifiable completion are near-term architecture rather than polish to add after autonomy. A more capable model without these controls would increase business risk instead of reducing coordination burden.
+
+The long-term native **Diomedes Agent** should be genuinely Devin-like in outcome ownership: Diomedes owns planning, routing, delegation, monitoring, correction, permissions/escalation, verification, and durable progress. The cognition underneath may be Diomedes-hosted weights, a Diomedes-tuned local model, or an interchangeable model route. Hosted and local deployments should preserve the same Core/Runtime/Trust semantics even when capabilities, latency, privacy, cost, uptime, and model quality differ.
+
+Business onboarding and consultation should make those deployment tradeoffs explicit. Local can improve data locality, offline behavior, predictable marginal inference cost, and customer control but requires suitable hardware, lifecycle management, and accepts a hardware-dependent capability ceiling. Hosted avoids customer GPU requirements and can offer stronger/elastic intelligence and easier remote availability but introduces recurring compute cost, service/network dependency, and different data-handling considerations. Hybrid should remain first-class and is likely attractive for many businesses: routine supervisory work local when appropriate, stronger hosted specialists used selectively under explicit rules and budgets.
+
+Do not market complete autonomy before evidence supports it. The product direction is nevertheless explicit: every release should reduce avoidable user supervision while increasing the quality of policy, drift detection, correction, verification, and evidence.
+
+## Pricing strategy reference
+
+A provisional services/software pricing plan is maintained separately so experimental prices do not become product-definition facts merely by appearing in memory. Current working draft: Google Doc `11EjZfmFpx0pKpISeS0s63aHr9pQLdb8d8r5UhoOaiZQ`; GitHub mirror `docs/business/PRICING_STRATEGY_2026-09-10.md`. Prices remain proposals until Andrew approves them for public use.
 
 This file records direction. Verify current implementation before claiming any item is shipped.
