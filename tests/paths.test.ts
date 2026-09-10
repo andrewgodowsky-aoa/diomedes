@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -50,6 +51,24 @@ const shortNameOf = (parent: string, name: string): string | null => {
 };
 
 /**
+ * Does the volume holding the temp directory generate 8.3 aliases at all?
+ *
+ * Short-name creation is per-volume and off on plenty of machines, including
+ * this project's own F: drive. Answering at module load lets the test that
+ * needs a real alias report itself as skipped instead of returning early and
+ * rendering as a pass that asserted nothing.
+ */
+const volumeGeneratesShortNames = (() => {
+  if (!windows) return false;
+  const probe = fsSync.mkdtempSync(path.join(os.tmpdir(), 'diomedes-alias-probe-'));
+  try {
+    return shortNameOf(os.tmpdir(), path.basename(probe)) !== null;
+  } finally {
+    fsSync.rmSync(probe, { recursive: true, force: true });
+  }
+})();
+
+/**
  * The 8.3 guard refuses on shape, and the shape it refuses is also the shape
  * Windows hands back for an ordinary profile whose name runs past eight
  * characters. `C:\Users\RUNNER~1\AppData\Local\Temp` is not an evasion; it is
@@ -74,21 +93,24 @@ describe('path privacy and 8.3 aliases', () => {
     expect(await statusOf(path.join(os.tmpdir(), 'diomedes-scratch'))).toBeNull();
   });
 
-  test('a short name standing in for a guarded directory is still refused', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-shortname-'));
-    try {
-      await fs.mkdir(path.join(root, 'node_modules'));
-      const alias = shortNameOf(root, 'node_modules');
-      // No alias means this volume does not generate them; there is nothing to
-      // prove here and inventing a path would prove the wrong thing.
-      if (!alias) return;
-      expect(alias).not.toBe('node_modules');
-      expect(await statusOf(path.join(root, alias))).toBe(403);
-      expect(await statusOf(path.join(root, alias, 'pkg', 'index.js'))).toBe(403);
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
-    }
-  });
+  test.skipIf(!volumeGeneratesShortNames)(
+    'a short name standing in for a guarded directory is still refused',
+    async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-shortname-'));
+      try {
+        await fs.mkdir(path.join(root, 'node_modules'));
+        // The volume generates aliases, so a missing one is a reading bug in
+        // shortNameOf rather than an environment without them.
+        const alias = shortNameOf(root, 'node_modules');
+        expect(alias).not.toBeNull();
+        expect(alias).not.toBe('node_modules');
+        expect(await statusOf(path.join(root, alias!))).toBe(403);
+        expect(await statusOf(path.join(root, alias!, 'pkg', 'index.js'))).toBe(403);
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   test('a short name that resolves nowhere is still refused', async () => {
     // Nothing exists to expand, so the guard cannot clear it and does not.
