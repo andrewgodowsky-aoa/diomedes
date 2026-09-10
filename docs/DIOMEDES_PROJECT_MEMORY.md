@@ -1,6 +1,6 @@
 # DIOMEDES PROJECT MEMORY — CANONICAL
 
-Version: 2026-09-10.5
+Version: 2026-09-10.6
 Last reconciled: September 10, 2026
 Cloud canonical: 13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw
 Repository mirror: docs/DIOMEDES_PROJECT_MEMORY.md
@@ -36,6 +36,44 @@ A workspace is `{ kind: 'personal' }` or `{ kind: 'business', organizationId }`,
 The Business intake is gated by one host predicate requiring an active Business workspace, an active membership, owner-or-admin authority and a setup that is new or explicitly resumed. Personal has no route into it at all. Answers are typed facts with origin, timestamp, tenant and schema revision; unresolved answers stay unresolved; credential-shaped and card-shaped free text is refused rather than stored; a concurrent administrator gets a conflict rather than last-write-wins. Reaching a complete draft produces a proposal, and the host says plainly that compiling, validating, rehearsing and activating are not implemented.
 
 Production identity is still absent. `trustBackendInstalled()` is the single source for whether hosted Business is available, and it is false, so every organization created here is a `development-fixture` labelled as one in the interface. Entitlement is computed, never stored, and always `none` with a reason: nothing local can grant a plan. `onboarding.work === 'business'` yields a sentence of explanation and nothing else.
+
+### What PB-03 and the brief wiring settled — 2026-09-10.6
+
+**Managed usage is a debited allowance, and it is not for sale here.** An amount of money is an
+integer count of micro-USD; nothing constructs one except `micro()` or `dollars()`, and a figure
+finer than a micro-USD is refused rather than rounded, because rounding is a silent write-off.
+Provider cost, allowance debit and invoice are three fields that stay apart. Whether a charge kind
+debits the allowance belongs to a versioned rate card, so a charge settled last month keeps the
+classification it settled under. Anything without a knowable pre-call ceiling — a provider-run tool
+— is not admitted under a managed payer at all, because a route with no reliable bound cannot
+promise a hard cap.
+
+A reservation holds a conservative maximum against both the organization balance and the parent
+task's envelope, settles the difference once, and a lost response goes `uncertain` rather than being
+released: releasing it would let a call that may already have cost money be retried for free.
+Delegation and retries reserve inside the same parent envelope; nothing mints credit.
+
+A payer is resolved, never defaulted: `managed`, `byo`, `local`, or refused. A personal
+subscription is refused for company work rather than resold. The plan definition is a candidate
+with `sellable` typed as `false`, every unapproved limit `null` with a reason, and entitlement
+resolves to `none` — so every managed admission in this build refuses, and that is the honest state
+rather than a defect. The Console shows no figures where there is no allowance, because a drawn
+zero reads as a spent allowance.
+
+Admission runs identity, membership, entitlement, data route, charge kind, payer, then budget, in
+that order. The order is load-bearing: a purely local call needs no plan, so entitlement cannot come
+first, and money comes last because a reservation is not permission to execute. A billing platform
+is not the spend gate; its events are treated as at-least-once and out-of-order, a period grants
+once however many events name it, and payment cannot lift a security suspension.
+
+**Where a business writes is an explicit, per-organization choice.** A business job needs a
+destination, and every implicit answer is wrong somewhere: the open project would let switching
+workspace mid-run redirect a company's output, and a project created on demand puts a company's
+work where nobody chose. An owner or admin binds one project per organization; the target resolves
+once when a run starts and is bound to that tenant for the run's lifetime. It is deliberately not
+attached to a configuration revision, so rolling a setup back cannot silently redirect where work
+lands. A bound project that has since gone is named, never replaced. This is what made the weekly
+brief reachable.
 
 ## Stable meanings
 
