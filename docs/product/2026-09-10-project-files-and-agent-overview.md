@@ -110,11 +110,25 @@ The pane never gets a path of its own to read.
 | Diff material | `HistoryEntry.files[].before` / `.after` | `shared/types.ts` |
 | Fuzzy-find surface | `Palette.tsx` / `paletteEntries.ts` | `client/console/` |
 
-Item (i) is therefore already done on the server. Items (b), (c), (e), (f), (g) and (j) need no new
-server capability at all. That is the payoff for reusing the primitives instead of inventing a file
-service.
+Items (b), (d), (e), (f), (g) and (i) need no new server capability at all: the listing, the reading,
+the text-kind decision, the changed-file flags and both sides of a diff already exist. That is the
+payoff for reusing the primitives instead of inventing a file service.
 
-### 2.3 The four real gaps
+Three items are not free, and saying so is the point of this table:
+
+- **(c) ordinary file preview** of spreadsheets, PDFs and images. `readTextOrNull` refuses binary by
+  design, so previewing a non-text business file needs new server work and a deliberate decision
+  about which types are worth rendering rather than handing to the operating system.
+- **(j) open externally** is a shell hand-off, not a read. It leaves Diomedes' control, so it is a
+  Trust question before it is a Files question.
+- **(h) attachments and references into Threads** needs a message-level reference shape; nothing
+  today lets a Thread cite a file and line.
+
+### 2.3 The four architectural gaps
+
+These are a different kind of problem from the three unfree items above. Those need new work but no
+new shape: a preview renderer, a shell hand-off and a reference field all sit on the existing model.
+These four change how the surface has to be built, so they are the ones worth settling first.
 
 **Gap 1 — the listing is flat, and re-walks on every call.**
 `listDocuments` returns a flat `DocumentInfo[]` whose `path` is a `/`-joined relative path, and

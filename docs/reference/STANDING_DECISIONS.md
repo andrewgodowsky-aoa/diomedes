@@ -185,6 +185,25 @@ Implementation: `server/paths.ts`. Regression tests: `tests/paths.test.ts`, `tes
 The alias tests report themselves as skipped rather than passing on a volume that generates no short
 names, so a green run on such a volume cannot be mistaken for proof.
 
+**Acceptance proof.** A local pass is not the evidence for this decision, because the local volume
+generates no short names and the alias case skips. The proof is the `windows-latest` runner, which
+has exactly the profile that broke:
+
+| Run | Commit | `tests/paths.test.ts` | Result |
+|---|---|---|---|
+| 34532148878 | `2112ea1`, before the fix | — | **failed**: 32 of 40 `connections.test.ts` tests refused with *This folder or file is private and cannot be opened by Diomedes*, because their fixtures live under `os.tmpdir()` = `C:\Users\RUNNER~1\AppData\Local\Temp` |
+| 34551480601 | `a4158e6`, after the fix | `(6 tests)` | **success** |
+
+The same file reports `(6 tests | 1 skipped)` on a developer volume and `(6 tests)` on the runner.
+That delta *is* the evidence: the alias case was exercised against a real `RUNNER~1` profile and
+allowed it, while `NODEMO~1` and the credential names stayed refused. Do not cite a local green run
+as proof of this decision.
+
+The blast radius is worth remembering. The guard is defined in `server/paths.ts`, but the pre-fix
+failure appeared in `connections.test.ts` — a shape-based refusal fails wherever a path merely passes
+through, which is the argument for resolving once at the funnel instead of adding exceptions at call
+sites.
+
 ---
 
 ## 12. Projects stay general-purpose
