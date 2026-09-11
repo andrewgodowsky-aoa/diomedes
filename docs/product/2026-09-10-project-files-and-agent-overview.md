@@ -1,54 +1,85 @@
-# The Project as a durable container: an optional Files pane, and an overview that reads like a person wrote it
+# The Project as a durable container: one Files surface, and an overview that reads like a person wrote it
 
 **Status: approved direction. Nothing described here is implemented.**
 Approved by Andrew, 2026-09-10. Nothing in this document may be reported, released or advertised as
-shipped until it exists and has proof. See `AGENTS.md` decisions 12 and 13.
+shipped until it exists and has proof. See `AGENTS.md` decisions 12, 13 and 14.
 
-This document answers three of Andrew's 2026-09-10 instructions together, because they are one
+This document answers several of Andrew's 2026-09-10 instructions together, because they are one
 question: what a Project is, what it holds, and how a person sees the work happening inside it.
 
-- **§1** records the approved product direction for an optional file/project viewer.
+- **§1** is the approved direction: one Files surface in two tiers, Core and capability pack.
 - **§2** is the Console architecture for it, grounded in what the code already does.
 - **§3** is the investigation of Cursor's September 2026 Projects and Agents experience.
 - **§4** is the Project/Console/Agent hierarchy and the human status projection.
-- **§5** is what this changes, and what it must never change.
+- **§5** is what this changes, what is open, and what it must never change.
+
+The capability-pack contract itself lives in a focused companion:
+[`2026-09-10-capability-packs.md`](2026-09-10-capability-packs.md).
 
 ---
 
-## 1. Approved direction: an optional Files pane
-
-Diomedes should offer an IDE-like file experience for users who want one, particularly programmers
-and power users, without forcing development-tool complexity onto ordinary Personal or Business
-users.
+## 1. Approved direction: one Files surface, two tiers
 
 **A restaurant manager should never need to understand a source tree to use Diomedes. A software
 developer should be able to work inside Diomedes without switching to another editor merely to
-inspect what the agent is doing.** Both sentences have to stay true at once, which is what makes this
-an optional pane rather than a new mode.
+inspect what the agent is doing.** Both sentences have to stay true at once.
 
-Approved capabilities, in the order they are worth building:
+The way they stay true is a split, settled by Andrew on 2026-09-10: **files are not inherently a
+software feature**, so the file and artifact surface belongs in Core; the IDE-grade version of that
+same surface is supplied by the **Software Engineering Capability Pack** and appears only when a
+person activates it.
+
+**There is one Files surface.** The pack does not add a second one. It changes what the existing
+surface can do.
+
+### 1.1 Core Files and Artifacts — always available
+
+General-purpose, because SOPs, reports, exports, documents, spreadsheets, invoices and images are
+ordinary business objects and have nothing to do with programming.
 
 | | Capability | Notes |
 |---|---|---|
 | a | Collapsible, resizable Files pane bound to the current Project | Off by default; remembered per person |
-| b | Project file tree | Derived, not stored |
-| c | Fuzzy file search | Belongs in the existing Ctrl+K palette |
-| d | Project-wide text search | The one genuinely new server capability |
-| e | Readable source, text and Markdown viewing | `readTextOrNull` already does the reading |
-| f | Syntax highlighting | Client-only |
-| g | Markdown rendered/raw toggle | |
-| h | Line selection and reference into the current Thread | The feature that earns the pane |
-| i | Changed-file indicators | `DocumentInfo` already carries them |
-| j | Before/after and unified diff viewing | History already holds both sides |
-| k | Open externally | |
-| l | Direct editing, later and where safe | Only through the existing mutation, History and permission path |
+| b | The project folder and artifact model | Reuses `Project`, `DocumentInfo`, `DocumentContent` |
+| c | Ordinary file preview | Common business file types |
+| d | Text and Markdown viewing, rendered/raw toggle | `readTextOrNull` already does the reading |
+| e | File search | Belongs in the existing Ctrl+K palette |
+| f | Generated artifacts | Whatever the work produced |
+| g | History and version inspection | History already holds both sides |
+| h | Attachments and references into Threads | The feature that earns the pane |
+| i | Changed-file indicators | `DocumentInfo.hasChangesWaiting` and `.recorded` |
+| j | Preview, and open externally where preview is wrong | Binary and unsupported files show metadata |
 
-Binary and unsupported files show useful metadata and open externally. Diomedes does not become a
-universal editor.
+Diomedes does not become a universal editor.
 
-`AGENTS.md`, plans, generated artifacts, evidence files and ordinary project files should all be
-pleasant to inspect through this system. That is the acceptance test for the pane: the documents this
-repository itself produces should be good to read inside it.
+### 1.2 Software Engineering Capability Pack — on activation
+
+When a person activates the software-development capability or profile, the same Files surface
+becomes an IDE-grade project environment:
+
+repository-aware tree · syntax highlighting · code editing · project-wide code and text search ·
+symbol, function and class navigation · line references into Threads · Git status and history ·
+unified or split diffs · changed-file review · diagnostics · test and build commands · worktrees and
+branches · repo-aware context construction · software-specific Agents and subagents · coding tools
+and workflows · automatic discovery of repository instruction files · later, LSP and code
+intelligence where justified.
+
+**Do not inject or load the software-development toolset for users or projects that do not need it.**
+A Personal Project tracking invoices must not pay for a symbol index, and its Console must not grow
+a Git status column.
+
+### 1.3 Repository instruction files are first-class in the pack
+
+When a repository or project contains applicable instruction files — `AGENTS.md`, `CLAUDE.md`, and
+relevant project documentation — Diomedes discovers them, feeds them through the correct context and
+rule path rather than pasting them into a prompt, and shows the person an unobtrusive indication:
+
+> Project instructions loaded · AGENTS.md
+
+Clicking it opens a readable rendered version. This is the acceptance test for the whole Files
+surface, and it is deliberately self-referential: **the documents this repository itself produces
+should be good to read inside it.** If `AGENTS.md` is not pleasant to read in the pane, the pane is
+not done.
 
 ---
 
@@ -124,15 +155,34 @@ computation and should not be a second code path.
 
 ### 2.4 Build order
 
+**Core first, pack second.** Core has to be good on its own, because most Projects will never
+activate the pack.
+
+*Core Files and Artifacts*
+
 1. **Pane shell + tree + read-only viewing.** Client-only over `listDocuments` and `readDocument`.
    Proves the pane earns its space before anything new is written on the server.
-2. **Changed-file indicators + Markdown toggle + highlighting.** All client-side.
-3. **Line selection into the Thread.** The feature that makes the pane worth opening: select lines,
-   send the reference into the current Thread as context.
-4. **Diff viewing** over existing History records.
-5. **Project-wide search.** The one new endpoint.
-6. **Editing**, only through the existing mutation, History and permission architecture, and only
-   once 1 to 5 are proven.
+2. **Changed-file indicators + Markdown rendered/raw toggle + preview and open-externally.** All
+   client-side.
+3. **References into the Thread.** The feature that makes the pane worth opening: select a file or a
+   passage, send the reference into the current Thread as context.
+4. **History and version inspection** over existing History records.
+5. **File search** in the Ctrl+K palette.
+
+*Software Engineering Capability Pack*
+
+6. **Pack activation plumbing.** The pack must be able to contribute tools, Agents, rules, context
+   and UI affordances without a second surface. See
+   [`2026-09-10-capability-packs.md`](2026-09-10-capability-packs.md).
+7. **Repository awareness**: repo-aware tree, Git status and history, changed-file review, and
+   discovery of `AGENTS.md` and `CLAUDE.md` with the "Project instructions loaded" indication.
+8. **Reading like code**: syntax highlighting, unified and split diffs, project-wide code and text
+   search. Search is the one genuinely new server capability (§2.3, Gap 3).
+9. **Navigating like code**: symbol, function and class navigation; diagnostics; later LSP where
+   justified.
+10. **Acting like a developer**: test and build commands, worktrees and branches, coding workflows.
+11. **Editing**, only through the existing mutation, History and permission architecture, and only
+    once the rest is proven.
 
 Editing is last on purpose. A Files pane that can read is a viewer; a Files pane that can write is a
 new mutation path, and Diomedes already has exactly one of those, with receipts.
@@ -174,7 +224,21 @@ one** — so this document does not invent any.
 - A right-side inspection panel carrying a file browser, a sandbox terminal, a browser and a review
   pane (third-party description, `learncursor.dev`; not stated in Cursor's own docs).
 
-### 3.2 Worth adopting
+### 3.2 Where each Cursor idea belongs
+
+Andrew's allocation, 2026-09-10, and the rule for reading §3.3 below:
+
+- **Cursor's file, code and repository interaction ideas belong primarily in the Software Engineering
+  Capability Pack.** Diffs, worktrees, repo search, PR handoff, the code-shaped half of the Agents
+  Window. They are good ideas about *software*, and they should arrive with the pack that admits it.
+- **Cursor's higher-level clarity belongs in Core**: Project → active work → Needs you → Ready for
+  review → completed work. That pattern is about how a person understands work in progress, and it is
+  as true of a restaurant Project as a repository.
+- **Neither justifies a second task or state engine.** Those states are derived from the
+  authoritative Diomedes task, run, Need, review and evidence records (§4.2).
+- **Neither turns Diomedes generally into a coding IDE.**
+
+### 3.3 Worth adopting
 
 1. **The agent-management layer stays high-level; files are somewhere you drop into.** This is
    Cursor's strongest idea and it is exactly compatible with serving both ordinary and technical
@@ -194,7 +258,7 @@ one** — so this document does not invent any.
 5. **Worktree isolation made visible.** Diomedes already coordinates worktrees (`AGENTS.md`); Cursor
    surfaces them as a first-class property of a run. Ours are an agent convention the user never sees.
 
-### 3.3 Not appropriate for Diomedes
+### 3.4 Not appropriate for Diomedes
 
 1. **Coding-specific vocabulary as primary structure.** PRs, branches, CI and repositories are one
    Project's contents, not the Project model. A restaurant Project has approvals and exported reports
@@ -212,7 +276,7 @@ one** — so this document does not invent any.
    execution, and the attribution contract (decision 8) is stricter than Cursor's. Do not adopt the
    rule; the honest distinction we already have is better.
 
-### 3.4 Where Diomedes is already ahead
+### 3.5 Where Diomedes is already ahead
 
 - **Evidence and attribution.** Receipts, authorization history, verification and truthful
   actor attribution have no counterpart in what Cursor documents. Cursor's review flow ends at
@@ -293,17 +357,31 @@ precisely a thing that needs a person. Flagged for Andrew if a fifth status is p
 
 - A Project is stated as the durable container for an outcome and its working context, with the
   Diomedes Agent working across it rather than inside one Thread.
-- An optional Files pane is approved Console direction, with a build order and a named set of gaps.
+- One Files surface, in two tiers: a general-purpose Core file and artifact surface, and an IDE-grade
+  tier supplied by the Software Engineering Capability Pack on activation.
+- The capability-pack contract: a pack composes tools, Agents, rules, context, workflows and UI
+  affordances over the same Core contracts, and activation is not authorization
+  ([`2026-09-10-capability-packs.md`](2026-09-10-capability-packs.md)).
+- Repository instruction files become first-class, discovered standing guidance with an inspectable
+  indication.
 - Project and global overviews should present derived human statuses.
-- Whether an opted-in Files pane shows dotfiles is an open decision for Andrew (§2.3, Gap 2).
+
+**Open for Andrew**
+
+- Whether an opted-in repository-aware tree shows dotfiles (§2.3, Gap 2).
+- Pack granularity, activation surface and workspace policy
+  ([`2026-09-10-capability-packs.md`](2026-09-10-capability-packs.md) §5).
+- Whether `'went-wrong'` surfaces as **Needs you** or earns a fifth status (§4.2).
 
 **Must not change**
 
 - Diomedes does not become a coding IDE, and Projects stay general-purpose (decision 12).
-- No second application surface (decision 1).
+- No second application surface, and a pack does not add one (decisions 1, 14).
 - No competing file authority: every byte still arrives through `server/paths.ts` (decision 13).
 - The path guard's `blocked` and `privateNames` sets are not display preferences and are not
-  negotiable by a setting (decision 11).
+  negotiable by a setting or a pack (decision 11).
+- A pack's toolset is not loaded for Projects that do not need it, and activating one grants no
+  authority (decision 14).
 - No parallel lifecycle or state machine for the UI (§4.2).
 - Nothing here is shipped, and nothing here may be described as shipped (decision 13).
 

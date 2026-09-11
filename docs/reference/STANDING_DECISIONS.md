@@ -202,16 +202,34 @@ source tree to use Diomedes.
 
 ---
 
-## 13. The optional Files pane is approved direction, not a shipped capability
+## 13. One Files surface, two tiers
 
 **Approved 2026-09-10 by Andrew.**
 
-Diomedes should offer an optional IDE-like file experience for users who want one, particularly
-programmers and power users, without forcing development-tool complexity onto ordinary Personal or
-Business users. It belongs inside the one Console; it is never a second application surface.
+Diomedes should offer an IDE-like file experience for users who want one, particularly programmers
+and power users, without forcing development-tool complexity onto ordinary Personal or Business
+users. A restaurant manager should never need to understand a source tree to use Diomedes. A software
+developer should be able to work inside Diomedes without switching to another editor merely to
+inspect what the agent is doing.
 
-It reuses the existing Project, `DocumentInfo`, `DocumentContent` and History primitives rather than
-creating competing storage or a second file authority.
+Both sentences stay true through a split. **Files are not inherently a software feature**, so the file
+and artifact surface belongs in Core and is generally useful: the project folder and artifact model,
+ordinary file preview, text and Markdown viewing, search, generated artifacts, history and version
+inspection, attachments and references into Threads, and preview or open-externally behaviour for
+common business files. SOPs, reports, exports, documents, spreadsheets, invoices and images are
+ordinary business objects.
+
+The IDE-grade version of that **same** surface is supplied by the Software Engineering Capability Pack
+and appears only when a person activates it. There is one Files surface; the pack does not add a
+second one, it changes what the existing one can do. See decision 14 and
+[`docs/product/2026-09-10-capability-packs.md`](../product/2026-09-10-capability-packs.md).
+
+It belongs inside the one Console and reuses the existing Project, `DocumentInfo`, `DocumentContent`
+and History primitives rather than creating competing storage or a second file authority. Every byte
+a person sees still arrives through `server/paths.ts`.
+
+Binary and unsupported files show useful metadata and open externally. Diomedes does not become a
+universal editor.
 
 Until it exists with proof, no site copy, release note, roadmap status or report may describe it as
 shipped. Approved direction and a shipped capability are different claims, and the second one is
@@ -219,3 +237,45 @@ shipped. Approved direction and a shipped capability are different claims, and t
 
 Design investigation and architecture:
 [`docs/product/2026-09-10-project-files-and-agent-overview.md`](../product/2026-09-10-project-files-and-agent-overview.md).
+
+---
+
+## 14. A capability pack composes; it never parallels
+
+**Approved 2026-09-10 by Andrew.**
+
+A capability pack is how Diomedes becomes good at a kind of work without becoming a product for that
+kind of work. A pack may affect the combination of tools, Agents, rules, context, workflows and
+relevant UI affordances — **not merely prompt text** — while using the same Core Runtime, Trust and
+Project contracts.
+
+Both halves are load-bearing. A pack that could only add prompt text would be too weak: "be good at
+code review" in a system prompt is not a capability, whereas a repo-aware tree, a diff view, a test
+command and a reviewer Agent are. A pack that could add its own runtime, permission model or file
+authority would be a second product.
+
+**Activating a pack is not an authorization event.** A pack declares the capabilities it would use;
+Trust still decides whether the person or organization granted them. This is the existing Agent rule
+applied to packs: changing Agent, model or Team never grants authority, and a handoff cannot launder
+permission.
+
+**Do not inject or load a pack's toolset for users or projects that do not need it.** A Personal
+Project tracking invoices must not pay for a symbol index, and its Console must not grow a Git status
+column. Activation is the line, and the default side of that line is off.
+
+The Software Engineering pack supplies, on the Core Files surface: repository-aware tree, syntax
+highlighting, code editing, project-wide code and text search, symbol/function/class navigation, line
+references into Threads, Git status and history, unified or split diffs, changed-file review,
+diagnostics, test and build commands, worktrees and branches, repo-aware context construction,
+software-specific Agents and subagents, coding tools and workflows, discovery of repository
+instruction files, and later LSP where justified.
+
+Repository instruction files (`AGENTS.md`, `CLAUDE.md`, relevant project documentation) are
+discovered and fed through the correct context and rule path rather than pasted into a prompt: an
+instruction file is standing guidance, and Diomedes already distinguishes standing guidance,
+triggered correction and enforced policy. The person sees `Project instructions loaded · AGENTS.md`,
+and clicking it opens a readable rendered version. Discovery is not obedience-in-secret: a rule the
+user cannot inspect is a hidden behaviour change, not standing guidance.
+
+Full contract, including what a pack may never do and the open questions:
+[`docs/product/2026-09-10-capability-packs.md`](../product/2026-09-10-capability-packs.md).

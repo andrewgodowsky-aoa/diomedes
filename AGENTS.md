@@ -111,12 +111,26 @@ Numbering is stable; tests and comments cite these by number. Full text and reas
     restaurant or a remodel it holds documents, exported reports, spreadsheets, connector-backed
     information, procedures, approvals, generated artifacts, tasks and operating evidence. One Project
     contract serves both. Diomedes does not become a coding IDE.
-13. **The optional Files pane is approved direction, not a shipped capability.** Approved 2026-09-10.
-    It belongs inside the one Console, never as a second application surface, and it reuses the
-    existing Project, `DocumentInfo`, `DocumentContent` and History primitives rather than creating a
-    competing file authority. Until it exists with proof, no site copy, release note, roadmap status or
-    report may describe it as shipped.
+13. **One Files surface, two tiers — approved direction, not a shipped capability.** Approved
+    2026-09-10. **Files are not inherently a software feature**, so Core carries the general file and
+    artifact surface: the project folder and artifact model, ordinary preview, text and Markdown
+    viewing, search, generated artifacts, history and version inspection, references into Threads, and
+    open-externally behaviour. The IDE-grade version of that **same** surface is supplied by the
+    Software Engineering Capability Pack on activation. It belongs inside the one Console, never as a
+    second application surface, and it reuses the existing Project, `DocumentInfo`, `DocumentContent`
+    and History primitives rather than creating a competing file authority. Until it exists with
+    proof, no site copy, release note, roadmap status or report may describe it as shipped.
     → [`docs/product/2026-09-10-project-files-and-agent-overview.md`](docs/product/2026-09-10-project-files-and-agent-overview.md)
+14. **A capability pack composes; it never parallels.** Approved 2026-09-10. A pack may affect the
+    combination of tools, Agents, rules, context, workflows and relevant UI affordances — not merely
+    prompt text — while using the same Core Runtime, Trust and Project contracts. It never introduces
+    a second runtime, permission model, file authority or application surface, and **activating a pack
+    is not an authorization event**: a pack declares what it needs and Trust still decides. Do not
+    inject or load a pack's toolset for users or projects that do not need it. Repository instruction
+    files such as `AGENTS.md` and `CLAUDE.md` are discovered by the Software Engineering pack and fed
+    through the context and rule path, shown to the person as `Project instructions loaded · AGENTS.md`
+    — never pasted into a prompt, and never applied where the person cannot inspect them.
+    → [`docs/product/2026-09-10-capability-packs.md`](docs/product/2026-09-10-capability-packs.md)
 
 ---
 
