@@ -72,7 +72,7 @@ of these is a design question before it is an implementation one.
 
 ## Resolved
 
-### R6. History retention was configured and not enforced
+### R7. History retention was configured and not enforced (raised as O5)
 
 **Settled 2026-09-10 by Andrew: preserve the evidence, remove the controls.**
 `Settings.history.keepDays` (30) and `maxBytesPerProject` (2 GB) were stored, validated
@@ -86,6 +86,12 @@ Both keys are gone from `Settings`, from the defaults and from the settings vali
 defaults and a retired key would otherwise be read back and rewritten forever. History
 now keeps everything, and the README and the website say so rather than describing a
 control that does not work.
+
+This is not a ruling that data can never be deleted. Diomedes relies on durable
+attribution, receipts, authorization history, verification and evidence as part of its
+trust model, so what it will not do is expose a blunt setting that destroys that record
+before the archival, deletion, organization-policy and legal data-lifecycle model exists.
+Designing those semantics deliberately is future work, not a closed door.
 
 Still open, when someone wants it: what a real retention and archive policy allows. It
 has to answer whether ageing out may remove the record of an authorized effect, and if

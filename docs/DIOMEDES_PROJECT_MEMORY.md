@@ -1,6 +1,6 @@
 # DIOMEDES PROJECT MEMORY — CANONICAL
 
-Version: 2026-09-10.6
+Version: 2026-09-10.7
 Last reconciled: September 10, 2026
 Cloud canonical: 13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw
 Repository mirror: docs/DIOMEDES_PROJECT_MEMORY.md
@@ -88,6 +88,14 @@ An Agent (2026-09-10) is a versioned, capability-aware, policy-governed worker i
 Direct-agent mode lets an explicitly chosen external engine be primary executor/reasoner while Diomedes keeps surrounding project state and the control guarantees its adapter actually provides. Engine, model, provider/account route and worker are distinct. Preserve actual runtime-reported attribution per turn/proposal/event; do not rename history when the picker changes. Unknown model identity remains unknown. Reserve Diomedes reasoning attribution for Diomedes-led work; application infrastructure actions may still truthfully use the Diomedes name.
 
 Memory/preferences, retrieved business knowledge, reusable skills, behavioral rules, enforced policy, pending runtime state, evaluations and governed training data remain distinct. A remembered preference is not permission, and a prose summary is not the record of pending work.
+
+A Project (2026-09-10.7) is the durable container for an outcome and its working context: Threads and Tasks, the Diomedes Agent or Team doing the work, Files and artifacts, capabilities/rules/context, permissions, and evidence/History. It is the level at which work outlives a conversation, and the Diomedes Agent operates across the work inside a Project rather than being conceptually trapped inside one Thread. Projects are general-purpose by construction: a software Project may hold source and repositories where a restaurant or remodeling Project holds documents, exported reports, spreadsheets, connector-backed information, procedures, approvals, generated artifacts, tasks and operating evidence. Same contract, different contents. Workspace/organization sits above a Project and owns identity, membership, entitlement and policy.
+
+Human work statuses (2026-09-10.7) — Working, Needs you, Ready for review, Finished recently — are a projection over the authoritative task, run, Need, review and evidence records, not a lifecycle of their own. `taskBoardState` is the existing precedent: a pure function from a durable record to a display state that stores nothing. A status that cannot be derived means the underlying record is wrong, and the fix is the record rather than a display state stored beside it. "Recently" is a display window and never a retention rule.
+
+History is evidence (2026-09-10.7). Durable attribution, receipts, authorization history, verification and evidence are part of the trust model, so Diomedes does not expose a blunt retention control that destroys them. This is not a rule that data can never be deleted; archival, deletion, organization-policy and legal data-lifecycle semantics are deliberate future design, and until they exist no setting may prune the record of an authorized effect.
+
+A path is judged by what it resolves to (2026-09-10.7), not by how it is spelled. A Windows 8.3 short-name alias is expanded at the `safeAbsolute` trust funnel and the forbidden and private checks re-run against the resolved path. A path guard is never widened by deleting it.
 
 ## Experience and autonomy
 
