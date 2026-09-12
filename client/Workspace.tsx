@@ -93,13 +93,7 @@ export function Workspace({
   const [buffer, setBuffer] = useState('');
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<Mode>(() => {
-    try {
-      return localStorage.getItem(askDraftKey(projectId)) ? 'ask' : 'ask';
-    } catch {
-      return 'ask';
-    }
-  });
+  const [mode, setMode] = useState<Mode>('ask');
   const [prompt, setPrompt] = useState(() => {
     try {
       const carried = localStorage.getItem(askDraftKey(projectId));
@@ -1054,8 +1048,6 @@ export function Workspace({
     }
     return rows;
   }
-  const codex = integrations.find((i) => i.id === 'codex');
-  void codex;
   function historyRow(entry: HistoryEntry) {
     // The recorded origin behind this entry, looked up from its own snapshot
     // first, then its session engine. The current picker never renames it.
