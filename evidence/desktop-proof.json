@@ -1,12 +1,12 @@
 {
-  "checkedAt": "2026-09-09T12:08:26.619Z",
-  "executablePath": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
+  "checkedAt": "2026-09-12T04:36:45.944Z",
+  "executablePath": "F:\\Diomedes\\diomedes-wt\\release-20260912\\release\\Diomedes-win32-x64\\Diomedes.exe",
   "startup": {
     "version": "0.1.1",
-    "executable": "F:\\Achilles\\diomedes\\release\\Diomedes-win32-x64\\Diomedes.exe",
-    "pid": 39860,
-    "url": "http://127.0.0.1:62110",
-    "startedAt": "2026-09-09T12:08:23.348Z",
+    "executable": "F:\\Diomedes\\diomedes-wt\\release-20260912\\release\\Diomedes-win32-x64\\Diomedes.exe",
+    "pid": 32092,
+    "url": "http://127.0.0.1:62481",
+    "startedAt": "2026-09-12T04:36:42.698Z",
     "packaged": true
   },
   "taskCount": 4,
@@ -35,13 +35,13 @@
         "requests": 2,
         "receipt": {
           "protocolVersion": 1,
-          "commandId": "88308c66-4276-4de4-baf3-042633afb188",
+          "commandId": "cd8189d5-d940-4a0b-97ee-d064346313ef",
           "payloadDigest": "sha256:fadcf63690b2b3db42ae6d4235215abcca34c2ec981e85fb099ae14967a4380b",
-          "projectId": "a1b870c5f6fb",
+          "projectId": "8d08c50943b0",
           "taskId": "T1",
-          "sessionId": "Se494bf839b9a",
-          "eventId": "Ebfa155fbd56d",
-          "admittedAt": "2026-09-09T12:08:24.053Z",
+          "sessionId": "Sa412ca4f3421",
+          "eventId": "Eb680b9390c29",
+          "admittedAt": "2026-09-12T04:36:43.359Z",
           "route": "sample",
           "scope": "local-prototype"
         }
@@ -51,13 +51,13 @@
         "requests": 2,
         "receipt": {
           "protocolVersion": 1,
-          "commandId": "b74b4401-dfa4-474a-a624-8e1537feb43c",
+          "commandId": "e7d00b8e-92a6-42ab-9c56-53664d28ab3c",
           "payloadDigest": "sha256:c54fc3a39939f69aa3a84c980ea9f1958fea1384906bab71ed501b1853d707f8",
-          "projectId": "a1b870c5f6fb",
+          "projectId": "8d08c50943b0",
           "taskId": "T1",
-          "sessionId": "S628fc2446394",
-          "eventId": "E8b9e26980cd6",
-          "admittedAt": "2026-09-09T12:08:24.375Z",
+          "sessionId": "Sd29adf13faac",
+          "eventId": "Ea1132e47a6af",
+          "admittedAt": "2026-09-12T04:36:43.681Z",
           "route": "sample",
           "scope": "local-prototype"
         }

@@ -120,6 +120,20 @@ right budget, and whether an unanswered probe should refuse rather than guess (o
 Options 1 and 2 are no longer recommended, because the measured cause was a cold host, not
 a slow one.
 
+### O7. What version the first fully recorded candidate carries, and what its installer is called
+
+Raised 2026-09-12. `diomedes-0.1.1-windows-experimental-20260912-da84689e08d7` is the first
+candidate whose package, installer and record exist together on one machine
+(`docs/implementation/2026-09-12-release-candidate.md`). It is version 0.1.1, like both
+earlier identities, because bumping the version is not a build task. Two installers named
+`Diomedes-Experimental-0.1.1-unsigned-setup.exe` now exist in history with different
+digests, and the stable update channel tells releases apart by version. Separately, the
+installer's product id, ownership marker and Start Menu folder are still named `20260909`
+in `scripts/build-windows-installer.mjs`; renaming them breaks upgrade continuity with the
+earlier installer, so they were left as they are. Andrew decides whether this candidate
+becomes 0.1.2 or stays an unpublished experimental 0.1.1, and when the product identity is
+renamed, once, on purpose.
+
 ## Resolved
 
 ### R7. History retention was configured and not enforced (raised as O5)

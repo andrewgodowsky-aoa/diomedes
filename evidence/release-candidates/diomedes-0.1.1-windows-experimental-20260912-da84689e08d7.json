@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "diomedes-0.1.1-windows-experimental-20260912-da84689e08d7",
+  "named": true,
+  "product": "Diomedes",
+  "appVersion": "0.1.1",
+  "channel": "experimental",
+  "build": {
+    "baseCommit": "da84689e08d73c98390bccea63669cc93a21a657",
+    "sourceStatus": "committed",
+    "sourceDigest": "ab11cc07d2e32970a74bf46e10d952987606dec519528cafaf64660cfdcb2cc0",
+    "builtAt": "2026-09-12T04:29:01.835Z",
+    "identityEmbeddedIn": "resources/app.asar:BUILD_INFO.json",
+    "sourceFiles": 229
+  },
+  "package": {
+    "directory": "release/Diomedes-win32-x64",
+    "executableSha256": "ae8ef98af1b83cacc237c1649de8a993b1577c0365e5b98066d4ad93404f249a",
+    "asarSha256": "f2836d4f00884875fc98b333915e9b8975e34b5a188da27fff48aa4f933c1bdd",
+    "electron": "44.2.0"
+  },
+  "installer": {
+    "filename": "Diomedes-Experimental-0.1.1-unsigned-setup.exe",
+    "bytes": 265954167,
+    "sha256": "ed9748c57001135598f3ba1b3c38b5a6225513749ed7594c8418ffd5f6455691",
+    "productId": "Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001",
+    "appTreeSha256": "eeb57a1a05f374401d23d14e466504943eff24f045586c002c1c480fe7d67ad4",
+    "compiler": {
+      "name": "NSIS",
+      "version": "3.12"
+    }
+  },
+  "nativeRuntime": {
+    "version": "0.153.4",
+    "sha256": {
+      "codex.exe": "a1cf6360ca71918d5466bc3a32d9f18b7044c9128756d1949e715d277b88c9b6",
+      "codex-command-runner.exe": "08b56828cca57c83d14f03eb9ec62c73a2cd6648248cc731ae8fedd5fa3ae566",
+      "codex-windows-sandbox-setup.exe": "682cf7b351a871f3479b78fe3b7ea7348554de655bd98b0f322cef2d006a8d62"
+    }
+  },
+  "protocols": {
+    "workCommand": 1,
+    "scopedGrant": 2,
+    "reviewer": 3,
+    "agent": 1,
+    "harness": [
+      "harness-v1",
+      "in-process",
+      "codex app-server 0.153.4",
+      "codex app-server 0.153.4 with diomedes_team MCP"
+    ],
+    "engines": {
+      "testedVersions": {
+        "claude-code": "2.1.252",
+        "opencode": "1.18.4",
+        "oh-my-pi": "18.0.6",
+        "cursor": "2026.08.11"
+      },
+      "claude": "2.1.252",
+      "opencode": "1.18.4",
+      "cursor": "2026.08.11"
+    }
+  },
+  "verification": {
+    "typecheck": "passed",
+    "unit": {
+      "passed": 1498,
+      "failed": 0,
+      "pending": 1,
+      "total": 1499,
+      "files": 88,
+      "report": "evidence/release-candidates/diomedes-0.1.1-windows-experimental-20260912-da84689e08d7-unit.json"
+    },
+    "browser": {
+      "expected": 52,
+      "unexpected": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "report": "evidence/release-candidates/diomedes-0.1.1-windows-experimental-20260912-da84689e08d7-browser.json",
+      "lastRun": "passed"
+    }
+  },
+  "signing": {
+    "application": "NotSigned",
+    "installer": "NotSigned",
+    "publisher": null
+  },
+  "recordedAt": "2026-09-12T04:37:43.733Z"
+}
