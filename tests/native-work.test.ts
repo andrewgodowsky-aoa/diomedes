@@ -1267,7 +1267,12 @@ ${'A rule with an exception that must not be lost. '.repeat(600)}`;
       agentRole: 'Diomedes build file proposal writer',
       budgetBytes: 8,
     });
-    expect(assembled.section).toBeNull();
+    // The model is told the instructions exist and did not fit, rather than
+    // being left unable to tell this project from one that has none.
+    expect(assembled.section).toContain('none of them fit this request');
+    expect(assembled.section).toContain('Left out of this request, and not summarised');
+    expect(assembled.section).toContain('AGENTS.md');
+    expect(assembled.section).not.toContain('Always write the reason for a change');
     expect(assembled.delivery?.truncated).toBe(true);
     expect(assembled.delivery?.bytes).toBe(0);
     expect(assembled.delivery?.files[0]).toMatchObject({ path: 'AGENTS.md', state: 'omitted' });

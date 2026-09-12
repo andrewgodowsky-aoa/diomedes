@@ -231,9 +231,21 @@ export async function assembleInstructions(input: {
     truncated: omitted.length > 0,
     bytes: used,
   };
-  // Every file was refused or unreadable: say nothing rather than open an empty
-  // section, and keep the record so History still shows what was attempted.
-  if (!bodies.length) return { section: null, delivery, governing: context.governing };
+  const left = omitted.length
+    ? `Left out of this request, and not summarised:\n${omitted
+        .map((file) => `- ${file.path}: ${file.detail}`)
+        .join('\n')}`
+    : '';
+  // Every file was refused, missing or too large. Say so anyway: a run that
+  // silently proceeds without them is indistinguishable, to the model and to
+  // the person reading the thread afterwards, from a project that never had
+  // any. The record alone cannot carry that, because the model never sees it.
+  if (!bodies.length)
+    return {
+      section: `This project has instructions the person loaded, and none of them fit this request. Nothing from them was summarised or paraphrased here.\n${left}`,
+      delivery,
+      governing: context.governing,
+    };
 
   const section = [
     PREAMBLE,
@@ -241,13 +253,7 @@ export async function assembleInstructions(input: {
       .map((rule) => `- ${rule.text}`)
       .join('\n')}`,
     ...bodies,
-    ...(omitted.length
-      ? [
-          `Left out of this request, and not summarised:\n${omitted
-            .map((file) => `- ${file.path}: ${file.detail}`)
-            .join('\n')}`,
-        ]
-      : []),
+    ...(left ? [left] : []),
   ].join('\n');
   return { section, delivery, governing: context.governing };
 }

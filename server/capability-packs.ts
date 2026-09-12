@@ -215,7 +215,7 @@ export async function recordInstructionFile(input: {
       size: stat.size,
       state: 'loaded',
       ruleId: instructionRuleId(relative),
-      detail: `Recorded as standing guidance. Work started in this project sends it to the engine whole, under this rule and named by its sha.${screened(
+      detail: `Recorded as standing guidance. Work started in this project sends it to the engine whole when it fits, under this rule and named by its sha.${screened(
         attempts,
       )}`,
     };

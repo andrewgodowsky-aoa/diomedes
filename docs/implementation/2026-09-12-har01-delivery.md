@@ -99,6 +99,12 @@ named with its reason in the prompt (`Left out of this request, and not summaris
 session record with `truncated: true`. Half a rule that lost its exception is worse than no rule —
 HAR-05's requirement, applied here rather than deferred.
 
+When *every* applied file is omitted there is still a section, carrying only the omission list and
+one sentence saying this project has instructions and none of them fit. A run that quietly proceeds
+without them would otherwise be indistinguishable — to the model and to the person reading the
+thread afterwards — from a project that never had any, and the session record cannot fix that
+because the model never sees it.
+
 There are two distinct over-size paths and they behave differently on purpose. A file past 16 KB is
 already recorded `exceeds-view-budget` by discovery and never becomes a rule, so delivery never sees
 it; the person sees the file and the reason in the Console panel, and `Project instructions found`
@@ -130,15 +136,16 @@ real HTTP app and a real project folder):
 3. A file present on disk delivers nothing until the pack that discovers it is turned on.
 4. A file past the view budget is never delivered, because discovery made no rule from it, and the
    Console record says `exceeds-view-budget`.
-5. A file with no room left after the documents is left out whole, named, recorded `truncated`, and
-   its governing rule evidence still exists.
+5. A file with no room left after the documents is left out whole; the section says so and names it
+   without paraphrasing any of it, the record says `truncated`, and its governing rule evidence
+   still exists.
 6. The budget arithmetic: 32 KB with no documents, 12 KB at the 128 KB source ceiling, 0 at the
    request limit.
 7. A file changed since discovery is sent at its current sha, and the record says it changed.
 
 ## Gates
 
-Run in this worktree, 2026-09-12, on `c05db05`:
+Run in this worktree, 2026-09-12, on `4ff8e07`:
 
 - `npx tsc --noEmit` — clean.
 - `npx vitest run` — 89 files, 1519 passed, 1 skipped (1520 total).
