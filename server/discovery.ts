@@ -173,6 +173,7 @@ function knownFolders(deps: DiscoveryDeps): string[] {
     folders.push(
       path.join(localAppData, 'Microsoft', 'WinGet', 'Links'),
       path.join(localAppData, 'omp'),
+      path.join(localAppData, 'cursor-agent'),
     );
   if (deps.env.APPDATA) folders.push(path.join(deps.env.APPDATA, 'npm'));
   const home = deps.env.USERPROFILE ?? deps.env.HOME;
@@ -256,8 +257,8 @@ const BINARY_SPECS: BinarySpec[] = [
     binary: 'agent',
     kind: 'online',
     signIn: 'first-use',
-    adapter: 'none',
-    probeVersion: false,
+    adapter: 'planned',
+    probeVersion: true,
   },
 ];
 

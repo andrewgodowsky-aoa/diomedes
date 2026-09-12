@@ -7,14 +7,23 @@ import { recordEngineCatalog } from '../models.js';
 import { ClaudeAdapter, CLAUDE_VERSION } from './claude.js';
 import { OpenCodeAdapter } from './opencode.js';
 import { OmpAdapter } from './omp.js';
+import { CursorAdapter, cursorCommand, resolveCursorEntry } from './cursor.js';
 import { managedBinary, verifyManagedBinary } from './install.js';
 import { capture, engineEnvironment, EngineError } from './process.js';
 import type { TextEngineAdapter, TextRequest } from './contract.js';
+
+function recordShimError(error: unknown): boolean {
+  return (
+    (error instanceof EngineError && error.code === 'UNSUPPORTED_SHIM') ||
+    (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+  );
+}
 
 export const TESTED_VERSIONS: Record<ExternalEngine, string> = {
   'claude-code': CLAUDE_VERSION,
   opencode: '1.18.4',
   'oh-my-pi': '18.0.6',
+  cursor: '2026.08.11',
 };
 export interface EngineServiceDeps {
   discover(): Promise<IntegrationStatus[]>;
@@ -47,9 +56,12 @@ export class EngineService {
     this.deps = {
       discover: async () => (await createDiscovery().discover()).engines,
       version: async (file, signal) => {
+        const command =
+          path.basename(file) === 'index.js'
+            ? cursorCommand(file, ['--version'])
+            : { file, args: ['--version'] };
         const result = await capture({
-          file,
-          args: ['--version'],
+          ...command,
           cwd: root,
           env: engineEnvironment(),
           signal,
@@ -69,6 +81,7 @@ export class EngineService {
       adapter: (engine, file, cwd) => {
         if (engine === 'claude-code') return new ClaudeAdapter(file, cwd);
         if (engine === 'opencode') return new OpenCodeAdapter(file, cwd);
+        if (engine === 'cursor') return new CursorAdapter(file, cwd);
         return new OmpAdapter(file, cwd);
       },
       ...deps,
@@ -98,7 +111,7 @@ export class EngineService {
       const found = await this.deps.discover();
       for (const id of EXTERNAL_ENGINES) {
         let hit = found.find((row) => row.id === id && row.found);
-        if (!hit && this.nativeDiscovery) {
+        if (!hit && this.nativeDiscovery && id !== 'cursor') {
           const file = managedBinary(this.root, id);
           try {
             await fs.access(file);
@@ -130,6 +143,14 @@ export class EngineService {
           } catch (error) {
             if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT'))
               throw error;
+          }
+        }
+        if (hit?.location && id === 'cursor' && /\.(cmd|bat)$/i.test(hit.location)) {
+          try {
+            hit = { ...hit, location: await resolveCursorEntry(hit.location) };
+          } catch (error) {
+            if (recordShimError(error)) hit = { ...hit, installedVersion: undefined };
+            else throw error;
           }
         }
         const old = this.connections.get(id)!;
@@ -192,7 +213,10 @@ export class EngineService {
         `Use the reviewed ${TESTED_VERSIONS[engine]} version before connecting this route.`,
       );
     try {
-      if (path.resolve(saved.location) === path.resolve(managedBinary(this.root, engine)))
+      if (
+        engine !== 'cursor' &&
+        path.resolve(saved.location) === path.resolve(managedBinary(this.root, engine))
+      )
         await verifyManagedBinary(this.root, engine);
       const version = await this.deps.version(saved.location, signal);
       if (version !== TESTED_VERSIONS[engine])
@@ -277,7 +301,9 @@ export class EngineService {
       capabilities: ready ? ['ask', 'plan', 'work-proposals'] : [],
       disclosure: [
         'Selected text is sent to the chosen service using its native account route.',
-        'Tools are disabled by the engine configuration; this is not an operating-system sandbox.',
+        engine === 'cursor'
+          ? 'Cursor denies tools through native permissions and stops on tool events; this is not an operating-system sandbox.'
+          : 'Tools are disabled by the engine configuration; this is not an operating-system sandbox.',
         'Diomedes reviews exact file proposals through its existing approvals and History.',
         'Usage remaining is unknown unless reported by the provider.',
       ],

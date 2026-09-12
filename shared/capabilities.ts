@@ -274,6 +274,72 @@ export const ROUTE_CAPABILITIES: Record<string, RouteCapabilities> = {
     uncertaintyAfterDispatch:
       'An unconfigured profile is not a working account. Quota and live inference are unverified.',
   },
+  cursor: {
+    routeId: 'cursor',
+    name: 'Cursor account, ACP text route',
+    storeOnlyWrites: fact(
+      'yes',
+      'diomedes-enforced',
+      'server/engines/cursor.ts returns bounded text; reviewed proposals use the existing Store.writeRecorded path (server/native-work.ts, server/store.ts).',
+    ),
+    spawnsProcesses: fact(
+      'unknown',
+      'not-measured',
+      'server/engines/cursor.ts starts the bundled CLI runtime with shell:false. Native deny rules and tool-event rejection do not prove containment of descendants.',
+    ),
+    runsShellCommands: fact(
+      'unknown',
+      'not-measured',
+      'server/engines/cursor.ts configures Shell(*) denial and ACP ask mode. No live hostile command probe has measured the native boundary.',
+    ),
+    arbitraryFilesystem: fact(
+      'unknown',
+      'not-measured',
+      'server/engines/cursor.ts configures Read(**)/Write(**) denial and offers no ACP filesystem handlers. Automatic native reads and OS access are not contained.',
+    ),
+    network: fact(
+      'unknown',
+      'not-measured',
+      'server/engines/cursor.ts denies web/MCP tools but the CLI reaches its account provider. No egress probe has measured other native traffic.',
+    ),
+    receivesSecrets: fact(
+      'no',
+      'diomedes-enforced',
+      'server/engines/cursor.ts uses engineEnvironment() from server/engines/process.ts, excluding API keys and endpoint overrides. Cursor reads its own native sign-in; Diomedes never copies credentials.',
+    ),
+    preExecutionInterception: fact(
+      'yes',
+      'diomedes-enforced',
+      'server/engines/cursor.ts denies blocking ACP client requests. The supported effect is a text proposal, applied only through exact Store review (server/native-work.ts); unseen native effects are not covered.',
+    ),
+    revocationStopsFutureEffects: fact(
+      'unknown',
+      'not-measured',
+      'server/engines/cursor.ts sends session/cancel then calls killOwnedProcess; protocol fixtures cover late-output rejection. Provider cancellation and billing after dispatch are not measured.',
+    ),
+    effectProof: fact(
+      'yes',
+      'diomedes-enforced',
+      'server/store.ts records before/after content and History for applied text proposals. This does not prove effects inside Cursor.',
+    ),
+    osSandbox: fact(
+      'no',
+      'not-implemented',
+      'server/engines/cursor.ts launches as the current user. Native permissions and an empty workspace are not an OS sandbox owned by Diomedes.',
+    ),
+    disposableEnvironment: fact(
+      'no',
+      'not-implemented',
+      'server/engines/cursor.ts uses temporary configuration, not a restorable OS environment. No environment provider exists in server/trust/environments.ts.',
+    ),
+    hostRootBoundary: fact(
+      'no',
+      'not-implemented',
+      'server/paths.ts guards Diomedes writes; server/engines/cursor.ts does not confine the native process to a host root.',
+    ),
+    uncertaintyAfterDispatch:
+      'The native process can have unseen effects, and provider work may finish or consume usage after Stop. ACP has no no-tools advertisement; a successful text fixture is not production containment proof.',
+  },
   'harness-runtime': {
     routeId: 'harness-runtime',
     name: 'Diomedes Runtime harness',

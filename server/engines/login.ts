@@ -5,12 +5,14 @@ import type { ExternalEngine } from '../../shared/types.js';
 import type { EngineConnection } from '../../shared/engines.js';
 import { killOwnedProcess } from '../integrations.js';
 import { engineEnvironment, EngineError } from './process.js';
+import { cursorCommand, resolveCursorEntry } from './cursor.js';
 
 const psQuote = (value: string) => `'${value.replaceAll("'", "''")}'`;
 export function loginCommand(engine: ExternalEngine): string[] {
   if (engine === 'claude-code')
     return ['--safe-mode', '--setting-sources', '', 'auth', 'login', '--claudeai'];
   if (engine === 'opencode') return ['auth', 'login', '--pure', '--provider', 'opencode-go'];
+  if (engine === 'cursor') return ['login'];
   throw new EngineError(
     'LOGIN_UNSUPPORTED',
     'Direct OpenAI API access uses the native OMP models.yml configuration, not OAuth login.',
@@ -110,9 +112,13 @@ export class NativeLogin {
     }
     const caption =
       'Complete sign-in in this native tool, then use Check sign-in and models in Diomedes.';
+    const command =
+      engine === 'cursor'
+        ? cursorCommand(await resolveCursorEntry(connection.location), loginCommand(engine))
+        : { file: connection.location, args: loginCommand(engine) };
     const script =
       `$ErrorActionPreference='Stop'\nSet-Location -LiteralPath ${psQuote(cwd)}\nWrite-Host ${psQuote(caption)}\n` +
-      `& ${psQuote(connection.location)} @(${loginCommand(engine).map(psQuote).join(',')})\n` +
+      `& ${psQuote(command.file)} @(${command.args.map(psQuote).join(',')})\n` +
       `if ($LASTEXITCODE -ne 0) { Write-Host 'Sign-in did not complete. Recheck the native tool.'; Read-Host 'Press Enter to close' | Out-Null }`;
     const child = this.launch(
       path.join(

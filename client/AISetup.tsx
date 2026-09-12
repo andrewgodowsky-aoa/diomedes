@@ -522,7 +522,7 @@ export function AIConnections({ settings, save, busy }: AIConnectionProps) {
                       </div>
                       <p>{offer.detail}</p>
                       <div className="actions">
-                        <Button disabled={busy} onClick={() => void install(engine)}>
+                        <Button disabled={busy || !offer.available} onClick={() => void install(engine)}>
                           Install selected tool
                         </Button>
                       </div>

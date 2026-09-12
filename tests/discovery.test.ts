@@ -184,14 +184,14 @@ describe('binary engine discovery', () => {
     expect(opencode.installedVersion).toBeUndefined();
   });
 
-  it('reports Cursor as installed without running its launcher', async () => {
+  it('probes Cursor version while keeping discovery separate from readiness', async () => {
     const ran: string[] = [];
     const discovery = createDiscovery(
       fakeDeps({
         which: async (name) => (name === 'agent' ? ['C:\\tools\\agent.cmd'] : []),
         run: async (file) => {
           ran.push(file);
-          return okRun('2026.1.1');
+          return okRun('2026.08.11-e8db854');
         },
       }),
     );
@@ -200,11 +200,13 @@ describe('binary engine discovery', () => {
     expect(cursor).toMatchObject({
       found: true,
       status: 'Installed',
-      detail: 'Cursor is installed. Diomedes does not use it.',
+      detail: 'Cursor 2026.08.11 is installed. Diomedes cannot run it yet.',
       location: 'C:\\tools\\agent.cmd',
+      available: false,
+      adapter: 'planned',
     });
-    expect(cursor.installedVersion).toBeUndefined();
-    expect(ran).toEqual([]);
+    expect(cursor.installedVersion).toBe('2026.08.11');
+    expect(ran).toEqual(['C:\\tools\\agent.cmd']);
   });
 
   it('runs one probe at a time', async () => {

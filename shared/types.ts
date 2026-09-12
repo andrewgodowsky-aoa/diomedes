@@ -23,7 +23,7 @@ export type Page =
 export type Mode = 'ask' | 'plan' | 'build' | 'fix';
 export type TaskState = 'todo' | 'working' | 'waiting' | 'done';
 export type Owner = 'you' | 'diomedes' | 'diomedes-with-ok';
-export type ExternalEngine = 'claude-code' | 'opencode' | 'oh-my-pi';
+export type ExternalEngine = 'claude-code' | 'opencode' | 'oh-my-pi' | 'cursor';
 export type Route = 'sample' | 'codex' | ExternalEngine;
 export interface Settings {
   version: 1;

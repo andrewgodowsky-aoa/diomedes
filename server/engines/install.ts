@@ -41,7 +41,7 @@ const RELEASES = {
       'Uses a separate native oh-my-pi profile with an OpenAI API key configured in models.yml. API billing is separate from ChatGPT; credentials stay with oh-my-pi.',
   },
 } satisfies Record<
-  ExternalEngine,
+  Exclude<ExternalEngine, 'cursor'>,
   {
     version: string;
     publisher: string;
@@ -54,10 +54,14 @@ const RELEASES = {
 >;
 
 export function managedBinary(root: string, engine: ExternalEngine) {
+  if (engine === 'cursor')
+    throw new EngineError('INSTALL_UNSUPPORTED', 'Install Cursor from cursor.com, then recheck.');
   const release = RELEASES[engine];
   return path.join(root, 'installed', engine, release.version, release.binary);
 }
 export async function verifyManagedBinary(root: string, engine: ExternalEngine) {
+  if (engine === 'cursor')
+    throw new EngineError('INSTALL_UNSUPPORTED', 'Cursor is not managed by Diomedes.');
   // OpenCode's ZIP digest and its extracted executable digest are different.
   // This executable digest was obtained only after verifying the pinned ZIP.
   const expected =
@@ -134,6 +138,20 @@ export class EngineInstaller {
     } = {},
   ) {}
   offer(engine: ExternalEngine): InstallOffer {
+    if (engine === 'cursor')
+      return {
+        engine,
+        publisher: 'Cursor',
+        source: 'https://cursor.com',
+        version: '2026.08.11',
+        destination: 'Chosen by the Cursor installer',
+        dependencies: [],
+        privileges: 'Managed by the Cursor installer.',
+        account: 'Sign in through the native Cursor CLI with agent login.',
+        available: false,
+        detail:
+          'Install Cursor from cursor.com, then check this computer again. Diomedes does not install Cursor.',
+      };
     const release = RELEASES[engine];
     const available =
       (this.deps.platform ?? process.platform) === 'win32' &&
@@ -163,7 +181,7 @@ export class EngineInstaller {
         'CONSENT_REQUIRED',
         'Review and confirm the selected installation first.',
       );
-    if (!this.offer(engine).available)
+    if (engine === 'cursor' || !this.offer(engine).available)
       throw new EngineError('INSTALL_UNSUPPORTED', this.offer(engine).detail);
     if (this.active.has(engine))
       throw new EngineError('INSTALL_ACTIVE', 'This tool already has an installation in progress.');

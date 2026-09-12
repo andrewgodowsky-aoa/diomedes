@@ -51,7 +51,7 @@ describe('honest route capability model', () => {
     }
   });
   test('an imported text adapter does not claim the shell answer a flag cannot prove', () => {
-    for (const routeId of ['claude-code', 'opencode', 'oh-my-pi']) {
+    for (const routeId of ['claude-code', 'opencode', 'oh-my-pi', 'cursor']) {
       const route = ROUTE_CAPABILITIES[routeId];
       expect(route.runsShellCommands.answer).toBe('unknown');
       expect(route.arbitraryFilesystem.answer).toBe('unknown');

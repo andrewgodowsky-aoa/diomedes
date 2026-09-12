@@ -10,7 +10,7 @@ import type {
 import { MODE_CEILING, effortFor } from '../../shared/effort';
 import { api } from '../api';
 
-const ENGINE_IDS = ['codex', 'claude-code', 'opencode', 'oh-my-pi'] as const;
+const ENGINE_IDS = ['codex', 'claude-code', 'opencode', 'oh-my-pi', 'cursor'] as const;
 
 interface PickerProps {
   thread: Conversation;

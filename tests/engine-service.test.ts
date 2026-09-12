@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { EngineService } from '../server/engines/service.js';
-import type { IntegrationStatus } from '../shared/types.js';
+import { EngineService, TESTED_VERSIONS } from '../server/engines/service.js';
+import type { ExternalEngine, IntegrationStatus } from '../shared/types.js';
 import type { TextEngineAdapter } from '../server/engines/contract.js';
 const installed: IntegrationStatus = {
   id: 'claude-code',
@@ -21,30 +21,43 @@ const installed: IntegrationStatus = {
   location: 'tool.exe',
   disclosure: [],
 };
-const model = { slug: 'sonnet', name: 'Sonnet', description: '', efforts: [], defaultEffort: null };
+const model = {
+  slug: 'sonnet',
+  name: 'Sonnet',
+  description: '',
+  efforts: [],
+  defaultEffort: null,
+};
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
-function fixture(auth: 'signed-in' | 'unknown' = 'signed-in') {
+function fixture(
+  auth: 'signed-in' | 'unknown' = 'signed-in',
+  engine: ExternalEngine = 'claude-code',
+) {
+  const accountRoute = engine === 'cursor' ? 'cursor:cursor-account' : 'claude-code:claude.ai';
+  const version = TESTED_VERSIONS[engine];
   const inspect = vi.fn(async () => ({
     authentication: auth,
-    accountRoute: 'claude-code:claude.ai',
+    accountRoute,
     models: [model],
     detail: 'Checked',
   }));
   const generate = vi.fn<TextEngineAdapter['generate']>(async (input) => ({
     ...input,
     text: 'Answer',
-    version: '2.1.252',
+    version,
   }));
-  const discover = vi.fn(async () => [installed]);
+  const discover = vi.fn<() => Promise<IntegrationStatus[]>>(async () => [
+    { ...installed, id: engine, installedVersion: version },
+  ]);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'diomedes-setup-'));
   roots.push(root);
   const service = new EngineService(root, {
     discover,
-    version: async () => '2.1.252',
-    adapter: () => ({ id: 'claude-code', inspect, generate }),
+    version: async () => version,
+    adapter: () => ({ id: engine, inspect, generate }),
   });
   return { service, inspect, generate, discover };
 }
@@ -52,12 +65,20 @@ describe('AI setup readiness and dispatch', () => {
   it('does no discovery at creation or when reading cached state', () => {
     const { service, discover, inspect } = fixture();
     expect(service.status()[0].installation).toBe('not-checked');
+    expect(service.status().map((row) => row.engine)).toEqual([
+      'claude-code',
+      'opencode',
+      'oh-my-pi',
+      'cursor',
+    ]);
     expect(discover).not.toHaveBeenCalled();
     expect(inspect).not.toHaveBeenCalled();
   });
   it('requires disclosure consent and only reports installation on discovery', async () => {
     const { service, inspect } = fixture();
-    await expect(service.discover(false)).rejects.toMatchObject({ code: 'CONSENT_REQUIRED' });
+    await expect(service.discover(false)).rejects.toMatchObject({
+      code: 'CONSENT_REQUIRED',
+    });
     await service.discover(true);
     expect(service.status()[0]).toMatchObject({
       installation: 'found',
@@ -65,6 +86,40 @@ describe('AI setup readiness and dispatch', () => {
       authentication: 'unknown',
     });
     expect(inspect).not.toHaveBeenCalled();
+  });
+  it('discovers, checks and dispatches Cursor through the same account and identity guards', async () => {
+    const { service, generate } = fixture('signed-in', 'cursor');
+    await service.discover(true);
+    await service.check('cursor');
+    expect(service.selection('cursor', 'sonnet')).toEqual({
+      engine: 'cursor',
+      model: 'sonnet',
+      accountRoute: 'cursor:cursor-account',
+    });
+    const input = {
+      projectId: 'p',
+      threadId: 't',
+      requestId: 'r',
+      model: 'sonnet',
+      accountRoute: 'cursor:cursor-account',
+      prompt: 'Question',
+      instructions: '',
+      documents: [],
+    };
+    await expect(service.generate('cursor', input)).resolves.toMatchObject({
+      text: 'Answer',
+      version: '2026.08.11',
+    });
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(service.integration('cursor', false)).toMatchObject({
+      available: true,
+      enabled: false,
+    });
+    expect(service.integration('cursor', false).disclosure.join(' ')).toContain('denies tools');
+    await expect(
+      service.generate('cursor', { ...input, accountRoute: 'cursor:api' }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_CHANGED' });
+    expect(generate).toHaveBeenCalledTimes(1);
   });
   it('does not mistake unknown authentication for usable models', async () => {
     const { service } = fixture('unknown');
