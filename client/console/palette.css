@@ -64,6 +64,7 @@
   grid-column: 2;
   font: 400 var(--dm-type-body) / 1.5 var(--mono);
   color: var(--t3);
+  overflow-wrap: anywhere;
 }
 .console .palette li .acts {
   grid-column: 3;

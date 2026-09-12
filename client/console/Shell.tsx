@@ -58,6 +58,7 @@ import './console.css';
 import './palette.css';
 import './motion.css';
 import './files.css';
+import { activeInstructionFiles } from '../../shared/capability-packs';
 
 interface ShellProps {
   projectId: string;
@@ -980,6 +981,7 @@ export function Shell({
               history={state.history}
               allNeeds={state.needs}
               changes={state.changes}
+              instructionFiles={activeInstructionFiles(state.project.packs, state.instructionFiles)}
               grantActive={!!activeGrant}
               onScope={() => setPermissionsOpen(true)}
               permissionControl={
