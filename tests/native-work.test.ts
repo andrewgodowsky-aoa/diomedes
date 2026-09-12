@@ -984,6 +984,49 @@ describe('untrusted generated proposal validation', () => {
     expect(failed.needs).toEqual([]);
     expect(failed.changes).toEqual([]);
   });
+
+  test('a refused prose reply is kept on the session and its fault entry', async () => {
+    const refusal =
+      'The engine did not return a valid file proposal. No files were changed. Start again to request a new proposal.';
+    invoke = async () => ({ text: 'Here is your plan: use the menu.', model: 'test-model' });
+    await start([]);
+    const failed = await until((current) => current.sessions[0].state === 'failed');
+    const expected = {
+      rawReply: 'Here is your plan: use the menu.',
+      rawReplyLength: 32,
+      parseError: refusal,
+    };
+    expect(failed.sessions[0]).toMatchObject(expected);
+    const fault = failed.history.find((entry) => entry.kind === 'fault')!;
+    expect(fault).toMatchObject(expected);
+    expect(fault.sentence).toContain('The engine did not return a valid file proposal');
+  });
+
+  test('a long refused reply is capped at 4000 characters with a truncation note', async () => {
+    invoke = async () => ({ text: 'x'.repeat(10_000), model: 'test-model' });
+    await start([]);
+    const failed = await until((current) => current.sessions[0].state === 'failed');
+    expect(failed.sessions[0].rawReplyLength).toBe(10_000);
+    expect(failed.sessions[0].rawReply).toBe(`${'x'.repeat(4000)}… [truncated, 10000 chars]`);
+    expect(failed.history.find((entry) => entry.kind === 'fault')?.rawReply).toBe(
+      failed.sessions[0].rawReply,
+    );
+  });
+
+  test('a refused reply keeps no key, token or Windows user name', async () => {
+    invoke = async () => ({
+      text: 'Refused: key sk-abcdefghijkl, Bearer tok.en-123456, profile C:\\Users\\andre\\menu.',
+      model: 'test-model',
+    });
+    await start([]);
+    const failed = await until((current) => current.sessions[0].state === 'failed');
+    const reply = failed.sessions[0].rawReply!;
+    expect(reply).not.toContain('sk-abcdefghijkl');
+    expect(reply).not.toContain('tok.en-123456');
+    expect(reply).not.toContain('C:\\Users\\andre');
+    expect(reply).toContain('[redacted]');
+    expect(failed.history.find((entry) => entry.kind === 'fault')?.rawReply).toBe(reply);
+  });
 });
 
 describe('file proposal extraction', () => {

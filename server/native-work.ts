@@ -75,15 +75,45 @@ interface NativeRun {
   agent?: AgentResolution;
   proposal?: Proposal;
   writes?: WriteInput[];
+  /**
+   * The scrubbed, capped reply behind a refused proposal, kept on the run
+   * because a thrown parse refusal makes locked() reload the last durable
+   * state; fail() then writes it onto the session and its fault entry.
+   */
+  faultReply?: { rawReply: string; rawReplyLength: number; parseError?: string };
   teamRunId?: string;
   releaseToken?: () => void;
   redact?: (text: string) => string;
 }
 const MAX_FILES = 8;
 const MAX_BYTES = 128_000;
+const RAW_REPLY_CAP = 4000;
 const active = (session: Session) => ['queued', 'working', 'waiting'].includes(session.state);
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/**
+ * The raw reply behind a refused or empty proposal is evidence a person may
+ * need to diagnose a paid turn that produced nothing, so it is kept — but never
+ * as a secret carrier: keys, bearer tokens and Windows user names are redacted
+ * before the text is stored, and it is capped with an honest truncation note.
+ */
+function keepRawReply(text: string, redact?: (text: string) => string) {
+  const scrubbed = (
+    text
+      .replace(/sk-[A-Za-z0-9_-]{8,}/g, '[redacted]')
+      .replace(/Bearer [A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
+      .replace(/([A-Za-z]:\\Users\\)[^\\/:*?"<>|]+/g, '$1[redacted]')
+  ).trim();
+  const cleaned = redact ? redact(scrubbed) : scrubbed;
+  return {
+    rawReply:
+      cleaned.length <= RAW_REPLY_CAP
+        ? cleaned
+        : `${cleaned.slice(0, RAW_REPLY_CAP)}… [truncated, ${cleaned.length} chars]`,
+    rawReplyLength: cleaned.length,
+  };
+}
 
 /**
  * A paid model turn sometimes wraps the JSON object in a ```json fence or adds
@@ -538,7 +568,20 @@ export class NativeWorkService {
         session.engine.version = result.version ?? null;
         session.engine.verified = Boolean(result.model);
         await this.store.persist(state);
-        const proposal = parseProposal(result.text);
+        // A refused reply is kept as evidence for fail() to record: a thrown
+        // parse refusal makes locked() reload the last durable state, so the
+        // fields cannot ride on the session from here.
+        let proposal: Proposal;
+        try {
+          proposal = parseProposal(result.text);
+        } catch (error) {
+          run.faultReply = {
+            ...keepRawReply(result.text, run.redact),
+            parseError:
+              error instanceof Error ? error.message : 'The proposal could not be parsed.',
+          };
+          throw error;
+        }
         if (run.redact) {
           proposal.summary = run.redact(proposal.summary);
           for (const change of proposal.changes) {
@@ -653,6 +696,9 @@ export class NativeWorkService {
         this.log(session, proposal.summary);
         if (!writes.length) {
           this.log(session, 'The proposal changes no files.');
+          const kept = keepRawReply(result.text, run.redact);
+          session.rawReply = kept.rawReply;
+          session.rawReplyLength = kept.rawReplyLength;
           session.state = 'done';
           session.endedAt = now();
           this.store.moveTask(state, task, 'done', 'diomedes');
@@ -977,7 +1023,25 @@ export class NativeWorkService {
     }
     this.log(session, sentence);
     this.store.moveTask(state, task, 'waiting', 'diomedes');
-    this.store.addEntry(state, { kind: 'fault', sentence, sessionId: session.id, taskId: task.id });
+    const fault = this.store.addEntry(state, {
+      kind: 'fault',
+      sentence,
+      sessionId: session.id,
+      taskId: task.id,
+    });
+    // History is evidence: write the kept reply onto the session and its fault
+    // entry so the failure is diagnosable without leaving the session record.
+    if (run.faultReply) {
+      const { rawReply, rawReplyLength, parseError } = run.faultReply;
+      session.rawReply = rawReply;
+      session.rawReplyLength = rawReplyLength;
+      fault.rawReply = rawReply;
+      fault.rawReplyLength = rawReplyLength;
+      if (parseError !== undefined) {
+        session.parseError = parseError;
+        fault.parseError = parseError;
+      }
+    }
     this.runs.delete(run.projectId);
     this.finishTeam(run, 'failed', sentence);
     await this.store.persist(state);

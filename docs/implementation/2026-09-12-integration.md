@@ -71,6 +71,14 @@ on a route until the next candidate is built and one turn is spent.
   a refused turn is attributed. OpenCode's startup budget now says how many seconds it waited.
   Tests for each. Whether this is the whole cause is unknown, because no raw reply was
   recorded; the next journey run will say.
+- **Fault reply persistence** (this worktree). When the parser refuses a reply, the scrubbed
+  reply is now kept: `rawReply` (capped at 4,000 characters with a `… [truncated, N chars]`
+  note), `rawReplyLength` (uncut) and `parseError` land on the session and on the `fault`
+  History entry in `fail()` before the failure persists, so the Console's History carries the
+  evidence; the user-facing sentence is unchanged. The reply is redacted for `sk-…` keys,
+  `Bearer …` tokens and `C:\Users\<name>` paths (plus the team-token scrubber where one is
+  leased) before it is stored, and the same fields are kept when a reply parses but changes
+  nothing. Three tests in `tests/native-work.test.ts`.
 
 ## 4. The readability change
 

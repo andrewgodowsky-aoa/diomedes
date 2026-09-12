@@ -256,6 +256,16 @@ export interface Session {
   log: { time: string; sentence: string; level: 'plain' | 'technical' }[];
   entryIds: string[];
   needId: string | null;
+  /**
+   * The scrubbed, capped engine reply kept when the proposal parser refused it
+   * or the proposal changed nothing, so a paid turn that produced no proposal
+   * still leaves diagnosable evidence. Missing on sessions recorded before
+   * 2026-09-12. `rawReplyLength` is the uncut length; `parseError` is set only
+   * when the parser refused the reply.
+   */
+  rawReply?: string;
+  rawReplyLength?: number;
+  parseError?: string;
   engine: {
     name: string;
     model: string | null;
@@ -298,6 +308,14 @@ export interface HistoryEntry {
   commit: string | null;
   /** Links a decision or recorded write to its exact Need. */
   approvalId?: string;
+  /**
+   * The scrubbed, capped raw engine reply behind a fault or empty proposal,
+   * mirroring the session record so History stays the evidence a person can
+   * read. Missing on entries recorded before 2026-09-12.
+   */
+  rawReply?: string;
+  rawReplyLength?: number;
+  parseError?: string;
 }
 export interface Change {
   id: string;
