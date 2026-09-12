@@ -332,3 +332,79 @@ test('Console exact approval recovers both lost responses from durable state eve
   await expect(pane).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test('Console New task makes a task, Ready shows it, and Start admits one run', async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const fresh = await api<Project>('/projects/sample', 'POST', {});
+  await api('/settings', 'PUT', { surface: 'console', openProjects: [fresh.id] });
+  await page.goto(baseURL);
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
+  const rail = page.getByRole('navigation', { name: 'Threads and views' });
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  const board = page.locator('.board[aria-label="Board"]');
+  await expect(board).toBeVisible();
+  const ready = board.locator('.column[aria-label="Ready"]');
+  await expect(ready).toContainText('Nothing is ready. New task adds one.');
+  await board.getByRole('button', { name: 'New task', exact: true }).click();
+  const form = board.locator('form.newtask');
+  await form.getByLabel('Task name').fill('Draft the operations brief');
+  await form.getByLabel('What should happen (optional)').fill('Propose one short section.');
+  await form.getByRole('button', { name: 'Create', exact: true }).click();
+  const row = ready.locator('.crow').filter({ hasText: 'Draft the operations brief' });
+  await expect(row).toBeVisible();
+  await expect(form).toHaveCount(0);
+  await row.getByRole('button', { name: 'Start', exact: true }).click();
+  const confirm = row.locator('.confirm');
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole('button', { name: 'Start', exact: true }).click();
+  await expect.poll(async () => (await api<ProjectState>(`/projects/${fresh.id}/state`)).sessions.length).toBe(1);
+  const state = await api<ProjectState>(`/projects/${fresh.id}/state`);
+  expect(state.tasks).toHaveLength(1);
+  expect(state.tasks[0].name).toBe('Draft the operations brief');
+  expect(state.tasks[0].description).toBe('Propose one short section.');
+  expect(state.sessions[0].taskId).toBe(state.tasks[0].id);
+  expect(state.sessions[0].receipt?.commandId).toBeTruthy();
+  expect(state.history.filter(entry => entry.kind === 'tasks-made')).toHaveLength(1);
+  expect(state.history.filter(entry => entry.kind === 'work-admitted')).toHaveLength(1);
+  await page.screenshot({ path: testInfo.outputPath('console-new-task.png'), animations: 'disabled', fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test('Console Start again restarts a faulted task through the same admission', async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const faulted = await api<Project>('/projects/sample', 'POST', {});
+  const task = await api<{ id: string }>(`/projects/${faulted.id}/tasks`, 'POST', { name: 'Add NOTES.md for the plan', owner: 'you' });
+  const generationsBefore = generationCount;
+  await api(`/projects/${faulted.id}/work/start`, 'POST', {
+    protocolVersion: 1, commandId: 'console-faulted-start', taskId: task.id, route: 'codex', sources: [], consent: true,
+  });
+  await expect.poll(async () => (await api<ProjectState>(`/projects/${faulted.id}/state`)).sessions[0]?.state).toBe('failed');
+  expect(generationCount).toBe(generationsBefore + 1);
+  await api('/settings', 'PUT', { surface: 'console', openProjects: [faulted.id] });
+  await page.goto(baseURL);
+  const rail = page.getByRole('navigation', { name: 'Threads and views' });
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  const board = page.locator('.board[aria-label="Board"]');
+  await expect(board).toBeVisible();
+  const blocked = board.locator('.column[aria-label="Blocked"]');
+  const row = blocked.locator('.crow').filter({ hasText: 'Add NOTES.md for the plan' });
+  await expect(row).toContainText('Run failed');
+  await expect(row.getByRole('button', { name: 'Route to', exact: true })).toHaveCount(0);
+  await row.getByRole('button', { name: 'Start again', exact: true }).click();
+  const confirm = row.locator('.confirm');
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole('button', { name: 'Start again', exact: true }).click();
+  await expect.poll(async () => (await api<ProjectState>(`/projects/${faulted.id}/state`)).sessions.length).toBe(2);
+  const state = await api<ProjectState>(`/projects/${faulted.id}/state`);
+  expect(state.sessions[1].receipt?.commandId).toBeTruthy();
+  expect(state.sessions[1].receipt?.commandId).not.toBe(state.sessions[0].receipt?.commandId);
+  expect(state.sessions[1].taskId).toBe(task.id);
+  expect(state.history.filter(entry => entry.kind === 'work-admitted')).toHaveLength(2);
+  expect(state.tasks).toHaveLength(1);
+  await expect.poll(() => page.evaluate(() => Object.keys(sessionStorage)
+    .filter(key => key.startsWith('diomedes.work-start.pending.')).length)).toBe(0);
+  await page.screenshot({ path: testInfo.outputPath('console-start-again.png'), animations: 'disabled', fullPage: true });
+  expect(errors).toEqual([]);
+});

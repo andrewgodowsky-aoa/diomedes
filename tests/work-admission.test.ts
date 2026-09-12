@@ -484,6 +484,69 @@ describe('durable task Work admission', () => {
     },
   );
 
+  // The Board's faulted row now says "Start again", and the fault sentence has
+  // said so all along. This is the server half of that promise: the same task,
+  // the same route, a new command identity, and no way for a second press to
+  // become a second run.
+  test('a faulted run is admitted again under a new command, and each command runs once', async () => {
+    generate.mockImplementationOnce(async () => ({
+      model: 'deterministic-fixture',
+      version: 'fixture-1',
+      text: 'Certainly! Here is some prose where the JSON proposal should be.',
+    }));
+    const first = await start(command('faulted-start'));
+    expect(first.status).toBe(200);
+    const faulted = await until((s) => s.sessions[0]?.state === 'failed');
+    expect(faulted.tasks[0].state).toBe('waiting');
+    expect(faulted.tasks[0].reason).toBe('went-wrong');
+    expect(faulted.history.some((entry) => entry.kind === 'fault')).toBe(true);
+
+    const again = await start(command('start-again'));
+    expect(again.status).toBe(200);
+    expect(again.data.id).not.toBe(first.data.id);
+    expect(again.data.receipt?.commandId).toBe('start-again');
+    expect(again.data.taskId).toBe(taskId);
+    await until((s) => s.sessions[1]?.state === 'waiting');
+    expect(current().history.filter((entry) => entry.kind === 'work-admitted')).toHaveLength(2);
+    expect(generate).toHaveBeenCalledTimes(2);
+
+    // Pressing Start again twice is one command, so the second press replays.
+    const replay = await start(command('start-again'));
+    expect(replay.data.id).toBe(again.data.id);
+    expect(replay.data.receipt).toEqual(again.data.receipt);
+    expect(current().sessions).toHaveLength(2);
+    expect(generate).toHaveBeenCalledTimes(2);
+
+    // The spent command still names its own faulted session and starts nothing.
+    const spent = await start(command('faulted-start'));
+    expect(spent.data.id).toBe(first.data.id);
+    expect(spent.data.state).toBe('failed');
+    expect(current().sessions).toHaveLength(2);
+    expect(generate).toHaveBeenCalledTimes(2);
+  });
+
+  test('the Console task control names one task per request and refuses a blank name', async () => {
+    const before = current().tasks.length;
+    const made = await request<Task>(`/projects/${projectId}/tasks`, 'POST', {
+      name: '  Draft the operations brief  ',
+      description: 'Read the two exports and propose a short section.',
+      owner: 'you',
+    });
+    expect(made.status).toBe(200);
+    expect(made.data.name).toBe('Draft the operations brief');
+    expect(made.data.state).toBe('todo');
+    expect(made.data.sessionIds).toEqual([]);
+    expect(current().tasks).toHaveLength(before + 1);
+    expect(
+      current().history.filter(
+        (entry) => entry.kind === 'tasks-made' && entry.taskId === made.data.id,
+      ),
+    ).toHaveLength(1);
+    const blank = await request(`/projects/${projectId}/tasks`, 'POST', { name: '   ' });
+    expect(blank.status).toBe(400);
+    expect(current().tasks).toHaveLength(before + 1);
+  });
+
   test('incompatible saved receipts stop loading before project state is rewritten', async () => {
     await start();
     await until((s) => s.sessions[0]?.state === 'waiting');
