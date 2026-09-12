@@ -61,6 +61,7 @@ import { FIXTURE_ENGINE } from './harness/approval.js';
 import { CODEX_ENGINE, type ResolveHarnessAuthority } from './harness/codex-engine.js';
 import { roleInstructions } from './team/prompts.js';
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
+import { WorkControl } from './work-control.js';
 import { DesktopConnections } from './connections/desktop.js';
 import packageInfo from '../package.json' with { type: 'json' };
 import {
@@ -133,6 +134,8 @@ const choice = <const T extends string>(value: unknown, values: readonly T[], na
 };
 const THREAD_PERMISSIONS: readonly ThreadPermission[] = ['show-first', 'task'];
 const PERMISSION_UNAVAILABLE = 'That permission mode is not available in this version.';
+/** A run that has not finished: the same three states the rest of the server uses. */
+const ACTIVE_SESSION_STATES = ['queued', 'working', 'waiting'];
 /**
  * The SSE `state` fan-out never carries the documents listing: it can hold
  * 10,000 rows and the client already refetches after any event.
@@ -499,9 +502,10 @@ export async function createApp(options: AppOptions) {
     };
   };
   const teamForThread = (
-    req: Request,
     projectId: string,
     threadId: string | undefined,
+    // The socket is the listening service, even when listen(0) selected the port.
+    port: number | undefined,
   ): NativeTeamOptions | undefined => {
     if (!threadId) return undefined;
     const state = store.state(projectId);
@@ -509,8 +513,7 @@ export async function createApp(options: AppOptions) {
       (item) => item.threadId === threadId && item.engine === 'codex',
     );
     if (!member) return undefined;
-    // The socket is the listening service, even when listen(0) selected the port.
-    return teamForMember(projectId, member, req.socket.localPort);
+    return teamForMember(projectId, member, port);
   };
   const serviceFor = (projectId: string, sessionId: string) => {
     const session = store.state(projectId).sessions.find((item) => item.id === sessionId);
@@ -1316,111 +1319,205 @@ export async function createApp(options: AppOptions) {
     '/api/projects/:id/work',
     route(async (req) => ({ sessions: store.state(id(req)).sessions })),
   );
+  /**
+   * The Work start route's own admission path, called with the store lock held.
+   * A queued follow-up is delivered by calling exactly this with the follow-up's
+   * own command identity, so the protocol check, the consent check, the route
+   * check, the receipt replay and the scope the task already has are the same
+   * ones a person's Start goes through. Nothing here is duplicated elsewhere.
+   */
+  const admitWork = async (
+    projectId: string,
+    supplied: Record<string, unknown>,
+    port: number | undefined,
+  ) => {
+    if (isUpdateClosing())
+      throw new ApiError(409, 'The app update is accepted. New work pauses until restart.');
+    if (supplied.capabilityId !== undefined) {
+      if (supplied.protocolVersion !== undefined || supplied.commandId !== undefined)
+        throw new ApiError(400, 'Saved Work commands for native fixtures are not available yet.');
+      return harness.bridge.start(
+        projectId,
+        supplied.taskId === null ? null : asString(supplied.taskId, 'a task', 100),
+        asString(supplied.capabilityId, 'a capability', 100),
+        asString(supplied.instruction, 'an instruction', 16000),
+        localHarnessPrincipal(projectId),
+      );
+    }
+    const command = parseWorkCommand(supplied);
+    const b = command?.request ?? supplied;
+    const state = store.state(projectId);
+    const taskId = asString(b.taskId, 'a task', 100);
+    const threadId =
+      b.threadId === undefined || b.threadId === null
+        ? undefined
+        : asString(b.threadId, 'a thread', 100);
+    let threadPermission: ThreadPermission = 'show-first';
+    if (threadId !== undefined) {
+      const thread = store.state(projectId).conversations.find((c) => c.id === threadId);
+      if (!thread) throw new ApiError(404, 'This thread was not found.');
+      threadPermission = thread.permission ?? 'show-first';
+    }
+    const selectedRoute =
+      b.route === undefined
+        ? selectedEngine(
+            store.settings,
+            state.project,
+            state.conversations.find((c) => c.id === threadId),
+          )
+        : choice(b.route, ROUTES, 'service');
+    const team = teamForThread(projectId, threadId, port);
+    if (command && team)
+      throw new ApiError(409, 'Saved Work commands for team helpers are not available yet.', {
+        code: 'unsupported_work_target',
+      });
+    if (selectedRoute !== 'sample') {
+      if (store.settings.services?.[selectedRoute] !== true)
+        throw new ApiError(409, 'Turn the selected engine on in Settings before using it.');
+      if (b.consent !== true)
+        throw new ApiError(
+          409,
+          'Your instruction and selected documents will be sent to the selected service. Confirm before sending.',
+          { consentRequired: true },
+        );
+      if (!Array.isArray(b.sources))
+        throw new ApiError(
+          400,
+          'Provide the explicitly selected source documents, or an empty list to propose new files.',
+        );
+    }
+    // Recheck the current local scope and service consent before returning a cached
+    // receipt. Replay never scans source files or dispatches another adapter call.
+    if (!state.tasks.some((task) => task.id === taskId && !task.deletedAt))
+      throw new ApiError(404, 'This task was not found.');
+    if (command) {
+      const previous = store.workCommand(
+        projectId,
+        command.admission.commandId,
+        command.admission.payloadDigest,
+      );
+      if (previous) return structuredClone(previous);
+      store.checkWorkReceiptCapacity(projectId);
+    }
+    if (selectedRoute !== 'sample') {
+      return nativeWork.start(projectId, taskId, {
+        engine: selectedRoute,
+        threadId,
+        agentId:
+          command?.request.agentId ??
+          state.conversations.find((c) => c.id === threadId)?.requested?.agent ??
+          null,
+        requested: nativeChoice(
+          selectedRoute,
+          projectId,
+          state.conversations.find((c) => c.id === threadId),
+        ),
+        instruction:
+          b.instruction === undefined
+            ? undefined
+            : asString(b.instruction, 'an instruction', 16000),
+        sources: Array.isArray(b.sources) ? b.sources.map(relativeName) : [],
+        consent: true,
+        team,
+        permission: threadPermission,
+        admission: command?.admission,
+      });
+    }
+    return work.start(
+      projectId,
+      taskId,
+      typeof b.instruction === 'string' ? b.instruction : '',
+      b.demo === 'fault',
+      { permission: threadPermission, admission: command?.admission },
+    );
+  };
+  /**
+   * Stop scopes and the follow-up queue. Delivery goes through `admitWork`, the
+   * Work start route's own path, so a follow-up can never reach the runtime by
+   * a route a person's Start does not take, and can never widen what the task
+   * already has.
+   */
+  const workControl = new WorkControl({
+    store,
+    native: nativeWork,
+    admit: (projectId, command) => admitWork(projectId, command, listeningPort),
+    stopSession: (projectId, sessionId) =>
+      serviceFor(projectId, sessionId).stop(projectId, sessionId),
+    modelFor: (projectId, threadId, engine) =>
+      engine === 'sample'
+        ? null
+        : (nativeChoice(
+            engine,
+            projectId,
+            store.state(projectId).conversations.find((c) => c.id === threadId),
+          ).model ?? null),
+  });
+  /**
+   * The one trigger. A session reaching a terminal state and a task becoming
+   * done both end in a durable write, and `persist` announces that write, so
+   * this listens for it rather than polling or duplicating the half-dozen
+   * places that can settle a run. It is a level check, not an edge: a turn has
+   * ended when the task has run at least once and nothing of its is active.
+   * The work itself is queued behind the lock rather than done inside it.
+   */
+  const deliveries = new Set<Promise<unknown>>();
+  const delivering = new Set<string>();
+  const again = new Set<string>();
+  let deliveryClosed = false;
+  const deliverFor = (projectId: string) => {
+    if (deliveryClosed) return;
+    if (delivering.has(projectId)) {
+      again.add(projectId);
+      return;
+    }
+    let tasks: string[];
+    try {
+      const current = store.state(projectId);
+      tasks = [
+        ...new Set(
+          (current.followUps ?? [])
+            .filter((item) => item.state === 'queued')
+            .map((item) => item.taskId),
+        ),
+      ];
+    } catch {
+      return;
+    }
+    if (!tasks.length) return;
+    delivering.add(projectId);
+    const job = store
+      .locked(async () => {
+        for (const taskId of tasks) {
+          const current = store.state(projectId);
+          const task = current.tasks.find((item) => item.id === taskId && !item.deletedAt);
+          if (!task) continue;
+          const own = current.sessions.filter((session) => session.taskId === taskId);
+          await workControl.deliverDue(projectId, {
+            taskId,
+            turnEnded:
+              own.length > 0 &&
+              !own.some((session) => ACTIVE_SESSION_STATES.includes(session.state)),
+            taskDone: task.state === 'done',
+          });
+        }
+      })
+      .catch((error) =>
+        console.error(
+          'Could not deliver a queued follow-up:',
+          error instanceof Error ? error.message : error,
+        ),
+      )
+      .finally(() => {
+        deliveries.delete(job);
+        delivering.delete(projectId);
+        if (again.delete(projectId)) deliverFor(projectId);
+      });
+    deliveries.add(job);
+  };
+  store.on('change', deliverFor);
   app.post(
     '/api/projects/:id/work/start',
-    route(async (req) => {
-      if (isUpdateClosing())
-        throw new ApiError(409, 'The app update is accepted. New work pauses until restart.');
-      const supplied = body(req);
-      if (supplied.capabilityId !== undefined) {
-        if (supplied.protocolVersion !== undefined || supplied.commandId !== undefined)
-          throw new ApiError(400, 'Saved Work commands for native fixtures are not available yet.');
-        return harness.bridge.start(
-          id(req),
-          supplied.taskId === null ? null : asString(supplied.taskId, 'a task', 100),
-          asString(supplied.capabilityId, 'a capability', 100),
-          asString(supplied.instruction, 'an instruction', 16000),
-          localHarnessPrincipal(id(req)),
-        );
-      }
-      const command = parseWorkCommand(supplied);
-      const b = command?.request ?? supplied;
-      const projectId = id(req);
-      const state = store.state(projectId);
-      const taskId = asString(b.taskId, 'a task', 100);
-      const threadId =
-        b.threadId === undefined || b.threadId === null
-          ? undefined
-          : asString(b.threadId, 'a thread', 100);
-      let threadPermission: ThreadPermission = 'show-first';
-      if (threadId !== undefined) {
-        const thread = store.state(projectId).conversations.find((c) => c.id === threadId);
-        if (!thread) throw new ApiError(404, 'This thread was not found.');
-        threadPermission = thread.permission ?? 'show-first';
-      }
-      const selectedRoute =
-        b.route === undefined
-          ? selectedEngine(
-              store.settings,
-              state.project,
-              state.conversations.find((c) => c.id === threadId),
-            )
-          : choice(b.route, ROUTES, 'service');
-      const team = teamForThread(req, projectId, threadId);
-      if (command && team)
-        throw new ApiError(409, 'Saved Work commands for team helpers are not available yet.', {
-          code: 'unsupported_work_target',
-        });
-      if (selectedRoute !== 'sample') {
-        if (store.settings.services?.[selectedRoute] !== true)
-          throw new ApiError(409, 'Turn the selected engine on in Settings before using it.');
-        if (b.consent !== true)
-          throw new ApiError(
-            409,
-            'Your instruction and selected documents will be sent to the selected service. Confirm before sending.',
-            { consentRequired: true },
-          );
-        if (!Array.isArray(b.sources))
-          throw new ApiError(
-            400,
-            'Provide the explicitly selected source documents, or an empty list to propose new files.',
-          );
-      }
-      // Recheck the current local scope and service consent before returning a cached
-      // receipt. Replay never scans source files or dispatches another adapter call.
-      if (!state.tasks.some((task) => task.id === taskId && !task.deletedAt))
-        throw new ApiError(404, 'This task was not found.');
-      if (command) {
-        const previous = store.workCommand(
-          projectId,
-          command.admission.commandId,
-          command.admission.payloadDigest,
-        );
-        if (previous) return structuredClone(previous);
-        store.checkWorkReceiptCapacity(projectId);
-      }
-      if (selectedRoute !== 'sample') {
-        return nativeWork.start(projectId, taskId, {
-          engine: selectedRoute,
-          threadId,
-          agentId:
-            command?.request.agentId ??
-            state.conversations.find((c) => c.id === threadId)?.requested?.agent ??
-            null,
-          requested: nativeChoice(
-            selectedRoute,
-            projectId,
-            state.conversations.find((c) => c.id === threadId),
-          ),
-          instruction:
-            b.instruction === undefined
-              ? undefined
-              : asString(b.instruction, 'an instruction', 16000),
-          sources: Array.isArray(b.sources) ? b.sources.map(relativeName) : [],
-          consent: true,
-          team,
-          permission: threadPermission,
-          admission: command?.admission,
-        });
-      }
-      return work.start(
-        projectId,
-        taskId,
-        typeof b.instruction === 'string' ? b.instruction : '',
-        b.demo === 'fault',
-        { permission: threadPermission, admission: command?.admission },
-      );
-    }),
+    route(async (req) => admitWork(id(req), body(req), req.socket.localPort)),
   );
   app.get(
     '/api/projects/:id/work/commands/:commandId',
@@ -1436,11 +1533,51 @@ export async function createApp(options: AppOptions) {
       return structuredClone(session);
     }),
   );
+  // Today's Stop, unchanged for the caller: it now runs through the `task`
+  // scope, so it also cancels what that task had queued, and still answers with
+  // the session.
   app.post(
     '/api/projects/:id/work/:sessionId/stop',
-    route(async (req) =>
-      serviceFor(id(req), String(req.params.sessionId)).stop(id(req), String(req.params.sessionId)),
-    ),
+    route(async (req) => {
+      const projectId = id(req);
+      const sessionId = String(req.params.sessionId);
+      const session = store.state(projectId).sessions.find((item) => item.id === sessionId);
+      if (!session) throw new ApiError(404, 'This work session was not found.');
+      await workControl.stop(projectId, {
+        scope: 'task',
+        taskId: session.taskId,
+        sessionId,
+      });
+      return store.state(projectId).sessions.find((item) => item.id === sessionId) ?? session;
+    }),
+  );
+  app.post(
+    '/api/projects/:id/stop',
+    route(async (req) => workControl.stop(id(req), body(req))),
+  );
+  app.get(
+    '/api/projects/:id/follow-ups',
+    route(async (req) => ({ followUps: workControl.list(id(req)) })),
+  );
+  app.post(
+    '/api/projects/:id/follow-ups',
+    route(async (req) => ({ followUp: await workControl.queue(id(req), body(req)) })),
+  );
+  app.post(
+    '/api/projects/:id/follow-ups/reorder',
+    route(async (req) => ({ followUps: await workControl.reorder(id(req), body(req)) })),
+  );
+  app.put(
+    '/api/projects/:id/follow-ups/:fid',
+    route(async (req) => ({
+      followUp: await workControl.edit(id(req), String(req.params.fid), body(req)),
+    })),
+  );
+  app.delete(
+    '/api/projects/:id/follow-ups/:fid',
+    route(async (req) => ({
+      followUp: await workControl.remove(id(req), String(req.params.fid), 'you'),
+    })),
   );
   app.post(
     '/api/projects/:id/work/:sessionId/note',
@@ -1979,7 +2116,7 @@ export async function createApp(options: AppOptions) {
           text,
           sources,
           consent: b.consent === true,
-          team: teamForThread(req, projectId, threadId),
+          team: teamForThread(projectId, threadId, req.socket.localPort),
           mode,
           ...(failing ? { failing } : {}),
         });
@@ -2354,7 +2491,13 @@ export async function createApp(options: AppOptions) {
   app.locals.nativeWork = nativeWork;
   app.locals.harness = harness;
   app.locals.connections = connections;
+  app.locals.workControl = workControl;
   app.locals.close = async () => {
+    // Stop listening before anything is stopped, or shutting a run down would
+    // announce a settled session and schedule a delivery on the way out.
+    deliveryClosed = true;
+    store.off('change', deliverFor);
+    await Promise.allSettled([...deliveries]);
     engines.close();
     await login.close();
     await connections.close();

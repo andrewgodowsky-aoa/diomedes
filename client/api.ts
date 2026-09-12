@@ -1,3 +1,9 @@
+import type {
+  FollowUpCommand,
+  QueueFollowUpRequest,
+  StopReceipt,
+} from '../shared/work-control';
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -60,3 +66,41 @@ export function readDocument(
     signal,
   );
 }
+const base = (projectId: string) => `/projects/${encodeURIComponent(projectId)}`;
+const followUp = (projectId: string, followUpId: string) =>
+  `${base(projectId)}/follow-ups/${encodeURIComponent(followUpId)}`;
+
+/**
+ * The five work-control routes. A follow-up carries its own `commandId`, minted
+ * the way a Work start's is, so a double click or a lost response names the
+ * same command rather than queueing a second one.
+ */
+export const queueFollowUp = (projectId: string, request: QueueFollowUpRequest) =>
+  api<{ followUp: FollowUpCommand }>(`${base(projectId)}/follow-ups`, 'POST', request).then(
+    (result) => result.followUp,
+  );
+export const editFollowUp = (
+  projectId: string,
+  followUpId: string,
+  patch: { text?: string; waitsFor?: FollowUpCommand['waitsFor'] },
+) =>
+  api<{ followUp: FollowUpCommand }>(followUp(projectId, followUpId), 'PUT', patch).then(
+    (result) => result.followUp,
+  );
+export const removeFollowUp = (projectId: string, followUpId: string) =>
+  api<{ followUp: FollowUpCommand }>(followUp(projectId, followUpId), 'DELETE').then(
+    (result) => result.followUp,
+  );
+export const reorderFollowUps = (
+  projectId: string,
+  request: { taskId: string; order: string[] },
+) =>
+  api<{ followUps: FollowUpCommand[] }>(
+    `${base(projectId)}/follow-ups/reorder`,
+    'POST',
+    request,
+  ).then((result) => result.followUps);
+export const stopWork = (
+  projectId: string,
+  request: { scope: StopReceipt['scope']; taskId: string; sessionId?: string | null },
+) => api<StopReceipt>(`${base(projectId)}/stop`, 'POST', request);

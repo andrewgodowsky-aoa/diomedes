@@ -4,6 +4,7 @@ import type { AgentResolution } from './agents.js';
 import type { OriginSnapshot } from './attribution.js';
 import type { WorkspaceRef } from './workspaces.js';
 import type { InstructionFileRecord, PackActivation } from './capability-packs.js';
+import type { FollowUpCommand, StopReceipt } from './work-control.js';
 
 export type Detail = 'guided' | 'standard' | 'technical';
 /** The two surfaces. The Workbook is one page at a time; the Console is every thread, helper and change at once. */
@@ -128,6 +129,8 @@ export interface Task {
   needId: string | null;
   sessionIds: string[];
   changeIds: string[];
+  /** Append-only record of what each Stop actually did, by scope. Never rewritten. */
+  stopReceipts?: StopReceipt[];
   createdBy: Owner;
   createdAt: string;
   assignedTo?: Slot | null;
@@ -390,6 +393,8 @@ export interface ProjectState {
   history: HistoryEntry[];
   changes: Change[];
   conversations: Conversation[];
+  /** Absent in projects written before the follow-up queue existed. */
+  followUps?: FollowUpCommand[];
   team?: TeamState;
   /**
    * What pack discovery found in the project folder. Derived, not authored:

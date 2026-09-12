@@ -15,14 +15,18 @@ import type {
   ThreadPermission,
   Turn,
 } from '../../shared/types';
+import type { FollowUpCommand } from '../../shared/work-control';
 import { effortFor } from '../../shared/effort';
 import type { InstructionFileRecord } from '../../shared/capability-packs';
 import { formatOrigin, originForSession, originForTurn } from '../../shared/attribution';
 import { ApprovalStatus, time } from '../components';
 import { RunInspector } from '../workbench/RunInspector';
 import { taskEvidence } from '../workbench/task-evidence';
+import { stopWork } from '../api';
 import { Composer } from './Composer';
 import { ProjectInstructions } from './ProjectInstructions';
+import { FollowUpQueue } from './FollowUpQueue';
+import { StopMenu, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
 
 function fmtDur(ms: number): string {
@@ -63,6 +67,8 @@ interface ThreadViewProps {
    * on, which is what keeps the indication from appearing where nothing loaded.
    */
   instructionFiles?: readonly InstructionFileRecord[];
+  /** The project's follow-up queue. The rows for this task are shown and driven here. */
+  followUps?: FollowUpCommand[];
   permissionControl?: ReactNode;
   onScope?(): void;
   grantActive?: boolean;
@@ -110,6 +116,7 @@ export function ThreadView({
   allNeeds,
   changes = [],
   instructionFiles = [],
+  followUps = [],
   permissionControl,
   onScope,
   grantActive = false,
@@ -251,11 +258,42 @@ export function ThreadView({
       ),
     });
   });
+  // Three Stops, and what the last one actually did. The plain Stop keeps its
+  // word and today's meaning; the other two are offered only where they would
+  // do something. The receipt sits under the run it was pressed on.
+  const queuedForTask = task
+    ? followUps.filter((item) => item.taskId === task.id && item.state === 'queued')
+    : [];
+  const lastReceipt = task?.stopReceipts?.at(-1) ?? null;
+  const receiptOn =
+    lastReceipt?.sessionId ?? (lastReceipt ? (ordered.at(-1)?.id ?? null) : null);
   ordered.forEach((s) => {
     items.push({
       at: s.startedAt,
       seq: 2000,
-      node: <RunRecord key={s.id} session={s} onStop={() => onStopSession(s.id)} />,
+      node: (
+        <RunRecord
+          key={s.id}
+          session={s}
+          onStop={() => onStopSession(s.id)}
+          stop={
+            projectId && task ? (
+              <StopMenu
+                live={['queued', 'working'].includes(s.state)}
+                queuedCount={queuedForTask.length}
+                busy={busy}
+                onStopTask={() => onStopSession(s.id)}
+                onStopScope={(scope) =>
+                  void stopWork(projectId, { scope, taskId: task.id, sessionId: s.id })
+                }
+              />
+            ) : undefined
+          }
+          receipt={
+            lastReceipt && receiptOn === s.id ? <StopReceiptLine receipt={lastReceipt} /> : undefined
+          }
+        />
+      ),
     });
   });
   items.sort((a, b) => a.at.localeCompare(b.at) || a.seq - b.seq);
@@ -435,11 +473,31 @@ export function ThreadView({
         online={online}
         onSend={submit}
       />
+      {projectId && task && (
+        <FollowUpQueue
+          projectId={projectId}
+          task={task}
+          route={route}
+          followUps={followUps}
+          busy={busy}
+        />
+      )}
     </main>
   );
 }
 
-function RunRecord({ session, onStop }: { session: Session; onStop(): void }) {
+function RunRecord({
+  session,
+  onStop,
+  stop,
+  receipt,
+}: {
+  session: Session;
+  onStop(): void;
+  /** The scoped Stop cluster. Falls back to today's single button when absent. */
+  stop?: ReactNode;
+  receipt?: ReactNode;
+}) {
   const live = ['queued', 'working', 'waiting'].includes(session.state);
   const [open, setOpen] = useState(live);
   const [details, setDetails] = useState(false);
@@ -457,6 +515,7 @@ function RunRecord({ session, onStop }: { session: Session; onStop(): void }) {
         <button type="button" onClick={() => setOpen(true)}>
           show run
         </button>
+        {receipt}
       </div>
     );
   }
@@ -470,9 +529,11 @@ function RunRecord({ session, onStop }: { session: Session; onStop(): void }) {
       ))}
       {live && (
         <div>
-          <button type="button" onClick={onStop}>
-            Stop
-          </button>{' '}
+          {stop ?? (
+            <button type="button" onClick={onStop}>
+              Stop
+            </button>
+          )}{' '}
           <button type="button" onClick={() => setDetails(!details)}>
             {details ? 'Fewer details' : 'All details'}
           </button>
@@ -488,6 +549,7 @@ function RunRecord({ session, onStop }: { session: Session; onStop(): void }) {
           </button>
         </div>
       )}
+      {receipt}
     </div>
   );
 }

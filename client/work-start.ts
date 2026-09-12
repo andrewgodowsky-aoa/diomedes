@@ -21,6 +21,8 @@ const PREFIX = 'diomedes.work-start.pending.';
 const MAX_PENDING = 32;
 const inFlight = new Map<string, { input: string; promise: Promise<Session> }>();
 const commandPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+/** One place mints a command identity, for a Work start and for a follow-up alike. */
+export const mintCommandId = (): string => crypto.randomUUID();
 const invalid = () => new Error('Stored work-start command is invalid; the request was not sent.');
 const unavailable = () => new Error('Work start storage is unavailable; the request was not sent.');
 const unresolved = () =>
@@ -248,7 +250,7 @@ export async function startWork(projectId: string, input: WorkStartInput): Promi
         'Too many pending work starts; resolve an earlier request before starting new work.',
       );
     pending = {
-      commandId: crypto.randomUUID(),
+      commandId: mintCommandId(),
       projectId,
       taskId: normalized.taskId,
       input: normalized,

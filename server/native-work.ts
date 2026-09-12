@@ -170,6 +170,33 @@ export class NativeWorkService {
   running(projectId: string) {
     return this.runs.has(projectId);
   }
+  /**
+   * The provider request currently dispatched for this project, if any. Work
+   * control reads it to scope a Stop and to say honestly on the receipt whether
+   * anything was in flight when the person pressed it.
+   */
+  liveRun(projectId: string): { sessionId: string; taskId: string } | null {
+    const run = this.runs.get(projectId);
+    return run && !run.controller.signal.aborted
+      ? { sessionId: run.sessionId, taskId: run.taskId }
+      : null;
+  }
+  /**
+   * Interrupt the provider request this session is waiting on, and nothing
+   * else. The session keeps its state, its Needs stay open and the run stays in
+   * the map, because the person asked to stop the current request, not to end
+   * the work: `prepare` sees the aborted signal and writes no proposal, so the
+   * session waits for a proposal that will not now arrive until a task Stop
+   * ends it. Returns false when there was no live request to reach. The caller
+   * persists; this only touches in-memory run state and the session log.
+   */
+  interrupt(projectId: string, sessionId: string): boolean {
+    const run = this.runs.get(projectId);
+    if (!run || run.sessionId !== sessionId || run.controller.signal.aborted) return false;
+    run.controller.abort();
+    this.log(this.session(run), 'Interrupted the current request.');
+    return true;
+  }
   private session(run: NativeRun) {
     const session = this.store
       .state(run.projectId)

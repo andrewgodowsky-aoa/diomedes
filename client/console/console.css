@@ -1630,5 +1630,67 @@ html[data-motion='reduced'] .console .modes .ind b {
 }
 .pack-contributes {
   min-width: 0;
+/* Follow-up queue and the scoped Stops. The queue sits under the composer as
+   one line per item (decision 4): the person's sentence, when it runs, and what
+   became of it. The sentence can be long and can carry a path or a model name,
+   so it truncates where it is written (decision 5). */
+.console .follow-ups {
+  padding: 8px 0 0;
+  border-top: 1px solid var(--hair-2);
+  font: 400 var(--dm-type-body) / 1.6 var(--dm-font-ui);
+  min-width: 0;
+}
+.console .follow-up-compose textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  resize: vertical;
+}
+.console .follow-ups .grow {
+  flex: 1 1 auto;
+}
+.console .follow-up {
+  padding: 4px 0;
+  min-width: 0;
+  color: var(--t2);
+}
+.console .follow-up + .follow-up {
+  border-top: 1px solid var(--hair-2);
+}
+.console .follow-up.settled {
+  color: var(--t3);
+}
+.console .follow-up-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console input.follow-up-text {
+  box-sizing: border-box;
+  font: inherit;
+}
+.console .follow-up-when {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .follow-up-error {
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+.console .stop-menu,
+.console .stop-options {
+  display: inline;
+  min-width: 0;
+}
+.console .stop-receipt {
+  margin: 4px 0 0;
+  color: var(--t3);
+  white-space: normal;
   overflow-wrap: anywhere;
 }
