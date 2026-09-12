@@ -27,7 +27,7 @@ screenshots beside it are now this run.
 | Result | First run (`da84689`) | Published run (`4fb8656`) |
 |---|---|---|
 | traversed | 15 of 18 | 16 of 18 |
-| intervention | 1 | 1 (step 13, the deterministic brief's second run is a file comparison) |
+| intervention | 1 | 1 (step 13: the brief's first draft named the exports it could not read; a fixture was placed at the path it reads and the brief requested again) |
 | not reachable | 2 | 1 (step 08, attaching a file: FIL-02 is unbuilt) |
 | failed | 0 | 0 |
 | live turns | 2 on Claude Code, model unrecorded | 2 on Claude Code, `claude-sonnet-5` recorded on the session |
@@ -46,6 +46,10 @@ What changed between the runs, and what it showed:
 - **Step 17** still shows the composer gap: the thread composer sends with no confirmation of its own
   and carries no project document in ask mode, so the revision request was answered as "no documents
   were supplied". That is the remaining source fix from this journey.
+- **Step 13** is the same intervention as the first run: the deterministic brief drafts, but names
+  `weekly-operations-exports` under "Sources that could not be read" because the exports a person
+  would attach are not at the path the setup selects, and step 08 cannot attach them. A fixture was
+  written at that path and the brief requested again. No model is involved.
 - **Step 04** (the known failure): oh-my-pi signed out, recovery offered from the screen, unchanged.
 
 ## 1. What was traversed

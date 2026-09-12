@@ -244,7 +244,7 @@ Both scripts ran against the published executable on fresh profiles (records and
 
 | Journey | Route and model | traversed | intervention | not reachable | failed | turns |
 |---|---|---|---|---|---|---|
-| A, business owner | Claude Code, `claude-sonnet-5` | 16 of 18 | 1 (deterministic brief rerun) | 1 (attach a file, FIL-02) | 0 | 2 |
+| A, business owner | Claude Code, `claude-sonnet-5` | 16 of 18 | 1 (the deterministic brief could not read the exports nobody can attach; fixture placed, requested again) | 1 (attach a file, FIL-02) | 0 | 2 |
 | B, developer | OpenCode, `opencode-go/glm-5.2` | 19 of 22 | 2 (Review on the Workbook; History button switches surface) | 1 (edit an existing source file) | 0 | 2 |
 
 Journey B's bounded change was proposed by the model, shown before any write, approved, written to
