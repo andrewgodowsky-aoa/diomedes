@@ -7,6 +7,10 @@ import type { ProjectState, TeamMember } from '../shared/types.js';
 import { createApp } from '../server/app.js';
 import { extractJsonObject, parseProposal, type NativeGenerator } from '../server/native-work.js';
 import {
+  assembleInstructions,
+  instructionSectionBudget,
+} from '../server/harness/instruction-delivery.js';
+import {
   createIntegrations,
   IntegrationError,
   nativeEnvironment,
@@ -1153,5 +1157,145 @@ describe('team wake through the adapter', () => {
     current = await until((value) => value.sessions[0].state === 'done');
     expect(current.team?.members[0].status).toBe('idle');
     await assertPrivate(identity.token);
+  });
+});
+
+/**
+ * HAR-01. The measured gap was that `Project instructions loaded · AGENTS.md`
+ * was true of the Console and false of the model: `instructionRules` had no
+ * caller and no instruction text reached an engine. These tests hold the fix
+ * to the four things that make it more than a paste — the rule path gates it,
+ * the body arrives whole under a delimiter, the session says what went and at
+ * which sha, and a file that will not fit is left out by name rather than cut.
+ */
+describe('project instructions reach the model', () => {
+  const PACK = 'diomedes.software-engineering';
+  const folder = async () => (await state()).project.folder;
+  const writeInstructions = async (text: string, name = 'AGENTS.md') =>
+    fs.writeFile(path.join(await folder(), name), text, 'utf8');
+  const activate = () => request(`/projects/${projectId}/packs/${PACK}/activate`, 'POST', {});
+  const sentPrompt = () => generator.mock.calls[0][0].prompt;
+  const body = '# House rules\n\nAlways write the reason for a change in the summary.\n';
+
+  test('a loaded instruction file arrives whole, delimited, and recorded on the session', async () => {
+    await writeInstructions(body);
+    expect((await activate()).status).toBe(200);
+    expect((await start()).status).toBe(200);
+
+    const prompt = sentPrompt();
+    expect(prompt).toContain('Project instructions the person loaded for this project');
+    expect(prompt).toContain('--- BEGIN PROJECT INSTRUCTIONS AGENTS.md (sha ');
+    expect(prompt).toContain('Always write the reason for a change in the summary.');
+    expect(prompt).toContain('--- END PROJECT INSTRUCTIONS AGENTS.md ---');
+    // The host-authored rule that carries them is named, so the authority the
+    // text arrives under is visible in the prompt and not merely implied.
+    expect(prompt).toContain('Project instructions from AGENTS.md apply to work in this project.');
+    // It is guidance, not another document to edit, and not the mode channel.
+    expect(generator.mock.calls[0][0].documents.map((item) => item.path)).toEqual(['Fall menu.md']);
+    expect(generator.mock.calls[0][0].instructions ?? '').not.toContain(
+      'BEGIN PROJECT INSTRUCTIONS',
+    );
+    // The section may not be read as widening what the run may touch.
+    expect(prompt.indexOf('BEGIN PROJECT INSTRUCTIONS')).toBeLessThan(
+      prompt.indexOf('Selected editable paths'),
+    );
+
+    const current = await state();
+    const delivery = current.sessions[0].instructions!;
+    expect(delivery.routeId).toBe('codex');
+    expect(delivery.truncated).toBe(false);
+    expect(delivery.files).toHaveLength(1);
+    expect(delivery.files[0]).toMatchObject({ path: 'AGENTS.md', state: 'sent', packId: PACK });
+    expect(delivery.bytes).toBe(Buffer.byteLength(body));
+    // The sha recorded is the sha of what was sent, and the prompt carries it.
+    expect(prompt).toContain(delivery.files[0].sha!.slice(0, 12));
+    expect(delivery.files[0].sha).toBe(
+      current.instructionFiles?.find((file) => file.path === 'AGENTS.md')?.sha,
+    );
+
+    const entry = current.history.find((item) => item.kind === 'instructions-sent');
+    expect(entry?.sentence).toContain('AGENTS.md');
+    expect(entry?.sentence).toContain(delivery.files[0].sha!.slice(0, 12));
+    expect(entry?.actor).toBe('diomedes');
+    // History says what was sent; it never carries the body.
+    expect(entry?.sentence).not.toContain('Always write the reason');
+  });
+
+  test('a project with no instruction files gets no section at all', async () => {
+    expect((await start()).status).toBe(200);
+    expect(sentPrompt()).not.toContain('PROJECT INSTRUCTIONS');
+    const current = await state();
+    expect(current.sessions[0].instructions).toBeUndefined();
+    expect(current.history.some((item) => item.kind === 'instructions-sent')).toBe(false);
+  });
+
+  test('a file on disk delivers nothing until the pack that discovers it is on', async () => {
+    await writeInstructions(body);
+    expect((await start()).status).toBe(200);
+    expect(sentPrompt()).not.toContain('PROJECT INSTRUCTIONS');
+    expect((await state()).sessions[0].instructions).toBeUndefined();
+  });
+
+  test('a file discovery would make no rule from is never delivered', async () => {
+    const huge = `# Enormous
+
+${'A rule with an exception that must not be lost. '.repeat(600)}`;
+    expect(Buffer.byteLength(huge)).toBeGreaterThan(16 * 1024);
+    await writeInstructions(huge);
+    expect((await activate()).status).toBe(200);
+    expect((await start()).status).toBe(200);
+
+    // Discovery refuses to make a rule from a file past the view budget, and
+    // delivery is rule-gated, so nothing goes and nothing is cut. The person
+    // still sees the file and the reason in the Console record.
+    expect(sentPrompt()).not.toContain('PROJECT INSTRUCTIONS');
+    expect(sentPrompt()).not.toContain('A rule with an exception that must not be lost.');
+    const current = await state();
+    expect(current.sessions[0].instructions).toBeUndefined();
+    expect(current.instructionFiles?.[0]).toMatchObject({
+      path: 'AGENTS.md',
+      state: 'exceeds-view-budget',
+    });
+  });
+
+  test('a file with no room left after the documents is left out whole, named and recorded', async () => {
+    await writeInstructions(body);
+    expect((await activate()).status).toBe(200);
+    const assembled = await assembleInstructions({
+      state: app.locals.store.state(projectId),
+      routeId: 'codex',
+      agentRole: 'Diomedes build file proposal writer',
+      budgetBytes: 8,
+    });
+    expect(assembled.section).toBeNull();
+    expect(assembled.delivery?.truncated).toBe(true);
+    expect(assembled.delivery?.bytes).toBe(0);
+    expect(assembled.delivery?.files[0]).toMatchObject({ path: 'AGENTS.md', state: 'omitted' });
+    expect(assembled.delivery?.files[0].detail).toContain('left out whole rather than cut');
+    // The rule still governed the decision, so its evidence exists either way.
+    expect(assembled.governing.map((record) => record.ruleId)).toContain('instructions-agents-md');
+  });
+
+  test('the section takes the room the selected documents leave, and never more', () => {
+    // Both text routes refuse a request over 160 KB. Instructions take what is
+    // left over the reserve, so a selection that used to be admitted is never
+    // refused because instructions were added behind it.
+    expect(instructionSectionBudget(0)).toBe(32 * 1024);
+    expect(instructionSectionBudget(128_000)).toBe(12_000);
+    expect(instructionSectionBudget(160_000)).toBe(0);
+  });
+
+  test('a file that changed since discovery is sent at its current sha and said to have changed', async () => {
+    await writeInstructions(body);
+    expect((await activate()).status).toBe(200);
+    const discovered = (await state()).instructionFiles!.find((file) => file.path === 'AGENTS.md')!;
+    await writeInstructions(`${body}\nAnd never leave a TODO behind.\n`);
+    expect((await start()).status).toBe(200);
+
+    expect(sentPrompt()).toContain('And never leave a TODO behind.');
+    const delivery = (await state()).sessions[0].instructions!;
+    expect(delivery.files[0].state).toBe('sent');
+    expect(delivery.files[0].sha).not.toBe(discovered.sha);
+    expect(delivery.files[0].detail).toContain('changed since it was loaded');
   });
 });

@@ -15,10 +15,13 @@
  *    happens to sit next to it.
  * 3. **A file's body is data, never the rule.** Discovery records the path,
  *    the size and the sha, and the rule it produces is one host-authored
- *    sentence saying that those instructions apply. The body is referenced,
- *    not quoted, which is why `screenForInstructionText` runs over it: text
- *    that tries to instruct the harness is reported so a person can see it,
- *    and reporting it is not obeying it.
+ *    sentence saying that those instructions apply. When a run delivers the
+ *    body (`server/harness/instruction-delivery.ts`) it goes as guidance the
+ *    person loaded, under that rule and named by sha - it never becomes the
+ *    rule, and it never carries authority the rule does not have. That is why
+ *    `screenForInstructionText` runs over it: text that tries to instruct the
+ *    harness is reported so a person can see it, and reporting it is not
+ *    obeying it.
  *
  * Discovery reads through `server/paths.ts` and never around it. A name the
  * guard refuses is recorded `unreadable` with the guard's own reason; the
@@ -107,9 +110,10 @@ export function instructionRule(record: InstructionFileRecord, projectId: string
 /**
  * The rules an active pack contributes, in the shape `assembleContext` takes.
  *
- * Delivery on a route is a separate slice (HAR-01). What exists here is the
- * hand-off: the rules exist, they carry project authority and nothing more,
- * and nothing in this module puts them in front of a model.
+ * This is the hand-off, and `server/harness/instruction-delivery.ts` is its one
+ * caller (HAR-01). The rules carry project authority and nothing more, and the
+ * decision about which of them reaches a model is made by resolution over
+ * these rules, not by this module and not by the engine.
  */
 export function instructionRules(state: ProjectState): { rule: Rule; authority: RuleAuthority }[] {
   return activeInstructionFiles(state.project.packs, state.instructionFiles)
@@ -211,7 +215,7 @@ export async function recordInstructionFile(input: {
       size: stat.size,
       state: 'loaded',
       ruleId: instructionRuleId(relative),
-      detail: `Recorded as standing guidance. It is referenced by path and version, never pasted into a prompt.${screened(
+      detail: `Recorded as standing guidance. Work started in this project sends it to the engine whole, under this rule and named by its sha.${screened(
         attempts,
       )}`,
     };

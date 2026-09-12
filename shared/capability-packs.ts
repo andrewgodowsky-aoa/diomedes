@@ -108,6 +108,16 @@ export interface InstructionFileRecord {
 
 /** Instruction text larger than this is recorded and shown, never sent whole. */
 export const INSTRUCTION_FILE_VIEW_BUDGET_BYTES = 16 * 1024;
+/**
+ * The most the "Project instructions" prompt section may weigh in one request.
+ *
+ * The real bound is the 160 KB one every text route already enforces, and the
+ * section takes only what the selected documents leave over
+ * (`server/harness/instruction-delivery.ts`). This is the ceiling on top of
+ * that: two files at the per-file budget, and no more, so a project cannot
+ * spend its whole request on standing guidance.
+ */
+export const INSTRUCTION_SECTION_MAX_BYTES = 32 * 1024;
 /** Hard ceiling on what discovery will read at all. */
 export const INSTRUCTION_FILE_MAX_BYTES = 256 * 1024;
 
@@ -208,4 +218,40 @@ export function activeInstructionFiles(
   records: readonly InstructionFileRecord[] | undefined,
 ): readonly InstructionFileRecord[] {
   return (records ?? []).filter((record) => isPackActive(activations, record.packId));
+}
+
+/**
+ * One instruction file, as it stood when a run actually sent it — or did not.
+ *
+ * Separate from `InstructionFileRecord` on purpose. That record says what
+ * discovery found in the project folder; this says what one request did with
+ * it. They can disagree honestly: a file discovered an hour ago may have
+ * changed, grown past the budget, or been deleted, and `sha` here is always of
+ * the bytes this run read.
+ */
+export interface DeliveredInstructionFile {
+  readonly path: string;
+  /** The sha of what was read for this run, or null when nothing was read. */
+  readonly sha: string | null;
+  readonly bytes: number | null;
+  readonly packId: CapabilityPackId;
+  readonly packVersion: string;
+  /** The project-authority rule that carried it. Always present; delivery is rule-gated. */
+  readonly ruleId: string;
+  /** `omitted` is never a partial send. A body goes whole or it does not go. */
+  readonly state: 'sent' | 'omitted';
+  readonly detail: string;
+}
+
+/** What one run delivered, for the session record and History. Never the bodies. */
+export interface InstructionDelivery {
+  /** The instruction-view revision of the rules that governed this delivery. */
+  readonly revision: string;
+  readonly routeId: string;
+  readonly at: string;
+  readonly files: readonly DeliveredInstructionFile[];
+  /** True when a file was left out. Nothing is ever cut part way through. */
+  readonly truncated: boolean;
+  /** Instruction bytes actually placed in the prompt. */
+  readonly bytes: number;
 }

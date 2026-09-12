@@ -3,7 +3,11 @@ import type { ReviewerDecision, ScopeGrantRecord, ScopedAuthorization } from './
 import type { AgentResolution } from './agents.js';
 import type { OriginSnapshot } from './attribution.js';
 import type { WorkspaceRef } from './workspaces.js';
-import type { InstructionFileRecord, PackActivation } from './capability-packs.js';
+import type {
+  InstructionDelivery,
+  InstructionFileRecord,
+  PackActivation,
+} from './capability-packs.js';
 import type { FollowUpCommand, StopReceipt } from './work-control.js';
 
 export type Detail = 'guided' | 'standard' | 'technical';
@@ -236,6 +240,12 @@ export interface WorkReceipt {
 }
 export interface Session {
   origin?: OriginSnapshot;
+  /**
+   * The project instruction files this run put in front of the model, with the
+   * sha of the bytes actually sent and anything left out whole. Absent on a
+   * project that has no active pack or no discovered instruction file.
+   */
+  instructions?: InstructionDelivery;
   /**
    * Which Agent this run resolved to, with the model, route and policy state at
    * that moment. It is a record of what was permitted, never a grant, and it is
