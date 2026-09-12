@@ -1,0 +1,282 @@
+{
+  "startedAt": "2026-09-12T05:37:56.104Z",
+  "finishedAt": "2026-09-12T05:39:14.921Z",
+  "candidate": {
+    "exe": "F:\\Diomedes\\diomedes-wt\\release-20260912\\release\\Diomedes-win32-x64\\Diomedes.exe",
+    "sha256": "ae8ef98af1b83cacc237c1649de8a993b1577c0365e5b98066d4ad93404f249a",
+    "baseCommit": "da84689e08d73c98390bccea63669cc93a21a657",
+    "buildInfo": {
+      "version": "0.1.1",
+      "sourceStatus": "committed"
+    }
+  },
+  "mode": "real",
+  "route": "opencode",
+  "model": "opencode-go/glm-5.2",
+  "accountRoute": "opencode:opencode-go",
+  "liveTurns": 2,
+  "steps": [
+    {
+      "name": "onboarding",
+      "status": "traversed",
+      "note": "Welcome, three questions, AI setup and \"Open Diomedes\", each with its own control."
+    },
+    {
+      "name": "path-guard-refusal",
+      "status": "traversed",
+      "note": "A guarded folder is refused in words and the dialog stays open to correct: \"This folder or file is private and cannot be opened by Diomedes.\""
+    },
+    {
+      "name": "open-repository",
+      "status": "traversed",
+      "note": "Opened greet-kit with the Console's own \"Open a folder as a project\" control."
+    },
+    {
+      "name": "make-the-task",
+      "status": "not-reachable",
+      "note": "The Console cannot make a task; only the frozen Workbook plan path can. Made by API as a fixture."
+    },
+    {
+      "name": "engine-setup",
+      "status": "traversed",
+      "note": "OpenCode: \"Native OpenCode Go account connected. Choose an explicit provider/model.\". 15 models advertised; opencode-go/glm-5.2 set as the default on opencode:opencode-go."
+    },
+    {
+      "name": "open-the-task-thread",
+      "status": "traversed",
+      "note": "The board row's task name opens (and, the first time, makes) the task's thread."
+    },
+    {
+      "name": "activate-software-engineering-pack",
+      "status": "traversed",
+      "note": "Software Engineering is on; 1 instruction files recorded; 0 grants and 0 needs — activation granted nothing."
+    },
+    {
+      "name": "inspect-project-instructions",
+      "status": "traversed",
+      "note": "\"Project instructions loaded · AGENTS.md\" — AGENTS.md opens and reads back \"# Rules for this repository 1. Keep every file under twenty lines. 2. Say a thin\". Nothing here reaches a model (HAR-01)."
+    },
+    {
+      "name": "choose-the-model-on-the-thread",
+      "status": "not-reachable",
+      "note": "The thread's engine picker offers only nothing: Picker.tsx requires IntegrationStatus.available, and discovery never sets it for OpenCode. Settings > Engines is the only route control."
+    },
+    {
+      "name": "known-failure-account-unavailable",
+      "status": "traversed",
+      "note": "Confirmed and sent; refused with: \"Turn the selected engine on in Settings before using it.\" — no substitute route ran."
+    },
+    {
+      "name": "recover-by-turning-the-engine-back-on",
+      "status": "traversed",
+      "note": "The refusal named the control that fixes it; the switch in Settings > Engines is that control."
+    },
+    {
+      "name": "assign-the-bounded-change",
+      "status": "failed",
+      "note": "\"Send this task?\" confirmed. Session ended failed with no model recorded; OpenCode turns so far: 1. Fault: \"Work stopped: OpenCode did not finish within the time limit. Recheck before starting another request. No project files were changed.\""
+    },
+    {
+      "name": "exact-proposal",
+      "status": "failed",
+      "note": "No proposal to inspect: the turn faulted. \"Work stopped: OpenCode did not finish within the time limit. Recheck before starting another request. No project files were changed.\""
+    },
+    {
+      "name": "approve-and-record-the-write",
+      "status": "failed",
+      "note": "Nothing was put in front of the person to approve: \"Work stopped: OpenCode did not finish within the time limit. Recheck before starting another request. No project files were changed.\"."
+    },
+    {
+      "name": "review-the-diff",
+      "status": "failed",
+      "note": "The Review page opens but has no change to show: nothing was written, so \"Keep all\" is disabled."
+    },
+    {
+      "name": "edit-an-existing-source-file",
+      "status": "not-reachable",
+      "note": "No Console control selects a source document, and with an empty selection a text route may only create files (server/native-work.ts). The obvious change inside src/greet.js cannot be assigned here."
+    },
+    {
+      "name": "second-assignment-for-stop",
+      "status": "failed",
+      "note": "The board row offers no Start after the faulted turn, though the fault says \"Start again to request a new proposal\". The row reads: \"Add NOTES.md for src/greet.jsOpenCodenowRun failedthis threadRoute to\"."
+    },
+    {
+      "name": "queue-a-follow-up-while-in-flight",
+      "status": "intervention",
+      "note": "The queue accepts and shows the follow-up, but no run was in flight, so the in-flight case was not measured."
+    },
+    {
+      "name": "stop-the-task",
+      "status": "traversed",
+      "note": "Stopped the task. It reached what was running. Provider work already sent can complete and be charged after Stop."
+    },
+    {
+      "name": "follow-up-fate",
+      "status": "traversed",
+      "note": "Also list the exported names in NOTES.md.Sent (recorded state: delivered)"
+    },
+    {
+      "name": "inspect-history",
+      "status": "intervention",
+      "note": "History opens with 1 day(s) of entries, but the Console's History button switches the surface to the frozen Workbook and downgrades Technical detail to Standard."
+    },
+    {
+      "name": "reopen-check",
+      "status": "traversed",
+      "note": "Reopened; greet-kit is listed again and History keeps 1 day(s)."
+    }
+  ],
+  "knownFailure": {
+    "induced": "OpenCode turned off in Settings > Engines while it is the task's route (0 turns spent)",
+    "recoveryActionSeen": "Turn the selected engine on in Settings before using it.",
+    "pathGuard": {
+      "folder": "F:\\Diomedes\\diomedes\\node_modules",
+      "said": "This folder or file is private and cannot be opened by Diomedes."
+    },
+    "secondUninduced": "A real provider-side fault on both live attempts: run 2 \"did not return a valid file proposal\", run 3 \"did not finish within the time limit\". Both were stated in words with no spinner and no substitute route, but the named recovery (\"Start again\") has no control on the board row."
+  },
+  "stop": {
+    "scope": "task",
+    "receipt": "Stopped the task. It reached what was running. Provider work already sent can complete and be charged after Stop."
+  },
+  "followUp": {
+    "queued": "Also list the exported names in NOTES.md.",
+    "fate": "Also list the exported names in NOTES.md.Sent (recorded state: delivered)"
+  },
+  "reopen": {
+    "closedVia": "window close",
+    "foundAgain": true,
+    "leakedProcesses": [],
+    "processScan": [
+      {
+        "Name": "codex.exe",
+        "ProcessId": 34484,
+        "ParentProcessId": 24112,
+        "CreationDate": "2026-09-11T19:13:25"
+      },
+      {
+        "Name": "codex-computer-use-swift.exe",
+        "ProcessId": 19720,
+        "ParentProcessId": 24112,
+        "CreationDate": "2026-09-11T19:13:31"
+      },
+      {
+        "Name": "codex-code-mode-host.exe",
+        "ProcessId": 21600,
+        "ParentProcessId": 34484,
+        "CreationDate": "2026-09-11T19:15:48"
+      }
+    ],
+    "processScanNote": "Name-based scan for opencode/codex plus journey-b node and Diomedes processes, taken after the reopen check. All three matches predate this run (2026-09-11) and belong to the person's Codex CLI; nothing was killed. No opencode or Diomedes process survived the run."
+  },
+  "backendPreparation": [
+    {
+      "route": "filesystem",
+      "method": "write",
+      "status": 200,
+      "why": "disposable git repository at F:\\Diomedes\\diomedes-wt\\opus-journey-b\\test-results\\journey-b\\projects\\greet-kit"
+    },
+    {
+      "route": "/projects",
+      "method": "GET",
+      "status": 200,
+      "why": "read the opened project id",
+      "calls": 1
+    },
+    {
+      "route": "/projects/663d46711036/tasks",
+      "method": "POST",
+      "status": 200,
+      "why": "the Console has no task-creation control; fixture preparation",
+      "calls": 1
+    },
+    {
+      "route": "/engines/opencode/models",
+      "method": "GET",
+      "status": 200,
+      "why": "check the picker against the catalogue the app advertises",
+      "calls": 1
+    },
+    {
+      "route": "/settings",
+      "method": "GET",
+      "status": 200,
+      "why": "read the saved engine default",
+      "calls": 1
+    },
+    {
+      "route": "/projects/663d46711036/packs",
+      "method": "GET",
+      "status": 200,
+      "why": "confirm activation recorded no grant",
+      "calls": 1
+    },
+    {
+      "route": "/projects/663d46711036/state",
+      "method": "GET",
+      "status": 200,
+      "why": "verify what the interface claimed",
+      "calls": 21
+    },
+    {
+      "route": "/projects/663d46711036/history",
+      "method": "GET",
+      "status": 200,
+      "why": "confirm the History the Workbook page renders",
+      "calls": 1
+    },
+    {
+      "route": "/projects",
+      "method": "GET",
+      "status": 200,
+      "why": "confirm the repository survived a restart",
+      "calls": 1
+    },
+    {
+      "route": "/projects/663d46711036/history",
+      "method": "GET",
+      "status": 200,
+      "why": "confirm History survived the restart",
+      "calls": 1
+    }
+  ],
+  "limitations": [
+    "make-the-task (not-reachable): The Console cannot make a task; only the frozen Workbook plan path can. Made by API as a fixture.",
+    "choose-the-model-on-the-thread (not-reachable): The thread's engine picker offers only nothing: Picker.tsx requires IntegrationStatus.available, and discovery never sets it for OpenCode. Settings > Engines is the only route control.",
+    "assign-the-bounded-change (failed): \"Send this task?\" confirmed. Session ended failed with no model recorded; OpenCode turns so far: 1. Fault: \"Work stopped: OpenCode did not finish within the time limit. Recheck before starting another request. No project files were changed.\"",
+    "exact-proposal (failed): No proposal to inspect: the turn faulted. \"Work stopped: OpenCode did not finish within the time limit. Recheck before starting another request. No project files were changed.\"",
+    "approve-and-record-the-write (failed): Nothing was put in front of the person to approve: \"Work stopped: OpenCode did not finish within the time limit. Recheck before starting another request. No project files were changed.\".",
+    "review-the-diff (failed): The Review page opens but has no change to show: nothing was written, so \"Keep all\" is disabled.",
+    "edit-an-existing-source-file (not-reachable): No Console control selects a source document, and with an empty selection a text route may only create files (server/native-work.ts). The obvious change inside src/greet.js cannot be assigned here.",
+    "second-assignment-for-stop (failed): The board row offers no Start after the faulted turn, though the fault says \"Start again to request a new proposal\". The row reads: \"Add NOTES.md for src/greet.jsOpenCodenowRun failedthis threadRoute to\".",
+    "The paid turn produced no proposal: \"Work stopped: OpenCode did not finish within the time limit. Recheck before starting another request. No project files were changed.\""
+  ],
+  "advertisedModels": [
+    "opencode-go/mimo-v2.5-pro",
+    "opencode-go/kimi-k2.7-code",
+    "opencode-go/mimo-v2.5",
+    "opencode-go/kimi-k3",
+    "opencode-go/deepseek-v4-flash",
+    "opencode-go/grok-4.5",
+    "opencode-go/kimi-k2.6",
+    "opencode-go/qwen3.7-plus",
+    "opencode-go/deepseek-v4-pro",
+    "opencode-go/qwen3.7-max",
+    "opencode-go/qwen3.6-plus",
+    "opencode-go/glm-5.2",
+    "opencode-go/minimax-m3",
+    "opencode-go/glm-5.1",
+    "opencode-go/minimax-m2.7"
+  ],
+  "reportedModel": null,
+  "priorRun": {
+    "folder": "run2-mimo/",
+    "model": "opencode-go/mimo-v2.5-pro",
+    "accountRoute": "opencode:opencode-go",
+    "liveTurns": 2,
+    "outcome": "The assignment turn ran for 21 s on the account and the adapter refused the reply: \"Work stopped: The engine did not return a valid file proposal. No files were changed. Start again to request a new proposal.\" No proposal, no change, no need.",
+    "why": "server/native-work.ts:96 parses the reply with a bare JSON.parse and strips no code fence or prose; the prompt asks for STRICT JSON only."
+  },
+  "totalLiveTurns": 4
+}
