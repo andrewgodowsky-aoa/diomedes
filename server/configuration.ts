@@ -205,10 +205,6 @@ export class ConfigurationService {
   }
 
   /**
-   * The one authority check. Only an active owner or administrator may stage,
-   * activate or roll back; membership is read now, never from a manifest.
-   */
-  /**
    * Refuse anyone who may not change this business's setup, before any other
    * check runs.
    *
@@ -448,7 +444,6 @@ export class ConfigurationService {
     return manifests.find((item) => item.revision === target.revision)!;
   }
 
-  /** The manifest a recorded activation id produced, if any. */
   /**
    * The manifest one activation id produced *in this organization*.
    *
