@@ -26,7 +26,7 @@ const time = z
   .string()
   .max(40)
   .refine((value) => Number.isFinite(Date.parse(value)));
-const contentHash = (text: string | null) =>
+export const contentHash = (text: string | null) =>
   text === null ? null : createHash('sha256').update(text).digest('hex');
 export const APPROVAL_TTL_MS = 60 * 60 * 1000;
 // Retention never makes a previously used command executable again.

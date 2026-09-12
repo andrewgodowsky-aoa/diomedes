@@ -36,11 +36,16 @@ import {
   textKind,
 } from './paths.js';
 import { MAX_WORK_RECEIPTS, validateWorkReceipts, type WorkAdmission } from './work-admission.js';
-import { actionDigest, MAX_APPROVAL_RECEIPTS, validateApprovalReceipts, type ApprovalAdmission } from './approval-admission.js';
+import {
+  actionDigest,
+  contentHash,
+  MAX_APPROVAL_RECEIPTS,
+  validateApprovalReceipts,
+  type ApprovalAdmission,
+} from './approval-admission.js';
 
 export const now = () => new Date().toISOString();
-export const hash = (text: string | null) =>
-  text === null ? null : createHash('sha256').update(text).digest('hex');
+export const hash = contentHash;
 export const identifier = (prefix = '') => prefix + randomBytes(6).toString('hex');
 // Folders that never hold Diomedes documents; skipped during the documents walk.
 export const SKIPPED_FOLDERS = new Set([
