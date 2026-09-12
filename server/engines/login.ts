@@ -4,10 +4,9 @@ import path from 'node:path';
 import type { ExternalEngine } from '../../shared/types.js';
 import type { EngineConnection } from '../../shared/engines.js';
 import { killOwnedProcess } from '../integrations.js';
-import { engineEnvironment, EngineError } from './process.js';
+import { engineEnvironment, EngineError, psQuote } from './process.js';
 import { cursorCommand, resolveCursorEntry } from './cursor.js';
 
-const psQuote = (value: string) => `'${value.replaceAll("'", "''")}'`;
 export function loginCommand(engine: ExternalEngine): string[] {
   if (engine === 'claude-code')
     return ['--safe-mode', '--setting-sources', '', 'auth', 'login', '--claudeai'];

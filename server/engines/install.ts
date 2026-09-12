@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { ExternalEngine } from '../../shared/types.js';
 import type { InstallOffer } from '../../shared/engines.js';
-import { capture, engineEnvironment, EngineError, stopped } from './process.js';
+import { capture, engineEnvironment, EngineError, psQuote, stopped } from './process.js';
 
 // Exact official Windows assets reviewed 2026-09-10. Never resolve 'latest'.
 // Claude: downloads.claude.ai/claude-code-releases/2.1.252/manifest.json.
@@ -85,7 +85,6 @@ export async function verifyManagedBinary(root: string, engine: ExternalEngine) 
       'The managed executable changed. It was not launched. Restore the reviewed installation before rechecking.',
     );
 }
-const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
 export async function extractOpenCode(
   archive: string,
   output: string,
@@ -95,10 +94,10 @@ export async function extractOpenCode(
   // Extract exactly one known basename. Archive paths never choose a destination.
   const script =
     `$ErrorActionPreference='Stop'\nAdd-Type -AssemblyName System.IO.Compression.FileSystem\n` +
-    `$zip=[IO.Compression.ZipFile]::OpenRead(${quote(archive)})\ntry {\n` +
+    `$zip=[IO.Compression.ZipFile]::OpenRead(${psQuote(archive)})\ntry {\n` +
     `$entries=@($zip.Entries | Where-Object { $_.FullName -eq 'opencode.exe' })\n` +
     `if ($entries.Count -ne 1 -or $entries[0].Length -gt 350000000) { throw 'Unsupported release archive' }\n` +
-    `[IO.Compression.ZipFileExtensions]::ExtractToFile($entries[0],${quote(output)},$false)\n} finally { $zip.Dispose() }`;
+    `[IO.Compression.ZipFileExtensions]::ExtractToFile($entries[0],${psQuote(output)},$false)\n} finally { $zip.Dispose() }`;
   const result = await capture({
     file: path.join(
       process.env.SystemRoot ?? 'C:\\Windows',

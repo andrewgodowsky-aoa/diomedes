@@ -34,6 +34,8 @@ export function engineEnvironment(source: NodeJS.ProcessEnv = process.env): Node
     Object.entries(source).filter(([key, value]) => allowed.test(key) && value !== undefined),
   );
 }
+/** A PowerShell single-quoted literal: the only escape is a doubled quote. */
+export const psQuote = (value: string) => `'${value.replaceAll("'", "''")}'`;
 /** Only fixed launch arguments cross cmd.exe. Prompts and protocol data use stdin. */
 export function launchCommand(file: string, args: string[], platform = process.platform) {
   if (platform !== 'win32' || !/\.(cmd|bat)$/i.test(file)) return { file, args, verbatim: false };
