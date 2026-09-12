@@ -186,6 +186,31 @@ if (!app.requestSingleInstanceLock()) {
         autoHideMenuBar: true,
         webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
       });
+      // The persisted interface preference is the only app zoom authority. Native
+      // Chromium zoom would multiply it and drift from the visible Settings value.
+      const interfaceScale = (command) => {
+        void window.webContents
+          .executeJavaScript(
+            `window.dispatchEvent(new CustomEvent('diomedes-interface-scale', { detail: ${JSON.stringify(command)} }))`,
+          )
+          .catch((error) => console.error('Interface size could not change:', error));
+      };
+      window.webContents.setZoomFactor(1);
+      void window.webContents.setVisualZoomLevelLimits(1, 1);
+      window.webContents.on('before-input-event', (event, input) => {
+        if (input.type !== 'keyDown' || !(input.control || input.meta) || input.alt) return;
+        const command =
+          input.key === '+' || input.key === '='
+            ? 'increase'
+            : input.key === '-'
+              ? 'decrease'
+              : input.key === '0'
+                ? 'reset'
+                : null;
+        if (!command) return;
+        event.preventDefault();
+        interfaceScale(command);
+      });
       Menu.setApplicationMenu(
         Menu.buildFromTemplate([
           { label: 'File', submenu: [{ role: 'quit' }] },
@@ -204,9 +229,9 @@ if (!app.requestSingleInstanceLock()) {
           {
             label: 'View',
             submenu: [
-              { role: 'zoomIn' },
-              { role: 'zoomOut' },
-              { role: 'resetZoom' },
+              { label: 'Increase interface size', click: () => interfaceScale('increase') },
+              { label: 'Decrease interface size', click: () => interfaceScale('decrease') },
+              { label: 'Reset interface size (100%)', click: () => interfaceScale('reset') },
               { type: 'separator' },
               { role: 'togglefullscreen' },
             ],

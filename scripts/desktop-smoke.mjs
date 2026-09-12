@@ -79,10 +79,9 @@ try {
       ),
     );
   const beforeFonts = await fonts();
-  // The Field scale: the Workbook body sits at the 14 px floor the layout
-  // checks enforce, and a task title is body size carried by weight, not size.
-  expect(beforeFonts.body).toBe(14);
-  expect(beforeFonts['.task-title']).toBe(14);
+  // Prose and task content use the shared 16px body role before user scaling.
+  expect(beforeFonts.body).toBe(16);
+  expect(beforeFonts['.task-title']).toBe(16);
   const before = await sizes();
   await page.screenshot({
     path: path.resolve('evidence/screenshots/desktop-tasks.png'),

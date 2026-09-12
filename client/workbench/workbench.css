@@ -2,7 +2,7 @@
   min-width: 0;
   border-block: 1px solid var(--hair);
   color: var(--t2);
-  font: 400 var(--dm-type-body, 14px) / 1.5 var(--ui);
+  font: 400 var(--dm-type-body, var(--dm-type-ui)) / 1.5 var(--ui);
 }
 .console .run-inspector summary {
   cursor: pointer;
@@ -12,7 +12,7 @@
 .console .run-inspector summary span {
   margin-left: 12px;
   color: var(--t3);
-  font-size: var(--dm-type-caption, 14px);
+  font-size: var(--dm-type-caption, var(--dm-type-ui));
 }
 .console .run-inspector-body {
   padding-bottom: 12px;
@@ -36,7 +36,7 @@
 }
 .console .run-inspector-code {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--dm-type-meta);
 }
 .console .run-inspector section {
   border-top: 1px solid var(--hair);
@@ -44,7 +44,7 @@
   margin-top: 10px;
 }
 .console .run-inspector h3 {
-  font: 500 var(--dm-type-caption, 14px) / 1.5 var(--ui);
+  font: 500 var(--dm-type-caption, var(--dm-type-ui)) / 1.5 var(--ui);
   margin: 0;
   color: var(--t1);
 }

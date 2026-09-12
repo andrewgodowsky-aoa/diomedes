@@ -17,7 +17,7 @@ html[data-surface='console'] body {
   grid-template-columns: minmax(0, 1fr);
   background: var(--chrome);
   color: var(--t1);
-  font: 400 var(--dm-type-body) / 1.5 var(--ui);
+  font: 400 var(--dm-type-ui) / 1.5 var(--ui);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
   /* `scrollbar-color` inherits; `scrollbar-width` does not, so it is set on the
@@ -59,7 +59,7 @@ html[data-surface='console'] body {
 }
 .console .mono {
   font-family: var(--mono);
-  font-size: var(--dm-type-caption);
+  font-size: var(--dm-type-meta);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--t3);
@@ -68,7 +68,7 @@ html[data-surface='console'] body {
 .console .mono.lc {
   text-transform: none;
   letter-spacing: 0.01em;
-  font-size: var(--dm-type-caption);
+  font-size: var(--dm-type-meta);
 }
 .console .pt {
   display: inline-block;
@@ -367,17 +367,17 @@ html[data-surface='console'] body {
   background: var(--surface);
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-areas: 'heading' 'instruments' 'transcript' 'composer';
   min-height: 0;
 }
-/* One measure, centred in the work pane. `min()` keeps the 760 px reading
-   width whenever the pane can hold it and turns the gutters into padding when
-   it cannot, so head, instrument line, transcript and composer stay on the
-   same two edges at every width. */
+/* A work measure independent of prose length; wide artifacts can use more room.
+   Keep a single owner for column centering across heading, transcript and input. */
 .console .col {
-  width: min(var(--dm-measure), 100% - 64px);
+  width: min(var(--dm-work-measure, var(--dm-measure)), 100% - 64px);
   margin-inline: auto;
 }
 .console .head {
+  grid-area: heading;
   padding: 26px 0 0;
   display: flex;
   align-items: baseline;
@@ -391,13 +391,14 @@ html[data-surface='console'] body {
 }
 /* instrumentation lives on one mono line under the title, never inside the conversation */
 .console .instr {
+  grid-area: instruments;
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
   align-items: baseline;
   padding: 6px 0 12px;
   border-bottom: 1px solid var(--hair);
-  font: 400 var(--dm-type-body) / 1.6 var(--mono);
+  font: 400 var(--dm-type-meta) / 1.5 var(--mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--t3);
@@ -462,6 +463,7 @@ html[data-surface='console'] body {
   background: var(--raised);
 }
 .console .transcript {
+  grid-area: transcript;
   overflow-y: auto;
   min-height: 0;
 }
@@ -490,7 +492,7 @@ html[data-surface='console'] body {
 }
 .console .turn {
   position: relative;
-  max-width: 68ch;
+  min-width: 0;
 }
 .console .turn + .turn {
   margin-top: 14px;
@@ -598,6 +600,21 @@ html[data-surface='console'] body {
 }
 .console .body p {
   margin: 0 0 8px;
+  max-width: var(--dm-measure-prose);
+}
+.console .body :is(ul, ol, blockquote) {
+  max-width: var(--dm-measure-prose);
+}
+.console .body :is(pre, table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  font-size: var(--dm-type-code);
+}
+@container app (min-width: 1600px) {
+  .console .work:has(.body pre, .body table) {
+    --dm-work-measure: var(--dm-measure-wide);
+  }
 }
 .console .body p:last-child {
   margin: 0;
@@ -701,6 +718,7 @@ html[data-surface='console'] body {
 }
 
 .console .compose {
+  grid-area: composer;
   padding: 0 0 20px;
 }
 .console .composer {
@@ -719,7 +737,7 @@ html[data-surface='console'] body {
   background: transparent;
   border: 0;
   color: var(--t1);
-  font: 400 var(--dm-type-body) / 1.55 var(--ui);
+  font: 400 var(--dm-type-input) / 1.55 var(--ui);
   padding: 11px 14px 4px;
   min-height: 42px;
   max-height: 220px;
@@ -847,7 +865,7 @@ html[data-surface='console'] body {
 }
 .console .ledger h2 {
   margin: 0;
-  font: 500 var(--dm-type-body) / 1.4 var(--mono);
+  font: 500 var(--dm-type-caption) / 1.4 var(--ui);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -902,11 +920,11 @@ html[data-surface='console'] body {
   transition: opacity var(--move);
 }
 .console .ledger section.dim {
-  opacity: 0.55;
+  color: var(--t3);
 }
 .console .ledger h3 {
   margin: 0 0 8px;
-  font: 500 var(--dm-type-body) / 1.4 var(--mono);
+  font: 500 var(--dm-type-meta) / 1.5 var(--ui);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--t3);
@@ -1277,7 +1295,7 @@ html[data-surface='console'] body {
     grid-template-columns: minmax(0, 1fr) 250px;
   }
   .console .col {
-    width: min(760px, 100% - 64px);
+    width: min(var(--dm-measure), 100% - 64px);
   }
 }
 
@@ -1311,7 +1329,7 @@ html[data-surface='console'] body {
     padding-left: 16px;
   }
   .console .col {
-    width: min(760px, 100% - 32px);
+    width: min(var(--dm-measure), 100% - 32px);
   }
   .console .instr .grow {
     display: none;
@@ -1486,7 +1504,7 @@ html[data-motion='reduced'] .console .modes .ind b {
 .console .task-permission { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .console .who > b, .console .who > span { min-width: 0; overflow-wrap: anywhere; }
 .console .run-origin { overflow-wrap: anywhere; color: var(--fg-2, inherit); }
-.permission-panel { min-width: 0; font-family: inherit; font-size: 14px; line-height: 1.5; }
+.permission-panel { min-width: 0; font-family: inherit; font-size: var(--dm-type-ui); line-height: 1.5; }
 .permission-panel p { margin: 8px 0; }
 .permission-panel-title { display: flex; justify-content: space-between; gap: 12px; min-width: 0; overflow-wrap: anywhere; }
 .permission-presets > div { padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -1500,7 +1518,7 @@ html[data-motion='reduced'] .console .modes .ind b {
 .permission-choice { display: flex; align-items: baseline; gap: 8px; margin: 0; min-width: 0; }
 .permission-choice input { width: auto; margin: 0; }
 .permission-choice strong { min-width: 0; overflow-wrap: anywhere; }
-.permission-choice em { font-style: normal; font-size: 12px; opacity: 0.7; }
+.permission-choice em { font-style: normal; font-size: var(--dm-type-caption); color: var(--t2); }
 .permission-presets > div.is-unavailable > .permission-choice strong { opacity: 0.7; }
 .permission-why { opacity: 0.8; }
 .permission-points { margin: 8px 0; padding-left: 18px; min-width: 0; }

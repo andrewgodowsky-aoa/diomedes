@@ -45,12 +45,19 @@
   --dm-font-ui: 'Schibsted Grotesk', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --dm-font-read: var(--dm-font-ui);
   --dm-font-code: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
-  --dm-type-body: 14px;
-  --dm-type-caption: 14px;
-  --dm-type-section: 16px;
-  --dm-type-title: 18px;
-  --dm-line-body: 1.5;
-  --dm-measure: 880px;
+  /* Semantic roles at a stable root; width and information density never size type. */
+  --dm-type-body: 1rem;
+  --dm-type-input: 0.9375rem;
+  --dm-type-ui: 0.875rem;
+  --dm-type-caption: 0.8125rem;
+  --dm-type-meta: 0.75rem;
+  --dm-type-code: 0.875rem;
+  --dm-type-section: 1.125rem;
+  --dm-type-title: 1.25rem;
+  --dm-line-body: 1.55;
+  --dm-measure: 57.5rem;
+  --dm-measure-wide: 75rem;
+  --dm-measure-prose: 68ch;
   --dm-ui-scale: 1;
   --dm-read-scale: 1;
   --dm-code-scale: 1;
@@ -60,6 +67,8 @@
   --dm-ease: cubic-bezier(0.2, 0, 0, 1);
 }
 html {
+  font-size: 100%;
+  /* Only the explicit persisted preference scales the interface. */
   zoom: var(--dm-ui-scale);
 }
 html[data-package='field'] {
@@ -217,7 +226,7 @@ body {
   margin: 0;
   background: var(--dm-frame);
   color: var(--dm-text-1);
-  /* 14 px floor: tests/ui.spec.ts flags any text-bearing element under 14 px. */
+  /* Prose baseline; navigation, controls and metadata use explicit semantic roles. */
   font: var(--dm-type-body) / var(--dm-line-body) var(--dm-font-ui);
   overflow-wrap: anywhere;
   font-synthesis: none;
@@ -239,6 +248,7 @@ select {
   border-radius: 0;
 }
 button {
+  font-size: var(--dm-type-ui);
   cursor: pointer;
   background: none;
   border: 0;
@@ -267,6 +277,7 @@ input,
 textarea,
 select {
   background: var(--dm-well);
+  font-size: var(--dm-type-input);
   border: 1px solid var(--dm-rule);
   padding: 8px 12px;
   min-width: 0;
@@ -371,19 +382,19 @@ a {
   font-weight: 600;
 }
 .caption {
-  font: 400 var(--dm-type-body) / 1.5 var(--dm-font-ui);
+  font: 400 var(--dm-type-caption) / 1.5 var(--dm-font-ui);
   color: var(--dm-text-3);
 }
 .muted {
   color: var(--dm-text-2);
 }
 .code {
-  font: 400 calc(14px * var(--dm-code-scale)) / 1.57 var(--dm-font-code);
+  font: 400 calc(var(--dm-type-code) * var(--dm-code-scale)) / 1.57 var(--dm-font-code);
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 .code.caption {
-  font: 400 calc(14px * var(--dm-code-scale)) / 1.48 var(--dm-font-code);
+  font: 400 calc(var(--dm-type-code) * var(--dm-code-scale)) / 1.48 var(--dm-font-code);
 }
 /* Technical-only hint; no text-bearing use on the size-checked pages. */
 .key-hint {
@@ -665,6 +676,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   background: var(--dm-rule-2);
 }
 .rail-link {
+  font-size: var(--dm-type-ui);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1029,6 +1041,8 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
    Ask, Plan, Build and Fix at the shared UI size; the current one is --t1 with a
    1 px --light ink line under it, the rest --t3. */
 .composer .segmented {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   border: 0;
   border-bottom: 1px solid var(--dm-rule-2);
   border-radius: 0;
@@ -1039,12 +1053,12 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   border: 0;
   border-bottom: 1px solid transparent;
   margin-bottom: -1px;
-  padding: 11px 10px 11px;
+  padding: 10px 6px;
   min-width: 0;
   font-family: var(--dm-font-ui);
-  font-size: var(--dm-type-body);
+  font-size: var(--dm-type-ui);
   font-weight: 500;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--dm-text-3);
 }
@@ -1065,7 +1079,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   width: 100%;
   height: 68px;
   min-height: 68px;
-  font: 400 var(--dm-type-body) / var(--dm-line-body) var(--dm-font-ui);
+  font: 400 var(--dm-type-input) / var(--dm-line-body) var(--dm-font-ui);
   background: transparent;
   border-color: transparent;
   padding: 8px 0;
@@ -1197,7 +1211,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   padding: 20px 24px 12px;
 }
 .dialog-heading h2 {
-  font-size: 20px;
+  font-size: var(--dm-type-title);
   line-height: 1.28;
   margin: 0;
 }
@@ -1227,7 +1241,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .field input,
 .field textarea {
   width: 100%;
-  font-size: 16px;
+  font-size: var(--dm-type-body);
 }
 .field select {
   width: 100%;
@@ -1299,7 +1313,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 }
 .setup-content > h1 {
   margin: 8px 0 24px;
-  font-size: 20px;
+  font-size: var(--dm-type-title);
   line-height: 1.28;
 }
 .setup-content .intro {
@@ -1356,6 +1370,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   gap: 24px;
 }
 .setting-row {
+  font-size: var(--dm-type-ui);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1615,11 +1630,14 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 }
 .markdown {
   font: 400 var(--dm-type-body) / var(--dm-line-body) var(--dm-font-ui);
-  max-width: 72ch;
+  max-width: var(--dm-measure);
   overflow-wrap: anywhere;
 }
+.markdown :is(p, .markdown-list-line) {
+  max-width: var(--dm-measure-prose);
+}
 .document-reading {
-  font: 400 calc(16px * var(--dm-read-scale)) / 1.75 var(--dm-font-read);
+  font: 400 calc(var(--dm-type-body) * var(--dm-read-scale)) / 1.55 var(--dm-font-read);
 }
 .markdown p {
   margin: 0;
@@ -1629,18 +1647,18 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   font: 600 var(--dm-type-section) / 1.4 var(--dm-font-ui);
 }
 .document-reading h2 {
-  font: 600 calc(24px * var(--dm-read-scale)) / 1.4 var(--dm-font-read);
+  font: 600 calc(1.5rem * var(--dm-read-scale)) / 1.4 var(--dm-font-read);
 }
 .document-reading h2.document-title {
   margin-top: 0;
-  font-size: calc(28px * var(--dm-read-scale));
+  font-size: calc(1.75rem * var(--dm-read-scale));
 }
 .markdown h3 {
   margin: 16px 0 10px;
   font: 600 var(--dm-type-body) / 1.4 var(--dm-font-ui);
 }
 .document-reading h3 {
-  font: 600 calc(17px * var(--dm-read-scale)) / 1.42 var(--dm-font-read);
+  font: 600 calc(var(--dm-type-section) * var(--dm-read-scale)) / 1.42 var(--dm-font-read);
 }
 .paragraph-space {
   height: 14px;
@@ -1686,7 +1704,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   margin-bottom: 20px;
 }
 .work-session > h2 {
-  font-size: 20px;
+  font-size: var(--dm-type-title);
 }
 .work-log {
   margin: 20px 0;
@@ -1707,7 +1725,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   margin: 0;
 }
 .technical-log {
-  font: calc(13.5px * var(--dm-code-scale)) / 1.48 var(--dm-font-code);
+  font: calc(var(--dm-type-code) * var(--dm-code-scale)) / 1.48 var(--dm-font-code);
   color: var(--dm-text-3);
 }
 .change-card {
@@ -1851,7 +1869,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   max-height: 380px;
   overflow: auto;
   max-width: 100%;
-  font: calc(14px * var(--dm-code-scale)) / 1.57 var(--dm-font-code);
+  font: calc(var(--dm-type-code) * var(--dm-code-scale)) / 1.57 var(--dm-font-code);
   background: var(--dm-well);
 }
 .change-hunk {
@@ -1951,12 +1969,8 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   .workbook-layout {
     grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
   }
-  .reading > .prose,
-  .reading > .markdown {
-    max-width: 720px;
-  }
-  .reading > .block {
-    max-width: 900px;
+  .reading > :is(.markdown:has(pre, table), .document-editor, .block:has(pre, table)) {
+    max-width: var(--dm-measure-wide);
   }
 }
 @media (max-width: 1350px) {
@@ -1982,7 +1996,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     flex-wrap: wrap;
   }
   .page-header h1 {
-    font-size: 18px;
+    font-size: var(--dm-type-section);
   }
   .header-path {
     display: none;
@@ -2310,7 +2324,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     padding: 0 24px 40px;
   }
   .setup-content > h1 {
-    font-size: 20px;
+    font-size: var(--dm-type-title);
   }
   .setup-actions {
     flex-wrap: wrap;
@@ -2325,7 +2339,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     padding: 8px 16px 20px;
   }
   .dialog-heading h2 {
-    font-size: 19px;
+    font-size: var(--dm-type-title);
   }
   .error-bar,
   .feedback {
@@ -2395,7 +2409,7 @@ html[data-motion='reduced'] *::after {
   margin: 4px 0 28px;
 }
 .intents > h2 {
-  font-size: 20px;
+  font-size: var(--dm-type-title);
   margin: 0 0 14px;
 }
 .intent-rail {
@@ -2431,7 +2445,7 @@ html[data-motion='reduced'] *::after {
 }
 .intent strong {
   display: block;
-  font-size: 15px;
+  font-size: var(--dm-type-input);
   font-weight: 600;
   line-height: 1.4;
 }
@@ -2633,14 +2647,6 @@ html[data-motion='reduced'] *::after {
 }
 .history-entry.compact .entry-body > span {
   font-weight: 500;
-}
-@media (min-width: 1550px) {
-  .workbook-layout.home .reading {
-    max-width: 964px;
-  }
-  .workbook-layout.home .reading > * {
-    max-width: 880px;
-  }
 }
 
 /* ---- Landing ---- */

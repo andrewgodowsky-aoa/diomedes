@@ -7,6 +7,7 @@ import type {
   UsageSnapshot,
 } from '../shared/types';
 import { api } from './api';
+import { INTERFACE_SCALES } from '../shared/interface-scale';
 import { AppUpdates } from './AppUpdates';
 import { freshnessLine, planLine, shouldShowEmptyDetail } from './usage-presentation';
 import { AIConnections } from './AISetup';
@@ -526,11 +527,18 @@ export function SettingsPage({
                         >
                           {key === 'interfaceScale' ? (
                             <>
-                              <option value={0.95}>Smaller</option>
-                              <option value={1}>Default</option>
-                              <option value={1.1}>Comfortable</option>
-                              <option value={1.12}>Larger</option>
-                              <option value={1.24}>Largest</option>
+                              {INTERFACE_SCALES.map((scale) => (
+                                <option key={scale} value={scale}>
+                                  {Math.round(scale * 100)}%{scale === 1 ? ' (Default)' : ''}
+                                </option>
+                              ))}
+                              {!INTERFACE_SCALES.some(
+                                (scale) => scale === effectiveInterfaceScale,
+                              ) && (
+                                <option value={effectiveInterfaceScale}>
+                                  {Math.round(effectiveInterfaceScale * 100)}% (Custom)
+                                </option>
+                              )}
                             </>
                           ) : (
                             <>
@@ -544,6 +552,9 @@ export function SettingsPage({
                     ),
                   );
                 })()}
+                <p className="caption">
+                  Ctrl+Plus and Ctrl+Minus change interface size. Ctrl+0 resets it to 100%.
+                </p>
               </>
             )}
             {section === 'About' && (
@@ -629,9 +640,7 @@ export function SettingsPage({
                           <span className={`engine-meter-fill${s.available ? ' on' : ''}`} />
                         </span>
                       )}
-                      <span className="engine-row-name">
-                        {isDesk ? s.name : 'Online service'}
-                      </span>
+                      <span className="engine-row-name">{isDesk ? s.name : 'Online service'}</span>
                       <span className="caption push-right engine-state">
                         <Mark state={s.available ? 'working' : 'todo'} />
                         {s.available ? 'Available' : 'Unavailable'}

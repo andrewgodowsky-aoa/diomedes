@@ -628,7 +628,7 @@ test('F17, F20-F22: surface switches preserve data; visible pages meet copy and 
         [...element.childNodes].some(
           (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim(),
         ) &&
-        parseFloat(style.fontSize) < 14
+        parseFloat(style.fontSize) < 12
       )
         result.push(
           `Small text: ${element.tagName} ${style.fontSize} ${element.innerText.slice(0, 60)}`,

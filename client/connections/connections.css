@@ -17,7 +17,7 @@
 }
 .connections-kicker {
   font:
-    11px 'IBM Plex Mono',
+    var(--dm-type-meta) 'IBM Plex Mono',
     monospace;
   letter-spacing: 0.11em;
   color: #9caeb6;
@@ -29,7 +29,7 @@
   gap: 20px;
 }
 .connections-heading h1 {
-  font-size: 40px;
+  font-size: 2.5rem;
   font-weight: 500;
   margin: 12px 0;
   letter-spacing: -0.04em;
@@ -40,7 +40,7 @@
 .connections-demo-label {
   padding: 8px 12px;
   border: 1px solid #58676f;
-  font-size: 12px;
+  font-size: var(--dm-type-meta);
   white-space: nowrap;
 }
 .connections-notice {
@@ -48,7 +48,7 @@
   border-left: 2px solid #81c6d0;
   padding: 9px 14px;
   margin: 26px 0;
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
   background: #1a2225;
 }
 .connection-summary {
@@ -60,13 +60,13 @@
   border-bottom: 1px solid #343d41;
 }
 .connection-summary h2 {
-  font-size: 26px;
+  font-size: 1.625rem;
   margin: 0 0 6px;
 }
 .connection-summary p {
   margin: 0;
   color: #a9b6bd;
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
 }
 .connection-summary strong {
   display: block;
@@ -77,7 +77,7 @@
   display: block;
   color: #a9b6bd;
   margin-top: 5px;
-  font-size: 12px;
+  font-size: var(--dm-type-meta);
 }
 .connection-actions {
   display: flex;
@@ -88,14 +88,14 @@
 }
 .connections-page summary {
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
   color: #b9dbe1;
 }
 .connection-actions details {
   flex-basis: 100%;
 }
 .connection-actions details p {
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
   max-width: 750px;
 }
 .connection-freshness {
@@ -103,7 +103,7 @@
   flex-wrap: wrap;
   gap: 24px;
   color: #99abb5;
-  font-size: 12px;
+  font-size: var(--dm-type-meta);
   padding-bottom: 20px;
   border-bottom: 1px solid #343d41;
 }
@@ -120,25 +120,25 @@
   gap: 12px;
 }
 .connections-page h2 {
-  font-size: 19px;
+  font-size: var(--dm-type-title);
   font-weight: 500;
 }
 .connection-section-title span,
 .connection-subtitle {
   color: #a9b6bd;
-  font-size: 12px;
+  font-size: var(--dm-type-meta);
 }
 .connections-page table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
   margin-top: 18px;
 }
 .connections-page th {
   text-align: left;
   color: #9fb1ba;
   font-weight: 400;
-  font-size: 11px;
+  font-size: var(--dm-type-meta);
   padding: 10px 8px;
 }
 .connections-page td {
@@ -147,7 +147,7 @@
 }
 .connection-empty {
   padding: 28px 0;
-  font-size: 14px;
+  font-size: var(--dm-type-ui);
   color: #a9b6bd;
   line-height: 1.6;
 }
@@ -158,18 +158,18 @@
   background: #1b2327;
 }
 .connection-issue h3 {
-  font-size: 17px;
+  font-size: var(--dm-type-section);
   font-weight: 500;
 }
 .connection-issue p {
   color: #bcc7ce;
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
   line-height: 1.6;
 }
 .connections-page pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: var(--dm-type-meta);
   line-height: 1.6;
   max-height: 340px;
   overflow: auto;
@@ -181,13 +181,13 @@
 }
 .connection-rules p {
   color: #b5c0c6;
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
 }
 .connection-rules label {
   display: block;
   margin: 20px 0 7px;
   color: #b5c0c6;
-  font-size: 12px;
+  font-size: var(--dm-type-meta);
 }
 .connection-rule-input {
   display: flex;
@@ -202,7 +202,7 @@
   border-radius: 0;
   color: #e5edef;
   font: inherit;
-  font-size: 14px;
+  font-size: var(--dm-type-ui);
 }
 .connection-proposal {
   margin-top: 18px;
@@ -213,7 +213,7 @@
   display: grid;
   grid-template-columns: 120px 1fr;
   margin: 10px 0;
-  font-size: 13px;
+  font-size: var(--dm-type-caption);
 }
 .connection-proposal dt {
   text-transform: capitalize;

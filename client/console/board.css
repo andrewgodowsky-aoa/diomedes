@@ -107,7 +107,7 @@
   margin-top: 5px;
 }
 .console .crow .t {
-  font-size: var(--dm-type-caption);
+  font-size: var(--dm-type-input);
   color: var(--t1);
   padding-right: 60px;
   line-height: 1.4;
@@ -289,7 +289,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   padding-right: 0;
-  font-size: var(--dm-type-caption);
+  font-size: var(--dm-type-input);
 }
 .console .columns.compact .crow .m {
   grid-column: 3;

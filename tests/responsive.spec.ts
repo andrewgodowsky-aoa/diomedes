@@ -99,7 +99,7 @@ for (const [width, height, scale] of [
         );
       for (const font of uiFonts) {
         expect(font.family).toContain('Schibsted Grotesk');
-        expect(font.size).toBe('14px');
+        expect(font.size).toBe('16px');
       }
     }
     await page.getByRole('button', { name: 'Settings', exact: true }).click();

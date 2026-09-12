@@ -8,6 +8,7 @@ import type {
   UsageSnapshot,
 } from '../shared/types';
 import { api } from './api';
+import { nextInterfaceScale, scaleShortcut, type ScaleCommand } from '../shared/interface-scale';
 import {
   Brand,
   Button,
@@ -59,6 +60,7 @@ export function App() {
   const [landingText, setLandingText] = useState('');
   const [landingProjectId, setLandingProjectId] = useState<string | null>(null);
   const settingsRef = useRef(settings);
+  const scaleWrites = useRef<Promise<void>>(Promise.resolve());
   settingsRef.current = settings;
   // Opener registered by the console Shell; Ctrl+K on the console surface
   // opens the console palette instead of the Workbook's project search.
@@ -72,16 +74,19 @@ export function App() {
     const data = await api<{ projects: Project[] }>('/projects');
     setProjects(data.projects);
   }, []);
-  const refreshIntegrations = useCallback(async (refresh = false) => {
-    try {
-      const data = await api<{ integrations: IntegrationStatus[] }>(
-        `/integrations${refresh ? '?refresh=1' : ''}`,
-      );
-      setIntegrations(data.integrations);
-    } catch (e) {
-      report(e);
-    }
-  }, [report]);
+  const refreshIntegrations = useCallback(
+    async (refresh = false) => {
+      try {
+        const data = await api<{ integrations: IntegrationStatus[] }>(
+          `/integrations${refresh ? '?refresh=1' : ''}`,
+        );
+        setIntegrations(data.integrations);
+      } catch (e) {
+        report(e);
+      }
+    },
+    [report],
+  );
   const refreshUsage = useCallback(async () => {
     try {
       const data = await api<{ usage: UsageSnapshot[] }>('/usage');
@@ -170,6 +175,38 @@ export function App() {
     }))
       root.style.setProperty(`--dm-${name}`, String(value));
   }, [settings]);
+  useEffect(() => {
+    const change = (command: ScaleCommand) => {
+      // Serialize held/repeated shortcuts and read the current preference each time.
+      // A scale change owns only one appearance field, never provider or account settings.
+      scaleWrites.current = scaleWrites.current
+        .then(async () => {
+          const current = await api<Settings>('/settings');
+          const value = nextInterfaceScale(current.appearance.interfaceScale ?? 1, command);
+          if (value === current.appearance.interfaceScale) return;
+          setSettings(
+            await api<Settings>('/settings', 'PUT', { appearance: { interfaceScale: value } }),
+          );
+        })
+        .catch(report);
+    };
+    const keyboard = (event: KeyboardEvent) => {
+      const command = scaleShortcut(event);
+      if (!command) return;
+      event.preventDefault();
+      change(command);
+    };
+    const desktop = (event: Event) => {
+      const command: unknown = (event as CustomEvent<unknown>).detail;
+      if (command === 'increase' || command === 'decrease' || command === 'reset') change(command);
+    };
+    window.addEventListener('keydown', keyboard);
+    window.addEventListener('diomedes-interface-scale', desktop);
+    return () => {
+      window.removeEventListener('keydown', keyboard);
+      window.removeEventListener('diomedes-interface-scale', desktop);
+    };
+  }, [report]);
   const openProject = useCallback(
     (project: Project) => {
       setSelected(project.id);
@@ -356,120 +393,124 @@ export function App() {
         ) : (
           <>
             {!consoleActive && (
-            <header className="top-bar">
-              <button
-                className="brand-button"
-                onClick={() => {
-                  setSelected(null);
-                  setShowSettings(false);
-                }}
-                aria-label="Diomedes projects"
-              >
-                <MarkGlyph size={18} />
-                <Brand />
-              </button>
-              <nav className="project-tabs" aria-label="Open projects">
+              <header className="top-bar">
                 <button
-                  className={`project-tab ${!selected && !showSettings ? 'active' : ''}`}
+                  className="brand-button"
                   onClick={() => {
                     setSelected(null);
                     setShowSettings(false);
                   }}
+                  aria-label="Diomedes projects"
                 >
-                  Projects
+                  <MarkGlyph size={18} />
+                  <Brand />
                 </button>
-                {shownProjects.map((p) => (
+                <nav className="project-tabs" aria-label="Open projects">
                   <button
-                    key={p.id}
-                    className={`project-tab ${selected === p.id && !showSettings ? 'active' : ''}`}
-                    onClick={() => openProject(p)}
+                    className={`project-tab ${!selected && !showSettings ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelected(null);
+                      setShowSettings(false);
+                    }}
                   >
-                    {p.status?.needsYou || p.status?.working ? (
-                      <Mark state={p.status.needsYou ? 'waiting' : 'working'} />
-                    ) : null}
-                    <span className="project-tab-name" title={p.name}>{p.name}</span>
+                    Projects
                   </button>
-                ))}
-              </nav>
-              <div className="top-right">
-                <div className="top-status" role="status">
-                  {status && (
-                    <>
-                      <Mark
-                        state={!online ? 'fault' : needs ? 'waiting' : running ? 'working' : 'done'}
+                  {shownProjects.map((p) => (
+                    <button
+                      key={p.id}
+                      className={`project-tab ${selected === p.id && !showSettings ? 'active' : ''}`}
+                      onClick={() => openProject(p)}
+                    >
+                      {p.status?.needsYou || p.status?.working ? (
+                        <Mark state={p.status.needsYou ? 'waiting' : 'working'} />
+                      ) : null}
+                      <span className="project-tab-name" title={p.name}>
+                        {p.name}
+                      </span>
+                    </button>
+                  ))}
+                </nav>
+                <div className="top-right">
+                  <div className="top-status" role="status">
+                    {status && (
+                      <>
+                        <Mark
+                          state={
+                            !online ? 'fault' : needs ? 'waiting' : running ? 'working' : 'done'
+                          }
+                        />
+                        <span>{status}</span>
+                      </>
+                    )}
+                    {chipVisible && activeIntegration && activeUsage && (
+                      <UsageChip
+                        snapshot={activeUsage}
+                        name={activeIntegration.name}
+                        onOpen={() => {
+                          setShowSettings(true);
+                          setHelpersRequest((n) => n + 1);
+                        }}
                       />
-                      <span>{status}</span>
-                    </>
-                  )}
-                  {chipVisible && activeIntegration && activeUsage && (
-                    <UsageChip
-                      snapshot={activeUsage}
-                      name={activeIntegration.name}
-                      onOpen={() => {
-                        setShowSettings(true);
-                        setHelpersRequest((n) => n + 1);
-                      }}
-                    />
-                  )}
-                </div>
-                <Button
-                  tone={`quiet ${showSettings ? 'selected' : ''}`}
-                  onClick={() => setShowSettings(!showSettings)}
-                >
-                  Settings
-                </Button>
-                <div className="account-wrap">
+                    )}
+                  </div>
                   <Button
-                    tone="quiet icon-button"
-                    aria-label="Interface detail menu"
-                    onClick={() => setAccount(!account)}
+                    tone={`quiet ${showSettings ? 'selected' : ''}`}
+                    onClick={() => setShowSettings(!showSettings)}
                   >
-                    <Icon name="settings" />
+                    Settings
                   </Button>
-                  {account && (
-                    <div className="account-menu">
-                      <p className="caption">Surface</p>
-                      {(['workbook', 'console'] as const).map((s) => (
-                        <button
-                          key={s}
-                          onClick={() => {
-                            void saveSettings({
-                              ...settings,
-                              surface: s,
-                              detail:
-                                s === 'workbook' && settings.detail === 'technical'
-                                  ? 'standard'
-                                  : settings.detail,
-                            });
-                            setAccount(false);
-                          }}
-                        >
-                          <Mark state={s === surface ? 'working' : 'todo'} />
-                          {s === 'workbook' ? 'The Workbook' : 'The Console'}
-                        </button>
-                      ))}
-                      {surface === 'workbook' && (
-                        <>
-                          <p className="caption">Detail</p>
-                          {(['guided', 'standard'] as const).map((d) => (
-                            <button
-                              key={d}
-                              onClick={() => {
-                                void saveSettings({ ...settings, detail: d });
-                                setAccount(false);
-                              }}
-                            >
-                              <Mark state={d === settings.detail ? 'working' : 'todo'} />
-                              {titleCase(d)}
-                            </button>
-                          ))}
-                        </>
-                      )}
-                    </div>
-                  )}
+                  <div className="account-wrap">
+                    <Button
+                      tone="quiet icon-button"
+                      aria-label="Interface detail menu"
+                      onClick={() => setAccount(!account)}
+                    >
+                      <Icon name="settings" />
+                    </Button>
+                    {account && (
+                      <div className="account-menu">
+                        <p className="caption">Surface</p>
+                        {(['workbook', 'console'] as const).map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => {
+                              void saveSettings({
+                                ...settings,
+                                surface: s,
+                                detail:
+                                  s === 'workbook' && settings.detail === 'technical'
+                                    ? 'standard'
+                                    : settings.detail,
+                              });
+                              setAccount(false);
+                            }}
+                          >
+                            <Mark state={s === surface ? 'working' : 'todo'} />
+                            {s === 'workbook' ? 'The Workbook' : 'The Console'}
+                          </button>
+                        ))}
+                        {surface === 'workbook' && (
+                          <>
+                            <p className="caption">Detail</p>
+                            {(['guided', 'standard'] as const).map((d) => (
+                              <button
+                                key={d}
+                                onClick={() => {
+                                  void saveSettings({ ...settings, detail: d });
+                                  setAccount(false);
+                                }}
+                              >
+                                <Mark state={d === settings.detail ? 'working' : 'todo'} />
+                                {titleCase(d)}
+                              </button>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </header>
+              </header>
             )}
             <div
               className={`page-frame ${needs && current?.status?.needsYou ? 'needs-attention' : ''} ${!online ? 'disconnected' : ''}`}
@@ -736,9 +777,7 @@ export function App() {
                               }[settings.onboarding.work ?? 'mix']
                             }
                           </p>
-                          <p className="caption">
-                            Projects are ordinary folders on this computer.
-                          </p>
+                          <p className="caption">Projects are ordinary folders on this computer.</p>
                         </>
                       )}
                     </div>
