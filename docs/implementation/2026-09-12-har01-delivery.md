@@ -145,7 +145,7 @@ real HTTP app and a real project folder):
 
 ## Gates
 
-Run in this worktree, 2026-09-12, on `4ff8e07`:
+Run in this worktree, 2026-09-12, on `40b6130`:
 
 - `npx tsc --noEmit` — clean.
 - `npx vitest run` — 89 files, 1519 passed, 1 skipped (1520 total).
