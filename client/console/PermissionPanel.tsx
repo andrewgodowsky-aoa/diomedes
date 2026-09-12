@@ -7,6 +7,7 @@ import {
   type ScopeGrantCommand,
   type ScopeGrantView,
 } from '../../shared/permissions';
+import { ROUTE_CAPABILITIES } from '../../shared/capabilities';
 
 export interface PermissionPanelProps {
   projectId: string;
@@ -66,6 +67,23 @@ export function PermissionPanel({
       current = false;
     };
   }, [base, projectId, engine]);
+  /**
+   * Why an option is off, in the person's terms.
+   *
+   * `Work in this project` and `Approve for me` are refused for every route but
+   * Codex, because a scoped automatic write has a verified boundary on that
+   * route and nowhere else (`server/permission-routes.ts`). That is a fact
+   * about the route, not a fault in the account: a signed-in, ready OpenCode
+   * reads exactly the same. The bare word "Unavailable" said the opposite, so
+   * the scope-backed options name the route instead, and say the one thing that
+   * changes the answer.
+   */
+  const scopeOnCodexOnly =
+    !!capabilities && capabilities.routeId !== 'codex' && capabilities.routeId !== 'unknown';
+  const scopeBacked = (id: PermissionChoiceId) => id === 'project' || id === 'auto-review';
+  const offState = (id: PermissionChoiceId) =>
+    scopeOnCodexOnly && scopeBacked(id) ? 'Codex only' : 'Unavailable';
+  const routeName = ROUTE_CAPABILITIES[capabilities?.routeId ?? '']?.name ?? engine;
   const matching = grants.filter((record) => record.grant.taskId === taskId);
   const active = matching.filter((record) => record.active);
   const choices = capabilities?.choices ?? [];
@@ -161,11 +179,19 @@ export function PermissionPanel({
                 onChange={() => setChoice(preset.id)}
               />
               <strong>{preset.name}</strong>
-              {!preset.available && <em>Unavailable</em>}
+              {!preset.available && <em>{offState(preset.id)}</em>}
               {preset.id === 'project' && preset.available && <em>recommended</em>}
             </label>
             <p>{preset.detail}</p>
             {!preset.available && <p className="permission-why">{preset.unavailableReason}</p>}
+            {!preset.available && scopeOnCodexOnly && scopeBacked(preset.id) && (
+              <p className="permission-why">
+                This is about the route, not about the {routeName} connection: only Codex has a
+                verified boundary for scoped automatic writes. Set this thread to Codex in the
+                engine picker, or connect Codex in Settings &gt; Engines. Review changes stays
+                available on {routeName}.
+              </p>
+            )}
             {(choice === preset.id || !preset.available) && (
               <ul className="permission-points">
                 {preset.points.map((point) => (

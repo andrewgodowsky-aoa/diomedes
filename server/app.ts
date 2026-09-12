@@ -716,13 +716,45 @@ export async function createApp(options: AppOptions) {
       return { bundle, text: renderSupportBundle(bundle) };
     }, false),
   );
+  /**
+   * The expected-hash write guard for settings.
+   *
+   * Two AI-setup controls write settings by different routes, and a
+   * whole-object PUT built from a screen's snapshot silently discards whatever
+   * landed after that snapshot was taken — `validateSettings` replaces
+   * `services` wholesale, so an On switch and a "Use as default" pressed close
+   * together lose one of the two. The stored settings therefore carry their own
+   * content hash as an ETag. A caller that echoes it back in `If-Match` is
+   * refused with 409 when the stored settings have moved, and the refusal
+   * carries the saved settings so the caller re-applies its one change to the
+   * current truth. A caller that sends no `If-Match` is unguarded, exactly as
+   * before, so this adds a guarantee without taking one away.
+   */
+  const settingsTag = (value: Settings) => `"${hash(JSON.stringify(value)) ?? ''}"`;
+  const withSettingsTag = (res: Response, value: Settings) => {
+    res.setHeader('ETag', settingsTag(value));
+    return value;
+  };
   app.get(
     '/api/settings',
-    route(async () => store.settings),
+    route(async (_req, res) => withSettingsTag(res, store.settings)),
   );
   app.put(
     '/api/settings',
-    route(async (req) => store.saveSettings(validateSettings(store.settings, req.body))),
+    route(async (req, res) => {
+      const expected = req.headers['if-match'];
+      if (typeof expected === 'string' && expected !== settingsTag(store.settings))
+        throw new ApiError(
+          409,
+          'Settings changed while this screen was saving. The saved settings were reloaded.',
+          {
+            code: 'settings_conflict',
+            settings: store.settings,
+            etag: settingsTag(store.settings),
+          },
+        );
+      return withSettingsTag(res, await store.saveSettings(validateSettings(store.settings, req.body)));
+    }),
   );
   const externalEngine = (req: Request) =>
     choice(String(req.params.engine), EXTERNAL_ENGINES, 'engine');
@@ -760,20 +792,48 @@ export async function createApp(options: AppOptions) {
   );
   app.post(
     '/api/ai/select',
-    route(async (req) => {
+    route(async (req, res) => {
       const b = body(req),
         engine = choice(b.engine, EXTERNAL_ENGINES, 'engine');
       const selected = engines.selection(engine, asString(b.model, 'a model', 120));
-      return store.saveSettings({
-        ...store.settings,
-        services: {
-          ...store.settings.services,
-          defaultEngine: engine,
-          [engine]: true,
-          [`${engine}Model`]: selected.model,
-          [`${engine}AccountRoute`]: selected.accountRoute,
-        },
-      });
+      return withSettingsTag(
+        res,
+        await store.saveSettings({
+          ...store.settings,
+          services: {
+            ...store.settings.services,
+            defaultEngine: engine,
+            [engine]: true,
+            [`${engine}Model`]: selected.model,
+            [`${engine}AccountRoute`]: selected.accountRoute,
+          },
+        }),
+      );
+    }),
+  );
+  /**
+   * The engine On switch. It exists as its own route so the read-modify-write
+   * happens here, under the same store lock `/api/ai/select` holds, rather than
+   * on a screen that must first guess what the rest of settings currently says.
+   * Turning an engine on or off then commutes with choosing its default model:
+   * neither can lose the other, in either order, at any speed. The switch is a
+   * preference and never a readiness claim — `EngineService.generate()` still
+   * rechecks installation, version, sign-in and the model before anything is
+   * sent, and refuses when the account cannot answer.
+   */
+  app.post(
+    '/api/ai/enabled',
+    route(async (req, res) => {
+      const b = body(req),
+        engine = choice(b.engine, EXTERNAL_ENGINES, 'engine');
+      if (typeof b.on !== 'boolean') throw new ApiError(400, 'Provide on as true or false.');
+      return withSettingsTag(
+        res,
+        await store.saveSettings({
+          ...store.settings,
+          services: { ...store.settings.services, [engine]: b.on },
+        }),
+      );
     }),
   );
   app.get(

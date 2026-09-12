@@ -7,7 +7,7 @@ import type {
   Surface,
   UsageSnapshot,
 } from '../shared/types';
-import { api } from './api';
+import { api, patchSettings, readSettings, SettingsConflict, writeSettings } from './api';
 import { nextInterfaceScale, scaleShortcut, type ScaleCommand } from '../shared/interface-scale';
 import {
   Brand,
@@ -103,13 +103,21 @@ export function App() {
       report(e);
     }
   }, [report]);
+  /**
+   * Every settings write carries the hash of the settings this screen last saw.
+   * When another route has written since — AI setup's On switch and its
+   * "Use as default" are two such routes — the server refuses rather than
+   * overwriting, and hands back what it stored. Adopting that is the correct
+   * outcome, not an error to report: the screen ends up showing the saved
+   * state, which is what it was asked to do.
+   */
   async function saveSettings(value: Settings) {
     setBusy(true);
     try {
-      const saved = await api<Settings>('/settings', 'PUT', value);
-      setSettings(saved);
+      setSettings(await writeSettings(value));
     } catch (e) {
-      report(e);
+      if (e instanceof SettingsConflict) setSettings(e.settings);
+      else report(e);
     } finally {
       setBusy(false);
     }
@@ -117,7 +125,7 @@ export function App() {
   const loadInitial = useCallback(async () => {
     try {
       const [s, p] = await Promise.all([
-        api<Settings>('/settings'),
+        readSettings(),
         api<{ projects: Project[] }>('/projects'),
       ]);
       setSettings(s);
@@ -155,7 +163,7 @@ export function App() {
       (n) => es.addEventListener(n, refresh),
     );
     es.addEventListener('settings', () => {
-      void api<Settings>('/settings').then(setSettings).catch(report);
+      void readSettings().then(setSettings).catch(report);
     });
     es.addEventListener('usage', () => {
       void refreshUsage().catch(report);
@@ -189,11 +197,11 @@ export function App() {
       // A scale change owns only one appearance field, never provider or account settings.
       scaleWrites.current = scaleWrites.current
         .then(async () => {
-          const current = await api<Settings>('/settings');
+          const current = await readSettings();
           const value = nextInterfaceScale(current.appearance.interfaceScale ?? 1, command);
           if (value === current.appearance.interfaceScale) return;
           setSettings(
-            await api<Settings>('/settings', 'PUT', { appearance: { interfaceScale: value } }),
+            await patchSettings({ appearance: { interfaceScale: value } }),
           );
         })
         .catch(report);
@@ -230,7 +238,7 @@ export function App() {
         settingsRef.current = next;
         setSettings(next);
         // Navigation owns only this field; a stale client must not overwrite engine consent.
-        void api<Settings>('/settings', 'PUT', { openProjects: next.openProjects }).catch(report);
+        void patchSettings({ openProjects: next.openProjects }).catch(report);
       }
     },
     [report],
@@ -246,7 +254,7 @@ export function App() {
         const next = { ...s, lastPage: { ...s.lastPage, [selected]: p } };
         settingsRef.current = next;
         setSettings(next);
-        void api<Settings>('/settings', 'PUT', { lastPage: next.lastPage }).catch(report);
+        void patchSettings({ lastPage: next.lastPage }).catch(report);
       }
     },
     [report, selected],

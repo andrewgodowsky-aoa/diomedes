@@ -4,7 +4,7 @@ import type { ExternalEngine } from '../shared/types';
 import type { EngineConnection, InstallOffer } from '../shared/engines';
 import { ENGINE_NAMES, EXTERNAL_ENGINES, TEXT_ROUTE_CONTROLS } from '../shared/engines';
 import { advanceSetup } from '../shared/onboarding';
-import { api } from './api';
+import { api, selectEngineModel, setEngineEnabled } from './api';
 import { Button } from './components';
 import './ai-setup.css';
 
@@ -196,13 +196,16 @@ export function AIConnections({ settings, save, busy }: AIConnectionProps) {
     }
   }
 
+  /**
+   * The switch names one key. It is sent as that one key, and the server merges
+   * it into whatever is stored, so pressing this and "Use as default" in quick
+   * succession cannot lose either write. What the screen then shows is the
+   * settings the server saved, never the value this screen hoped for.
+   */
   async function toggle(engine: ExternalEngine, on: boolean): Promise<void> {
     setOpError((prev) => ({ ...prev, [engine]: null }));
     try {
-      await save({
-        ...settings,
-        services: { ...settings.services, [engine]: on },
-      });
+      await save(await setEngineEnabled(engine, on));
     } catch (error) {
       fail(engine, error);
     }
@@ -216,15 +219,12 @@ export function AIConnections({ settings, save, busy }: AIConnectionProps) {
     setOpError((prev) => ({ ...prev, [engine]: null }));
     setProgress(`Setting the default model for ${ENGINE_NAMES[engine]}…`);
     try {
-      const result = await api<Settings>(
-        '/ai/select',
-        'POST',
-        { engine, model },
-        controller.signal,
-      );
+      const result = await selectEngineModel(engine, model, controller.signal);
       if (!mounted.current) return;
-      // The parent save updates the UI; the old thread and project settings
-      // are left untouched by passing the returned settings through as-is.
+      // The server has already written this under its lock. The parent save
+      // publishes the saved settings; because it carries the hash the server
+      // just reported, a write that landed in between is refused rather than
+      // overwritten, and the screen adopts what was actually stored.
       await save(result);
     } catch (error) {
       if (controller.signal.aborted || !mounted.current) return;
