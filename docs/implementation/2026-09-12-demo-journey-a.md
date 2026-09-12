@@ -15,6 +15,39 @@ touched. The traversal is `scripts/demo-journey-a.mjs`; its per-step record is
 This is a measurement, not a build. Where a step has no control in this build it is recorded as not
 reachable rather than worked around with a new one.
 
+## 0. Rerun on the published bytes (candidate `4fb8656`, v0.1.1-experimental.3)
+
+The sections below describe the first run, on the `da84689` candidate. The same script was rerun
+unchanged in its steps against the candidate that was published as `v0.1.1-experimental.3`
+(`F:/Diomedes/diomedes-wt/release-20260912-4fb8656/release/Diomedes-win32-x64/Diomedes.exe`, record
+`evidence/release-candidates/diomedes-0.1.1-windows-experimental-20260912-4fb86560c1d7.json`), on a
+fresh profile, 08:08 to 08:09 UTC on 12 September. `evidence/demo-journeys/a/journey-a.json` and the
+screenshots beside it are now this run.
+
+| Result | First run (`da84689`) | Published run (`4fb8656`) |
+|---|---|---|
+| traversed | 15 of 18 | 16 of 18 |
+| intervention | 1 | 1 (step 13, the deterministic brief's second run is a file comparison) |
+| not reachable | 2 | 1 (step 08, attaching a file: FIL-02 is unbuilt) |
+| failed | 0 | 0 |
+| live turns | 2 on Claude Code, model unrecorded | 2 on Claude Code, `claude-sonnet-5` recorded on the session |
+
+What changed between the runs, and what it showed:
+
+- **Step 15** now makes the task through the Board's own New task control (Opus's Console-tasks
+  slice, 33fbda9) rather than through the API, so the journey's only fixture preparation is the two
+  exports that step 08 cannot attach.
+- **Step 16** sends the documents the task names. The first run's turn came back with the model saying
+  it had been shown no document, because the Board's Start sent `sources: []`; `shared/task-sources.ts`
+  (7965277, 4fb8656) now picks the text and Markdown files the task's name and description mention.
+  The confirmation lists them. The run ended waiting on `claude-sonnet-5`, one row in Working, the
+  Board showed Review 1, and the session records the model that answered (the attribution gap in §5
+  is closed).
+- **Step 17** still shows the composer gap: the thread composer sends with no confirmation of its own
+  and carries no project document in ask mode, so the revision request was answered as "no documents
+  were supplied". That is the remaining source fix from this journey.
+- **Step 04** (the known failure): oh-my-pi signed out, recovery offered from the screen, unchanged.
+
 ## 1. What was traversed
 
 | Step | Status | What happened |
@@ -246,4 +279,5 @@ was amended and nothing here claims a capability that is not shipped.
 Source and evidence only: one new script and one evidence directory in this worktree, nothing
 committed or pushed, no package built, no installed app replaced, no release published, no cloud
 document written; the only provider calls were the two recorded Claude Code turns on the account
-already signed in on this machine.
+already signed in on this machine. **Update, 12 September 08:00 UTC:** the rerun in §0 was made on
+the bytes published as `v0.1.1-experimental.3` and spent two further Claude Code turns.

@@ -1,0 +1,20 @@
+{
+  "startedAt": "2026-09-12T08:08:15.4907131Z",
+  "installer": "F:\\Diomedes\\deliverables\\windows-release-20260912-4fb8656\\Diomedes-Experimental-0.1.1-unsigned-setup.exe",
+  "installerSha256": "d9eccbd5101b675968a17f2adbb760b66db627e247da24f8c4d07aa66b0e369d",
+  "installTarget": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\test-results\\installer-proof\\installation",
+  "registryKeys": [
+    "HKCU:\\Software\\Diomedes\\Experimental\\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001",
+    "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001"
+  ],
+  "checks": [
+    "Installed all payload files with identical SHA-256, current-user keys and shortcut",
+    "Installed executable passed full Connections desktop/crash/restart smoke with isolated profile",
+    "Same-version repair install retained unknown data and isolated profile; all program hashes still match",
+    "Uninstall removed only owned payload/registration/shortcut; unknown file and isolated profile retained"
+  ],
+  "passed": true,
+  "payloadFileCount": 76,
+  "runtime": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\test-results\\installer-proof\\runtime-proof\\proof.json",
+  "finishedAt": "2026-09-12T08:08:49.8808067Z"
+}

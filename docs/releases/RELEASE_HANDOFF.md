@@ -1,5 +1,13 @@
 # Diomedes Windows experimental 0.1.1 handoff
 
+> **Current release (12 September 2026):** `v0.1.1-experimental.3` from commit `4fb8656`, record
+> `evidence/release-candidates/diomedes-0.1.1-windows-experimental-20260912-4fb86560c1d7.json`,
+> published at https://github.com/andrewgodowsky-aoa/diomedes/releases/tag/v0.1.1-experimental.3
+> (installer sha256 `d9eccbd5101b675968a17f2adbb760b66db627e247da24f8c4d07aa66b0e369d`). Public assets
+> are produced by `scripts/write-release-assets.mjs`; the release pipeline is described in
+> `docs/implementation/2026-09-12-integration.md` §12 and signing in `docs/releases/CODE_SIGNING.md`.
+> The text below is the September 9 handoff, kept as written.
+
 The app is implemented, integrated, rebuilt and tested as a real Windows package.
 The complete portable ZIP and per-user installer are staged locally. They are
 unsigned and unpublished. Opus owns the future public download link; this task

@@ -1,10 +1,10 @@
 {
-  "startedAt": "2026-09-12T05:19:08.116Z",
-  "finishedAt": "2026-09-12T05:20:11.266Z",
+  "startedAt": "2026-09-12T08:08:50.455Z",
+  "finishedAt": "2026-09-12T08:09:55.471Z",
   "candidate": {
-    "exe": "F:\\Diomedes\\diomedes-wt\\release-20260912\\release\\Diomedes-win32-x64\\Diomedes.exe",
-    "sha256": "ae8ef98af1b83cacc237c1649de8a993b1577c0365e5b98066d4ad93404f249a",
-    "baseCommit": "da84689e08d73c98390bccea63669cc93a21a657",
+    "exe": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\release\\Diomedes-win32-x64\\Diomedes.exe",
+    "sha256": "0150fd56749c919c32e7c0b36024b01f0bf90784ef15c3153022bb9b86476aef",
+    "baseCommit": "4fb86560c1d7a183d5d015f55688dba21d2eb911",
     "version": "0.1.1",
     "sourceStatus": "committed"
   },
@@ -45,7 +45,7 @@
     {
       "name": "07-create-a-project",
       "status": "traversed",
-      "note": "Created from the Projects page dialog; the Console opened on it (e390418ddf5b)."
+      "note": "Created from the Projects page dialog; the Console opened on it (d7579a22b148)."
     },
     {
       "name": "08-attach-two-exports",
@@ -55,7 +55,7 @@
     {
       "name": "09-business-workspace",
       "status": "traversed",
-      "note": "Business workspace created from the Workspaces panel and made current (org_GmlDqe1K2k8); the panel states it as a development identity, not a verified one."
+      "note": "Business workspace created from the Workspaces panel and made current (org_PAI0Ct_HPc4); the panel states it as a development identity, not a verified one."
     },
     {
       "name": "10-answer-the-setup-questions",
@@ -75,38 +75,37 @@
     {
       "name": "13-request-the-operations-brief",
       "status": "intervention",
-      "note": "Deterministic, no model. First run: Drafted into Ambleside Bakery operations as weekly-operations-brief.md. It is waiting for you to read. — and the draft named [\"weekly-operations-exports\"] under \"Sources that could not be read\", because the exports a person would attach are not the path the setup selects. A fixture was then written at that path and the brief requested again: This document changed since you opened it. Read its current version before saving."
+      "note": "Deterministic, no model. First run: Drafted into Ambleside Bakery operations as weekly-operations-brief.md. It is waiting for you to read. — and the draft named [\"weekly-operations-exports\"] under \"Sources that could not be read\", because the exports a person would attach are not the path the setup selects. A fixture was then written at that path and the brief requested again: Drafted into Ambleside Bakery operations as weekly-operations-brief.md. It is waiting for you to read."
     },
     {
       "name": "14-open-the-brief-and-its-sources",
       "status": "traversed",
-      "note": "The brief opens in the Files pane from its own row. Source section present: true. Bracketed source markers on claims: false. What it says about its sources: # Weekly operations brief — Produce a recurring report: A short Monday brief of what changed in last week’s sales and stoc There is nothing new in the approved exports since the previous brief. ## Sources that could not be read The following selected files could not be read. They are named here so none is silently drop"
+      "note": "The brief opens in the Files pane from its own row. Source section present: true. Bracketed source markers on claims: true. What it says about its sources: # Weekly operations brief — Produce a recurring report: A short Monday brief of what changed in last week’s sales and stoc ## Weekly operations exports: Weekly operations exports - day,loaves,pastries,takings_gbp [weekly-operations-exports] - Mon,118,240,742 [weekly-operations-exports] - Tue,131,255,801 [weekly-operati"
     },
     {
       "name": "15-make-a-task-and-find-it-in-Ready",
-      "status": "not-reachable",
-      "note": "No Console control creates a task and none moves one between columns: a task with no run is projected into Ready by taskEvidence. The task was created through the API and appears in Ready."
+      "status": "traversed",
+      "note": "Made from the Board's New task control (name and description typed, Create pressed); the row appears in Ready as task T1. Nothing moves a task between columns by hand; a task with no run is Ready by projection."
     },
     {
       "name": "16-start-the-task-and-watch-progress",
       "status": "traversed",
-      "note": "Confirmation shown before anything ran (Hand to You?StartNot now | Send this task? Send the instruction for Add a stock-to-watch section to the weekly brief to Claude Code using its selected model and). 1 row in Working while it ran; session Sdfd20bc5cc27 on route claude-code, model not recorded, ended failed after 15 s. Board after: Blocked 1. 9 History entries, last: Work stopped: The engine did not return a valid file proposal. No files were changed. Start again to request a new proposal. No project files were changed."
+      "note": "Confirmation shown before anything ran (Hand to You?StartNot now | Send this task? Send the instruction for Add a stock-to-watch section to the weekly brief to Claude Code using its selected model and). 1 row in Working while it ran; session S1fd230a6c033 on route claude-code, model claude-sonnet-5, ended waiting after ? s. Board after: Review 1. 10 History entries, last: Diomedes moved Add a stock-to-watch section to the weekly brief to Waiting for you"
     },
     {
       "name": "17-ask-for-one-revision",
       "status": "traversed",
-      "note": "Revision sent from the thread composer on the claude-code route. Reply recorded from assistant via claude-code, model not recorded: \"No documents were supplied with this request, so I have no source material to draw a brief from or to keep source markers for. Please provide the document(s) containing the brief you'd like shortened.\" The composer sends the instruction with no confirmation of its own, unlike the Board's Start, and in ask mode it carries no project document with it. The brief itself is deterministic, so a revision of it is a model turn about a document no model wrote."
+      "note": "Revision sent from the thread composer on the claude-code route. Reply recorded from assistant via claude-code, model not recorded: \"No documents were supplied with this request, so I have no source material to draw the brief or source markers from. Please provide the document(s) containing the brief you'd like shortened.\" The composer sends the instruction with no confirmation of its own, unlike the Board's Start, and in ask mode it carries no project document with it. The brief itself is deterministic, so a revision of it is a model turn about a document no model wrote."
     },
     {
       "name": "18-close-and-reopen",
       "status": "traversed",
-      "note": "Reopened on the same profile, data and projects directories. Project found; 1 tasks, 4 documents, 9 History entries. Processes left behind by this launch: none."
+      "note": "Reopened on the same profile, data and projects directories. Project found; 1 tasks, 4 documents, 12 History entries. Processes left behind by this launch: none."
     }
   ],
   "knownFailure": {
     "induced": "Sign-in checked per engine from the screen's own control: claude-code: signed-in, 2 models; opencode: signed-in, 15 models; oh-my-pi: unknown, 0 models; cursor: signed-in, 37 models. Known failure: oh-my-pi is installed and supported but signed out; the screen offers \"Configure OpenAI API access\" with the caption that sign-in runs in the provider's own tool and Diomedes never asks for provider secrets. Its detail line reads: The isolated native OMP profile exited before it could report metadata. Configure supported OpenAI API access in the native profile, then recheck.",
-    "recoveryActionSeen": "Sign-in checked per engine from the screen's own control: claude-code: signed-in, 2 models; opencode: signed-in, 15 models; oh-my-pi: unknown, 0 models; cursor: signed-in, 37 models. Known failure: oh-my-pi is installed and supported but signed out; the screen offers \"Configure OpenAI API access\" with the caption that sign-in runs in the provider's own tool and Diomedes never asks for provider secrets. Its detail line reads: The isolated native OMP profile exited before it could report metadata. Configure supported OpenAI API access in the native profile, then recheck.",
-    "recomputedNote": "This field was recomputed from the recorded steps after a one-line fix to the script’s own lookup, which still named the step by its earlier name. No new run was made and no step record was altered."
+    "recoveryActionSeen": "Sign-in checked per engine from the screen's own control: claude-code: signed-in, 2 models; opencode: signed-in, 15 models; oh-my-pi: unknown, 0 models; cursor: signed-in, 37 models. Known failure: oh-my-pi is installed and supported but signed out; the screen offers \"Configure OpenAI API access\" with the caption that sign-in runs in the provider's own tool and Diomedes never asks for provider secrets. Its detail line reads: The isolated native OMP profile exited before it could report metadata. Configure supported OpenAI API access in the native profile, then recheck."
   },
   "reopen": {
     "closedVia": "the window close the app itself handles (window-all-closed quits); no process was killed",
@@ -125,12 +124,10 @@
     "GET /api/workspace/organizations/:id/configuration — verified the activation the screen claimed.",
     "POST /api/projects/:id/documents/create weekly-operations-exports — the one path the active setup names, written so the brief has something to read.",
     "GET /api/projects/:id/documents/read — read the drafted brief back to check its source list.",
-    "POST /api/projects/:id/tasks — created the task, because no Console control creates one.",
     "GET /api/projects/:id/state — read sessions and History to check what the Board showed.",
     "GET /api/projects, /state and /documents after the relaunch — verified the work the reopened window showed."
   ],
   "limitations": [
-    "The approved-export selection is fixed by the pack variant to [\"weekly-operations-exports\"]; no screen lets a person name which exports the brief reads.",
-    "The weekly brief can be prepared once per project. WeeklyBriefService.run passes the previous file text as the recorded writer's `expected` value, which store.writeRecorded compares against a sha256, so every later run is refused with \"This document changed since you opened it.\""
+    "The approved-export selection is fixed by the pack variant to [\"weekly-operations-exports\"]; no screen lets a person name which exports the brief reads."
   ]
 }

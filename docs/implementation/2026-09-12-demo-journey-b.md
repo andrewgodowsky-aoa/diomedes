@@ -18,6 +18,43 @@ proposal on either of the two live attempts, on two different models, for two di
 the middle of the journey — exact proposal, approval, recorded write, diff — was not measured on a
 real route in this build.
 
+## Rerun on the published bytes (candidate `4fb8656`, v0.1.1-experimental.3)
+
+Everything below this section describes the first run, on the `da84689` candidate, whose headline
+was that the engine turn produced no proposal. The script was rerun against the candidate published
+as `v0.1.1-experimental.3`
+(`F:/Diomedes/diomedes-wt/release-20260912-4fb8656/release/Diomedes-win32-x64/Diomedes.exe`, record
+`evidence/release-candidates/diomedes-0.1.1-windows-experimental-20260912-4fb86560c1d7.json`) on a
+fresh profile, 08:09 to 08:11 UTC on 12 September. `evidence/demo-journeys/b/journey-b.json` and its
+screenshots are now that run; the earlier `mimo-v2.5-pro` attempt is kept under `run2-mimo/`.
+
+| Result | First run (`da84689`) | Published run (`4fb8656`) |
+|---|---|---|
+| traversed | 12 of 22 | 19 of 22 |
+| intervention | 2 | 2 (review the diff from the Workbook; the History button switches surface) |
+| not reachable | 3 | 1 (editing an existing source file from the Console) |
+| failed | 5 | 0 |
+| live turns | 2 on `opencode-go/glm-5.2`, no proposal | 2 on `opencode-go/glm-5.2`, proposal approved and written |
+
+The middle of the journey is now measured on a real route:
+
+- **assign-the-bounded-change:** "Send this task?" confirmed from the Board; the session ended
+  waiting on `opencode-go/glm-5.2`.
+- **exact-proposal:** the proposal names exactly `NOTES.md` and shows its text before any write.
+- **approve-and-record-the-write:** approved; one change record for `NOTES.md`; History reads
+  "opencode-go/glm-5.2 changed 1 file".
+- **choose-the-model-on-the-thread:** the thread picker now offers the signed-in account's models
+  (16 choices including OpenCode's), which closes the picker gap named under pillar 07 below.
+- **known failure and recovery:** unchanged and still exact: with OpenCode switched off the start is
+  refused by name, no substitute route runs, and the switch in Settings is the named control.
+- **stop-the-task and follow-up-fate:** the second run was stopped with the receipt; the queued
+  follow-up is recorded as `cancelled · Cancelled by Stop (task)` rather than delivered into its own
+  session, which is the fate the brief asked to see.
+- **What remains:** the Console has no keep or undo control for a proposal (Review happens on the
+  Workbook page); the History button still switches the surface and downgrades the detail level; and a
+  bounded change to an existing file cannot be assigned from the Console because no control selects
+  a source document and an empty selection lets a text route only create files.
+
 ## What was traversed
 
 Twenty-two named steps ran against the packaged EXE with ordinary controls. Statuses are the
@@ -293,4 +330,5 @@ faulted run tells the person to start again on a row that offers no Start.
 ## BUILD / PUBLICATION / DEPLOYMENT STATUS
 
 Source and evidence only in `opus/journey-b-20260912`; nothing built, packaged, committed, pushed,
-published or deployed.
+published or deployed. **Update, 12 September 08:00 UTC:** the rerun described at the top was made on
+the bytes published as `v0.1.1-experimental.3` and spent two further OpenCode turns.

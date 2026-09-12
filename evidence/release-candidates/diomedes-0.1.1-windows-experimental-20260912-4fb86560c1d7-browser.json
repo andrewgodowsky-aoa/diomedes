@@ -1,0 +1,2909 @@
+{
+  "config": {
+    "argv": [
+      "F:\\LocalAI\\hermes-home\\node\\node.exe",
+      "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "--reporter=list,json"
+    ],
+    "configFile": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\playwright.config.ts",
+    "rootDir": "F:/Diomedes/diomedes-wt/release-20260912-4fb8656/tests",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "F:/Diomedes/diomedes-wt/release-20260912-4fb8656/test-results/browser",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "F:/Diomedes/diomedes-wt/release-20260912-4fb8656/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "ui.spec.ts",
+          "native-ui.spec.ts",
+          "field.spec.ts",
+          "ai-engines-ui.spec.ts",
+          "autonomy-ui.spec.ts",
+          "reviewer-ui.spec.ts",
+          "agent-ui.spec.ts",
+          "app-updates-ui.spec.ts",
+          "workspace-ui.spec.ts",
+          "configuration-ui.spec.ts",
+          "allowance-ui.spec.ts"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.63.0",
+    "workers": 1,
+    "webServer": {
+      "command": "\"F:\\LocalAI\\hermes-home\\node\\node.exe\" scripts/dev.mjs",
+      "url": "http://127.0.0.1:5174/api/settings",
+      "timeout": 30000,
+      "reuseExistingServer": false,
+      "env": {
+        "DIOMEDES_PORT": "47632",
+        "DIOMEDES_CLIENT_PORT": "5174",
+        "DIOMEDES_DATA_DIR": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\test-results\\app-data-1789200337757-43048\\data",
+        "DIOMEDES_PROJECTS_DIR": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\test-results\\app-data-1789200337757-43048\\projects",
+        "DIOMEDES_TEST_MODE": "1",
+        "CODEX_HOME": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\test-results\\app-data-1789200337757-43048\\codex"
+      },
+      "stdout": "pipe",
+      "stderr": "pipe"
+    }
+  },
+  "suites": [
+    {
+      "title": "agent-ui.spec.ts",
+      "file": "agent-ui.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "the worker and the model are two separate controls",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\agent-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 526,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:42.659Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\agent-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c9e0bc4c095a7a56452f-95f0de661e3752b03707",
+          "file": "agent-ui.spec.ts",
+          "line": 178,
+          "column": 1
+        },
+        {
+          "title": "the menu says plainly that choosing a worker grants nothing",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\agent-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 411,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:43.699Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\agent-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c9e0bc4c095a7a56452f-aba27bb332a58e62d9fd",
+          "file": "agent-ui.spec.ts",
+          "line": 187,
+          "column": 1
+        },
+        {
+          "title": "a worker this engine cannot support states its reason instead of vanishing",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\agent-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 331,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:44.117Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\agent-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c9e0bc4c095a7a56452f-7bcaedd9edb302228cdc",
+          "file": "agent-ui.spec.ts",
+          "line": 199,
+          "column": 1
+        },
+        {
+          "title": "choosing a worker leaves the model alone, and the model leaves the worker alone",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\agent-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 631,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:44.454Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\agent-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c9e0bc4c095a7a56452f-97948aa578d588c332a6",
+          "file": "agent-ui.spec.ts",
+          "line": 210,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "ai-engines-ui.spec.ts",
+      "file": "ai-engines-ui.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "Console discovers, selects, streams, cancels, and approves every fixture engine",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ai-engines-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3744,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [
+                    {
+                      "text": "Error: fixture request cancelled\n    at AbortSignal.abort \u001b[90m(file:///F:/Diomedes/diomedes-wt/release-20260912-4fb8656/\u001b[39mtests/ai-engines-ui.spec.ts:87:20\u001b[90m)\u001b[39m\n\u001b[90m    at AbortSignal.[nodejs.internal.kHybridDispatch] (node:internal/event_target:843:20)\u001b[39m\n\u001b[90m    at AbortSignal.dispatchEvent (node:internal/event_target:776:26)\u001b[39m\n\u001b[90m    at runAbort (node:internal/abort_controller:486:10)\u001b[39m\n\u001b[90m    at abortSignal (node:internal/abort_controller:463:5)\u001b[39m\n\u001b[90m    at AbortController.abort (node:internal/abort_controller:505:5)\u001b[39m\n    at ServerResponse.<anonymous> \u001b[90m(file:///F:/Diomedes/diomedes-wt/release-20260912-4fb8656/\u001b[39mserver/app.ts:764:42\u001b[90m)\u001b[39m\n\u001b[90m    at Object.onceWrapper (node:events:633:28)\u001b[39m\n\u001b[90m    at ServerResponse.emit (node:events:519:28)\u001b[39m\n\u001b[90m    at emitCloseNT (node:_http_server:1066:10)\u001b[39m\n\u001b[90m    at Socket.onServerResponseClose (node:_http_server:285:5)\u001b[39m\n\u001b[90m    at Socket.emit (node:events:531:35)\u001b[39m\n\u001b[90m    at TCP.<anonymous> (node:net:347:12)\u001b[39m\n\u001b[90m    at TCP.callbackTrampoline (node:internal/async_hooks:130:17)\u001b[39m\n"
+                    }
+                  ],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:45.119Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ai-engines-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "51c6954d0b955793d9cf-e5eae6a0899ac5e246ce",
+          "file": "ai-engines-ui.spec.ts",
+          "line": 235,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "allowance-ui.spec.ts",
+      "file": "allowance-ui.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "a business is told where its work will go, before it goes anywhere",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\allowance-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 343,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:49.002Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\allowance-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4bbc77e5029ae737f915-50bb051dc023a730ffdd",
+          "file": "allowance-ui.spec.ts",
+          "line": 112,
+          "column": 1
+        },
+        {
+          "title": "the brief says what is missing rather than writing something empty",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\allowance-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 337,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:49.502Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\allowance-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4bbc77e5029ae737f915-01f9c7acee1a520bb22b",
+          "file": "allowance-ui.spec.ts",
+          "line": 128,
+          "column": 1
+        },
+        {
+          "title": "managed access shows no balance, because there is none to show",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\allowance-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 324,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:49.846Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\allowance-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4bbc77e5029ae737f915-d3b3d9c31ab64f896bb1",
+          "file": "allowance-ui.spec.ts",
+          "line": 141,
+          "column": 1
+        },
+        {
+          "title": "the panel holds together in a narrow window with a long name",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\allowance-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 330,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:50.176Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\allowance-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4bbc77e5029ae737f915-5572c7980eb883e31fef",
+          "file": "allowance-ui.spec.ts",
+          "line": 161,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "app-updates-ui.spec.ts",
+      "file": "app-updates-ui.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "Settings > App updates checks, downloads, verifies and hands off",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\app-updates-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 560,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:50.539Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\app-updates-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "74ea0961f9c0bfd6d6d5-9efdcd5bd0fe98f75242",
+          "file": "app-updates-ui.spec.ts",
+          "line": 159,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "autonomy-ui.spec.ts",
+      "file": "autonomy-ui.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "scope confirmation covers the same task; recorded actor survives a picker mutation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\autonomy-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1737,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:51.163Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\autonomy-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "7ac4b94c3d012bfff69a-2640cb83b2e626c4be20",
+          "file": "autonomy-ui.spec.ts",
+          "line": 264,
+          "column": 1
+        },
+        {
+          "title": "out-of-scope proposals wait for exact review; revocation forces exact approval again",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\autonomy-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1343,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:52.937Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\autonomy-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "7ac4b94c3d012bfff69a-5edaf53523b3d5bf79e0",
+          "file": "autonomy-ui.spec.ts",
+          "line": 445,
+          "column": 1
+        },
+        {
+          "title": "long names hold at 800px; Stop is truthful and inspector refresh stays honest",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\autonomy-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 959,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:54.285Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\autonomy-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "7ac4b94c3d012bfff69a-f168bbbf069839c08c94",
+          "file": "autonomy-ui.spec.ts",
+          "line": 556,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "configuration-ui.spec.ts",
+      "file": "configuration-ui.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "the review explains every field and says what this build will not do",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\configuration-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 454,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:55.270Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\configuration-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "87cc438d16642a03c83a-2fc3e1194140f84fd5bc",
+          "file": "configuration-ui.spec.ts",
+          "line": 148,
+          "column": 1
+        },
+        {
+          "title": "turning the setup on is something a person does, and it then says what is running",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\configuration-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 406,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:56.092Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\configuration-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "87cc438d16642a03c83a-dcafaeec03d14ca6c044",
+          "file": "configuration-ui.spec.ts",
+          "line": 175,
+          "column": 1
+        },
+        {
+          "title": "a person can go back to change an answer instead of activating",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\configuration-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 393,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:56.504Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\configuration-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "87cc438d16642a03c83a-b5ecca361908d7e13ebb",
+          "file": "configuration-ui.spec.ts",
+          "line": 194,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "field.spec.ts",
+      "file": "field.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "C01: the rail lists threads, carries New, marks the selection, and offers the three views",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\field.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1382,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:56.924Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\field.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "15c81640284b51cc4ecd-1575805670ff96dcf0b9",
+          "file": "field.spec.ts",
+          "line": 102,
+          "column": 1
+        },
+        {
+          "title": "C02: the view switch swaps Thread, Board, and Team",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\field.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 526,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:58.468Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\field.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "15c81640284b51cc4ecd-0f171a77df96adc2f6b6",
+          "file": "field.spec.ts",
+          "line": 122,
+          "column": 1
+        },
+        {
+          "title": "C03: the Board shows the Ready task, and Show-me-first confirms instead of starting",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\field.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 593,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:59.000Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\field.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "15c81640284b51cc4ecd-a5ed08ab0d0a842c6b0d",
+          "file": "field.spec.ts",
+          "line": 137,
+          "column": 1
+        },
+        {
+          "title": "C04: the palette finds and filters, Escape closes, and the Workbook keeps its own search",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\field.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 881,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:05:59.599Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\field.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "15c81640284b51cc4ecd-cb7902aadabd65b3d869",
+          "file": "field.spec.ts",
+          "line": 167,
+          "column": 1
+        },
+        {
+          "title": "C05: the wake is skipped under automation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\field.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 460,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:00.487Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\field.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "15c81640284b51cc4ecd-00c5cfc02222d0927547",
+          "file": "field.spec.ts",
+          "line": 203,
+          "column": 1
+        },
+        {
+          "title": "C06: the Ember scheme applies its package and token, then Field is restored",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\field.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 754,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:00.953Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\field.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "15c81640284b51cc4ecd-5885163777279cd4cf1f",
+          "file": "field.spec.ts",
+          "line": 210,
+          "column": 1
+        },
+        {
+          "title": "C07: the thread head states the exact-OK rule while an approval is open",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\field.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 721,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:01.712Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\field.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "15c81640284b51cc4ecd-13e9e76ea3cd0996b714",
+          "file": "field.spec.ts",
+          "line": 235,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "native-ui.spec.ts",
+      "file": "native-ui.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "Native UI: consent, exact proposal preview, approval, Review and History with an injected generator",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1335,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:02.478Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ecfa27319ad260ee84c0-5fbdbfe1c2ac76d394cf",
+          "file": "native-ui.spec.ts",
+          "line": 115,
+          "column": 1
+        },
+        {
+          "title": "Console task Start recovers both lost responses from state without duplicating Work",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1165,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:03.979Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ecfa27319ad260ee84c0-6fd196ecc328100a1d27",
+          "file": "native-ui.spec.ts",
+          "line": 207,
+          "column": 1
+        },
+        {
+          "title": "Console exact approval recovers both lost responses from durable state even with task permission",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1081,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:05.150Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ecfa27319ad260ee84c0-3030a598066b50b89b36",
+          "file": "native-ui.spec.ts",
+          "line": 273,
+          "column": 1
+        },
+        {
+          "title": "Console New task makes a task, Ready shows it, and Start admits one run",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 582,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:06.239Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ecfa27319ad260ee84c0-593cc3d64cc8d5d023be",
+          "file": "native-ui.spec.ts",
+          "line": 336,
+          "column": 1
+        },
+        {
+          "title": "Console Start again restarts a faulted task through the same admission",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 534,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:06.827Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ecfa27319ad260ee84c0-0035b8bcfeaf762f52ff",
+          "file": "native-ui.spec.ts",
+          "line": 374,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "reviewer-ui.spec.ts",
+      "file": "reviewer-ui.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "the four choices are offered honestly, and Full access says why it is not",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\reviewer-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 765,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:07.401Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\reviewer-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d463ff28a6bd1b747926-1e41ec71f9eac9e70d51",
+          "file": "reviewer-ui.spec.ts",
+          "line": 216,
+          "column": 1
+        },
+        {
+          "title": "an eligible change set is applied after a reviewer approval, recorded as a model decision",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\reviewer-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 966,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:08.198Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\reviewer-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d463ff28a6bd1b747926-a1fce8ac8251726ca9bb",
+          "file": "reviewer-ui.spec.ts",
+          "line": 275,
+          "column": 1
+        },
+        {
+          "title": "a reviewer that asks for you leaves the change set as Needs you, and you can still decide",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\reviewer-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 934,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:09.170Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\reviewer-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d463ff28a6bd1b747926-551be703f6e1adffc1d6",
+          "file": "reviewer-ui.spec.ts",
+          "line": 351,
+          "column": 1
+        },
+        {
+          "title": "an unavailable reviewer falls back to you, and an off connection makes the option unofferable",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\reviewer-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 905,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:10.110Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\reviewer-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d463ff28a6bd1b747926-de4996f071a879448bac",
+          "file": "reviewer-ui.spec.ts",
+          "line": 426,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "ui.spec.ts",
+      "file": "ui.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "F01-F02: first run preserves detail and approvals, supports AI skip, and resumes",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2012,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:11.061Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-fed118fc860ed5d6aef4",
+          "file": "ui.spec.ts",
+          "line": 60,
+          "column": 1
+        },
+        {
+          "title": "F04, F06: sample project opens and a plan edit survives reload with History",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1004,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:13.079Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-13ddb213e30525702415",
+          "file": "ui.spec.ts",
+          "line": 172,
+          "column": 1
+        },
+        {
+          "title": "F10: plan steps become real tasks with provenance and a History entry",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 955,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:14.089Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-503b8dc9490e44e64a70",
+          "file": "ui.spec.ts",
+          "line": 232,
+          "column": 1
+        },
+        {
+          "title": "F11-F13: work asks twice, decline skips creation, and the remaining change is recorded",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5064,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:15.052Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-ddc037962f003f8bce46",
+          "file": "ui.spec.ts",
+          "line": 273,
+          "column": 1
+        },
+        {
+          "title": "F15-F16: Review keeps the changed file and History exposes the recorded change",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 705,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:20.123Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-e81de8ce0bd9581610ce",
+          "file": "ui.spec.ts",
+          "line": 368,
+          "column": 1
+        },
+        {
+          "title": "F07-F08: restore and Undo recover both versions; newer edits expose conflict choices",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1374,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:20.834Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-1c1a2d6f9c97918de1d9",
+          "file": "ui.spec.ts",
+          "line": 402,
+          "column": 1
+        },
+        {
+          "title": "F14: Stop settles a started sample promptly and expires its approval",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1019,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:22.216Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-8087305d1f1a1e5a7c3e",
+          "file": "ui.spec.ts",
+          "line": 468,
+          "column": 1
+        },
+        {
+          "title": "F17, F20-F22: surface switches preserve data; visible pages meet copy and layout checks",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2077,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:23.241Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-f2c2a2e7855c08715b93",
+          "file": "ui.spec.ts",
+          "line": 496,
+          "column": 1
+        },
+        {
+          "title": "Draft recovery: Settings, reload and same-named files in separate projects preserve writing and stale-save conflicts",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2086,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:25.326Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-c6355cd3b4ff5cef576e",
+          "file": "ui.spec.ts",
+          "line": 695,
+          "column": 1
+        },
+        {
+          "title": "Services roster: every reported engine listed with switch discipline; Guided hides non-ready adapters; Console has no Connections",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4004,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:27.419Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-06c25b20745ba7d75cab",
+          "file": "ui.spec.ts",
+          "line": 827,
+          "column": 1
+        },
+        {
+          "title": "Usage: chip, signal bar and Settings bars from the test-mode snapshot",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 820,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:31.429Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-47b0f2f0e71219d46d28",
+          "file": "ui.spec.ts",
+          "line": 903,
+          "column": 1
+        },
+        {
+          "title": "Landing: ask box carries a draft into the chosen project",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 528,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:32.257Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-494a11d8da22de773988",
+          "file": "ui.spec.ts",
+          "line": 977,
+          "column": 1
+        },
+        {
+          "title": "Unavailable helper: the application notice has no invented runtime caption",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 548,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:32.791Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-c5671f70911cc47a8a36",
+          "file": "ui.spec.ts",
+          "line": 1032,
+          "column": 1
+        },
+        {
+          "title": "Engine choices: the list comes from the engine, and the levels follow the choice",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 680,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:33.347Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-61d02928825b55c594d3",
+          "file": "ui.spec.ts",
+          "line": 1047,
+          "column": 1
+        },
+        {
+          "title": "Modes: the Workbook composer shows four modes and Fix needs what is failing",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 615,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:34.033Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-f19a8685bc6d1a65961c",
+          "file": "ui.spec.ts",
+          "line": 1130,
+          "column": 1
+        },
+        {
+          "title": "Enter sends from the Workbook composer and Shift+Enter adds a line",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 554,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:34.656Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-57e537e4e410051aa659",
+          "file": "ui.spec.ts",
+          "line": 1199,
+          "column": 1
+        },
+        {
+          "title": "Usage: navigation preserves a concurrent engine setting while refresh is delayed",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 480,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:35.216Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d425444c687fa36b5882-8edfa6c71e24b3410e37",
+          "file": "ui.spec.ts",
+          "line": 1227,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "workspace-ui.spec.ts",
+      "file": "workspace-ui.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "the Console opens in Personal and names it where a person will see it",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\workspace-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 270,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:35.708Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\workspace-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "214dde7d85546ae8585c-f73a3ce7a0ec070f75ed",
+          "file": "workspace-ui.spec.ts",
+          "line": 103,
+          "column": 1
+        },
+        {
+          "title": "Personal is offered no business questions, and the old preference is explained",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\workspace-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 303,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:36.095Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\workspace-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "214dde7d85546ae8585c-98f17d6ec846fc4ca835",
+          "file": "workspace-ui.spec.ts",
+          "line": 109,
+          "column": 1
+        },
+        {
+          "title": "creating a business is explicit, and says what it actually is",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\workspace-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 402,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:36.403Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\workspace-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "214dde7d85546ae8585c-a55dafe8bd1a24adcb89",
+          "file": "workspace-ui.spec.ts",
+          "line": 122,
+          "column": 1
+        },
+        {
+          "title": "the intake asks one question at a time, with a reason and a way back",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\workspace-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 543,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:36.810Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\workspace-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "214dde7d85546ae8585c-47254e2e748192b848b0",
+          "file": "workspace-ui.spec.ts",
+          "line": 140,
+          "column": 1
+        },
+        {
+          "title": "a credential typed into an answer is refused where the person can read why",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [
+                {
+                  "type": "serial",
+                  "location": {
+                    "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\workspace-ui.spec.ts",
+                    "line": 0,
+                    "column": 0
+                  }
+                }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 362,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-12T08:06:37.358Z",
+                  "annotations": [
+                    {
+                      "type": "serial",
+                      "location": {
+                        "file": "F:\\Diomedes\\diomedes-wt\\release-20260912-4fb8656\\tests\\workspace-ui.spec.ts",
+                        "line": 0,
+                        "column": 0
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "214dde7d85546ae8585c-e8315ef88284db47c0fc",
+          "file": "workspace-ui.spec.ts",
+          "line": 165,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-12T08:05:37.766Z",
+    "duration": 60741.181000000004,
+    "expected": 54,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

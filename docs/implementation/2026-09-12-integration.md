@@ -199,3 +199,106 @@ delivery → fixed in source, unproven on a route.
 **BUILD / PUBLICATION / DEPLOYMENT STATUS.** Source, one local package, one local installer,
 evidence and CI. Version stays 0.1.1. Nothing published or signed; the published last known
 good remains `v0.1.1-experimental.2`.
+
+## 12. Second pass, night of 12 September (03:00 to 04:30 EDT)
+
+Andrew's asks, in order: a PowerShell-safe cleanup, the Norton quarantine, a fully working state, an implementation check of the eight briefs by Muse or GLM, a copy people can be given, a working copy on the website, and a start on code signing. What follows is what was done, on which commit, and with which proof.
+
+### 12.1 The middle, proven before anything was built
+
+`scripts/route-probe.ts` spends one live turn through the app's own HTTP path (discover, check, select as "Use as default" does, project, document, task, start, wait). On `main` at b7f9746 both text routes proposed: OpenCode `opencode-go/glm-5.2` in 13.6 s and Claude Code `claude-sonnet-5` in 15.3 s, model recorded on the session (`evidence/route-probes/`). The packaged candidate `…-da84689e08d7` of the first pass could not do this. A refused reply is now kept, scrubbed and capped, on the session and its fault History entry (8d8ae4e, GLM).
+
+### 12.2 What landed on `main` (baa7c77 → 4fb8656)
+
+| Commit | Slice | Owner |
+|---|---|---|
+| b7f9746 | one-turn route probe and two records | Fable |
+| 8d8ae4e | fault-reply persistence | GLM 5.3 Flash |
+| 3658d33 | Settings card no longer prints the build machine's path | Fable |
+| aa59b4c | keyless Azure Artifact Signing step, `--signed` installer path, signing memo | Fable |
+| 0c3e78f | public release asset writer | Fable |
+| 33fbda9 (+3) | Console New task control; faulted row offers Start again | Opus 5 |
+| 2c9a548 (+3) | HAR-01: instruction files reach the model through the rule path, recorded on the session | Opus 5 |
+| dbf727f (+3) | thread picker lists a signed-in account's models; `Codex only` instead of `Unavailable`; setup write race | Opus 5 |
+| 829e9f7 | brief-by-brief review record | Fable / Muse |
+| ed9a99c | desktop smoke expects the caption-role task title it has | Fable |
+| 74015ff, 981cf42 | harness-host waits bounded (CI had 1 s) | Fable |
+| 7965277 | the Board sends the documents a task names; journeys use the New task control | Fable |
+| 4c942f6 | OpenCode startup budget 45 s | Fable |
+| ebda768 | compact Board rows keep their title; journey confirm race | Fable |
+| 4fb8656 | Board holds the document listing so a Start is one command | Fable |
+
+### 12.3 Candidates built tonight
+
+| Candidate | Commit | Outcome |
+|---|---|---|
+| `…-dbf727f8e8f2` | dbf727f | full gates (1540 unit, 54 browser), installer, smokes, installed runtime; journey A found the Board sent no documents; journey B (clean profile) proposed, approved and wrote on `opencode-go/glm-5.2`, then hit the compact-row title collapse |
+| `…-4c942f62e6ef` | 4c942f6 | abandoned: one browser test failed on a race the Board-start change had introduced (fixed in 4fb8656) |
+| `…-4fb86560c1d7` | 4fb8656 | typecheck clean, 1546 unit tests in 91 files, 54 browser tests, installer `d9eccbd5…0e369d` (265,961,055 bytes), desktop and app-updates smokes, installer install/repair/uninstall with all payload hashes compared, installed-runtime Connections proof; both journeys rerun on it (§12.4); **published as `v0.1.1-experimental.3`** |
+
+### 12.4 Journeys on the published bytes
+
+Both scripts ran against the published executable on fresh profiles (records and screenshots under
+`evidence/demo-journeys/a` and `/b`; the addenda at the top of `2026-09-12-demo-journey-a.md` and
+`-b.md` compare the runs).
+
+| Journey | Route and model | traversed | intervention | not reachable | failed | turns |
+|---|---|---|---|---|---|---|
+| A, business owner | Claude Code, `claude-sonnet-5` | 16 of 18 | 1 (deterministic brief rerun) | 1 (attach a file, FIL-02) | 0 | 2 |
+| B, developer | OpenCode, `opencode-go/glm-5.2` | 19 of 22 | 2 (Review on the Workbook; History button switches surface) | 1 (edit an existing source file) | 0 | 2 |
+
+Journey B's bounded change was proposed by the model, shown before any write, approved, written to
+`NOTES.md` and recorded in History with the model's name; Stop produced its receipt and the queued
+follow-up was recorded as cancelled by Stop. That is the publish gate the first pass could not meet.
+
+### 12.5 Publication
+
+`v0.1.1-experimental.3` at https://github.com/andrewgodowsky-aoa/diomedes/releases/tag/v0.1.1-experimental.3,
+target commit 4fb86560c1d7a183d5d015f55688dba21d2eb911, prerelease, six assets written by
+`scripts/write-release-assets.mjs` from the candidate record: the installer (265,961,055 bytes,
+sha256 `d9eccbd5101b675968a17f2adbb760b66db627e247da24f8c4d07aa66b0e369d`), the portable zip
+(266,742,519 bytes, `b41e0e664bd79f2698a571233c29e9f7525472b83d76b3391450fd624d3dc19a`), `README.txt`,
+`release-manifest.json`, `SHA256SUMS.txt` and `Start-Experimental.ps1`. `v0.1.1-experimental.2` is
+retitled superseded. Same version and product identity, so the September 9 install upgrades in
+place; the upgrade path was exercised as a same-version repair on these bytes, not as an install of
+.3 over an installed .2.
+
+The site (`diomedes-site` 38b4fbd) points its download at the new asset with the byte count and hash
+read from the published file, marks the Claude Code and OpenCode adapters available with their
+route-probe evidence, and carries the updater and antivirus paragraphs; its test that downloads the
+public asset anonymously and compares the bytes passed (134 tests), and it is deployed.
+
+### 12.6 Signing and the Norton quarantine
+
+Nothing is signed. `docs/releases/CODE_SIGNING.md` compares Azure Artifact Signing, OV/EV certificates and SignPath Foundation with September 2026 facts and recommends Artifact Signing; `scripts/sign-windows.ps1` and `build-windows-installer.mjs --signed` are ready and refuse to run unconfigured. Andrew's steps are listed in the memo (Azure account, identity validation, certificate profile, client tools, `metadata.json`, three environment variables). Norton's `IDP.Generic` on 2026-09-12 is a reputation heuristic on an unsigned Electron/NSIS build; all three build copies on disk were intact, so which file Norton took is unknown until Andrew reads Norton's history. The release notes and the download page now carry the antivirus paragraph.
+
+### 12.7 Brief reviews
+
+`docs/implementation/2026-09-12-brief-review.md`: 102 rows, 14 implemented, 46 partial, 42 not implemented at 3658d33, with the integrator's corrections and what moved afterwards.
+
+### 12.8 Live turns
+
+| Purpose | Route | Turns |
+|---|---|---|
+| route probes on main (b7f9746) | OpenCode, Claude Code | 2 |
+| journey A on `dbf727f` | Claude Code | 2 |
+| journey B on `dbf727f` (three runs, two reached a model) | OpenCode | ~2 |
+| journey A on `4c942f6`, killed with the candidate | Claude Code | ≤2 |
+| journey A on `4fb8656` (published) | Claude Code | 2 |
+| journey B on `4fb8656` (published) | OpenCode | 2 |
+
+About twelve turns in total, all on accounts already signed in on this machine.
+
+### 12.9 Left open
+
+- FIL-02: no attach, add or import control in the Files pane; journey A's exports are fixture preparation.
+- The Console has no keep or undo control for a proposal; Review is the Workbook page.
+- The Console's History button switches the surface to the Workbook and downgrades the detail level.
+- The thread composer in ask mode carries no project document and asks no confirmation.
+- Editing an existing source file cannot be assigned from the Console (no source selection; empty selection creates only).
+- Task creation from the Console is not an admitted command with a receipt.
+- Cursor's route is unproven; oh-my-pi is found but cannot run.
+- Decision 14 in `docs/DECISIONS.md` describes instruction delivery as it was before HAR-01; Andrew settles the text.
+- Signing: nothing signed; Andrew's Azure Artifact Signing steps are in `docs/releases/CODE_SIGNING.md`.
+- Norton: which file was quarantined is unknown until Norton's history is read; a false-positive submission follows publication.
+- Thirty-one evidence screenshots under `evidence/agents`, `ai-setup`, `autonomy-workbench`, `reviewer`, `screenshots` and `workspaces` were regenerated by tonight's browser run on main and are committed as the current views.
