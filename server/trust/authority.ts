@@ -9,6 +9,7 @@ import {
   allCapabilities,
   assuranceRank,
   denial,
+  isDenial,
   type Assurance,
   type Authority,
   type AuthorityClaim,
@@ -362,8 +363,8 @@ export function requireCapability(
   result: Authority | Denial,
   capability: Capability,
 ): Authority | Denial {
-  if ((result as Denial).denied === true) return result as Denial;
-  const authority = result as Authority;
+  if (isDenial(result)) return result;
+  const authority = result;
   if (!authority.capabilities.has(capability))
     return denial(403, 'missing-capability', `This principal does not hold ${capability}.`);
   return authority;
@@ -374,8 +375,8 @@ export function requireAssurance(
   result: Authority | Denial,
   minimum: Assurance,
 ): Authority | Denial {
-  if ((result as Denial).denied === true) return result as Denial;
-  const authority = result as Authority;
+  if (isDenial(result)) return result;
+  const authority = result;
   if (assuranceRank[authority.assurance] < assuranceRank[minimum])
     return denial(
       403,
@@ -387,8 +388,8 @@ export function requireAssurance(
 
 /** Refuse synthetic authority. Call in any path a production build must gate. */
 export function requireGenuine(result: Authority | Denial): Authority | Denial {
-  if ((result as Denial).denied === true) return result as Denial;
-  const authority = result as Authority;
+  if (isDenial(result)) return result;
+  const authority = result;
   if (authority.synthetic)
     return denial(
       403,
