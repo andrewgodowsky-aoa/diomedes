@@ -69,19 +69,21 @@ during the run and removes them at the end; both were absent before and after.
 ## 4. Last known good
 
 The brief asks for an independently identified last-known-good build beside any candidate.
-There are two earlier identities, and neither is complete on disk:
+It is the published GitHub prerelease `v0.1.1-experimental.2` (2026-09-09T12:16Z), built from
+`7b1b5a61ec09a3a9b431b8fa07fdda7b812cc754`: installer
+`Diomedes-Experimental-0.1.1-unsigned-setup.exe` 266,271,506 bytes, SHA-256
+`1c896f89a00f535fabaf3fd3ac579951842afe23f769f41e9d898e54f4b9e89b`; portable zip SHA-256
+`4de4629ed508b0bf8f2c6fbab630a8eb414b92aca187df8bf0e9832de7427c71`; with its own
+`release-manifest.json`, `SHA256SUMS.txt` and `Start-Experimental.ps1` as release assets. The
+main checkout's `release/Diomedes-win32-x64` is that same `7b1b5a6` portable build (executable
+`aa7a750d052f…`), left untouched by this work, which is why the candidate was built in a
+worktree. An earlier identity, `diomedes-0.1.1-windows-experimental-20260909-09e551958dfa`
+in `docs/releases/release-manifest.json` (commit `11829e1962b4`), belongs to the superseded
+`.1` prerelease; its local staging folder under `F:\deliverables` no longer exists after the
+tree moved from Achilles, and its hashes remain the record of it.
 
-- `docs/releases/release-manifest.json` names `diomedes-0.1.1-windows-experimental-20260909-09e551958dfa`
-  (commit `11829e1962b4`, executable `1aa5a72eb0fb…`, installer `e487e62f50a6…`). Its
-  artifacts were staged under `F:\deliverables\windows-release-20260909`, which no longer
-  exists after the tree moved from Achilles. The hashes remain the record of it.
-- The main checkout's `release/Diomedes-win32-x64` holds a later portable build from
-  `7b1b5a61ec09` (built 2026-09-09T12:06Z, `committed`, executable `aa7a750d052f…`). It was
-  left untouched by this work, which is why the candidate was built in a worktree.
-
-So the last known good is the `7b1b5a6` portable package in the main checkout, and the
-September 9 installer identity survives only as hashes. This candidate is the first whose
-installer bytes, package bytes and record exist together on the machine.
+So the last known good is public and complete, and this candidate is the first since it whose
+installer bytes, package bytes and record exist together on the build machine.
 
 ## 5. Open questions for Andrew
 
