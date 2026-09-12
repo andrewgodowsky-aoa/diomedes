@@ -606,6 +606,29 @@ export function Shell({
       await load();
     });
   }
+  /**
+   * The Console's one task-creation path. It posts the same `POST /tasks` the
+   * frozen Workbook's plan import already uses, then reloads: a task with no run
+   * is projected into Ready by `taskEvidence`, so no move follows and no second
+   * lifecycle is introduced. The error is reported and rethrown, because the
+   * board keeps its form open when the task was not made.
+   */
+  async function createTask(input: { name: string; description: string }) {
+    setBusy(true);
+    try {
+      await api<Task>(`${base}/tasks`, 'POST', {
+        name: input.name,
+        description: input.description,
+        owner: 'you',
+      });
+      await load();
+    } catch (error) {
+      report(error);
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  }
   async function startTask(task: Task, route: Route) {
     if (isExternalEngine(route)) {
       setSendTask({ task, route });
@@ -1134,6 +1157,7 @@ export function Shell({
               }}
               onOpenTeam={() => setView('Team')}
               onOpenThread={(task) => openTaskThread(task)}
+              onCreateTask={createTask}
             />
           </section>
         )}

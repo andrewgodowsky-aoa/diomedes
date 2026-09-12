@@ -21,7 +21,7 @@ function board(patch: Partial<ProjectState>, options: {
   const markup = renderToStaticMarkup(createElement(BoardView, { project, state, tasks: state.tasks, policy: options.policy ?? 'go',
     onPolicyChange: options.onPolicyChange, busy: false,
     onStart: mutation, onPause: mutation, onReview: mutation, onRoute: mutation, onReopen: mutation,
-    onOpenTeam: mutation, onOpenThread: mutation }));
+    onOpenTeam: mutation, onOpenThread: mutation, onCreateTask: mutation }));
   expect(mutation).not.toHaveBeenCalled();
   return markup;
 }
@@ -78,5 +78,31 @@ describe('Board controls reflect execution evidence', () => {
   it('does not repeat the Ready column caption on a plain Ready row', () => {
     const markup = board({});
     expect(markup.split('Start explicitly to run')).toHaveLength(2);
+  });
+  it('offers one control that fills the board, and says so where Ready is empty', () => {
+    const markup = board({ tasks: [] });
+    expect(markup).toContain('>New task</button>');
+    expect(markup).toContain('Nothing is ready. New task adds one.');
+    expect(markup).not.toContain('Make tasks from a plan.');
+  });
+  it('offers Start again on a faulted row, so the fault sentence can be obeyed', () => {
+    const markup = board({ tasks: [{ ...task, state: 'waiting', reason: 'went-wrong' }],
+      sessions: [sessionFixture({ state: 'failed' })] });
+    expect(markup).toContain('aria-label="Blocked"');
+    expect(markup).toContain('Run failed');
+    expect(markup).toContain('>Start again</button>');
+    expect(markup).not.toContain('>Start</button>');
+  });
+  it('offers no Route to and no hidden Retry on a faulted row with no team', () => {
+    const markup = board({ tasks: [{ ...task, state: 'waiting', reason: 'went-wrong' }],
+      sessions: [sessionFixture({ state: 'failed' })] });
+    expect(markup).not.toContain('>Route to</button>');
+    expect(markup).not.toContain('>Retry</button>');
+  });
+  it('does not offer Start again for a stopped run, which Ready already restarts', () => {
+    const markup = board({ sessions: [sessionFixture({ state: 'stopped' })] });
+    expect(markup).toContain('Stopped; Start begins new work');
+    expect(markup).toContain('>Start</button>');
+    expect(markup).not.toContain('>Start again</button>');
   });
 });

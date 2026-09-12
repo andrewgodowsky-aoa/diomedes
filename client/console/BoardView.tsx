@@ -20,7 +20,7 @@ const WHY: Record<Column, string> = {
   Done: 'Completion evidence stays in the thread',
 };
 const EMPTY: Record<Column, string> = {
-  Ready: 'Make tasks from a plan.',
+  Ready: 'Nothing is ready. New task adds one.',
   Queued: 'Nothing is queued.',
   Working: 'Nothing is running.',
   Review: 'Nothing waits on you.',
@@ -76,11 +76,18 @@ export function BoardView({
   onReopen,
   onOpenTeam,
   onOpenThread,
+  onCreateTask,
   onPolicyChange,
 }: BoardProps) {
   const evidenceOf = (task: Task) => taskEvidence(task, state.sessions, state.needs, state.changes);
   const columnOf = (task: Task): Column => evidenceOf(task).column;
   const [compact, setCompact] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  // `busy` only turns true after the Shell's state settles, so a second click
+  // can arrive before the first render. The ref refuses it in the same tick.
+  const sending = useRef(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [routeId, setRouteId] = useState<string | null>(null);
   const [arrived, setArrived] = useState<ReadonlySet<string>>(new Set());
@@ -188,6 +195,30 @@ export function BoardView({
     setRouteId(null);
   }
 
+  function closeNew() {
+    setCreating(false);
+    setNewName('');
+    setNewDescription('');
+  }
+
+  // One control, one path: the same `POST /tasks` the plan import already uses.
+  // A created task has no run, so `taskEvidence` projects it into Ready, and the
+  // row's own Start is the next action.
+  async function submitNew(event: React.FormEvent) {
+    event.preventDefault();
+    const name = newName.trim();
+    if (!name || sending.current) return;
+    sending.current = true;
+    try {
+      await onCreateTask({ name, description: newDescription.trim() });
+      closeNew();
+    } catch {
+      // The Shell reported it. Keep the words the person typed.
+    } finally {
+      sending.current = false;
+    }
+  }
+
   return (
     <div className="board" aria-label="Board">
       <div className="bhead">
@@ -195,6 +226,15 @@ export function BoardView({
         <span className="mono">
           {project.name} · {tasks.length} tasks
         </span>
+        <button
+          type="button"
+          className="verb light new"
+          aria-expanded={creating}
+          disabled={busy}
+          onClick={() => (creating ? closeNew() : setCreating(true))}
+        >
+          New task
+        </button>
         <button
           type="button"
           className={`mono link${compact ? ' on' : ''}`}
@@ -229,6 +269,40 @@ export function BoardView({
           <span className="ctx" data-board-policy={effective} aria-label="Start confirmation">
             {effective === 'first' ? 'Confirm each start' : 'Start on click'}
           </span>
+        )}
+        {creating && (
+          <form
+            className="newtask"
+            aria-label="New task"
+            onSubmit={(event) => void submitNew(event)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') closeNew();
+            }}
+          >
+            <input
+              autoFocus
+              type="text"
+              aria-label="Task name"
+              placeholder="Task name"
+              maxLength={200}
+              value={newName}
+              onChange={(event) => setNewName(event.target.value)}
+            />
+            <input
+              type="text"
+              aria-label="What should happen (optional)"
+              placeholder="What should happen (optional)"
+              maxLength={10_000}
+              value={newDescription}
+              onChange={(event) => setNewDescription(event.target.value)}
+            />
+            <button type="submit" className="go" disabled={busy || !newName.trim()}>
+              Create
+            </button>
+            <button type="button" onClick={closeNew}>
+              Not now
+            </button>
+          </form>
         )}
       </div>
       <div className={`columns${compact ? ' compact' : ''}`}>
@@ -365,7 +439,15 @@ function TaskRow({
     column === 'Working' || (column === 'Ready' && evidence.detail === WHY.Ready)
       ? null
       : evidence.detail;
-  const startBlocked = column === 'Ready' && slotBusy;
+  // The fault sentence says "Start again to request a new proposal", so the row
+  // that carries the fault offers exactly that, through the same admission the
+  // Ready column uses. A stopped or unrecorded run is a different state and is
+  // not restarted from here.
+  const failed = !evidence.active && evidence.session?.state === 'failed';
+  const canStart = column === 'Ready' || (column === 'Blocked' && failed);
+  const startLabel = column === 'Ready' ? 'Start' : 'Start again';
+  const startBlocked = canStart && slotBusy;
+  const canRoute = column === 'Blocked' && !evidence.active && members.length > 0;
 
   function onKeyClose(e: React.KeyboardEvent) {
     if (e.key === 'Escape') onCloseInline();
@@ -400,7 +482,7 @@ function TaskRow({
         </div>
       )}
       <span className="acts">
-        {column === 'Ready' && (
+        {canStart && (
           <button
             type="button"
             className="verb light"
@@ -414,7 +496,7 @@ function TaskRow({
               onToggleConfirm();
             }}
           >
-            Start
+            {startLabel}
           </button>
         )}
         {evidence.active && (
@@ -437,7 +519,7 @@ function TaskRow({
             Review
           </button>
         )}
-        {column === 'Blocked' && !evidence.active && (
+        {canRoute && (
           <button type="button" className="verb" onClick={onToggleRoute}>
             Route to
           </button>
@@ -453,7 +535,7 @@ function TaskRow({
           </button>
         )}
       </span>
-      {column === 'Ready' && confirmOpen && (
+      {canStart && confirmOpen && (
         <div className="confirm">
           <span>Hand to {worker}?</span>
           <button
@@ -462,20 +544,15 @@ function TaskRow({
             disabled={busy || startBlocked}
             onClick={() => void onStart(task)}
           >
-            Start
+            {startLabel}
           </button>
           <button type="button" onClick={onToggleConfirm}>
             Not now
           </button>
         </div>
       )}
-      {column === 'Blocked' && !evidence.active && routeOpen && (
+      {canRoute && routeOpen && (
         <div className="route" role="list">
-          {members.length === 0 && (
-            <button type="button" disabled={busy || slotBusy} onClick={() => void onStart(task)}>
-              Retry
-            </button>
-          )}
           {members.map((m) => (
             <button
               key={m.slotId}

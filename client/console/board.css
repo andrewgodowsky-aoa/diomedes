@@ -38,6 +38,52 @@
 .console .bhead .seg {
   margin-left: 0;
 }
+/* The one control that fills the board. It sits with the count, not with the
+   view switches, because it changes the work rather than the way it is shown. */
+.console .bhead .verb.new {
+  cursor: pointer;
+  font-size: var(--dm-type-caption);
+  color: var(--light);
+  border-radius: var(--rb);
+}
+.console .bhead .verb.new:disabled {
+  color: var(--t3);
+  cursor: default;
+}
+.console .bhead .newtask {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 4px;
+}
+.console .bhead .newtask input {
+  min-width: 0;
+  flex: 1 1 200px;
+  font: 400 var(--dm-type-input) / 1.4 var(--ui);
+  color: var(--t1);
+  background: var(--raised);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  padding: 5px 8px;
+}
+.console .bhead .newtask input:focus-visible {
+  border-color: var(--light);
+}
+.console .bhead .newtask button {
+  cursor: pointer;
+  font-size: var(--dm-type-caption);
+  color: var(--t1);
+  border-radius: var(--rb);
+}
+.console .bhead .newtask button.go {
+  color: var(--light);
+}
+.console .bhead .newtask button:disabled {
+  color: var(--t3);
+  cursor: default;
+}
 .console .bhead > span,
 .console .board .column,
 .console .crow,
