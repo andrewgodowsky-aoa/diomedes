@@ -111,15 +111,18 @@ Numbering is stable; tests and comments cite these by number. Full text and reas
     restaurant or a remodel it holds documents, exported reports, spreadsheets, connector-backed
     information, procedures, approvals, generated artifacts, tasks and operating evidence. One Project
     contract serves both. Diomedes does not become a coding IDE.
-13. **One Files surface, two tiers — approved direction, not a shipped capability.** Approved
-    2026-09-10. **Files are not inherently a software feature**, so Core carries the general file and
+13. **One Files surface, two tiers.** Approved 2026-09-10; first Core slice implemented 2026-09-11
+    within a stated boundary (a read-only Files pane, an activity overview, pack activation and
+    instruction-file discovery, each with tests: `docs/implementation/2026-09-11-*.md`). **Files are not inherently a software feature**, so Core carries the general file and
     artifact surface: the project folder and artifact model, ordinary preview, text and Markdown
     viewing, search, generated artifacts, history and version inspection, references into Threads, and
     open-externally behaviour. The IDE-grade version of that **same** surface is supplied by the
     Software Engineering Capability Pack on activation. It belongs inside the one Console, never as a
     second application surface, and it reuses the existing Project, `DocumentInfo`, `DocumentContent`
-    and History primitives rather than creating a competing file authority. Until it exists with
-    proof, no site copy, release note, roadmap status or report may describe it as shipped.
+    and History primitives rather than creating a competing file authority. Anything beyond the
+    recorded boundary (attachments, broader previews, code editing, Git, diffs, LSP) is still not
+    shipped, and no site copy, release note, roadmap status or report may describe it as shipped
+    until it exists with proof.
     → [`docs/product/2026-09-10-project-files-and-agent-overview.md`](docs/product/2026-09-10-project-files-and-agent-overview.md)
 14. **A capability pack composes; it never parallels.** Approved 2026-09-10. A pack may affect the
     combination of tools, Agents, rules, context, workflows and relevant UI affordances — not merely
