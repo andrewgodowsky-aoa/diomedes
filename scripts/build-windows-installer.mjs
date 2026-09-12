@@ -35,6 +35,10 @@ Options:
   --output-name NAME   Installer file name (must be a base name ending in .exe)
   --tool-cache PATH    Cache for the portable NSIS ZIP and extraction
   --no-download        Fail instead of downloading the pinned portable NSIS ZIP
+  --signed             Authenticode-sign Diomedes.exe and the installer through
+                       scripts/sign-windows.ps1 (Azure Artifact Signing; needs the
+                       DIOMEDES_SIGN_* environment). Without it the build is unsigned
+                       and says so.
   --help               Show this help
 
 Relative paths are resolved from the current working directory. Existing installer
@@ -52,6 +56,7 @@ function parseArgs(argv) {
     const arg = argv[index];
     if (arg === '--help') result.help = true;
     else if (arg === '--no-download') result.download = false;
+    else if (arg === '--signed') result.signed = true;
     else if (arg === '--output-name') {
       const value = argv[++index];
       if (!value) throw new Error(`${arg} requires a value.`);
@@ -233,7 +238,7 @@ function numericFileVersion(version) {
   return `${parts[0]}.${parts[1]}.${parts[2]}.0`;
 }
 
-function generateNsis({ outputPath, version, payload }) {
+function generateNsis({ outputPath, version, payload, signed = false }) {
   let previousInstallDirectory;
   const installFiles = payload.files
     .map(({ absolutePath, relativePath }) => {
@@ -261,7 +266,7 @@ RequestExecutionLevel user
 !include \"MUI2.nsh\"
 
 !define PRODUCT_ID \"${productId}\"
-!define PRODUCT_NAME \"Diomedes Experimental 2026-09-09 (Unsigned)\"
+!define PRODUCT_NAME \"Diomedes Experimental 2026-09-09${signed ? '' : ' (Unsigned)'}\"
 !define APP_VERSION \"${nsis(version)}\"
 !define MARKER \"${markerName}\"
 !define PRODUCT_KEY \"${productRegistryKey}\"
@@ -271,13 +276,13 @@ Name \"${'${PRODUCT_NAME}'}\"
 OutFile \"${nsis(outputPath)}\"
 InstallDir \"$LOCALAPPDATA\\Programs\\Diomedes Experimental 20260909\"
 InstallDirRegKey HKCU \"${'${PRODUCT_KEY}'}\" \"InstallDir\"
-BrandingText \"Experimental unsigned build\"
+BrandingText \"Experimental ${signed ? 'signed' : 'unsigned'} build\"
 ShowInstDetails show
 ShowUninstDetails show
 
 VIProductVersion \"${numericFileVersion(version)}\"
 VIAddVersionKey /LANG=1033 \"ProductName\" \"${'${PRODUCT_NAME}'}\"
-VIAddVersionKey /LANG=1033 \"FileDescription\" \"Unsigned experimental per-user installer\"
+VIAddVersionKey /LANG=1033 \"FileDescription\" \"${signed ? 'Experimental' : 'Unsigned experimental'} per-user installer\"
 VIAddVersionKey /LANG=1033 \"FileVersion\" \"${nsis(version)}\"
 VIAddVersionKey /LANG=1033 \"ProductVersion\" \"${nsis(version)}\"
 VIAddVersionKey /LANG=1033 \"CompanyName\" \"Diomedes\"
@@ -434,6 +439,29 @@ async function getAuthenticodeStatus(outputPath) {
   }
 }
 
+/**
+ * Sign through scripts/sign-windows.ps1, which holds no key and refuses to run
+ * on a machine that is not configured for Azure Artifact Signing. A missing
+ * configuration is an error here, because --signed was asked for explicitly.
+ */
+async function signFiles(files) {
+  const script = path.join(root, 'scripts', 'sign-windows.ps1');
+  // run() rejects on a non-zero exit with the script's output in the message.
+  try {
+    const result = await run('pwsh', ['-NoProfile', '-File', script, '-Path', ...files], { cwd: root });
+    process.stdout.write(result.stdout);
+  } catch (error) {
+    const text = error instanceof Error ? error.message : String(error);
+    if (text.includes('[sign-windows] not configured')) {
+      throw new Error(
+        'Signing was requested but this machine is not configured: set DIOMEDES_SIGN_METADATA, DIOMEDES_SIGNTOOL and DIOMEDES_SIGN_DLIB (docs/releases/CODE_SIGNING.md).',
+      );
+    }
+    throw new Error(`Signing failed.
+${text}`);
+  }
+}
+
 const args = parseArgs(process.argv.slice(2));
 if (args.help) {
   console.log(usage());
@@ -445,8 +473,10 @@ const appDir = args.appDir ?? defaults.appDir;
 const outDir = args.outDir ?? defaults.outDir;
 const toolCache = args.toolCache ?? defaults.toolCache;
 const manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+const signed = args.signed === true;
 const outputName =
-  args.outputName ?? `Diomedes-Experimental-${manifest.version}-unsigned-setup.exe`;
+  args.outputName ??
+  `Diomedes-Experimental-${manifest.version}-${signed ? 'setup' : 'unsigned-setup'}.exe`;
 if (path.basename(outputName) !== outputName || !outputName.toLowerCase().endsWith('.exe')) {
   throw new Error('--output-name must be a file base name ending in .exe.');
 }
@@ -464,6 +494,7 @@ if (isWithin(toolCache, appDir)) {
   throw new Error(`NSIS tool cache must be outside the packaged app directory: ${toolCache}`);
 }
 
+if (signed) await signFiles([path.join(appDir, 'Diomedes.exe')]);
 const payload = await collectPayload(appDir);
 if (payload.files.length === 0) throw new Error(`Packaged app is empty: ${appDir}`);
 const appTreeSha256 = payloadTreeSha256(payload);
@@ -476,7 +507,7 @@ await fs.mkdir(generatedDir, { recursive: true });
 const generatedScript = path.join(generatedDir, `${path.parse(outputName).name}.nsi`);
 await fs.writeFile(
   generatedScript,
-  generateNsis({ outputPath, version: manifest.version, payload }),
+  generateNsis({ outputPath, version: manifest.version, payload, signed }),
   'utf8',
 );
 
@@ -507,9 +538,13 @@ if (payloadTreeSha256(postCompilePayload) !== appTreeSha256) {
     'Packaged app changed while NSIS was compiling. Preserve the output for inspection and rebuild from a stable app directory.',
   );
 }
+if (signed) await signFiles([outputPath]);
 const authenticodeStatus = await getAuthenticodeStatus(outputPath);
-if (authenticodeStatus !== 'NotSigned') {
+if (!signed && authenticodeStatus !== 'NotSigned') {
   throw new Error(`Expected an unsigned installer; Authenticode status is ${authenticodeStatus}.`);
+}
+if (signed && authenticodeStatus !== 'Signed') {
+  throw new Error(`--signed was requested but the installer carries no signature (${authenticodeStatus}).`);
 }
 
 const installerStat = await fs.stat(outputPath);
@@ -518,7 +553,8 @@ const buildManifest = {
   ownedBy: buildScriptId,
   productId,
   experimental: true,
-  unsigned: true,
+  unsigned: !signed,
+  signing: signed ? 'azure-artifact-signing' : 'unsigned-experimental',
   authenticodeStatus,
   outputFile: outputPath,
   outputBytes: installerStat.size,
@@ -546,4 +582,4 @@ process.stderr.write(compile.stderr);
 console.log(`Installer: ${outputPath}`);
 console.log(`Manifest: ${manifestPath}`);
 console.log(`SHA-256: ${buildManifest.outputSha256}`);
-console.log('Authenticode: NotSigned (experimental build)');
+console.log(`Authenticode: ${authenticodeStatus} (${signed ? 'signed' : 'unsigned'} experimental build)`);
