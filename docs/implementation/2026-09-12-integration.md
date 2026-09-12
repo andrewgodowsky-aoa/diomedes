@@ -19,7 +19,7 @@ still open.
 | `cb20cb6` | Demonstration journey B traversed on the packaged candidate | Opus 5 | `2026-09-12-demo-journey-b.md` |
 | `5ba3618` | A fenced or prefixed file proposal is read; a refused turn keeps its model; OpenCode's two time budgets read differently | GLM 5.3 Flash | this record, §3 |
 | `130d8d4` | The candidate record names the published prerelease as the last known good | integrator | `2026-09-12-release-candidate.md` §4 |
-| `abb90ec`…`a3d13ee` (12) | Code audit: measured findings, nine behaviour-preserving cleanups | Fable (one-time, owner-authorised) | `2026-09-12-code-audit.md` |
+| `2fde3d5`…`a3d13ee` (12) | Code audit: measured findings, nine behaviour-preserving cleanups | Fable (one-time, owner-authorised) | `2026-09-12-code-audit.md` |
 
 The candidate was built from `da84689`, which was `main` when the day began; everything
 above landed after it, so the packaged bytes a person would install today do not contain
