@@ -84,7 +84,10 @@ twenty files in a minute with two windows open moves 300 MB.
 Fix (API shape, not applied): send `{ projectId }` only; the clients already treat every
 event as "something changed, refetch". If any consumer does need a slice, send that slice
 and nothing else. A one-line change on the server and none on the clients, but it is a
-change to what `/api/events` delivers and belongs in a slice with its own record.
+change to what `/api/events` delivers and belongs in a slice with its own record. One
+test reads the payload: `tests/backend.test.ts:1255` (d) parses the `state` event's data
+to prove `statePayload` strips `documents`, and would need to change with the shape.
+Nothing under `desktop/` opens the stream.
 
 ### 2.3 The Files pane re-walks the project folder under the store lock on every state event
 
@@ -115,7 +118,8 @@ integrator owns that decision.
 
 `server/store.ts:601`: `state.history.filter((h) => h.time.slice(0, 10) === now().slice(0, 10))`.
 `now()` allocates a `Date` and formats it, per entry. Measured at 5,000 entries: 3.55 ms
-per call; 0.08 ms with `now()` hoisted out of the filter. `refreshCounts` runs inside
+per `refreshCounts` call; the History filter alone drops to 0.08 ms with `now()` hoisted
+out of it, and History is what dominates the call. `refreshCounts` runs inside
 `projectState` (line 1467), once per project in `projects()` (line 614), and on every write
 path that calls `persist` through `writeRecorded`. Applied in §8.
 
@@ -223,7 +227,7 @@ care about.
 
 | Helper | Copies | Owner if merged |
 |---|---|---|
-| sha256 of text, null-preserving | `server/store.ts:43` `hash`, `server/approval-admission.ts:30` `contentHash`, `server/harness/capabilities/format-report.ts:149` `digestText` | `approval-admission.ts` already exports one and `store.ts` imports from it; merging `hash` into it is safe, `format-report.ts` should import too |
+| sha256 of text, null-preserving | `server/store.ts:43` `hash`, `server/approval-admission.ts:30` `contentHash`, `server/harness/capabilities/format-report.ts:149` `digestText` | `approval-admission.ts` defines one and `store.ts` already imports from that module; exporting it and re-exporting as `hash` is safe, `format-report.ts` should import too |
 | "is a plain object" | `server/engines/process.ts:218` `record`, `server/app.ts:185` `plain`, `server/team/routes.ts:9` `plain`, `shared/app-updates.ts:151`, `server/connections/openapi-candidate.ts:18`, `compiled-fixture.ts:67`, `mcp-projection.ts:28` `isRecord`, `server/engines/opencode.ts:41` `object`, `client/work-start.ts:33`, `client/approval-decisions.ts:28` `record` | one in `shared/`; `app.ts` cannot import `team/routes.ts` back without a cycle, so the owner must be a leaf |
 | "string or empty" | `server/engines/cursor.ts:62` `string`, `server/engines/opencode.ts:43` `text`, `server/models.ts:31`, `server/managed-usage-routes.ts:63`, `client/work-start.ts:41`, `client/approval-decisions.ts:37` | same leaf |
 | `body()`, `organizationId()`, `route()` | `server/workspace-routes.ts` and `server/configuration-routes.ts`, byte-identical | either file, or a `server/route-helpers.ts` |
@@ -393,6 +397,11 @@ Gates on the branch head, run serially in the worktree after the last commit:
 
 The Playwright run rewrote four PNGs under `evidence/screenshots/` as those specs do. They
 are left uncommitted for the integrator; this pass does not touch `evidence/`.
+
+`main` moved from `da84689` to `130d8d4` while this pass ran (the readability merge and the
+journey records). The gates above ran against the `da84689` base. `git merge-tree main HEAD`
+reports no conflict; `client/App.tsx` and `server/engines/opencode.ts` changed on both
+sides, so the rebase is due and the gates should run once more on the rebased head.
 
 Left for the integrator to decide, in the order the numbers argue for: §2.2 (one line on
 the server, no client change, the largest measured saving per event), §2.3 (two `route()`
