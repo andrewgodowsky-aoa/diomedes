@@ -25,8 +25,11 @@ jobs:
       - run: npm run check
       # The runner context is only available inside a step, never in a job-level env
       # block, so this pair has to sit here. These gates use synthetic data and mocked
-      # providers, never a signed-in account.
-      - run: node node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile=test-results/unit.xml
+      # providers, never a signed-in account. Two workers, not the default: several
+      # suites spawn real child processes (the data-folder lock probe, the harness
+      # host, approval crash recovery) and on a four-vCPU runner three workers plus
+      # their children starved each other into timeouts that read as failures.
+      - run: node node_modules/vitest/vitest.mjs run --maxWorkers=2 --reporter=default --reporter=junit --outputFile=test-results/unit.xml
         env:
           CODEX_HOME: ${{ runner.temp }}/diomedes-ci-codex
       # npm run build also packages the desktop and requires separately staged

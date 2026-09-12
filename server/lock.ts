@@ -82,24 +82,47 @@ function run(file: string, args: string[], timeoutMs: number): Promise<string | 
   });
 }
 
+/**
+ * Which PowerShell answers first. PowerShell 7 (`pwsh`) starts in a fraction of
+ * the time Windows PowerShell 5.1 does, and on a machine where 5.1 has never
+ * been launched since boot its first start can take longer than any budget a
+ * lock should wait, because the runtime compiles itself on the way up. The
+ * GitHub Windows runner is exactly that machine: every workflow step runs under
+ * pwsh, so 5.1 is cold when the suite reaches this probe. Remember the answer
+ * per process so the fallback costs one miss, not one per probe.
+ */
+let windowsHost: 'pwsh.exe' | 'powershell.exe' | null = null;
+
 async function windowsStartedAt(pid: number, timeoutMs: number): Promise<number | null> {
   // Opening the one process by id is cheaper than `Get-Process`, which walks the
   // whole process table before selecting from it. Both throw for a pid that is
   // gone or cannot be opened, so what a caller sees on failure is unchanged.
-  const output = await run(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-NoLogo',
-      '-Command',
-      `[Diagnostics.Process]::GetProcessById(${pid}).StartTime.ToUniversalTime().Ticks`,
-    ],
-    timeoutMs,
-  );
-  const text = output?.trim();
-  if (!text || !/^\d+$/.test(text)) return null;
-  return Number((BigInt(text) - TICKS_TO_UNIX_EPOCH) / 10_000n);
+  const args = [
+    '-NoProfile',
+    '-NonInteractive',
+    '-NoLogo',
+    '-Command',
+    `[Diagnostics.Process]::GetProcessById(${pid}).StartTime.ToUniversalTime().Ticks`,
+  ];
+  const parse = (output: string | null) => {
+    const text = output?.trim();
+    if (!text || !/^\d+$/.test(text)) return null;
+    return Number((BigInt(text) - TICKS_TO_UNIX_EPOCH) / 10_000n);
+  };
+  if (windowsHost) return parse(await run(windowsHost, args, timeoutMs));
+  const started = Date.now();
+  const viaPwsh = parse(await run('pwsh.exe', args, timeoutMs));
+  if (viaPwsh !== null) {
+    windowsHost = 'pwsh.exe';
+    return viaPwsh;
+  }
+  // No pwsh, or it could not open the pid. Spend what is left of the budget on
+  // 5.1 rather than starting the clock again; a caller asked for one wait.
+  const remaining = timeoutMs - (Date.now() - started);
+  if (remaining <= 0) return null;
+  const via51 = parse(await run('powershell.exe', args, remaining));
+  if (via51 !== null) windowsHost = 'powershell.exe';
+  return via51;
 }
 
 async function linuxStartedAt(pid: number): Promise<number | null> {
