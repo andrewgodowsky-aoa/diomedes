@@ -357,7 +357,6 @@ export class Store extends EventEmitter {
       validateApprovalReceipts(fresh);
       validateScopeGrants(fresh);
       validateAgentResolutions(fresh);
-      validateAgentResolutions(fresh);
       fresh.teamMeta ??= emptyTeamMeta();
       this.states.set(id, fresh);
     }
@@ -595,11 +594,12 @@ export class Store extends EventEmitter {
     void this.refreshDocuments(id).catch(() => undefined);
   }
   private refreshCounts(state: StoredState) {
+    const today = now().slice(0, 10);
     state.project.counts = {
       running: state.sessions.filter((s) => ['working', 'queued'].includes(s.state)).length,
       changesWaiting: state.changes.filter((c) => c.state === 'waiting').length,
       waitingForYou: state.needs.filter((n) => n.state === 'open').length,
-      historyToday: state.history.filter((h) => h.time.slice(0, 10) === now().slice(0, 10)).length,
+      historyToday: state.history.filter((h) => h.time.slice(0, 10) === today).length,
     };
     state.project.status = {
       needsYou: state.project.counts.waitingForYou,
@@ -773,7 +773,8 @@ export class Store extends EventEmitter {
     return readTextOrNull(file.absolute);
   }
   latestFile(state: StoredState, name: string) {
-    for (const entry of [...state.history].reverse()) {
+    for (let i = state.history.length - 1; i >= 0; i--) {
+      const entry = state.history[i];
       const file = entry.files.find((f) => f.path === name);
       if (file) return { entry, file };
     }
