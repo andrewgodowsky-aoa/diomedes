@@ -1,0 +1,168 @@
+{
+  "startedAt": "2026-09-09T10:40:08.081Z",
+  "executablePath": "F:\\Achilles\\diomedes-wt\\windows-release\\release\\Diomedes-win32-x64\\Diomedes.exe",
+  "root": "F:\\Achilles\\diomedes-wt\\windows-release\\test-results\\package-negative-final-20260909-0612",
+  "version": "0.1.1",
+  "checks": [
+    "A valid older signed event was durably ignored; exact replay was a duplicate, with one Task and the newer observation retained.",
+    "A rule-revision request carrying a privilege expansion failed strict request validation with HTTP 400.",
+    "An outside report created after proposal invalidated the expected base; the run failed, execution was not applied, and the outside bytes remained.",
+    "A valid but expired exact approval was refused with approval_expired; its Need and run stayed waiting and no report was written."
+  ],
+  "launches": [
+    {
+      "origin": "http://127.0.0.1:52776",
+      "pid": 51728,
+      "readyMs": 3039,
+      "version": "0.1.1"
+    },
+    {
+      "origin": "http://127.0.0.1:59409",
+      "pid": 51052,
+      "readyMs": 1923,
+      "version": "0.1.1"
+    }
+  ],
+  "errors": [],
+  "passed": true,
+  "providerBoundary": {
+    "codexEnabled": false,
+    "syntheticCodexHomeStartedEmpty": true,
+    "providerRoutesCalled": 0
+  },
+  "reorderedEvent": {
+    "newerId": "eb90fed9-7a19-481e-95d8-e11fddd4d615",
+    "olderId": "eca43ccb-e93e-4dfd-8afb-e05c62fd2737",
+    "newerSourceAt": "2026-09-09T10:40:11.329Z",
+    "olderSourceAt": "2026-09-09T10:38:11.329Z",
+    "states": [
+      {
+        "id": "eb90fed9-7a19-481e-95d8-e11fddd4d615",
+        "state": "processed"
+      },
+      {
+        "id": "eca43ccb-e93e-4dfd-8afb-e05c62fd2737",
+        "state": "ignored"
+      }
+    ],
+    "duplicateReplay": true,
+    "tasks": 1,
+    "retainedObservation": {
+      "resourceId": "10000000-0000-4000-8000-000000000001",
+      "key": "101",
+      "sourceAt": "2026-09-09T10:40:11.329Z",
+      "receivedAt": "2026-09-09T10:40:11.340Z",
+      "facts": {
+        "itemId": "20000000-0000-4000-8000-000000000001",
+        "availability": "available",
+        "status": "QUANTITY",
+        "quantity": 3,
+        "quantityState": "reported",
+        "quantityUnknown": false,
+        "sourceKind": "menu-availability"
+      },
+      "source": "Toast menu-item/modifier stock (fixture)"
+    }
+  },
+  "privilegeExpansion": {
+    "value": {
+      "error": "The connection request does not match the reviewed schema.",
+      "issues": [
+        "Unrecognized key: \"capabilities\""
+      ]
+    },
+    "status": 400,
+    "ok": false
+  },
+  "changedBase": {
+    "runId": "R94f2da38c76a",
+    "runState": "failed",
+    "failure": {
+      "name": "Error",
+      "message": "This document changed since you opened it. Read its current version before saving."
+    },
+    "execution": {
+      "state": "not-applied",
+      "eventId": null,
+      "completedAt": "2026-09-09T10:40:12.089Z",
+      "reason": "The run stopped before this write was prepared.",
+      "conflicts": []
+    },
+    "retainedSha256": "150b85ea103db695e94db2c0fcf1c00d50f619383ee54014cf85d1a5885f8225",
+    "historyWrites": 0
+  },
+  "controlledExpiryFixture": {
+    "kind": "isolated-state-injection",
+    "reason": "The packaged process exposes no supported clock override; only this unopened isolated Need was aged while the owned process was stopped.",
+    "statePath": "F:\\Achilles\\diomedes-wt\\windows-release\\test-results\\package-negative-final-20260909-0612\\data\\projects\\d5497b6db8ee\\state.json",
+    "before": {
+      "createdAt": "2026-09-09T10:40:12.330Z",
+      "expiresAt": "2026-09-09T11:40:12.330Z",
+      "stateSha256": "0c828b42cc4cbfbc774eb04e171f2852d7fc45af5bb734c34b70cbb607f8a0a6"
+    },
+    "after": {
+      "createdAt": "2026-09-09T09:40:12.625Z",
+      "expiresAt": "2026-09-09T10:40:12.625Z",
+      "actionDigest": "33719ec22becf9e94a8517b2c855990aed53c67ce6e765f1e514d59870fe9f8e",
+      "baseDigest": "sha256:81e0aa9f0d5a67fdeb6ca634ea10736da917fe22af60e5fcf17cb5e8c98b5047",
+      "proposalDigest": "sha256:d01dd4dca5dfcd62c8928278c481556239319d698cd48dc9efe186d8d75be3dc",
+      "stateSha256": "f04c580c2afa688b19d0112a81c177d5d2a4a39f06e24aa829b785545e9af4da"
+    },
+    "machineClockChanged": false,
+    "sourceChanged": false
+  },
+  "expiredApproval": {
+    "response": {
+      "value": {
+        "error": "This approval window expired. Start work again for a new proposal.",
+        "code": "approval_expired"
+      },
+      "status": 409,
+      "ok": false
+    },
+    "needState": "open",
+    "approvalReceipt": null,
+    "runState": "waiting",
+    "reportExists": false
+  },
+  "syntheticCodexHome": {
+    "path": "F:\\Achilles\\diomedes-wt\\windows-release\\test-results\\package-negative-final-20260909-0612\\synthetic-codex",
+    "initialEntries": [],
+    "finalEntries": [
+      "goals_1.sqlite",
+      "goals_1.sqlite-shm",
+      "goals_1.sqlite-wal",
+      "installation_id",
+      "logs_2.sqlite",
+      "logs_2.sqlite-shm",
+      "logs_2.sqlite-wal",
+      "memories_1.sqlite",
+      "memories_1.sqlite-shm",
+      "memories_1.sqlite-wal",
+      "queue_1.sqlite",
+      "queue_1.sqlite-shm",
+      "queue_1.sqlite-wal",
+      "skills",
+      "state_5.sqlite",
+      "state_5.sqlite-shm",
+      "state_5.sqlite-wal",
+      "tmp"
+    ],
+    "credentialEntries": [],
+    "note": "The isolated runtime initialized fresh local databases; no inherited auth or config file was present."
+  },
+  "finishedAt": "2026-09-09T10:40:14.672Z",
+  "executableSha256": "1aa5a72eb0fba99a1e5bb5541045f9b0ee63574a14f0f847264738481a4e3c54",
+  "asarSha256": "313a35c02ca99d9243441d3f79cecdbbba063380aec7682c0e07abe5840ae11f",
+  "cleanup": [
+    {
+      "origin": "http://127.0.0.1:52776",
+      "closed": true
+    },
+    {
+      "origin": "http://127.0.0.1:59409",
+      "closed": true
+    }
+  ],
+  "lockReleased": true
+}

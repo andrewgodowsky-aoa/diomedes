@@ -1,0 +1,55 @@
+{
+  "at": "2026-09-10T06:35:18.723Z",
+  "branch": "codex/ai-setup-20260910",
+  "baseCommit": "2e230c89020d1ddb4fd51720a201ad0b562fbef8",
+  "sourceDigest": "5150ad62e28c4399f78829be542df6066baf523c87bf11ee3b625cd1814ff42f",
+  "sourceStatus": "local-uncommitted",
+  "candidate": "F:\\Achilles\\diomedes-wt\\ai-setup\\release\\Diomedes-win32-x64",
+  "exeSha256": "68585b58f369cd7338ea2bc52ef8ae5312e469b9e3bae88fd1a85cc360cd89bc",
+  "asarSha256": "6f740744303f33ea477d64c9f8dc2c5d23444694507e408a866bd737e34af1c4",
+  "typecheck": "passed",
+  "unitTests": {
+    "passed": 697,
+    "failed": 0,
+    "files": 35,
+    "maxWorkers": 4
+  },
+  "browserTests": {
+    "passed": 28,
+    "failed": 0,
+    "files": [
+      "ai-engines-ui.spec.ts",
+      "ui.spec.ts",
+      "native-ui.spec.ts",
+      "field.spec.ts"
+    ]
+  },
+  "packagedCleanAndUpgrade": "passed",
+  "installedMetadata": [
+    {
+      "engine": "claude-code",
+      "version": "2.1.252",
+      "authentication": "signed-in",
+      "modelCount": 2,
+      "detail": "Claude account connected. Choose a model for text and reviewed proposals."
+    },
+    {
+      "engine": "opencode",
+      "version": "1.18.4",
+      "authentication": "signed-in",
+      "modelCount": 15,
+      "detail": "Native OpenCode Go account connected. Choose an explicit provider/model."
+    },
+    {
+      "engine": "oh-my-pi",
+      "version": "18.0.6",
+      "authentication": "unknown",
+      "modelCount": 0,
+      "detail": "The isolated native OMP profile exited before it could report metadata. Configure supported OpenAI API access in the native profile, then recheck."
+    }
+  ],
+  "modelPrompts": 0,
+  "commit": "not performed",
+  "publication": "not performed",
+  "deployment": "not performed"
+}

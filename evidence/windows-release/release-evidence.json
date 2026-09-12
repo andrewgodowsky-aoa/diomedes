@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "diomedes-0.1.1-windows-experimental-20260909-09e551958dfa",
+  "generatedAt": "2026-09-09T11:01:09.471Z",
+  "checkout": "F:\\Achilles\\diomedes-wt\\windows-release\\",
+  "destination": "F:\\Achilles\\deliverables\\windows-release-20260909",
+  "sourceSnapshotVerified": true,
+  "asarAllowlistVerified": true,
+  "packageFilesVerified": 76,
+  "proofFiles": {
+    "connections": {
+      "path": "F:\\Achilles\\diomedes-wt\\windows-release\\test-results\\package-connections-final\\proof.json",
+      "checks": [
+        "Incomplete natural-language intent remains inactive and asks for threshold/service window",
+        "Reviewed three-location scope; typed fixture read preserves unknown and untracked quantities",
+        "Frozen effective model context, raw bad observation, new budgeted correction identity and rule provenance",
+        "Correction history -> offline replay comparison -> explicit revision adoption -> versioned rollback",
+        "Signed durable ingress, deterministic threshold AND service window, duplicate/conflict handling, one manager Task",
+        "Registered prohibited write refused before handler, zero dispatches",
+        "Two unrelated generic OpenAPI adapters reviewed and called by official SDK MCP client through same Runtime",
+        "Revocation blocks reads and signed events using current host authority",
+        "Fresh process requires explicit authorization, starts stale, keeps durable receipts and never duplicates manager Task",
+        "Connections available through normal Workbook navigation as well as Console",
+        "Abrupt owned-process crash after signed durable HTTP 202 and before triage; explicit new-session recovery processes receipt once"
+      ]
+    },
+    "relocated": {
+      "path": "F:\\Achilles\\diomedes-wt\\windows-release\\test-results\\package-relocated-final\\proof.json",
+      "checks": [
+        "Checkout server, client, fixtures and dist directories unavailable during packaged execution",
+        "Packaged fixture reached exact approval",
+        "Exact harness proposal text is inspectable in Workbook",
+        "Review presents the pending harness Need",
+        "Console Board opens the owning thread and exact proposal",
+        "Restart preserves waiting Need; lost decision response replays one receipt and one exact write",
+        "Visible decline and Stop prevent additional file writes",
+        "History restore removes a newly created file and records its own restore entry",
+        "Built navigation preserves a concurrent engine setting during a delayed refresh; no provider call",
+        "Restored state survives restart; renderer isolation settings and built UI checked",
+        "Owned package server stopped and data lock released"
+      ]
+    },
+    "installer": {
+      "path": "F:\\Achilles\\diomedes-wt\\windows-release\\test-results\\installer-final-3\\proof.json",
+      "checks": [
+        "Installed all payload files with identical SHA-256, current-user keys and shortcut",
+        "Installed executable passed full Connections desktop/crash/restart smoke with isolated profile",
+        "Same-version repair install retained unknown data and isolated profile; all program hashes still match",
+        "Uninstall removed only owned payload/registration/shortcut; unknown file and isolated profile retained"
+      ]
+    },
+    "upgrade": {
+      "path": "F:\\Achilles\\diomedes-wt\\windows-release\\test-results\\archive-upgrade-final-2\\proof.json",
+      "checks": [
+        "Actual 0.1.0 profile upgraded to ZIP-extracted 0.1.1 with project, preferences, History and exact pending Need preserved",
+        "Upgraded exact proposal approved once through UI; one recorded write and original read attempt retained"
+      ]
+    },
+    "provider": {
+      "path": "F:\\Achilles\\diomedes-wt\\windows-release\\evidence\\windows-release\\provider-smoke-sol-1\\proof.json",
+      "checks": null
+    },
+    "negative": {
+      "path": "F:\\Achilles\\diomedes-wt\\windows-release\\evidence\\windows-release\\package-negative-final.json",
+      "checks": [
+        "A valid older signed event was durably ignored; exact replay was a duplicate, with one Task and the newer observation retained.",
+        "A rule-revision request carrying a privilege expansion failed strict request validation with HTTP 400.",
+        "An outside report created after proposal invalidated the expected base; the run failed, execution was not applied, and the outside bytes remained.",
+        "A valid but expired exact approval was refused with approval_expired; its Need and run stayed waiting and no report was written."
+      ]
+    }
+  },
+  "internalOnly": true
+}

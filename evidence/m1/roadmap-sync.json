@@ -1,0 +1,12 @@
+{
+  "documentId": "1bRhz3zQPXOYuVlt95U1EIkz7pcm1dtSsoBvkDrLR3zE",
+  "roadmapVersion": "2026-09-09.5",
+  "docsRevision": "ANLCKQl1Zh5dJ2GdV6Q1igtOW5cYnbSylkQEiJp6uurjBrKbgItkBr0KqzVMPfgDqaK2SV2TJ7tVeriqOsf_UAxzu9Rt5pZTfS9kvIPgNp4",
+  "cloudUpdated": true,
+  "exactReadback": true,
+  "normalizedSha256": "e3c15408a20241066e07540b1f12c7a3b245c5e6157aa7bc2496a2ede5cdb1cd",
+  "normalization": "Google Docs paragraph text in tab t.0 concatenated; LF, UTF-8 without BOM",
+  "exactPatch": "DIOMEDES-ROADMAP-IMPACT-2026-09-09.5.json",
+  "repositoryMirror": "docs/DIOMEDES_LIVE_ROADMAP.md",
+  "equivalence": "Current decisions reconciled; cloud retains historical amendments, repository keeps the clean strategic structure."
+}

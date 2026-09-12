@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-09-09",
+  "release": {
+    "repository": "openai/codex",
+    "tag": "rust-v0.153.4",
+    "releaseId": 383061770,
+    "targetCommitish": "main",
+    "publishedAt": "2026-09-04T23:25:48Z",
+    "htmlUrl": "https://github.com/openai/codex/releases/tag/rust-v0.153.4",
+    "apiUrl": "https://api.github.com/repos/openai/codex/releases/383061770"
+  },
+  "downloadDirectory": "test-results/native-provenance",
+  "method": {
+    "signatureCommand": "Get-AuthenticodeSignature -LiteralPath <path>",
+    "rawDigest": "SHA-256 over the complete file",
+    "normalizedDigest": "SHA-256 over the complete PE file after omitting the four-byte optional-header checksum, the eight-byte certificate-directory entry, and the certificate blob addressed by that directory",
+    "sectionComparison": "SHA-256 over every section's raw-data range, paired by section name, raw offset, and raw size",
+    "overlayComparison": "The bytes between the end of the last section and the certificate blob were measured separately",
+    "interpretation": "For every pair, all PE section ranges and the normalized digest match. The certificate directory offset and size also have equal values, there is no pre-certificate overlay, and the only differing ranges are the PE checksum and certificate blob."
+  },
+  "commonSigner": {
+    "status": "Valid",
+    "statusMessage": "Signature verified.",
+    "signatureType": "Authenticode",
+    "subject": "CN=\"OpenAI OpCo, LLC\", O=\"OpenAI OpCo, LLC\", L=San Francisco, S=California, C=US",
+    "issuer": "CN=Microsoft ID Verified CS EOC CA 03, O=Microsoft Corporation, C=US",
+    "thumbprint": "EC22378E8B5F90A38B5449A388915922A9803643",
+    "notBefore": "2026-09-03T01:11:38Z",
+    "notAfter": "2026-09-06T01:11:38Z"
+  },
+  "timestampIssuer": "CN=Microsoft Public RSA Timestamping CA 2020, O=Microsoft Corporation, C=US",
+  "assets": [
+    {
+      "component": "codex",
+      "localPath": ".data/native-runtime/codex.exe",
+      "officialFile": "codex-x86_64-pc-windows-msvc.exe",
+      "asset": {
+        "id": 545043415,
+        "apiUrl": "https://api.github.com/repos/openai/codex/releases/assets/545043415",
+        "downloadUrl": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-x86_64-pc-windows-msvc.exe",
+        "contentType": "application/x-msdos-program",
+        "state": "uploaded",
+        "createdAt": "2026-09-04T23:23:48Z",
+        "updatedAt": "2026-09-04T23:25:04Z",
+        "bytes": 295408944,
+        "apiDigest": "sha256:444a3f0008050605cae73cd9b7a2dcac61294062dfaab56dd20430fd6498518b"
+      },
+      "local": {
+        "bytes": 295408944,
+        "sha256": "a1cf6360ca71918d5466bc3a32d9f18b7044c9128756d1949e715d277b88c9b6",
+        "peChecksum": 295427952,
+        "certificateSha256": "de4f07055e6a4d395af862d7fce4c5f6da6c04a3765af83e169757eb70a4a565",
+        "timestampSubject": "CN=Microsoft Public RSA Time Stamping Authority, OU=nShield TSS ESN:7800-05E0-D947, OU=Microsoft America Operations, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+        "timestampThumbprint": "FD2F31399C42510141364ACDF168A28F5C79CBC3",
+        "timestampNotBefore": "2025-10-23T20:46:53Z",
+        "timestampNotAfter": "2026-10-22T20:46:53Z"
+      },
+      "official": {
+        "bytes": 295408944,
+        "sha256": "444a3f0008050605cae73cd9b7a2dcac61294062dfaab56dd20430fd6498518b",
+        "peChecksum": 295449376,
+        "certificateSha256": "a223fdead156b288486d125ba8e70b2656cf82282814dcd9f16c931962f2e3e3",
+        "timestampSubject": "CN=Microsoft Public RSA Time Stamping Authority, OU=nShield TSS ESN:A500-05E0-D947, OU=Microsoft America Operations, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+        "timestampThumbprint": "FF73F729152A9059805E5E0832449D996EF60411",
+        "timestampNotBefore": "2025-10-23T20:46:51Z",
+        "timestampNotAfter": "2026-10-22T20:46:51Z"
+      },
+      "pe": {
+        "peHeaderOffset": 120,
+        "optionalHeaderMagic": "0x20b",
+        "sectionCount": 8,
+        "certificateFileOffset": 295393280,
+        "certificateBytes": 15664,
+        "imageSectionEnd": 295393280,
+        "preCertificateOverlayBytes": 0,
+        "normalizedSha256": "0ea7244a5900d74d9db1f097572e91b477fb27a3a862a82a4c21f0b66881d627",
+        "normalizedMatch": true,
+        "sectionHashesMatch": true,
+        "sections": {
+          ".text": "bd111acc5e9ed3dcd3fce665ab02113a8543581512872f4f52df28049d1abc07",
+          ".rdata": "9c42399a3af48e7092712fea17c8191aafd905136d9145161150281b0a60eb7f",
+          ".data": "2e18f7fdf83574d1fcad5eefd83b2b6a0aa08752951784da628432bf7a5df22f",
+          ".pdata": "1c62e3724f4e4912e5c41dd8c88ee2ad7190aa9f0a7fe51b38d324578fdf7e6d",
+          ".fptable": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560",
+          ".tls": "528182499193f19b15d4414bf1492d5961c7a80b5c87647f41e0bfb75d297635",
+          "_RDATA": "34f1090c011b3f20f96bebf2cef5c7f7fb512db618bdb231367258434853c82f",
+          ".reloc": "acc7da8e78b146aace1f1c00de3be26fe84a8f7334aec5f690ed885bd0c17a08"
+        }
+      }
+    },
+    {
+      "component": "codex-command-runner",
+      "localPath": ".data/native-runtime/codex-command-runner.exe",
+      "officialFile": "codex-command-runner-x86_64-pc-windows-msvc.exe",
+      "asset": {
+        "id": 545043435,
+        "apiUrl": "https://api.github.com/repos/openai/codex/releases/assets/545043435",
+        "downloadUrl": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-command-runner-x86_64-pc-windows-msvc.exe",
+        "contentType": "application/x-msdos-program",
+        "state": "uploaded",
+        "createdAt": "2026-09-04T23:23:48Z",
+        "updatedAt": "2026-09-04T23:23:55Z",
+        "bytes": 8204592,
+        "apiDigest": "sha256:3eb267dc1f0d1d80efeacc26a211f26ed0f414466d32a2aa7304a8a0beec170c"
+      },
+      "local": {
+        "bytes": 8204592,
+        "sha256": "08b56828cca57c83d14f03eb9ec62c73a2cd6648248cc731ae8fedd5fa3ae566",
+        "peChecksum": 8256717,
+        "certificateSha256": "0eccc9660d4d964922460e703f46a312acb1e01f9fea9c0ddd075ca2f2c0891f",
+        "timestampSubject": "CN=Microsoft Public RSA Time Stamping Authority, OU=nShield TSS ESN:A500-05E0-D947, OU=Microsoft America Operations, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+        "timestampThumbprint": "FF73F729152A9059805E5E0832449D996EF60411",
+        "timestampNotBefore": "2025-10-23T20:46:51Z",
+        "timestampNotAfter": "2026-10-22T20:46:51Z"
+      },
+      "official": {
+        "bytes": 8204592,
+        "sha256": "3eb267dc1f0d1d80efeacc26a211f26ed0f414466d32a2aa7304a8a0beec170c",
+        "peChecksum": 8247008,
+        "certificateSha256": "45f353a5e651054ae798748d24d0a8e03d0774b85132db7dd6fad7cc8568f534",
+        "timestampSubject": "CN=Microsoft Public RSA Time Stamping Authority, OU=nShield TSS ESN:7800-05E0-D947, OU=Microsoft America Operations, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+        "timestampThumbprint": "FD2F31399C42510141364ACDF168A28F5C79CBC3",
+        "timestampNotBefore": "2025-10-23T20:46:53Z",
+        "timestampNotAfter": "2026-10-22T20:46:53Z"
+      },
+      "pe": {
+        "peHeaderOffset": 120,
+        "optionalHeaderMagic": "0x20b",
+        "sectionCount": 8,
+        "certificateFileOffset": 8188928,
+        "certificateBytes": 15664,
+        "imageSectionEnd": 8188928,
+        "preCertificateOverlayBytes": 0,
+        "normalizedSha256": "2ecffd7b103042d21133fef812ddbf3ff2cbec9d1496dd3d904e2a63a88a322b",
+        "normalizedMatch": true,
+        "sectionHashesMatch": true,
+        "sections": {
+          ".text": "5c8cb597c9446f7e289f80c9398c875edade6adc6e756ed8beed12439de61e9b",
+          ".rdata": "9a51b211a29598f905db55f9b2a6699af0757ee2bb97a72c70f5d52142b1b686",
+          ".data": "b3d9e3ad613cb3617eed5485b03c452edf6a2cb894c73e8b58c3b4737e0049b1",
+          ".pdata": "c93cb4fc8a5cc3bb29dd7646450cb85a50e0d45805a1d83085feaa1d532a84d7",
+          ".fptable": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560",
+          ".tls": "4f2f4aa49febb5d3dca59ea121e11b076f6f059824e6d36d49872ca4645837b6",
+          "_RDATA": "d46a96d8d91eac56874317629ed3aa4beaebbb69a3d789f46ceb55fffe39de0a",
+          ".reloc": "aed375a0fdd028a0a5dc77f2438d3c343f2a64892b34aa2ad1c1538ccb1bfed4"
+        }
+      }
+    },
+    {
+      "component": "codex-windows-sandbox-setup",
+      "localPath": ".data/native-runtime/codex-windows-sandbox-setup.exe",
+      "officialFile": "codex-windows-sandbox-setup-x86_64-pc-windows-msvc.exe",
+      "asset": {
+        "id": 545043455,
+        "apiUrl": "https://api.github.com/repos/openai/codex/releases/assets/545043455",
+        "downloadUrl": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-windows-sandbox-setup-x86_64-pc-windows-msvc.exe",
+        "contentType": "application/x-msdos-program",
+        "state": "uploaded",
+        "createdAt": "2026-09-04T23:23:48Z",
+        "updatedAt": "2026-09-04T23:24:00Z",
+        "bytes": 15413040,
+        "apiDigest": "sha256:0c3eeb7cee8d2bc4c8644def3c818e8b06760979572dcedc919c38d0f38f64c4"
+      },
+      "local": {
+        "bytes": 15413040,
+        "sha256": "682cf7b351a871f3479b78fe3b7ea7348554de655bd98b0f322cef2d006a8d62",
+        "peChecksum": 15443071,
+        "certificateSha256": "903191cd5cfdefff0e623aa96a7ad7d0d4e123d0e093dc09dac003e7287f7a66",
+        "timestampSubject": "CN=Microsoft Public RSA Time Stamping Authority, OU=nShield TSS ESN:7800-05E0-D947, OU=Microsoft America Operations, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+        "timestampThumbprint": "FD2F31399C42510141364ACDF168A28F5C79CBC3",
+        "timestampNotBefore": "2025-10-23T20:46:53Z",
+        "timestampNotAfter": "2026-10-22T20:46:53Z"
+      },
+      "official": {
+        "bytes": 15413040,
+        "sha256": "0c3eeb7cee8d2bc4c8644def3c818e8b06760979572dcedc919c38d0f38f64c4",
+        "peChecksum": 15463369,
+        "certificateSha256": "16431f9606bbdba7a9269f823bf53d0796b21658d391e336d2f2e9b4423aeaec",
+        "timestampSubject": "CN=Microsoft Public RSA Time Stamping Authority, OU=nShield TSS ESN:7A00-05E0-D947, OU=Microsoft America Operations, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+        "timestampThumbprint": "9D64791BDBA7AB705D8EEB6BC275951F512BC45C",
+        "timestampNotBefore": "2025-10-23T20:46:55Z",
+        "timestampNotAfter": "2026-10-22T20:46:55Z"
+      },
+      "pe": {
+        "peHeaderOffset": 120,
+        "optionalHeaderMagic": "0x20b",
+        "sectionCount": 9,
+        "certificateFileOffset": 15397376,
+        "certificateBytes": 15664,
+        "imageSectionEnd": 15397376,
+        "preCertificateOverlayBytes": 0,
+        "normalizedSha256": "6efb2379477d2276cccb1df5e9b7dd86340e52d26e70f4950f40302a7c656315",
+        "normalizedMatch": true,
+        "sectionHashesMatch": true,
+        "sections": {
+          ".text": "0c5e15a6a7081bc3b3fc5905fb5a6771ded26c7a570819c081b171d1dd0574ff",
+          ".rdata": "ac8b553fe26295f311d2d3a71086924e9fc149b218b69455d18f77f2fa2e021b",
+          ".data": "0b3e114a813a2494dac8c0c3a9dbc80a8a1500086d7366c218aaceea3a0b351e",
+          ".pdata": "df33215207da5941e9f29f551afe8e9c80251cbddae2a0b924de032303ec876f",
+          ".fptable": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560",
+          ".tls": "e3e939e9bcc6612ef9d46d35610860394684521c1eea1dc6674e3ae033fb0a9f",
+          "_RDATA": "98cb266977ffeee19daf78b9468d9135b878e145fab7db79a2faa6664e774676",
+          ".rsrc": "33046ad13767c00d327e6a894111d58a6644229a803603d0aa6a0f609c612a2b",
+          ".reloc": "2d2b455bc3dbafaea99ff9c295b177262120598413730c5d0b76ac38d1d3567d"
+        }
+      }
+    }
+  ],
+  "conclusion": {
+    "executablePayloadMatchesOfficialAssets": true,
+    "rawFilesMatchOfficialAssets": false,
+    "finding": "The three pinned local executables have byte-identical PE program/image content to the corresponding official rust-v0.153.4 assets. Their complete-file hashes differ only because the optional-header checksum and Authenticode certificate blob differ. Both copies carry a currently valid signature from the same OpenAI signer certificate, but they use different signature/timestamp instances.",
+    "remainingBoundary": "This resolves executable-content provenance. It does not establish that the upstream root LICENSE and NOTICE comprise every third-party notice required by the Rust dependency graph, and it does not replace a human redistribution review."
+  }
+}
