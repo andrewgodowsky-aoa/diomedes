@@ -26,19 +26,31 @@ import {
 import { digest, HarnessError } from './harness/policy.js';
 import type { ModelAdapter, ModelInspection } from './harness/native-agent.js';
 
+// One formatter per time zone. Formatters are immutable and cost about twenty times a
+// formatToParts call to build, so a burst of events against one rule reuses it.
+const windowFormatters = new Map<string, Intl.DateTimeFormat>();
+function windowFormatter(timeZone: string): Intl.DateTimeFormat {
+  let formatter = windowFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    });
+    windowFormatters.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
 /** Source time, explicit time zone, inclusive start/exclusive end. Overnight windows
  * belong to the day on which service starts. Missing source time never matches. */
 export function withinServiceWindow(rule: Rule, sourceAt: Json | undefined): boolean {
   if (!rule.serviceWindow) return true;
   if (typeof sourceAt !== 'string' || !Number.isFinite(Date.parse(sourceAt))) return false;
   const window = rule.serviceWindow;
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: window.timeZone,
-    weekday: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(new Date(sourceAt));
+  const parts = windowFormatter(window.timeZone).formatToParts(new Date(sourceAt));
   const part = (kind: string) => parts.find((item) => item.type === kind)!.value;
   const minute = `${part('hour')}:${part('minute')}`;
   let day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(part('weekday'));
