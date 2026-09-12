@@ -70,6 +70,44 @@ There is no steering a run, no branching a thread, and no handing a thread from 
 helper to another. A leader can interrupt or shut down a member, and that is all. Each
 of these is a design question before it is an implementation one.
 
+### O6. How long a start may wait before the data folder lock downgrades its evidence
+
+`PROBE_TIMEOUT_MS` in `server/lock.ts` gives the start-time probe four seconds. The probe is
+the lock's strongest signal: it is what separates a live owner from a reused pid. When it
+does not answer in time the verdict falls back to the recorded port, which is the weaker
+signal, and nothing tells the person that it did.
+
+Four seconds is not always enough. On an idle machine the probe costs about 300 ms. On the
+GitHub Windows runner, under the full suite, CI run 34552390176 failed three lock tests at
+4074 ms, 4049 ms and 4043 ms, all at the timeout boundary, on a commit that changed only
+markdown. Run 34551480601 passed with an identical `lock.ts`. Three consecutive timeouts
+also rule out a cold start that a retry would warm. Of the shell-outs measured on current
+Windows, PowerShell is the only one that answers at all: `wmic` is gone and `tasklist`
+does not report a start time. Its own start dominates the cost, measured at about 250 ms of
+roughly 300 ms, so a cheaper expression does not buy the budget back. Whether a lighter
+host could was not tested.
+
+Both fallback outcomes are wrong, in opposite directions. CI showed the conservative one: a
+reused-pid lock that should read `held: false, start-time-mismatch` read `held: true,
+port-active`, so Diomedes would refuse a data folder that is actually free. The dangerous
+one is the same failure when the live owner has not yet bound its port: `port-idle` says
+the folder is free and two processes can own it.
+
+Three ways out, none taken:
+
+1. Raise the budget. The probe runs only when a lock file already exists, so the cost is a
+   slower start in an already abnormal case, against a wrong answer about ownership. This is
+   the recommendation, at about fifteen seconds. The true ceiling is unknown: what is known
+   is that four seconds failed three times running.
+2. Keep four seconds and accept that the lock degrades to the port under load, saying so
+   where the verdict is recorded.
+3. Change what the fallback means, so an unanswered probe refuses rather than guesses.
+
+Meanwhile the tests ask the capability question rather than the latency one: they give the
+real probe a longer leash, so a loaded runner no longer reads as a platform that cannot
+report a start time. The production default is untouched, and no test now exercises the
+four-second budget end to end. Whichever option is chosen, that separation stands.
+
 ## Resolved
 
 ### R7. History retention was configured and not enforced (raised as O5)

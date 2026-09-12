@@ -10,6 +10,7 @@ import {
   DataFolderInUse,
   inspectLock,
   LOCK_NAME,
+  type LockProbes,
   ownStartedAt,
   portListening,
   processAlive,
@@ -828,9 +829,27 @@ describe('the data folder lock tells a live owner from a reused pid', () => {
       child.once('error', reject);
       child.once('exit', () => resolve(child.pid as number));
     });
+  /**
+   * The start-time probe shells out to PowerShell: about 300 ms on an idle
+   * machine, and measured past four seconds on a loaded CI runner, where each
+   * test below read a null start time and fell back to the recorded port. What
+   * these tests ask is whether this platform reports a start time at all and
+   * whether the verdict follows from it, not how fast the runner is, so they
+   * give the probe a longer leash than a real start would. The budget a real
+   * start spends is PROBE_TIMEOUT_MS in server/lock.ts, left alone here.
+   */
+  const PATIENT_PROBE_MS = 15_000;
+  /**
+   * The genuine platform probe, waiting longer. Never a stub: these tests are
+   * worth nothing unless the verdict follows from what the operating system
+   * actually reports.
+   */
+  const patient: LockProbes = { startedAt: (pid) => processStartedAt(pid, PATIENT_PROBE_MS) };
+  /** Two probes at the patient leash, plus room for the file work around them. */
+  const TWO_PROBE_MS = 45_000;
 
   test('this platform reports its own start time, and a loopback port is testable', async () => {
-    const measured = await processStartedAt(process.pid);
+    const measured = await processStartedAt(process.pid, PATIENT_PROBE_MS);
     expect(measured).not.toBeNull();
     expect(Math.abs((measured as number) - ownStartedAt())).toBeLessThanOrEqual(
       START_TIME_TOLERANCE_MS,
@@ -851,17 +870,20 @@ describe('the data folder lock tells a live owner from a reused pid', () => {
       startedAt: ownStartedAt(),
       port: livePort(),
     });
-    expect(await inspectLock(await read(file))).toEqual({
+    expect(await inspectLock(await read(file), patient)).toEqual({
       held: true,
       reason: 'start-time-match',
     });
-    await expect(claimDataFolder(dir)).rejects.toBeInstanceOf(DataFolderInUse);
-    await expect(claimDataFolder(dir)).rejects.toThrow(
+    // One refusal, not two: every claim pays for its own probe, and the type
+    // and the message are both readable from a single one.
+    const refusal = await claimDataFolder(dir, { probes: patient }).catch((error) => error);
+    expect(refusal).toBeInstanceOf(DataFolderInUse);
+    expect((refusal as Error).message).toContain(
       `Another process (${process.pid}) holds this Diomedes data folder.`,
     );
     // A refused claim must leave the owner's lock exactly as it found it.
     expect((await read(file)).pid).toBe(process.pid);
-  });
+  }, TWO_PROBE_MS);
 
   test('a live pid whose start time differs is a reused pid, so the lock is stale', async () => {
     const dir = await folder();
@@ -871,11 +893,11 @@ describe('the data folder lock tells a live owner from a reused pid', () => {
       startedAt: ownStartedAt() - 60 * 60 * 1000,
       port: livePort(),
     });
-    expect(await inspectLock(await read(file))).toEqual({
+    expect(await inspectLock(await read(file), patient)).toEqual({
       held: false,
       reason: 'start-time-mismatch',
     });
-    const claim = await claimDataFolder(dir, { port: 47631 });
+    const claim = await claimDataFolder(dir, { port: 47631, probes: patient });
     const replaced = await read(file);
     expect(replaced.pid).toBe(process.pid);
     expect(replaced.port).toBe(47631);
@@ -890,7 +912,7 @@ describe('the data folder lock tells a live owner from a reused pid', () => {
         () => false,
       ),
     ).toBe(false);
-  });
+  }, TWO_PROBE_MS);
 
   test('a dead pid leaves a stale lock that a new start clears', async () => {
     const dir = await folder();

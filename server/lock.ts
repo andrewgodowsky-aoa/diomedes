@@ -71,25 +71,32 @@ export function processAlive(pid: number): boolean {
   }
 }
 
-function run(file: string, args: string[]): Promise<string | null> {
+function run(file: string, args: string[], timeoutMs: number): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(
       file,
       args,
-      { timeout: PROBE_TIMEOUT_MS, windowsHide: true, shell: false, maxBuffer: 1 << 20 },
+      { timeout: timeoutMs, windowsHide: true, shell: false, maxBuffer: 1 << 20 },
       (error, stdout) => resolve(error ? null : stdout),
     );
   });
 }
 
-async function windowsStartedAt(pid: number): Promise<number | null> {
-  const output = await run('powershell.exe', [
-    '-NoProfile',
-    '-NonInteractive',
-    '-NoLogo',
-    '-Command',
-    `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().Ticks`,
-  ]);
+async function windowsStartedAt(pid: number, timeoutMs: number): Promise<number | null> {
+  // Opening the one process by id is cheaper than `Get-Process`, which walks the
+  // whole process table before selecting from it. Both throw for a pid that is
+  // gone or cannot be opened, so what a caller sees on failure is unchanged.
+  const output = await run(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-NoLogo',
+      '-Command',
+      `[Diagnostics.Process]::GetProcessById(${pid}).StartTime.ToUniversalTime().Ticks`,
+    ],
+    timeoutMs,
+  );
   const text = output?.trim();
   if (!text || !/^\d+$/.test(text)) return null;
   return Number((BigInt(text) - TICKS_TO_UNIX_EPOCH) / 10_000n);
@@ -109,8 +116,8 @@ async function linuxStartedAt(pid: number): Promise<number | null> {
   }
 }
 
-async function macStartedAt(pid: number): Promise<number | null> {
-  const output = await run('/bin/ps', ['-o', 'lstart=', '-p', String(pid)]);
+async function macStartedAt(pid: number, timeoutMs: number): Promise<number | null> {
+  const output = await run('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], timeoutMs);
   const parsed = output ? Date.parse(output.trim()) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -119,13 +126,20 @@ async function macStartedAt(pid: number): Promise<number | null> {
  * Start time of any pid, in epoch milliseconds, or null when this platform
  * cannot report it. Only called when a lock file already exists, so the cost of
  * the probe never lands on an ordinary start.
+ *
+ * `timeoutMs` bounds how long a start may wait for the answer. The default is
+ * the budget a real start spends; a caller asking whether this platform can
+ * report a start time at all, rather than how quickly, may wait longer.
  */
-export async function processStartedAt(pid: number): Promise<number | null> {
+export async function processStartedAt(
+  pid: number,
+  timeoutMs = PROBE_TIMEOUT_MS,
+): Promise<number | null> {
   if (!Number.isInteger(pid) || pid <= 0) return null;
   try {
-    if (process.platform === 'win32') return await windowsStartedAt(pid);
+    if (process.platform === 'win32') return await windowsStartedAt(pid, timeoutMs);
     if (process.platform === 'linux') return await linuxStartedAt(pid);
-    if (process.platform === 'darwin') return await macStartedAt(pid);
+    if (process.platform === 'darwin') return await macStartedAt(pid, timeoutMs);
   } catch {
     return null;
   }
