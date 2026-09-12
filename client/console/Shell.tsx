@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { selectedEngine } from '../../shared/ai-selection';
 import { formatOrigin, originForNeed, originForSession } from '../../shared/attribution';
 import type { ScopeGrantView } from '../../shared/permissions';
@@ -6,6 +6,7 @@ import { isRoute, isExternalEngine, ENGINE_NAMES } from '../../shared/engines';
 import type {
   Change,
   Conversation,
+  DocumentInfo,
   EngineCatalog,
   IntegrationStatus,
   Mode,
@@ -23,7 +24,7 @@ import type {
   ThreadPermission,
   UsageSnapshot,
 } from '../../shared/types';
-import { api } from '../api';
+import { api, listDocuments } from '../api';
 import { reconcileWorkStarts, startWork } from '../work-start';
 import { decideApproval, reconcileApprovals } from '../approval-decisions';
 import {
@@ -43,6 +44,9 @@ import { Ledger } from './Ledger';
 import { Picker } from './Picker';
 import { AgentPicker } from './AgentPicker';
 import { BoardView } from './BoardView';
+import { FilesPane, DEFAULT_WIDTH, clampWidth } from './FilesPane';
+import { ActivityOverview } from './ActivityOverview';
+import { projectActivity, type ActivityRow } from './activity';
 import { TeamView } from './TeamView';
 import { Connections } from '../connections/Connections';
 import { Palette } from './Palette';
@@ -53,6 +57,7 @@ import type { ShellView } from './types';
 import './console.css';
 import './palette.css';
 import './motion.css';
+import './files.css';
 
 interface ShellProps {
   projectId: string;
@@ -120,6 +125,16 @@ export function Shell({
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const [routingTaskId, setRoutingTaskId] = useState<string | null>(null);
   const [catalogs, setCatalogs] = useState<Record<string, EngineCatalog>>({});
+  // The Files pane: off by default and remembered per person, never per project.
+  const [filesOpen, setFilesOpen] = useState(() => stored('console.files.open') === 'true');
+  const [filesWidth, setFilesWidth] = useState(() => {
+    const saved = Number(stored('console.files.width'));
+    return Number.isFinite(saved) && saved > 0 ? clampWidth(saved) : DEFAULT_WIDTH;
+  });
+  const [openPath, setOpenPath] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<DocumentInfo[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentsFailure, setDocumentsFailure] = useState<string | null>(null);
   // Live streamed text for a new external-engine Ask/Plan: ephemeral, never
   // persisted. The server owns the requestId; the started event adopts it.
   const [streaming, setStreaming] = useState<{
@@ -240,6 +255,9 @@ export function Shell({
     setPermissionsOpen(false);
     setSelectedId(null);
     setView('Thread');
+    setOpenPath(null);
+    setDocuments([]);
+    setDocumentsFailure(null);
     void load().catch(report);
   }, [load, report]);
   useEffect(() => {
@@ -330,6 +348,60 @@ export function Shell({
       setStreaming(null);
     };
   }, [projectId]);
+
+  useEffect(() => {
+    remember('console.files.open', filesOpen ? 'true' : 'false');
+  }, [filesOpen]);
+  useEffect(() => {
+    remember('console.files.width', String(filesWidth));
+  }, [filesWidth]);
+  // `statePayload` strips `documents` from the SSE fan-out, so the listing is
+  // fetched here: when the pane or the palette wants it, and again on each
+  // state event while one of them is open. Nothing reads `state.documents`.
+  const wantDocuments = filesOpen || paletteOpen;
+  useEffect(() => {
+    if (!wantDocuments) return;
+    let alive = true;
+    setDocumentsLoading(true);
+    listDocuments(projectId)
+      .then((result) => {
+        if (!alive || currentId.current !== projectId) return;
+        setDocuments(result.documents);
+        setDocumentsFailure(null);
+      })
+      .catch((e: unknown) => {
+        if (!alive || currentId.current !== projectId) return;
+        setDocuments([]);
+        setDocumentsFailure(
+          isMissingRoute(e)
+            ? 'This service does not list project documents.'
+            : e instanceof Error
+              ? e.message
+              : "This project's folder could not be read.",
+        );
+      })
+      .finally(() => {
+        if (alive) setDocumentsLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [wantDocuments, projectId, state]);
+
+  // The overview of what is happening in this Project, derived from the same
+  // task, run, Need, change and History records the Board reads. Null when
+  // nothing is happening, so the screen keeps its own sentence. Memoised on
+  // the state object: it must not recompute on every keystroke.
+  const activity = useMemo(() => {
+    if (!state) return null;
+    const projected = projectActivity(state);
+    return projected.working.length ||
+      projected.needsYou.length ||
+      projected.readyForReview.length ||
+      projected.finishedRecently.length
+      ? projected
+      : null;
+  }, [state]);
 
   const threads = [...(state?.conversations ?? [])].sort((a, b) =>
     threadTime(b).localeCompare(threadTime(a)),
@@ -642,6 +714,20 @@ export function Shell({
       box?.focus();
     }, 80);
   }
+  /** Opening a document opens the pane; it never changes the selected thread. */
+  function openDocument(path: string) {
+    setOpenPath(path);
+    setFilesOpen(true);
+  }
+  /** A row is a way back into the record it came from, never a new action. */
+  function openActivityRow(row: ActivityRow) {
+    if (row.threadId) {
+      setSelectedId(row.threadId);
+      setView('Thread');
+      return;
+    }
+    setView('Board');
+  }
   function closePalette() {
     setPaletteOpen(false);
     setPendingTaskId(null);
@@ -694,6 +780,7 @@ export function Shell({
     sessions,
     needs: state.needs,
     changes: state.changes,
+    documents,
     members: team.members,
     catalogs,
     integrations,
@@ -745,6 +832,7 @@ export function Shell({
       },
       setView: (v) => setView(v),
       openProject: (p) => onOpenProject(p),
+      openDocument,
     },
   };
   const paletteEntries = (query: string) => applyQuery(buildEntries(paletteCtx), query);
@@ -848,7 +936,10 @@ export function Shell({
         </div>
       </header>
 
-      <div className="stage">
+      <div
+        className={`stage${filesOpen ? ' files-open' : ''}`}
+        style={filesOpen ? ({ '--files-w': `${filesWidth}px` } as CSSProperties) : undefined}
+      >
         <Rail
           top={<WorkspaceMark view={workspace} onOpen={() => setWorkspacesOpen(true)} />}
           items={railItems}
@@ -862,6 +953,8 @@ export function Shell({
           onView={setView}
           openTasks={openTasks}
           workerCount={team.members.length}
+          filesOpen={filesOpen}
+          onFiles={() => setFilesOpen(!filesOpen)}
           onHome={() => openInBook('home')}
           onHistory={() => openInBook('history')}
           onEngines={openEngineSettings}
@@ -969,7 +1062,11 @@ export function Shell({
                 <h1>No threads yet</h1>
               </div>
               <div className="col">
-                <p className="caption">Start one and it is listed in the rail.</p>
+                {activity ? (
+                  <ActivityOverview activity={activity} onOpenRow={openActivityRow} />
+                ) : (
+                  <p className="caption">Start one and it is listed in the rail.</p>
+                )}
                 <button type="button" disabled={busy} onClick={() => void newThread()}>
                   New thread
                 </button>
@@ -1072,6 +1169,21 @@ export function Shell({
               }}
             />
           </section>
+        )}
+        {/* Last in the stage on purpose: the pane is the third grid column, so
+            it must follow whichever screen is showing. */}
+        {filesOpen && (
+          <FilesPane
+            projectId={projectId}
+            documents={documents}
+            loading={documentsLoading}
+            failure={documentsFailure}
+            openPath={openPath}
+            width={filesWidth}
+            onOpen={setOpenPath}
+            onWidth={setFilesWidth}
+            onClose={() => setFilesOpen(false)}
+          />
         )}
       </div>
 
@@ -1235,6 +1347,24 @@ function threadOwnsNeed(thread: Conversation, need: Need, state: ProjectState) {
     thread.attachedTo.kind === 'project' &&
     !state.conversations.some((c) => c.taskId && c.taskId === need.taskId)
   );
+}
+/**
+ * Per-person interface memory. A browser that refuses storage still gets the
+ * pane; it simply does not remember it.
+ */
+function stored(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function remember(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // No storage: the choice lasts for this session only.
+  }
 }
 function isMissingRoute(e: unknown) {
   return (

@@ -1,6 +1,7 @@
 import type {
   Change,
   Conversation,
+  DocumentInfo,
   EngineCatalog,
   IntegrationStatus,
   Need,
@@ -16,8 +17,10 @@ import type { PaletteEntry, PalettePoint, ShellView } from './types';
  * Ctrl+K entries: 1:1 with the "Ctrl+K: find a thing and act on it in its
  * current state" script section of 05-instrumented-density-prototype.html.
  *
- * `buildEntries` returns every row unfiltered (Tasks, Workers, Models,
- * Projects, Views). `applyQuery` adds the verb search (`rows()` in the
+ * `buildEntries` returns every row unfiltered (Tasks, Files, Workers, Models,
+ * Projects, Views). Files is where a person searches for a document: the
+ * palette is the file-search surface, so the Files pane needs no search box of
+ * its own. `applyQuery` adds the verb search (`rows()` in the
  * prototype) and the Recent group. Recent names live in module memory for
  * the session; `noteRecent` records one after a non-stay action runs.
  */
@@ -39,6 +42,8 @@ export interface PaletteHandlers {
   selectThread(threadId: string): void;
   setView(view: ShellView): void;
   openProject(project: Project): void;
+  /** Open a project document in the Files pane, opening the pane if it is shut. */
+  openDocument(path: string): void;
 }
 
 export interface PaletteContext {
@@ -46,6 +51,13 @@ export interface PaletteContext {
   sessions: Session[];
   needs: Need[];
   changes: Change[];
+  /**
+   * The project's documents, from GET /projects/:id/documents. The SSE state
+   * fan-out never carries the listing, so the Shell fetches it while the pane
+   * or the palette is open and passes it here; an empty array simply means the
+   * Files group has nothing to offer yet.
+   */
+  documents: DocumentInfo[];
   members: TeamMember[];
   /** engine id -> live catalogue (GET /engines/:id/models), as the Picker reads it. */
   catalogs: Record<string, EngineCatalog>;
@@ -230,6 +242,49 @@ function taskEntries(ctx: PaletteContext): PaletteEntry[] {
   });
 }
 
+/** The name a person reads, and the folder that disambiguates it. */
+export function documentName(path: string): string {
+  const at = path.lastIndexOf('/');
+  return at < 0 ? path : path.slice(at + 1);
+}
+
+/**
+ * Where the file sits, bounded where it is written (decision 5): the palette
+ * row is a fixed-width surface, so a deep path is shortened to its last two
+ * folders rather than left to overflow. The full path stays searchable through
+ * the entry's `search` field.
+ */
+export function documentFolder(path: string): string {
+  const at = path.lastIndexOf('/');
+  if (at < 0) return 'project folder';
+  const parts = path.slice(0, at).split('/');
+  return parts.length > 2 ? `.../${parts.slice(-2).join('/')}` : parts.join('/');
+}
+
+function documentKind(kind: DocumentInfo['kind']): string {
+  return kind === 'unsupported' ? 'not text' : kind;
+}
+
+function fileEntries(ctx: PaletteContext): PaletteEntry[] {
+  return ctx.documents.map((file) => {
+    const marks = [
+      documentKind(file.kind),
+      documentFolder(file.path),
+      ...(file.hasChangesWaiting ? ['changes waiting'] : []),
+      ...(file.recorded ? ['recorded'] : []),
+    ];
+    return {
+      group: 'Files',
+      id: `file:${file.path}`,
+      name: documentName(file.path),
+      sub: marks.join(', '),
+      search: file.path,
+      point: file.hasChangesWaiting ? 'attn' : file.recorded ? 'done' : '',
+      actions: [{ label: 'Open', light: true, run: () => ctx.handlers.openDocument(file.path) }],
+    } satisfies PaletteEntry;
+  });
+}
+
 function workerEntries(ctx: PaletteContext): PaletteEntry[] {
   return ctx.members.map((m) => {
     const sub = `${m.role}, ${m.engine}${m.status === 'error' ? ', blocked' : ''}`;
@@ -320,6 +375,7 @@ function viewEntries(ctx: PaletteContext): PaletteEntry[] {
 export function buildEntries(ctx: PaletteContext): PaletteEntry[] {
   return [
     ...taskEntries(ctx),
+    ...fileEntries(ctx),
     ...workerEntries(ctx),
     ...modelEntries(ctx),
     ...projectEntries(ctx),
@@ -328,7 +384,8 @@ export function buildEntries(ctx: PaletteContext): PaletteEntry[] {
 }
 
 /** Verb search: every whitespace-separated word must match the name, the
- * sub, or the start of one of the row's action labels. */
+ * sub, the row's hidden search text, or the start of one of the row's action
+ * labels. */
 export function filterPalette(entries: PaletteEntry[], query: string): PaletteEntry[] {
   const q = query.trim().toLowerCase();
   if (!q) return entries;
@@ -338,6 +395,7 @@ export function filterPalette(entries: PaletteEntry[], query: string): PaletteEn
       (w) =>
         e.name.toLowerCase().includes(w) ||
         e.sub.toLowerCase().includes(w) ||
+        (e.search ?? '').toLowerCase().includes(w) ||
         e.actions.some((a) => a.label.toLowerCase().startsWith(w)),
     ),
   );

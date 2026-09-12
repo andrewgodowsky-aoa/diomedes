@@ -7,6 +7,8 @@ export class ApiError extends Error {
     super(message);
   }
 }
+import type { DocumentContent, DocumentInfo } from '../shared/types';
+
 export async function api<T>(
   path: string,
   method = 'GET',
@@ -29,4 +31,32 @@ export async function api<T>(
       payload,
     );
   return payload as T;
+}
+
+/**
+ * The project's document listing. The SSE `state` fan-out strips `documents`
+ * (server/app.ts `statePayload`), so a surface that needs the listing asks for
+ * it here rather than reading `state.documents`.
+ */
+export function listDocuments(projectId: string, signal?: AbortSignal): Promise<{ documents: DocumentInfo[] }> {
+  return api<{ documents: DocumentInfo[] }>(
+    `/projects/${encodeURIComponent(projectId)}/documents`,
+    'GET',
+    undefined,
+    signal,
+  );
+}
+
+/** One document's text, through the same guarded read the Workbook uses. */
+export function readDocument(
+  projectId: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<DocumentContent> {
+  return api<DocumentContent>(
+    `/projects/${encodeURIComponent(projectId)}/documents/read?path=${encodeURIComponent(path)}`,
+    'GET',
+    undefined,
+    signal,
+  );
 }

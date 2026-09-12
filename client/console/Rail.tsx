@@ -19,6 +19,9 @@ interface RailProps {
   onView(view: ShellView): void;
   openTasks: number;
   workerCount: number;
+  /** Whether the Files pane is showing; the foot toggle states it. */
+  filesOpen: boolean;
+  onFiles(): void;
   onHome(): void;
   onHistory(): void;
   onEngines(): void;
@@ -26,7 +29,9 @@ interface RailProps {
 
 /**
  * The thread rail: mono head, the spine with its sliding point, the three
- * views, and the workbook/engine foot. 1:1 with the prototype rail.
+ * views, and the files/workbook/engine foot. 1:1 with the prototype rail,
+ * plus the Files pane toggle: the pane is not a view, so it is not in the
+ * view switch.
  */
 export function Rail({
   top,
@@ -38,6 +43,8 @@ export function Rail({
   onView,
   openTasks,
   workerCount,
+  filesOpen,
+  onFiles,
   onHome,
   onHistory,
   onEngines,
@@ -95,6 +102,9 @@ export function Rail({
         ))}
       </div>
       <div className="foot">
+        <button type="button" aria-pressed={filesOpen} className={filesOpen ? 'on' : ''} onClick={onFiles}>
+          Files
+        </button>
         <button type="button" onClick={onHome}>
           Workbook
         </button>

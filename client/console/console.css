@@ -200,6 +200,11 @@ html[data-surface='console'] body {
   grid-template-columns: 232px minmax(0, 1fr);
   min-height: 0;
 }
+/* The Files pane is a third page column on the stage, never a margin on a
+   `.col` (decision 6). `--files-w` is the person's remembered width. */
+.console .stage.files-open {
+  grid-template-columns: 232px minmax(0, 1fr) var(--files-w, 320px);
+}
 
 /* ---- rail with the spine ---- */
 .console .rail {
@@ -333,7 +338,8 @@ html[data-surface='console'] body {
   background: var(--raised);
   color: var(--t1);
 }
-.console .rail .views button.on {
+.console .rail .views button.on,
+.console .rail .foot button.on {
   color: var(--t1);
   background: var(--surface);
 }
@@ -1264,6 +1270,9 @@ html[data-surface='console'] body {
   .console .agent-picker > button .eff {
     display: none;
   }
+  .console .stage.files-open {
+    grid-template-columns: 200px minmax(0, 1fr) var(--files-w, 320px);
+  }
   .console #scrThread {
     grid-template-columns: minmax(0, 1fr) 250px;
   }
@@ -1288,6 +1297,12 @@ html[data-surface='console'] body {
   .console .stage {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
+    position: relative;
+  }
+  /* Too narrow to squeeze a third column: the pane overlays the screen
+     instead of stealing the reading measure. */
+  .console .stage.files-open {
+    grid-template-columns: minmax(0, 1fr);
   }
   .console #scrThread {
     grid-template-columns: 1fr;
