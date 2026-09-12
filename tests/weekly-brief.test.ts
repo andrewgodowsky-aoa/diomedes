@@ -16,7 +16,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { Store } from '../server/store.js';
+import { hash, Store } from '../server/store.js';
 import { ApiError } from '../server/paths.js';
 import { BUSINESS_SETUP_SCHEMA_REVISION } from '../shared/business-setup.js';
 import type { ConfigurationManifest, ValidationProblem } from '../shared/configuration.js';
@@ -300,6 +300,36 @@ describe('change detection', () => {
   });
 });
 
+describe('change detection across runs', () => {
+  test('a second run succeeds, names what the first already reported, and reports only what is new', async () => {
+    await writeFixture('kitchen-log.md', KITCHEN_LOG);
+    await writeFixture('dining-room-notes.md', DINING_NOTES);
+    const manifest = manifestFor();
+    const first = await service.run({ projectId, manifest, at: AT });
+    // A line the first brief never reported arrives between the two runs.
+    await writeFixture(
+      'dining-room-notes.md',
+      `${DINING_NOTES}\nHang the new noticeboard by the door.`,
+    );
+    // The run resolves the previous brief from its own destination, so the
+    // recorded write matches the store's expectation instead of conflicting.
+    const second = await service.run({ projectId, manifest, at: AT });
+    expect(second.destination).toBe(first.destination);
+    const kitchenId = second.draft.sources.find((source) => source.path === 'kitchen-log.md')?.id;
+    expect(kitchenId).toBeDefined();
+    expect(second.draft.unused).toContain(kitchenId);
+    for (const section of second.draft.sections)
+      for (const claim of section.claims) expect(claim.sources).not.toContain(kitchenId);
+    expect(second.draft.markdown).toContain('Unchanged since the previous brief');
+    expect(second.draft.markdown).toContain('kitchen-log.md');
+    const reported = second.draft.sections.flatMap((section) =>
+      section.claims.map((claim) => claim.text),
+    );
+    expect(reported).toContain('Hang the new noticeboard by the door.');
+    for (const line of DINING_NOTES.split('\n')) expect(reported).not.toContain(line);
+  });
+});
+
 describe('variants', () => {
   test('both variants share one structure under different labels', async () => {
     await writeFixture('front-desk-notes.md', FRONT_DESK_NOTES);
@@ -323,13 +353,11 @@ describe('variants', () => {
     const restaurantRun = await service.run({
       projectId,
       manifest: restaurant,
-      previous: null,
       at: AT,
     });
     const professionalRun = await service.run({
       projectId,
       manifest: professional,
-      previous: null,
       at: AT,
     });
 
@@ -363,7 +391,7 @@ describe('the recorded write', () => {
     const manifest = manifestFor();
     const historyBefore = store.state(projectId).history.length;
     const writer = vi.spyOn(store, 'writeRecorded');
-    const result = await service.run({ projectId, manifest, previous: null, at: AT });
+    const result = await service.run({ projectId, manifest, at: AT });
 
     expect(writer).toHaveBeenCalledTimes(1);
     const call = writer.mock.calls[0];
@@ -386,6 +414,20 @@ describe('the recorded write', () => {
       result.draft.markdown,
     );
   });
+
+  test('the expected digest is the hash of the previous draft, null on the first run', async () => {
+    await writeFixture('kitchen-log.md', KITCHEN_LOG);
+    await writeFixture('dining-room-notes.md', DINING_NOTES);
+    const manifest = manifestFor();
+    const writer = vi.spyOn(store, 'writeRecorded');
+    await service.run({ projectId, manifest, at: AT });
+    expect(writer.mock.calls[0]?.[1][0]?.expected).toBeNull();
+    const previousText = await store.current(projectId, 'weekly-operations-brief.md');
+    expect(previousText).not.toBeNull();
+    await service.run({ projectId, manifest, at: AT });
+    expect(writer).toHaveBeenCalledTimes(2);
+    expect(writer.mock.calls[1]?.[1][0]?.expected).toBe(hash(previousText));
+  });
 });
 
 describe('refusals', () => {
@@ -394,7 +436,7 @@ describe('refusals', () => {
     await writeFixture('dining-room-notes.md', DINING_NOTES);
     const manifest = manifestFor({ state: 'staged' });
     const historyBefore = store.state(projectId).history.length;
-    const error = await fails(service.run({ projectId, manifest, previous: null, at: AT }));
+    const error = await fails(service.run({ projectId, manifest, at: AT }));
     expect(error.status).toBe(409);
     expect(store.state(projectId).history).toHaveLength(historyBefore);
     expect(await store.current(projectId, 'weekly-operations-brief.md')).toBeNull();
@@ -405,7 +447,7 @@ describe('refusals', () => {
     await writeFixture('dining-room-notes.md', DINING_NOTES);
     const manifest = manifestFor({ ready: false });
     const historyBefore = store.state(projectId).history.length;
-    const error = await fails(service.run({ projectId, manifest, previous: null, at: AT }));
+    const error = await fails(service.run({ projectId, manifest, at: AT }));
     expect(error.status).toBe(409);
     expect(store.state(projectId).history).toHaveLength(historyBefore);
     expect(await store.current(projectId, 'weekly-operations-brief.md')).toBeNull();
@@ -416,7 +458,7 @@ describe('refusals', () => {
     await writeFixture('dining-room-notes.md', DINING_NOTES);
     const manifest = manifestFor({ destination: '../outside.md' });
     const historyBefore = store.state(projectId).history.length;
-    const error = await fails(service.run({ projectId, manifest, previous: null, at: AT }));
+    const error = await fails(service.run({ projectId, manifest, at: AT }));
     expect(error).toBeInstanceOf(ApiError);
     expect(store.state(projectId).history).toHaveLength(historyBefore);
   });
@@ -442,9 +484,7 @@ describe('refusals', () => {
       }
       return original(id, inputs, options);
     });
-    await expect(service.run({ projectId, manifest, previous: null, at: AT })).rejects.toThrow(
-      /changed since/,
-    );
+    await expect(service.run({ projectId, manifest, at: AT })).rejects.toThrow(/changed since/);
     expect(await store.current(projectId, destination)).toBe(
       'A person edited this file while the brief was being prepared.',
     );

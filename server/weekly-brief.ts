@@ -23,7 +23,7 @@
 import { diffLines } from 'diff';
 import type { ConfigurationManifest } from '../shared/configuration.js';
 import { ApiError, relativeName } from './paths.js';
-import type { Store } from './store.js';
+import { hash, type Store } from './store.js';
 
 export interface BriefSource {
   readonly id: string;
@@ -269,7 +269,6 @@ export class WeeklyBriefService {
   async run(input: {
     projectId: string;
     manifest: ConfigurationManifest;
-    previous: string | null;
     at: string;
   }): Promise<{ draft: BriefDraft; entryId: string; destination: string }> {
     const manifest = input.manifest;
@@ -293,14 +292,17 @@ export class WeeklyBriefService {
         { code: 'brief_no_destination' },
       );
     // Refused before anything is written: an escaping destination never
-    // reaches the writer, and neither does a stale expected digest.
+    // reaches the writer. The previous brief is read from the same
+    // destination this run writes, so change detection compares against
+    // what the last run actually left behind, and `expected` is the digest
+    // of that text — the form `writeRecorded` compares `hash(before)` against.
     const destination = relativeName(output.destination);
     const sources = await this.gather(input.projectId, manifest);
-    const expected = await this.store.current(input.projectId, destination);
-    const draft = composeBrief({ manifest, sources, previous: input.previous, at: input.at });
+    const previous = await this.store.current(input.projectId, destination);
+    const draft = composeBrief({ manifest, sources, previous, at: input.at });
     const entry = await this.store.writeRecorded(
       input.projectId,
-      [{ path: destination, text: draft.markdown, expected }],
+      [{ path: destination, text: draft.markdown, expected: hash(previous) }],
       {
         kind: 'weekly-brief',
         review: true,

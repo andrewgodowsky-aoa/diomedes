@@ -195,11 +195,9 @@ export function mountWorkspaceRoutes(
           'This business has no setup running, so there is nothing to prepare a brief from. Turn a setup on first.',
           { code: 'no_active_configuration' },
         );
-      const previous = await store.current(target.projectId, 'diomedes/last-brief.md');
       const result = await briefs.run({
         projectId: target.projectId,
         manifest,
-        previous,
         at: new Date().toISOString(),
       });
       return {
