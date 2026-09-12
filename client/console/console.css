@@ -1490,3 +1490,130 @@ html[data-motion='reduced'] .console .modes .ind b {
 .permission-why { opacity: 0.8; }
 .permission-points { margin: 8px 0; padding-left: 18px; min-width: 0; }
 .permission-points li { margin: 3px 0; overflow-wrap: anywhere; }
+
+/* ---- capability packs: the thread indication and the Capabilities section ----
+   Two surfaces, both existing ones. `.instructions` is the last item in the
+   thread head's flex row and takes a full basis so it sits on its own line
+   without a page-column rule of its own (decision 6). Every element that can
+   carry a path or a sha gets `min-width: 0` and truncation where it is written
+   (decision 5). Graphite, one hairline, no accent except the focus ring. */
+.console .instructions {
+  flex: 1 0 100%;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+}
+.console .instructions-line {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  text-align: left;
+  font: 400 var(--dm-type-body) / 1.6 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.console .instructions-line:hover {
+  color: var(--t2);
+}
+.console .instructions-line > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+.console .instructions-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px 0 2px;
+  border-top: 1px solid var(--hair);
+  min-width: 0;
+}
+.console .instructions-file {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.console .instructions-file-head {
+  display: flex;
+  gap: 4px 12px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.console .instructions-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  color: var(--t1);
+}
+.console button.instructions-name:hover {
+  color: var(--light);
+}
+.console .instructions-file p {
+  margin: 0;
+  color: var(--t3);
+}
+.console .instructions-body {
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  min-width: 0;
+  background: var(--chrome);
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  font: 400 12px / 1.6 var(--mono);
+  color: var(--t2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* The Capabilities section inside the task-permissions dialog. It inherits the
+   panel's typography; only its own separator and list are set here. */
+.pack-settings {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hair-2);
+  min-width: 0;
+}
+.pack-settings h3 {
+  margin: 0 0 8px;
+  font: inherit;
+  font-weight: 500;
+}
+.pack-settings p {
+  margin: 8px 0;
+}
+.pack {
+  min-width: 0;
+}
+.pack-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pack-settings .pack-label {
+  margin-bottom: 2px;
+  opacity: 0.8;
+}
+.pack-points {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+  min-width: 0;
+}
+.pack-points li {
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+}
+.pack-contributes {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

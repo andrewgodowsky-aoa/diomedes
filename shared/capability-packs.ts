@@ -175,3 +175,37 @@ export function validateManifest(manifest: CapabilityPackManifest): string[] {
       problems.push(`Instruction files are discovered by plain name, not path: ${file}.`);
   return problems;
 }
+
+/**
+ * The rule identifier one instruction file always becomes.
+ *
+ * `ruleSchema.id` is `^[a-z][a-z0-9-]{0,63}$`, so the obvious spelling
+ * `instructions:AGENTS.md` is not a legal rule id. The slug below is the same
+ * idea inside that grammar: deterministic from the file name, so the rule a
+ * file becomes keeps its identity across discoveries and History can be read
+ * back against it.
+ */
+export function instructionRuleId(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `instructions-${slug || 'file'}`.slice(0, 64);
+}
+
+/**
+ * The records that still describe what is loaded right now.
+ *
+ * Turning a pack off leaves its records in place — History has to be able to
+ * say what was active when a run happened — so "what was ever discovered" and
+ * "what applies today" are two different questions. Rule derivation and the
+ * thread indicator both ask this one, because a project that turned the pack
+ * off and still reads `Project instructions loaded` is being told something
+ * untrue.
+ */
+export function activeInstructionFiles(
+  activations: readonly PackActivation[] | undefined,
+  records: readonly InstructionFileRecord[] | undefined,
+): readonly InstructionFileRecord[] {
+  return (records ?? []).filter((record) => isPackActive(activations, record.packId));
+}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
+import { PackSettings } from './PackSettings';
 import {
   type PermissionCapabilityView,
   type PermissionChoiceId,
@@ -355,6 +356,9 @@ export function PermissionPanel({
         contents.
       </p>
       {error && <p role="alert">{error}</p>}
+      {/* Capabilities sit under authority and are not part of it: activating a
+          pack changes what Diomedes is good at and grants nothing. */}
+      <PackSettings projectId={projectId} onChange={onChange} />
     </section>
   );
 }

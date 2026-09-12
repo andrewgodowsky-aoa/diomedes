@@ -29,6 +29,16 @@ import type {
   Route,
 } from '../shared/types.js';
 import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
+import {
+  activatePack,
+  deactivatePack,
+  discoverInstructionFiles,
+} from './capability-packs.js';
+import {
+  CAPABILITY_PACK_IDS,
+  CAPABILITY_PACKS,
+  isCapabilityPackId,
+} from '../shared/capability-packs.js';
 import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText } from './store.js';
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
@@ -985,6 +995,69 @@ export async function createApp(options: AppOptions) {
       return store.writeRecorded(id(req), [{ path: name, text: b.text, expected: null }], {
         merge: false,
       });
+    }),
+  );
+  /**
+   * Capability packs for one Project.
+   *
+   * Activation is a Project-level record and nothing more: no grant, no Need,
+   * no permission changes here (`AGENTS.md` decision 14). The listing carries
+   * the manifests so the person reads what a pack would use before deciding,
+   * and the instruction records so what discovery found is inspectable rather
+   * than a hidden behaviour change.
+   */
+  const packId = (req: Request) => {
+    const value = String(req.params.packId);
+    if (!isCapabilityPackId(value)) throw new ApiError(404, 'This capability pack does not exist.');
+    return value;
+  };
+  app.get(
+    '/api/projects/:id/packs',
+    route(async (req) => ({
+      packs: CAPABILITY_PACK_IDS.map((id) => CAPABILITY_PACKS[id]),
+      activations: store.state(id(req)).project.packs ?? [],
+      instructionFiles: await discoverInstructionFiles(store, id(req)),
+    })),
+  );
+  app.post(
+    '/api/projects/:id/packs/:packId/activate',
+    route(async (req) => {
+      const state = await activatePack(store, id(req), packId(req));
+      return {
+        activations: state.project.packs ?? [],
+        instructionFiles: state.instructionFiles ?? [],
+      };
+    }),
+  );
+  app.post(
+    '/api/projects/:id/packs/:packId/deactivate',
+    route(async (req) => {
+      const state = await deactivatePack(store, id(req), packId(req));
+      return {
+        activations: state.project.packs ?? [],
+        instructionFiles: state.instructionFiles ?? [],
+      };
+    }),
+  );
+  /**
+   * Read one discovered instruction file, as Diomedes read it.
+   *
+   * Only a path discovery actually recorded is served. That is what keeps the
+   * route from becoming a second way to read the project folder: the guard in
+   * `server/paths.ts` still decides what may be opened, and this decides only
+   * whether the file is one of the ones already on the record.
+   */
+  app.get(
+    '/api/projects/:id/instructions/read',
+    route(async (req) => {
+      const projectId = id(req);
+      const wanted = asString(req.query.path, 'an instruction file path', 1000);
+      const record = (store.state(projectId).instructionFiles ?? []).find(
+        (item) => item.path === wanted,
+      );
+      if (!record)
+        throw new ApiError(404, 'That file is not one of the instruction files in this project.');
+      return store.readDocument(projectId, record.path);
     }),
   );
   app.get(

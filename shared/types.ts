@@ -3,6 +3,7 @@ import type { ReviewerDecision, ScopeGrantRecord, ScopedAuthorization } from './
 import type { AgentResolution } from './agents.js';
 import type { OriginSnapshot } from './attribution.js';
 import type { WorkspaceRef } from './workspaces.js';
+import type { InstructionFileRecord, PackActivation } from './capability-packs.js';
 
 export type Detail = 'guided' | 'standard' | 'technical';
 /** The two surfaces. The Workbook is one page at a time; the Console is every thread, helper and change at once. */
@@ -94,6 +95,13 @@ export interface Project {
   counts: { running: number; changesWaiting: number; waitingForYou: number; historyToday: number };
   status: { needsYou: number; working: number; tasksDone: number; tasksTotal: number };
   missing?: boolean;
+  /**
+   * Capability packs this Project turned on or off, appended in order. Absent
+   * on every project written before packs existed, which is the same thing as
+   * no pack: activation is opt-in and nothing loads for a project that did not
+   * ask (`AGENTS.md` decision 14).
+   */
+  packs?: PackActivation[];
 }
 export interface DocumentInfo {
   path: string;
@@ -383,6 +391,11 @@ export interface ProjectState {
   changes: Change[];
   conversations: Conversation[];
   team?: TeamState;
+  /**
+   * What pack discovery found in the project folder. Derived, not authored:
+   * refreshed on activation and re-read from disk, never edited by hand.
+   */
+  instructionFiles?: InstructionFileRecord[];
 }
 /** How Diomedes knows whether an engine is signed in. 'first-use' means the first run reports it. */
 export type SignInState = 'signed-in' | 'not-signed-in' | 'unknown' | 'first-use' | 'not-needed';

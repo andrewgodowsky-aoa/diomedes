@@ -16,11 +16,13 @@ import type {
   Turn,
 } from '../../shared/types';
 import { effortFor } from '../../shared/effort';
+import type { InstructionFileRecord } from '../../shared/capability-packs';
 import { formatOrigin, originForSession, originForTurn } from '../../shared/attribution';
 import { ApprovalStatus, time } from '../components';
 import { RunInspector } from '../workbench/RunInspector';
 import { taskEvidence } from '../workbench/task-evidence';
 import { Composer } from './Composer';
+import { ProjectInstructions } from './ProjectInstructions';
 import { NeedBlock } from './Need';
 
 function fmtDur(ms: number): string {
@@ -55,6 +57,12 @@ interface ThreadViewProps {
   history?: HistoryEntry[];
   allNeeds?: Need[];
   changes?: Change[];
+  /**
+   * What the Software Engineering pack found in this project's folder, and
+   * only while it is active. Empty for every project that did not turn a pack
+   * on, which is what keeps the indication from appearing where nothing loaded.
+   */
+  instructionFiles?: readonly InstructionFileRecord[];
   permissionControl?: ReactNode;
   onScope?(): void;
   grantActive?: boolean;
@@ -101,6 +109,7 @@ export function ThreadView({
   history = [],
   allNeeds,
   changes = [],
+  instructionFiles = [],
   permissionControl,
   onScope,
   grantActive = false,
@@ -296,6 +305,9 @@ export function ThreadView({
               Go ahead for this task
             </button>
           </div>
+        )}
+        {projectId && instructionFiles.length > 0 && (
+          <ProjectInstructions projectId={projectId} files={instructionFiles} />
         )}
       </div>
       <div className="col instr" aria-label="Thread instruments">
