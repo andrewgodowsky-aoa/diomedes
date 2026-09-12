@@ -41,7 +41,8 @@ Nothing here is pushed, packaged or released.
   it to Ready, where Start begins new work.
 - **Route to** now renders only when there is somebody to route to (`members.length > 0`), and the
   zero-member "Retry" inside that panel is gone. On the exact row journey B measured, Start again is
-  the one next action; with a team, Route to remains beside it as the different action it is.
+  the one next action; with a team, Route to remains beside it as the different action it is. This
+  applies to the whole Blocked column, not only the faulted row — see *Known limits*.
 
 ### `client/console/types.ts`, `client/console/Shell.tsx`, `client/console/board.css`
 
@@ -55,7 +56,7 @@ new lifecycle, no new state machine and no second admission route.
 ## Wire-up entry point
 
 `client/console/Shell.tsx` → `createTask` → `POST /api/projects/:id/tasks` (existing route,
-`server/app.ts:1180`) → `load()`.
+`server/app.ts`, `app.post('/api/projects/:id/tasks', ...)`) → `load()`.
 Start and Start again both go through the existing path: `BoardView.onStart` →
 `Shell.startTask`/`dispatchTask` → `client/work-start.ts` `startWork` (minted `commandId`,
 sessionStorage pending record, in-flight dedupe) → `POST /api/projects/:id/work/start` →
@@ -94,9 +95,19 @@ in the same file because that is where board rendering is asserted.
   restart in the middle of the POST is not deduplicated. Making creation idempotent means a third
   command family in `server/command-admission.ts` and a durable command field on the task or its
   History entry — a contract decision beyond this slice.
-- **Start again covers a faulted run only.** A `Blocked` row that reads "No active run recorded" or
-  "Check the task record" still offers no start; those states were not measured by the journeys and
-  their right next action is not settled.
+- **Start again covers a faulted run only.** A `Blocked` row that reads
+  "Stopped; check the run before retrying", "No active run recorded", "Run is waiting" or
+  "Check the task record" offers no start. Those states were not measured by the journeys and their
+  right next action is not settled.
+- **The hidden Retry was removed from every Blocked row, not only the faulted one.** `canRoute` now
+  requires `members.length > 0` for the whole column, so on a machine with no team the two states
+  above that previously reached a "Retry" two clicks deep under Route to now offer only the task's
+  thread link. That is a real reduction for those unmeasured states. It was chosen over leaving two
+  different starts on the same row, since "Stopped; check the run before retrying" tells a person to
+  check before retrying and "No active run recorded" describes a record that does not agree with
+  itself. Restoring a start there is the integrator's call, not an accident of this patch: the
+  narrower change is `canRoute = column === 'Blocked' && !evidence.active && (members.length > 0 ||
+  !failed)` with the zero-member Retry kept inside the panel.
 - **The route is still not chosen on the row.** Start again reuses `routeForTask`, which reads
   Settings and the thread. Journey B's finding that `client/console/Picker.tsx` never offers an
   external engine is untouched; that file belongs to another slice tonight.
