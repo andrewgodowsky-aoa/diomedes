@@ -83,7 +83,7 @@ export function Ledger({
         `${open.length} open ${open.length === 1 ? 'item' : 'items'}`,
       )
     : 'Ready when you are';
-  const recent = [...state.history].slice(-3).reverse();
+  const recent = state.history.slice(-3).reverse();
   const activity = latest ? [...latest.log].reverse().slice(0, 8) : [];
   const sessionOf = (sessionId: string | null) =>
     sessionId ? (state.sessions.find((s) => s.id === sessionId) ?? null) : null;

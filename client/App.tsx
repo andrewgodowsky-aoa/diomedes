@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   IntegrationStatus,
   Page,
@@ -36,6 +36,14 @@ import { useWake } from './console/useWake';
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
+  // Newest first, once per projects change; the landing ask and its picker all read this.
+  const byRecency = useMemo(
+    () =>
+      [...projects].sort((a, b) =>
+        (b.lastOpenedAt || b.createdAt).localeCompare(a.lastOpenedAt || a.createdAt),
+      ),
+    [projects],
+  );
   const [selected, setSelected] = useState<string | null>(null);
   const [page, setPage] = useState<Page>('home');
   const [showSettings, setShowSettings] = useState(false);
@@ -612,13 +620,8 @@ export function App() {
                                   !e.nativeEvent.isComposing
                                 ) {
                                   e.preventDefault();
-                                  const sorted = [...projects].sort((a, b) =>
-                                    (b.lastOpenedAt || b.createdAt).localeCompare(
-                                      a.lastOpenedAt || a.createdAt,
-                                    ),
-                                  );
                                   const target =
-                                    sorted.find((p) => p.id === landingProjectId) ?? sorted[0];
+                                    byRecency.find((p) => p.id === landingProjectId) ?? byRecency[0];
                                   if (target) sendLandingAsk(landingText, target);
                                 }
                               }}
@@ -628,24 +631,10 @@ export function App() {
                                 <span className="caption">In project</span>
                                 <select
                                   aria-label="In project"
-                                  value={
-                                    landingProjectId ??
-                                    [...projects].sort((a, b) =>
-                                      (b.lastOpenedAt || b.createdAt).localeCompare(
-                                        a.lastOpenedAt || a.createdAt,
-                                      ),
-                                    )[0]?.id ??
-                                    ''
-                                  }
+                                  value={landingProjectId ?? byRecency[0]?.id ?? ''}
                                   onChange={(e) => setLandingProjectId(e.target.value)}
                                 >
-                                  {[...projects]
-                                    .sort((a, b) =>
-                                      (b.lastOpenedAt || b.createdAt).localeCompare(
-                                        a.lastOpenedAt || a.createdAt,
-                                      ),
-                                    )
-                                    .map((p) => (
+                                  {byRecency.map((p) => (
                                       <option key={p.id} value={p.id}>
                                         {p.name}
                                       </option>
@@ -656,13 +645,8 @@ export function App() {
                                 tone="primary"
                                 disabled={!landingText.trim()}
                                 onClick={() => {
-                                  const sorted = [...projects].sort((a, b) =>
-                                    (b.lastOpenedAt || b.createdAt).localeCompare(
-                                      a.lastOpenedAt || a.createdAt,
-                                    ),
-                                  );
                                   const target =
-                                    sorted.find((p) => p.id === landingProjectId) ?? sorted[0];
+                                    byRecency.find((p) => p.id === landingProjectId) ?? byRecency[0];
                                   if (target) sendLandingAsk(landingText, target);
                                 }}
                               >
