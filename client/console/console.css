@@ -1543,7 +1543,9 @@ html[data-motion='reduced'] .console .modes .ind b {
   align-items: baseline;
   min-width: 0;
   text-align: left;
-  font: 400 var(--dm-type-body) / 1.6 var(--mono);
+  /* The same mono metadata role as `.instr`: the two lines sit under the same
+     title, so they read at one size. */
+  font: 400 var(--dm-type-meta) / 1.5 var(--mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--t3);
@@ -1602,7 +1604,8 @@ html[data-motion='reduced'] .console .modes .ind b {
   background: var(--chrome);
   border: 1px solid var(--hair);
   border-radius: var(--r);
-  font: 400 12px / 1.6 var(--mono);
+  /* Verbatim file text, so it takes the shared code role rather than a literal. */
+  font: 400 var(--dm-type-code) / 1.55 var(--mono);
   color: var(--t2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1648,6 +1651,8 @@ html[data-motion='reduced'] .console .modes .ind b {
 }
 .pack-contributes {
   min-width: 0;
+}
+
 /* Follow-up queue and the scoped Stops. The queue sits under the composer as
    one line per item (decision 4): the person's sentence, when it runs, and what
    became of it. The sentence can be long and can carry a path or a model name,
@@ -1655,14 +1660,16 @@ html[data-motion='reduced'] .console .modes .ind b {
 .console .follow-ups {
   padding: 8px 0 0;
   border-top: 1px solid var(--hair-2);
-  font: 400 var(--dm-type-body) / 1.6 var(--dm-font-ui);
+  /* A control list under the composer, so it takes the navigation role; the
+     things a person types into take the input role the composer already uses. */
+  font: 400 var(--dm-type-ui) / 1.5 var(--dm-font-ui);
   min-width: 0;
 }
 .console .follow-up-compose textarea {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  font: inherit;
+  font: 400 var(--dm-type-input) / 1.55 var(--dm-font-ui);
   resize: vertical;
 }
 .console .follow-ups .grow {
@@ -1688,7 +1695,7 @@ html[data-motion='reduced'] .console .modes .ind b {
 }
 .console input.follow-up-text {
   box-sizing: border-box;
-  font: inherit;
+  font: 400 var(--dm-type-input) / 1.55 var(--dm-font-ui);
 }
 .console .follow-up-when {
   flex: 0 1 auto;

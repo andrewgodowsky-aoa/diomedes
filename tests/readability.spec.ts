@@ -254,3 +254,170 @@ test('maximizing preserves type and explicit scaling persists through reload and
     '112% (Custom)',
   );
 });
+
+/**
+ * The September 11 Console — the Files pane, the follow-up queue, the scoped
+ * Stop, the project instructions line and the activity overview — arrived
+ * after the semantic roles, written against the older scale where body and
+ * caption were both 14 px. Two things can go wrong, so there are two checks:
+ * a rule can size text in raw pixels, and a rule can pick the wrong role.
+ */
+test('the newer Console surfaces take the same semantic roles', async ({ page }) => {
+  await open(page);
+  // No rule anywhere sizes text in pixels. Read the rule text rather than the
+  // parsed shorthand: a `font` shorthand whose longhand is overridden later
+  // (`.console .instr` sets `font-variant-numeric` after it) no longer
+  // serializes, but a literal pixel size still does.
+  const sized = await page.evaluate(() => {
+    const declarations: { selector: string; value: string }[] = [];
+    const walk = (rules: CSSRuleList | undefined) => {
+      if (!rules) return;
+      for (const rule of rules) {
+        const styleRule = rule as CSSStyleRule;
+        if (styleRule.selectorText) {
+          const block = styleRule.cssText.slice(styleRule.cssText.indexOf('{') + 1);
+          for (const found of block.matchAll(/(?:^|[;{]\s*)font(?:-size)?\s*:\s*([^;}]*)/g))
+            if (found[1].trim())
+              declarations.push({ selector: styleRule.selectorText, value: found[1] });
+        }
+        walk((rule as CSSGroupingRule).cssRules);
+      }
+    };
+    for (const sheet of document.styleSheets) {
+      try {
+        walk(sheet.cssRules);
+      } catch {
+        // A stylesheet this document may not read tells us nothing.
+      }
+    }
+    return declarations;
+  });
+  expect(sized.length).toBeGreaterThan(40);
+  expect(
+    sized
+      .filter((rule) => /\d(\.\d+)?px/.test(rule.value))
+      .map((rule) => `${rule.selector} { font: ${rule.value.trim()} }`),
+  ).toEqual([]);
+
+  // The instructions line and its file preview need the Software Engineering
+  // pack and a repository to open, so their roles are read off the real
+  // cascade with the markup the component renders, placed where it renders it.
+  const head = await page.evaluate(() => {
+    const probe = document.createElement('div');
+    probe.className = 'instructions';
+    probe.innerHTML =
+      '<button class="instructions-line"><span>AGENTS.md</span></button>' +
+      '<div class="instructions-panel"><pre class="instructions-body">rule</pre></div>';
+    document.querySelector('.console .head')!.append(probe);
+    const size = (selector: string) =>
+      parseFloat(getComputedStyle(document.querySelector<HTMLElement>(selector)!).fontSize);
+    const measured = {
+      instruments: size('.console .instr'),
+      line: size('.console .instructions-line'),
+      body: size('.console .instructions-body'),
+    };
+    probe.remove();
+    return measured;
+  });
+  expect(head.instruments).toBe(12);
+  expect(head.line).toBe(head.instruments);
+  expect(head.body).toBe(14);
+
+  // The Files pane is a third page column on the stage, never a margin on a
+  // `.col` (decision 6), and its tree reads at the navigation role the rail's
+  // own rows already use.
+  const nav = page.getByRole('navigation', { name: 'Threads and views' });
+  await nav.getByRole('button', { name: 'Files', exact: true }).click();
+  await expect(page.locator('.console .files-row').first()).toBeVisible();
+  await audit(page);
+  const pane = await page.evaluate(() => {
+    const size = (selector: string) => {
+      const el = document.querySelector<HTMLElement>(selector);
+      return el ? parseFloat(getComputedStyle(el).fontSize) : null;
+    };
+    const stage = document.querySelector<HTMLElement>('.console .stage')!;
+    const work = document.querySelector<HTMLElement>('.console .work')!.getBoundingClientRect();
+    const col = document.querySelector<HTMLElement>('.console .work .col')!.getBoundingClientRect();
+    return {
+      columns: getComputedStyle(stage).gridTemplateColumns.trim().split(/\s+/).length,
+      workWidth: work.width,
+      colWidth: col.width,
+      gaps: [col.left - work.left, work.right - col.right],
+      row: size('.console .files-row'),
+      spine: size('.console .spine .row .nm'),
+      paneHeading: size('.console .files-head h2'),
+      railHeading: size('.console .rail-head h2'),
+      body: size('.console .body p'),
+    };
+  });
+  expect(pane.columns).toBe(3);
+  // The pane took a stage column, so the work column narrowed with it and is
+  // still centred by its one owner rather than pushed by a margin.
+  expect(pane.colWidth).toBe(Math.min(920, pane.workWidth - 64));
+  expect(pane.gaps[0]).toBeGreaterThan(0);
+  expect(pane.gaps[0]).toBeCloseTo(pane.gaps[1], 0);
+  expect(pane.row).toBe(14);
+  expect(pane.row).toBe(pane.spine);
+  expect(pane.paneHeading).toBe(pane.railHeading);
+  expect(pane.body).toBe(16);
+
+  // A document read in the pane: prose at the reading role, the raw bytes at
+  // the code role rather than at 16 px prose.
+  await page.locator('.console .files-row', { hasText: 'Reopening plan.md' }).click();
+  await expect(page.locator('.console .files-md')).toBeVisible();
+  expect(
+    await page
+      .locator('.console .files-md')
+      .evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
+  ).toBe(16);
+  await audit(page);
+  await page.locator('.console .files-seg').getByRole('button', { name: 'Raw' }).click();
+  await expect(page.locator('.console .files-raw')).toBeVisible();
+  expect(
+    await page
+      .locator('.console .files-raw')
+      .evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
+  ).toBe(14);
+  await audit(page);
+
+  // A thread that owns a task carries the follow-up queue under its composer.
+  const task = await (
+    await page.request.post(`/api/projects/${project.id}/tasks`, {
+      headers,
+      data: { name: 'Confirm the produce order' },
+    })
+  ).json();
+  expect(
+    (
+      await page.request.post(`/api/projects/${project.id}/ask`, {
+        headers,
+        data: {
+          text: 'Confirm the produce order with the supplier before Friday.',
+          mode: 'ask',
+          route: 'sample',
+          attachedTo: { kind: 'task', ref: task.id },
+        },
+      })
+    ).ok(),
+  ).toBe(true);
+  await page.reload();
+  await nav.getByRole('button', { name: /Confirm the produce order with the supplier/ }).click();
+  await expect(page.locator('.console .follow-ups')).toBeVisible();
+  await audit(page);
+  const queue = await page.evaluate(() => {
+    const size = (selector: string) => {
+      const el = document.querySelector<HTMLElement>(selector);
+      return el ? parseFloat(getComputedStyle(el).fontSize) : null;
+    };
+    return {
+      queue: size('.console .follow-ups'),
+      queueInput: size('.console .follow-up-compose textarea'),
+      composer: size('.console .composer textarea'),
+      when: size('.console .follow-ups .seg button'),
+    };
+  });
+  expect(queue.queue).toBe(14);
+  expect(queue.queueInput).toBe(15);
+  expect(queue.queueInput).toBe(queue.composer);
+  expect(queue.when).toBe(13);
+});

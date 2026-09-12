@@ -81,7 +81,8 @@
   padding: 5px 8px 5px 10px;
   border-radius: var(--rb);
   color: var(--t2);
-  font-size: var(--dm-type-caption);
+  /* A navigation row, like a spine row: the navigation role, not a caption. */
+  font-size: var(--dm-type-ui);
   transition:
     background var(--quick),
     color var(--quick);
@@ -191,7 +192,9 @@
 .console .files-code {
   margin: 0;
   padding: 0 8px;
-  font: 400 var(--dm-type-body) / 1.6 var(--mono);
+  /* Verbatim file text takes the code role, the same one the transcript's own
+     `pre` blocks use. */
+  font: 400 var(--dm-type-code) / 1.6 var(--mono);
   color: var(--t2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;

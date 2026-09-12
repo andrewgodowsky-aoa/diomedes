@@ -119,3 +119,58 @@ artifacts rather than release inputs.
   `tests/responsive.spec.ts`, `tests/ui.spec.ts`
 - `scripts/readability-desktop-smoke.mjs`, `scripts/desktop-smoke.mjs`
 - This implementation record.
+
+## 2026-09-12 — rebased onto main
+
+This patch was rebased from `b6d26ec` onto `da84689`, the thirteen commits that
+brought the Console the Files pane, capability packs and project instructions,
+the follow-up queue and the scoped Stop, the activity overview and the Cursor
+route. Git found no textual conflict; the reconciliation was semantic.
+
+- `client/console/console.css` now carries both sides: main's `.stage.files-open`
+  third column and its two narrow-viewport variants, and this patch's
+  `.console .col` measure, which reads `var(--dm-measure)` at every width rather
+  than the old 760 px literal. Decision 6 is intact — the Files pane is a stage
+  column, not a margin on a `.col`.
+- `client/Settings.tsx` keeps main's support-bundle button beside this patch's
+  interface-scale option list and shortcut caption.
+
+The surfaces that arrived after the roles were given the roles, so the Console
+does not carry two scales. The thread's instructions line now reads at the mono
+metadata role its neighbouring instrument line uses instead of prose; the
+instruction-file preview took the code role in place of a literal `12px`; the
+follow-up queue reads at the navigation role with its composer at the input
+role, matching the composer above it; the Files pane's tree rows read at the
+navigation role the rail's own rows use, and its raw and code views at the code
+role. `.pack-contributes` in main's `console.css` was missing its closing brace,
+which nested every follow-up and Stop rule after it under a selector that never
+matches; the brace is closed, so those rules apply for the first time.
+`tests/readability.spec.ts` gained one case for the merged surfaces. It fails
+if any rule in any stylesheet sizes text in raw pixels; it opens the Files pane
+and measures its tree against the rail's own rows, its heading against the
+rail's heading, and the work column it narrowed against the one owner that
+centres it; it reads a document in the pane and measures the rendered prose and
+the raw bytes; and it opens a task-owning thread and measures the follow-up
+queue against the composer above it. The instructions line and its file preview
+need the Software Engineering pack and a repository, so their two roles are
+measured off the real cascade with the markup the component renders.
+
+Gates on the merged tree: `tsc --noEmit` clean; `vitest run` 89 files, 1,500
+passed, 1 skipped (an earlier run of the same tree had one timing failure in
+`tests/work-admission.test.ts`, which passes alone and is untouched here);
+`vite build` succeeded. The browser gate ran twice, because
+`readability.spec.ts` is matched by `playwright.responsive.config.ts` and not by
+the default configuration: `playwright test` 52 passed, and `playwright test -c
+playwright.responsive.config.ts` 20 passed, the new case among them. The packaged desktop
+smoke, `scripts/readability-desktop-smoke.mjs`, was **not** run — another worker
+holds the packaged candidate — so the native maximize, restart-persistence and
+menu-scaling evidence above still stands only for the pre-rebase build. Its
+selectors and labels were read against the merged tree instead and all still
+resolve: `.console .body p`, `.console .composer textarea`,
+`.console .transcript .col`, `.console .views button`, `.model-picker > button`
+and `.settings-layout .rail`; the rail's Board, Team, Connections and Thread;
+Settings' Appearance, Permissions and History; the Workbook's eight pages; the
+Find and act dialog; and the three View-menu interface-size items in
+`desktop/main.mjs`. `scripts/desktop-smoke.mjs` still asserts the 16 px body and
+task title this patch set, and neither script exercises the Files pane, which
+stays closed unless a person opens it.
