@@ -111,7 +111,7 @@ export const INSTRUCTION_FILE_VIEW_BUDGET_BYTES = 16 * 1024;
 /** Hard ceiling on what discovery will read at all. */
 export const INSTRUCTION_FILE_MAX_BYTES = 256 * 1024;
 
-export const SOFTWARE_ENGINEERING_PACK: CapabilityPackManifest = Object.freeze({
+export const SOFTWARE_ENGINEERING_PACK: CapabilityPackManifest = {
   contractVersion: CAPABILITY_PACK_CONTRACT_VERSION,
   id: 'diomedes.software-engineering',
   version: '0.1.0',
@@ -131,12 +131,11 @@ export const SOFTWARE_ENGINEERING_PACK: CapabilityPackManifest = Object.freeze({
   ],
   instructionFiles: ['AGENTS.md', 'CLAUDE.md'],
   grantsAuthority: false,
-});
+};
 
-export const CAPABILITY_PACKS: Readonly<Record<CapabilityPackId, CapabilityPackManifest>> =
-  Object.freeze({
-    'diomedes.software-engineering': SOFTWARE_ENGINEERING_PACK,
-  });
+export const CAPABILITY_PACKS: Readonly<Record<CapabilityPackId, CapabilityPackManifest>> = {
+  'diomedes.software-engineering': SOFTWARE_ENGINEERING_PACK,
+};
 
 /** The latest activation record for a pack, or null when it was never touched. */
 export function latestActivation(
