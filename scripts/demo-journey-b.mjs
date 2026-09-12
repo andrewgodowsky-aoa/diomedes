@@ -313,11 +313,13 @@ async function startFromBoard() {
   // A row that offers no Start is a finding, not a timeout: let the step say so.
   if (!(await start.isVisible().catch(() => false))) return null;
   await press(start);
+  // Under "Confirm each start" the row opens an inline confirm first, then the
+  // engine's own Send this task? dialog; each can take a moment to render.
   const confirm = row.locator('.confirm');
-  if (await confirm.isVisible().catch(() => false))
+  if (await confirm.waitFor({ timeout: 3_000 }).then(() => true, () => false))
     await press(confirm.getByRole('button', { name: 'Start', exact: true }));
   const send = dialog('Send this task?');
-  if (await send.isVisible().catch(() => false)) {
+  if (await send.waitFor({ timeout: 3_000 }).then(() => true, () => false)) {
     await shot('send-this-task');
     await press(send.getByRole('button', { name: 'Send task', exact: true }));
     return true;

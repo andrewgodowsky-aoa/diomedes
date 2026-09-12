@@ -327,7 +327,7 @@
   grid-template-columns: repeat(6, minmax(210px, 1fr));
 } /* one-line rows need room; the board scrolls sideways before a title breaks */
 .console .columns.compact .crow {
-  grid-template-columns: 14px minmax(0, 1fr) auto;
+  grid-template-columns: 14px minmax(8ch, 1fr) minmax(0, auto);
   padding: 4px 6px 4px 2px;
 }
 .console .columns.compact .crow .t {
@@ -342,7 +342,21 @@
   grid-row: 1;
   margin: 0;
   flex-wrap: nowrap;
+  /* The title keeps the first claim on the row: a long model slug in the
+     meta used to take the whole line and leave the name with no width. */
+  max-width: 55%;
+  min-width: 0;
+  overflow: hidden;
   transition: opacity var(--quick);
+}
+.console .columns.compact .crow .m .mono {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.console .columns.compact .crow .m .age {
+  flex: none;
 }
 .console .columns.compact .crow:hover .m,
 .console .columns.compact .crow:focus-within .m {
