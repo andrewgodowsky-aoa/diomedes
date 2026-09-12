@@ -1,0 +1,188 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-11",
+  "worktree": "F:/Diomedes/diomedes-wt/autonomy-main-ready-20260911",
+  "branch": "codex/autonomy-main-ready-20260911",
+  "baseMain": "e69d4a26ddef5f603b970fab1dec17e728368e43",
+  "baseTree": "6aaba37c34396dff9b176801acf49e8588af7ee4",
+  "candidateBranch": "integration/autonomy-workbench-20260910",
+  "candidateTip": "32ee98c5efd7e1c687b3c6019e2b3fe1967b3970",
+  "candidateIsAncestorOfMain": true,
+  "candidateOnlyCommits": 0,
+  "applicationSourceChanged": false,
+  "canonicalVersions": {
+    "pillars": "2026-09-10.1",
+    "roadmap": "2026-09-10.8",
+    "projectMemory": "2026-09-10.7"
+  },
+  "runtime": {
+    "node": "v22.23.2",
+    "dependencies": "Existing lockfile dependencies via node_modules junction; no dependency changes"
+  },
+  "gates": [
+    {
+      "name": "typecheck",
+      "command": "node node_modules/typescript/bin/tsc --noEmit",
+      "exitCode": 0
+    },
+    {
+      "name": "unit",
+      "command": "node node_modules/vitest/vitest.mjs run --maxWorkers=4 --reporter=default --reporter=json --outputFile=test-results/main-ready/unit-results.json",
+      "exitCode": 0,
+      "files": 82,
+      "total": 1402,
+      "passed": 1401,
+      "skipped": 1,
+      "failed": 0,
+      "startTime": "2026-09-11T23:18:03.008Z",
+      "skippedTest": "path privacy and 8.3 aliases a short name standing in for a guarded directory is still refused",
+      "skipReason": "This volume does not generate the required Windows short-name alias."
+    },
+    {
+      "name": "production-client",
+      "command": "node node_modules/vite/bin/vite.js build",
+      "exitCode": 0
+    },
+    {
+      "name": "browser",
+      "command": "node node_modules/@playwright/test/cli.js test --reporter=list,json",
+      "reportEnvironment": {
+        "PLAYWRIGHT_JSON_OUTPUT_NAME": "test-results/main-ready/browser-results.json"
+      },
+      "exitCode": 0,
+      "passed": 52,
+      "skipped": 0,
+      "failed": 0,
+      "flaky": 0,
+      "requiredSubsetPassed": 27,
+      "requiredSubsetIncludedInTotal": true,
+      "startTime": "2026-09-11T23:19:37.747Z",
+      "files": [
+        {
+          "file": "agent-ui.spec.ts",
+          "tests": 4
+        },
+        {
+          "file": "ai-engines-ui.spec.ts",
+          "tests": 1
+        },
+        {
+          "file": "allowance-ui.spec.ts",
+          "tests": 4
+        },
+        {
+          "file": "app-updates-ui.spec.ts",
+          "tests": 1
+        },
+        {
+          "file": "autonomy-ui.spec.ts",
+          "tests": 3
+        },
+        {
+          "file": "configuration-ui.spec.ts",
+          "tests": 3
+        },
+        {
+          "file": "field.spec.ts",
+          "tests": 7
+        },
+        {
+          "file": "native-ui.spec.ts",
+          "tests": 3
+        },
+        {
+          "file": "reviewer-ui.spec.ts",
+          "tests": 4
+        },
+        {
+          "file": "ui.spec.ts",
+          "tests": 17
+        },
+        {
+          "file": "workspace-ui.spec.ts",
+          "tests": 5
+        }
+      ]
+    }
+  ],
+  "mainPreservation": {
+    "hashesMatchBeforeAndAfter": true,
+    "files": [
+      {
+        "path": "QUESTIONS.md",
+        "sha256": "411307228B5A5D7229F371CF316E1C6644B12BCC647D865240E1F12D42A50600"
+      },
+      {
+        "path": "evidence/screenshots/approval-console-record.png",
+        "sha256": "86C6CBF6D2CF2A145B91A40158202A05D162943A457FE99A1145E13806D087AA"
+      },
+      {
+        "path": "evidence/screenshots/approval-workbook-preview.png",
+        "sha256": "B301516F52F6D689AE4C5CF69DD66570C75F8E6EAB58A2DD59E34E1CBB9137E5"
+      },
+      {
+        "path": "evidence/screenshots/work-admission-workbook.png",
+        "sha256": "B301516F52F6D689AE4C5CF69DD66570C75F8E6EAB58A2DD59E34E1CBB9137E5"
+      },
+      {
+        "path": "server/lock.ts",
+        "sha256": "8E76F08ECADF3BD06A55BD20D067D06CACCFADB2E73FAC0E1B0D7DA527C7CA8B"
+      },
+      {
+        "path": "tests/backend.test.ts",
+        "sha256": "C6D213C92F530540E395A45BF1C2035670740A3392436FE8DF67BFD1EC55B882"
+      }
+    ]
+  },
+  "evidenceHashes": [
+    {
+      "path": "test-results/main-ready/browser.log",
+      "sha256": "7e69d3c3845877794e8feaca229e9373b187bd742f2a3a9dcf39f80c9a6b4a7d"
+    },
+    {
+      "path": "test-results/main-ready/build.log",
+      "sha256": "1511a6e2bef76f06c7337f06725cfad8306119880ce0d379ec5ba2bf2e4f20cb"
+    },
+    {
+      "path": "test-results/main-ready/typecheck.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "test-results/main-ready/unit.log",
+      "sha256": "4670a2bb59412c14892b999ee9c2c8f61e258fcaa2318b18a14b24b03a908301"
+    },
+    {
+      "path": "test-results/main-ready/browser-results.json",
+      "sha256": "709e0f0f9d01c04f81311de5755dab5fa460b9b05b9773259eb627e00265fb33"
+    },
+    {
+      "path": "test-results/main-ready/unit-results.json",
+      "sha256": "d43c536ba747ba8e9e6257f13e295983fd1e78a43e513900fc3abcde86faf94d"
+    },
+    {
+      "path": "dist/index.html",
+      "sha256": "a209e5e7e497f712017ec0a0f93f62246ae9b5eef9e4680961a7d39cadd58ebf"
+    },
+    {
+      "path": "dist/assets/index-CgJrBmbk.js",
+      "sha256": "f1deca37ca8d65af7150938ff43d79c9c9cfaf4148024b1a536b7eca026fade6"
+    },
+    {
+      "path": "dist/assets/index-mkjtFDIW.css",
+      "sha256": "5c8dcd2be7a38cdf00d4d56bfc1df0a3ac5b0807bd13603c16a776a5a0f7ca86"
+    }
+  ],
+  "generatedCaptures": "test-results/main-ready/captures/evidence/",
+  "limits": [
+    "Source and synthetic browser proof only; no new packaged desktop or installed-app proof.",
+    "No live model inference or real update-installation proof.",
+    "Canonical document versions unchanged; historical roadmap wording is not current Git evidence."
+  ],
+  "publication": {
+    "committed": false,
+    "pushed": false,
+    "released": false,
+    "installed": false,
+    "cloudWritten": false
+  }
+}

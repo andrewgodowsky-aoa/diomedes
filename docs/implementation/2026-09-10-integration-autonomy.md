@@ -1,5 +1,12 @@
 # Integration checkpoint: autonomy-workbench reconciled with current main
 
+Historical report: the status and counts below describe the September 10 run.
+On September 11, candidate tip `32ee98c5efd7e1c687b3c6019e2b3fe1967b3970`
+was already an ancestor of local main `e69d4a26ddef5f603b970fab1dec17e728368e43`.
+Do not reapply its old source snapshot over main. Current reconciliation and
+fresh verification are recorded in
+[the September 11 handoff](2026-09-11-autonomy-main-ready.md).
+
 Status: implemented and verified as a local integration candidate on
 `integration/autonomy-workbench-20260910`. No commit, push, installed replacement,
 release publication, website deployment or cloud write is included. Version stays 0.1.1.
