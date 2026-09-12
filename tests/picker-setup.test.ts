@@ -9,6 +9,7 @@ import { EngineService, TESTED_VERSIONS } from '../server/engines/service.js';
 import type { TextEngineAdapter } from '../server/engines/contract.js';
 import type { EngineModel, IntegrationStatus, Settings } from '../shared/types.js';
 import type { EngineConnection } from '../shared/engines.js';
+import { connectionState, signedIn } from '../client/console/Picker.js';
 
 /**
  * What the thread picker reads, and what two AI-setup controls write.
@@ -302,5 +303,42 @@ describe('AI setup writes cannot lose each other', () => {
     expect(((await call('/settings')).data as unknown as Settings).detail).toBe('standard');
     expect((await call('/ai/enabled', 'POST', { engine: 'opencode', on: 'yes' })).status).toBe(400);
     expect((await call('/ai/enabled', 'POST', { engine: 'codex', on: true })).status).toBe(400);
+  });
+});
+
+/**
+ * The gate the thread picker applies to `GET /ai/status`. It is the four facts
+ * AI setup shows, and deliberately not `IntegrationStatus.available`, which
+ * also folds in "checked in the last five minutes" — a working account read
+ * six minutes after its check is still the same account, and the send path
+ * rechecks it anyway. What the freshness window governs is the heading.
+ */
+describe('what the thread picker treats as a usable account', () => {
+  const base: EngineConnection = {
+    engine: 'opencode',
+    installation: 'found',
+    compatibility: 'supported',
+    authentication: 'signed-in',
+    accountRoute: OPENCODE_ACCOUNT,
+    models: MODELS,
+    checkedAt: new Date().toISOString(),
+    detail: 'Native OpenCode Go account connected. Choose an explicit provider/model.',
+    usage: { state: 'unknown', checkedAt: null },
+  };
+  it('offers a signed-in account whose check has gone stale', () => {
+    expect(signedIn(base)).toBe(true);
+    const stale = { ...base, checkedAt: new Date(Date.now() - 3_600_000).toISOString() };
+    expect(signedIn(stale)).toBe(true);
+    expect(connectionState(base)).toBe('Signed in · Ready');
+    expect(connectionState(stale)).toContain('rechecked before sending');
+  });
+  it('offers nothing for an account that is missing, unsupported, signed out or empty', () => {
+    expect(signedIn(undefined)).toBe(false);
+    expect(signedIn({ ...base, installation: 'missing' })).toBe(false);
+    expect(signedIn({ ...base, installation: 'not-checked' })).toBe(false);
+    expect(signedIn({ ...base, compatibility: 'unsupported' })).toBe(false);
+    expect(signedIn({ ...base, authentication: 'signed-out' })).toBe(false);
+    expect(signedIn({ ...base, authentication: 'unknown' })).toBe(false);
+    expect(signedIn({ ...base, models: [] })).toBe(false);
   });
 });

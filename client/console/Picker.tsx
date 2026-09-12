@@ -61,7 +61,7 @@ function available(id: string, integrations: IntegrationStatus[], settings: Sett
  * its last check is inside the freshness window — the window governs how the
  * status line reads, never whether the account exists.
  */
-function signedIn(connection: EngineConnection | undefined): connection is EngineConnection {
+export function signedIn(connection: EngineConnection | undefined): connection is EngineConnection {
   return (
     !!connection &&
     connection.installation === 'found' &&
@@ -72,7 +72,7 @@ function signedIn(connection: EngineConnection | undefined): connection is Engin
 }
 
 /** One sentence for the engine heading: what Diomedes last saw, and when. */
-function connectionState(connection: EngineConnection): string {
+export function connectionState(connection: EngineConnection): string {
   const at = connection.checkedAt ? Date.parse(connection.checkedAt) : Number.NaN;
   if (Number.isFinite(at) && Date.now() - at < FRESH_MS) return 'Signed in · Ready';
   return Number.isFinite(at)
