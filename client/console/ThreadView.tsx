@@ -94,6 +94,8 @@ interface ThreadViewProps {
   /** Live streamed text for a new external-engine Ask/Plan: ephemeral, never saved. */
   streaming?: { requestId: string; text: string; engine: string };
   onCancelText?(): void;
+  /** Where a refused scoped Stop is reported; without it the refusal is silent. */
+  onError?(error: Error): void;
 }
 
 /**
@@ -135,6 +137,7 @@ export function ThreadView({
   onOpenBoard,
   streaming,
   onCancelText,
+  onError,
 }: ThreadViewProps) {
   const permission: ThreadPermission = thread.permission ?? 'show-first';
   const live = sessions.find((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? null;
@@ -284,7 +287,10 @@ export function ThreadView({
                 busy={busy}
                 onStopTask={() => onStopSession(s.id)}
                 onStopScope={(scope) =>
-                  void stopWork(projectId, { scope, taskId: task.id, sessionId: s.id })
+                  void stopWork(projectId, { scope, taskId: task.id, sessionId: s.id }).catch(
+                    (error: unknown) =>
+                      onError?.(error instanceof Error ? error : new Error(String(error))),
+                  )
                 }
               />
             ) : undefined
