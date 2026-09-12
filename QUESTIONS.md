@@ -108,6 +108,18 @@ real probe a longer leash, so a loaded runner no longer reads as a platform that
 report a start time. The production default is untouched, and no test now exercises the
 four-second budget end to end. Whichever option is chosen, that separation stands.
 
+**Narrowed 2026-09-11.** The fifteen-second leash was not enough either: CI run 34664792501
+timed out the same test at 15200 ms. So the budget was never the variable. Every `run:` step
+on the GitHub Windows runner executes under PowerShell 7, which leaves Windows PowerShell 5.1
+cold until the suite spawns it, and a cold 5.1 compiles itself on the way up for longer than
+any budget a lock should wait. `server/lock.ts` now asks `pwsh.exe` first and falls back to
+`powershell.exe` inside the same budget, remembering which one answered; run 34665085056 on
+282baf3 passed with the four-second default unchanged. What remains open is the original
+question in a smaller form: on a machine with no `pwsh`, whether four seconds of 5.1 is the
+right budget, and whether an unanswered probe should refuse rather than guess (option 3).
+Options 1 and 2 are no longer recommended, because the measured cause was a cold host, not
+a slow one.
+
 ## Resolved
 
 ### R7. History retention was configured and not enforced (raised as O5)
