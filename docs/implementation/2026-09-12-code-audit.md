@@ -364,4 +364,37 @@ Read line by line, in the light of the September 11 note that this author writes
 
 ## 8. Applied in this pass
 
-Filled in after the cleanups and the gates; see the commit list at the end of this section.
+Nine commits on `fable/code-audit-20260912`, each one cleanup, none changing a contract,
+an API shape or a sentence the user reads:
+
+| Commit | Change | Proof |
+|---|---|---|
+| `d1ad203` | `refreshCounts` takes the date once (§3.1); `latestFile` walks the index backward instead of copying History; the repeated `validateAgentResolutions` on load is gone | `backend`, `scoped-work`, `native-work`, `capability-packs` tests |
+| `b97eb97` | one `Intl.DateTimeFormat` per time zone in `withinServiceWindow` (§3.9) | `connections-desktop` tests |
+| `66297f7` | the write-only stderr buffer and its decoder removed from `EngineProcess`, drain listener kept (§3.3); `text` guard exported from `process.ts` and used by `cursor.ts` and `opencode.ts` | `engine-process`, `cursor-adapter`, `opencode-adapter` tests |
+| `d4d90e1` | `isDenial` replaces three `as Denial` casts (§4.2) | `agent-authority` tests |
+| `2e14b3a` | the older of two stacked JSDoc blocks removed twice in `configuration.ts` (§4.3) | comment only |
+| `d40838b` | the `ask : ask` initializer and the voided `codex` lookup removed from the Workbook (§4.3) | `tsc`; the Workbook has no unit tests |
+| `ada7495` | one `byRecency` memo replaces four identical sorts on the landing page; the Ledger takes three History rows without copying all (§4.3) | `tsc`, `ui.spec` |
+| `5c212ff` | `store.ts` `hash` re-exports `approval-admission.ts` `contentHash` (§4.1) | `approval-admission`, `work-admission`, `backend` tests |
+| `413d7e3` | `psQuote` exported from `process.ts`, used by `login.ts` and `install.ts` (§4.1) | `engine-login`, `engine-install` tests |
+
+No test assertion was changed. No test was added: none of the nine fixes a defect a test
+could have caught, and the brief asked for benchmarks to stay out of the tree.
+
+Gates on the branch head, run serially in the worktree after the last commit:
+
+| Gate | Result |
+|---|---|
+| `tsc --noEmit` | clean |
+| `vitest run` | 88 files, 1,498 passed, 1 skipped |
+| `vite build` | built (the existing chunk-size warning only) |
+| `playwright test ui native-ui field` | 27 passed in 41 s, under `.playwright.lock` |
+
+The Playwright run rewrote four PNGs under `evidence/screenshots/` as those specs do. They
+are left uncommitted for the integrator; this pass does not touch `evidence/`.
+
+Left for the integrator to decide, in the order the numbers argue for: §2.2 (one line on
+the server, no client change, the largest measured saving per event), §2.3 (two `route()`
+flags and one effect dependency), §2.1 (a design change to when `changedSince` is
+computed), then the copy items §3.10 and §3.11, which are small but user-facing.
