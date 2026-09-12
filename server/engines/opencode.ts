@@ -17,6 +17,7 @@ import {
   EngineError,
   launchCommand,
   stopped,
+  text,
 } from './process.js';
 import { killOwnedProcess } from '../integrations.js';
 
@@ -40,7 +41,6 @@ export interface OpenCodeAdapterDeps {
 
 const object = (value: unknown): Json =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : {};
-const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 async function cappedText(response: Response, limit: number): Promise<string> {
   if (!response.body) return '';

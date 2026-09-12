@@ -61,7 +61,6 @@ export class EngineProcess {
   private readonly child;
   private readonly timer;
   private readonly decoder = new StringDecoder('utf8');
-  private readonly stderrDecoder = new StringDecoder('utf8');
   private pending = '';
   private lines: string[] = [];
   private bytes = 0;
@@ -69,7 +68,6 @@ export class EngineProcess {
   private ended = false;
   private wake?: () => void;
   private closing?: Promise<void>;
-  private stderr = '';
   exitCode: number | null = null;
   closed = false;
   private readonly abort = () => this.fail(stopped());
@@ -111,9 +109,8 @@ export class EngineProcess {
       }
       this.wake?.();
     });
-    this.child.stderr.on('data', (chunk: Buffer) => {
-      this.stderr = (this.stderr + this.stderrDecoder.write(chunk)).slice(0, 4096);
-    });
+    // Drained and dropped: an unread stderr pipe can block the child once its buffer fills.
+    this.child.stderr.on('data', () => undefined);
     this.child.once('close', (code) => {
       this.exitCode = code;
       this.ended = true;
@@ -220,3 +217,4 @@ export function record(value: unknown): Record<string, unknown> {
     ? (value as Record<string, unknown>)
     : {};
 }
+export const text = (value: unknown): string => (typeof value === 'string' ? value : '');

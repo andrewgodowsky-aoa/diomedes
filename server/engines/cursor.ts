@@ -33,6 +33,7 @@ import {
   EngineError,
   record,
   stopped,
+  text,
 } from './process.js';
 
 export const CURSOR_VERSION = '2026.08.11';
@@ -59,7 +60,6 @@ export interface CursorAdapterDeps {
   startupTimeoutMs?: number;
   requestTimeoutMs?: number;
 }
-const string = (value: unknown): string => (typeof value === 'string' ? value : '');
 const protocolError = (detail: string) =>
   new EngineError('PROTOCOL_ERROR', `Cursor ${detail}`, true);
 
@@ -115,13 +115,13 @@ export function cursorCommand(file: string, args: string[]): { file: string; arg
 
 function rpcFailure(value: unknown): EngineError {
   const error = record(value);
-  if (error.code === -32000 || /auth|sign.?in|login/i.test(string(error.message)))
+  if (error.code === -32000 || /auth|sign.?in|login/i.test(text(error.message)))
     return new EngineError(
       'AUTH_REQUIRED',
       'Cursor needs native sign-in. Run agent login, then recheck.',
       true,
     );
-  if (/rate.?limit|quota|usage.?limit/i.test(string(error.message)))
+  if (/rate.?limit|quota|usage.?limit/i.test(text(error.message)))
     return new EngineError(
       'USAGE_LIMIT',
       'Cursor reported a service limit. No model or account was substituted.',
@@ -227,7 +227,7 @@ class CursorAcp {
     });
   }
   private decline(frame: Json) {
-    const method = string(frame.method);
+    const method = text(frame.method);
     let result: unknown;
     if (method === 'session/request_permission') {
       const options = record(frame.params).options;
@@ -419,13 +419,13 @@ function modelsFrom(value: unknown): EngineModel[] {
   if (!Array.isArray(value)) return [];
   return value.slice(0, 256).flatMap((value) => {
     const row = record(value),
-      id = string(row.modelId);
+      id = text(row.modelId);
     if (!explicitModel(id)) return [];
     return [
       {
         slug: id,
-        name: string(row.name).slice(0, 120) || id,
-        description: string(row.description).slice(0, 240),
+        name: text(row.name).slice(0, 120) || id,
+        description: text(row.description).slice(0, 240),
         efforts: [],
         defaultEffort: null,
       },
@@ -556,7 +556,7 @@ export class CursorAdapter implements TextEngineAdapter {
         cwd: workspace,
         mcpServers: [],
       });
-      const sessionId = string(created.sessionId);
+      const sessionId = text(created.sessionId);
       if (!sessionId || sessionId.length > 256) throw protocolError('did not return a session id.');
       rpc.sessionId = sessionId;
       await rpc.request('session/set_mode', { sessionId, modeId: 'ask' });
@@ -582,7 +582,7 @@ export class CursorAdapter implements TextEngineAdapter {
   }
   private onUpdate(rpc: CursorAcp, params: Json, turn?: CursorTurn) {
     const update = record(params.update),
-      kind = string(update.sessionUpdate);
+      kind = text(update.sessionUpdate);
     if (kind === 'tool_call' || kind === 'tool_call_update' || kind === 'plan')
       throw new EngineError(
         'UNEXPECTED_TOOL',
@@ -623,9 +623,9 @@ export class CursorAdapter implements TextEngineAdapter {
         .map(record)
         .find((option) => option.category === 'model' || option.id === 'model');
       if (model) {
-        if (!explicitModel(string(model.currentValue)))
+        if (!explicitModel(text(model.currentValue)))
           throw protocolError('reported an invalid model selection.');
-        turn.model = string(model.currentValue);
+        turn.model = text(model.currentValue);
       }
     }
   }
