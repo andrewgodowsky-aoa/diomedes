@@ -77,17 +77,24 @@ async function ready() {
     'Format the shipped fixture.',
     localHarnessPrincipal(projectId),
   );
-  await vi.waitFor(() =>
-    expect(
-      state().needs.some((need) => need.sessionId === session.id && need.state === 'open'),
-    ).toBe(true),
+  // A native run reads the project, resolves instructions and proposes before
+  // its Need opens; CI's two-worker run takes over a second for that, so the
+  // wait is bounded generously rather than by vi.waitFor's 1 s default.
+  await vi.waitFor(
+    () =>
+      expect(
+        state().needs.some((need) => need.sessionId === session.id && need.state === 'open'),
+      ).toBe(true),
+    { timeout: 15_000 },
   );
   return structuredClone(
     state().needs.find((need) => need.sessionId === session.id && need.state === 'open')!,
   );
 }
 async function untilRun(runId: string, expected: HarnessRun['state']) {
-  await vi.waitFor(async () => expect((await host().get(projectId, runId)).state).toBe(expected));
+  await vi.waitFor(async () => expect((await host().get(projectId, runId)).state).toBe(expected), {
+    timeout: 15_000,
+  });
   await host().bridge.flush();
   return host().get(projectId, runId);
 }
