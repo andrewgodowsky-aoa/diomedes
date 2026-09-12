@@ -380,15 +380,26 @@ async function journey() {
   });
 
   await step('make-the-task', async (r) => {
-    const made = await api(
-      `/projects/${projectId}/tasks`,
-      'POST',
-      { name: TASK, description: ASK },
-      'the Console has no task-creation control; fixture preparation',
-    );
-    taskName = made.name;
-    r.status = 'not-reachable';
-    r.note = 'The Console cannot make a task; only the frozen Workbook plan path can. Made by API as a fixture.';
+    await press(rail().getByRole('button', { name: /^Board/ }));
+    const board = page.locator('.board[aria-label="Board"]');
+    await board.waitFor();
+    const control = board.getByRole('button', { name: 'New task', exact: true });
+    if ((await control.count()) === 0) {
+      const made = await api(`/projects/${projectId}/tasks`, 'POST', { name: TASK, description: ASK }, 'this build has no task-creation control; fixture preparation');
+      taskName = made.name;
+      r.status = 'not-reachable';
+      r.note = 'The Console cannot make a task in this build. Made by API as a fixture.';
+      return;
+    }
+    await press(control);
+    const form = board.getByRole('form', { name: 'New task' });
+    await form.waitFor();
+    await form.getByLabel('Task name').fill(TASK);
+    await form.getByLabel('What should happen (optional)').fill(ASK);
+    await press(form.getByRole('button', { name: 'Create', exact: true }));
+    await page.locator('.column[aria-label="Ready"] .crow', { hasText: TASK }).first().waitFor({ timeout: 15_000 });
+    taskName = TASK;
+    r.note = "Made from the Board's New task control; the row is in Ready.";
   });
 
   await step('engine-setup', async (r) => {

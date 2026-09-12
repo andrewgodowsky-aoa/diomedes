@@ -3,6 +3,7 @@ import { selectedEngine } from '../../shared/ai-selection';
 import { formatOrigin, originForNeed, originForSession } from '../../shared/attribution';
 import type { ScopeGrantView } from '../../shared/permissions';
 import { isRoute, isExternalEngine, ENGINE_NAMES } from '../../shared/engines';
+import { selectTaskSources } from '../../shared/task-sources';
 import type {
   Change,
   Conversation,
@@ -116,7 +117,9 @@ export function Shell({
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [scopeGrants, setScopeGrants] = useState<ScopeGrantView[]>([]);
-  const [sendTask, setSendTask] = useState<{ task: Task; route: Route } | null>(null);
+  const [sendTask, setSendTask] = useState<{ task: Task; route: Route; sources: string[] } | null>(
+    null,
+  );
   const [team, setTeam] = useState<TeamState>(emptyTeam);
   const [teamAvailable, setTeamAvailable] = useState(false);
   const [toast, setToast] = useState('');
@@ -629,20 +632,28 @@ export function Shell({
       setBusy(false);
     }
   }
+  // The documents the task itself names travel with it; a task that names
+  // none sends none, and the confirmation says which. The listing is fetched
+  // here because the state fan-out strips `documents`.
+  async function taskSources(task: Task): Promise<string[]> {
+    const { documents: listed } = await listDocuments(projectId);
+    return selectTaskSources(task, listed);
+  }
   async function startTask(task: Task, route: Route) {
     if (isExternalEngine(route)) {
-      setSendTask({ task, route });
+      const sources = await taskSources(task).catch(() => [] as string[]);
+      setSendTask({ task, route, sources });
       return;
     }
     await dispatchTask(task, route);
   }
-  async function dispatchTask(task: Task, route: Route) {
+  async function dispatchTask(task: Task, route: Route, sources?: string[]) {
     await perform(async () => {
       const thread = state?.conversations.find((item) => item.taskId === task.id);
       await startWork(projectId, {
         taskId: task.id,
         route,
-        sources: [],
+        sources: sources ?? (await taskSources(task)),
         consent: true,
         ...(thread ? { threadId: thread.id } : {}),
       });
@@ -1242,8 +1253,11 @@ export function Shell({
           <p className="prose">
             Send the instruction for {sendTask.task.name} to{' '}
             {isExternalEngine(sendTask.route) ? ENGINE_NAMES[sendTask.route] : sendTask.route} using
-            its selected model and account. No documents are included. File proposals will wait for
-            exact approval.
+            its selected model and account.{' '}
+            {sendTask.sources.length
+              ? `The ${sendTask.sources.length === 1 ? 'document' : 'documents'} the task names ${sendTask.sources.length === 1 ? 'goes' : 'go'} with it: ${sendTask.sources.join(', ')}.`
+              : 'The task names no project document, so none is included and the engine can only propose new files.'}{' '}
+            File proposals will wait for exact approval.
           </p>
           <div className="dialog-actions">
             <Button onClick={() => setSendTask(null)}>Cancel</Button>
@@ -1252,7 +1266,7 @@ export function Shell({
               onClick={() => {
                 const pending = sendTask;
                 setSendTask(null);
-                void dispatchTask(pending.task, pending.route);
+                void dispatchTask(pending.task, pending.route, pending.sources);
               }}
             >
               Send task

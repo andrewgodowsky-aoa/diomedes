@@ -467,26 +467,39 @@ await step('14-open-the-brief-and-its-sources', async () => {
 });
 
 await step('15-make-a-task-and-find-it-in-Ready', async () => {
-  const created = await api(`/projects/${state.projectId}/tasks`, 'POST', {
-    name: 'Add a stock-to-watch section to the weekly brief',
-    description:
-      'Read weekly-operations-brief.md and bakery-inventory.md in this project, and propose adding a short "Stock to watch" section to weekly-operations-brief.md listing only the items already below their stated reorder point. Change nothing else.',
-    owner: 'you',
-  });
-  state.taskId = created.id ?? created.task?.id ?? null;
-  backendPreparation.push('POST /api/projects/:id/tasks — created the task, because no Console control creates one.');
+  const name = 'Add a stock-to-watch section to the weekly brief';
+  const description =
+    'Read weekly-operations-brief.md and bakery-inventory.md in this project, and propose adding a short "Stock to watch" section to weekly-operations-brief.md listing only the items already below their stated reorder point. Change nothing else.';
   await page.reload();
   await page.locator('.console').waitFor();
   const rail = page.getByRole('navigation', { name: 'Threads and views' });
   await rail.getByRole('button', { name: /^Board/ }).click();
   const board = page.locator('.board[aria-label="Board"]');
   await board.waitFor();
-  await board.getByRole('button', { name: 'compact', exact: true }).click().catch(() => {});
+  const control = board.getByRole('button', { name: 'New task', exact: true });
+  if ((await control.count()) === 0) {
+    const created = await api(`/projects/${state.projectId}/tasks`, 'POST', { name, description, owner: 'you' });
+    state.taskId = created.id ?? created.task?.id ?? null;
+    backendPreparation.push('POST /api/projects/:id/tasks - created the task, because this build has no Console control for it.');
+    return { status: 'not-reachable', note: 'No Console control creates a task in this build; the task was created through the API.' };
+  }
+  // The Board's own control: New task opens a form, Create adds the task.
+  await control.click();
+  const form = board.getByRole('form', { name: 'New task' });
+  await form.waitFor();
+  await form.getByLabel('Task name').fill(name);
+  await form.getByLabel('What should happen (optional)').fill(description);
+  await form.getByRole('button', { name: 'Create', exact: true }).click();
   const ready = page.locator('.column[aria-label="Ready"]');
-  const present = await ready.locator('.crow', { hasText: 'Add a stock-to-watch section' }).count();
+  const row = ready.locator('.crow', { hasText: 'Add a stock-to-watch section' });
+  await row.first().waitFor({ timeout: 15_000 });
+  const live = await api(`/projects/${state.projectId}/state`);
+  const task = live.tasks.find((item) => item.name === name);
+  state.taskId = task?.id ?? null;
+  await board.getByRole('button', { name: 'compact', exact: true }).click().catch(() => {});
   return {
-    status: 'not-reachable',
-    note: `No Console control creates a task and none moves one between columns: a task with no run is projected into Ready by taskEvidence. The task was created through the API and ${present ? 'appears' : 'does not appear'} in Ready.`,
+    status: 'traversed',
+    note: `Made from the Board's New task control (name and description typed, Create pressed); the row appears in Ready${task ? ` as task ${task.id}` : ''}. Nothing moves a task between columns by hand; a task with no run is Ready by projection.`,
   };
 });
 
@@ -529,7 +542,7 @@ await step('16-start-the-task-and-watch-progress', async () => {
   if (!dry && session && accountRoute && accountRoute !== 'sample') liveTurns += 1;
   return {
     status: session ? 'traversed' : 'failed',
-    note: `Confirmation shown before anything ran (${dialogSeen.replace(/\s+/g, ' ').trim().slice(0, 160)}). ${working} row in Working while it ran; session ${session?.id} on route ${session?.route ?? 'unknown'}, model ${session?.model ?? 'not recorded'}, ended ${session?.state} after ${seconds ?? '?'} s. Board after: ${landed.filter(([, n]) => n).map(([c, n]) => `${c} ${n}`).join(', ')}. ${live.history.length} History entries, last: ${String(last?.sentence ?? '').slice(0, 160)}`,
+    note: `Confirmation shown before anything ran (${dialogSeen.replace(/\s+/g, ' ').trim().slice(0, 160)}). ${working} row in Working while it ran; session ${session?.id} on route ${session?.route ?? 'unknown'}, model ${session?.engine?.model ?? 'not recorded'}, ended ${session?.state} after ${seconds ?? '?'} s. Board after: ${landed.filter(([, n]) => n).map(([c, n]) => `${c} ${n}`).join(', ')}. ${live.history.length} History entries, last: ${String(last?.sentence ?? '').slice(0, 160)}`,
   };
 });
 
