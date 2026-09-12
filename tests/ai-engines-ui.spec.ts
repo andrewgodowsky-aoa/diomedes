@@ -210,7 +210,7 @@ test.beforeAll(async () => {
     surface: 'console',
     detail: 'technical',
     openProjects: [project.id],
-    services: { 'claude-code': false, opencode: false, 'oh-my-pi': false },
+    services: { 'claude-code': false, opencode: false, 'oh-my-pi': false, cursor: false },
     onboarding: {
       work: 'software',
       detail: 'technical',
@@ -232,7 +232,7 @@ test.afterAll(async () => {
   if (fixtureRoot) await fs.rm(fixtureRoot, { recursive: true, force: true });
 });
 
-test('Console discovers, selects, streams, cancels, and approves all three fixture engines', async ({
+test('Console discovers, selects, streams, cancels, and approves every fixture engine', async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -256,10 +256,11 @@ test('Console discovers, selects, streams, cancels, and approves all three fixtu
     await section.getByRole('button', { name: 'Use as default', exact: true }).click();
   }
   const selected = await api<{ services: Record<string, boolean | string> }>('/settings');
-  expect(selected.services.defaultEngine).toBe('oh-my-pi');
-  expect(selected.services['claude-codeModel']).toBe('claude-code/fixture-model');
-  expect(selected.services.opencodeModel).toBe('opencode/fixture-model');
-  expect(selected.services['oh-my-piModel']).toBe('oh-my-pi/fixture-model');
+  // The last row whose `Use as default` was clicked is the default; every row kept its model.
+  const engines = Object.keys(versions) as ExternalEngine[];
+  expect(selected.services.defaultEngine).toBe(engines.at(-1));
+  for (const engine of engines)
+    expect(selected.services[`${engine}Model`]).toBe(`${engine}/fixture-model`);
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(page.locator('.console')).toBeVisible();
