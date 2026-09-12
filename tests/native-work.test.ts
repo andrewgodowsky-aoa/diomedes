@@ -5,7 +5,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { ProjectState, TeamMember } from '../shared/types.js';
 import { createApp } from '../server/app.js';
-import type { NativeGenerator } from '../server/native-work.js';
+import { extractJsonObject, parseProposal, type NativeGenerator } from '../server/native-work.js';
 import {
   createIntegrations,
   IntegrationError,
@@ -968,6 +968,72 @@ describe('untrusted generated proposal validation', () => {
     await documentsOf();
     expect((await state()).documents).toHaveLength(3);
     expect(failed.tasks[0].reason).toBe('went-wrong');
+  });
+
+  test('attributes a refused turn to the runtime-reported model', async () => {
+    invoke = async () => ({
+      text: 'Here is your plan: use the menu.',
+      model: 'refused-run-model',
+      version: '9.8.7',
+    });
+    await start([]);
+    const failed = await until((current) => current.sessions[0].state === 'failed');
+    expect(failed.sessions[0].engine.model).toBe('refused-run-model');
+    expect(failed.sessions[0].engine.version).toBe('9.8.7');
+    expect(failed.sessions[0].engine.verified).toBe(true);
+    expect(failed.needs).toEqual([]);
+    expect(failed.changes).toEqual([]);
+  });
+});
+
+describe('file proposal extraction', () => {
+  const proposalText = () =>
+    JSON.stringify({
+      summary: 'A wrapped proposal',
+      changes: [{ path: 'Announcement.md', text: 'New text', summary: 'Create it' }],
+    });
+  const expected = {
+    summary: 'A wrapped proposal',
+    changes: [{ path: 'Announcement.md', text: 'New text', summary: 'Create it' }],
+  };
+  const refusal =
+    'The engine did not return a valid file proposal. No files were changed. Start again to request a new proposal.';
+  test('accepts plain JSON unchanged', () => {
+    expect(parseProposal(proposalText())).toEqual(expected);
+    expect(extractJsonObject(proposalText())).toBe(proposalText());
+  });
+  test('accepts one fenced json block, with or without a prefix', () => {
+    expect(parseProposal(`Here it is:\n\`\`\`json\n${proposalText()}\n\`\`\`\n`)).toEqual(expected);
+    expect(extractJsonObject(`\`\`\`json\n${proposalText()}\n\`\`\``)).toBe(proposalText());
+  });
+  test('accepts a short sentence before the object', () => {
+    expect(parseProposal(`Here is the proposal:\n${proposalText()}`)).toEqual(expected);
+  });
+  test('refuses two fenced blocks', () => {
+    expect(() =>
+      parseProposal(
+        `\`\`\`json\n${proposalText()}\n\`\`\`\nAnd again:\n\`\`\`json\n${proposalText()}\n\`\`\``,
+      ),
+    ).toThrow(refusal);
+  });
+  test('refuses prose with braces scattered through it', () => {
+    const prose = 'The result {one} arrived, though {two is still open for review.';
+    expect(extractJsonObject(prose)).toBe(prose);
+    expect(() => parseProposal(prose)).toThrow(refusal);
+  });
+  test('refuses more than 400 characters of prose around the object', () => {
+    const long = 'Please read this carefully. '.repeat(30) + proposalText();
+    expect(extractJsonObject(long)).toBe(long);
+    expect(() => parseProposal(long)).toThrow(refusal);
+  });
+  test('runs the size guard before any extraction', () => {
+    const oversize = `\`\`\`json\n${JSON.stringify({
+      summary: 'x'.repeat(1_024_001),
+      changes: [],
+    })}\n\`\`\``;
+    expect(() => parseProposal(oversize)).toThrow(
+      'The engine returned a proposal that is too large. No files were changed.',
+    );
   });
 });
 

@@ -133,14 +133,23 @@ function deadline(
   };
 }
 
-function abortError(signal: AbortSignal): EngineError {
-  return signal.reason === 'timeout'
+function abortError(
+  signal: AbortSignal,
+  timeoutMs: number,
+  budget: 'startup' | 'request',
+): EngineError {
+  if (signal.reason !== 'timeout') return stopped();
+  return budget === 'startup'
     ? new EngineError(
+        'TIMEOUT',
+        `OpenCode did not start within ${Math.round(timeoutMs / 1000)} seconds. Recheck the engine in Settings before starting another request.`,
+        true,
+      )
+    : new EngineError(
         'TIMEOUT',
         'OpenCode did not finish within the time limit. Recheck before starting another request.',
         true,
-      )
-    : stopped();
+      );
 }
 
 function errorForResponse(status: number, body: string): EngineError {
@@ -331,7 +340,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
         } catch (error) {
           if (error instanceof EngineError) throw error;
           if (launchError) throw launchError;
-          if (ready.signal.aborted) throw abortError(ready.signal);
+          if (ready.signal.aborted) throw abortError(ready.signal, this.startupTimeout, 'startup');
         }
         if (launchError) throw launchError;
         if (child.exitCode !== null || child.signalCode !== null)
@@ -374,7 +383,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
         headers: { ...this.headers(server.auth), ...(init.headers ?? {}) },
       });
     } catch (error) {
-      if (signal.aborted) throw abortError(signal);
+      if (signal.aborted) throw abortError(signal, this.requestTimeout, 'request');
       throw new EngineError('PROVIDER_ERROR', 'OpenCode could not be reached.', true);
     }
     if (!response.ok) {
@@ -648,7 +657,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       );
     } catch (error) {
       if (!(error instanceof EngineError) && control.signal.aborted)
-        error = abortError(control.signal);
+        error = abortError(control.signal, this.requestTimeout, 'request');
       primary = error;
       if (sessionId && !completed)
         await this.cleanupRequest(server, `/session/${encodeURIComponent(sessionId)}/abort`);

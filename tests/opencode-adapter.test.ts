@@ -39,7 +39,7 @@ const request: TextRequest = {
   documents: [],
 };
 
-async function fixture(mode = 'ok') {
+async function fixture(mode = 'ok', startupTimeoutMs = 5_000) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes opencode '));
   roots.push(root);
   const file = path.join(root, 'fixture.mjs');
@@ -50,7 +50,7 @@ const mode=${JSON.stringify(mode)}; let stream;
 const send=(res,value)=>{res.write('data: '+JSON.stringify(value)+'\\n\\n')};
 const server=http.createServer(async(req,res)=>{
  const auth=req.headers.authorization||''; if(!auth.startsWith('Basic ')){res.writeHead(401);return res.end();}
- if(req.url==='/provider'){res.setHeader('content-type','application/json');return res.end(JSON.stringify(mode==='zen'?{connected:['opencode'],all:[{id:'opencode',models:{'zen-model':{id:'zen-model',name:'Zen model'}}}]}:{connected:['opencode-go'],all:[{id:'opencode-go',models:{'go-model':{id:'go-model',name:'Go model',description:'fixture'}}}]}));}
+ if(req.url==='/provider'){if(mode==='start-hang')return; res.setHeader('content-type','application/json');return res.end(JSON.stringify(mode==='zen'?{connected:['opencode'],all:[{id:'opencode',models:{'zen-model':{id:'zen-model',name:'Zen model'}}}]}:{connected:['opencode-go'],all:[{id:'opencode-go',models:{'go-model':{id:'go-model',name:'Go model',description:'fixture'}}}]}));}
  if(req.url==='/event'){res.writeHead(200,{'content-type':'text/event-stream'});stream=res;send(res,{type:'server.connected',properties:{}});return;}
  if(req.url==='/session'&&req.method==='POST'){let b='';for await(const c of req)b+=c;res.setHeader('content-type','application/json');return res.end(JSON.stringify({id:'session-1'}));}
  if(req.url==='/session/session-1/prompt_async'){res.writeHead(204);res.end(); if(mode==='hang')return; setTimeout(()=>{if(!stream)return; if(mode==='malformed'){stream.write('data: {bad\\n\\n');return;} if(mode==='retry'){send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'retry',attempt:1,message:'retry',next:1}}});return;} if(mode==='tools'){send(stream,{type:'message.part.updated',properties:{part:{sessionID:'session-1',messageID:'assistant-1',type:'tool',text:''}}});return;} if(mode==='noise'){send(stream,{type:'message.updated',properties:{info:{id:'noise',sessionID:'other-session',role:'assistant',providerID:'other',modelID:'other'}}});} const provider=mode==='mismatch'?'other':'opencode-go'; send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Answer'}}); send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1,completed:2},finish:'stop'}}}); send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'idle'}}});},5);return;}
@@ -69,7 +69,7 @@ const server=http.createServer(async(req,res)=>{
   };
   const adapter = new OpenCodeAdapter('opencode', root, {
     spawn: launch,
-    startupTimeoutMs: 5_000,
+    startupTimeoutMs,
     requestTimeoutMs: mode === 'hang' ? 30 : 1_000,
   });
   return { adapter, launches };
@@ -144,6 +144,22 @@ describe('OpenCode 1.18.4 authenticated text route', () => {
   it('reports a bounded server timeout separately from cancellation', async () => {
     const { adapter } = await fixture('hang');
     await expect(adapter.generate(request)).rejects.toMatchObject({ code: 'TIMEOUT' });
+  });
+  it('keeps the request-budget sentence for a timed-out request', async () => {
+    const { adapter } = await fixture('hang');
+    await expect(adapter.generate(request)).rejects.toMatchObject({
+      code: 'TIMEOUT',
+      message:
+        'OpenCode did not finish within the time limit. Recheck before starting another request.',
+    });
+  });
+  it('gives the startup budget its own timeout sentence', async () => {
+    const { adapter } = await fixture('start-hang', 2_000);
+    await expect(adapter.generate(request)).rejects.toMatchObject({
+      code: 'TIMEOUT',
+      message:
+        'OpenCode did not start within 2 seconds. Recheck the engine in Settings before starting another request.',
+    });
   });
   it('preserves the request failure and reports uncertain process cleanup safely', async () => {
     const { adapter } = await fixture('malformed');

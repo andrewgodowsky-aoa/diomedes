@@ -85,6 +85,31 @@ const active = (session: Session) => ['queued', 'working', 'waiting'].includes(s
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
+/**
+ * A paid model turn sometimes wraps the JSON object in a ```json fence or adds
+ * one short sentence before it. Only those two wrappings are tolerated:
+ * anything that already parses is returned unchanged, anything else stays a
+ * refusal, and prose scattered with braces is never promoted to a proposal.
+ */
+export function extractJsonObject(text: string): string {
+  try {
+    JSON.parse(text);
+    return text;
+  } catch {
+    // Fall through to the two tolerated wrappings.
+  }
+  const fences = [...text.matchAll(/```(?:json)?[ \t]*\r?\n([\s\S]*?)```/g)];
+  if (fences.length === 1) return fences[0][1].trim();
+  const first = text.indexOf('{');
+  const last = text.lastIndexOf('}');
+  if (first !== -1 && last > first) {
+    const outside = text.slice(0, first) + text.slice(last + 1);
+    if (!outside.includes('{') && (outside.trim() === '' || outside.length <= 400))
+      return text.slice(first, last + 1);
+  }
+  return text;
+}
+
 export function parseProposal(text: string): Proposal {
   if (Buffer.byteLength(text) > MAX_BYTES * 8)
     throw new ApiError(
@@ -93,7 +118,7 @@ export function parseProposal(text: string): Proposal {
     );
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(extractJsonObject(text));
   } catch {
     throw new ApiError(
       422,
@@ -502,6 +527,17 @@ export class NativeWorkService {
       });
       await this.store.locked(async () => {
         if (this.runs.get(run.projectId) !== run || run.controller.signal.aborted) return;
+        const state = this.store.state(run.projectId),
+          session = this.session(run),
+          task = state.tasks.find((item) => item.id === run.taskId)!;
+        // The runtime-reported engine only; a missing report stays unverified.
+        // It is recorded and persisted before the proposal is judged, so a
+        // refused or failed turn is still attributed to the model that billed
+        // it, and no request setting can invent one.
+        session.engine.model = result.model ? (run.redact?.(result.model) ?? result.model) : null;
+        session.engine.version = result.version ?? null;
+        session.engine.verified = Boolean(result.model);
+        await this.store.persist(state);
         const proposal = parseProposal(result.text);
         if (run.redact) {
           proposal.summary = run.redact(proposal.summary);
@@ -511,13 +547,6 @@ export class NativeWorkService {
             if (change.text !== null) change.text = run.redact(change.text);
           }
         }
-        const state = this.store.state(run.projectId),
-          session = this.session(run),
-          task = state.tasks.find((item) => item.id === run.taskId)!;
-        // The runtime-reported engine only; a missing report stays unverified.
-        session.engine.model = result.model ? (run.redact?.(result.model) ?? result.model) : null;
-        session.engine.version = result.version ?? null;
-        session.engine.verified = Boolean(result.model);
         session.origin = directOrigin({
           engine: run.engine,
           ...(run.agent
