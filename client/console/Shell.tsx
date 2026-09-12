@@ -362,7 +362,10 @@ export function Shell({
   // `statePayload` strips `documents` from the SSE fan-out, so the listing is
   // fetched here: when the pane or the palette wants it, and again on each
   // state event while one of them is open. Nothing reads `state.documents`.
-  const wantDocuments = filesOpen || paletteOpen;
+  // The Board wants the listing too, so a Start can pick the documents a task
+  // names without a round trip between the click and the command.
+  const wantDocuments = filesOpen || paletteOpen || view === 'Board';
+  const documentsFor = useRef<string | null>(null);
   useEffect(() => {
     if (!wantDocuments) return;
     let alive = true;
@@ -371,11 +374,13 @@ export function Shell({
       .then((result) => {
         if (!alive || currentId.current !== projectId) return;
         setDocuments(result.documents);
+        documentsFor.current = projectId;
         setDocumentsFailure(null);
       })
       .catch((e: unknown) => {
         if (!alive || currentId.current !== projectId) return;
         setDocuments([]);
+        documentsFor.current = null;
         setDocumentsFailure(
           isMissingRoute(e)
             ? 'This service does not list project documents.'
@@ -636,7 +641,8 @@ export function Shell({
   // none sends none, and the confirmation says which. The listing is fetched
   // here because the state fan-out strips `documents`.
   async function taskSources(task: Task): Promise<string[]> {
-    const { documents: listed } = await listDocuments(projectId);
+    const listed =
+      documentsFor.current === projectId ? documents : (await listDocuments(projectId)).documents;
     return selectTaskSources(task, listed);
   }
   async function startTask(task: Task, route: Route) {
