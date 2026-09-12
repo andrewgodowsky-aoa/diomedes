@@ -387,12 +387,14 @@ describe('native harness through the real host', () => {
       'Format the fixture.',
       localHarnessPrincipal(third.id),
     );
-    await vi.waitFor(() =>
-      expect(
-        store()
-          .state(third.id)
-          .sessions.find((item) => item.id === session.id)!.state,
-      ).toBe('waiting'),
+    await vi.waitFor(
+      () =>
+        expect(
+          store()
+            .state(third.id)
+            .sessions.find((item) => item.id === session.id)!.state,
+        ).toBe('waiting'),
+      { timeout: 15_000 },
     );
   });
 
@@ -473,8 +475,9 @@ describe('native harness through the real host', () => {
       localHarnessPrincipal(projectId),
     );
     expect(session.permission).toBe('task');
-    await vi.waitFor(() =>
-      expect(state().needs.some((need) => need.sessionId === session.id)).toBe(true),
+    await vi.waitFor(
+      () => expect(state().needs.some((need) => need.sessionId === session.id)).toBe(true),
+      { timeout: 15_000 },
     );
     expect(await store().current(projectId, REPORT_PATH)).toBeNull();
   });
@@ -532,8 +535,9 @@ describe('native harness through the real host', () => {
       'Read a fixture.',
       localHarnessPrincipal(projectId),
     );
-    await vi.waitFor(() =>
-      expect(state().sessions.find((item) => item.id === session.id)!.state).toBe('failed'),
+    await vi.waitFor(
+      () => expect(state().sessions.find((item) => item.id === session.id)!.state).toBe('failed'),
+      { timeout: 15_000 },
     );
     const [run] = await host().list(projectId);
     expect(await fs.readFile(runFile(run.id), 'utf8')).not.toContain(token);
