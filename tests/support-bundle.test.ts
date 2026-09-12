@@ -164,3 +164,34 @@ describe('support bundle', () => {
     expect(rendered.split('\n').filter((line) => line.startsWith('project ') && !line.startsWith('project root:'))).toHaveLength(0);
   });
 });
+
+describe('the support bundle route', () => {
+  test('answers without a project, and the text names what it excludes', async () => {
+    const { createApp } = await import('../server/app.js');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const fs = await import('node:fs/promises');
+    const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-support-'));
+    const app = await createApp({
+      dataDir: path.join(temp, 'data'),
+      projectRoot: path.join(temp, 'projects'),
+      stepMs: 20,
+    });
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const { port } = server.address() as { port: number };
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/support/bundle?project=missing`);
+      expect(response.status).toBe(200);
+      const { bundle, text } = (await response.json()) as { bundle: { project: unknown; app: { version: string } }; text: string };
+      expect(bundle.project).toBeNull();
+      expect(text).toContain(`Diomedes ${bundle.app.version}`);
+      expect(text).toContain('not included: Environment variables are not included.');
+    } finally {
+      await app.locals.close();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await fs.rm(temp, { recursive: true, force: true });
+    }
+  });
+});

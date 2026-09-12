@@ -562,6 +562,7 @@ export function SettingsPage({
                   Local browser application. Text and Markdown editing. No startup service or remote
                   access.
                 </p>
+                <SupportBundleCopy />
               </>
             )}
             {section === 'Rules' && (
@@ -656,5 +657,35 @@ export function SettingsPage({
         </Modal>
       )}
     </div>
+  );
+}
+
+/**
+ * One button that copies the support bundle: version, host, paths, engine
+ * status, counts and recent errors, with secrets scrubbed and the exclusions
+ * listed in the text itself. The feedback says what actually happened.
+ */
+function SupportBundleCopy() {
+  const [note, setNote] = useState('');
+  return (
+    <p className="caption">
+      <button
+        type="button"
+        onClick={async () => {
+          setNote('');
+          try {
+            const { text } = await api<{ text: string }>('/support/bundle');
+            if (!navigator.clipboard) throw new Error('The clipboard is not available here.');
+            await navigator.clipboard.writeText(text);
+            setNote('Copied. Secrets and document contents are not included.');
+          } catch (error) {
+            setNote(error instanceof Error ? error.message : 'The bundle could not be copied.');
+          }
+        }}
+      >
+        Copy support information
+      </button>
+      {note && <span role="status"> {note}</span>}
+    </p>
   );
 }

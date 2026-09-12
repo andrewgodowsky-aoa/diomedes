@@ -40,6 +40,7 @@ import {
   isCapabilityPackId,
 } from '../shared/capability-packs.js';
 import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText } from './store.js';
+import { buildSupportBundle, renderSupportBundle } from './support-bundle.js';
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
 import { askCodex, getIntegrationStatuses, type NativeTeamOptions } from './integrations.js';
@@ -668,6 +669,49 @@ export async function createApp(options: AppOptions) {
       service: 'local',
       port,
     }),
+  );
+  /**
+   * The last few errors the service logged, for the support bundle. Messages
+   * only, capped, and scrubbed again on the way out; a stack is a developer's
+   * tool and this is a person's.
+   */
+  const recentErrors: string[] = [];
+  const noteError = (error: unknown) => {
+    const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    recentErrors.push(`${now()} ${message}`.slice(0, 500));
+    if (recentErrors.length > 20) recentErrors.shift();
+  };
+  /**
+   * What a person may paste into a support request. Everything is scrubbed
+   * against the team secrets of the project named, if any, and the bundle
+   * itself lists what it leaves out. Read-only; no lock needed.
+   */
+  app.get(
+    '/api/support/bundle',
+    route(async (req) => {
+      const projectId = typeof req.query.project === 'string' ? req.query.project : null;
+      let state = null;
+      let secrets: string[] = [];
+      if (projectId) {
+        try {
+          state = store.state(projectId);
+          secrets = Object.values(await store.readTeamSecrets(projectId));
+        } catch {
+          state = null;
+        }
+      }
+      const bundle = buildSupportBundle({
+        version: packageInfo.version,
+        dataDir: store.dataDir,
+        projectRoot: store.projectRoot,
+        port,
+        engines: await getIntegrationStatuses({ refresh: false, passive: true }),
+        state,
+        recentErrors,
+        secrets,
+      });
+      return { bundle, text: renderSupportBundle(bundle) };
+    }, false),
   );
   app.get(
     '/api/settings',
@@ -2299,6 +2343,7 @@ export async function createApp(options: AppOptions) {
       return;
     }
     console.error(error);
+    noteError(error);
     res.status(500).json({
       error: 'The local service could not complete this action. Your saved history is preserved.',
     });
