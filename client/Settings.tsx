@@ -605,7 +605,7 @@ export function SettingsPage({
                   <br />
                   Transport: HTTP and server-sent events
                   <br />
-                  Storage: F:/Achilles/diomedes/.data
+                  Storage: this app&apos;s own data folder; its path is in the support information below
                   <br />
                   History: content-addressed objects and journal
                   <br />
