@@ -25,7 +25,11 @@ export const OPENCODE_VERSION = '1.18.4';
 export const OPENCODE_ACCOUNT_ROUTE = 'opencode:opencode-go';
 const MAX_JSON_BYTES = 512 * 1024;
 const MAX_EVENT_BYTES = 4 * 1024 * 1024;
-const STARTUP_TIMEOUT_MS = 15_000;
+// A cold `opencode serve` answers in about two seconds here, but the setup
+// screen checks four engines at once and a first start on a slow disk or a
+// busy machine has been seen past fifteen; the budget is generous because the
+// sentence that follows a miss names the wait and asks for a recheck.
+const STARTUP_TIMEOUT_MS = 45_000;
 const REQUEST_TIMEOUT_MS = 120_000;
 
 type Json = Record<string, unknown>;
