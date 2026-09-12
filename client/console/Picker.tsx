@@ -278,8 +278,7 @@ export function Picker({
               {waiting.map((id) => (
                 <p className="note" key={id}>
                   {integrations.find((i) => i.id === id)?.name ?? id} is on but has not passed a
-                  sign-in and model check. Open Settings &gt; Engines and press “Check sign-in and
-                  models”.
+                  sign-in and model check. Check it in Settings &gt; Engines.
                 </p>
               ))}
               {offeredIds.length === 0 && waiting.length === 0 && (

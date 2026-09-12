@@ -107,9 +107,10 @@ export function App() {
    * Every settings write carries the hash of the settings this screen last saw.
    * When another route has written since — AI setup's On switch and its
    * "Use as default" are two such routes — the server refuses rather than
-   * overwriting, and hands back what it stored. Adopting that is the correct
-   * outcome, not an error to report: the screen ends up showing the saved
-   * state, which is what it was asked to do.
+   * overwriting, and hands back what it stored. The screen adopts the saved
+   * state, and says so: the change the person just made did not land, so
+   * staying silent would leave them reading a screen that quietly disagrees
+   * with what they pressed.
    */
   async function saveSettings(value: Settings) {
     setBusy(true);
@@ -117,7 +118,7 @@ export function App() {
       setSettings(await writeSettings(value));
     } catch (e) {
       if (e instanceof SettingsConflict) setSettings(e.settings);
-      else report(e);
+      report(e);
     } finally {
       setBusy(false);
     }

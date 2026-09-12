@@ -115,11 +115,15 @@ the client's stale base. A switch whose snapshot predates a select discards `def
   `patchSettings` (unguarded, one field, still records the tag), `setEngineEnabled`,
   `selectEngineModel`, and a `SettingsConflict` error carrying the saved settings.
 - **`client/AISetup.tsx`**: the switch calls `setEngineEnabled`; "Use as default" calls
-  `selectEngineModel`. Both then publish the settings the **server** saved, not the value the screen
-  hoped for.
+  `selectEngineModel`. Neither writes anything back. A first draft echoed each response through the
+  parent's guarded PUT, which re-opened the race it was meant to close: both responses land in the
+  same tick, so the client keeps one hash — the later one — and a PUT of the *earlier* body then
+  measures as current, is accepted, and silently reverts the later write. The hash guard cannot see
+  this, because the hash is honest and only the body is old. `store.saveSettings` emits `settings`,
+  the app re-reads on that event, and the screen shows what was stored.
 - **`client/App.tsx`**: `saveSettings` writes through the guard and, on a conflict, adopts the saved
-  settings rather than reporting an error — the screen ends up showing what was stored, which is what
-  it was asked to do. The three one-field writes (interface scale, open projects, last page) go
+  settings *and says so*. The change the person just made did not land; staying silent would leave
+  them reading a screen that quietly disagrees with what they pressed. The three one-field writes (interface scale, open projects, last page) go
   through `patchSettings`, so they stay unguarded but keep the tag current and cannot cause a
   spurious refusal later.
 
@@ -131,15 +135,15 @@ No client-side lock was added.
 |---|---|
 | `client/console/Picker.tsx` | Reads `GET /ai/status` for external engines; offers a signed-in account regardless of check age; states when it last looked; names an on-but-unchecked engine and its fix. |
 | `client/console/PermissionPanel.tsx` | `Codex only` plus one next action for the two scope-backed options on a non-Codex route. |
-| `client/AISetup.tsx` | Switch and default-model writes go through the two server-side routes; the screen shows the saved settings. |
+| `client/AISetup.tsx` | Switch and default-model writes go through the two server-side routes and write nothing back; the screen shows the saved settings the server publishes. |
 | `client/api.ts` | Additive: engine connections, guarded and unguarded settings writes, the two AI-setup writes, `SettingsConflict`. |
-| `client/App.tsx` | Guarded `saveSettings` that adopts the saved state on conflict; one-field writes keep the tag current. |
+| `client/App.tsx` | Guarded `saveSettings` that adopts *and reports* the saved state on conflict; one-field writes keep the tag current. |
 | `server/app.ts` | Settings ETag on four routes, the `If-Match` guard, and `POST /api/ai/enabled`. |
 | `tests/picker-setup.test.ts` | New. |
 
 ## Tests
 
-`tests/picker-setup.test.ts`, eleven cases over an injected `EngineService` whose adapter never
+`tests/picker-setup.test.ts`, twelve cases over an injected `EngineService` whose adapter never
 starts a native engine, reads a credential store or contacts a provider.
 
 - Before any check: `/ai/status` reports not-checked with no account route and no models,
@@ -152,6 +156,9 @@ starts a native engine, reads a credential store or contacts a provider.
   says so; missing, not-checked, unsupported, signed-out, unknown and empty-model accounts are not.
 - Write ordering: the switch and "Use as default" in both orders, both surviving; the switch turned
   off without discarding the model it was given.
+- The echo hazard itself: PUT-ing the switch route's response body with the select route's (current,
+  honest) tag is accepted and loses the model. This is the loss the screen no longer risks, and the
+  reason AI setup writes nothing back.
 - The guard's three outcomes: a whole-object write against a moved hash refused with the saved
   settings and their tag, the same write against the current tag accepted, and a caller that sends no
   tag unaffected. Plus two refusals on `/ai/enabled` (a non-boolean switch, a non-external engine).
@@ -161,14 +168,13 @@ and was re-run: it still passes, so the change did not narrow the proven path.
 
 ## Gates
 
-Run in this worktree, on `0091136` plus the picker-gate tests:
+Run in this worktree on the tree this report lands with:
 
 - `npx tsc --noEmit` — clean.
-- `npx vitest run` — 90 files, 1521 passed, 1 skipped, before the two picker-gate cases were added;
-  1523 passed with them. The final counts are in the commit that lands this report.
+- `npx vitest run` — 90 files, 1524 passed, 1 skipped (1525 total).
 - `npx vite build` — built.
-- `npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts` — 20 passed, and
-  `tests/ai-engines-ui.spec.ts` — 1 passed. Both under the shared lock at
+- `npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/ai-engines-ui.spec.ts` —
+  21 passed. Under the shared lock at
   `F:\Diomedes\diomedes-wt\.playwright.lock`, taken and deleted by this branch.
 
 ## Known limits
@@ -176,7 +182,7 @@ Run in this worktree, on `0091136` plus the picker-gate tests:
 - **This was not verified against the real OpenCode account on this machine.** Every assertion here
   is source, unit and browser-fixture evidence. Journey B's live gap should be re-measured on a
   packaged build before it is called closed.
-- **Three files outside the brief's owned list were edited**, because the gaps are there and not in
+- **Two files outside the brief's owned list were edited**, because the gaps are there and not in
   the files the brief named: `server/app.ts` (the settings routes and the new `/ai/enabled`),
   `client/App.tsx` (the guarded write path). `server/configuration.ts` and
   `server/configuration-routes.ts`, which the brief did name, were not touched — they are business
@@ -191,6 +197,11 @@ Run in this worktree, on `0091136` plus the picker-gate tests:
   callers keep working. Every caller in this tree now sends a tag or owns one field.
 - **The permission panel's next action assumes Codex is connectable.** It says where to go; it does
   not check whether Codex is signed in on this machine before saying it.
+- **AI setup's own screen now depends on the `settings` event to update.** The saved state arrives
+  through `/api/events`; with the stream down the switch will not move, and the app's offline
+  indicator is the only sign. There is no browser test for the no-echo behaviour — this tree has no
+  component-test tooling, and the Playwright budget for this slice was spent — so the guarantee rests
+  on the two server routes, the vitest case above, and the re-run of `tests/ai-engines-ui.spec.ts`.
 
 ## PILLAR IMPACT
 

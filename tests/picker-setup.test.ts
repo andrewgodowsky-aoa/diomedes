@@ -228,6 +228,38 @@ describe('AI setup writes cannot lose each other', () => {
     }
   });
 
+  it('reverts the later write when an earlier response is echoed back with the current hash', async () => {
+    // Why AI setup writes nothing back after the two switch/select routes.
+    // Each route answers with the whole settings object and its hash. When both
+    // answers land in the same tick, a screen that keeps one hash keeps the
+    // later one — and a PUT of the *earlier* body then measures as current and
+    // is accepted, silently undoing the write that came second. The hash guard
+    // cannot see this, because the hash is honest and the body is old. So the
+    // screen must not echo; the server publishes what it saved and the app
+    // re-reads that.
+    const { call, connect } = await fixture();
+    await connect();
+    expect((await call('/ai/enabled', 'POST', { engine: 'opencode', on: false })).status).toBe(200);
+    const enabled = await call('/ai/enabled', 'POST', { engine: 'opencode', on: true });
+    const chosen = await call('/ai/select', 'POST', {
+      engine: 'opencode',
+      model: 'opencode-go/glm-5.2',
+    });
+    expect(enabled.status).toBe(200);
+    expect(chosen.status).toBe(200);
+    const echo = await call(
+      '/settings',
+      'PUT',
+      enabled.data as unknown as Settings,
+      chosen.etag ?? undefined,
+    );
+    expect(echo.status).toBe(200);
+    // Proof of the loss the client no longer risks: the chosen model is gone.
+    expect(((await call('/settings')).data as unknown as Settings).services?.opencodeModel).toBe(
+      undefined,
+    );
+  });
+
   it('turns an engine off without discarding the default model it was given', async () => {
     const { call, connect } = await fixture();
     await connect();

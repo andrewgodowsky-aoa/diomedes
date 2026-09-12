@@ -70,7 +70,7 @@ export interface AISetupProps extends AIConnectionProps {
   onBack: () => void;
 }
 
-export function AIConnections({ settings, save, busy }: AIConnectionProps) {
+export function AIConnections({ settings, busy }: AIConnectionProps) {
   const [connections, setConnections] = useState<EngineConnection[] | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -198,14 +198,20 @@ export function AIConnections({ settings, save, busy }: AIConnectionProps) {
 
   /**
    * The switch names one key. It is sent as that one key, and the server merges
-   * it into whatever is stored, so pressing this and "Use as default" in quick
-   * succession cannot lose either write. What the screen then shows is the
-   * settings the server saved, never the value this screen hoped for.
+   * it into whatever is stored under the store's lock, so pressing this and
+   * "Use as default" in quick succession cannot lose either write.
+   *
+   * Nothing is written back from here. Echoing the response as a whole-object
+   * PUT would re-open the very race this route closes: two responses landing in
+   * the same tick share one recorded hash, so the slower continuation could
+   * still overwrite the faster write with its own older whole object. The
+   * server publishes `settings` when it saves, the app re-reads on that event,
+   * and the screen shows the settings the server stored.
    */
   async function toggle(engine: ExternalEngine, on: boolean): Promise<void> {
     setOpError((prev) => ({ ...prev, [engine]: null }));
     try {
-      await save(await setEngineEnabled(engine, on));
+      await setEngineEnabled(engine, on);
     } catch (error) {
       fail(engine, error);
     }
@@ -219,13 +225,9 @@ export function AIConnections({ settings, save, busy }: AIConnectionProps) {
     setOpError((prev) => ({ ...prev, [engine]: null }));
     setProgress(`Setting the default model for ${ENGINE_NAMES[engine]}…`);
     try {
-      const result = await selectEngineModel(engine, model, controller.signal);
-      if (!mounted.current) return;
-      // The server has already written this under its lock. The parent save
-      // publishes the saved settings; because it carries the hash the server
-      // just reported, a write that landed in between is refused rather than
-      // overwritten, and the screen adopts what was actually stored.
-      await save(result);
+      // The server has already written this under its lock, and publishes the
+      // saved settings. As with the switch, nothing is written back from here.
+      await selectEngineModel(engine, model, controller.signal);
     } catch (error) {
       if (controller.signal.aborted || !mounted.current) return;
       fail(engine, error);
