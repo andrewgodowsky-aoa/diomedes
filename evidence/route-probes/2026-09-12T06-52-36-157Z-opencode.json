@@ -1,0 +1,256 @@
+{
+  "startedAt": "2026-09-12T06:52:36.158Z",
+  "engine": "opencode",
+  "wantedModel": "opencode-go/glm-5.2",
+  "liveTurns": 1,
+  "outcome": "proposal",
+  "discovered": {
+    "connections": [
+      {
+        "engine": "claude-code",
+        "installation": "found",
+        "compatibility": "supported",
+        "authentication": "unknown",
+        "accountRoute": null,
+        "models": [],
+        "checkedAt": "2026-09-12T06:52:39.465Z",
+        "detail": "Found a compatible installation. Check sign-in and models next.",
+        "usage": {
+          "state": "unknown",
+          "checkedAt": null
+        },
+        "location": "C:\\Users\\andre\\.local\\bin\\claude.exe",
+        "version": "2.1.252"
+      },
+      {
+        "engine": "opencode",
+        "installation": "found",
+        "compatibility": "supported",
+        "authentication": "unknown",
+        "accountRoute": null,
+        "models": [],
+        "checkedAt": "2026-09-12T06:52:39.465Z",
+        "detail": "Found a compatible installation. Check sign-in and models next.",
+        "usage": {
+          "state": "unknown",
+          "checkedAt": null
+        },
+        "location": "C:\\Users\\andre\\AppData\\Local\\Microsoft\\WinGet\\Packages\\OpenJS.NodeJS.LTS_Microsoft.Winget.Source_8wekyb3d8bbwe\\node-v24.14.1-win-x64\\node_modules\\opencode-ai\\bin\\opencode.exe",
+        "version": "1.18.4"
+      },
+      {
+        "engine": "oh-my-pi",
+        "installation": "found",
+        "compatibility": "supported",
+        "authentication": "unknown",
+        "accountRoute": null,
+        "models": [],
+        "checkedAt": "2026-09-12T06:52:39.465Z",
+        "detail": "Found a compatible installation. Check sign-in and models next.",
+        "usage": {
+          "state": "unknown",
+          "checkedAt": null
+        },
+        "location": "C:\\Users\\andre\\.bun\\bin\\omp.exe",
+        "version": "18.0.6"
+      },
+      {
+        "engine": "cursor",
+        "installation": "found",
+        "compatibility": "supported",
+        "authentication": "unknown",
+        "accountRoute": null,
+        "models": [],
+        "checkedAt": "2026-09-12T06:52:39.467Z",
+        "detail": "Found a compatible installation. Check sign-in and models next.",
+        "usage": {
+          "state": "unknown",
+          "checkedAt": null
+        },
+        "location": "C:\\Users\\andre\\AppData\\Local\\cursor-agent\\versions\\2026.08.11-e8db854\\index.js",
+        "version": "2026.08.11"
+      }
+    ]
+  },
+  "check": {
+    "engine": "opencode",
+    "installation": "found",
+    "compatibility": "supported",
+    "authentication": "signed-in",
+    "accountRoute": "opencode:opencode-go",
+    "models": [
+      {
+        "slug": "opencode-go/mimo-v2.5-pro",
+        "name": "MiMo V2.5 Pro",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      },
+      {
+        "slug": "opencode-go/kimi-k2.7-code",
+        "name": "Kimi K2.7 Code",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      },
+      {
+        "slug": "opencode-go/mimo-v2.5",
+        "name": "MiMo V2.5",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      },
+      {
+        "slug": "opencode-go/kimi-k3",
+        "name": "Kimi K3 (2x usage)",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      },
+      {
+        "slug": "opencode-go/deepseek-v4-flash",
+        "name": "DeepSeek V4 Flash",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      },
+      {
+        "slug": "opencode-go/grok-4.5",
+        "name": "Grok 4.5",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      },
+      {
+        "slug": "opencode-go/kimi-k2.6",
+        "name": "Kimi K2.6",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      },
+      {
+        "slug": "opencode-go/qwen3.7-plus",
+        "name": "Qwen3.7 Plus",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      },
+      {
+        "slug": "opencode-go/deepseek-v4-pro",
+        "name": "DeepSeek V4 Pro",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      },
+      {
+        "slug": "opencode-go/qwen3.7-max",
+        "name": "Qwen3.7 Max",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      },
+      {
+        "slug": "opencode-go/qwen3.6-plus",
+        "name": "Qwen3.6 Plus",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      },
+      {
+        "slug": "opencode-go/glm-5.2",
+        "name": "GLM-5.2",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      },
+      {
+        "slug": "opencode-go/minimax-m3",
+        "name": "MiniMax-M3",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      },
+      {
+        "slug": "opencode-go/glm-5.1",
+        "name": "GLM-5.1",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      },
+      {
+        "slug": "opencode-go/minimax-m2.7",
+        "name": "MiniMax-M2.7",
+        "description": "",
+        "efforts": [],
+        "defaultEffort": null
+      }
+    ],
+    "checkedAt": "2026-09-12T06:52:41.946Z",
+    "detail": "Native OpenCode Go account connected. Choose an explicit provider/model.",
+    "usage": {
+      "state": "unknown",
+      "checkedAt": null
+    },
+    "location": "C:\\Users\\andre\\AppData\\Local\\Microsoft\\WinGet\\Packages\\OpenJS.NodeJS.LTS_Microsoft.Winget.Source_8wekyb3d8bbwe\\node-v24.14.1-win-x64\\node_modules\\opencode-ai\\bin\\opencode.exe",
+    "version": "1.18.4"
+  },
+  "advertisedModels": [
+    "opencode-go/mimo-v2.5-pro",
+    "opencode-go/kimi-k2.7-code",
+    "opencode-go/mimo-v2.5",
+    "opencode-go/kimi-k3",
+    "opencode-go/deepseek-v4-flash",
+    "opencode-go/grok-4.5",
+    "opencode-go/kimi-k2.6",
+    "opencode-go/qwen3.7-plus",
+    "opencode-go/deepseek-v4-pro",
+    "opencode-go/qwen3.7-max",
+    "opencode-go/qwen3.6-plus",
+    "opencode-go/glm-5.2",
+    "opencode-go/minimax-m3",
+    "opencode-go/glm-5.1",
+    "opencode-go/minimax-m2.7"
+  ],
+  "selected": {
+    "model": "opencode-go/glm-5.2",
+    "accountRoute": "opencode:opencode-go",
+    "defaultEngine": "opencode"
+  },
+  "sessionId": "S92d5dd9daa38",
+  "elapsedMs": 13585,
+  "sessionState": "waiting",
+  "reportedModel": "opencode-go/glm-5.2",
+  "engineRecord": {
+    "name": "opencode, guarded file proposals",
+    "model": "opencode-go/glm-5.2",
+    "worker": 1,
+    "branch": null,
+    "context": 52,
+    "events": 4,
+    "version": "1.18.4",
+    "verified": true
+  },
+  "log": [
+    "Preparing a proposal with opencode from 1 document.",
+    "The adapter disables engine tools and sends only selected text. This is not an operating-system sandbox.",
+    "Appends the exact sentence 'Route probe verified.' as one new line at the end of Brief.md, preserving all existing characters.",
+    "The proposal is ready. Review its files before saying go ahead. Nothing in the project has been changed."
+  ],
+  "need": {
+    "state": "open",
+    "previewFiles": [
+      {
+        "path": "Brief.md",
+        "afterLength": 74
+      }
+    ],
+    "summary": null
+  },
+  "fault": null,
+  "history": [
+    "Diomedes saved a version (selected documents)",
+    "Diomedes accepted this Work request."
+  ],
+  "fileUnchanged": true,
+  "finishedAt": "2026-09-12T06:52:55.625Z"
+}
