@@ -79,9 +79,11 @@ try {
       ),
     );
   const beforeFonts = await fonts();
-  // Prose and task content use the shared 16px body role before user scaling.
+  // The body sits at the shared 16px body role before user scaling; a task
+  // title stays at the 13px caption role and is carried by weight, not size
+  // (client/styles.css .task-title), which is what the readability patch kept.
   expect(beforeFonts.body).toBe(16);
-  expect(beforeFonts['.task-title']).toBe(16);
+  expect(beforeFonts['.task-title']).toBe(13);
   const before = await sizes();
   await page.screenshot({
     path: path.resolve('evidence/screenshots/desktop-tasks.png'),
