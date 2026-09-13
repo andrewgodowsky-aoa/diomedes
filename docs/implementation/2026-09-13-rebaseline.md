@@ -84,10 +84,13 @@ Fable's own claim for this node (`claim_mtzduvno_9b5dcf0d`): `AGENTS.md`,
 
 ## 5. Coordination root and tool
 
-Layout: `claims/` (atomic `wx` claim files plus per-path locks under `claims/paths/`),
-`external-claims/`, `journals/<role>.jsonl`, `slot/heavy.json`, `work-orders/<node>.json`,
-`results/`, `handoffs/`. `scripts/coordination.ts` implements it; `tests/coordination.test.ts`
-proves the required acceptance cases:
+Layout after the C00 repair (section 14): `claims/` (winning claims and `.released.json`
+records; `claims/attempts/`, the dense `claims/order/` sequence and one `claims/decisions/`
+record per attempt; `claims/paths/` lock files kept only for the earlier tool),
+`handoffs/issued/` (integrator handoffs and their single use), `external-claims/`,
+`journals/<role>.jsonl`, `slot/heavy.json`, `work-orders/<node>.json`, `results/`.
+`scripts/coordination.ts` implements it; `tests/coordination.test.ts` proves the acceptance
+cases the original candidate had, and section 14 lists what the repair added:
 
 - two workers claiming the same path: exactly one wins, the loser is told the holder;
 - a stale timestamp alone does not permit a steal;
@@ -106,7 +109,7 @@ Additive. `HARNESS_CONTRACT_VERSION`, `WORK_CONTROL_CONTRACT_VERSION`,
 `shared/harness.ts`, `shared/agents.ts`, `shared/engines.ts` and
 `shared/capability-packs.ts` were inspected and not changed.
 
-| frozen thing | schema | built from |
+| proposed shape | schema | built from |
 |---|---|---|
 | command identity and expected revision | `commandIdentitySchema` | `commandIdSchema` regex and `payloadDigest` shape from `server/command-admission.ts`, plus `expectedRevision` |
 | authoritative run/turn/event IDs | `authoritativeIdsSchema` | `HarnessEvent{v,seq,runId}`, `Session.id`, turn id; authority is always `host` |
@@ -133,7 +136,9 @@ list, and tool refs carry effect and permission for the live re-authorize path i
 `server/harness/lifecycle.ts`); a model alias changing identity (`requested` and
 `reported` stay apart and `source` says whether the runtime reported at all); an
 activated-but-unauthorized pack (`activatedAt` is a date, not a grant; Trust decides).
-No consumer was written in this patch. Test: `tests/contract-revision.test.ts` (23 cases).
+No consumer was written in this patch. Test: `tests/contract-revision.test.ts` (23 cases on the
+original candidate; 31 after the C00 repair, which makes the model source agree with the reported
+model and binds every run reference to the run store's identifier pattern, section 14).
 
 ## 7. Inventory
 
@@ -148,7 +153,7 @@ rows below were verified by Fable against `212106e`.
 - **Model-profile resolvers**: `server/execution.ts:225 resolveExecution` (with the entitlement, trust and budget gates at `:66,:111,:147`), `shared/agents.ts:309 agentCompatibility` (there is no `resolveAgent`), `shared/effort.ts`, `server/models.ts` catalog.
 - **Pack manifests**: one capability pack, `diomedes.software-engineering` 0.1.0 (`shared/capability-packs.ts:124-147`); `shared/packs.ts` is the weekly-brief template compiler, deliberately not a capability pack.
 - **Console surfaces**: 24 files under `client/console/` (ActivityOverview, AgentPicker, Allowance, BoardView, BusinessSetup, Composer, Configuration, FilesPane, FollowUpQueue, Ledger, Mark, Need, PackSettings, Palette, PermissionPanel, Picker, ProjectInstructions, Rail, Shell, StopMenu, TeamView, ThreadView, Wake, Workspaces).
-- **Anchors the package names that do not exist on `212106e`**: 38, all `services/control-plane/**`, `docs/operations/`, and site paths; each is marked `proposed-new` in its work order (`evidence/unified-20260913/dependency-order.md`).
+- **Anchors the package names that are not in the app on `212106e`**: the original candidate recorded 38 `missing-on-base` entries and one `proposed-new` (B00.I's `services/control-plane/contract/`); this line wrongly called all 38 `proposed-new`. The C00 repair binds the 14 site entries (W02's combined `tests/` and `scripts/check-copy.mjs` entry is now two) to `diomedes-site` at `cf784de`, where 11 name paths that exist and 3 are descriptive, and marks the Google Docs mirrors external. The remaining 24 `missing-on-base` entries are all `services/control-plane/**` or `docs/operations/` (`evidence/unified-20260913/dependency-order.md`).
 
 ## 8. Coverage audit
 
@@ -212,13 +217,46 @@ install, site changes.
 Recorded in `evidence/unified-20260913/C00.I.json` with actual output. Focused suites
 were written first and failed for the missing modules (`Cannot find module
 '../shared/contract-revision.js'` and `'../scripts/coordination.js'`), then passed after
-the smallest implementation. The combined full gates run on the integration branch, not
-on this leaf, under the heavy slot.
+the smallest implementation (32 cases). The combined full gates run on the integration
+branch, not on this leaf, under the heavy slot. Section 14 records the repair pass's own
+verification.
 
 ## 13. Status
 
-- implementation: candidate complete on `fable/c00-rebaseline-20260913` (uncommitted until Andrew's per-patch approval is applied; Andrew pre-authorized commit and push to main for this run on 2026-09-13).
-- independent review (`C00.R`): not run.
+- implementation: the original candidate `a034163` was committed and integrated into `origin/main` `03a1b80` on 2026-09-13. The C00 repair (section 14) is committed locally on `fable/c00-rebaseline-20260913` and is not pushed.
+- independent review (`C00.R`): **failed** on `a034163` (Astra, findings C00-R1 to C00-R5); a renewed review is requested on the repair candidate.
 - live provider: not applicable (no live call in scope).
 - packaged / publication / deployment: not run.
-- blockers: local `main` cannot be fast-forwarded while Astra's FIL-02 is uncommitted in the main checkout; Playwright needs the heavy slot; `C00.R` is Astra's.
+- blockers: `B00.I` (03a) and `H01.I` (03b) wait for a renewed `C00.R` acceptance; contract revision `2026-09-13.1` stays proposed until then.
+
+## 14. C00 repair pass
+
+Astra's `C00.R` failed candidate `a034163` with five findings
+(`evidence/unified-20260913/C00.R.md`). On 2026-09-13 Andrew asked for Astra's counterexamples
+to be committed and C00 repaired before 03a and 03b. Claude Opus 5 did the repair in the fable
+seat (session pid 48352) under the coordination root handoffs
+`astra-c00-r-regression-files.json` and `fable-seat-c00-repair.json`. Astra's
+`tests/c00-independent.test.ts` and review evidence were committed unchanged first, failing as
+reported (13 of 27).
+
+| finding | repair | tests |
+|---|---|---|
+| C00-R1: aliases and directories defeat exclusive paths | `canonicalPath` gives one repository-relative identity. Separators, `.`/`..` segments and case do not make a second path, and escaping, absolute, drive, stream, reserved-device and short-name spellings are refused. Two claims overlap when one identity equals or contains the other. Exclusion is ordered: each attempt is hard-linked under the next free dense sequence number in `claims/order/` and yields to every earlier overlapping attempt that won or has not decided, so overlapping attempts cannot both win. An attempt that never decides blocks until its holder or the integrator releases it. Hot-file checks use the same identity and fail closed. Claims written by the earlier tool still exclude, and won claims leave the lock files that tool checks. | canonical path identity (26), overlap exclusion under concurrency (5) |
+| C00-R2: an arbitrary handoff string bypasses integrator ownership | `issueHandoff`: only the integrator issues a handoff, with a note, to one exact process identity, node, base and canonical scope. A claim that names it must match exactly. An id nobody issued, a record the integrator did not issue, any mismatch or a second use is refused as `handoff-invalid`. A valid handoff does not displace a live claim and is used only by a winning claim. Work mode lets the recipient edit only the hot path its own handed-off claim covers. | recorded handoffs (12) |
+| C00-R3: owner checks omit process identity | An owner is role, host, pid, process start instant and worktree, compared after respelling (host and worktree case, separators, time zone). Claim release, slot release and work mode use it. The integrator ends another holder's claim only with a recorded reason (`authority: integrator`). A malformed identity cannot claim, take the slot or write a journal. The CLI requires `--pid` for the long-lived process and reads its start time from the operating system (`Win32_Process.CreationDate`; `/proc` on Linux) unless `--start` is given. | complete owner identity (17), command-line identity (3) |
+| C00-R4: the proposed schemas admit contradictions | `profileSnapshotSchema.model` says `runtime` exactly when it names a reported model, as `directOrigin` records it, and `compatibilityForSavedRun` skips contradictory step records. `RUN_ID_PATTERN` is copied byte-identically from the run store and parity-tested; `authoritativeIds.runId`, `event.runId` and every continuation `ofRunId` use it. `forkPoint` stays a bounded id because no step-id pattern exists to reuse. | 8 new contract cases (31 in all) |
+| C00-R5: the manifest does not reconstruct its candidate | `C00.I.json` no longer hashes itself or its patch. The outer manifest, outside the tree, records the candidate commits, Git blob ids, sha256 over blob bytes (Git stores these files LF-normalized; working copies may be CRLF), patch digests and test results. The status text, the anchor labels (section 7), the HAR-10 and `AGENTS.md` wording and the `dependency-order.md` encoding are corrected, and the site anchors are bound to `diomedes-site` at `cf784de`. | none needed |
+
+Verification of the repair, in the order it ran:
+
+- RED: the new producer cases against the unrepaired code, 103 cases: 34 passed and 69 failed, each on a missing function or the reported defect (five winners in the alias race, impostor releases accepted, malformed identities accepted, `run/other` accepted).
+- GREEN: `tests/coordination.test.ts` 72, `tests/contract-revision.test.ts` 31 and `tests/c00-independent.test.ts` 27, so 130 passed. The affected runtime suites (`harness-provider-outcomes`, `harness-lifecycle`, `harness`, `harness-negative`) passed 118.
+- Repeats: the coordination and independent suites five times in a row, 99 of 99 each time, while the runtime suites ran alongside.
+- Mutation: treating an undecided earlier attempt as settled is caught by the stuck-attempt test. Skipping the order scan (check-then-write) is caught by 11 tests, including the race (8 winners) and C01, C02, C04 and C05.
+- CLI smoke against a scratch root: identity from the operating system, `--pid` required, an absent pid refused, an alias claim held, a claim under a handoff, a non-holder release refused and a holder release recorded.
+- Type check: `tsc --noEmit` over the changed files and their imports with the project's compiler options, exit 0. The full-project run under the heavy slot is recorded in the outer manifest.
+
+Transition: a session still running the earlier tool from an older worktree only checks
+exact-path lock files. The repaired tool writes those files for its claims and honors the
+earlier tool's claims, but only the repaired tool enforces aliases, directories, handoffs and
+full process identity. Every session should switch once the repair is on its base.

@@ -2722,33 +2722,45 @@
       "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
       "anchors": [
         {
-          "path": "site: src/data/site.ts",
-          "state": "missing-on-base",
+          "path": "src/data/site.ts",
+          "repository": "diomedes-site",
+          "inspected_at": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+          "state": "exists",
           "integrator_owned": false
         },
         {
-          "path": "site: src/data/releases.ts",
-          "state": "missing-on-base",
+          "path": "src/data/releases.ts",
+          "repository": "diomedes-site",
+          "inspected_at": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+          "state": "exists",
           "integrator_owned": false
         },
         {
-          "path": "site: src/data/engines.ts",
-          "state": "missing-on-base",
+          "path": "src/data/engines.ts",
+          "repository": "diomedes-site",
+          "inspected_at": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+          "state": "exists",
           "integrator_owned": false
         },
         {
-          "path": "site: src/pages/",
-          "state": "missing-on-base",
+          "path": "src/pages/",
+          "repository": "diomedes-site",
+          "inspected_at": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+          "state": "exists",
           "integrator_owned": false
         },
         {
-          "path": "site: src/content/",
-          "state": "missing-on-base",
+          "path": "src/content/",
+          "repository": "diomedes-site",
+          "inspected_at": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+          "state": "exists",
           "integrator_owned": false
         },
         {
-          "path": "site: scripts/check-copy.mjs",
-          "state": "missing-on-base",
+          "path": "scripts/check-copy.mjs",
+          "repository": "diomedes-site",
+          "inspected_at": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+          "state": "exists",
           "integrator_owned": false
         }
       ],
@@ -2784,28 +2796,48 @@
       "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
       "anchors": [
         {
-          "path": "site: src/data/releases.ts",
-          "state": "missing-on-base",
+          "path": "src/data/releases.ts",
+          "repository": "diomedes-site",
+          "inspected_at": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+          "state": "exists",
           "integrator_owned": false
         },
         {
-          "path": "site: actual capability registry discovered in W01",
-          "state": "missing-on-base",
+          "path": "actual capability registry discovered in W01",
+          "repository": "diomedes-site",
+          "inspected_at": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+          "state": "descriptive",
+          "integrator_owned": false,
+          "candidates": [
+            "src/data/status.ts"
+          ]
+        },
+        {
+          "path": "src/pages/",
+          "repository": "diomedes-site",
+          "inspected_at": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+          "state": "exists",
           "integrator_owned": false
         },
         {
-          "path": "site: src/pages/",
-          "state": "missing-on-base",
+          "path": "src/content/",
+          "repository": "diomedes-site",
+          "inspected_at": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+          "state": "exists",
           "integrator_owned": false
         },
         {
-          "path": "site: src/content/",
-          "state": "missing-on-base",
+          "path": "tests/",
+          "repository": "diomedes-site",
+          "inspected_at": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+          "state": "exists",
           "integrator_owned": false
         },
         {
-          "path": "site: tests/ and scripts/check-copy.mjs",
-          "state": "missing-on-base",
+          "path": "scripts/check-copy.mjs",
+          "repository": "diomedes-site",
+          "inspected_at": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+          "state": "exists",
           "integrator_owned": false
         }
       ],
@@ -2860,13 +2892,15 @@
           "integrator_owned": false
         },
         {
-          "path": "site: release/capability documentation",
-          "state": "missing-on-base",
+          "path": "release/capability documentation",
+          "repository": "diomedes-site",
+          "inspected_at": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+          "state": "descriptive",
           "integrator_owned": false
         },
         {
           "path": "Google Docs canonical mirrors",
-          "state": "missing-on-base",
+          "state": "external",
           "integrator_owned": false
         }
       ],
@@ -2910,8 +2944,10 @@
           "integrator_owned": false
         },
         {
-          "path": "site: approved release/offer manifests",
-          "state": "missing-on-base",
+          "path": "approved release/offer manifests",
+          "repository": "diomedes-site",
+          "inspected_at": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+          "state": "descriptive",
           "integrator_owned": false
         }
       ],

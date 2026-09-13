@@ -1,10 +1,10 @@
-# Dependency order · unified-20260913
+# Dependency order Â· unified-20260913
 
 Topological order from RUN_ORDER.json, ties broken by wave, priority, number. Base 212106e.
 
 | # | node | role | wave | pri | depends on | prompt |
 |---|---|---|---|---|---|---|
-| 1 | C00.I | FABLE_5_1 | 1 | 0 | — | `FABLE_5_1/01_C00_IMPLEMENT_rebaseline-freeze-shared-contracts-and-establish-the-two-lea.md` |
+| 1 | C00.I | FABLE_5_1 | 1 | 0 | â€” | `FABLE_5_1/01_C00_IMPLEMENT_rebaseline-freeze-shared-contracts-and-establish-the-two-lea.md` |
 | 2 | C00.R | ASTRA | 2 | 0 | C00.I | `ASTRA/02_C00_REVIEW_rebaseline-freeze-shared-contracts-and-establish-the-two-lea.md` |
 | 3 | B00.I | FABLE_5_1 | 3 | 0 | C00.R | `FABLE_5_1/03a_B00_IMPLEMENT_zero-budget-vendor-decision-and-shared-commercial-contracts.md` |
 | 4 | H01.I | FABLE_5_1 | 3 | 1 | C00.R | `FABLE_5_1/03b_H01_IMPLEMENT_one-versioned-adapter-contract-durable-event-stream-and-conf.md` |
@@ -109,7 +109,14 @@ Topological order from RUN_ORDER.json, ties broken by wave, priority, number. Ba
 | 103 | G01.I | FABLE_5_1 | 43 | 4 | D01.R | `FABLE_5_1/43_G01_IMPLEMENT_production-activation-readiness-not-automatic-launch.md` |
 | 104 | G01.R | ASTRA | 44 | 4 | G01.I | `ASTRA/44_G01_REVIEW_production-activation-readiness-not-automatic-launch.md` |
 
-## Anchors missing on base 212106e (marked proposed-new in the work order unless the prompt already says so)
+## Anchors not present in the app on base 212106e
+
+`work-orders.json` records each anchor's state. The original C00.I candidate marked 38 entries
+`missing-on-base`, including the site and Google Docs entries, and one `proposed-new`. The C00
+repair binds the site entries to the repository they name (`diomedes-site` at `cf784de`,
+where every literal path was checked with `git cat-file`) and marks the Google Docs mirrors external.
+
+### Missing on base (24)
 
 - B01.I: `services/control-plane/`
 - B01.I: `services/control-plane/migrations/`
@@ -133,19 +140,30 @@ Topological order from RUN_ORDER.json, ties broken by wave, priority, number. Ba
 - B10.I: `docs/operations/`
 - B11.I: `services/control-plane/tests/`
 - B12.I: `services/control-plane/connections/vercel/`
-- W01.I: `site: src/data/site.ts`
-- W01.I: `site: src/data/releases.ts`
-- W01.I: `site: src/data/engines.ts`
-- W01.I: `site: src/pages/`
-- W01.I: `site: src/content/`
-- W01.I: `site: scripts/check-copy.mjs`
-- W02.I: `site: src/data/releases.ts`
-- W02.I: `site: actual capability registry discovered in W01`
-- W02.I: `site: src/pages/`
-- W02.I: `site: src/content/`
-- W02.I: `site: tests/ and scripts/check-copy.mjs`
-- D01.I: `site: release/capability documentation`
-- D01.I: `Google Docs canonical mirrors`
 - G01.I: `docs/operations/`
 - G01.I: `services/control-plane/deployment/`
-- G01.I: `site: approved release/offer manifests`
+
+### Proposed new (1)
+
+- B00.I: `services/control-plane/contract/`
+
+### Site repository, diomedes-site at cf784de (14)
+
+- W01.I: `src/data/site.ts` (exists)
+- W01.I: `src/data/releases.ts` (exists)
+- W01.I: `src/data/engines.ts` (exists)
+- W01.I: `src/pages/` (exists)
+- W01.I: `src/content/` (exists)
+- W01.I: `scripts/check-copy.mjs` (exists)
+- W02.I: `src/data/releases.ts` (exists)
+- W02.I: `actual capability registry discovered in W01` (descriptive; candidate `src/data/status.ts`)
+- W02.I: `src/pages/` (exists)
+- W02.I: `src/content/` (exists)
+- W02.I: `tests/` (exists)
+- W02.I: `scripts/check-copy.mjs` (exists)
+- D01.I: `release/capability documentation` (descriptive)
+- G01.I: `approved release/offer manifests` (descriptive)
+
+### External (1)
+
+- D01.I: `Google Docs canonical mirrors`
