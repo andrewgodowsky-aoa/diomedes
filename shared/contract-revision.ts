@@ -42,18 +42,21 @@ export type ContractRevisionId = typeof CONTRACT_REVISION.revision;
 /** What a v:1 record written before this file existed is reported as. */
 export const PRE_REVISION = 'pre-2026-09-13.1' as const;
 
-// --- patterns shared with the admission layer and the run store -----------------
-// Kept byte-identical to server/command-admission.ts and to `RUN_ID` in
-// server/harness/run-store.ts; tests/contract-revision.test.ts checks both accept and
-// reject the same samples.
+// --- patterns shared with the admission layer and the harness runtime -----------
+// Kept byte-identical to server/command-admission.ts, to `RUN_ID` in
+// server/harness/run-store.ts and to `STEP_ID` in server/harness/run-service.ts;
+// tests/contract-revision.test.ts checks each accepts and rejects the same samples.
 export const COMMAND_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 export const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 export const REVISION_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
 export const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+export const STEP_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 const id = z.string().trim().min(1).max(200);
 /** A run id exactly as `FileRunStore` accepts it: nothing trimmed, no path separators. */
 const runId = z.string().regex(RUN_ID_PATTERN);
+/** A step id exactly as `RunService.step` accepts it; a fork point names a recorded step. */
+const stepId = z.string().regex(STEP_ID_PATTERN);
 const iso = z.string().datetime({ offset: true });
 const digest = z.string().regex(DIGEST_PATTERN);
 
@@ -163,7 +166,7 @@ export const continuationModeSchema = z
     z.strictObject({
       mode: z.literal('fork'),
       ofRunId: runId,
-      forkPoint: id,
+      forkPoint: stepId,
       nativeSession: nativeSessionRefSchema.nullable(),
     }),
   ])
