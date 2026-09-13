@@ -1,0 +1,40 @@
+.console .task-document {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: var(--dm-type-caption);
+}
+.console .task-document select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 8px;
+  font: inherit;
+  color: var(--t1);
+  background: var(--raised);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  text-overflow: ellipsis;
+}
+.console .task-document select:focus-visible {
+  border-color: var(--light);
+}
+.console .task-document [role='alert'] {
+  color: var(--attn);
+}
+.console .bhead .newtask .task-document {
+  flex: 1 0 100%;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+}
+.console .bhead .newtask .task-document :is([role='status'], [role='alert']) {
+  grid-column: 1 / -1;
+}
+.console .task-sources {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

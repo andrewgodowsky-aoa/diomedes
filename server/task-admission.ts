@@ -14,6 +14,8 @@ const requestSchema = z.strictObject({
   commandId: commandIdSchema,
   name: z.string().trim().min(1).max(200),
   description: z.string().max(10_000).default(''),
+  /** A reference into the project's Files listing; the route re-checks it against a fresh walk. */
+  sourceDocument: z.string().trim().min(1).max(1000).optional(),
   owner: z.enum(['you', 'diomedes', 'diomedes-with-ok']).default('you'),
 });
 
@@ -25,9 +27,9 @@ export function parseTaskCommand(body: Record<string, unknown>) {
     throw new ApiError(400, 'Provide a valid version 1 task command.', {
       code: 'invalid_task_command',
     });
-  const { protocolVersion, commandId, name, description, owner } = parsed.data;
+  const { protocolVersion, commandId, name, description, sourceDocument, owner } = parsed.data;
   return {
-    input: { name, description, owner },
+    input: { name, description, owner, ...(sourceDocument === undefined ? {} : { sourceDocument }) },
     admission: {
       commandId,
       payloadDigest: payloadDigest({
@@ -36,6 +38,9 @@ export function parseTaskCommand(body: Record<string, unknown>) {
         name,
         description,
         owner,
+        // Two commands that differ only by document must never digest alike. An absent
+        // document is dropped by JSON.stringify, so commands without one keep their digest.
+        sourceDocument,
       }),
     },
   };

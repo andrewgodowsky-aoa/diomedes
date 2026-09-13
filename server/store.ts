@@ -1421,7 +1421,7 @@ export class Store extends EventEmitter {
   }
   createTask(
     state: StoredState,
-    input: { name: string; description?: string; owner?: Owner; from?: Task['from'] },
+    input: { name: string; description?: string; sourceDocument?: string; owner?: Owner; from?: Task['from'] },
   ): Task {
     if (!input.name.trim()) throw new ApiError(400, 'Give this task a name.');
     const ids = state.tasks.map((t) => Number(t.id.slice(1))).filter(Number.isFinite);
@@ -1429,6 +1429,7 @@ export class Store extends EventEmitter {
       id: `T${Math.max(0, ...ids) + 1}`,
       name: input.name.trim().slice(0, 200),
       description: input.description ?? '',
+      ...(input.sourceDocument !== undefined ? { sourceDocument: input.sourceDocument } : {}),
       from: input.from ?? null,
       owner: input.owner ?? 'you',
       state: 'todo',

@@ -10,6 +10,8 @@ import {
   type TaskColumn as Column,
 } from '../workbench/task-evidence';
 import './board.css';
+import { TaskDocumentSelect } from './TaskDocumentSelect';
+import { taskDocumentProblem } from '../../shared/task-sources';
 
 const ORDER: Column[] = ['Ready', 'Queued', 'Working', 'Review', 'Blocked', 'Done'];
 const WHY: Record<Column, string> = {
@@ -70,6 +72,9 @@ export function BoardView({
   policy,
   focusTaskId,
   busy,
+  documents,
+  documentsLoading,
+  documentsFailure,
   onStart,
   onPause,
   onReview,
@@ -86,6 +91,7 @@ export function BoardView({
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [newDocument, setNewDocument] = useState('');
   const [retryingCreate, setRetryingCreate] = useState(false);
   const [creationIssue, setCreationIssue] = useState('');
   function restoreCreation() {
@@ -96,6 +102,8 @@ export function BoardView({
       if (pending) {
         setNewName(pending.name);
         setNewDescription(pending.description);
+        // The saved request names one exact document or none; the retry sends that.
+        setNewDocument(pending.sourceDocument ?? '');
         setCreating(true);
       }
     } catch (error) {
@@ -108,8 +116,15 @@ export function BoardView({
     setCreating(false);
     setNewName('');
     setNewDescription('');
+    setNewDocument('');
     restoreCreation();
   }, [project.id]);
+  const invalidDocument = !!newDocument && (
+    documentsLoading || !!documentsFailure || !!taskDocumentProblem(newDocument, documents)
+  );
+  // A retry re-sends the saved request as it is; the server answers with the replayed
+  // task or with the reason the document no longer qualifies.
+  const blockedDocument = invalidDocument && !retryingCreate;
   // `busy` only turns true after the Shell's state settles, so a second click
   // can arrive before the first render. The ref refuses it in the same tick.
   const sending = useRef(false);
@@ -224,6 +239,7 @@ export function BoardView({
     setCreating(false);
     setNewName('');
     setNewDescription('');
+    setNewDocument('');
   }
 
   // One control, one path: the same `POST /tasks` the plan import already uses.
@@ -232,10 +248,14 @@ export function BoardView({
   async function submitNew(event: React.FormEvent) {
     event.preventDefault();
     const name = newName.trim();
-    if (!name || sending.current) return;
+    if (!name || sending.current || blockedDocument) return;
     sending.current = true;
     try {
-      await onCreateTask({ name, description: retryingCreate ? newDescription : newDescription.trim() });
+      await onCreateTask({
+        name,
+        description: retryingCreate ? newDescription : newDescription.trim(),
+        ...(newDocument ? { sourceDocument: newDocument } : {}),
+      });
       closeNew();
     } catch {
       // The Shell reported it. Keep the words the person typed.
@@ -335,10 +355,18 @@ export function BoardView({
               readOnly={busy || retryingCreate}
               onChange={(event) => setNewDescription(event.target.value)}
             />
+            <TaskDocumentSelect
+              documents={documents}
+              loading={documentsLoading}
+              failure={documentsFailure}
+              value={newDocument}
+              onChange={setNewDocument}
+              disabled={busy || retryingCreate}
+            />
             <button
               type="submit"
               className="go"
-              disabled={busy || !!creationIssue || !newName.trim()}
+              disabled={busy || !!creationIssue || !newName.trim() || blockedDocument}
             >
               {retryingCreate ? 'Retry create' : 'Create'}
             </button>
@@ -512,6 +540,9 @@ function TaskRow({
         </span>
         <span className="mono age">{age}</span>
       </div>
+      {task.sourceDocument && (
+        <div className="x" title={task.sourceDocument}>Default document: {task.sourceDocument}</div>
+      )}
       {(evidenceLine || focus) && (
         <div className="x">
           {evidenceLine && <span className="why">{evidenceLine}</span>}

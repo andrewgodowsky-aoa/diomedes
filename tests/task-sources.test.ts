@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { selectTaskSources } from '../shared/task-sources.js';
+import { selectTaskSources, taskDocumentProblem } from '../shared/task-sources.js';
 import type { DocumentInfo } from '../shared/types.js';
 
 const doc = (path: string, size = 100, kind: DocumentInfo['kind'] = 'markdown'): DocumentInfo => ({
@@ -62,6 +62,23 @@ describe('documents a Board-started task carries', () => {
       expect(selectTaskSources({ name }, documents)).toEqual(['bakery-inventory.md']);
     for (const name of ['Read bakery-inventory.md.bak', 'Read bakery-inventory.md/child', 'Read ../bakery-inventory.md'])
       expect(selectTaskSources({ name }, documents)).toEqual([]);
+  });
+
+  test('an explicit path takes precedence and disambiguates duplicate file names', () => {
+    const duplicates = [doc('first/brief.md'), doc('second/brief.md')];
+    expect(selectTaskSources({ name: 'Update brief.md', sourceDocument: 'second/brief.md' }, duplicates))
+      .toEqual(['second/brief.md']);
+    expect(selectTaskSources({ name: 'Update the introduction', sourceDocument: 'Plan.md' }, documents))
+      .toEqual(['Plan.md']);
+  });
+
+  test('an unavailable explicit selection never falls back to named files', () => {
+    expect(() => selectTaskSources({ name: 'Rewrite bakery-inventory.md', sourceDocument: 'missing.md' }, documents))
+      .toThrow('no longer listed');
+    expect(() => selectTaskSources({ name: 'Rewrite bakery-inventory.md', sourceDocument: 'data.csv' }, documents))
+      .toThrow('supported text');
+    expect(taskDocumentProblem('big.md', [doc('big.md', 128_001)])).toContain('128 KB');
+    expect(taskDocumentProblem('fits.md', [doc('fits.md', 128_000)])).toBeNull();
   });
 
   test("the server's limits hold: eight files, 128 KB", () => {

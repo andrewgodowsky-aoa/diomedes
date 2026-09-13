@@ -2,7 +2,7 @@ import { api, ApiError } from './api';
 import { mintCommandId } from './work-start';
 import type { Task, TaskCreationInput } from '../shared/types';
 
-type Input = Pick<TaskCreationInput, 'name' | 'description'>;
+type Input = Pick<TaskCreationInput, 'name' | 'description' | 'sourceDocument'>;
 interface Pending {
   projectId: string;
   commandId: string;
@@ -25,15 +25,24 @@ function record(value: unknown): value is Record<string, unknown> {
 function normalize(value: unknown): Input {
   if (
     !record(value) ||
-    Object.keys(value).some((key) => !['name', 'description'].includes(key)) ||
+    Object.keys(value).some((key) => !['name', 'description', 'sourceDocument'].includes(key)) ||
     typeof value.name !== 'string' ||
     !value.name.trim() ||
     value.name.trim().length > 200 ||
     typeof value.description !== 'string' ||
-    value.description.length > 10_000
+    value.description.length > 10_000 ||
+    (value.sourceDocument !== undefined &&
+      (typeof value.sourceDocument !== 'string' ||
+        !value.sourceDocument.trim() ||
+        value.sourceDocument.length > 1000))
   )
     throw invalid();
-  return { name: value.name.trim(), description: value.description };
+  // The saved request names one exact document, or none; a retry re-sends exactly that.
+  return {
+    name: value.name.trim(),
+    description: value.description,
+    ...(value.sourceDocument === undefined ? {} : { sourceDocument: value.sourceDocument }),
+  };
 }
 function storageFor(projectId: string) {
   if (!projectId.trim() || projectId.length > 100) throw invalid();

@@ -1,4 +1,5 @@
 import { parseApprovalCommand } from './approval-admission.js';
+import { taskDocumentProblem } from '../shared/task-sources.js';
 import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
@@ -1245,6 +1246,7 @@ export async function createApp(options: AppOptions) {
         state = store.state(id(req));
       const command = parseTaskCommand(b);
       if (command) {
+        // A replay answers before validation: the admitted task is the evidence.
         const replay = store.taskCommand(
           id(req),
           command.admission.commandId,
@@ -1252,14 +1254,24 @@ export async function createApp(options: AppOptions) {
         );
         if (replay) return replay;
       }
-      const task = store.createTask(
-        state,
-        command?.input ?? {
+      // The document is checked against a fresh listing on both the versioned and the
+      // unversioned path, before anything is created.
+      const requested = command ? command.input.sourceDocument : b.sourceDocument;
+      const sourceDocument = requested === undefined ? undefined : relativeName(requested);
+      if (sourceDocument !== undefined) {
+        if (sourceDocument.length > 1000)
+          throw new ApiError(400, 'Select a project document with a shorter path.');
+        const problem = taskDocumentProblem(sourceDocument, await store.listDocuments(id(req)));
+        if (problem) throw new ApiError(400, problem);
+      }
+      const task = store.createTask(state, {
+        ...(command?.input ?? {
           name: asString(b.name, 'a task name', 200),
           description: typeof b.description === 'string' ? b.description.slice(0, 10000) : '',
           owner: b.owner === undefined ? 'you' : choice(b.owner, owners, 'owner'),
-        },
-      );
+        }),
+        ...(sourceDocument !== undefined ? { sourceDocument } : {}),
+      });
       const entry = store.addEntry(state, {
         kind: 'tasks-made',
         sentence: `You made a task: ${task.name}`,

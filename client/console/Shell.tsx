@@ -3,7 +3,12 @@ import { selectedEngine } from '../../shared/ai-selection';
 import { formatOrigin, originForNeed, originForSession } from '../../shared/attribution';
 import type { ScopeGrantView } from '../../shared/permissions';
 import { isRoute, isExternalEngine } from '../../shared/engines';
-import { selectTaskSources, TASK_SOURCE_LIMITS } from '../../shared/task-sources';
+import {
+  selectTaskSources,
+  taskDocumentProblem,
+  TASK_SOURCE_LIMITS,
+} from '../../shared/task-sources';
+import { TaskDocumentSelect } from './TaskDocumentSelect';
 import type {
   Change,
   Conversation,
@@ -119,9 +124,13 @@ export function Shell({
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [scopeGrants, setScopeGrants] = useState<ScopeGrantView[]>([]);
-  const [sendTask, setSendTask] = useState<{ task: Task; route: Route; sources: string[] } | null>(
-    null,
-  );
+  const [sendTask, setSendTask] = useState<{
+    task: Task;
+    route: Route;
+    sources: string[];
+    namedSources: string[];
+    documents: DocumentInfo[];
+  } | null>(null);
   const [team, setTeam] = useState<TeamState>(emptyTeam);
   const [teamAvailable, setTeamAvailable] = useState(false);
   const [toast, setToast] = useState('');
@@ -364,8 +373,8 @@ export function Shell({
   // `statePayload` strips `documents` from the SSE fan-out, so the listing is
   // fetched here: when the pane or the palette wants it, and again on each
   // state event while one of them is open. Nothing reads `state.documents`.
-  // The Board wants the listing too, so a Start can pick the documents a task
-  // names without a round trip between the click and the command.
+  // The Board uses the same listing for the new task's document picker.
+  // Starts refresh it again before presenting the selection and dispatching.
   const wantDocuments = filesOpen || paletteOpen || view === 'Board';
   const documentsFor = useRef<string | null>(null);
   useEffect(() => {
@@ -621,9 +630,10 @@ export function Shell({
    * Ready by projection; no run or task move follows. Only an unconfirmed create
    * keeps the form open: a later refresh failure must not invite a second task.
    */
-  async function createTask(input: { name: string; description: string }) {
+  async function createTask(input: { name: string; description: string; sourceDocument?: string }) {
     setBusy(true);
     try {
+      // The pending record carries the chosen document, so a retry re-sends exactly it.
       await admitTaskCreation(projectId, input);
       await load().catch(report);
     } catch (error) {
@@ -633,29 +643,41 @@ export function Shell({
       setBusy(false);
     }
   }
-  // The documents the task itself names travel with it; a task that names
-  // none sends none, and the confirmation says which. The listing is fetched
-  // here because the state fan-out strips `documents`.
-  async function taskSources(task: Task): Promise<string[]> {
-    const listed =
-      documentsFor.current === projectId ? documents : (await listDocuments(projectId)).documents;
-    return selectTaskSources(task, listed);
-  }
   async function startTask(task: Task, route: Route) {
-    if (isExternalEngine(route)) {
-      const sources = await taskSources(task).catch(() => [] as string[]);
-      setSendTask({ task, route, sources });
+    if (route !== 'sample') {
+      setBusy(true);
+      try {
+        const listed = (await listDocuments(projectId)).documents;
+        if (currentId.current !== projectId) return;
+        // Keep an unavailable saved path visible so the person can replace it.
+        const sources = task.sourceDocument !== undefined
+          ? [task.sourceDocument]
+          : selectTaskSources(task, listed);
+        setSendTask({ task, route, sources, namedSources: sources, documents: listed });
+      } catch (error) {
+        report(error);
+      } finally {
+        setBusy(false);
+      }
       return;
     }
     await dispatchTask(task, route);
   }
   async function dispatchTask(task: Task, route: Route, sources?: string[]) {
     await perform(async () => {
+      if (route !== 'sample') {
+        const listed = (await listDocuments(projectId)).documents;
+        for (const source of sources ?? []) {
+          const problem = taskDocumentProblem(source, listed);
+          if (problem) throw new Error(problem);
+        }
+      }
+      if (currentId.current !== projectId) return;
       const thread = state?.conversations.find((item) => item.taskId === task.id);
       await startWork(projectId, {
         taskId: task.id,
         route,
-        sources: sources ?? (await taskSources(task)),
+        sources: sources ?? [],
         consent: true,
         ...(thread ? { threadId: thread.id } : {}),
       });
@@ -1210,6 +1232,9 @@ export function Shell({
               onOpenTeam={() => setView('Team')}
               onOpenThread={(task) => openTaskThread(task)}
               onCreateTask={createTask}
+              documents={documentsFor.current === projectId ? documents : []}
+              documentsLoading={documentsLoading}
+              documentsFailure={documentsFailure}
             />
           </section>
         )}
@@ -1298,7 +1323,24 @@ export function Shell({
           route={sendTask.route}
           sources={sendTask.sources}
           mode="build"
-          disabled={busy || !online}
+          picker={
+            <TaskDocumentSelect
+              documents={sendTask.documents}
+              value={sendTask.sources.length > 1 ? 'named' : sendTask.sources[0] ?? ''}
+              namedSources={sendTask.namedSources}
+              onChange={(value) =>
+                setSendTask({
+                  ...sendTask,
+                  sources: value === 'named' ? sendTask.namedSources : value ? [value] : [],
+                })
+              }
+            />
+          }
+          disabled={
+            busy ||
+            !online ||
+            sendTask.sources.some((source) => !!taskDocumentProblem(source, sendTask.documents))
+          }
           onClose={() => setSendTask(null)}
           onSend={() => {
             const pending = sendTask;

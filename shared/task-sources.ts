@@ -2,6 +2,8 @@ import type { DocumentInfo } from './types.js';
 
 /**
  * The documents a Board-started task carries to the model.
+ * An explicitly selected sourceDocument takes precedence over name matching,
+ * including plans, and must still be visible and within the text size limit.
  *
  * The Board's Start used to send `sources: []`, which the server reads as
  * "new files only": the model was told the task and given nothing to read,
@@ -18,10 +20,29 @@ import type { DocumentInfo } from './types.js';
  */
 export const TASK_SOURCE_LIMITS = { files: 8, bytes: 128_000 } as const;
 
+/** Validate an explicit selection against the same visible listing as Files. */
+export function taskDocumentProblem(
+  path: string,
+  documents: readonly DocumentInfo[],
+): string | null {
+  const document = documents.find((item) => item.path === path);
+  if (!document)
+    return 'The selected document is no longer listed in this project. Choose another document.';
+  if (!['markdown', 'text', 'plan'].includes(document.kind))
+    return 'Select a supported text document.';
+  if (document.size > TASK_SOURCE_LIMITS.bytes) return 'Select a document no larger than 128 KB.';
+  return null;
+}
+
 export function selectTaskSources(
-  task: { name: string; description?: string | null },
+  task: { name: string; description?: string | null; sourceDocument?: string },
   documents: readonly DocumentInfo[],
 ): string[] {
+  if (task.sourceDocument !== undefined) {
+    const problem = taskDocumentProblem(task.sourceDocument, documents);
+    if (problem) throw new Error(problem);
+    return [task.sourceDocument];
+  }
   const text = `${task.name}\n${task.description ?? ''}`.toLowerCase();
   if (!text.trim()) return [];
   const candidates = documents.filter((d) => d.kind === 'markdown' || d.kind === 'text');
@@ -30,9 +51,7 @@ export function selectTaskSources(
     const path = document.path.replaceAll('\\', '/').toLowerCase();
     const name = path.slice(path.lastIndexOf('/') + 1);
     const at = Math.min(
-      ...[path, name]
-        .map((needle) => wholeTokenIndex(text, needle))
-        .filter((index) => index >= 0),
+      ...[path, name].map((needle) => wholeTokenIndex(text, needle)).filter((index) => index >= 0),
     );
     if (Number.isFinite(at)) found.push({ path: document.path, at, size: document.size });
   }

@@ -121,6 +121,31 @@ describe('Console task creation transport', () => {
     expect(values.has(key)).toBe(true);
   });
 
+  test('a saved request keeps its document; the retry re-sends exactly that document', async () => {
+    const withDocument = { ...input, sourceDocument: 'Reopening plan.md' };
+    send.mockRejectedValue(new TypeError('Offline'));
+    await expect(createTask(projectId, withDocument)).rejects.toThrow('could not be confirmed');
+    expect(pendingTaskCreation(projectId)).toEqual(withDocument);
+    expect(bodyAt()).toMatchObject({ protocolVersion: 1, owner: 'you', ...withDocument });
+    // The same words without the document are a different request, not a retry.
+    await expect(createTask(projectId, input)).rejects.toThrow('saved task request');
+    send.mockImplementation(async (url, options) => accepted(url, options));
+    await createTask(projectId, withDocument);
+    expect(bodyAt(2)).toEqual(bodyAt());
+    expect(values.size).toBe(0);
+  });
+
+  test.each([{ sourceDocument: '' }, { sourceDocument: 7 }, { sourceDocument: 'x'.repeat(1001) }])(
+    'a request with an unusable document is refused before sending: %j',
+    async (extra) => {
+      await expect(
+        createTask(projectId, { ...input, ...extra } as Parameters<typeof createTask>[1]),
+      ).rejects.toThrow('could not be checked');
+      expect(send).not.toHaveBeenCalled();
+      expect(values.size).toBe(0);
+    },
+  );
+
   test('malformed saved input is retained and never sent', async () => {
     values.set(key, '{broken');
     expect(() => pendingTaskCreation(projectId)).toThrow('could not be checked');

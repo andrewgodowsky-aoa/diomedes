@@ -126,6 +126,8 @@ export interface Task {
   id: string;
   name: string;
   description: string;
+  /** Default document for a bounded proposal; selection grants no write authority. */
+  sourceDocument?: string;
   from: { plan: string; step: number } | null;
   owner: Owner;
   state: TaskState;
@@ -153,6 +155,8 @@ export interface Task {
 export interface TaskCreationInput {
   name: string;
   description: string;
+  /** Optional default document; part of the command identity, validated against a fresh listing. */
+  sourceDocument?: string;
   owner: Owner;
 }
 export interface TaskCreationReceipt {

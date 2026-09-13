@@ -260,4 +260,39 @@ describe('ordinary task creation admission', () => {
       original.admission.payloadDigest,
     );
   });
+
+  test('a document is part of the command identity and is checked against a fresh listing', async () => {
+    const original = parseTaskCommand(command())!;
+    const withDocument = parseTaskCommand({ ...command(), sourceDocument: 'Reopening plan.md' })!;
+    expect(withDocument.input.sourceDocument).toBe('Reopening plan.md');
+    expect(withDocument.admission.payloadDigest).not.toBe(original.admission.payloadDigest);
+    expect(
+      parseTaskCommand({ ...command(), sourceDocument: 'Reopening plan.md ' })!.admission
+        .payloadDigest,
+    ).toBe(withDocument.admission.payloadDigest);
+    expect(() => parseTaskCommand({ ...command(), sourceDocument: '' })).toThrow();
+    expect(() => parseTaskCommand({ ...command(), sourceDocument: 42 })).toThrow();
+
+    const folder = state().project.folder;
+    await fs.writeFile(path.join(folder, 'Reopening plan.md'), 'Plan text');
+    const missing = await create({ ...command(), sourceDocument: 'missing.md' });
+    expect(missing.status).toBe(400);
+    expect(state().tasks).toHaveLength(0);
+    const first = await create({ ...command(), sourceDocument: 'Reopening plan.md' });
+    expect(first.status).toBe(200);
+    expect(first.data.sourceDocument).toBe('Reopening plan.md');
+    expect(first.data.creationReceipt?.payloadDigest).toBe(withDocument.admission.payloadDigest);
+    // The same command replays; the same key with another document, or none, conflicts.
+    expect((await create({ ...command(), sourceDocument: 'Reopening plan.md' })).data.id).toBe(
+      first.data.id,
+    );
+    expect((await create({ ...command(), sourceDocument: 'Other.md' })).status).toBe(409);
+    expect((await create(command())).status).toBe(409);
+    expect(state().tasks).toHaveLength(1);
+    // A replay answers even after the document is gone: the admitted task is the evidence.
+    await fs.rm(path.join(folder, 'Reopening plan.md'));
+    const replay = await create({ ...command(), sourceDocument: 'Reopening plan.md' });
+    expect(replay.status).toBe(200);
+    expect(replay.data.id).toBe(first.data.id);
+  });
 });
