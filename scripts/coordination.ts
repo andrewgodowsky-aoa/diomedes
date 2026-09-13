@@ -161,11 +161,19 @@ export function coordinationLayout(root: string) {
     order: path.join(claims, 'order'),
     /** The one decision per attempt: won, lost or abandoned. */
     decisions: path.join(claims, 'decisions'),
+    /**
+     * Releases of ordered claims whose `<id>.released.json` name was already taken by a record
+     * without authority, such as the earlier tool's role-only release.
+     */
+    releases: path.join(claims, 'releases'),
     /** Per-path lock files the earlier tool checks; written for its sake, never trusted here. */
     locks: path.join(claims, 'paths'),
     /** Integrator-issued handoffs (`<id>.json`) and their single use (`<id>.consumed.json`). */
     handoffs: path.join(root, 'handoffs', 'issued'),
+    /** The heavy slot (`heavy.json`) and its release history (`history.jsonl`). */
     slot: path.join(root, 'slot'),
+    /** One record per released slot (`<slotId>.json`), published before the slot file is removed. */
+    slotReleases: path.join(root, 'slot', 'releases'),
     journals: path.join(root, 'journals'),
   };
 }
@@ -452,8 +460,14 @@ const decisionFile = (layout: Layout, claimId: string) =>
 const claimFile = (layout: Layout, claimId: string) => path.join(layout.claims, `${claimId}.json`);
 const releaseFile = (layout: Layout, claimId: string) =>
   path.join(layout.claims, `${claimId}.released.json`);
+const releaseRecordFile = (layout: Layout, claimId: string) =>
+  path.join(layout.releases, `${claimId}.json`);
+/** The name of the lock file the earlier tool checks for a recorded path. */
+const legacyLockName = (recordedPath: string) => `${encodeURIComponent(recordedPath)}.lock`;
 const legacyLockFile = (layout: Layout, recordedPath: string) =>
-  path.join(layout.locks, `${encodeURIComponent(recordedPath)}.lock`);
+  path.join(layout.locks, legacyLockName(recordedPath));
+/** File systems cap one name at 255 characters (NTFS) or bytes (ext4); lock names are ASCII. */
+const MAX_FILE_NAME = 255;
 const handoffFile = (layout: Layout, handoffId: string) =>
   path.join(layout.handoffs, `${handoffId}.json`);
 const handoffUseFile = (layout: Layout, handoffId: string) =>
@@ -527,17 +541,45 @@ async function legacyActiveClaims(layout: Layout): Promise<Claim[]> {
   return claims;
 }
 
+/** A release by the claim's holder, or by the integrator with a recorded reason. */
+function authoritative(release: ClaimRelease | null, claim: Claim): release is ClaimRelease {
+  if (!release || release.claimId !== claim.claimId) return false;
+  if (sameOwner(release.releasedBy, claim.owner)) return true;
+  return (
+    ownerProblem(release.releasedBy) === null &&
+    release.releasedBy.role === INTEGRATOR &&
+    nonEmpty(release.note)
+  );
+}
+
+/**
+ * The release that ended a claim, or null. A claim the earlier tool wrote ends with its release
+ * record, as that tool decides. An ordered claim ends only by its holder or by the integrator with
+ * a recorded reason: the earlier tool checks nothing but the releasing role, so a record it leaves
+ * is not a release here, and the authoritative release is then recorded under `claims/releases/`.
+ */
+async function releaseOf(
+  layout: Layout,
+  claim: Claim,
+  ordered: boolean,
+): Promise<ClaimRelease | null> {
+  const recorded = await readJson<ClaimRelease>(releaseFile(layout, claim.claimId));
+  if (!ordered || authoritative(recorded, claim)) return recorded;
+  const later = await readJson<ClaimRelease>(releaseRecordFile(layout, claim.claimId));
+  return authoritative(later, claim) ? later : null;
+}
+
 /** won (and not released), done (lost, abandoned or released), or undecided at the deadline. */
 async function settledOutcome(
   layout: Layout,
-  claimId: string,
+  entry: Claim,
   deadline: number,
 ): Promise<'won' | 'done' | 'undecided'> {
   for (;;) {
-    const record = await readJson<DecisionRecord>(decisionFile(layout, claimId));
+    const record = await readJson<DecisionRecord>(decisionFile(layout, entry.claimId));
     if (record) {
       if (record.decision === 'lost' || record.decision === 'abandoned') return 'done';
-      return (await exists(releaseFile(layout, claimId))) ? 'done' : 'won';
+      return (await releaseOf(layout, entry, true)) ? 'done' : 'won';
     }
     if (Date.now() >= deadline) return 'undecided';
     await pause(Math.max(1, Math.min(25, deadline - Date.now())));
@@ -555,8 +597,9 @@ const heldBlock = (claim: Claim): Block => ({
 });
 
 /**
- * The first reason an attempt at `mySeq` cannot win: an unreleased claim from the earlier tool,
- * or an earlier overlapping attempt that won or has not decided by the deadline.
+ * The first reason an attempt at `mySeq` cannot win: an unreleased claim from the earlier tool, or
+ * an earlier overlapping attempt that won or has not decided by the deadline. The earlier tool
+ * claims outside the order, so its claims are read again after waiting, just before winning.
  */
 async function firstBlocking(
   layout: Layout,
@@ -564,8 +607,13 @@ async function firstBlocking(
   wanted: readonly string[],
   settleMs: number,
 ): Promise<Block | null> {
-  for (const legacy of await legacyActiveClaims(layout))
-    if (overlapsAny(recordedKeys(legacy), wanted)) return heldBlock(legacy);
+  const legacyBlock = async () => {
+    for (const legacy of await legacyActiveClaims(layout))
+      if (overlapsAny(recordedKeys(legacy), wanted)) return heldBlock(legacy);
+    return null;
+  };
+  const early = await legacyBlock();
+  if (early) return early;
   const deadline = Date.now() + settleMs;
   for (let seq = 0; seq < mySeq; seq += 1) {
     const entry = await readJson<Claim>(path.join(layout.order, orderEntryName(seq)));
@@ -575,7 +623,7 @@ async function firstBlocking(
         detail: `Order entry ${seq} is missing, so ${layout.order} was edited by hand. Nothing later can be claimed until the integrator repairs it.`,
       };
     if (!overlapsAny(recordedKeys(entry), wanted)) continue;
-    const outcome = await settledOutcome(layout, entry.claimId, deadline);
+    const outcome = await settledOutcome(layout, entry, deadline);
     if (outcome === 'won') return heldBlock(entry);
     if (outcome === 'undecided')
       return {
@@ -583,7 +631,7 @@ async function firstBlocking(
         detail: `Claim ${entry.claimId} by ${describeOwner(entry.owner)} for ${describePaths(entry)} has not finished deciding. If that process has exited, its owner or the integrator can end it with release.`,
       };
   }
-  return null;
+  return legacyBlock();
 }
 
 /** Every claim holding its paths now: won and not released, or an unreleased earlier-tool claim. */
@@ -593,7 +641,7 @@ export async function activeClaims(root: string): Promise<Claim[]> {
   for (const entry of await orderEntries(layout)) {
     const record = await readJson<DecisionRecord>(decisionFile(layout, entry.claimId));
     if (!record || record.decision === 'lost' || record.decision === 'abandoned') continue;
-    if (!(await exists(releaseFile(layout, entry.claimId)))) claims.push(entry);
+    if (!(await releaseOf(layout, entry, true))) claims.push(entry);
   }
   return claims.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 }
@@ -649,6 +697,14 @@ export async function claimPaths(
   if (!set.ok) return { ok: false, reason: 'invalid', detail: set.detail };
   if (set.value.length === 0)
     return { ok: false, reason: 'invalid', detail: 'A claim needs at least one path.' };
+  // Refuse before publishing: a lock file that cannot be written would fail after the claim won.
+  const unlockable = set.value.find((entry) => legacyLockName(entry.path).length > MAX_FILE_NAME);
+  if (unlockable)
+    return {
+      ok: false,
+      reason: 'invalid',
+      detail: `The path ${JSON.stringify(unlockable.path)} is too long for the lock file the earlier tool checks (a ${legacyLockName(unlockable.path).length}-character name; at most ${MAX_FILE_NAME}). Claim a shorter path or a directory above it.`,
+    };
   const layout = coordinationLayout(root);
   let handoff: Handoff | null = null;
   if (input.handoffFrom !== undefined && input.handoffFrom !== null) {
@@ -701,6 +757,15 @@ export async function claimPaths(
       ...(block.claim ? { heldBy: block.claim } : {}),
     };
   }
+  const outcome = await decide(layout, claim.claimId, 'won');
+  if (outcome.decision !== 'won')
+    return {
+      ok: false,
+      reason: 'held',
+      detail: `Claim ${claim.claimId} was ended (${outcome.decision}) before it could decide; nothing was claimed.`,
+    };
+  // Only a claim that has won uses its handoff, so an attempt ended while it waited leaves the
+  // handoff for the next one. Another claim by the same process can still have used it first.
   if (handoff) {
     const use: HandoffUse = {
       schema_version: 1,
@@ -710,22 +775,15 @@ export async function claimPaths(
     };
     const useFile = handoffUseFile(layout, handoff.handoffId);
     if (!(await publishExclusive(useFile, JSON.stringify(use, null, 2)))) {
-      await decide(layout, claim.claimId, 'lost');
       const used = await readJson<HandoffUse>(useFile);
-      return {
-        ok: false,
-        reason: 'handoff-invalid',
-        detail: `Handoff ${handoff.handoffId} was already used by claim ${used?.claimId ?? 'unknown'}.`,
-      };
+      const detail = `Handoff ${handoff.handoffId} was already used by claim ${used?.claimId ?? 'unknown'}.`;
+      await releaseClaim(root, claim.claimId, {
+        by: input.owner,
+        note: `${detail} This attempt won after that, so it gave the paths back.`,
+      });
+      return { ok: false, reason: 'handoff-invalid', detail };
     }
   }
-  const outcome = await decide(layout, claim.claimId, 'won');
-  if (outcome.decision !== 'won')
-    return {
-      ok: false,
-      reason: 'held',
-      detail: `Claim ${claim.claimId} was ended (${outcome.decision}) before it could decide; nothing was claimed.`,
-    };
   await publishExclusive(claimFile(layout, claim.claimId), text);
   await writeLegacyLocks(layout, claim);
   return { ok: true, claim };
@@ -754,7 +812,8 @@ async function clearLegacyLocks(layout: Layout, claim: Claim) {
  * End a claim. Its holder (the same full process identity) may, and so may the integrator with
  * a recorded reason; anyone else is refused. An attempt that never decided is recorded as
  * abandoned, which lets the attempts waiting behind it proceed. The claim stays as evidence; a
- * `.released.json` beside it says who ended it, with which authority and why.
+ * `.released.json` beside it says who ended it, with which authority and why. When a record
+ * without authority already took that name, the release is recorded as `claims/releases/<id>.json`.
  */
 export async function releaseClaim(
   root: string,
@@ -769,7 +828,8 @@ export async function releaseClaim(
   const attempt = await readJson<Claim>(attemptFile(layout, claimId));
   const claim = attempt ?? (await readJson<Claim>(claimFile(layout, claimId)));
   if (!claim) throw new Error(`No claim ${claimId}.`);
-  if (await exists(releaseFile(layout, claimId)))
+  const ordered = attempt !== null;
+  if (await releaseOf(layout, claim, ordered))
     throw new Error(`Claim ${claimId} was already released.`);
   const note = typeof input.note === 'string' ? input.note : '';
   let authority: ClaimRelease['authority'];
@@ -798,8 +858,21 @@ export async function releaseClaim(
     at: input.at ?? new Date().toISOString(),
     note,
   };
-  if (!(await publishExclusive(releaseFile(layout, claimId), JSON.stringify(release, null, 2))))
-    throw new Error(`Claim ${claimId} was already released.`);
+  const text = JSON.stringify(release, null, 2);
+  if (!(await publishExclusive(releaseFile(layout, claimId), text))) {
+    // The name is taken. A record without authority does not end an ordered claim, so its release
+    // is recorded beside the claims instead; any other record means the claim was released already.
+    const taken = await readJson<ClaimRelease>(releaseFile(layout, claimId));
+    if (!ordered || authoritative(taken, claim))
+      throw new Error(`Claim ${claimId} was already released.`);
+    await fs.mkdir(layout.releases, { recursive: true });
+    if (!(await publishExclusive(releaseRecordFile(layout, claimId), text)))
+      throw new Error(
+        authoritative(await readJson<ClaimRelease>(releaseRecordFile(layout, claimId)), claim)
+          ? `Claim ${claimId} was already released.`
+          : `Both release records of claim ${claimId} are taken by records without authority; the integrator must inspect ${releaseFile(layout, claimId)} and ${releaseRecordFile(layout, claimId)}.`,
+      );
+  }
   await clearLegacyLocks(layout, claim);
   return release;
 }
@@ -962,10 +1035,21 @@ export async function requestSlot(
   };
 }
 
-/** Only the holder, by full process identity, releases the slot. */
+const SLOT_ID = /^slot_[a-z0-9]+_[0-9a-f]{8}$/;
+const slotReleaseFile = (layout: Layout, slotId: string) =>
+  path.join(layout.slotReleases, `${slotId}.json`);
+
+/**
+ * Only the holder, by full process identity, releases the slot, and each slot is released once.
+ * The release is published exclusively before the slot file is removed, so a retried or
+ * concurrent release that read the same slot finds the record and removes nothing: it cannot
+ * remove the slot the next holder took.
+ */
 export async function releaseSlot(root: string, slotId: string, input: { by: Owner; at?: string }) {
   const problem = ownerProblem(input.by);
   if (problem) throw new Error(`The releasing identity is incomplete: ${problem}.`);
+  if (typeof slotId !== 'string' || !SLOT_ID.test(slotId))
+    throw new Error(`${JSON.stringify(slotId)} is not a slot id.`);
   const layout = coordinationLayout(root);
   const held = await readJson<Slot>(slotFile(layout));
   if (!held || held.slotId !== slotId) throw new Error(`Slot ${slotId} is not the current holder.`);
@@ -976,8 +1060,13 @@ export async function releaseSlot(root: string, slotId: string, input: { by: Own
     releasedAt: input.at ?? new Date().toISOString(),
     releasedBy: input.by,
   };
-  await fs.appendFile(path.join(layout.slot, 'history.jsonl'), JSON.stringify(released) + '\n');
+  await fs.mkdir(layout.slotReleases, { recursive: true });
+  if (!(await publishExclusive(slotReleaseFile(layout, slotId), JSON.stringify(released, null, 2))))
+    throw new Error(`Slot ${slotId} was already released; nothing was removed.`);
+  // Only the removal sits between the record and a free slot, so no other failure can leave a slot
+  // that is recorded as released but still held.
   await retryBusy(() => fs.rm(slotFile(layout), { force: true }));
+  await fs.appendFile(path.join(layout.slot, 'history.jsonl'), JSON.stringify(released) + '\n');
 }
 
 export async function currentSlot(root: string): Promise<Slot | null> {
@@ -1023,8 +1112,8 @@ export async function readJournal(root: string, role: Role): Promise<JournalEntr
  * What a worker may do right now. Read-only when the partner has not shown up in the journals,
  * when the worker's identity is incomplete or a wanted path cannot be read, when a non-integrator
  * wants a hot path that its own handed-off claim does not cover, or when another process holds an
- * overlapping claim. Read-only work is useful work: source inventory, black-box tests, fixtures,
- * review; never a second implementation.
+ * overlapping claim or has an overlapping attempt that has not decided. Read-only work is useful
+ * work: source inventory, black-box tests, fixtures, review; never a second implementation.
  */
 export async function workMode(
   root: string,
@@ -1069,9 +1158,18 @@ export async function workMode(
       mode: 'read-only',
       why: `${describePaths(holder)} held by ${describeOwner(holder.owner)} (claim ${holder.claimId}, node ${holder.node}).`,
     };
+  // An attempt that has not decided may still win, so its paths are not free to edit either.
+  const deciding = (await pendingAttempts(root)).find(
+    (attempt) => !sameOwner(attempt.owner, input.me) && overlapsAny(recordedKeys(attempt), wanted),
+  );
+  if (deciding)
+    return {
+      mode: 'read-only',
+      why: `${describePaths(deciding)} being claimed by ${describeOwner(deciding.owner)} (claim ${deciding.claimId}, node ${deciding.node}), which has not decided. If that process has exited, its owner or the integrator can end it with release.`,
+    };
   return {
     mode: 'edit',
-    why: 'Partner present, no hot path outside the integrator or a handoff, and no overlapping claim held by another process.',
+    why: 'Partner present, no hot path outside the integrator or a handoff, and no overlapping claim held or being decided by another process.',
   };
 }
 
