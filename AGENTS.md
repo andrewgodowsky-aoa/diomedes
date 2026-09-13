@@ -198,6 +198,26 @@ Take these to Andrew rather than choosing:
   `main` only, so every exe is a commit you can name.
 - Do not bump the version or touch the native-runtime hashes unless that is your task.
 
+### Unified execution program (from 2026-09-13)
+
+- The coordination root is `<git common dir>/diomedes-coordination/unified-20260913/` (for this
+  repository, `F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913/`). Claims, the
+  heavy-test slot and per-role journals live there; `scripts/coordination.ts` reads and writes
+  them (`./node_modules/.bin/tsx scripts/coordination.ts status`). Only coordination files go
+  there; never Git's own files.
+- Claim exact paths before editing, atomically, and release them when the patch returns. A stale
+  timestamp is not permission to steal a claim. If your partner's journal is absent, do read-only
+  work; do not start a second implementation.
+- Fable (Claude Code) integrates and owns the charter's shared hot files (`package.json` and
+  lockfiles, `shared/types.ts`, the shared harness/Agent/pack contracts, `server/app.ts`,
+  `server/store.ts`, `server/native-work.ts`, `client/api.ts`, `client/console/Shell.tsx`,
+  `desktop/`). Others inspect them and return patches. Astra (Codex) reviews exact base+patch
+  candidates and owns independent tests; Opus is a bounded worker under a written work order.
+- The heavy-test / Playwright / packaging / live-call slot is one, shared by this repository and
+  the site. Take it through the tool before running those; release it after.
+- Contract revision `2026-09-13.1` (`shared/contract-revision.ts`) is the frozen additive
+  amendment later items consume. Ledger: `docs/implementation/2026-09-13-rebaseline.md`.
+
 ---
 
 ## Before commit or push
