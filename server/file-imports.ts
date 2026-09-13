@@ -115,7 +115,10 @@ export async function browseImports(input: string): Promise<ImportListing> {
   return result;
 }
 
-/** Called under Store.locked by the route. No source is modified or registered as a grant. */
+/**
+ * Runs under the store lock that the `route()` helper in server/app.ts takes by default;
+ * nothing here takes it. No source is modified or registered as a grant.
+ */
 export async function importExports(store: Store, projectId: string, value: unknown) {
   store.state(projectId);
   const references = fileReferences(value);

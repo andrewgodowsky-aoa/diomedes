@@ -199,7 +199,7 @@ export function composeBrief(input: {
 export function renderBrief(draft: Omit<BriefDraft, 'markdown'>): string {
   const lines: string[] = [`# ${draft.title}`, ''];
   if (draft.sections.length === 0)
-    lines.push('There is nothing new in the approved exports since the previous brief.', '');
+    lines.push('There is nothing new in the files this brief reads since the previous brief.', '');
   for (const section of draft.sections) {
     lines.push(`## ${section.heading}`, '');
     for (const claim of section.claims) lines.push(`- ${claim.text} [${claim.sources.join(', ')}]`);
@@ -362,7 +362,10 @@ export class WeeklyBriefService {
       {
         kind: 'weekly-brief',
         review: true,
-        sentence: `Diomedes drafted ${output.label} from the approved exports for your review.`,
+        // The recorded sentence names the scope that was actually read.
+        sentence: `Diomedes drafted ${output.label} from ${
+          input.sources === undefined ? 'the approved exports' : 'the files you chose'
+        } for your review.`,
         label: output.label,
       },
     );

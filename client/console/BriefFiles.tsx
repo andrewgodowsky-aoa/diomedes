@@ -63,8 +63,9 @@ export function BriefFiles({
   return (
     <div className="brief-files">
       <p className="caption">
-        Choose the exports for this brief. Use Files &gt; Import files to add exports from this
-        computer. Only checked files are read; this brief runs locally.
+        Check the exports for this brief, or check nothing to read the files the active setup
+        approved. Use Files &gt; Import files to add exports from this computer. This brief runs
+        locally.
       </p>
       <div className="brief-file-list" role="group" aria-label="Weekly brief sources">
         {files.map((file) => (
@@ -94,7 +95,11 @@ export function BriefFiles({
           </label>
         ))}
       </div>
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p className="ws-error" role="alert">
+          {error}
+        </p>
+      )}
       <div className="ws-actions">
         <Button
           tone="quiet"
@@ -109,13 +114,15 @@ export function BriefFiles({
         </Button>
         <Button
           tone="quiet"
-          disabled={disabled || busy || !selected.length}
+          disabled={disabled || busy}
           onClick={() =>
             void act(async () => {
+              // Nothing checked is the configured run: the setup's approved scope is
+              // read, and what it could not read is reported the same way.
               const result = await api<{ destination: string; projectName: string }>(
                 `/workspace/organizations/${organizationId}/brief`,
                 'POST',
-                { projectId, sources: selected },
+                selected.length ? { projectId, sources: selected } : {},
               );
               onResult(
                 `Drafted into ${result.projectName} as ${result.destination}. It is waiting for you to read.`,
@@ -129,7 +136,9 @@ export function BriefFiles({
       <p className="caption" role="status">
         {busy
           ? 'Reading selected files or preparing the brief...'
-          : `${selected.length} of ${IMPORT_MAX_FILES} files selected`}
+          : selected.length
+            ? `${selected.length} of ${IMPORT_MAX_FILES} files selected`
+            : 'Nothing checked: the brief reads the files the active setup approved.'}
       </p>
     </div>
   );

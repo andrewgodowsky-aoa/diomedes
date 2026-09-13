@@ -113,7 +113,11 @@ Numbering is stable; tests and comments cite these by number. Full text and reas
     contract serves both. Diomedes does not become a coding IDE.
 13. **One Files surface, two tiers.** Approved 2026-09-10; first Core slice implemented 2026-09-11
     within a stated boundary (a read-only Files pane, an activity overview, pack activation and
-    instruction-file discovery, each with tests: `docs/implementation/2026-09-11-*.md`). **Files are not inherently a software feature**, so Core carries the general file and
+    instruction-file discovery, each with tests: `docs/implementation/2026-09-11-*.md`). FIL-02
+    (2026-09-13, `docs/implementation/2026-09-13-fil02-export-import.md`) adds local export import
+    through that same pane and the one recorded write path, plus per-run source selection for the
+    weekly brief, so the pane is no longer read-only; the wider FIL-02 direction (drop and paste,
+    image, PDF and spreadsheet import, provider attachments) is still open. **Files are not inherently a software feature**, so Core carries the general file and
     artifact surface: the project folder and artifact model, ordinary preview, text and Markdown
     viewing, search, generated artifacts, history and version inspection, references into Threads, and
     open-externally behaviour. The IDE-grade version of that **same** surface is supplied by the
