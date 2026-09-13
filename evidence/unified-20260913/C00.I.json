@@ -106,12 +106,13 @@
     "evidence/unified-20260913/coverage-audit.md",
     "evidence/unified-20260913/dependency-order.md",
     "evidence/unified-20260913/work-orders.json",
-    "tests/coordination.test.ts (9 cases on the original candidate; 72 after the C00 repair)",
-    "tests/contract-revision.test.ts (23 cases on the original candidate; 31 after the C00 repair)",
+    "tests/coordination.test.ts (9 cases on the original candidate; 72 after the first repair round; 81 after the second)",
+    "tests/contract-revision.test.ts (23 cases on the original candidate; 31 after the first repair round; 32 after the second)",
     "F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913/ (README, external-claims/*, claims/, journals/fable.jsonl, work-orders/*.json)",
     "scratchpad inventory/routes.md, audit-eng.md, audit-har.md, audit-filpak.md (delegated read-only inputs)",
     "tests/c00-independent.test.ts (Astra's 27 C00.R acceptance cases, committed unchanged)",
-    "evidence/unified-20260913/C00.R.md, C00.R.json, c00-r-tests.json (Astra's failed C00.R on a0341639)"
+    "evidence/unified-20260913/C00.R.md, C00.R.json, c00-r-tests.json (Astra's failed C00.R on a0341639)",
+    "F:/Diomedes/deliverables/c00-repair-20260913/ (outside the tree; second round: red-round2-*, green-round2-*, typecheck-round2.json, mutation-round2/, opus-precheck-rerun/)"
   ],
   "observed_versions": {
     "app_base": "212106e75a710242e74620c3c5947aef4bbeef23",
@@ -133,8 +134,8 @@
     "spend": "fixed USD 0, variable USD 0, no live provider call"
   },
   "status": {
-    "implementation": "original candidate a0341639: focused tests 32/32 and tsc exit 0 (the earlier \"30/30\" text was stale). Repair candidate: producer and independent suites 130/130, affected runtime suites 118/118, tsc --noEmit (focused on the changed files and their imports, with the project's compiler options): exit 0; the full-project run under the heavy slot is recorded in the outer manifest",
-    "independent_review": "C00.R failed a0341639 (Astra: 13 of 27 independent cases failing, findings C00-R1 to C00-R5); renewed C00.R requested on the repair candidate named in the outer manifest",
+    "implementation": "original candidate a0341639: focused tests 32/32 and tsc exit 0 (the earlier \"30/30\" text was stale). Repair candidate after the second round: producer and independent suites 140/140, affected runtime suites 118/118, full-project tsc --noEmit under the heavy slot: exit 0. The first repair candidate 74939ae (130/130, 118/118) was held back after a hostile pre-check",
+    "independent_review": "C00.R failed a0341639 (Astra: 13 of 27 independent cases failing, findings C00-R1 to C00-R5). A Claude Opus 5 hostile pre-check (not independent verification) held back the first repair candidate 74939ae; renewed C00.R is requested on the second-round candidate named in the outer manifest",
     "live_provider": "not-applicable-with-reason: no live call is in C00 scope",
     "packaged": "not-run",
     "publication": "not-run",
@@ -143,7 +144,7 @@
   "blockers": [
     "B00.I (03a) and H01.I (03b) stay blocked until a renewed C00.R accepts the repair candidate.",
     "Combined gates (full vitest, vite build, Playwright three specs) run on the integration candidate under the heavy slot, not on this leaf.",
-    "Sessions still running the earlier coordination tool from older worktrees check only exact-path lock files; the repaired tool writes those files for them, but every session should switch to the repaired tool once it is on its base.",
+    "Rollout requirement: the coordination tool on origin/main is still the earlier one. While any session claims with it, exclusion between it and the repaired tool is not guaranteed (it checks only exact-path lock files and releases on the releasing role alone). Retiring it needs the repaired tool on main (Andrew's push approval), every session switched to it, and the integrator releasing, with notes, the claims the earlier tool left in the coordination root.",
     "Decision 14 instruction-delivery wording needs Andrew's reconciled sentence (flag A3 in the ledger)."
   ],
   "safe_prerequisite_release": null,
@@ -153,10 +154,10 @@
   "unpublished_changes": [
     "The C00 repair commits are local to fable/c00-rebaseline-20260913 and integration/unified-20260913 until Andrew approves a push."
   ],
-  "recorded_at": "2026-09-13T09:03:43.7008051Z",
+  "recorded_at": "2026-09-13T10:35:15.743Z",
   "repair": {
     "review": "C00.R by Astra (Codex gpt-6-astra) failed candidate a0341639d3a918d0bb87753758f600a37f4beb3e with findings C00-R1 to C00-R5 (evidence/unified-20260913/C00.R.md)",
-    "actual_model_route": "Claude Code desktop, claude-opus-5 (Opus 5) acting in the fable seat, session pid 48352; no delegated model call was used for the repair",
+    "actual_model_route": "Claude Code desktop, claude-opus-5 (Opus 5) acting in the fable seat, session pid 48352; a separate Claude Opus 5 review ran the read-only hostile pre-check between the rounds; no delegated model wrote repair code",
     "handoffs": [
       "coordination root handoffs/astra-c00-r-regression-files.json: Astra's regression file and review evidence taken into the fable branch unchanged",
       "coordination root handoffs/fable-seat-c00-repair.json: scope and seat of this repair pass"
@@ -165,7 +166,7 @@
       "C00-R1": "A path is one canonical repository-relative identity: separators, dot segments and letter case do not make a second path, and escaping, absolute, drive, stream, reserved-device and short-name spellings are refused. Claims overlap when one identity equals or contains the other. Exclusion is ordered: each attempt is hard-linked under the next free dense sequence number and yields to every earlier overlapping attempt that won or has not decided, so overlapping attempts cannot both win. Hot-file checks use the same identity and fail closed.",
       "C00-R2": "A handoff is a record the integrator issues to one exact process identity, node, base and canonical scope. An id alone, a mismatch, a non-integrator issuer or a second use is refused as handoff-invalid. A valid handoff does not displace a live claim and is used only by a winning claim.",
       "C00-R3": "An owner is role, host, pid, process start instant and worktree, compared after respelling. Claim release, slot release and work mode all use it; the integrator may end another holder's claim only with a recorded reason. The command line requires --pid and reads that process's start time from the operating system unless --start is given.",
-      "C00-R4": "A profile model says runtime exactly when it names a reported model, as directOrigin records it, and saved-run compatibility skips contradictory step records. Authoritative run ids, event run ids and continuation ofRunId use the run store's identifier pattern, copied byte-identically and parity-tested. forkPoint stays a bounded id because no step-id pattern exists.",
+      "C00-R4": "A profile model says runtime exactly when it names a reported model, as directOrigin records it, and saved-run compatibility skips contradictory step records. Authoritative run ids, event run ids and continuation ofRunId use the run store's identifier pattern, copied byte-identically and parity-tested. The first round left forkPoint a bounded id, wrongly saying no step-id pattern existed; the second round gives it the run service's step id pattern (see second_round.findings.F3).",
       "C00-R5": "This record no longer hashes itself or its patch; the outer manifest does, over Git blob bytes. The stale 30/30 text, the 38 proposed-new anchor text, HAR-10 and AGENTS.md frozen wording and the cp1252 bytes in dependency-order.md are corrected, and site anchors are bound to the site repository."
     },
     "tests": {
@@ -183,6 +184,26 @@
       "site anchors bound to diomedes-site at cf784de56a5102ffb9948878eaeee31af51f7e10 (11 existing paths, 3 descriptive; the combined W02 entry split in two) and the Google Docs mirrors marked external, in work-orders.json and in the coordination root copies of W01.I, W02.I, D01.I and G01.I",
       "dependency-order.md re-encoded as UTF-8 (cp1252 bytes at offsets 19 and 257) and its anchor section regenerated from the work orders",
       "coverage-audit.md HAR-10 and AGENTS.md say the revision is proposed until C00.R accepts it"
-    ]
+    ],
+    "second_round": {
+      "trigger": "A Claude Opus 5 hostile pre-check of the first repair candidate 74939ae (read-only, scratch roots) reproduced F1-F3 and E1-E3, and the candidate was held back from renewed C00.R (coordination root journals/fable.jsonl, 2026-09-13T09:50Z)",
+      "findings": {
+        "F1": "The earlier tool on the shared root defeats exclusion. Fixed where the repaired tool was at fault: an ordered claim ends only by a release from its holder or from the integrator with a reason, a release record without that authority is ignored, and the authoritative release is then recorded as claims/releases/<id>.json; a claim the earlier tool writes while an attempt waits is read again just before the attempt can win. The earlier tool's own blindness to aliases, directories and ordered attempts is the rollout requirement in blockers.",
+        "F2": "A retried unslot removed the next holder's slot. A slot is now released once: slot/releases/<slotId>.json is published exclusively before heavy.json is removed, and a release that finds the record removes nothing.",
+        "F3": "forkPoint accepted ids the runtime refuses and rewrote padded ones. STEP_ID_PATTERN copies STEP_ID from server/harness/run-service.ts byte-identically, forkPoint uses it without trimming, and the test compares it with RunService.step.",
+        "E1": "A path whose lock file name exceeds 255 characters threw after the claim won. It is now refused as invalid before anything is published.",
+        "E2": "Work mode ignored undecided attempts. It is now read-only while another process has an overlapping attempt that has not decided.",
+        "E3": "The handoff was used before the decision, so an attempt ended while it waited used it up. Only a winning claim now uses its handoff, and a claim that wins after another claim used the same handoff gives its paths back."
+      },
+      "tests": {
+        "red_before_repair": "tests/coordination.test.ts 81 cases: 74 passed, 7 failed, each on the reported defect; tests/contract-revision.test.ts 32 cases: 31 passed, 1 failed (a 129-character fork point accepted)",
+        "green_focused": "tests/coordination.test.ts 81, tests/contract-revision.test.ts 32, tests/c00-independent.test.ts 27: 140 passed, 0 failed",
+        "runtime_affected": "tests/harness-provider-outcomes.test.ts, harness-lifecycle.test.ts, harness.test.ts, harness-negative.test.ts: 118 passed, 0 failed",
+        "mutation": "11 mutants, each killed; every second-round mutant by its own new test (slot-release-unrecorded, release-any-record, handoff-used-before-decision, handoff-winner-keeps-paths, workmode-ignores-undecided, no-lock-name-limit, no-second-legacy-scan, decision-overwrites, forkpoint-trimmed-id); the first-round mutants undecided-does-not-block and skip-order-scan fail 5 and 13 tests; sources restored and compared by sha256 after each",
+        "cross_process": "4 node processes race for spellings of tests/a.ts: exactly one winner, and every loser names it",
+        "pre_check_rerun": "the pre-check's scripts on the repaired code: the second slot release is refused and removes nothing; the long path is refused with nothing held; work mode is read-only; the later claim under the same handoff succeeds; fork points agree with STEP_ID; the third claimant after the earlier tool's role-only release is refused, while its directory, alias and exact-path cases still let both tools hold",
+        "typecheck": "full-project tsc --noEmit under heavy slot slot_mtzocy2j_ff38be1a (fable seat pid 48352), 2026-09-13T10:32:08Z to 10:32:18Z: exit 0, no diagnostics"
+      }
+    }
   }
 }
