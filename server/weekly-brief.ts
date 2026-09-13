@@ -24,6 +24,8 @@ import { diffLines } from 'diff';
 import type { ConfigurationManifest } from '../shared/configuration.js';
 import { ApiError, relativeName } from './paths.js';
 import { hash, type Store } from './store.js';
+import { checkExport, fileReferences } from './file-imports.js';
+import { IMPORT_MAX_TOTAL_BYTES } from '../shared/file-imports.js';
 
 export interface BriefSource {
   readonly id: string;
@@ -57,6 +59,7 @@ export interface BriefDraft {
     readonly id: string;
     readonly label: string;
     readonly path: string;
+    readonly sha: string;
   }[];
   /** Selected sources that produced no claim. Named, not hidden. */
   readonly unused: readonly string[];
@@ -184,6 +187,7 @@ export function composeBrief(input: {
       id: source.id,
       label: source.label,
       path: source.path,
+      sha: hash(source.text)!,
     })),
     unused,
     missing,
@@ -228,7 +232,7 @@ export function renderBrief(draft: Omit<BriefDraft, 'markdown'>): string {
   }
   lines.push('## Sources', '');
   for (const source of draft.sources)
-    lines.push(`- [${source.id}] ${source.label} — ${source.path}`);
+    lines.push(`- [${source.id}] ${source.label} — ${source.path} (SHA-256: ${source.sha})`);
   lines.push('');
   return `${lines.join('\n')}\n`;
 }
@@ -270,8 +274,10 @@ export class WeeklyBriefService {
     projectId: string;
     manifest: ConfigurationManifest;
     at: string;
+    /** Explicit per-run selection. Omission preserves the configured legacy sources. */
+    sources?: unknown;
   }): Promise<{ draft: BriefDraft; entryId: string; destination: string }> {
-    const manifest = input.manifest;
+    let manifest = structuredClone(input.manifest);
     if (manifest.state !== 'active')
       throw new ApiError(
         409,
@@ -297,9 +303,59 @@ export class WeeklyBriefService {
     // what the last run actually left behind, and `expected` is the digest
     // of that text — the form `writeRecorded` compares `hash(before)` against.
     const destination = relativeName(output.destination);
-    const sources = await this.gather(input.projectId, manifest);
+    let sources: BriefSource[];
+    if (input.sources !== undefined) {
+      const references = fileReferences(input.sources).map((ref) => ({
+        ...ref,
+        path: relativeName(ref.path),
+      }));
+      const scope = approvedScope(manifest);
+      if (!scope) throw new ApiError(409, 'This setup does not accept approved export files.');
+      if (references.some((ref) => ref.path.toLowerCase() === destination.toLowerCase()))
+        throw new ApiError(400, 'The brief destination cannot also be a source.');
+      // A per-run choice by the same authorized workspace operator. No saved
+      // configuration, project grant or provider consent is changed.
+      manifest = {
+        ...manifest,
+        proposal: {
+          ...manifest.proposal,
+          contextScopes: manifest.proposal.contextScopes.map((item) =>
+            item === scope ? { ...item, selection: references.map((ref) => ref.path) } : item,
+          ),
+        },
+      };
+      sources = [];
+      for (const [index, ref] of references.entries()) {
+        const text = await this.store.current(input.projectId, ref.path);
+        if (text === null || hash(text) !== ref.sha)
+          throw new ApiError(
+            409,
+            `${ref.path} changed or disappeared. Choose it again before preparing the brief.`,
+          );
+        checkExport(ref.path, text);
+        sources.push({
+          id: `${slugFor(ref.path)}-${index + 1}`,
+          label: `${scope.label}: ${prettyFor(ref.path)}`,
+          path: ref.path,
+          text,
+        });
+      }
+      if (
+        sources.reduce((sum, source) => sum + Buffer.byteLength(source.text), 0) >
+        IMPORT_MAX_TOTAL_BYTES
+      )
+        throw new ApiError(413, 'Choose no more than 4 MB of exports for one brief.');
+    } else sources = await this.gather(input.projectId, manifest);
     const previous = await this.store.current(input.projectId, destination);
     const draft = composeBrief({ manifest, sources, previous, at: input.at });
+    if (input.sources !== undefined) {
+      for (const source of sources)
+        if (hash(await this.store.current(input.projectId, source.path)) !== hash(source.text))
+          throw new ApiError(
+            409,
+            `${source.path} changed while the brief was being prepared. Choose it again.`,
+          );
+    }
     const entry = await this.store.writeRecorded(
       input.projectId,
       [{ path: destination, text: draft.markdown, expected: hash(previous) }],

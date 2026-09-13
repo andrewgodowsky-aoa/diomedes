@@ -10,6 +10,7 @@ import { Allowance } from './Allowance';
 import { Button, Modal } from '../components';
 import { BusinessSetup } from './BusinessSetup';
 import { Configuration } from './Configuration';
+import { BriefFiles } from './BriefFiles';
 import './workspace.css';
 
 /**
@@ -327,34 +328,16 @@ export function WorkspacePanel({ view, busy, onClose, onChanged, report }: Panel
                     </select>
                   </label>
                 </div>
-                <div className="ws-actions">
-                  <Button
-                    tone="quiet"
-                    disabled={disabled || !activeOrganization.output}
-                    onClick={() => {
-                      setWorking(true);
-                      setError('');
-                      setBrief('');
-                      api<{ destination: string; projectName: string }>(
-                        `/workspace/organizations/${activeOrganization.organization.id}/brief`,
-                        'POST',
-                        {},
-                      )
-                        .then((result) =>
-                          setBrief(
-                            `Drafted into ${result.projectName} as ${result.destination}. It is waiting for you to read.`,
-                          ),
-                        )
-                        .catch((e) => {
-                          setError(e instanceof Error ? e.message : 'That could not be completed.');
-                          report(e);
-                        })
-                        .finally(() => setWorking(false));
-                    }}
-                  >
-                    Prepare the weekly brief
-                  </Button>
-                </div>
+                {activeOrganization.output && (
+                  <BriefFiles
+                    key={`${activeOrganization.organization.id}:${activeOrganization.output.projectId}`}
+                    organizationId={activeOrganization.organization.id}
+                    projectId={activeOrganization.output.projectId}
+                    disabled={disabled}
+                    onResult={setBrief}
+                    report={report}
+                  />
+                )}
                 {brief && <p className="caption ws-brief">{brief}</p>}
               </>
             ) : (

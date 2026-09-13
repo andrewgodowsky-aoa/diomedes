@@ -6,6 +6,7 @@ import { mountWorkspaceRoutes } from './workspace-routes.js';
 import { ConfigurationService } from './configuration.js';
 import { mountConfigurationRoutes } from './configuration-routes.js';
 import { WeeklyBriefService } from './weekly-brief.js';
+import { browseImports, inspectImport, importExports } from './file-imports.js';
 import { isActiveMember } from '../shared/workspaces.js';
 import { AllowanceLedger } from './managed-usage.js';
 import { ManagedGateway } from './managed-gateway.js';
@@ -1070,6 +1071,27 @@ export async function createApp(options: AppOptions) {
   app.get(
     '/api/projects/:id/documents',
     route(async (req) => ({ documents: await store.listDocuments(id(req)) })),
+  );
+  app.get(
+    '/api/projects/:id/imports/browse',
+    route(async (req) => {
+      store.state(id(req));
+      return browseImports(
+        typeof req.query.path === 'string' && req.query.path.trim()
+          ? req.query.path : store.projectRoot,
+      );
+    }),
+  );
+  app.post(
+    '/api/projects/:id/imports/inspect',
+    route(async (req) => {
+      store.state(id(req));
+      return inspectImport(body(req).path);
+    }),
+  );
+  app.post(
+    '/api/projects/:id/imports',
+    route(async (req) => importExports(store, id(req), body(req).files)),
   );
   app.get(
     '/api/projects/:id/documents/read',

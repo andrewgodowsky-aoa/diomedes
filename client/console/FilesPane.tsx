@@ -3,15 +3,16 @@ import type { DocumentContent, DocumentInfo } from '../../shared/types';
 import { readDocument } from '../api';
 import { date, time } from '../components';
 import type { FilesPaneProps } from './types';
+import { ImportFiles } from './ImportFiles';
 
 /**
  * The Files pane: the Core file and artifact surface, bound to the current
- * Project and read-only.
+ * Project. Imports use the existing recorded writer; previews are read-only.
  *
  * Every byte arrives through the existing guarded routes — `DocumentInfo` from
  * `GET /projects/:id/documents` and `DocumentContent` from `.../documents/read`
- * — so this pane creates no second file authority (decision 13). It writes
- * nothing, and it is not an editor: the pack tier owns code reading, editing,
+ * — so this pane creates no second file authority (decision 13). It is not
+ * an editor: the pack tier owns code reading, editing,
  * Git and diffs, and none of that is here.
  *
  * Search lives in Ctrl+K, not in this pane (FIL-01).
@@ -322,6 +323,8 @@ export function FilesPane({
   onWidth,
   onClose,
 }: FilesPaneProps) {
+  const [importing, setImporting] = useState(false);
+  useEffect(() => setImporting(false), [projectId]);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set<string>());
   const dragFrom = useRef<{ x: number; width: number } | null>(null);
   const tree = useMemo(() => buildTree(documents), [documents]);
@@ -388,6 +391,7 @@ export function FilesPane({
         </button>
       </div>
       <div className="files-body">
+        <button type="button" className="files-import" onClick={() => setImporting(true)}>Import files</button>
         {failure && <p className="caption files-fail">{failure}</p>}
         {!failure && loading && !documents.length && <p className="caption">Reading the folder...</p>}
         {!failure && !loading && !documents.length && (
@@ -415,6 +419,17 @@ export function FilesPane({
           )
         )}
       </div>
+      {importing && (
+        <ImportFiles
+          key={projectId}
+          projectId={projectId}
+          onClose={() => setImporting(false)}
+          onImported={(paths) => {
+            setImporting(false);
+            onOpen(paths[0] ?? null);
+          }}
+        />
+      )}
     </aside>
   );
 }

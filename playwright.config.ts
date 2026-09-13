@@ -63,6 +63,7 @@ export default defineConfig({
     'app-updates-ui.spec.ts',
     'workspace-ui.spec.ts',
     'configuration-ui.spec.ts',
+    'file-imports-ui.spec.ts',
     'allowance-ui.spec.ts',
   ],
   fullyParallel: false,
