@@ -133,7 +133,7 @@ list, and tool refs carry effect and permission for the live re-authorize path i
 `server/harness/lifecycle.ts`); a model alias changing identity (`requested` and
 `reported` stay apart and `source` says whether the runtime reported at all); an
 activated-but-unauthorized pack (`activatedAt` is a date, not a grant; Trust decides).
-No consumer was written in this patch. Test: `tests/contract-revision.test.ts` (21 cases).
+No consumer was written in this patch. Test: `tests/contract-revision.test.ts` (23 cases).
 
 ## 7. Inventory
 

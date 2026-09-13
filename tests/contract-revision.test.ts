@@ -22,11 +22,16 @@ import {
   toolRefSchema,
   verificationEvidenceSchema,
   CONTRACT_EXAMPLES,
+  COMMAND_ID_PATTERN,
+  DIGEST_PATTERN,
+  PRE_REVISION,
   compatibilityForSavedRun,
+  receiptRevision,
   type SavedRunCompatibility,
 } from '../shared/contract-revision.js';
 import { HARNESS_CONTRACT_VERSION, type HarnessRun } from '../shared/harness.js';
 import { FileRunStore } from '../server/harness/run-store.js';
+import { commandIdSchema, digestSchema, payloadDigest } from '../server/command-admission.js';
 
 describe('the revision identity', () => {
   test('is a dated, frozen literal that names the contract versions it amends', () => {
@@ -74,6 +79,49 @@ describe('examples validate against the shared schemas', () => {
       commandIdentitySchema.safeParse({ ...CONTRACT_EXAMPLES.command, expectedRevision: 'latest' })
         .success,
     ).toBe(false);
+  });
+
+  test('the frozen patterns accept and reject exactly what the admission layer does', () => {
+    // The revision copies the admission regexes rather than importing them so that
+    // shared/ never depends on server/. This pins the copy to the original: if the
+    // admission slice ever changes a regex, this drifts and fails here, not in production.
+    const commandIds = [
+      'cmd_1',
+      'a',
+      'A.b:c-d_9',
+      'x'.repeat(128),
+      'x'.repeat(129),
+      '',
+      '-leading-dash',
+      '.leading-dot',
+      'has space',
+      'unicodé',
+      'slash/inside',
+    ];
+    for (const sample of commandIds) {
+      expect([sample, COMMAND_ID_PATTERN.test(sample)]).toEqual([
+        sample,
+        commandIdSchema.safeParse(sample).success,
+      ]);
+    }
+    const digests = [
+      payloadDigest({ a: 1 }),
+      payloadDigest(null),
+      `sha256:${'0'.repeat(64)}`,
+      `sha256:${'f'.repeat(64)}`,
+      `sha256:${'F'.repeat(64)}`,
+      `sha256:${'0'.repeat(63)}`,
+      `sha256:${'0'.repeat(65)}`,
+      `sha1:${'0'.repeat(40)}`,
+      `md5:abc`,
+      '',
+    ];
+    for (const sample of digests) {
+      expect([sample, DIGEST_PATTERN.test(sample)]).toEqual([
+        sample,
+        digestSchema.safeParse(sample).success,
+      ]);
+    }
   });
 
   test('a steering acknowledgment is a distinct state, never a boolean that reads as delivered', () => {
@@ -282,6 +330,19 @@ describe('compatibility for existing saved runs and receipts', () => {
     const compat = compatibilityForSavedRun(forked);
     expect(compat.continuation.fork).toBe(true);
     expect(compat.lineage).toEqual({ parentRunId: 'run_parent', forkPoint: 'step_2' });
+  });
+
+  test('a receipt written before the revision reads as pre-revision, never as the current one', () => {
+    expect(receiptRevision({})).toBe(PRE_REVISION);
+    expect(receiptRevision({ contractRevision: undefined })).toBe(PRE_REVISION);
+    // Garbage in the field is treated as absent rather than trusted.
+    expect(receiptRevision({ contractRevision: 'latest' })).toBe(PRE_REVISION);
+    expect(receiptRevision({ contractRevision: 20260913 })).toBe(PRE_REVISION);
+    expect(receiptRevision({ contractRevision: '2026-09-13' })).toBe(PRE_REVISION);
+    // A well-formed recorded revision is returned as recorded, even if it is not this one.
+    expect(receiptRevision({ contractRevision: CONTRACT_REVISION.revision })).toBe('2026-09-13.1');
+    expect(receiptRevision({ contractRevision: '2026-10-01.3' })).toBe('2026-10-01.3');
+    expect(PRE_REVISION).not.toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
   });
 
   test('the store still refuses a newer run version; the compatibility policy is for v:1 files only', async () => {

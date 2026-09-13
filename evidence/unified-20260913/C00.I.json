@@ -15,11 +15,12 @@
     "tests/coordination.test.ts"
   ],
   "patch_path": "F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913/results/C00.I.patch",
-  "patch_sha256": "sha256:9dd1897373d15687ab01c4eed04996744af9faab5ea091cee71b0753f4188a30",
-  "patch_bytes": 188874,
+  "patch_sha256": "sha256:2fc947138f7f4b75e08a254a7199bfed0062aa420cb184736780c862b45de499",
+  "patch_bytes": 202101,
   "changed_paths": [
     "AGENTS.md",
     "docs/implementation/2026-09-13-rebaseline.md",
+    "evidence/unified-20260913/C00.I.json",
     "evidence/unified-20260913/coverage-audit.md",
     "evidence/unified-20260913/dependency-order.md",
     "evidence/unified-20260913/work-orders.json",
@@ -30,13 +31,14 @@
   ],
   "changed_file_sha256": {
     "AGENTS.md": "sha256:b0fc27ee0aa97a47cf20ae4f5bb97642567beede5d0f957c1d19ea32ff59cfc0",
-    "docs/implementation/2026-09-13-rebaseline.md": "sha256:521df401b738011c5c371295ddce3355016863a9d9cfab21716d4e773ca7615b",
+    "docs/implementation/2026-09-13-rebaseline.md": "sha256:aa9cff75569c44b82d4936a687f23e41d9994eed4b4647557fbd14cf69103492",
+    "evidence/unified-20260913/C00.I.json": "sha256:3ed5e22121616bd5b2c9ed1a59d6abd6204a2c461b004507ceaa7c7e025b1e13",
     "evidence/unified-20260913/coverage-audit.md": "sha256:fa8e605fa3842eb5a0fa37d51b519df000e8a5b7a45376a93daabd71af2f41af",
     "evidence/unified-20260913/dependency-order.md": "sha256:b2bfd67eb3431a2b17ae8825c36d073a69529d986c62013af10e92d0ca9ef6b1",
     "evidence/unified-20260913/work-orders.json": "sha256:2b78761f1ad7465700a7ff616aa318e58a3e4b4c3107e33795f0c6118b6c377a",
     "scripts/coordination.ts": "sha256:fe7c6d901a6406abf32dbb407c4dfdd9b1c2c874148d3bb9c39f6851a066001c",
     "shared/contract-revision.ts": "sha256:d224f36bbccd657fab33303498b96201d851333ff58e8025627c4235db5c5849",
-    "tests/contract-revision.test.ts": "sha256:bd3eb79271a0df254d4009589c9e6dc4b3bc2014954f1d257bc13b3f6977b0ee",
+    "tests/contract-revision.test.ts": "sha256:30d29923e09116441dadae84e8ffe207369b56ef8cc75b9b929b3ec96705d28c",
     "tests/coordination.test.ts": "sha256:f842dafa66387e55a2d6b385e72a9850fe732ab6c701835c99f53040a1dd0e48"
   },
   "consumed_contract_revision": null,
@@ -68,7 +70,7 @@
       "command": "./node_modules/.bin/vitest run tests/coordination.test.ts tests/contract-revision.test.ts",
       "cwd": "F:/Diomedes/diomedes-wt/c00-rebaseline-20260913",
       "when": "final",
-      "result": "Test Files 2 passed (2); Tests 30 passed (30)"
+      "result": "Test Files 2 passed (2); Tests 32 passed (32)"
     },
     {
       "command": "./node_modules/.bin/tsc --noEmit",
@@ -117,7 +119,7 @@
     "evidence/unified-20260913/dependency-order.md",
     "evidence/unified-20260913/work-orders.json",
     "tests/coordination.test.ts (9 cases)",
-    "tests/contract-revision.test.ts (21 cases)",
+    "tests/contract-revision.test.ts (23 cases)",
     "F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913/ (README, external-claims/*, claims/, journals/fable.jsonl, work-orders/*.json)",
     "scratchpad inventory/routes.md, audit-eng.md, audit-har.md, audit-filpak.md (delegated read-only inputs)"
   ],
@@ -159,6 +161,7 @@
   "uncommitted_paths": [
     "AGENTS.md",
     "docs/implementation/2026-09-13-rebaseline.md",
+    "evidence/unified-20260913/C00.I.json",
     "evidence/unified-20260913/coverage-audit.md",
     "evidence/unified-20260913/dependency-order.md",
     "evidence/unified-20260913/work-orders.json",
@@ -170,5 +173,5 @@
   "unpublished_changes": [
     "everything in changed_paths until Andrew's per-patch commit approval is applied"
   ],
-  "recorded_at": "2026-09-13T05:46:06.194483+00:00"
+  "recorded_at": "2026-09-13T05:54:14.509614+00:00"
 }
