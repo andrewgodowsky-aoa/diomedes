@@ -25,12 +25,14 @@ import {
   COMMAND_ID_PATTERN,
   DIGEST_PATTERN,
   PRE_REVISION,
+  RUN_ID_PATTERN,
   compatibilityForSavedRun,
   receiptRevision,
   type SavedRunCompatibility,
 } from '../shared/contract-revision.js';
+import { directOrigin } from '../shared/attribution.js';
 import { HARNESS_CONTRACT_VERSION, type HarnessRun } from '../shared/harness.js';
-import { FileRunStore } from '../server/harness/run-store.js';
+import { FileRunStore, validateRunId } from '../server/harness/run-store.js';
 import { commandIdSchema, digestSchema, payloadDigest } from '../server/command-admission.js';
 
 describe('the revision identity', () => {
@@ -358,5 +360,116 @@ describe('compatibility for existing saved runs and receipts', () => {
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
+  });
+
+  test('a saved run reports a runtime model only from a step record that names one', () => {
+    const modelOf = (...models: unknown[]) =>
+      compatibilityForSavedRun({
+        ...baseRun(),
+        steps: models.map((model) => ({ origin: { model } })),
+      } as unknown as HarnessRun).profile.model;
+    const named = { requested: 'gpt-5.5', reported: 'gpt-5.5-2026-08', source: 'runtime' };
+    const contradictory = { requested: 'gpt-5.5', reported: null, source: 'runtime' };
+    const nothing = { requested: null, reported: null, source: 'not-recorded' };
+    expect(modelOf(named, contradictory)).toEqual(named);
+    expect(modelOf(contradictory)).toEqual(nothing);
+    expect(modelOf({ ...named, reported: '' })).toEqual(nothing);
+    expect(modelOf({ ...named, requested: 7 })).toEqual(nothing);
+    expect(
+      profileSnapshotSchema.safeParse({
+        ...CONTRACT_EXAMPLES.profile,
+        model: modelOf(named, contradictory),
+      }).success,
+    ).toBe(true);
+  });
+});
+
+describe('C00.R repair: run identifiers and model reporting agree with the runtime', () => {
+  const storeAccepts = (value: string) => {
+    try {
+      validateRunId(value);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  test('the run identifier pattern accepts and rejects exactly what the run store does', () => {
+    const samples = [
+      'run_01',
+      'R0123456789ab',
+      'a',
+      'A.b-c_9',
+      'x'.repeat(128),
+      'x'.repeat(129),
+      '',
+      'run/other',
+      '../run',
+      'run\\other',
+      ' run_01',
+      'run_01 ',
+      'run_01\n',
+      '.hidden',
+      '-dash',
+      'run:01',
+      'unicodé',
+    ];
+    for (const sample of samples)
+      expect([sample, RUN_ID_PATTERN.test(sample)]).toEqual([sample, storeAccepts(sample)]);
+  });
+
+  test.each(['run/other', '../run', ' run_01', 'run_01 ', ''])(
+    'run references refuse %j in every position',
+    (bad) => {
+      const ids = CONTRACT_EXAMPLES.ids;
+      expect(
+        authoritativeIdsSchema.safeParse({
+          ...ids,
+          runId: bad,
+          event: { ...ids.event, runId: bad },
+        }).success,
+      ).toBe(false);
+      expect(
+        continuationModeSchema.safeParse({
+          mode: 'resume',
+          ofRunId: bad,
+          kind: 'host',
+          nativeSession: null,
+        }).success,
+      ).toBe(false);
+      expect(
+        continuationModeSchema.safeParse({ mode: 'retry', ofRunId: bad, nativeSession: null })
+          .success,
+      ).toBe(false);
+      expect(
+        continuationModeSchema.safeParse({
+          mode: 'fork',
+          ofRunId: bad,
+          forkPoint: 'step_3',
+          nativeSession: null,
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  test('a profile snapshot names a reported model exactly when the runtime reported one', () => {
+    const accepts = (model: unknown) =>
+      profileSnapshotSchema.safeParse({ ...CONTRACT_EXAMPLES.profile, model }).success;
+    expect(accepts({ requested: 'gpt-5.5', reported: 'gpt-5.5-2026-08', source: 'runtime' })).toBe(
+      true,
+    );
+    expect(accepts({ requested: 'gpt-5.5', reported: null, source: 'not-recorded' })).toBe(true);
+    expect(accepts({ requested: null, reported: null, source: 'not-recorded' })).toBe(true);
+    expect(accepts({ requested: 'gpt-5.5', reported: 'invented', source: 'not-recorded' })).toBe(
+      false,
+    );
+    expect(accepts({ requested: 'gpt-5.5', reported: null, source: 'runtime' })).toBe(false);
+    expect(accepts({ requested: 'gpt-5.5', reported: '', source: 'runtime' })).toBe(false);
+    // Every model the existing attribution constructor records is accepted as recorded.
+    for (const reportedModel of [undefined, null, '', 'gpt-5.5-2026-08'])
+      expect([
+        reportedModel,
+        accepts(directOrigin({ engine: 'codex', requestedModel: 'gpt-5.5', reportedModel }).model),
+      ]).toEqual([reportedModel, true]);
   });
 });

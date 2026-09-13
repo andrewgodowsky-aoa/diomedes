@@ -42,14 +42,18 @@ export type ContractRevisionId = typeof CONTRACT_REVISION.revision;
 /** What a v:1 record written before this file existed is reported as. */
 export const PRE_REVISION = 'pre-2026-09-13.1' as const;
 
-// --- patterns shared with the admission layer -----------------------------------
-// Kept byte-identical to server/command-admission.ts; tests/contract-revision.test.ts
-// checks both accept and reject the same samples.
+// --- patterns shared with the admission layer and the run store -----------------
+// Kept byte-identical to server/command-admission.ts and to `RUN_ID` in
+// server/harness/run-store.ts; tests/contract-revision.test.ts checks both accept and
+// reject the same samples.
 export const COMMAND_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 export const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 export const REVISION_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
+export const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 const id = z.string().trim().min(1).max(200);
+/** A run id exactly as `FileRunStore` accepts it: nothing trimmed, no path separators. */
+const runId = z.string().regex(RUN_ID_PATTERN);
 const iso = z.string().datetime({ offset: true });
 const digest = z.string().regex(DIGEST_PATTERN);
 
@@ -79,14 +83,14 @@ export type CommandIdentity = z.infer<typeof commandIdentitySchema>;
 // --- 2. authoritative run / turn / event identifiers ------------------------------
 export const authoritativeIdsSchema = z
   .strictObject({
-    runId: id,
+    runId,
     /** The Session and Turn presenting this run, when the host has linked them. */
     turn: z.strictObject({ sessionId: id, turnId: id }).nullable(),
     /** The durable event cursor: contract version, sequence, run. */
     event: z.strictObject({
       v: z.literal(HARNESS_CONTRACT_VERSION),
       seq: z.number().int().nonnegative(),
-      runId: id,
+      runId,
     }),
     /** Identifiers are minted by the host. A provider's ids are references, never authority. */
     authority: z.literal('host'),
@@ -147,18 +151,18 @@ export const continuationModeSchema = z
   .discriminatedUnion('mode', [
     z.strictObject({
       mode: z.literal('resume'),
-      ofRunId: id,
+      ofRunId: runId,
       kind: z.enum(['host', 'native']),
       nativeSession: nativeSessionRefSchema.nullable(),
     }),
     z.strictObject({
       mode: z.literal('retry'),
-      ofRunId: id,
+      ofRunId: runId,
       nativeSession: nativeSessionRefSchema.nullable(),
     }),
     z.strictObject({
       mode: z.literal('fork'),
-      ofRunId: id,
+      ofRunId: runId,
       forkPoint: id,
       nativeSession: nativeSessionRefSchema.nullable(),
     }),
@@ -172,7 +176,9 @@ export type ContinuationMode = z.infer<typeof continuationModeSchema>;
 /**
  * The Agent, route and model a run actually resolved to, taken at resolution time and
  * never rewritten. `model` is `OriginSnapshot.model`: requested and reported stay apart,
- * and `source` says whether the runtime reported anything. `selection` is
+ * and `source` says whether the runtime reported anything. The two agree the way
+ * `directOrigin` records them: `runtime` exactly when a reported model is named,
+ * `not-recorded` exactly when none is. `selection` is
  * `AgentResolution.agentSelection` / `modelSelection`: whether a person chose or Auto did.
  */
 export const profileSnapshotSchema = z.strictObject({
@@ -180,11 +186,16 @@ export const profileSnapshotSchema = z.strictObject({
   agentVersion: id,
   agentDigest: id,
   routeId: id,
-  model: z.strictObject({
-    requested: z.string().nullable(),
-    reported: z.string().nullable(),
-    source: z.enum(['runtime', 'not-recorded']),
-  }),
+  model: z
+    .strictObject({
+      requested: z.string().nullable(),
+      reported: z.string().nullable(),
+      source: z.enum(['runtime', 'not-recorded']),
+    })
+    .refine((model) => (model.source === 'runtime') === Boolean(model.reported), {
+      message:
+        'source is runtime exactly when a reported model is named, as directOrigin records it.',
+    }),
   selection: z.strictObject({
     agent: z.enum(['manual', 'automatic']),
     model: z.enum(['manual', 'automatic', 'runtime-default']),
@@ -388,16 +399,25 @@ export function compatibilityForSavedRun(run: HarnessRun): SavedRunCompatibility
   };
 }
 
+/**
+ * The newest step model the runtime actually reported. A record that says `runtime` without
+ * naming a reported model, or with an unreadable requested model, contradicts itself and is
+ * skipped rather than reported.
+ */
 function lastRuntimeModel(steps: readonly StepRecord[] | undefined): OriginSnapshot['model'] {
   if (Array.isArray(steps))
     for (let index = steps.length - 1; index >= 0; index -= 1) {
-      const origin = steps[index]?.origin;
-      if (origin?.model?.source === 'runtime')
-        return {
-          requested: origin.model.requested,
-          reported: origin.model.reported,
-          source: 'runtime',
-        };
+      const { requested, reported, source } = (steps[index]?.origin?.model ?? {}) as Record<
+        string,
+        unknown
+      >;
+      if (
+        source === 'runtime' &&
+        typeof reported === 'string' &&
+        reported.length > 0 &&
+        (requested === null || typeof requested === 'string')
+      )
+        return { requested, reported, source: 'runtime' };
     }
   return { requested: null, reported: null, source: 'not-recorded' };
 }
