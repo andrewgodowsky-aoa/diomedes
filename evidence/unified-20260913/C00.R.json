@@ -1,0 +1,316 @@
+{
+  "schema_version": 1,
+  "node_id": "C00.R",
+  "review_id": "astra-c00-20260913-claim_mtzfnna9_958a1b27",
+  "recorded_at": "2026-09-13T07:00:57.165903+00:00",
+  "actual_model_route": "Codex gpt-6-astra parent; read-only OpenCode Go Muse 1.3, then GLM-5.3-Flash fallback; explicit IDs and model-default effort",
+  "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+  "candidate_head": "a0341639d3a918d0bb87753758f600a37f4beb3e",
+  "integrated_source_observed": "03a1b800bca95e23eaa38a25bb17a93d38b97847",
+  "worktree": "F:\\Diomedes\\diomedes-wt\\astra-c00-review-20260913",
+  "review_patch_base_sha": "a0341639d3a918d0bb87753758f600a37f4beb3e",
+  "owned_paths": [
+    "tests/c00-independent.test.ts",
+    "evidence/unified-20260913/C00.R.md",
+    "evidence/unified-20260913/c00-r-tests.json",
+    "evidence/unified-20260913/C00.R.json"
+  ],
+  "patch_path": "F:\\Diomedes\\deliverables\\c00-review-20260913\\C00.R.patch",
+  "patch_sha256": "sha256:df3beddc5e5148117f64b09796f55d32e10dc18af4ffb6139de6bc0392b17840",
+  "patch_bytes": 48479,
+  "changed_file_sha256": {
+    "tests/c00-independent.test.ts": "sha256:0990da8c9cde5d97573afb5b30155b6120d141ed5c6dd5a74a4ae8cb0583c73c",
+    "evidence/unified-20260913/C00.R.md": "sha256:36dc57e0900023b0e9993553b2e47e37306180f6102cf0b7f1328d2e62f91597",
+    "evidence/unified-20260913/c00-r-tests.json": "sha256:9febeb0244e8618ff44eb94c82647bf3a47ef53f0427ee43f114c201482b1584"
+  },
+  "hash_policy": "SHA-256 of raw UTF-8 payload bytes. C00.R.json is the detached outer manifest and is excluded from its own hashes and payload patch. Patch contains only reviewer additions, not the reconstructed producer changes.",
+  "consumed_contract_revision": "2026-09-13.1 (proposed; examined, not accepted)",
+  "produced_contract_revision": null,
+  "commands": [
+    {
+      "command": ".\\node_modules\\.bin\\vitest.cmd run tests/coordination.test.ts tests/contract-revision.test.ts tests/c00-independent.test.ts --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=F:/Diomedes/deliverables/c00-review-20260913/independent-tests-final.json",
+      "cwd": "F:\\Diomedes\\diomedes-wt\\astra-c00-review-20260913",
+      "exit_code": 1,
+      "result": "59 cases: 46 passed, 13 failed; producer 32/32 and independent 14/27"
+    },
+    {
+      "command": ".\\node_modules\\.bin\\vitest.cmd run tests/harness-provider-outcomes.test.ts tests/harness-lifecycle.test.ts tests/harness.test.ts tests/harness-negative.test.ts --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=F:/Diomedes/deliverables/c00-review-20260913/existing-runtime-tests.json",
+      "cwd": "F:\\Diomedes\\diomedes-wt\\astra-c00-review-20260913",
+      "exit_code": 0,
+      "result": "118/118 passed"
+    },
+    {
+      "command": ".\\node_modules\\.bin\\tsc.cmd --noEmit",
+      "cwd": "F:\\Diomedes\\diomedes-wt\\astra-c00-review-20260913",
+      "exit_code": 0,
+      "evidence": "F:\\Diomedes\\deliverables\\c00-review-20260913\\typecheck.log"
+    },
+    {
+      "command": "python F:/Diomedes/deliverables/c00-review-20260913/verify-candidate.py",
+      "result": "10/10 Git blobs match the candidate after metadata-only reconstruction correction; manifest self-hash remains invalid"
+    },
+    {
+      "command": "git apply --check F:\\Diomedes\\deliverables\\c00-review-20260913\\C00.R.patch",
+      "cwd": "F:\\Diomedes\\diomedes-wt\\c00-rebaseline-20260913",
+      "exit_code": 0
+    },
+    {
+      "command": "git apply --check --reverse F:\\Diomedes\\deliverables\\c00-review-20260913\\C00.R.patch",
+      "cwd": "F:\\Diomedes\\diomedes-wt\\astra-c00-review-20260913",
+      "exit_code": 0
+    },
+    {
+      "command": "python F:/Diomedes/deliverables/c00-review-20260913/runtime-probe.py",
+      "exit_code": 0,
+      "result": "Installed Electron executable in Node mode only; no packaged application or SDK import proof"
+    },
+    {
+      "command": "google_drive_get_document_text (three canonical document IDs)",
+      "result": "Read-only version/revision check; no writes",
+      "evidence": "F:\\Diomedes\\deliverables\\c00-review-20260913\\cloud-versions.json"
+    },
+    {
+      "command": "opencode --version; opencode models opencode-go; opencode auth list (independent inventory calls)",
+      "result": "OpenCode 1.18.4; Muse and GLM routes listed, existing OpenCode Go credential present; no secrets exposed"
+    },
+    {
+      "command": "ask-opencode.ps1 -Mode ask -Model opencode-go/muse-spark-1.3-contributor",
+      "result": "No completed report after external-directory denial; explicit fallback",
+      "evidence": "F:\\Diomedes\\deliverables\\c00-review-20260913\\muse-output.log"
+    },
+    {
+      "command": "ask-opencode.ps1 -Mode ask -Model opencode-go/glm-5.3-flash",
+      "exit_code": 0,
+      "result": "Bounded read-only coverage fallback completed; parent accepted mapping checks, corrected Muse self-label and site-marker absence inference",
+      "evidence": "F:\\Diomedes\\deliverables\\c00-review-20260913\\glm-output.log"
+    },
+    {
+      "command": "python F:/Diomedes/deliverables/c00-review-20260913/check-coverage.py",
+      "exit_code": 0,
+      "result": "41 rows, 33 preserved original items, 52 implementation orders, 104 nodes, 44 waves; no mapping or dependency mismatch"
+    }
+  ],
+  "evidence": [
+    "F:\\Diomedes\\diomedes-wt\\astra-c00-review-20260913\\tests\\c00-independent.test.ts",
+    "F:\\Diomedes\\diomedes-wt\\astra-c00-review-20260913\\evidence\\unified-20260913\\C00.R.md",
+    "F:\\Diomedes\\diomedes-wt\\astra-c00-review-20260913\\evidence\\unified-20260913\\c00-r-tests.json",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\candidate-verification.json",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\candidate-verification-final.json",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\C00.I.commit-exact.patch",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\reconstruct-metadata.patch",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\independent-tests-final.json",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\independent-tests-final.log",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\existing-runtime-tests.json",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\existing-runtime-tests.log",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\typecheck.log",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\runtime-probe.json",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\cloud-versions.json",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\muse-output.log",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\glm-output.log",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\coverage-reconciliation.json"
+  ],
+  "observed_versions": {
+    "command": "ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe -p JSON.stringify(process.versions)",
+    "exit_code": 0,
+    "stdout": "{\"node\":\"24.20.0\",\"acorn\":\"8.18.0\",\"ada\":\"4.0.0\",\"amaro\":\"1.1.11\",\"ares\":\"1.34.8\",\"brotli\":\"1.2.0\",\"cldr\":\"48.0\",\"icu\":\"78.2\",\"llhttp\":\"9.4.3\",\"merve\":\"1.2.2\",\"modules\":\"149\",\"napi\":\"10\",\"nbytes\":\"0.1.4\",\"ncrypto\":\"0.0.1\",\"nghttp2\":\"1.70.0\",\"nghttp3\":\"\",\"ngtcp2\":\"\",\"openssl\":\"0.0.0\",\"simdjson\":\"4.6.6\",\"simdutf\":\"7.7.0\",\"sqlite\":\"3.53.4\",\"tz\":\"2025c\",\"undici\":\"7.29.0\",\"unicode\":\"17.0\",\"uv\":\"1.52.1\",\"uvwasi\":\"0.0.23\",\"v8\":\"15.2.124.19-electron.0\",\"zlib\":\"1.3.2.1-motley\",\"zstd\":\"1.6.0\",\"electron\":\"44.2.0\",\"chrome\":\"152.0.7977.76\"}\n",
+    "stderr": "",
+    "boundary": "Installed dependency executable only; no packaged Diomedes launch or SDK import proof.",
+    "electron": "44.2.0",
+    "vite": "7.3.6",
+    "vitest": "3.2.7",
+    "typescript": "5.9.3",
+    "zod": "4.5.4",
+    "express": "5.2.1",
+    "@playwright/test": "1.63.0",
+    "ai": "not installed",
+    "shell_node": "v22.23.2",
+    "app_candidate": "a0341639d3a918d0bb87753758f600a37f4beb3e",
+    "app_integrated_source_observed": "03a1b800bca95e23eaa38a25bb17a93d38b97847",
+    "site_head": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+    "canonical_docs": {
+      "repository": {
+        "pillars": "2026-09-10.1",
+        "roadmap": "2026-09-12.2",
+        "memory": "2026-09-10.7"
+      },
+      "cloud": {
+        "checked_on": "2026-09-13",
+        "method": "google_drive_get_document_text (read only)",
+        "documents": [
+          {
+            "document_id": "1O0bWr5HEryEQmtOsUput0sgzLhk2c_Ze6MaXoMfKta4",
+            "title": "DIOMEDES CORE PILLARS \u2014 BINDING PRODUCT CONSTITUTION",
+            "revision_id": "ANLCKQkKlKnYkMx8xR8XyyrolSFyL6GCM0AfOmpdXE69cxT4gda51gBf3qV84PrNgK9GXH299EOGOXH_2LTU1SjwcJcWcc79VYHp2QI6XSw",
+            "version_text": "Version: 2026-09-10.1"
+          },
+          {
+            "document_id": "1bRhz3zQPXOYuVlt95U1EIkz7pcm1dtSsoBvkDrLR3zE",
+            "title": "DIOMEDES LIVE ROADMAP \u2014 CANONICAL",
+            "revision_id": "ANLCKQkVQBsw_xWpywgMmeqdbnyplhdSQBTsTvaCu50Z6F574WQ8XH_QsLELi5gKb-FD6ya1eMgfc05hk45NKY3_lYvtNfEuwWXWWXhf8y4",
+            "version_text": "Roadmap version: 2026-09-10.4"
+          },
+          {
+            "document_id": "13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw",
+            "title": "DIOMEDES PROJECT MEMORY \u2014 CANONICAL",
+            "revision_id": "ANLCKQkDePMgDu0GbzIJH8VHFEO-SqkFcAKoRE0cRwa7jpq_YWxPk8mFOWC-btWQx0KB1PsmIiLffmMKORCOS9DDAJyvoecW8Ox5Ntdn1d0",
+            "version_text": "Version: 2026-09-10.4"
+          }
+        ]
+      }
+    },
+    "profile_evidence": "Deterministic externally constructed alias/runtime profiles; no live Diomedes profile observation.",
+    "pack_versions": {
+      "diomedes.software-engineering": "0.1.0 (shared/capability-packs.ts:126-127; source only)"
+    },
+    "spend_authority": {
+      "new_fixed_usd": 0,
+      "unapproved_variable_usd": 0,
+      "new_accounts_or_payers": false,
+      "account_charge_measured": false
+    }
+  },
+  "coverage_reconciliation": {
+    "candidate": "a0341639d3a918d0bb87753758f600a37f4beb3e",
+    "coverage_rows": 41,
+    "all_expected_rows_present": true,
+    "classification_counts": {
+      "partial": 18,
+      "present-and-verified": 11,
+      "externally-blocked": 1,
+      "absent": 11
+    },
+    "row_mapping_differences": [],
+    "original_harness_items_preserved": [
+      "C00",
+      "H01",
+      "H02",
+      "H03",
+      "H04",
+      "H05",
+      "H06",
+      "H07",
+      "H08",
+      "H09",
+      "H10",
+      "H11",
+      "H12",
+      "H13",
+      "H14",
+      "H15",
+      "H16",
+      "H17",
+      "H18",
+      "H19",
+      "H20",
+      "H21",
+      "P01",
+      "P02",
+      "P03",
+      "P04",
+      "P05",
+      "P06",
+      "P07",
+      "P08",
+      "P09",
+      "P10",
+      "Z01"
+    ],
+    "unified_work_orders": 52,
+    "unified_nodes": 104,
+    "waves": 44,
+    "work_order_field_differences": [],
+    "all_implementation_orders_present": true,
+    "dependency_graph_acyclic": true,
+    "dependency_table_complete": true,
+    "dependency_table_order_errors": [],
+    "dependency_table_encoding": "not UTF-8; cp1252 decodes it (first UTF-8 error at byte 19)",
+    "optional_items_and_downstream_consumers": {
+      "SDKO": [],
+      "G01": [],
+      "B12": []
+    },
+    "supporting_release_rows_separate": [
+      "Windows packaging / experimental installer",
+      "Code signing",
+      "App updates / rollback platform",
+      "Site release / capability registry",
+      "Antivirus false positive (Norton)"
+    ],
+    "consumer_prerequisites": {
+      "B00.I": [
+        "C00.R"
+      ],
+      "H01.I": [
+        "C00.R"
+      ]
+    },
+    "evidence_boundary": "Mapping and source-anchor reconciliation. The 11 present-and-verified classifications are producer baseline labels at deterministic level, not 11 fresh acceptance verdicts or native/live/package proof.",
+    "corrections": [
+      "Use proposed rather than frozen for HAR-10 until a successful C00.R verdict.",
+      "Normalize dependency-order.md to UTF-8 in the producer repair.",
+      "The ledger says 38 proposed-new anchors; the work orders contain 38 missing-on-base entries and one proposed-new.",
+      "Site-prefixed markers do not prove absence in the named site repository. src/data/site.ts, src/data/releases.ts and src/pages exist there; bind the site work orders to real repository paths.",
+      "Preserve the base-212106e scope of FIL-02; integrate its later producer evidence separately rather than counting the baseline absence as current integrated truth."
+    ],
+    "delegation_reconciliation": "GLM fallback completed exit 0. Accepted source and mapping checks, corrected its Muse self-label against invocation/header, and rejected its universal missing-path inference for site markers. No additional implementation prerequisite release."
+  },
+  "status": {
+    "implementation": "failed",
+    "independent_review": "failed",
+    "live_provider": "not-run",
+    "packaged": "not-run",
+    "publication": "not-run",
+    "deployment": "not-run"
+  },
+  "status_notes": {
+    "implementation": "The reviewed C00 candidate fails acceptance; reviewer made no production repair.",
+    "independent_review": "Complete with reproducible rejection.",
+    "live_provider": "No Diomedes live-provider acceptance call. Delegation calls are separate evidence.",
+    "publication": "Producer had already published integrated source. This review performed no publication and grants no approval."
+  },
+  "blockers": [
+    {
+      "id": "C00-R1",
+      "priority": "P1",
+      "summary": "Canonical path and directory overlap ownership are not enforced"
+    },
+    {
+      "id": "C00-R2",
+      "priority": "P1",
+      "summary": "Unverified handoffFrom string bypasses integrator ownership"
+    },
+    {
+      "id": "C00-R3",
+      "priority": "P1",
+      "summary": "Claim, slot and work-mode checks omit complete owner identity"
+    },
+    {
+      "id": "C00-R4",
+      "priority": "P2",
+      "summary": "Frozen profiles and run identifiers admit contradictory states"
+    },
+    {
+      "id": "C00-R5",
+      "priority": "P2",
+      "summary": "Submitted patch and manifest do not reproduce the advertised result metadata"
+    }
+  ],
+  "safe_prerequisite_release": null,
+  "downstream": {
+    "03a B00.I": "blocked pending repaired C00 acceptance",
+    "03b H01.I": "blocked pending repaired C00 acceptance",
+    "read_only_preparation": "permitted without treating C00 as accepted"
+  },
+  "pillar_impact": "No pillar semantics changed. Rejection preserves exclusive ownership, truthful model attribution and independent evidence.",
+  "roadmap_impact": "No completion status or canonical document changed. Hold B00.I/H01.I; known Drive mirror drift remains D01 work.",
+  "uncommitted_paths": [
+    "tests/c00-independent.test.ts",
+    "evidence/unified-20260913/C00.R.md",
+    "evidence/unified-20260913/c00-r-tests.json",
+    "evidence/unified-20260913/C00.R.json"
+  ],
+  "unpublished_changes": [
+    "All reviewer additions are uncommitted and unpushed in the isolated review worktree; coordination result copies are local handoff artifacts."
+  ],
+  "preserved_work": "Main checkout dirty work and all producer production files were preserved; reconstructed C00 files in reviewer worktree are not new reviewer implementations."
+}
