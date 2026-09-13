@@ -57,6 +57,13 @@ describe('documents a Board-started task carries', () => {
     ]);
   });
 
+  test('a sentence-ending period names a document without matching a longer path or extension', () => {
+    for (const name of ['Read bakery-inventory.md.', 'Read bakery-inventory.md. Keep the markers.'])
+      expect(selectTaskSources({ name }, documents)).toEqual(['bakery-inventory.md']);
+    for (const name of ['Read bakery-inventory.md.bak', 'Read bakery-inventory.md/child', 'Read ../bakery-inventory.md'])
+      expect(selectTaskSources({ name }, documents)).toEqual([]);
+  });
+
   test("the server's limits hold: eight files, 128 KB", () => {
     const many = Array.from({ length: 10 }, (_, i) => doc(`d${i}.md`, 10));
     const names = many.map((d) => d.path).join(' ');

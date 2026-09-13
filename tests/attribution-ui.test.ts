@@ -20,6 +20,7 @@ function renderThread(turn: Turn, pickedModel = 'new-picker-model') {
     thread, title: 'Historical origin', task: null, sessions: [], mail: [], members: [],
     member: null, needs: [], settings: defaults(), mode: 'ask', route: 'codex',
     busy: false, online: true, onMode: noAction, onPermission: noAction, onRename: noAction,
+    prepareSources: async () => [],
     onSend: noAction, onResolve: noAction, onPreview: noAction, onStopSession: noAction,
     onOpenBoard: noAction,
   }));

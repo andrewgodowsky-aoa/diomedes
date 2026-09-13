@@ -58,7 +58,10 @@ function wholeTokenIndex(text: string, needle: string): number {
     const before = index === 0 ? '' : text[index - 1];
     const after = text[index + needle.length] ?? '';
     const boundary = (ch: string) => ch === '' || !/[\w./\\-]/.test(ch);
-    if (boundary(before) && boundary(after)) return index;
+    // A final full stop is prose punctuation, but `.bak` and `/child` are
+    // still part of a different file name or path.
+    const sentenceEnd = after === '.' && boundary(text[index + needle.length + 1] ?? '');
+    if (boundary(before) && (boundary(after) || sentenceEnd)) return index;
     from = index + 1;
   }
 }

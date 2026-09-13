@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { selectedEngine } from '../../shared/ai-selection';
 import { formatOrigin, originForNeed, originForSession } from '../../shared/attribution';
 import type { ScopeGrantView } from '../../shared/permissions';
-import { isRoute, isExternalEngine, ENGINE_NAMES } from '../../shared/engines';
-import { selectTaskSources } from '../../shared/task-sources';
+import { isRoute, isExternalEngine } from '../../shared/engines';
+import { selectTaskSources, TASK_SOURCE_LIMITS } from '../../shared/task-sources';
 import type {
   Change,
   Conversation,
@@ -41,6 +41,7 @@ import {
 import { Mark } from './Mark';
 import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
+import { SendConfirmation } from './SendConfirmation';
 import { PermissionPanel } from './PermissionPanel';
 import { Ledger } from './Ledger';
 import { Picker } from './Picker';
@@ -692,7 +693,7 @@ export function Shell({
             consent: true,
             threadId: thread.id,
             attachedTo: thread.attachedTo,
-            ...(sources?.length ? { sources } : {}),
+            ...(sources ? { sources } : {}),
             ...(mode === 'fix' && failing ? { failing } : {}),
           },
           control.signal,
@@ -718,6 +719,44 @@ export function Shell({
         }
       }
     });
+  }
+  async function messageSources(
+    thread: Conversation,
+    mode: Mode,
+    text: string,
+    failingDocument: string,
+  ): Promise<string[]> {
+    // Preserve explicit attachments and Fix's failing document. Ask may also
+    // carry documents named by the person in this message or its owning task.
+    // Never infer scope from assistant prose or the rest of the transcript.
+    const sources = [...new Set([
+      ...(mode === 'fix' && failingDocument ? [failingDocument] : []),
+      ...(['document', 'plan'].includes(thread.attachedTo.kind)
+        ? [thread.attachedTo.ref]
+        : []),
+    ])];
+    if (mode !== 'ask') return sources;
+    const listed = (await listDocuments(projectId)).documents;
+    const task = taskOf(thread);
+    const named = selectTaskSources({
+      name: text,
+      description: task ? `${task.name}\n${task.description ?? ''}` : '',
+    }, listed);
+    // Attachments are also included by the server. Reserve their room before
+    // adding named documents so the preview and submitted list stay identical.
+    let bytes = sources.reduce(
+      (sum, source) => sum + (listed.find((d) => d.path === source)?.size ?? 0),
+      0,
+    );
+    for (const source of named) {
+      if (sources.includes(source)) continue;
+      const size = listed.find((d) => d.path === source)!.size;
+      if (sources.length >= TASK_SOURCE_LIMITS.files || bytes + size > TASK_SOURCE_LIMITS.bytes)
+        continue;
+      sources.push(source);
+      bytes += size;
+    }
+    return sources;
   }
   function cancelAsk() {
     askControl.current?.abort();
@@ -1061,6 +1100,7 @@ export function Shell({
               onMode={changeMode}
               onPermission={(p) => void setPermission(selected, p)}
               onRename={() => setRenaming({ id: selected.id, name: threadName(selected, state) })}
+              prepareSources={(m, text, doc) => messageSources(selected, m, text, doc)}
               onSend={(m, text, r, failing, sources) =>
                 void send(selected, m, text, r, failing, sources)
               }
@@ -1250,30 +1290,22 @@ export function Shell({
         />
       )}
       {sendTask && (
-        <Modal title="Send this task?" onClose={() => setSendTask(null)}>
-          <p className="prose">
-            Send the instruction for {sendTask.task.name} to{' '}
-            {isExternalEngine(sendTask.route) ? ENGINE_NAMES[sendTask.route] : sendTask.route} using
-            its selected model and account.{' '}
-            {sendTask.sources.length
-              ? `The ${sendTask.sources.length === 1 ? 'document' : 'documents'} the task names ${sendTask.sources.length === 1 ? 'goes' : 'go'} with it: ${sendTask.sources.join(', ')}.`
-              : 'The task names no project document, so none is included and the engine can only propose new files.'}{' '}
-            File proposals will wait for exact approval.
-          </p>
-          <div className="dialog-actions">
-            <Button onClick={() => setSendTask(null)}>Cancel</Button>
-            <Button
-              tone="primary"
-              onClick={() => {
-                const pending = sendTask;
-                setSendTask(null);
-                void dispatchTask(pending.task, pending.route, pending.sources);
-              }}
-            >
-              Send task
-            </Button>
-          </div>
-        </Modal>
+        <SendConfirmation
+          kind="task"
+          instruction={sendTask.task.description
+            ? `${sendTask.task.name}\n${sendTask.task.description}`
+            : sendTask.task.name}
+          route={sendTask.route}
+          sources={sendTask.sources}
+          mode="build"
+          disabled={busy || !online}
+          onClose={() => setSendTask(null)}
+          onSend={() => {
+            const pending = sendTask;
+            setSendTask(null);
+            void dispatchTask(pending.task, pending.route, pending.sources);
+          }}
+        />
       )}
       {permissionsOpen && selected && (
         <Modal title="Task permissions" onClose={() => setPermissionsOpen(false)}>

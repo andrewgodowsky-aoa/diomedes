@@ -17,6 +17,7 @@ import type {
 } from '../../shared/types';
 import type { FollowUpCommand } from '../../shared/work-control';
 import { effortFor } from '../../shared/effort';
+import { isExternalEngine } from '../../shared/engines';
 import type { InstructionFileRecord } from '../../shared/capability-packs';
 import { formatOrigin, originForSession, originForTurn } from '../../shared/attribution';
 import { ApprovalStatus, time } from '../components';
@@ -80,6 +81,7 @@ interface ThreadViewProps {
   onMode(mode: Mode): void;
   onPermission(permission: ThreadPermission): void;
   onRename(): void;
+  prepareSources(mode: Mode, text: string, failingDocument: string): Promise<string[]>;
   onSend(
     mode: Mode,
     text: string,
@@ -130,6 +132,7 @@ export function ThreadView({
   onMode,
   onPermission,
   onRename,
+  prepareSources,
   onSend,
   onResolve,
   onPreview,
@@ -304,7 +307,7 @@ export function ThreadView({
   });
   items.sort((a, b) => a.at.localeCompare(b.at) || a.seq - b.seq);
 
-  function submit(text: string, failingDocument: string, failingText: string) {
+  function submit(text: string, failingDocument: string, failingText: string, sources: string[]) {
     if (mode === 'fix') {
       const doc = failingDocument.trim();
       const txt = failingText.trim();
@@ -313,11 +316,11 @@ export function ThreadView({
         text,
         route,
         { ...(doc ? { document: doc } : {}), ...(txt ? { text: txt } : {}) },
-        doc ? [doc] : [],
+        sources,
       );
       return;
     }
-    onSend(mode, text, route);
+    onSend(mode, text, route, undefined, sources);
   }
 
   return (
@@ -464,19 +467,18 @@ export function ThreadView({
           ))}
         </div>
       </div>
-      {route !== 'sample' && (
-        <p className="caption">
-          Sending shares this instruction and selected documents with {route}. The selected account
-          is billed under its own plan. Engine tools are disabled; file proposals follow the task's
-          authority.
-        </p>
-      )}
       <Composer
         thread={thread}
         mode={mode}
         onMode={onMode}
         busy={busy}
         online={online}
+        route={route}
+        confirmSend={
+          isExternalEngine(route) ||
+          (route === 'codex' && (mode === 'build' || mode === 'fix' || settings.permissions.sending))
+        }
+        prepareSources={(text, doc) => prepareSources(mode, text, doc)}
         onSend={submit}
       />
       {projectId && task && (

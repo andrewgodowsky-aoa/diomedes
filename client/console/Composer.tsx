@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { Conversation, Mode } from '../../shared/types';
+import type { Conversation, Mode, Route } from '../../shared/types';
 import { reducedMotion, spring } from './motion';
+import { SendConfirmation } from './SendConfirmation';
 
 const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
 const CAPS: Record<Mode, string> = {
@@ -29,7 +30,10 @@ interface ComposerProps {
   onMode(mode: Mode): void;
   busy: boolean;
   online: boolean;
-  onSend(text: string, failingDocument: string, failingText: string): void;
+  route: Route;
+  confirmSend: boolean;
+  prepareSources(text: string, failingDocument: string): Promise<string[]>;
+  onSend(text: string, failingDocument: string, failingText: string, sources: string[]): void;
 }
 
 /**
@@ -37,10 +41,17 @@ interface ComposerProps {
  * point-and-line indicator, the caption, Send and the Enter hint, plus the
  * Build/Fix aux rows.
  */
-export function Composer({ thread, mode, onMode, busy, online, onSend }: ComposerProps) {
+export function Composer({
+  thread, mode, onMode, busy, online, route, confirmSend, prepareSources, onSend,
+}: ComposerProps) {
   const [text, setText] = useState('');
   const [failingDocument, setFailingDocument] = useState('');
   const [failingText, setFailingText] = useState('');
+  const [pending, setPending] = useState<{ text: string; sources: string[]; send(): void } | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [error, setError] = useState('');
+  const preparingRef = useRef(false);
+  const preparation = useRef(0);
   const box = useRef<HTMLTextAreaElement>(null);
   const modes = useRef<HTMLDivElement>(null);
   const ind = useRef<HTMLSpanElement>(null);
@@ -49,6 +60,18 @@ export function Composer({ thread, mode, onMode, busy, online, onSend }: Compose
   const sources = [...new Set(thread.turns.flatMap((t) => t.sources ?? []))];
   const fixReady = failingDocument.trim() !== '' || failingText.trim() !== '';
   const ready = text.trim() !== '' && (mode !== 'fix' || fixReady);
+
+  // A pending send belongs to this thread, mode and route. Late listing results
+  // cannot open a confirmation after navigation or reuse a different route.
+  useEffect(() => {
+    setPending(null);
+    setPreparing(false);
+    setError('');
+    return () => {
+      preparation.current += 1;
+      preparingRef.current = false;
+    };
+  }, [thread.id, mode, route]);
 
   useEffect(() => {
     setText('');
@@ -169,14 +192,39 @@ export function Composer({ thread, mode, onMode, busy, online, onSend }: Compose
     lineS.current = toS;
   }, [mode]);
 
-  function submit() {
-    const value = text.trim();
-    if (!value || busy || !online) return;
-    if (mode === 'fix' && !fixReady) return;
-    onSend(value, failingDocument.trim(), failingText.trim());
+  function dispatch(send: () => void) {
+    if (!preparingRef.current || busy || !online) return;
+    preparingRef.current = false;
+    setPending(null);
+    send();
     setText('');
     setFailingDocument('');
     setFailingText('');
+  }
+
+  async function submit() {
+    const value = text.trim();
+    if (!value || busy || !online || preparingRef.current) return;
+    if (mode === 'fix' && !fixReady) return;
+    preparingRef.current = true;
+    setPreparing(true);
+    setError('');
+    const attempt = ++preparation.current;
+    const doc = failingDocument.trim();
+    const failure = failingText.trim();
+    try {
+      const selected = await prepareSources(value, doc);
+      if (preparation.current !== attempt) return;
+      const send = () => onSend(value, doc, failure, selected);
+      if (confirmSend) setPending({ text: value, sources: selected, send });
+      else dispatch(send);
+    } catch (e) {
+      if (preparation.current !== attempt) return;
+      preparingRef.current = false;
+      setError(e instanceof Error ? e.message : 'The project documents could not be listed.');
+    } finally {
+      if (preparation.current === attempt) setPreparing(false);
+    }
   }
 
   return (
@@ -185,7 +233,7 @@ export function Composer({ thread, mode, onMode, busy, online, onSend }: Compose
         className="composer"
         onSubmit={(e) => {
           e.preventDefault();
-          submit();
+          void submit();
         }}
       >
         <textarea
@@ -194,11 +242,12 @@ export function Composer({ thread, mode, onMode, busy, online, onSend }: Compose
           aria-label="Message this thread"
           placeholder={PLACEHOLDERS[mode]}
           value={text}
+          disabled={preparing || pending !== null}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
-              submit();
+              void submit();
             }
           }}
         />
@@ -268,13 +317,30 @@ export function Composer({ thread, mode, onMode, busy, online, onSend }: Compose
           <button
             type="submit"
             className={`send ${ready ? 'ready' : ''}`}
-            aria-disabled={!ready}
+            aria-disabled={!ready || busy || !online || preparing || pending !== null}
+            disabled={busy || !online || preparing || pending !== null}
           >
             Send
           </button>
           <span className="hint">Enter</span>
         </div>
       </form>
+      {error && <p className="caption" role="alert">{error}</p>}
+      {pending && (
+        <SendConfirmation
+          kind="message"
+          instruction={pending.text}
+          route={route}
+          sources={pending.sources}
+          mode={mode}
+          disabled={busy || !online}
+          onClose={() => {
+            preparingRef.current = false;
+            setPending(null);
+          }}
+          onSend={() => dispatch(pending.send)}
+        />
+      )}
     </div>
   );
 }

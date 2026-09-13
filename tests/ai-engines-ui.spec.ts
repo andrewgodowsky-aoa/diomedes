@@ -10,8 +10,10 @@ import type {
   EngineModel,
   ExternalEngine,
   IntegrationStatus,
+  Conversation,
   Project,
   ProjectState,
+  Task,
 } from '../shared/types';
 
 // This is a browser contract fixture. The adapters below never start a native
@@ -284,6 +286,11 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
       .getByRole('textbox', { name: 'Message this thread', exact: true })
       .fill(`ASK ${engine}`);
     await page.getByRole('button', { name: 'Send', exact: true }).click();
+    const confirmation = page.getByRole('dialog', { name: 'Send this message?' });
+    await expect(confirmation).toContainText(names[engine]);
+    await expect(confirmation).toContainText('Scoped notes.md');
+    expect(calls.some((item) => item.input.prompt === `ASK ${engine}`)).toBe(false);
+    await confirmation.getByRole('button', { name: 'Send message', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
     await expect(
       page.locator('.exchange .turn.dio').filter({ hasText: `Scoped answer from ${engine}.` }),
@@ -308,6 +315,8 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
     .getByRole('textbox', { name: 'Message this thread', exact: true })
     .fill('CANCEL fixture request');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Send this message?' })
+    .getByRole('button', { name: 'Send message', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Request stopped');
@@ -338,6 +347,8 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
       .getByRole('textbox', { name: 'Message this thread', exact: true })
       .fill('PROPOSE exact note');
     await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Send this message?' })
+      .getByRole('button', { name: 'Send message', exact: true }).click();
     const need = page.getByRole('region', { name: 'Needs your OK' });
     await expect(need).toBeVisible();
     await need.getByRole('button', { name: 'Show me first', exact: true }).click();
@@ -385,4 +396,177 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
   for (const engine of Object.keys(versions))
     await expect(page.locator('.history-entry').filter({ hasText: `${engine}/fixture-model changed 1 file` })).toHaveCount(1);
   expect(errors).toEqual([]);
+});
+
+test('Console Ask revision confirms the named task documents, preserves Cancel, and never writes', async ({ page }, testInfo) => {
+  await api('/ai/discover', 'POST', { consent: true });
+  await api('/ai/check/opencode', 'POST', {});
+  await api('/ai/select', 'POST', { engine: 'opencode', model: 'opencode/fixture-model' });
+  const fixture = await api<Project>('/projects', 'POST', { name: 'Composer revision fixture' });
+  const documents = [
+    { path: 'weekly-operations-brief.md', text: 'Three changes. [inventory:1]\n' },
+    { path: 'bakery-inventory.md', text: 'Flour is low. [inventory:1]\n' },
+    { path: 'unrelated.md', text: 'This must never travel with the revision.\n' },
+  ];
+  for (const document of documents)
+    await api(`/projects/${fixture.id}/documents/create`, 'POST', document);
+  const task = await api<Task>(`/projects/${fixture.id}/tasks`, 'POST', {
+    name: 'Review the weekly brief',
+    description: 'Read weekly-operations-brief.md and bakery-inventory.md.',
+  });
+  const thread = await api<Conversation>(`/projects/${fixture.id}/threads`, 'POST', {
+    name: 'Revise the brief', taskId: task.id, mode: 'ask', permission: 'task',
+  });
+  await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id] });
+  const before = await api<ProjectState>(`/projects/${fixture.id}/state`);
+  const count = calls.length;
+  const instruction = 'Shorten the brief to the three things that changed most, and keep the source markers.';
+  const request = { threadId: thread.id, mode: 'ask', route: 'opencode', text: instruction, sources: documents.slice(0, 2).map((d) => d.path) };
+  const denied = await page.request.post(`${baseURL}/api/projects/${fixture.id}/ask`, { headers, data: request });
+  expect(denied.status()).toBe(409);
+  expect((await denied.json()).consentRequired).toBe(true);
+  expect(calls).toHaveLength(count);
+
+  await page.goto(baseURL);
+  const composer = page.getByRole('textbox', { name: 'Message this thread', exact: true });
+  await composer.fill(instruction);
+  await composer.press('Enter');
+  const confirmation = page.getByRole('dialog', { name: 'Send this message?' });
+  await expect(confirmation).toContainText('OpenCode');
+  await expect(confirmation).toContainText('weekly-operations-brief.md');
+  await expect(confirmation).toContainText('bakery-inventory.md');
+  await expect(confirmation).not.toContainText('unrelated.md');
+  await expect(confirmation).toContainText('Nothing in the project changes');
+  expect(calls).toHaveLength(count);
+  expect((await api<ProjectState>(`/projects/${fixture.id}/state`)).conversations[0].turns).toHaveLength(0);
+  await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(composer).toHaveValue(instruction);
+  expect(calls).toHaveLength(count);
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(confirmation).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('composer-revision-confirmation.png'), animations: 'disabled' });
+  await confirmation.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect.poll(() => calls.length).toBe(count + 1);
+  expect(calls.at(-1)?.input.documents).toEqual(documents.slice(0, 2));
+  expect(calls.at(-1)?.input.prompt).toBe(instruction);
+  expect(calls.at(-1)?.input.accountRoute).toBe('opencode:fixture-account');
+  await expect(page.locator('.exchange .turn.dio')).toContainText('Scoped answer from opencode.');
+  await expect(composer).toHaveValue('');
+  const after = await api<ProjectState>(`/projects/${fixture.id}/state`);
+  expect(after.conversations[0].turns[0].sources).toEqual(['weekly-operations-brief.md', 'bakery-inventory.md']);
+  expect(after.conversations[0].permission).toBe('task');
+  expect(after.needs).toEqual(before.needs);
+  expect(after.sessions).toEqual(before.sessions);
+  expect(after.changes).toEqual(before.changes);
+  for (const document of documents)
+    expect(await fs.readFile(path.join(fixture.folder, document.path), 'utf8')).toBe(document.text);
+});
+
+test('Console standalone Ask includes only documents named in the message and refuses a failed listing', async ({ page }) => {
+  await api('/ai/discover', 'POST', { consent: true });
+  await api('/ai/check/opencode', 'POST', {});
+  await api('/ai/select', 'POST', { engine: 'opencode', model: 'opencode/fixture-model' });
+  const fixture = await api<Project>('/projects', 'POST', { name: 'Standalone revision fixture' });
+  for (const name of ['brief.md', 'weekly-brief.md'])
+    await api(`/projects/${fixture.id}/documents/create`, 'POST', { path: name, text: name });
+  await api(`/projects/${fixture.id}/threads`, 'POST', { name: 'Standalone Ask', mode: 'ask' });
+  await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id] });
+  await page.goto(baseURL);
+  const composer = page.getByRole('textbox', { name: 'Message this thread', exact: true });
+  const count = calls.length;
+  await page.route(`**/api/projects/${fixture.id}/documents`, (route) => route.fulfill({ status: 503, json: { error: 'Listing unavailable' } }));
+  await composer.fill('Shorten weekly-brief.md.');
+  await composer.press('Enter');
+  await expect(page.getByRole('alert')).toContainText('Listing unavailable');
+  await expect(composer).toHaveValue('Shorten weekly-brief.md.');
+  expect(calls).toHaveLength(count);
+  await page.unrouteAll({ behavior: 'wait' });
+  await composer.press('Enter');
+  const confirmation = page.getByRole('dialog', { name: 'Send this message?' });
+  await expect(confirmation).toContainText('weekly-brief.md');
+  await confirmation.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect.poll(() => calls.length).toBe(count + 1);
+  expect(calls.at(-1)?.input.documents).toEqual([{ path: 'weekly-brief.md', text: 'weekly-brief.md' }]);
+  await expect(composer).toHaveValue('');
+  await expect(page.locator('.exchange .turn.dio')).toBeVisible();
+  await composer.fill('Explain how to write a brief.');
+  await composer.press('Enter');
+  await expect(confirmation).toContainText('No project documents are included');
+  await confirmation.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect.poll(() => calls.length).toBe(count + 2);
+  expect(calls.at(-1)?.input.documents).toEqual([]);
+});
+
+test('Console keeps the Codex sending preference and sample route separate from external confirmation', async ({ page }) => {
+  const fixture = await api<Project>('/projects', 'POST', { name: 'Sending preference fixture' });
+  const thread = await api<Conversation>(`/projects/${fixture.id}/threads`, 'POST', { mode: 'ask' });
+  const sent: { route: string; mode: string; consent: boolean }[] = [];
+  // Observe the client request boundary without starting a real Codex process.
+  // The backend consent contract is exercised in backend.test.ts.
+  await page.route(`**/api/projects/${fixture.id}/ask`, (route) => {
+    sent.push(route.request().postDataJSON());
+    return route.fulfill({ json: {} });
+  });
+  for (const scenario of [
+    { route: 'codex', mode: 'ask', sending: false, confirm: false },
+    { route: 'codex', mode: 'ask', sending: true, confirm: true },
+    { route: 'codex', mode: 'build', sending: false, confirm: true },
+    { route: 'sample', mode: 'ask', sending: true, confirm: false },
+  ]) {
+    await api(`/projects/${fixture.id}/threads/${thread.id}`, 'PUT', { engine: scenario.route, mode: scenario.mode });
+    await api('/settings', 'PUT', {
+      surface: 'console', openProjects: [fixture.id], services: { codex: true }, permissions: { sending: scenario.sending },
+    });
+    await page.goto(baseURL);
+    const count = sent.length;
+    const composer = page.getByRole('textbox', { name: 'Message this thread', exact: true });
+    await composer.fill('Check this send preference.');
+    await composer.press('Enter');
+    const confirmation = page.getByRole('dialog', { name: 'Send this message?' });
+    if (scenario.confirm) {
+      await expect(confirmation).toContainText('Codex');
+      expect(sent).toHaveLength(count);
+      await confirmation.getByRole('button', { name: 'Send message', exact: true }).click();
+    }
+    await expect.poll(() => sent.length).toBe(count + 1);
+    await expect(confirmation).toHaveCount(0);
+    expect(sent.at(-1)).toMatchObject({ route: scenario.route, mode: scenario.mode, consent: true });
+  }
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
+test('Console drops a late source listing when the person changes threads', async ({ page }) => {
+  const fixture = await api<Project>('/projects', 'POST', { name: 'Late listing fixture' });
+  await api(`/projects/${fixture.id}/threads`, 'POST', { name: 'First composer', mode: 'ask' });
+  await api(`/projects/${fixture.id}/threads`, 'POST', { name: 'Second composer', mode: 'ask' });
+  await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id], services: { defaultEngine: 'opencode' } });
+  await page.goto(baseURL);
+  const rail = page.getByRole('navigation', { name: 'Threads and views' });
+  await rail.getByRole('button', { name: /First composer/ }).click();
+  let release: (() => void) | undefined;
+  let requested = false;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route(`**/api/projects/${fixture.id}/documents`, async (route) => {
+    requested = true;
+    await gate;
+    await route.fulfill({ json: { documents: [] } });
+  });
+  const count = calls.length;
+  try {
+    const composer = page.getByRole('textbox', { name: 'Message this thread', exact: true });
+    await composer.fill('Do not send this from the second thread.');
+    await composer.press('Enter');
+    await expect.poll(() => requested).toBe(true);
+    await rail.getByRole('button', { name: /Second composer/ }).click();
+    release!();
+    await page.unrouteAll({ behavior: 'wait' });
+    await expect(composer).toBeEnabled();
+    await expect(composer).toHaveValue('');
+    await expect(page.getByRole('dialog', { name: 'Send this message?' })).toHaveCount(0);
+    expect(calls).toHaveLength(count);
+    expect((await api<ProjectState>(`/projects/${fixture.id}/state`)).conversations.every((c) => c.turns.length === 0)).toBe(true);
+  } finally {
+    release?.();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
 });
