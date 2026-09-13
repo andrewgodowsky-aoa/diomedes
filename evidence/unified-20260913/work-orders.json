@@ -1,0 +1,2932 @@
+{
+  "schema_version": 1,
+  "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+  "generated_from": "RUN_ORDER.json 2026-09-13 + inspected anchors",
+  "orders": {
+    "C00.I": {
+      "schema_version": 1,
+      "node_id": "C00.I",
+      "work_item": "C00",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "01",
+      "wave": 1,
+      "priority": 0,
+      "optional": false,
+      "dependencies": [],
+      "prompt_path": "FABLE_5_1/01_C00_IMPLEMENT_rebaseline-freeze-shared-contracts-and-establish-the-two-lea.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "AGENTS.md",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/DIOMEDES_CORE_PILLARS.md",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/DIOMEDES_LIVE_ROADMAP.md",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/DIOMEDES_PROJECT_MEMORY.md",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/implementation/2026-09-12-brief-review.md",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/harness.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "shared/agents.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "shared/engines.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "shared/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": true
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": null,
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H01.I": {
+      "schema_version": 1,
+      "node_id": "H01.I",
+      "work_item": "H01",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "03b",
+      "wave": 3,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "C00.R"
+      ],
+      "prompt_path": "FABLE_5_1/03b_H01_IMPLEMENT_one-versioned-adapter-contract-durable-event-stream-and-conf.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "shared/engines.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "shared/harness.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "shared/capabilities.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/engines/service.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/adapters.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/present.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H02.I": {
+      "schema_version": 1,
+      "node_id": "H02.I",
+      "work_item": "H02",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "05a",
+      "wave": 5,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H01.R"
+      ],
+      "prompt_path": "FABLE_5_1/05a_H02_IMPLEMENT_codex-native-steering-interruption-resume-and-fork.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/integrations.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/codex-engine.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/engines/service.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/codex-engine.test.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H03.I": {
+      "schema_version": 1,
+      "node_id": "H03.I",
+      "work_item": "H03",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "05b",
+      "wave": 5,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H01.R"
+      ],
+      "prompt_path": "FABLE_5_1/05b_H03_IMPLEMENT_claude-code-persistent-input-native-sessions-and-live-contro.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/engines/claude.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/engines/process.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/engines/login.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/claude-adapter.test.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H04.I": {
+      "schema_version": 1,
+      "node_id": "H04.I",
+      "work_item": "H04",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "05c",
+      "wave": 5,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H01.R"
+      ],
+      "prompt_path": "FABLE_5_1/05c_H04_IMPLEMENT_opencode-persistent-sessions-steering-abort-and-recovery.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/engines/opencode.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/engines/service.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/opencode-adapter.test.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H05.I": {
+      "schema_version": 1,
+      "node_id": "H05.I",
+      "work_item": "H05",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "05d",
+      "wave": 5,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H01.R"
+      ],
+      "prompt_path": "FABLE_5_1/05d_H05_IMPLEMENT_cursor-acp-session-loading-cancellation-and-safe-control.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/engines/cursor.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/engines/process.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/cursor-adapter.test.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/implementation/2026-09-11-cursor-route.md",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H06.I": {
+      "schema_version": 1,
+      "node_id": "H06.I",
+      "work_item": "H06",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "05e",
+      "wave": 5,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H01.R"
+      ],
+      "prompt_path": "FABLE_5_1/05e_H06_IMPLEMENT_oh-my-pi-parity-and-complete-advertised-route-inventory.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "shared/engines.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "server/engines/omp.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/omp-adapter.test.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/engines/service.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H07.I": {
+      "schema_version": 1,
+      "node_id": "H07.I",
+      "work_item": "H07",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "05f",
+      "wave": 5,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H01.R"
+      ],
+      "prompt_path": "FABLE_5_1/05f_H07_IMPLEMENT_durable-ready-admission-automatic-worker-claims-and-fair-sch.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/work-admission.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/work.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/work-control.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/bridge.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/run-service.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/store.ts",
+          "state": "exists",
+          "integrator_owned": true
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H08.I": {
+      "schema_version": 1,
+      "node_id": "H08.I",
+      "work_item": "H08",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "07a",
+      "wave": 7,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H01.R",
+        "H07.R"
+      ],
+      "prompt_path": "FABLE_5_1/07a_H08_IMPLEMENT_steer-queue-stop-resume-retry-and-fork-as-distinct-durable-c.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "shared/work-control.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "server/work-control.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/native-work.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "client/console/ThreadView.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/work-control.test.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H09.I": {
+      "schema_version": 1,
+      "node_id": "H09.I",
+      "work_item": "H09",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "05g",
+      "wave": 5,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "C00.R",
+        "H01.R"
+      ],
+      "prompt_path": "FABLE_5_1/05g_H09_IMPLEMENT_exact-model-agent-profiles-routing-preferences-and-immutable.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "shared/agents.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "shared/effort.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/agents.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/models.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/AgentPicker.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/Picker.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H10.I": {
+      "schema_version": 1,
+      "node_id": "H10.I",
+      "work_item": "H10",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "07b",
+      "wave": 7,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H09.R"
+      ],
+      "prompt_path": "FABLE_5_1/07b_H10_IMPLEMENT_automatic-guidance-maintenance-with-signed-revisions-evaluat.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "shared/agents.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "server/agents.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/rules.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/secrets.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/app-updates.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H11.I": {
+      "schema_version": 1,
+      "node_id": "H11.I",
+      "work_item": "H11",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "07c",
+      "wave": 7,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H09.R",
+        "H01.R"
+      ],
+      "prompt_path": "FABLE_5_1/07c_H11_IMPLEMENT_canonical-instructions-nested-project-rules-and-inspectable-.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/rules.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/instruction-delivery.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/rule-authority.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/instruction-view.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/paths.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H12.I": {
+      "schema_version": 1,
+      "node_id": "H12.I",
+      "work_item": "H12",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "05h",
+      "wave": 5,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H01.R"
+      ],
+      "prompt_path": "FABLE_5_1/05h_H12_IMPLEMENT_typed-tools-mediated-effects-and-real-execution-containment.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/harness/tools.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/run-service.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/policy.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/lifecycle.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/trust/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/paths.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/store.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "server/team/mcp.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H13.I": {
+      "schema_version": 1,
+      "node_id": "H13.I",
+      "work_item": "H13",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "11a",
+      "wave": 11,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H07.R",
+        "H09.R",
+        "H11.R",
+        "H12.R",
+        "H02.R",
+        "H04.R",
+        "SDKR.R"
+      ],
+      "prompt_path": "FABLE_5_1/11a_H13_IMPLEMENT_real-diomedes-owned-plan-act-observe-and-finish-loop.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/harness/native-agent.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/host.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/run-service.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/bridge.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/native-work.ts",
+          "state": "exists",
+          "integrator_owned": true
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H14.I": {
+      "schema_version": 1,
+      "node_id": "H14.I",
+      "work_item": "H14",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "13a",
+      "wave": 13,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H13.R",
+        "H08.R"
+      ],
+      "prompt_path": "FABLE_5_1/13a_H14_IMPLEMENT_teams-bounded-subagents-advisors-and-durable-handoffs.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "shared/handoff.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/agents.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "server/team/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/run-service.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/bridge.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/AgentPicker.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H15.I": {
+      "schema_version": 1,
+      "node_id": "H15.I",
+      "work_item": "H15",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "15a",
+      "wave": 15,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H13.R",
+        "H17.R"
+      ],
+      "prompt_path": "FABLE_5_1/15a_H15_IMPLEMENT_drift-detection-bounded-correction-and-escalation.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/harness/lifecycle.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/native-agent.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/rules.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/execution.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "server/connections/service.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H16.I": {
+      "schema_version": 1,
+      "node_id": "H16.I",
+      "work_item": "H16",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "17",
+      "wave": 17,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H15.R",
+        "H08.R",
+        "H12.R"
+      ],
+      "prompt_path": "FABLE_5_1/17_H16_IMPLEMENT_stream-time-rule-triggers-and-safe-intervention-ttsr.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/rules.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/native-agent.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/run-service.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/engines/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/rule-authority.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H17.I": {
+      "schema_version": 1,
+      "node_id": "H17.I",
+      "work_item": "H17",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "13b",
+      "wave": 13,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H12.R",
+        "H13.R"
+      ],
+      "prompt_path": "FABLE_5_1/13b_H17_IMPLEMENT_independent-verification-four-state-results-and-evidence-bou.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "shared/execution.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "server/harness/lifecycle.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/present.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/store.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "client/workbench/RunInspector.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H18.I": {
+      "schema_version": 1,
+      "node_id": "H18.I",
+      "work_item": "H18",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "13c",
+      "wave": 13,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H11.R",
+        "H13.R",
+        "H09.R"
+      ],
+      "prompt_path": "FABLE_5_1/13c_H18_IMPLEMENT_context-accounting-selective-retrieval-cache-reuse-and-safe-.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "shared/harness.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "shared/handoff.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/native-agent.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/tools.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/run-store.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/usage.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H19.I": {
+      "schema_version": 1,
+      "node_id": "H19.I",
+      "work_item": "H19",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "15b",
+      "wave": 15,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H08.R",
+        "H09.R",
+        "H11.R",
+        "H17.R",
+        "SDKR.R"
+      ],
+      "prompt_path": "FABLE_5_1/15b_H19_IMPLEMENT_one-console-for-setup-live-control-profiles-and-review.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "client/AISetup.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/Shell.tsx",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "client/console/ThreadView.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/BoardView.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/Picker.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/console.css",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/api.ts",
+          "state": "exists",
+          "integrator_owned": true
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H20.I": {
+      "schema_version": 1,
+      "node_id": "H20.I",
+      "work_item": "H20",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "19",
+      "wave": 19,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H02.R",
+        "H03.R",
+        "H04.R",
+        "H05.R",
+        "H06.R",
+        "H13.R",
+        "H14.R",
+        "H15.R",
+        "H16.R",
+        "H17.R",
+        "H18.R",
+        "H19.R",
+        "SDKR.R"
+      ],
+      "prompt_path": "FABLE_5_1/19_H20_IMPLEMENT_headless-production-core-evaluation-and-all-route-acceptance.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/harness/host.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/native-agent.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "scripts/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "evidence/",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "H21.I": {
+      "schema_version": 1,
+      "node_id": "H21.I",
+      "work_item": "H21",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "21",
+      "wave": 21,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H20.R",
+        "SDKR.R"
+      ],
+      "prompt_path": "FABLE_5_1/21_H21_IMPLEMENT_crash-recovery-migrations-performance-and-the-harness-comple.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/harness/run-store.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/store.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "server/work-admission.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "desktop/main.mjs",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/app-updates.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "scripts/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "P01.I": {
+      "schema_version": 1,
+      "node_id": "P01.I",
+      "work_item": "P01",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "23a",
+      "wave": 23,
+      "priority": 2,
+      "optional": false,
+      "dependencies": [
+        "H21.R"
+      ],
+      "prompt_path": "FABLE_5_1/23a_P01_IMPLEMENT_versioned-pack-manifests-contribution-contracts-and-dependen.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "shared/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "server/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/packs.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/agents.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "server/harness/tools.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "P02.I": {
+      "schema_version": 1,
+      "node_id": "P02.I",
+      "work_item": "P02",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "25a",
+      "wave": 25,
+      "priority": 2,
+      "optional": false,
+      "dependencies": [
+        "P01.R",
+        "H10.R"
+      ],
+      "prompt_path": "FABLE_5_1/25a_P02_IMPLEMENT_private-registry-and-github-acquisition-with-verified-distri.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/secrets.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/paths.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/engines/install.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": true
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "P03.I": {
+      "schema_version": 1,
+      "node_id": "P03.I",
+      "work_item": "P03",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "27a",
+      "wave": 27,
+      "priority": 2,
+      "optional": false,
+      "dependencies": [
+        "P02.R"
+      ],
+      "prompt_path": "FABLE_5_1/27a_P03_IMPLEMENT_pack-install-activate-update-deactivate-rollback-and-uninsta.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/PackSettings.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "server/store.ts",
+          "state": "exists",
+          "integrator_owned": true
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "P04.I": {
+      "schema_version": 1,
+      "node_id": "P04.I",
+      "work_item": "P04",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "29a",
+      "wave": 29,
+      "priority": 2,
+      "optional": false,
+      "dependencies": [
+        "P03.R",
+        "H12.R",
+        "H18.R",
+        "H09.R"
+      ],
+      "prompt_path": "FABLE_5_1/29a_P04_IMPLEMENT_on-demand-contribution-loading-across-tools-agents-context-w.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/harness/tools.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/native-agent.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/agents.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "client/console/Shell.tsx",
+          "state": "exists",
+          "integrator_owned": true
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "P05.I": {
+      "schema_version": 1,
+      "node_id": "P05.I",
+      "work_item": "P05",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "25b",
+      "wave": 25,
+      "priority": 2,
+      "optional": false,
+      "dependencies": [
+        "H19.R",
+        "P01.R"
+      ],
+      "prompt_path": "FABLE_5_1/25b_P05_IMPLEMENT_core-files-attachments-previews-and-durable-artifact-identit.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "client/console/FilesPane.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/Composer.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/paths.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/store.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "shared/types.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "client/console/paletteEntries.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "P06.I": {
+      "schema_version": 1,
+      "node_id": "P06.I",
+      "work_item": "P06",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "27b",
+      "wave": 27,
+      "priority": 2,
+      "optional": false,
+      "dependencies": [
+        "P05.R",
+        "H17.R"
+      ],
+      "prompt_path": "FABLE_5_1/27b_P06_IMPLEMENT_existing-file-edits-diffs-review-comments-and-verified-revis.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "client/console/FilesPane.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/ThreadView.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/store.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "server/native-work.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "shared/types.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "server/approval-admission.ts",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "P07.I": {
+      "schema_version": 1,
+      "node_id": "P07.I",
+      "work_item": "P07",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "31a",
+      "wave": 31,
+      "priority": 2,
+      "optional": false,
+      "dependencies": [
+        "P04.R",
+        "P06.R",
+        "H12.R"
+      ],
+      "prompt_path": "FABLE_5_1/31a_P07_IMPLEMENT_software-pack-repository-context-git-worktrees-and-mediated-.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/paths.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/tools.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/FilesPane.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": true
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "P08.I": {
+      "schema_version": 1,
+      "node_id": "P08.I",
+      "work_item": "P08",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "33a",
+      "wave": 33,
+      "priority": 2,
+      "optional": false,
+      "dependencies": [
+        "P07.R"
+      ],
+      "prompt_path": "FABLE_5_1/33a_P08_IMPLEMENT_optional-syntax-symbols-diagnostics-and-language-server-capa.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "client/console/FilesPane.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/engines/process.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": true
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "P09.I": {
+      "schema_version": 1,
+      "node_id": "P09.I",
+      "work_item": "P09",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "31b",
+      "wave": 31,
+      "priority": 2,
+      "optional": false,
+      "dependencies": [
+        "P02.R",
+        "P03.R",
+        "P04.R"
+      ],
+      "prompt_path": "FABLE_5_1/31b_P09_IMPLEMENT_private-capability-skill-catalog-and-interoperable-import-ex.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "shared/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "client/console/PackSettings.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/agents.ts",
+          "state": "exists",
+          "integrator_owned": true
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "P10.I": {
+      "schema_version": 1,
+      "node_id": "P10.I",
+      "work_item": "P10",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "31c",
+      "wave": 31,
+      "priority": 2,
+      "optional": false,
+      "dependencies": [
+        "P04.R",
+        "P05.R",
+        "P06.R"
+      ],
+      "prompt_path": "FABLE_5_1/31c_P10_IMPLEMENT_non-coding-approved-files-pack-on-the-same-harness.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "shared/packs.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/weekly-brief.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/configuration.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "client/console/PackSettings.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "Z01.I": {
+      "schema_version": 1,
+      "node_id": "Z01.I",
+      "work_item": "Z01",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "35a",
+      "wave": 35,
+      "priority": 2,
+      "optional": false,
+      "dependencies": [
+        "H10.R",
+        "H21.R",
+        "P04.R",
+        "P06.R",
+        "P07.R",
+        "P08.R",
+        "P09.R",
+        "P10.R",
+        "SDKR.R"
+      ],
+      "prompt_path": "FABLE_5_1/35a_Z01_IMPLEMENT_full-integrated-packaged-app-proof-and-completion-reconcilia.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "scripts/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "evidence/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/DIOMEDES_LIVE_ROADMAP.md",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/DIOMEDES_PROJECT_MEMORY.md",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/product/2026-09-10-capability-packs.md",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/implementation/",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "B00.I": {
+      "schema_version": 1,
+      "node_id": "B00.I",
+      "work_item": "B00",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "03a",
+      "wave": 3,
+      "priority": 0,
+      "optional": false,
+      "dependencies": [
+        "C00.R"
+      ],
+      "prompt_path": "FABLE_5_1/03a_B00_IMPLEMENT_zero-budget-vendor-decision-and-shared-commercial-contracts.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "docs/product/personal-business/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/trust/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "services/control-plane/contract/",
+          "state": "proposed-new",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "SDKR.I": {
+      "schema_version": 1,
+      "node_id": "SDKR.I",
+      "work_item": "SDKR",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "09",
+      "wave": 9,
+      "priority": 1,
+      "optional": false,
+      "dependencies": [
+        "H01.R",
+        "H09.R",
+        "H11.R",
+        "H12.R"
+      ],
+      "prompt_path": "FABLE_5_1/09_SDKR_IMPLEMENT_ai-sdk-core-model-operation-bridge.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/harness/adapters.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/native-agent.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/tools.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "package.json",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "package-lock.json",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "tests/",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "SDKO.I": {
+      "schema_version": 1,
+      "node_id": "SDKO.I",
+      "work_item": "SDKO",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "11b",
+      "wave": 11,
+      "priority": 4,
+      "optional": true,
+      "dependencies": [
+        "SDKR.R",
+        "H04.R",
+        "H12.R"
+      ],
+      "prompt_path": "FABLE_5_1/11b_SDKO_IMPLEMENT_optional-opencode-harnessagent-compatibility-proof.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "server/engines/opencode.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "B01.I": {
+      "schema_version": 1,
+      "node_id": "B01.I",
+      "work_item": "B01",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "23b",
+      "wave": 23,
+      "priority": 3,
+      "optional": false,
+      "dependencies": [
+        "B00.R",
+        "H21.R"
+      ],
+      "prompt_path": "FABLE_5_1/23b_B01_IMPLEMENT_small-control-plane-service-and-durable-cloud-store.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "services/control-plane/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "services/control-plane/migrations/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "services/control-plane/tests/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/product/personal-business/",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "B02.I": {
+      "schema_version": 1,
+      "node_id": "B02.I",
+      "work_item": "B02",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "25c",
+      "wave": 25,
+      "priority": 3,
+      "optional": false,
+      "dependencies": [
+        "B01.R"
+      ],
+      "prompt_path": "FABLE_5_1/25c_B02_IMPLEMENT_workos-authkit-web-and-electron-sign-in.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "services/control-plane/auth/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "desktop/main.mjs",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "desktop/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "B03.I": {
+      "schema_version": 1,
+      "node_id": "B03.I",
+      "work_item": "B03",
+      "role": "OPUS_5",
+      "action": "implementation",
+      "number": "27c",
+      "wave": 27,
+      "priority": 3,
+      "optional": false,
+      "dependencies": [
+        "B02.R"
+      ],
+      "prompt_path": "OPUS_5/27c_B03_IMPLEMENT_verified-tenancy-and-existing-workspace-bridge.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "services/control-plane/membership/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/trust/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/BusinessSetup.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "B04.I": {
+      "schema_version": 1,
+      "node_id": "B04.I",
+      "work_item": "B04",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "29b",
+      "wave": 29,
+      "priority": 3,
+      "optional": false,
+      "dependencies": [
+        "B03.R"
+      ],
+      "prompt_path": "FABLE_5_1/29b_B04_IMPLEMENT_stripe-hosted-checkout-and-customer-portal-in-test-mode.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "services/control-plane/billing/checkout.ts",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "services/control-plane/billing/portal.ts",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "services/control-plane/billing/catalog.ts",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "services/control-plane/tests/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "B05.I": {
+      "schema_version": 1,
+      "node_id": "B05.I",
+      "work_item": "B05",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "31d",
+      "wave": 31,
+      "priority": 3,
+      "optional": false,
+      "dependencies": [
+        "B04.R"
+      ],
+      "prompt_path": "FABLE_5_1/31d_B05_IMPLEMENT_signed-billing-inbox-reconciliation-and-entitlement-projecti.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "services/control-plane/billing/webhooks.ts",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "services/control-plane/billing/reconcile.ts",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "services/control-plane/entitlements/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "services/control-plane/migrations/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "B06.I": {
+      "schema_version": 1,
+      "node_id": "B06.I",
+      "work_item": "B06",
+      "role": "OPUS_5",
+      "action": "implementation",
+      "number": "33b",
+      "wave": 33,
+      "priority": 3,
+      "optional": false,
+      "dependencies": [
+        "B05.R"
+      ],
+      "prompt_path": "OPUS_5/33b_B06_IMPLEMENT_server-authoritative-funded-reserve-and-settle-accounting.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "services/control-plane/usage/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "services/control-plane/migrations/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "B07.I": {
+      "schema_version": 1,
+      "node_id": "B07.I",
+      "work_item": "B07",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "35b",
+      "wave": 35,
+      "priority": 3,
+      "optional": false,
+      "dependencies": [
+        "B06.R",
+        "SDKR.R",
+        "H21.R"
+      ],
+      "prompt_path": "FABLE_5_1/35b_B07_IMPLEMENT_managed-model-transport-behind-the-funded-gate.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "services/control-plane/inference/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/harness/adapters.ts",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "B08.I": {
+      "schema_version": 1,
+      "node_id": "B08.I",
+      "work_item": "B08",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "31e",
+      "wave": 31,
+      "priority": 3,
+      "optional": false,
+      "dependencies": [
+        "B03.R",
+        "P04.R",
+        "H12.R"
+      ],
+      "prompt_path": "FABLE_5_1/31e_B08_IMPLEMENT_credential-broker-and-one-read-only-github-capability.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "services/control-plane/connections/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/trust/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "server/connections/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "shared/capability-packs.ts",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "tests/",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "B09.I": {
+      "schema_version": 1,
+      "node_id": "B09.I",
+      "work_item": "B09",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "35c",
+      "wave": 35,
+      "priority": 3,
+      "optional": false,
+      "dependencies": [
+        "B03.R",
+        "B05.R",
+        "B06.R",
+        "H19.R"
+      ],
+      "prompt_path": "FABLE_5_1/35c_B09_IMPLEMENT_account-and-billing-ui-without-a-second-work-application.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "services/control-plane/web/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/Shell.tsx",
+          "state": "exists",
+          "integrator_owned": true
+        },
+        {
+          "path": "client/console/Allowance.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/console/BusinessSetup.tsx",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "client/api.ts",
+          "state": "exists",
+          "integrator_owned": true
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "B10.I": {
+      "schema_version": 1,
+      "node_id": "B10.I",
+      "work_item": "B10",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "37a",
+      "wave": 37,
+      "priority": 3,
+      "optional": false,
+      "dependencies": [
+        "B07.R",
+        "B08.R",
+        "B09.R"
+      ],
+      "prompt_path": "FABLE_5_1/37a_B10_IMPLEMENT_quota-revocation-recovery-and-operational-readiness.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "services/control-plane/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/operations/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "B11.I": {
+      "schema_version": 1,
+      "node_id": "B11.I",
+      "work_item": "B11",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "39",
+      "wave": 39,
+      "priority": 3,
+      "optional": false,
+      "dependencies": [
+        "B10.R",
+        "Z01.R"
+      ],
+      "prompt_path": "FABLE_5_1/39_B11_IMPLEMENT_integrated-business-sandbox-and-real-desktop-journey.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "tests/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "scripts/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "evidence/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "services/control-plane/tests/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "B12.I": {
+      "schema_version": 1,
+      "node_id": "B12.I",
+      "work_item": "B12",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "33c",
+      "wave": 33,
+      "priority": 4,
+      "optional": true,
+      "dependencies": [
+        "B08.R"
+      ],
+      "prompt_path": "FABLE_5_1/33c_B12_IMPLEMENT_optional-funded-vercel-connect-adapter.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "services/control-plane/connections/vercel/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/product/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "tests/",
+          "state": "exists",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "W01.I": {
+      "schema_version": 1,
+      "node_id": "W01.I",
+      "work_item": "W01",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "05i",
+      "wave": 5,
+      "priority": 2,
+      "optional": false,
+      "dependencies": [
+        "B00.R"
+      ],
+      "prompt_path": "FABLE_5_1/05i_W01_IMPLEMENT_early-website-clarity-and-truthful-business-positioning.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "site: src/data/site.ts",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "site: src/data/releases.ts",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "site: src/data/engines.ts",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "site: src/pages/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "site: src/content/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "site: scripts/check-copy.mjs",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "W02.I": {
+      "schema_version": 1,
+      "node_id": "W02.I",
+      "work_item": "W02",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "37b",
+      "wave": 37,
+      "priority": 3,
+      "optional": false,
+      "dependencies": [
+        "W01.R",
+        "Z01.R",
+        "B09.R"
+      ],
+      "prompt_path": "FABLE_5_1/37b_W02_IMPLEMENT_evidence-gated-website-capabilities-and-billing-navigation.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "site: src/data/releases.ts",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "site: actual capability registry discovered in W01",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "site: src/pages/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "site: src/content/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "site: tests/ and scripts/check-copy.mjs",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "D01.I": {
+      "schema_version": 1,
+      "node_id": "D01.I",
+      "work_item": "D01",
+      "role": "FABLE_5_1",
+      "action": "implementation",
+      "number": "41",
+      "wave": 41,
+      "priority": 3,
+      "optional": false,
+      "dependencies": [
+        "B11.R",
+        "W02.R"
+      ],
+      "prompt_path": "FABLE_5_1/41_D01_IMPLEMENT_canonical-reconciliation-and-final-handoff.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "docs/DIOMEDES_LIVE_ROADMAP.md",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/DIOMEDES_PROJECT_MEMORY.md",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/DIOMEDES_CORE_PILLARS.md",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "docs/implementation/",
+          "state": "exists",
+          "integrator_owned": false
+        },
+        {
+          "path": "site: release/capability documentation",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "Google Docs canonical mirrors",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    },
+    "G01.I": {
+      "schema_version": 1,
+      "node_id": "G01.I",
+      "work_item": "G01",
+      "role": "FABLE_5_1",
+      "action": "readiness preparation",
+      "number": "43",
+      "wave": 43,
+      "priority": 4,
+      "optional": true,
+      "dependencies": [
+        "D01.R"
+      ],
+      "prompt_path": "FABLE_5_1/43_G01_IMPLEMENT_production-activation-readiness-not-automatic-launch.md",
+      "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+      "anchors": [
+        {
+          "path": "docs/operations/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "services/control-plane/deployment/",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        },
+        {
+          "path": "site: approved release/offer manifests",
+          "state": "missing-on-base",
+          "integrator_owned": false
+        }
+      ],
+      "other_paths": [],
+      "claim_required_before_edit": true,
+      "integrator": "Fable 5.1",
+      "independent_reviewer": "Astra",
+      "consumed_contract_revision": "2026-09-13.1",
+      "heavy_slot_required_for": [
+        "full vitest",
+        "playwright",
+        "packaging",
+        "live calls"
+      ],
+      "status": "not-started"
+    }
+  }
+}
