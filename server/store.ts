@@ -1,4 +1,5 @@
 import { assertReplay, findCommand } from './command-admission.js';
+import { validateTaskReceipts } from './task-admission.js';
 import { ScopeGrants, validateScopeGrants } from './trust/scope-grants.js';
 import { validateAgentResolutions } from './agents.js';
 import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/attribution.js';
@@ -305,6 +306,7 @@ export class Store extends EventEmitter {
       state.teamMeta ??= emptyTeamMeta();
       state.teamMeta.idempotency ??= {};
       state.teamMeta.blockedBy ??= {};
+      validateTaskReceipts(state);
       validateWorkReceipts(state);
       validateApprovalReceipts(state);
       validateScopeGrants(state);
@@ -358,6 +360,7 @@ export class Store extends EventEmitter {
       for (const conversation of fresh.conversations ?? [])
         migrateConversation(conversation, fresh.tasks ?? [], loadTime);
       migrateTeam(fresh);
+      validateTaskReceipts(fresh);
       validateWorkReceipts(fresh);
       validateApprovalReceipts(fresh);
       validateScopeGrants(fresh);
@@ -415,6 +418,11 @@ export class Store extends EventEmitter {
     const state = this.states.get(id);
     if (!state) throw new ApiError(404, 'This project was not found.');
     return state;
+  }
+  taskCommand(id: string, commandId: string, payloadDigest: string) {
+    const record = findCommand(this.state(id), commandId);
+    assertReplay(record, 'task.create', payloadDigest);
+    return record?.type === 'task.create' ? record.subject : undefined;
   }
   workCommand(id: string, commandId: string, payloadDigest?: string) {
     const record = findCommand(this.state(id), commandId);
@@ -1060,6 +1068,7 @@ export class Store extends EventEmitter {
     for (const name of (await fs.readdir(pending)).filter((n) => n.endsWith('.json')).sort()) {
       const journal = JSON.parse(await fs.readFile(path.join(pending, name), 'utf8')) as Journal;
       const currentState = this.state(journal.projectId);
+      validateTaskReceipts(journal.state);
       validateWorkReceipts(journal.state);
       validateApprovalReceipts(journal.state);
       validateScopeGrants(journal.state);

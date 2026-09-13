@@ -61,6 +61,7 @@ import { FIXTURE_ENGINE } from './harness/approval.js';
 import { CODEX_ENGINE, type ResolveHarnessAuthority } from './harness/codex-engine.js';
 import { roleInstructions } from './team/prompts.js';
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
+import { parseTaskCommand } from './task-admission.js';
 import { WorkControl } from './work-control.js';
 import { DesktopConnections } from './connections/desktop.js';
 import packageInfo from '../package.json' with { type: 'json' };
@@ -1242,16 +1243,40 @@ export async function createApp(options: AppOptions) {
     route(async (req) => {
       const b = body(req),
         state = store.state(id(req));
-      const task = store.createTask(state, {
-        name: asString(b.name, 'a task name', 200),
-        description: typeof b.description === 'string' ? b.description.slice(0, 10000) : '',
-        owner: b.owner === undefined ? 'you' : choice(b.owner, owners, 'owner'),
-      });
-      store.addEntry(state, {
+      const command = parseTaskCommand(b);
+      if (command) {
+        const replay = store.taskCommand(
+          id(req),
+          command.admission.commandId,
+          command.admission.payloadDigest,
+        );
+        if (replay) return replay;
+      }
+      const task = store.createTask(
+        state,
+        command?.input ?? {
+          name: asString(b.name, 'a task name', 200),
+          description: typeof b.description === 'string' ? b.description.slice(0, 10000) : '',
+          owner: b.owner === undefined ? 'you' : choice(b.owner, owners, 'owner'),
+        },
+      );
+      const entry = store.addEntry(state, {
         kind: 'tasks-made',
         sentence: `You made a task: ${task.name}`,
         taskId: task.id,
       });
+      if (command) {
+        task.creationReceipt = {
+          protocolVersion: 1,
+          ...command.admission,
+          projectId: state.project.id,
+          taskId: task.id,
+          eventId: entry.id,
+          admittedAt: entry.time,
+          actor: 'local-client',
+          scope: 'local-prototype',
+        };
+      }
       await store.persist(state);
       return task;
     }),

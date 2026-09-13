@@ -27,6 +27,7 @@ import type {
 } from '../../shared/types';
 import { api, listDocuments } from '../api';
 import { reconcileWorkStarts, startWork } from '../work-start';
+import { createTask as admitTaskCreation } from '../task-create';
 import { decideApproval, reconcileApprovals } from '../approval-decisions';
 import {
   ApprovalStatus,
@@ -615,21 +616,15 @@ export function Shell({
     });
   }
   /**
-   * The Console's one task-creation path. It posts the same `POST /tasks` the
-   * frozen Workbook's plan import already uses, then reloads: a task with no run
-   * is projected into Ready by `taskEvidence`, so no move follows and no second
-   * lifecycle is introduced. The error is reported and rethrown, because the
-   * board keeps its form open when the task was not made.
+   * Creation uses ordinary command admission. The returned Task is already
+   * Ready by projection; no run or task move follows. Only an unconfirmed create
+   * keeps the form open: a later refresh failure must not invite a second task.
    */
   async function createTask(input: { name: string; description: string }) {
     setBusy(true);
     try {
-      await api<Task>(`${base}/tasks`, 'POST', {
-        name: input.name,
-        description: input.description,
-        owner: 'you',
-      });
-      await load();
+      await admitTaskCreation(projectId, input);
+      await load().catch(report);
     } catch (error) {
       report(error);
       throw error;

@@ -26,6 +26,20 @@ function board(patch: Partial<ProjectState>, options: {
   return markup;
 }
 describe('Board controls reflect execution evidence', () => {
+  it('shows recorded creation evidence only when a Task actually has a receipt', () => {
+    expect(board({})).not.toContain('Creation receipt');
+    const made = { ...task, creationReceipt: {
+      protocolVersion: 1 as const, commandId: 'create-123', payloadDigest: `sha256:${'a'.repeat(64)}`,
+      projectId: project.id, taskId: task.id, eventId: 'E123', admittedAt: '2026-09-12T00:00:00.000Z',
+      actor: 'local-client' as const, scope: 'local-prototype' as const,
+    } };
+    const markup = board({ tasks: [made] });
+    expect(markup).toContain('Creation receipt');
+    expect(markup).toContain('create-123');
+    expect(markup).toContain('E123');
+    expect(markup).toContain('dateTime="2026-09-12T00:00:00.000Z"');
+    expect(markup).toContain('>Start</button>');
+  });
   it('renders an admitted task in Queued with Stop, never Pause or an enabled Start', () => {
     const markup = board({ sessions: [sessionFixture({ state: 'queued' })] });
     expect(markup).toContain('aria-label="Queued"');

@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { ScopeGrantRecord } from '../shared/permissions.js';
-import type { Need, ProjectState, Session } from '../shared/types.js';
+import type { Need, ProjectState, Session, Task } from '../shared/types.js';
 import { ApiError } from './paths.js';
 
-// Shared by two proven command families. The adapters still own payload schemas,
+// Shared command identity. The adapters still own payload schemas,
 // authorization, persistence and dispatch; this is not a generic workflow engine.
 export const commandIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
 export const digestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
@@ -12,7 +12,10 @@ export const digestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 export const payloadDigest = (payload: unknown) =>
   `sha256:${createHash('sha256').update(JSON.stringify(payload)).digest('hex')}`;
 
-export function usesCommandProtocol(body: Record<string, unknown>, family: 'work' | 'approval') {
+export function usesCommandProtocol(
+  body: Record<string, unknown>,
+  family: 'work' | 'approval' | 'task',
+) {
   if (!Object.hasOwn(body, 'protocolVersion') && !Object.hasOwn(body, 'commandId')) return false;
   if (body.protocolVersion !== 1)
     throw new ApiError(409, `This ${family} command version is unsupported.`, {
@@ -23,12 +26,16 @@ export function usesCommandProtocol(body: Record<string, unknown>, family: 'work
 }
 
 type CommandRecord =
+  | { type: 'task.create'; subject: Task; digest: string }
   | { type: 'work.start'; subject: Session; digest: string }
   | { type: 'approval.decide'; subject: Need; digest: string }
   | { type: 'scope.issue'; subject: ScopeGrantRecord; digest: string };
 
 /** One project-scoped namespace: a key cannot be reused by another operation family. */
 export function findCommand(state: ProjectState, commandId: string): CommandRecord | undefined {
+  const task = state.tasks.find((item) => item.creationReceipt?.commandId === commandId);
+  if (task?.creationReceipt)
+    return { type: 'task.create', subject: task, digest: task.creationReceipt.payloadDigest };
   const session = state.sessions.find((item) => item.receipt?.commandId === commandId);
   if (session?.receipt)
     return { type: 'work.start', subject: session, digest: session.receipt.payloadDigest };
@@ -46,10 +53,12 @@ export function assertReplay(
   if (record && (record.type !== type || (digest !== undefined && record.digest !== digest)))
     throw new ApiError(409, 'This command already names a different request.', {
       code:
-        type === 'work.start'
-          ? 'work_command_conflict'
-          : type === 'approval.decide'
-            ? 'approval_command_conflict'
-            : 'scope_command_conflict',
+        type === 'task.create'
+          ? 'task_command_conflict'
+          : type === 'work.start'
+            ? 'work_command_conflict'
+            : type === 'approval.decide'
+              ? 'approval_command_conflict'
+              : 'scope_command_conflict',
     });
 }

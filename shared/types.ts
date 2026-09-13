@@ -135,6 +135,8 @@ export interface Task {
   changeIds: string[];
   /** Append-only record of what each Stop actually did, by scope. Never rewritten. */
   stopReceipts?: StopReceipt[];
+  /** Immutable admission evidence; absent on tasks created by legacy/internal callers. */
+  creationReceipt?: TaskCreationReceipt;
   createdBy: Owner;
   createdAt: string;
   assignedTo?: Slot | null;
@@ -147,6 +149,22 @@ export interface Task {
     undoUntil: string;
     undone: boolean;
   }[];
+}
+export interface TaskCreationInput {
+  name: string;
+  description: string;
+  owner: Owner;
+}
+export interface TaskCreationReceipt {
+  readonly protocolVersion: 1;
+  readonly commandId: string;
+  readonly payloadDigest: string;
+  readonly projectId: string;
+  readonly taskId: string;
+  readonly eventId: string;
+  readonly admittedAt: string;
+  readonly actor: 'local-client';
+  readonly scope: 'local-prototype';
 }
 export interface Need {
   origin?: OriginSnapshot;

@@ -148,6 +148,37 @@
 .console .crow:hover {
   background: var(--raised);
 }
+.console .creation-issue {
+  flex-basis: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--attn);
+}
+.console .crow .creation-receipt {
+  grid-column: 2 / -1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+}
+.console .creation-receipt summary {
+  cursor: pointer;
+}
+.console .creation-receipt dl {
+  margin: 6px 0;
+}
+.console .creation-receipt dt {
+  color: var(--t3);
+}
+.console .creation-receipt dd {
+  margin: 0 0 6px;
+  min-width: 0;
+}
+.console .creation-receipt dd.mono {
+  text-transform: none;
+  letter-spacing: normal;
+}
 .console .crow .pt {
   align-self: start;
   margin-top: 5px;

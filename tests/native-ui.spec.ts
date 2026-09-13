@@ -354,6 +354,11 @@ test('Console New task makes a task, Ready shows it, and Start admits one run', 
   const row = ready.locator('.crow').filter({ hasText: 'Draft the operations brief' });
   await expect(row).toBeVisible();
   await expect(form).toHaveCount(0);
+  const created = (await api<ProjectState>(`/projects/${fresh.id}/state`)).tasks[0];
+  expect(created.creationReceipt?.commandId).toBeTruthy();
+  await row.getByText('Creation receipt', { exact: true }).click();
+  await expect(row.locator('.creation-receipt')).toContainText(created.creationReceipt!.commandId);
+  await expect(row.locator('.creation-receipt')).toContainText(created.creationReceipt!.eventId);
   await row.getByRole('button', { name: 'Start', exact: true }).click();
   const confirm = row.locator('.confirm');
   await expect(confirm).toBeVisible();
@@ -369,6 +374,89 @@ test('Console New task makes a task, Ready shows it, and Start admits one run', 
   expect(state.history.filter(entry => entry.kind === 'work-admitted')).toHaveLength(1);
   await page.screenshot({ path: testInfo.outputPath('console-new-task.png'), animations: 'disabled', fullPage: true });
   expect(errors).toEqual([]);
+});
+
+test('Console retries a lost task creation response after reload and shows the durable receipt', async ({ page }, testInfo) => {
+  const fresh = await api<Project>('/projects/sample', 'POST', {});
+  await api('/settings', 'PUT', { surface: 'console', openProjects: [fresh.id] });
+  const commands: string[] = [];
+  const endpoint = `**/api/projects/${fresh.id}/tasks`;
+  await page.route(endpoint, async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    commands.push(route.request().postDataJSON().commandId);
+    await route.fetch();
+    await route.abort('failed');
+  });
+  await page.goto(baseURL);
+  const rail = page.getByRole('navigation', { name: 'Threads and views' });
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  const board = page.locator('.board[aria-label="Board"]');
+  await board.getByRole('button', { name: 'New task', exact: true }).click();
+  const form = board.locator('form.newtask');
+  const name = 'Prepare the reopening brief';
+  await form.getByLabel('Task name').fill(name);
+  await form.getByLabel('What should happen (optional)').fill('Summarize the approved plan.');
+  await form.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(form.getByRole('button', { name: 'Retry create', exact: true })).toBeVisible();
+  expect(commands).toHaveLength(2);
+  expect(new Set(commands).size).toBe(1);
+  const beforeReload = await api<ProjectState>(`/projects/${fresh.id}/state`);
+  expect(beforeReload.tasks).toHaveLength(1);
+  expect(beforeReload.sessions).toHaveLength(0);
+  const receipt = beforeReload.tasks[0].creationReceipt!;
+  await page.unroute(endpoint);
+  await page.route(endpoint, async (route) => {
+    if (route.request().method() === 'POST') commands.push(route.request().postDataJSON().commandId);
+    await route.continue();
+  });
+  await page.reload();
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  await expect(form.getByLabel('Task name')).toHaveValue(name);
+  await expect(form.getByLabel('What should happen (optional)')).toHaveValue('Summarize the approved plan.');
+  await form.getByRole('button', { name: 'Retry create', exact: true }).click();
+  await expect(form).toHaveCount(0);
+  expect(commands).toEqual([receipt.commandId, receipt.commandId, receipt.commandId]);
+  const after = await api<ProjectState>(`/projects/${fresh.id}/state`);
+  expect(after.tasks).toHaveLength(1);
+  expect(after.tasks[0].creationReceipt).toEqual(receipt);
+  expect(after.history.filter((entry) => entry.kind === 'tasks-made')).toHaveLength(1);
+  expect(after.sessions).toHaveLength(0);
+  expect(after.tasks[0].moves).toEqual([]);
+  const row = board.locator('.column[aria-label="Ready"] .crow').filter({ hasText: name });
+  await row.getByText('Creation receipt', { exact: true }).click();
+  await expect(row.locator('.creation-receipt')).toContainText(receipt.commandId);
+  await expect(row.locator('.creation-receipt')).toContainText(receipt.eventId);
+  await expect(row.locator('.creation-receipt dd.mono').first()).toHaveCSS('text-transform', 'none');
+  await expect.poll(() => page.evaluate(() => Object.keys(sessionStorage)
+    .filter((key) => key.startsWith('diomedes.task-create.pending.')).length)).toBe(0);
+  await expect(row.locator('time')).toHaveAttribute('datetime', receipt.admittedAt);
+  await expect(page.locator('html')).toHaveJSProperty('scrollWidth', await page.evaluate(() => window.innerWidth));
+  await page.screenshot({ path: testInfo.outputPath('console-task-creation-receipt.png'), fullPage: true, animations: 'disabled' });
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
+test('Console closes a confirmed creation even if refreshing the Board fails', async ({ page }) => {
+  const fresh = await api<Project>('/projects/sample', 'POST', {});
+  await api('/settings', 'PUT', { surface: 'console', openProjects: [fresh.id] });
+  await page.goto(baseURL);
+  const rail = page.getByRole('navigation', { name: 'Threads and views' });
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  const board = page.locator('.board[aria-label="Board"]');
+  await board.getByRole('button', { name: 'New task', exact: true }).click();
+  const form = board.locator('form.newtask');
+  await form.getByLabel('Task name').fill('Keep the confirmed creation');
+  const stateEndpoint = `**/api/projects/${fresh.id}/state`;
+  await page.route(stateEndpoint, (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"Synthetic refresh failure"}' }));
+  await form.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(form).toHaveCount(0);
+  await expect(page.getByRole('alert')).toContainText('Synthetic refresh failure');
+  expect((await api<ProjectState>(`/projects/${fresh.id}/state`)).tasks).toHaveLength(1);
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith('diomedes.task-create.pending.')))).toHaveLength(0);
+  await page.unroute(stateEndpoint);
+  await page.reload();
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  await expect(board.locator('.crow')).toHaveCount(1);
+  await expect(form).toHaveCount(0);
 });
 
 test('Console Start again restarts a faulted task through the same admission', async ({ page }, testInfo) => {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { pendingTaskCreation } from '../task-create';
 import type { Slot, Task, TeamMember } from '../../shared/types';
 import { formatOrigin, originForSession } from '../../shared/attribution';
 import type { BoardProps } from './types';
@@ -85,6 +86,30 @@ export function BoardView({
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [retryingCreate, setRetryingCreate] = useState(false);
+  const [creationIssue, setCreationIssue] = useState('');
+  function restoreCreation() {
+    try {
+      const pending = pendingTaskCreation(project.id);
+      setCreationIssue('');
+      setRetryingCreate(!!pending);
+      if (pending) {
+        setNewName(pending.name);
+        setNewDescription(pending.description);
+        setCreating(true);
+      }
+    } catch (error) {
+      setCreationIssue(
+        error instanceof Error ? error.message : 'The saved task request could not be checked.',
+      );
+    }
+  }
+  useEffect(() => {
+    setCreating(false);
+    setNewName('');
+    setNewDescription('');
+    restoreCreation();
+  }, [project.id]);
   // `busy` only turns true after the Shell's state settles, so a second click
   // can arrive before the first render. The ref refuses it in the same tick.
   const sending = useRef(false);
@@ -210,10 +235,11 @@ export function BoardView({
     if (!name || sending.current) return;
     sending.current = true;
     try {
-      await onCreateTask({ name, description: newDescription.trim() });
+      await onCreateTask({ name, description: retryingCreate ? newDescription : newDescription.trim() });
       closeNew();
     } catch {
       // The Shell reported it. Keep the words the person typed.
+      restoreCreation();
     } finally {
       sending.current = false;
     }
@@ -231,7 +257,13 @@ export function BoardView({
           className="verb light new"
           aria-expanded={creating}
           disabled={busy}
-          onClick={() => (creating ? closeNew() : setCreating(true))}
+          onClick={() => {
+            if (creating) closeNew();
+            else {
+              setCreating(true);
+              restoreCreation();
+            }
+          }}
         >
           New task
         </button>
@@ -270,6 +302,11 @@ export function BoardView({
             {effective === 'first' ? 'Confirm each start' : 'Start on click'}
           </span>
         )}
+        {creationIssue && (
+          <p className="creation-issue" role="alert">
+            {creationIssue}
+          </p>
+        )}
         {creating && (
           <form
             className="newtask"
@@ -286,6 +323,7 @@ export function BoardView({
               placeholder="Task name"
               maxLength={200}
               value={newName}
+              readOnly={busy || retryingCreate}
               onChange={(event) => setNewName(event.target.value)}
             />
             <input
@@ -294,10 +332,15 @@ export function BoardView({
               placeholder="What should happen (optional)"
               maxLength={10_000}
               value={newDescription}
+              readOnly={busy || retryingCreate}
               onChange={(event) => setNewDescription(event.target.value)}
             />
-            <button type="submit" className="go" disabled={busy || !newName.trim()}>
-              Create
+            <button
+              type="submit"
+              className="go"
+              disabled={busy || !!creationIssue || !newName.trim()}
+            >
+              {retryingCreate ? 'Retry create' : 'Create'}
             </button>
             <button type="button" onClick={closeNew}>
               Not now
@@ -535,6 +578,23 @@ function TaskRow({
           </button>
         )}
       </span>
+      {task.creationReceipt && (
+        <details className="creation-receipt">
+          <summary>Creation receipt</summary>
+          <dl>
+            <dt>Created</dt>
+            <dd>
+              <time dateTime={task.creationReceipt.admittedAt}>
+                {new Date(task.creationReceipt.admittedAt).toLocaleString()}
+              </time>
+            </dd>
+            <dt>Command</dt>
+            <dd className="mono">{task.creationReceipt.commandId}</dd>
+            <dt>History event</dt>
+            <dd className="mono">{task.creationReceipt.eventId}</dd>
+          </dl>
+        </details>
+      )}
       {canStart && confirmOpen && (
         <div className="confirm">
           <span>Hand to {worker}?</span>
