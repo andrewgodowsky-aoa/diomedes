@@ -224,6 +224,13 @@ try {
     await page.goto(fixtureUrl);
     await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
     const rail = page.getByRole('navigation', { name: 'Threads and views' });
+    // Any route but the sample asks first; only the dialog's Send task starts the work.
+    const confirmSend = async () => {
+      const send = page.getByRole('dialog', { name: 'Send this task?', exact: true });
+      await expect(send).toBeVisible();
+      await send.getByRole('button', { name: 'Send task', exact: true }).click();
+      await expect(send).toHaveCount(0);
+    };
     await rail.getByRole('button', { name: /^Board/ }).click();
     const board = page.locator('.board[aria-label="Board"]');
     await expect(board).toBeVisible();
@@ -231,6 +238,7 @@ try {
     await row.getByRole('button', { name: 'Start', exact: true }).first().click();
     const confirm = row.locator('.confirm');
     await confirm.getByRole('button', { name: 'Start', exact: true }).click();
+    await confirmSend();
     await rail
       .getByRole('button', { name: /Packaged scope task/ })
       .first()
@@ -291,6 +299,7 @@ try {
     await readyRow.getByRole('button', { name: 'Start', exact: true }).first().click();
     const confirm2 = readyRow.locator('.confirm');
     await confirm2.getByRole('button', { name: 'Start', exact: true }).click();
+    await confirmSend();
     state = await waitState(
       project.id,
       (value) =>
@@ -347,6 +356,7 @@ try {
       .locator('.confirm')
       .getByRole('button', { name: 'Start', exact: true })
       .click();
+    await confirmSend();
     await rail
       .getByRole('button', { name: /Packaged scope task/ })
       .first()
