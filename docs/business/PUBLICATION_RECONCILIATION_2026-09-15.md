@@ -4,13 +4,13 @@ Andrew explicitly requested publication of the website rebuild, reconciliation w
 
 ## Approved public offer
 
-Version 2026-09-15.1 in [PRICING_STRATEGY_2026-09-15.md](PRICING_STRATEGY_2026-09-15.md) governs: first fit hour free; Workflow Audit from $1,000; implementation from $5,000; Managed Diomedes from $750/month. The internal table retains separately scoped pilots, local/on-site services, advisory and founding-partner terms. Business software remains planned from $199/org/month, with entitlements and allowances explicit before sale.
+Version 2026-09-15.2 in [PRICING_STRATEGY_2026-09-15.md](PRICING_STRATEGY_2026-09-15.md) governs. Andrew's follow-up adds the 90-Day Workflow Starter at $299/month for 3 months, $897 total, without an additional Business subscription. The public ladder retains first fit hour free, audit from $1,000, pilot from $3,500, implementation from $5,000 and Managed Diomedes from $750/month. Business software remains planned from $199/org/month once operational. Starter's supported scope, remote onboarding, exclusions and three end-of-program choices are explicit; pricing does not establish production billing or managed operations.
 
 The previous website draft's setup from $2,000 and $39/$99/$199 plan grid are superseded. Unset seats, locations, inference, concurrency, term and cancellation fields are not customer-facing plan promises. Service scope, support expectations, travel and direct costs belong in the accepted quote. Managed scope accounts for third-party compatibility changes without promising that outside systems never break.
 
 ## Decision records
 
-- OD-21 is resolved for publishing the four public anchors above.
+- OD-21 is resolved for the public anchors above, including the separately approved Starter amendment.
 - OD-52 is resolved for this publication: `F:/Diomedes/diomedes-site`, branch `site/rebuild-2026-09-15`, integrated with the site repository's `main`. `src/data/pricing.ts` carries website prices; `src/data/status.json` carries capability states.
 - N16 continues to prohibit unlimited-use claims. Its planned Business reference is $199/org/month, with included inference unresolved.
 - OD-9 provider-route permissions and the other operational, legal and production-readiness decisions remain open. A pricing decision supplies no runtime proof.

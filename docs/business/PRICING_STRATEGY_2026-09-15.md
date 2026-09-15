@@ -1,6 +1,6 @@
 # Diomedes pricing and service scope
 
-Version: 2026-09-15.1
+Version: 2026-09-15.2
 Date: September 15, 2026
 Status: Approved commercial pricing direction. Supersedes the 2026-09-10.3 launch anchors where they conflict.
 Company direction: Diomedes Systems
@@ -12,6 +12,30 @@ Diomedes software and Diomedes Systems services are separate products with separ
 The software should remain accessible. Custom discovery, on-site implementation, integration work, training, maintenance, incident triage and ongoing operational responsibility are professional services and must not be priced like a self-service software subscription.
 
 Sell a measurable business outcome, not model tokens. Keep the first engagement bounded, preserve human approval for consequential actions, and quote the real work required to make the workflow dependable in the customer's environment.
+
+## 90-Day Workflow Starter
+
+Approved launch program: $299/month for 3 months, $897 total for the initial 90 days. This is the complete Starter price during the program; do not add the planned $199/month Business subscription on top.
+
+Start with one repetitive task and measure whether it earns its cost. This is a bounded entry engagement, not discounted arbitrary custom implementation. It opens with early business deployments and is discussed/requested through the existing contact form; production paid accounts, billing and operational managed service remain in development. No online purchase, activated subscription or customer portal is implied.
+
+Included starting scope:
+- one business location or business unit and one supported workflow;
+- up to two supported information sources, file/export inputs or already-supported connections;
+- approximately 60-90 minutes of remote setup/onboarding;
+- reasonable workflow rules/instructions, bounded Diomedes/model usage agreed before the engagement, human review before consequential actions and a basic handoff.
+
+Excluded: custom connector/API development, bespoke integration, substantial data cleanup, on-site implementation, unlimited workflows or support, priority incident response, an SLA and major engineering. Discovery that reveals those needs produces a separate scope before commitment. No usage amount is invented by this decision; confirm the actual allowance and suitability before starting.
+
+After 90 days there is no automatic continuation:
+1. Stop if the workflow has not justified its cost.
+2. Move to self-managed Diomedes Business, planned from $199/month per organization, once the paid product is operational. If it is not ready, stop or separately agree the next scope.
+3. Discuss Managed Diomedes from $750/month for agreed monitoring, compatibility triage, maintenance and bounded support, with operational availability confirmed before commencement. Major vendor changes, new integrations and material rebuilds may still require separate scope.
+
+The three-month program is not a free trial, a refund promise or a claim that cancellation during the initial term is unrestricted. Do not imply a compulsory managed upgrade.
+
+The public progression is Starter ($299/month), audit (from $1,000), pilot (from $3,500), implementation (from $5,000), then optional managed support (from $750/month). These are different engagement types, not mandatory sequential purchases or five software tiers. Preserve local/in-person implementation as a separately quoted service.
+
 
 ## Approved price anchors
 
@@ -30,7 +54,7 @@ Sell a measurable business outcome, not model tokens. Keep the first engagement 
 | Managed Diomedes | From $750/month | Agreed monitoring, health review, compatibility triage, maintenance and limited support after a working deployment. Typical managed accounts may be $750-$1,500+ depending on supported systems and service allowance. |
 | Fractional AI Ops / continuous improvement | From $2,000/month | High-touch ongoing relationship for businesses that want Diomedes Systems to keep finding, improving and maintaining workflows. Scope, included hours and response expectations are explicit. |
 
-The public website should stay simpler than this internal table. The preferred public anchors are: free fit call; Workflow Audit from $1,000; implementation from $5,000; Managed Diomedes from $750/month. A pilot may be quoted directly after discovery. Do not publish a giant menu that implies every business is the same implementation.
+The public website leads with the 90-Day Workflow Starter at $299/month for 3 months ($897 total), followed by the different scopes available: free fit call, Workflow Audit from $1,000, pilot from $3,500, implementation from $5,000 and Managed Diomedes from $750/month. Starter does not include a separate Business subscription. Planned self-managed Business from $199/org/month is an option after Starter once operational. Keep the page readable as scoped engagements, not a software-tier grid.
 
 ## Credits and conversion
 

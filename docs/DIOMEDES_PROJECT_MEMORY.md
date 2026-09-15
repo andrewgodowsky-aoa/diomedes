@@ -1,11 +1,13 @@
 # DIOMEDES PROJECT MEMORY — CANONICAL
 
-Version: 2026-09-15.1
+Version: 2026-09-15.2
 Last reconciled: September 15, 2026
 Cloud canonical: 13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw
 Repository mirror: docs/DIOMEDES_PROJECT_MEMORY.md
 
 ## How this memory is organized
+
+Current entry offer, pricing version 2026-09-15.2: the 90-Day Workflow Starter is $299/month for 3 months ($897 total), with no separate Business subscription during the program. Scope is one supported workflow, one location/unit, up to two supported sources/connections and 60-90 minutes remote onboarding, reasonable rules, bounded usage, human review and handoff. Custom connectors/integrations, substantial cleanup, on-site implementation, major engineering, unlimited support, priority incident response and an SLA are excluded. After 90 days there is no automatic continuation: stop, or separately agree planned self-managed Business from $199/org/month once operational, or Managed from $750/month with scope and availability confirmed. Billing and operational managed service remain in development. This is a distinct bounded entry engagement; it does not lower the professional implementation anchors below.
 
 This is the current definition and decision index. The complete previous standing-memory body is retained unchanged at docs/reference/DIOMEDES_PROJECT_MEMORY_BASE_2026-09-10.2.md, with a cloud snapshot at https://docs.google.com/document/d/1VEqHFWvKNVGLcLP88GNnQmWqcddWTj940Aw15U7WEN8/edit. Its detailed product requirements remain incorporated where not explicitly superseded here. They have not been discarded or relabeled as implemented. Use this current index first; retrieve the detailed base sections relevant to the task rather than injecting every past discussion indiscriminately.
 
