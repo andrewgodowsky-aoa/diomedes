@@ -256,6 +256,8 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
     await section.locator('input[type="checkbox"]').click();
     await expect(section.locator('input[type="checkbox"]')).toBeChecked();
     await section.getByRole('button', { name: 'Use as default', exact: true }).click();
+    // The click only starts the save; the row shows Default once the server has stored it.
+    await expect(section.getByText('Default', { exact: true })).toBeVisible();
   }
   const selected = await api<{ services: Record<string, boolean | string> }>('/settings');
   // The last row whose `Use as default` was clicked is the default; every row kept its model.
