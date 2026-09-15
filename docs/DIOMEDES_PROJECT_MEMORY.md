@@ -1,6 +1,6 @@
 # DIOMEDES PROJECT MEMORY — CANONICAL
 
-Version: 2026-09-15.3
+Version: 2026-09-15.4
 Last reconciled: September 15, 2026
 Cloud canonical: 13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw
 Repository mirror: docs/DIOMEDES_PROJECT_MEMORY.md
@@ -134,6 +134,14 @@ Clients normally buy hardware directly, retaining receipt/warranty/replacement r
 Preserve internal/personal use -> consultant operating layer -> narrow restaurant pilot -> measured case study -> repeatable hospitality. Private/hybrid infrastructure follows workload evidence; the first restaurant and Starter do not require hardware. Pricing 2026-09-15.3 separates the new strategic assessment/deployment ranges from smaller existing local setup services. No new public price constant is approved by this pass.
 
 "Should Your Business Run AI Locally?" is a future transparent three/five-year TCO assessment with cloud-preferred and no-break-even outcomes. "Diomedes Verified Local" is a future repeatable workload-evidence program, not certification. Current source has discovery, catalog, durable-work and fallback-policy foundations; local model execution, lifecycle, scheduling and production remote/multi-location management remain gaps. Definitions and inventory: `docs/product/2026-09-15-local-infrastructure.md`; commercial policy: `docs/business/2026-09-15-private-ai.md`; planned implementation: LI-01 through LI-12 in `docs/implementation/2026-09-15-local-infrastructure-work-items.md`.
+
+## Paid-service pages: owner-first, optionally deep
+
+Paid-service and scope pages retain a plain-English outcome when disclosures are closed and expose grouped engineering, configuration, integration, testing, training, handover and support for buyers who choose to inspect them. This owner decision supersedes the absolute rule that owners and technical evaluators cannot share a commercial page. Product implementation internals can still live in Docs/Roadmap. Preserve the Field design, native keyboard behavior, reduced motion and readable mobile columns; do not nest disclosures merely for complexity.
+
+The website uses one `ScopeDisclosure.astro` primitive with typed `serviceScope.ts` data. Agreed professional deliverables remain separate from product capability status; broad scope lists never imply every item belongs in every quote. Keep model/runtime/hardware independence, explicit human control, hardware at cost, functional self-managed handover, bounded support and the option to recommend cloud AI. Public prices remain unchanged under pricing 2026-09-15.3.
+
+The pattern is published on pricing, Private AI and Security from source `08f0b0fc52de1c249162d34f6b95bdbb531b99dd`; publication evidence is `diomedes-site/docs/verification/2026-09-15-service-scope-publication/REPORT.md`. The owner requirement is `docs/business/SERVICE_SCOPE_PROGRESSIVE_DISCLOSURE_2026-09-15.md`. This website completion changes no Local Infrastructure runtime status: LI-01 through LI-12 retain their existing acceptance gates.
 
 ## Current business correction — variety is the thesis
 

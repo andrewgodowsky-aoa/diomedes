@@ -1,6 +1,6 @@
 # Diomedes business planning — current index
 
-Current roadmap checkpoint: 2026-09-15.3.
+Current roadmap checkpoint: 2026-09-15.4.
 Current commercial pricing decision: 2026-09-15.3.
 
 Private AI is the owner-directed expansion into customer-owned infrastructure. Hardware passes through at cost, and cancellation of Managed support preserves a usable self-managed deployment where technology and licensing permit. New assessment and infrastructure figures are strategic planning ranges; the approved public prices and first restaurant pilot remain unchanged.
@@ -9,7 +9,7 @@ Private AI is the owner-directed expansion into customer-owned infrastructure. H
 - `../product/2026-09-15-local-infrastructure.md`: architecture, existing source inventory and future seams.
 - `../implementation/2026-09-15-local-infrastructure-work-items.md`: planned LI-01 through LI-12 with dependencies and acceptance criteria.
 - `2026-09-15-local-business-plan.md` and `2026-09-15-managed-inference-and-local-models.md`: related planning with a current Private AI amendment; older proposal prices and research remain historical.
-- `SERVICE_SCOPE_PROGRESSIVE_DISCLOSURE_2026-09-15.md`: owner-approved requirement for simple paid-service summaries with optional grouped scope.
+- `SERVICE_SCOPE_PROGRESSIVE_DISCLOSURE_2026-09-15.md`: owner-approved requirement for simple paid-service summaries with optional grouped scope. Published website implementation is recorded in `diomedes-site/docs/verification/2026-09-15-service-scope-publication/REPORT.md`; roadmap and memory .4 reflect the result without changing pricing .3 or planned product status.
 
 Read `PRICING_STRATEGY_2026-09-15.md` first for current service pricing and commercial scope. It supersedes the 2026-09-10.3 price anchors where they conflict. Historical pricing, marketability and income-model files remain preserved as evidence of earlier assumptions; do not treat them as current quotes.
 

@@ -1,6 +1,6 @@
 # DIOMEDES LIVE ROADMAP
 
-Roadmap version: 2026-09-15.3
+Roadmap version: 2026-09-15.4
 Last reconciled: September 15, 2026
 Product: Diomedes
 Company direction: Diomedes Systems
@@ -140,6 +140,14 @@ Customer equipment is normally purchased directly or passed through at cost, wit
 Status: strategy, architecture and website foundations in this pass; no driven local inference, lifecycle manager, scheduler, production location isolation or remote fleet management implemented. Existing source supports read-only hardware/runtime discovery, engine catalogs, durable work and policy/fallback foundations. Work items LI-01 through LI-12 are planned, dependency-ordered and acceptance-defined in `docs/implementation/2026-09-15-local-infrastructure-work-items.md`. Architecture/inventory: `docs/product/2026-09-15-local-infrastructure.md`. Commercial scope: `docs/business/2026-09-15-private-ai.md`.
 
 Future "Should Your Business Run AI Locally?" assessment compares cloud/local/hybrid TCO over three/five years and may recommend cloud. Future "Diomedes Verified Local" publishes repeatable workload tests, exact configurations, resource use and failures; no validated hardware or benchmarks are claimed yet. Both follow measured work rather than parameter-count marketing.
+
+### Inspectable paid-service scope
+
+Paid-service pages are owner-first, but optionally deep. Native in-page disclosures expose grouped scope, process, testing, handover and bounded support while the closed page stays understandable to a nontechnical owner. This supersedes the absolute audience split for paid-service and scope pages. The owner requirement is `docs/business/SERVICE_SCOPE_PROGRESSIVE_DISCLOSURE_2026-09-15.md` and its canonical Inspectable Service Scope / Progressive Disclosure decision.
+
+The website now publishes Audit, Pilot, Implementation, Custom Business Capability Packs, Managed and Private AI scope, plus separate contracted controls on Security. Private AI covers hardware/capacity, model lifecycle, inference infrastructure, performance/routing, reliability/operations and control/handover through one shared disclosure component. Service delivery scope does not make unfinished product automation available; status continues to come from the existing registry. Pricing authority remains 2026-09-15.3 with public prices unchanged, and LI-01 through LI-12 remain planned.
+
+Website source `08f0b0fc52de1c249162d34f6b95bdbb531b99dd` was integrated and deployed as Cloudflare version `d45c1b2e-6afa-47f2-a668-e51ca275229c`. The built pages, apex/www routes, legacy redirects, live disclosures, form validation and download destination were checked in production. Successful form delivery was tested with mocked endpoints; no new live customer submission or email was sent. Implementation and publication evidence are in `diomedes-site/docs/verification/2026-09-15-service-scope/REPORT.md` and `diomedes-site/docs/verification/2026-09-15-service-scope-publication/REPORT.md`.
 
 ## 8a. Long-term capabilities retained
 

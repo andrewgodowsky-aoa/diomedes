@@ -61,3 +61,15 @@ User approved building on dirty files and explicitly approved committing the rel
 BUILD STATUS: website foundation and Core checks as recorded above. PUBLICATION STATUS: website foundation committed; combined site publication is owned by the subsequent service-scope integration and its production report. PRODUCT CAPABILITY STATUS: only website/planning foundations added; LI-01 through LI-12 remain planned. No Core application package, installer or live installation was changed.
 
 PILLAR IMPACT: advances workflow-first adoption, one configurable product, interchangeable models, scoped authority, measured value and practical ownership. ROADMAP IMPACT: adds the Private AI expansion and acceptance-defined LI work without changing the immediate pilot sequence or claiming runtime completion.
+
+## Completed publication follow-through
+
+Core foundation commit `2b0e1af` was pushed as a fast-forward to remote main from this isolated branch. Original local main and all unrelated dirty application/research files remain preserved; it was not pulled or reset over the user's work.
+
+The separate Astra xhigh task completed the service-scope implementation. Parent reviewed its source, test evidence and mobile/desktop captures, then fast-forwarded website main to `08f0b0fc52de1c249162d34f6b95bdbb531b99dd`, retaining both Private AI and the separately published owner requirement. Website source is pushed and deployed as Cloudflare version `d45c1b2e-6afa-47f2-a668-e51ca275229c`.
+
+The final site build checked 97 Astro files with zero errors/warnings/hints, produced 30 pages and passed copy/Worker checks. The implementation suite recorded 192 passed, 1 existing conditional skip, 0 failed; the strengthened keyboard suite recorded 23 passed. Production verification passed 26 grouped HTTP checks across apex/www pages, all 11 redirects, form validation and the installer destination. Live browser checks opened Private AI, Pricing and Security disclosures; mobile content fit at 390 pixels. Website publication evidence: `diomedes-site/docs/verification/2026-09-15-service-scope-publication/REPORT.md`.
+
+Roadmap and project memory now advance to `2026-09-15.4` locally and in their canonical Google Docs, using fresh revisions and successful exact-addition readback. Pricing remains `.3`; pillars remain unchanged. The service-scope owner decision was read from its canonical Doc and the published Core requirement file. Existing older cloud/mirror drift remains preserved, as noted above.
+
+The follow-through changes documentation only. The application tree is identical to the source that passed the four gates; no repeated runtime tests or capability promotion is inferred from the .4 amendment. BUILD: verified. PUBLICATION: committed, pushed, deployed and checked live. PRODUCT: LI-01 through LI-12 remain planned. No live form email, installer execution or customer infrastructure operation was added to this proof.
