@@ -1,0 +1,54 @@
+{
+  "note": "Independent read-only witness taken outside the proof, before and after it: reg.exe exports of both registration keys, SHA-256 of the Start Menu shortcut, the taskbar pin and four installation files, a listing of every installation file, and the Explorer Taskband pin blobs.",
+  "before": {
+    "taskbandFavoritesSha256": "B0F54648F663029F4ACD959777004677802F5F0A19CA04FDBA12C208D12A613E",
+    "taskbandFavoritesResolveSha256": "2708BF143E0D87E80905B2D8BC417AEE22D5D14AA9B04C8A4D78002A0131B1B0",
+    "capturedAt": "2026-09-13T05:15:43.5843484-04:00",
+    "productExport": 0,
+    "uninstallExport": 0,
+    "productRegSha256": "C108718CEE6DA077666D26C50E98C8D27D73E618517AFC2453DF875B877564D2",
+    "uninstallRegSha256": "DE0D96A39648D40954D2A5D3E21720E92819F5273533F35865AD7D0905127140",
+    "filesSha256": "26D738593C75E073FD16A1A07515BD1771B41A8DCB972BB272EE01E0AB1748F0",
+    "fileLines": 84,
+    "runningFromInstall": 0
+  },
+  "after": {
+    "taskbandFavoritesSha256": "B0F54648F663029F4ACD959777004677802F5F0A19CA04FDBA12C208D12A613E",
+    "taskbandFavoritesResolveSha256": "2708BF143E0D87E80905B2D8BC417AEE22D5D14AA9B04C8A4D78002A0131B1B0",
+    "capturedAt": "2026-09-13T05:15:50.9115944-04:00",
+    "productExport": 0,
+    "uninstallExport": 0,
+    "productRegSha256": "C108718CEE6DA077666D26C50E98C8D27D73E618517AFC2453DF875B877564D2",
+    "uninstallRegSha256": "DE0D96A39648D40954D2A5D3E21720E92819F5273533F35865AD7D0905127140",
+    "filesSha256": "26D738593C75E073FD16A1A07515BD1771B41A8DCB972BB272EE01E0AB1748F0",
+    "fileLines": 84,
+    "runningFromInstall": 0
+  },
+  "comparison": {
+    "name": "C",
+    "minutes": 0.1,
+    "proofExit": 1,
+    "passed": false,
+    "error": "Installed payload differs: Diomedes.exe",
+    "handBackError": null,
+    "registrationRestore": {
+      "result": "restored",
+      "afterFailure": true
+    },
+    "preExisting": true,
+    "checks": [
+      "The registration found before the proof (2 keys, 1 Start Menu files) was handed back and reads back identical; the existing installation's 78 files and every Diomedes taskbar pin are unchanged"
+    ],
+    "taskbarPinChanges": null,
+    "beforeMatchesBaseline": true,
+    "productRegIdentical": true,
+    "uninstallRegIdentical": true,
+    "shortcutPinAndInstallIdentical": true,
+    "taskbandFavoritesIdentical": true,
+    "taskbandFavoritesResolveIdentical": true,
+    "fileDiff": [],
+    "pendingAfter": false,
+    "stateFolderAfter": [],
+    "runningFromInstall": "0 before, 0 after"
+  }
+}

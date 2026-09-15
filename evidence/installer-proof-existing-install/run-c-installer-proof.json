@@ -1,0 +1,26 @@
+{
+  "startedAt": "2026-09-13T09:15:44.1434169Z",
+  "installer": "F:\\Diomedes\\deliverables\\windows-release-20260912-4fb8656\\Diomedes-Experimental-0.1.1-unsigned-setup.exe",
+  "installerSha256": "d9eccbd5101b675968a17f2adbb760b66db627e247da24f8c4d07aa66b0e369d",
+  "installTarget": "F:\\Diomedes\\diomedes-wt\\installer-proof-existing-install-20260913\\test-results\\proof-existing-C\\installation",
+  "registryKeys": [
+    "HKCU:\\Software\\Diomedes\\Experimental\\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001",
+    "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001"
+  ],
+  "preExistingRegistration": {
+    "present": true,
+    "installDir": "C:\\Users\\andre\\AppData\\Local\\Programs\\Diomedes Experimental 20260909",
+    "installDirFileCount": 78,
+    "snapshot": "F:\\Diomedes\\diomedes-wt\\installer-proof-existing-install-20260913\\test-results\\proof-existing-C\\registration-before\\snapshot.json"
+  },
+  "checks": [
+    "The registration found before the proof (2 keys, 1 Start Menu files) was handed back and reads back identical; the existing installation's 78 files and every Diomedes taskbar pin are unchanged"
+  ],
+  "passed": false,
+  "registrationRestore": {
+    "result": "restored",
+    "afterFailure": true
+  },
+  "error": "Installed payload differs: Diomedes.exe",
+  "finishedAt": "2026-09-13T09:15:50.1541855Z"
+}
