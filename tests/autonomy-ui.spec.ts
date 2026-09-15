@@ -251,6 +251,11 @@ async function startFromBoard(page: Page, taskName: string): Promise<void> {
   const confirm = row.locator('.confirm');
   await expect(confirm.getByRole('button', { name: 'Start', exact: true })).toBeVisible();
   await confirm.getByRole('button', { name: 'Start', exact: true }).click();
+  // A non-sample route confirms the send first; only Send task dispatches the work.
+  const send = page.getByRole('dialog', { name: 'Send this task?', exact: true });
+  await expect(send).toBeVisible();
+  await send.getByRole('button', { name: 'Send task', exact: true }).click();
+  await expect(send).toHaveCount(0);
 }
 
 async function openThread(page: Page, taskName: string): Promise<void> {
@@ -352,7 +357,7 @@ test('scope confirmation covers the same task; recorded actor survives a picker 
   );
   expect(grants.grants.some((record) => record.active)).toBe(true);
 
-  // Same task again with a multi-file proposal: no additional dialog.
+  // Same task again with a multi-file proposal: no additional approval dialog.
   await keepAll(project.id);
   proposalMode = 'multi-new';
   await rail(page)
@@ -361,7 +366,13 @@ test('scope confirmation covers the same task; recorded actor survives a picker 
   const board = page.locator('.board[aria-label="Board"]');
   const doneRow = board.locator('.crow', { hasText: taskName }).first();
   await doneRow.getByRole('button', { name: 'Reopen' }).click();
+  const before = await api<ProjectState>(`/projects/${project.id}/state`);
   await startFromBoard(page, taskName);
+  // Send task re-checks documents before it admits the run, so wait for the new
+  // session; settled() on its own could read the previous one.
+  await expect
+    .poll(async () => (await api<ProjectState>(`/projects/${project.id}/state`)).sessions.length)
+    .toBe(before.sessions.length + 1);
   state = await settled(project.id);
   const scoped = state.needs.at(-1)!;
   expect(scoped.authorization?.kind).toBe('scope-grant');

@@ -204,6 +204,11 @@ async function startFromBoard(page: Page, taskName: string): Promise<void> {
   const confirm = row.locator('.confirm');
   await expect(confirm.getByRole('button', { name: 'Start', exact: true })).toBeVisible();
   await confirm.getByRole('button', { name: 'Start', exact: true }).click();
+  // A non-sample route confirms the send first; only Send task dispatches the work.
+  const send = page.getByRole('dialog', { name: 'Send this task?', exact: true });
+  await expect(send).toBeVisible();
+  await send.getByRole('button', { name: 'Send task', exact: true }).click();
+  await expect(send).toHaveCount(0);
 }
 async function openThread(page: Page, taskName: string): Promise<void> {
   await rail(page)
