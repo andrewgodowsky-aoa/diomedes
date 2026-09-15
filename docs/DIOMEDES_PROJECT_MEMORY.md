@@ -1,7 +1,7 @@
 # DIOMEDES PROJECT MEMORY — CANONICAL
 
-Version: 2026-09-10.7
-Last reconciled: September 10, 2026
+Version: 2026-09-15.1
+Last reconciled: September 15, 2026
 Cloud canonical: 13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw
 Repository mirror: docs/DIOMEDES_PROJECT_MEMORY.md
 
@@ -23,7 +23,7 @@ Mode → Agent → Model → Effort is the conceptual control model, not a rigid
 
 Self-configuration means structured facts → reviewable candidate → deterministic validation → rehearsal and approval → versioned activation → observed operation → reviewed improvements. Use deterministic templates with optional model assistance, existing mutation/admission services and expected-base checks. Missing connections stay unsupported; rollback never restores revoked grants or old credit. Corrections change an attempt, not silently the Agent or organization's governing rules.
 
-The illustrative $300/month with $100 inference allowance is a commercial candidate; existing approved price anchors remain until explicitly superseded. Entitlement, Trust permission and budget admission are different checks. Managed inference uses company-held server credentials and tenant-bound reserve/settle accounting including Team/reviewer/correction calls. Local/BYO is not silently charged against that allowance. No unlimited usage, automatic overage, invisible payer fallback or assumption that online inference provides an always-on execution host.
+The September 15, 2026 commercial decision supersedes the older price anchors. Diomedes Business is planned from $199/month per organization, but the exact included managed-inference allowance remains unresolved and must be cost-qualified rather than inherited from the older illustrative $300/$100 candidate. Entitlement, Trust permission and budget admission are different checks. Managed inference uses company-held server credentials and tenant-bound reserve/settle accounting including Team/reviewer/correction calls. Local/BYO is not silently charged against that allowance. No unlimited usage, automatic overage, invisible payer fallback or assumption that online inference provides an always-on execution host.
 
 Standing Opus 5 prompting preference: complete context, explicit scope/end state, short milestone prompts and repository references. Avoid giant phase-by-phase instructions, repeated warnings, exhaustive checks in every prompt and redundant self-verification/subagent review. Mandatory repository checks still apply. GLM implementation prompts may use Goal / Context / Constraints / Done when. See docs/product/personal-business/08_SOURCES_AND_LICENSING.md for checked first-party guidance.
 
@@ -129,11 +129,11 @@ Services-assisted software adoption is an intended route. Locally delivered SaaS
 
 Andrew's current hospitality relationships are in North Carolina's Triangle. Employer/prospect relationships do not establish ownership, signed pilot status, lawful data access, purchasing approval, references or endorsement. A remodeling contact is also a prospect/example unless separately authorized. Keep names/logos and internal revenue projections off public marketing without permission. Do not infer willingness to buy from a named establishment's size or presumed software sophistication.
 
-Andrew is willing to hire. A support/implementation hire is an option after measured workload and cash contribution justify it, not an immediate commitment or proof of unlimited capacity. Preserve affordable entry and scope larger work honestly instead of simply multiplying every price.
+Andrew is willing to hire. A support/implementation hire is an option after measured workload and cash contribution justify it, not an immediate commitment or proof of unlimited capacity. Preserve an accessible software product while pricing professional implementation, on-site work and recurring human responsibility high enough to support dependable delivery.
 
 ## Commercial decisions and research status
 
-Approved public anchors remain first hour free; $100/hour agreed continuation; $299 Quick Start; $350 audit; $249 local plan; from $749 single-machine local deployment; from $1,250 shared local or bounded pilot; from $2,500 broader/custom implementation; planned Business from $99/month per organization; optional Managed from $249/month. Consult docs/business/PRICING_STRATEGY_2026-09-10.md for scopes and credits. Free discovery is distinct from private pilot waivers and from saying the product is free for now.
+Current commercial anchors are governed by docs/business/PRICING_STRATEGY_2026-09-15.md: first fit hour free; focused advisory $150/hour; Quick Start from $750; Workflow Audit / Weak Point Map from $1,000; Local Hardware and Model Plan $500; Local AI Deployment from $2,500 plus hardware/travel; shared/team or on-site deployment from $5,000; bounded pilot from $3,500; broader/custom implementation from $5,000, with substantial multi-system or multi-location work commonly $7,500-$15,000+ by scope; planned Business from $199/month per organization; Managed Diomedes from $750/month; Fractional AI Ops from $2,000/month. The first three-location restaurant design partner may receive a $1,500-$2,500 founding rate against an approximately $4,500 reference-value bounded pilot because the engagement also produces structured product-learning value. Free discovery is distinct from private design-partner discounts and from saying the product is free for now.
 
 A $39-$49 starter, blanket $175-$225 hourly rate, and high minimum replacement prices from the outside assessment remain proposals, not approved prices. Larger scope-based implementation quotes are possible under the existing custom line. Monthly managed support is not unlimited labor or a 24/7 staffed guarantee.
 
@@ -141,7 +141,7 @@ Company-funded hosted Diomedes inference is paid-account-only through a server-c
 
 No measured average savings, sales conversion rate, signed design partner, customer count or probability-weighted income forecast was established in the supplied material. Use scenarios and collect actual evidence. Time returned is net of new review/correction/maintenance, and salary capacity is not automatically cash savings.
 
-Marketability/income analysis: docs/business/MARKETABILITY_AND_INCOME_2026-09-10.md; cloud https://docs.google.com/document/d/17-_I4q-h95yVQiY-G8mrySVM6V92BRnYcg8XnQsJNV4/edit. Scenario inputs: docs/business/income_model_2026-09-10.json. These are planning assumptions, not customer-facing promises.
+Current pricing: docs/business/PRICING_STRATEGY_2026-09-15.md and the canonical Drive pricing document. The September 10 marketability/income analysis and income_model_2026-09-10.json remain historical planning assumptions based on the old price ladder until deliberately recalculated; they are not current quotes, forecasts or customer-facing promises.
 
 ## Website and execution handoff
 

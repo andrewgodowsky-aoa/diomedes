@@ -1,7 +1,7 @@
 # DIOMEDES LIVE ROADMAP
 
-Roadmap version: 2026-09-13.1
-Last reconciled: September 13, 2026
+Roadmap version: 2026-09-15.1
+Last reconciled: September 15, 2026
 Product: Diomedes
 Company direction: Diomedes Systems
 Cloud canonical: 1bRhz3zQPXOYuVlt95U1EIkz7pcm1dtSsoBvkDrLR3zE
@@ -39,7 +39,7 @@ Settled architecture decision: **Diomedes contract first; ACP (Agent Client Prot
 
 Self-configuration proceeds through structured facts, a proposed configuration, deterministic validation, review, rehearsal and versioned activation. Questionnaire/model output never grants authority. Configuration changes and rollback cannot revive revoked access or spent credit. Start with a supported approved-files draft workflow and small synthetic industry variants, not universal live integrations.
 
-Andrew's $300/month including $100 managed inference is a candidate package, not a replacement for approved price anchors. Company-funded access requires server-side identity/entitlement and reserve/settle spend control; Personal local/BYO remains separate. Include all applicable setup, Team, reviewer and correction costs in disclosed accounting. No embedded company keys, automatic overage, silent payer change or fake production checkout. Existing Apache-2.0 rights remain unchanged; managed service differentiation is not a noncommercial restriction on published code.
+Commercial pricing is governed by the September 15, 2026 pricing decision. Diomedes Business is planned from $199/month per organization; company-funded inference remains bounded and its exact included allowance is still unresolved rather than implied by an older $300/$100 candidate. Company-funded access requires server-side identity/entitlement and reserve/settle spend control; Personal local/BYO remains separate. Include all applicable setup, Team, reviewer and correction costs in disclosed accounting. No embedded company keys, automatic overage, silent payer change or fake production checkout. Existing Apache-2.0 rights remain unchanged; managed service differentiation is not a noncommercial restriction on published code.
 
 Immediate sequence after the active Opus Trust/Agent checkpoint: PB-01 identity/intake; PB-02 reviewed configuration and harness integration; PB-03 bounded managed-usage contracts; PB-04 usable Console integration/handoff; then the planned GLM corrective-loop slice with Business scope and budget invariants. Missing production credentials must not block a clearly labeled local proof or expand this into a full billing platform before GLM.
 
@@ -111,7 +111,7 @@ These are dependency-guided slices, not a ban on bounded independent work. Do no
 
 Services-assisted software adoption is a deliberate third path between pure consulting and anonymous self-service SaaS. Sell one recognizable useful job first, preserve a universal configurable architecture and collect evidence before claiming scalability. Local SaaS describes delivery/sales, not necessarily local inference.
 
-Pricing version 2026-09-10.3 retains: free first fit hour; accepted continuation $100/hour; $299 cloud Quick Start; $350 audit; $249 local hardware/model plan; local deployment from $749 plus hardware; shared local or bounded pilot from $1,250; broader/custom implementation from $2,500; planned Business from $99/month per organization; optional Managed from $249/month. See the focused pricing contract for exclusions and credits.
+Pricing version 2026-09-15.1 supersedes the old 2026-09-10.3 anchors: first fit hour free; focused advisory $150/hour; Cloud AI Quick Start from $750; Workflow Audit / Weak Point Map from $1,000; Local Hardware and Model Plan $500; Local AI Deployment from $2,500 plus hardware/travel; shared/team or on-site deployment from $5,000; bounded pilot from $3,500; broader/custom implementation from $5,000, with multi-system or multi-location work commonly $7,500-$15,000+ by scope; planned Business from $199/month per organization; Managed Diomedes from $750/month; and high-touch Fractional AI Ops from $2,000/month. The first three-location restaurant design partner may receive a deliberately discounted $1,500-$2,500 founding pilot against an approximately $4,500 reference value because Diomedes receives structured product-learning value. See docs/business/PRICING_STRATEGY_2026-09-15.md for scope, credits, exclusions and service boundaries.
 
 Higher bespoke quotes are allowed by actual scope. A sub-$50 starter, blanket higher hourly rate and outside model revenue estimates remain proposals, not approved published offers. Basic trust/safety controls are foundational. No public product-free-for-now message, fake paid case studies, unlimited support or unshipped checkout.
 
@@ -141,7 +141,8 @@ Production identity provider/recovery and device-key compatibility; billing prov
 
 Current focused documents:
 - docs/DIOMEDES_PROJECT_MEMORY.md (definition index plus incorporated detailed base).
-- docs/business/PRICING_STRATEGY_2026-09-10.md (approved anchors versus proposals).
+- docs/business/PRICING_STRATEGY_2026-09-15.md (current approved commercial pricing, local/on-site implementation and managed-service boundaries).
+- docs/business/PRICING_STRATEGY_2026-09-10.md (historical prior pricing checkpoint; superseded where prices conflict).
 - docs/business/MARKETABILITY_AND_INCOME_2026-09-10.md (assumption-led analysis; cloud 17-_I4q-h95yVQiY-G8mrySVM6V92BRnYcg8XnQsJNV4).
 - docs/business/income_model_2026-09-10.json (reproducible scenarios, not forecasts).
 - docs/business/OPUS_5_WEBSITE_PROMPT_2026-09-10.md (bounded website execution; cloud 1S4892244vJ-zyMkbf15VO055J4qPFGiGiu8O6BuhmtQ).
