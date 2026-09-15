@@ -1,6 +1,6 @@
 # Diomedes pricing and service scope
 
-Version: 2026-09-15.2
+Version: 2026-09-15.3
 Date: September 15, 2026
 Status: Approved commercial pricing direction. Supersedes the 2026-09-10.3 launch anchors where they conflict.
 Company direction: Diomedes Systems
@@ -39,6 +39,8 @@ The public progression is Starter ($299/month), audit (from $1,000), pilot (from
 
 ## Approved price anchors
 
+Private AI scope amendment: the local plan, local setup and shared/on-site rows below remain smaller, separately scoped services. They do not price a full customer-owned Private AI infrastructure engagement. Do not inherit their credits, delivery-hour assumptions or starting prices into the strategic offering below. Starter, the narrow restaurant pilot and the existing approved public subset remain unchanged.
+
 | Offer | Approved starting price | Starting scope |
 | --- | ---: | --- |
 | Workflow Fit Call | First 60 minutes free | Initial discovery and fit. No automatic paid continuation and not an unlimited audit. |
@@ -57,6 +59,14 @@ The public progression is Starter ($299/month), audit (from $1,000), pilot (from
 The public website leads with the 90-Day Workflow Starter at $299/month for 3 months ($897 total), followed by the different scopes available: free fit call, Workflow Audit from $1,000, pilot from $3,500, implementation from $5,000 and Managed Diomedes from $750/month. Starter does not include a separate Business subscription. Planned self-managed Business from $199/org/month is an option after Starter once operational. Keep the page readable as scoped engagements, not a software-tier grid.
 
 ## Credits and conversion
+
+### Private AI infrastructure planning
+
+Owner-directed strategic ranges, not immutable prices or approved public constants: assessment approximately $2,500-$5,000; founding/design-partner private deployment approximately $10,000 plus equipment; mature standard deployment approximately $15,000-$25,000 plus equipment; advanced/multi-server/custom infrastructure approximately $25,000-$50,000+ plus equipment. Monthly managed support is scoped to complexity and operational responsibility. These figures do not change the discounted first restaurant workflow pilot.
+
+The future public anchor may be "Private AI Deployment - from $15,000 + hardware", assessment required. This pass uses assessment-led, separately quoted website copy and publishes none of these new ranges. Hardware is normally purchased directly by the customer; if facilitated, it passes through at cost without Diomedes markup. The customer retains a functional self-managed local deployment after Managed cancellation wherever technology and licenses permit. Engineering, third-party service charges, equipment and recurring support remain explicit separate costs. Full commercial scope and ownership handover: `2026-09-15-private-ai.md`.
+
+### Existing smaller-service credits
 
 A $500 Local Hardware and Model Plan may be credited toward a qualifying Local AI Deployment started within 30 days. Up to $500 of a paid Workflow Audit may be credited toward a qualifying $3,500+ pilot started within 30 days. Credits are stated in the accepted quote, do not stack unless explicitly approved, and never make the same fee payable twice.
 

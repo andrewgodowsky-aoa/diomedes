@@ -1,6 +1,6 @@
 # DIOMEDES LIVE ROADMAP
 
-Roadmap version: 2026-09-15.2
+Roadmap version: 2026-09-15.3
 Last reconciled: September 15, 2026
 Product: Diomedes
 Company direction: Diomedes Systems
@@ -127,7 +127,21 @@ Retain least privilege, tenant-scoped files/search/memory/embeddings/events/cred
 
 Measure net time returned after new review/rework, error rates, cost per verified task, support time, adoption and renewal. Capacity value is not automatically cash savings. Track paid fee collection separately from private design-partner waivers. Customer acquisition and retention still consume time when introductions are warm.
 
-## 8. Long-term capabilities retained
+## 8. Local Infrastructure and Diomedes Private AI
+
+Owner-directed expansion, 2026-09-15: customer-owned private/local AI is a major Business offering, especially for sustained multi-user and multi-location workloads. Preserve the GTM sequence: internal/personal use, consultant operating layer, narrow restaurant design-partner workflow pilot, measured case study, repeatable hospitality offering. Only then expand from proven workflows into implementation, capability packs, private/hybrid infrastructure and optional Managed Diomedes. No day-one server requirement or change to Starter.
+
+One model/runtime/hardware-agnostic path: capability/workload -> existing routing and admission -> inference provider/runtime adapter -> hardware. H01 remains the common agent seam; direct models remain inside the Diomedes-owned loop and planned AI SDK plane. Local Infrastructure extends discovery, model artifacts/profiles/storage, compatibility, lifecycle, health, capacity, operating windows, recovery and scoped remote management. It does not create another Runtime, Trust, file authority, scheduler or remote shell. Dense/MoE/multimodal/specialist and future models, CPU/GPU/unified-memory and later multiple hosts remain possible without a fixed model family or hardware SKU.
+
+Cloud, private/local and hybrid are deployment choices governed by customer policy. A failed local model never authorizes silent cloud disclosure, payer changes or expanded access. Shared nodes require verified client and location isolation. Always-on, business-hours, manual, service start/stop and supported sleep/wake policies require measured platform support; none implies HA or 24/7 staffed support.
+
+Customer equipment is normally purchased directly or passed through at cost, with no hardware markup. Ending Managed support must not intentionally disable purchased local infrastructure; provide functional self-managed handover where technology and licensing permit. Paid cloud service and support responsibilities remain distinct. Private AI planning ranges live in pricing version 2026-09-15.3 and are not fixed public offers; older $500/$2,500 local setup anchors do not price the full infrastructure engagement.
+
+Status: strategy, architecture and website foundations in this pass; no driven local inference, lifecycle manager, scheduler, production location isolation or remote fleet management implemented. Existing source supports read-only hardware/runtime discovery, engine catalogs, durable work and policy/fallback foundations. Work items LI-01 through LI-12 are planned, dependency-ordered and acceptance-defined in `docs/implementation/2026-09-15-local-infrastructure-work-items.md`. Architecture/inventory: `docs/product/2026-09-15-local-infrastructure.md`. Commercial scope: `docs/business/2026-09-15-private-ai.md`.
+
+Future "Should Your Business Run AI Locally?" assessment compares cloud/local/hybrid TCO over three/five years and may recommend cloud. Future "Diomedes Verified Local" publishes repeatable workload tests, exact configurations, resource use and failures; no validated hardware or benchmarks are claimed yet. Both follow measured work rather than parameter-count marketing.
+
+## 8a. Long-term capabilities retained
 
 Durable deterministic-plus-agent workflows, triggers/schedules/webhooks, waits and queues; explicit host availability; remote pairing/device identity/short sessions/revocation/phone status-approval-stop; context-aware replay/forks; safe external-effect reconciliation; execution isolation and portability; Notion-like artifacts/documents/versioning without forced GitHub; teach-by-demonstration into tested reusable procedures; MCP Apps and A2A where useful; business memberships/location workspaces and tenant administration.
 

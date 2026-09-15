@@ -1,6 +1,6 @@
 # DIOMEDES PROJECT MEMORY — CANONICAL
 
-Version: 2026-09-15.2
+Version: 2026-09-15.3
 Last reconciled: September 15, 2026
 Cloud canonical: 13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw
 Repository mirror: docs/DIOMEDES_PROJECT_MEMORY.md
@@ -122,6 +122,18 @@ Local models are first-class: hardware/acceleration/RAM/VRAM/unified-memory/disk
 Business deployment can be local, hosted or hybrid based on workload, privacy, concurrency, uptime, maintenance and total cost. Cloud inference alone is not a persistent execution host. Later Diomedes-tuned supervisor weights should specialize in orchestration/tool use/verification and delegate hard reasoning appropriately. Customer facts preferably stay in governed retrieval/configuration; customer-specific adapters require explicit data governance.
 
 Recursive improvement remains observed failure/correction -> candidate rule/skill/prompt/routing/workflow change -> replay/eval -> versioned promotion -> monitor/rollback. Weight tuning follows sufficient legitimate data and measured gains; it is not the first implementation milestone. Candidates cannot self-promote, rewrite permissions or change data access/billing/tenant scope. Keep provenance, held-out evaluations, independent checks where warranted and rollback. Never train on private customer material merely because it was processed during a job.
+
+## Customer-owned Private AI - owner decision, 2026-09-15
+
+Diomedes Private AI is a major Business expansion for sustained workloads, particularly shared work across locations. It is engineering, integration, deployment, reliability and support around customer-owned infrastructure; models, inference runtimes and hardware remain interchangeable resources. The customer normally sees useful capabilities rather than model files, quantization or runtime details. Core extends existing H01/direct-model, execution, Trust, capability-pack and remote-host boundaries; it does not create a competing hardware product or agent runtime.
+
+Cloud, private/local and hybrid are deployment choices. Local-only data cannot silently move to cloud after an outage; customer-owned remote hosts still require destination authorization and client/location isolation. Always-on, business-hours, manual, maintenance and supported wake/reconnect policies are planned choices, not current runtime promises. Low-power idle may be preferable to nightly shutdown.
+
+Clients normally buy hardware directly, retaining receipt/warranty/replacement relationships; facilitated hardware passes through at cost, without markup. Stopping Managed Diomedes must not intentionally disable purchased local infrastructure: retain a functional self-managed deployment where technically/licensing-wise possible, with documented configuration, backup/recovery and support offboarding. Paid company-funded inference and ongoing human work remain separate services, not artificial lock-in.
+
+Preserve internal/personal use -> consultant operating layer -> narrow restaurant pilot -> measured case study -> repeatable hospitality. Private/hybrid infrastructure follows workload evidence; the first restaurant and Starter do not require hardware. Pricing 2026-09-15.3 separates the new strategic assessment/deployment ranges from smaller existing local setup services. No new public price constant is approved by this pass.
+
+"Should Your Business Run AI Locally?" is a future transparent three/five-year TCO assessment with cloud-preferred and no-break-even outcomes. "Diomedes Verified Local" is a future repeatable workload-evidence program, not certification. Current source has discovery, catalog, durable-work and fallback-policy foundations; local model execution, lifecycle, scheduling and production remote/multi-location management remain gaps. Definitions and inventory: `docs/product/2026-09-15-local-infrastructure.md`; commercial policy: `docs/business/2026-09-15-private-ai.md`; planned implementation: LI-01 through LI-12 in `docs/implementation/2026-09-15-local-infrastructure-work-items.md`.
 
 ## Current business correction — variety is the thesis
 
