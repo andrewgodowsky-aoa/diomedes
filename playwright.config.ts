@@ -1,9 +1,38 @@
 import { defineConfig } from '@playwright/test';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const runRoot = path.resolve('test-results', `app-data-${Date.now()}-${process.pid}`);
 const clientPort = Number(process.env.DIOMEDES_UI_CLIENT_PORT ?? 5174);
+const servicePort = Number(process.env.DIOMEDES_UI_SERVICE_PORT ?? 47632);
+
+/**
+ * Reclaim this worktree's orphaned dev-server tree before Playwright's own
+ * webServer check trips on the port. A config file evaluates before any runner
+ * task — including webServer startup and globalSetup — so a synchronous guard
+ * here is the only hook early enough. Holders are only killed when the
+ * `.dev-server.json` marker plus their live command lines prove they are this
+ * worktree's orphan; anything else fails here with a full diagnostic instead
+ * of Playwright's bare "already used" error.
+ *
+ * Worker processes re-evaluate this config while the runner's webServer is
+ * legitimately up, so the guard is skipped wherever TEST_WORKER_INDEX is set.
+ */
+if (process.env.TEST_WORKER_INDEX === undefined) {
+  const guard = spawnSync(
+    process.execPath,
+    [
+      path.resolve('scripts/dev-server-guard.mjs'),
+      '--ports',
+      `${clientPort},${servicePort}`,
+      '--root',
+      path.resolve('.'),
+    ],
+    { stdio: 'inherit' },
+  );
+  if (guard.status !== 0) process.exit(guard.status ?? 1);
+}
 
 /**
  * A fixed engine catalogue for the suite. The server reads the engine's own
