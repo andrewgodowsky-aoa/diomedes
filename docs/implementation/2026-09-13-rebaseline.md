@@ -312,10 +312,12 @@ is a documented, verified transition of every writer to an agreed repaired tool,
 states explicitly need not be a push.
 
 Blast radius was measured on the live coordination root before any edit, by judging every release
-record with the same `authoritative()` predicate: of 20 claims (15 legacy, 5 ordered), **none**
-stops being suppressed under the stricter rule, because every release already on disk is
-authoritative. The defect was real and reproducible but had never been exercised here, so the
-repair creates no reconciliation backlog.
+record with the same `authoritative()` predicate: in that snapshot, of 20 claims (15 legacy, 5
+ordered), **none** stops being suppressed under the stricter rule, because every release record
+then on disk is authoritative. So the repair leaves no reconciliation backlog to work through.
+This measures the current records and not history: it cannot prove that no unauthorized release was
+ever written and later overwritten or removed, since these records are not append-only. The claim
+is the narrow one — nothing presently in the root is reclassified by the repair.
 
 The candidate carries its own cases for this round in `tests/coordination.test.ts`, under
 `C00.R repair round 3: legacy release records`: an unauthorized record leaves a legacy claim held
@@ -340,3 +342,46 @@ integrator released, with recorded reasons, the two claims left by `fable/pid 48
 running at 2026-09-16T01:48:40 and again at 01:56:03. `AGENTS.md`, `shared/contract-revision.ts`
 and `tests/contract-revision.test.ts` were released and not re-claimed: the six-family H01
 amendment is not part of this round.
+
+### Outcome of C00.R-3
+
+`results/C00.R-3.md` (sha256 `ad0bd13d302d85053d76224cd9fea675ae6ab688d49ddbe066c2a7fdf759c03a`) and
+`results/C00.R-3.json` (sha256 `bce82dcd3407cb5495982f4548f5bd5a50d0617e4f4a070e917ffe0cb95c5cd1`),
+2026-09-16 02:35. **Rejected, and only for the retained rollout prerequisite C00-R2-2.**
+`commit_authorized: false`, `approved_contract_revision: null`.
+
+- **C00-R2-1: resolved**, on the reviewer's own attacks, not on this ledger's word. Its R03 cases
+  (the real earlier tool loaded from Git bytes at `a0341639`) now pass; new R15 (five cases:
+  different pid, reused pid with a new lifetime, another host, another worktree, a whitespace-only
+  integrator reason), R16 (holder and reasoned-integrator recovery, re-read by a separate process)
+  and R17 (an authoritative earlier-tool release still ends a claim) pass. The reviewer audited every
+  `releaseOf`, `releaseFile`, `releaseRecordFile` and `.released.json` reference and found no
+  remaining filename-only release judgment.
+- **The launch-failure repair passes**, R18-R22, eight cases, with `acceptance_blocker: false`.
+  `EPERM`, `EACCES` and `EFTYPE` on the first shell each fall through to the second and return its
+  timestamp; both failing names each shell, each refusal and `--start`; successful-but-unreadable
+  output still throws and a later valid answer cannot hide it; empty output stays `null` rather than
+  an invented identity. The reviewer confirms no tested integrity error is swallowed into success.
+  In that sandbox the real lookup still fails (`pwsh.exe` EPERM, `powershell.exe` exit 1) — but it
+  now fails *actionably*, which is the whole point of the repair.
+- **Reconstruction passed**: manifest sha256 `9b9755ca…`, 15 blobs verified, every manifest patch
+  verified, initial `HEAD` and empty status confirmed.
+- **C00-R2-2 still blocks**, exactly as scoped. R02 fails as expected: a repaired-tool owner holds
+  `tests/tree/` and a separate process running the actual earlier tool still claims
+  `tests/tree/leaf.ts`. The reviewer states plainly that **a push is neither required nor authorized
+  by this review**, and that a pinned local repaired tool is a valid route before publication.
+
+**What closes C00-R2-2**, in the reviewer's words: the integrator records and verifies a controlled
+transition of every participating writer and launcher to an agreed exact repaired tool, inventories
+and reconciles legacy and undecided records through authorized releases or handoffs, and
+demonstrates overlap exclusion through the actual post-transition invocation paths — recording the
+tool hash, the participating identities, the retirement or redirection of old invocations, and the
+reconciliation outcomes. R02 need not go green by changing an immutable old executable once that
+mixed configuration is demonstrably retired. This is an integrator decision and is not started here.
+
+Two corrections the review asked for are applied above and in `evidence/unified-20260913/`:
+`C00.I.json` no longer describes the second round as current, and the blast-radius statement is
+scoped to what was actually measured — the records present in that snapshot — since it cannot prove
+that no unauthorized release ever existed historically in a root whose records are not append-only.
+Neither correction touches `scripts/coordination.ts`, which stays byte-identical to the reviewed
+candidate `ad21353` (blob `56d3617523cc8dbb7978a8e31e0155c752a85307`).

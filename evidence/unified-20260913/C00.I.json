@@ -134,15 +134,15 @@
     "spend": "fixed USD 0, variable USD 0, no live provider call"
   },
   "status": {
-    "implementation": "original candidate a0341639: focused tests 32/32 and tsc exit 0 (the earlier \"30/30\" text was stale). Repair candidate after the second round: producer and independent suites 140/140, affected runtime suites 118/118, full-project tsc --noEmit under the heavy slot: exit 0. The first repair candidate 74939ae (130/130, 118/118) was held back after a hostile pre-check",
-    "independent_review": "C00.R failed a0341639 (Astra: 13 of 27 independent cases failing, findings C00-R1 to C00-R5). A Claude Opus 5 hostile pre-check (not independent verification) held back the first repair candidate 74939ae; renewed C00.R is requested on the second-round candidate named in the outer manifest",
+    "implementation": "original candidate a0341639: focused tests 32/32 and tsc exit 0 (the earlier \"30/30\" text was stale). Third-round repair candidate ad21353, named in the outer manifest: focused producer and independent suites 112/112 (tests/coordination.test.ts 85, tests/c00-independent.test.ts 27), full vitest 1690 passed and 1 skipped with 0 failed, full-project tsc --noEmit exit 0, vite build exit 0. Second-round candidate b750406 (140/140, 118/118) was rejected by C00.R-2; first repair candidate 74939ae (130/130, 118/118) was held back after a hostile pre-check",
+    "independent_review": "C00.R failed a0341639 (Astra: 13 of 27 independent cases failing, findings C00-R1 to C00-R5). C00.R-2 rejected the second-round candidate b750406 on C00-R2-1 and C00-R2-2. C00.R-3 reviewed the third-round candidate ad21353 on 2026-09-16 and rejected it ONLY for the retained rollout prerequisite C00-R2-2: it records C00-R2-1 as resolved and the launch-failure repair as passing, with acceptance_blocker false. Reconstruction passed, 15 blobs verified",
     "live_provider": "not-applicable-with-reason: no live call is in C00 scope",
     "packaged": "not-run",
     "publication": "not-run",
     "deployment": "not-run"
   },
   "blockers": [
-    "B00.I (03a) and H01.I (03b) stay blocked until a renewed C00.R accepts the repair candidate.",
+    "B00.I (03a) and H01.I (03b) stay blocked until the C00-R2-2 rollout prerequisite is closed: a recorded, verified transition of every participating writer and launcher to an agreed exact repaired tool, with legacy and undecided records reconciled through authorized releases or handoffs. C00.R-3 states a push is neither required nor authorized for this.",
     "Combined gates (full vitest, vite build, Playwright three specs) run on the integration candidate under the heavy slot, not on this leaf.",
     "Rollout requirement: the coordination tool on origin/main is still the earlier one. While any session claims with it, exclusion between it and the repaired tool is not guaranteed (it checks only exact-path lock files and releases on the releasing role alone). Retiring it needs the repaired tool on main (Andrew's push approval), every session switched to it, and the integrator releasing, with notes, the claims the earlier tool left in the coordination root.",
     "Decision 14 instruction-delivery wording needs Andrew's reconciled sentence (flag A3 in the ledger)."
