@@ -14,7 +14,7 @@ import { EXTERNAL_ENGINES, isExternalEngine } from '../../shared/engines';
 import { MODE_CEILING, effortFor } from '../../shared/effort';
 import { api, engineConnections } from '../api';
 
-const ENGINE_IDS = ['codex', 'claude-code', 'opencode', 'oh-my-pi', 'cursor'] as const;
+const ENGINE_IDS = ['codex', 'claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin'] as const;
 
 /**
  * How long a connection check stays fresh, matching

@@ -1,6 +1,6 @@
 import type { EngineModel, ExternalEngine, Route } from './types.js';
 
-export const EXTERNAL_ENGINES = ['claude-code', 'opencode', 'oh-my-pi', 'cursor'] as const;
+export const EXTERNAL_ENGINES = ['claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin'] as const;
 export const ROUTES = ['sample', 'codex', ...EXTERNAL_ENGINES] as const;
 export function isExternalEngine(value: unknown): value is ExternalEngine {
   return EXTERNAL_ENGINES.some((id) => id === value);
@@ -13,6 +13,7 @@ export const ENGINE_NAMES: Record<ExternalEngine, string> = {
   opencode: 'OpenCode',
   'oh-my-pi': 'oh-my-pi',
   cursor: 'Cursor',
+  devin: 'Devin',
 };
 export interface EngineConnection {
   engine: ExternalEngine;
@@ -60,7 +61,7 @@ export const TEXT_ROUTE_CONTROLS: {
     control: 'Engine tools',
     level: 'observed',
     detail:
-      'Native configuration disables or denies tools; Cursor uses deny rules and stops on tool events. This does not restrict operating-system access.',
+      'Native configuration disables or denies tools; Cursor and Devin use deny rules and stop on tool events. This does not restrict operating-system access.',
   },
   {
     control: 'Task instructions',

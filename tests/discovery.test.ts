@@ -24,6 +24,7 @@ const ROSTER = [
   'opencode',
   'oh-my-pi',
   'cursor',
+  'devin',
   'hermes',
   'localai',
   'ollama',
@@ -450,7 +451,7 @@ describe('roster composition', () => {
 
   it('keeps available false for planned and observe-only engines', async () => {
     const statuses = await allFoundStatuses();
-    for (const id of ['claude-code', 'opencode', 'oh-my-pi', 'cursor', 'hermes', 'ollama']) {
+    for (const id of ['claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin', 'hermes', 'ollama']) {
       const entry = statuses.find((item) => item.id === id)!;
       expect(entry.found).toBe(true);
       expect(entry.adapter === 'planned' || entry.adapter === 'none').toBe(true);
@@ -460,7 +461,7 @@ describe('roster composition', () => {
 
   it('uses no banned word in any discovered status or detail', async () => {
     const statuses = await allFoundStatuses();
-    for (const id of ['claude-code', 'opencode', 'oh-my-pi', 'cursor', 'hermes', 'ollama']) {
+    for (const id of ['claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin', 'hermes', 'ollama']) {
       const entry = statuses.find((item) => item.id === id)!;
       expect(entry.status.match(BANNED) ?? [], `banned word in ${id} status`).toEqual([]);
       expect(entry.detail.match(BANNED) ?? [], `banned word in ${id} detail`).toEqual([]);
@@ -492,6 +493,7 @@ describe('roster composition', () => {
       'opencode',
       'oh-my-pi',
       'cursor',
+      'devin',
       'hermes',
       'ollama',
     ]);
