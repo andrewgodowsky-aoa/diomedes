@@ -162,8 +162,9 @@ export function coordinationLayout(root: string) {
     /** The one decision per attempt: won, lost or abandoned. */
     decisions: path.join(claims, 'decisions'),
     /**
-     * Releases of ordered claims whose `<id>.released.json` name was already taken by a record
-     * without authority, such as the earlier tool's role-only release.
+     * Releases of claims whose `<id>.released.json` name was already taken by a record without
+     * authority, such as the earlier tool's role-only release. Legacy and ordered claims alike
+     * recover here, so an unauthorized record can never make a claim unreleasable.
      */
     releases: path.join(claims, 'releases'),
     /** Per-path lock files the earlier tool checks; written for its sake, never trusted here. */
@@ -355,6 +356,16 @@ const isExists = (error: unknown) => errorCode(error) === 'EEXIST';
 const isAbsent = (error: unknown) => errorCode(error) === 'ENOENT';
 const isBusy = (error: unknown) =>
   process.platform === 'win32' && ['EPERM', 'EACCES', 'EBUSY'].includes(errorCode(error) ?? '');
+/** Why a helper program could not be run, short enough to carry in a message. */
+const describeRefusal = (error: unknown) => {
+  const code = errorCode(error);
+  // A timeout reports a null code and a kill, not a string code, so `!= null` covers both.
+  if (code != null) return `failed with ${String(code)}`;
+  if (typeof error === 'object' && error !== null && (error as { killed?: boolean }).killed)
+    return 'did not answer before the timeout';
+  const message = error instanceof Error ? error.message : String(error);
+  return `failed: ${message.slice(0, 120)}`;
+};
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const newId = (prefix: string) =>
   `${prefix}_${Date.now().toString(36)}_${randomBytes(4).toString('hex')}`;
@@ -522,21 +533,22 @@ async function orderEntries(layout: Layout): Promise<Claim[]> {
   return entries;
 }
 
-/** Unreleased claims the earlier tool wrote: a claim file with no attempt record behind it. */
+/**
+ * Unreleased claims the earlier tool wrote: a claim file with no attempt record behind it.
+ * The presence of a `<id>.released.json` file is not itself a release. That name is unprotected
+ * and the earlier tool checks nothing but the releasing role, so the record is read and judged
+ * here exactly as an ordered claim's is; a record without authority leaves the claim held until
+ * the integrator reconciles it with a recorded reason.
+ */
 async function legacyActiveClaims(layout: Layout): Promise<Claim[]> {
   const names = await listNames(layout.claims);
-  const released = new Set(
-    names
-      .filter((name) => name.endsWith('.released.json'))
-      .map((name) => name.slice(0, -'.released.json'.length)),
-  );
   const claims: Claim[] = [];
   for (const name of names) {
     if (!name.endsWith('.json') || name.endsWith('.released.json')) continue;
     const claimId = name.slice(0, -'.json'.length);
-    if (released.has(claimId) || (await exists(attemptFile(layout, claimId)))) continue;
+    if (await exists(attemptFile(layout, claimId))) continue;
     const claim = await readJson<Claim>(path.join(layout.claims, name));
-    if (claim) claims.push(claim);
+    if (claim && !(await releaseOf(layout, claim))) claims.push(claim);
   }
   return claims;
 }
@@ -553,18 +565,15 @@ function authoritative(release: ClaimRelease | null, claim: Claim): release is C
 }
 
 /**
- * The release that ended a claim, or null. A claim the earlier tool wrote ends with its release
- * record, as that tool decides. An ordered claim ends only by its holder or by the integrator with
- * a recorded reason: the earlier tool checks nothing but the releasing role, so a record it leaves
- * is not a release here, and the authoritative release is then recorded under `claims/releases/`.
+ * The release that ended a claim, or null. Every claim ends the same way, whichever tool wrote
+ * it: by its holder, or by the integrator with a recorded reason. The earlier tool checks nothing
+ * but the releasing role, so a record it leaves is not a release here, and the authoritative
+ * release is then recorded under `claims/releases/`. There is deliberately no parameter that
+ * exempts a claim from this check: an unauthorized record must never end one.
  */
-async function releaseOf(
-  layout: Layout,
-  claim: Claim,
-  ordered: boolean,
-): Promise<ClaimRelease | null> {
+async function releaseOf(layout: Layout, claim: Claim): Promise<ClaimRelease | null> {
   const recorded = await readJson<ClaimRelease>(releaseFile(layout, claim.claimId));
-  if (!ordered || authoritative(recorded, claim)) return recorded;
+  if (authoritative(recorded, claim)) return recorded;
   const later = await readJson<ClaimRelease>(releaseRecordFile(layout, claim.claimId));
   return authoritative(later, claim) ? later : null;
 }
@@ -579,7 +588,7 @@ async function settledOutcome(
     const record = await readJson<DecisionRecord>(decisionFile(layout, entry.claimId));
     if (record) {
       if (record.decision === 'lost' || record.decision === 'abandoned') return 'done';
-      return (await releaseOf(layout, entry, true)) ? 'done' : 'won';
+      return (await releaseOf(layout, entry)) ? 'done' : 'won';
     }
     if (Date.now() >= deadline) return 'undecided';
     await pause(Math.max(1, Math.min(25, deadline - Date.now())));
@@ -641,7 +650,7 @@ export async function activeClaims(root: string): Promise<Claim[]> {
   for (const entry of await orderEntries(layout)) {
     const record = await readJson<DecisionRecord>(decisionFile(layout, entry.claimId));
     if (!record || record.decision === 'lost' || record.decision === 'abandoned') continue;
-    if (!(await releaseOf(layout, entry, true))) claims.push(entry);
+    if (!(await releaseOf(layout, entry))) claims.push(entry);
   }
   return claims.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 }
@@ -828,9 +837,7 @@ export async function releaseClaim(
   const attempt = await readJson<Claim>(attemptFile(layout, claimId));
   const claim = attempt ?? (await readJson<Claim>(claimFile(layout, claimId)));
   if (!claim) throw new Error(`No claim ${claimId}.`);
-  const ordered = attempt !== null;
-  if (await releaseOf(layout, claim, ordered))
-    throw new Error(`Claim ${claimId} was already released.`);
+  if (await releaseOf(layout, claim)) throw new Error(`Claim ${claimId} was already released.`);
   const note = typeof input.note === 'string' ? input.note : '';
   let authority: ClaimRelease['authority'];
   if (sameOwner(claim.owner, input.by)) authority = 'holder';
@@ -860,11 +867,11 @@ export async function releaseClaim(
   };
   const text = JSON.stringify(release, null, 2);
   if (!(await publishExclusive(releaseFile(layout, claimId), text))) {
-    // The name is taken. A record without authority does not end an ordered claim, so its release
-    // is recorded beside the claims instead; any other record means the claim was released already.
+    // The name is taken. A record without authority does not end any claim, legacy or ordered,
+    // so this release is recorded beside the claims instead and the holder or the integrator can
+    // still end the claim; only an authoritative record means it was released already.
     const taken = await readJson<ClaimRelease>(releaseFile(layout, claimId));
-    if (!ordered || authoritative(taken, claim))
-      throw new Error(`Claim ${claimId} was already released.`);
+    if (authoritative(taken, claim)) throw new Error(`Claim ${claimId} was already released.`);
     await fs.mkdir(layout.releases, { recursive: true });
     if (!(await publishExclusive(releaseRecordFile(layout, claimId), text)))
       throw new Error(
@@ -1200,6 +1207,7 @@ export async function processStartOf(pid: number): Promise<string | null> {
   if (process.platform === 'win32') {
     // `pid` is a checked integer, so interpolating it cannot change the command.
     const script = `$p = Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}'; if ($p) { $p.CreationDate.ToUniversalTime().ToString('o') }`;
+    const refusals: string[] = [];
     for (const shell of ['pwsh.exe', 'powershell.exe']) {
       let stdout: string;
       try {
@@ -1209,8 +1217,13 @@ export async function processStartOf(pid: number): Promise<string | null> {
           { encoding: 'utf8', timeout: 30_000, windowsHide: true },
         ));
       } catch (error) {
-        if (errorCode(error) === 'ENOENT') continue;
-        throw error;
+        // Any failure to *run* the shell means try the next one. A sandbox that forbids the spawn
+        // reports EPERM or EACCES rather than ENOENT, and rethrowing those stopped callers who
+        // could have answered with --start. Reading a start time is one way to learn an identity,
+        // never the only one, so a refusal here is reported, not fatal. Output that did arrive is
+        // still judged below: an unreadable value is an integrity problem and does throw.
+        refusals.push(`${shell} ${describeRefusal(error)}`);
+        continue;
       }
       const value = stdout.trim();
       if (value === '') return null;
@@ -1221,7 +1234,7 @@ export async function processStartOf(pid: number): Promise<string | null> {
       return value;
     }
     throw new Error(
-      'Neither pwsh.exe nor powershell.exe can report process start times; pass --start.',
+      `Neither pwsh.exe nor powershell.exe can report process start times (${refusals.join('; ')}); pass --start with the time the process started, taken from the launch record of the process itself.`,
     );
   }
   if (process.platform === 'linux') {

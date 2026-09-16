@@ -291,3 +291,52 @@ Verification of the second round, in the order it ran:
 - Mutation: eleven mutants, each killed. Each second-round mutant is killed by its own new test: an unrecorded slot release, any release record ending a claim, the handoff used before the decision, a late winner keeping its paths, work mode ignoring undecided attempts, no lock-name limit, no second look for the earlier tool's claims, a decision overwriting the first, and a trimmed fork point. The first-round mutants still fail 5 and 13 tests. Sources were restored and compared by sha256 after each.
 - The pre-check's own scripts, rerun on the repaired code: a second slot release is refused and removes nothing; the long path is refused with nothing held; work mode is read-only; the later claim under the same handoff succeeds; fork points agree with `STEP_ID`. In the mixed-tool cases the third claimant after a role-only release is refused, while a directory claim, an alias and an exact-path race still let both tools hold, as the rollout requirement says.
 - Type check: full-project `tsc --noEmit` under the heavy slot, exit 0 with no diagnostics.
+
+### Third round, after the independent review rejected the second
+
+`C00.R-2` rejected candidate `b750406` on 2026-09-16 at 01:40 (`commit_authorized: false`) on two
+P1 findings, both reproduced by the reviewer against the earlier tool loaded from Git bytes at
+`a0341639`. This round repairs the one that is repairable here, and the environment defect that had
+blocked the review twice before it could start. Full evidence:
+`evidence/unified-20260913/C00.R-2-repair.md`.
+
+| finding | repair | tests |
+|---|---|---|
+| C00-R2-1: an unauthorized release still ends a **legacy** claim. `legacyActiveClaims` treated the presence of a `<id>.released.json` file as the release itself and never read it, so a release by a non-holder of the holder's role, or by the integrator with an empty reason, ended the claim and let a third owner take the path. The second round's authority check reached ordered claims only, because `releaseOf` and `releaseClaim` applied it behind a `!ordered` short-circuit. | The exemption is removed rather than narrowed: `releaseOf` no longer takes an `ordered` parameter, so no call site can reintroduce it, and `legacyActiveClaims` is expressed in terms of that single judgment instead of duplicating release-reading with a name set. Every claim now ends the same way, whichever tool wrote it — by its holder, or by the integrator with a recorded reason. An ambiguous legacy claim is retained until such a release exists. `releaseClaim` drops the same short-circuit, so a legacy claim whose `<id>.released.json` name is held by a record without authority is still releasable by its holder or the integrator, recorded at `claims/releases/<id>.json`; an unauthorized record can no longer make a claim unreleasable. | legacy release records (4) |
+| The producer's OS lookup fails in a sandbox. `processStartOf` fell through to `powershell.exe` only on `ENOENT` and rethrew everything else, so a sandbox that forbids the spawn raised a raw `spawn EPERM` and killed the run before any review work began — twice. | Any failure to *run* the shell is a reason to try the next one; when both refuse, the caller gets the actionable "pass `--start`" guidance naming each shell and why it refused, instead of the raw error. Output that did arrive is still judged, so an unreadable value remains an integrity error and still throws. Reading a start time is one way to learn an identity, never the only one. | existing command-line identity case; A/B proof against `b750406` in the evidence |
+
+**C00-R2-2 is not repaired and remains the rollout prerequisite.** The earlier tool checks only
+exact-path lock files, so no change inside this tool can make it see a directory claim: the
+reviewer's `R02` still fails by design, and the rollout requirement above is unchanged. Closing it
+is a documented, verified transition of every writer to an agreed repaired tool, which the reviewer
+states explicitly need not be a push.
+
+Blast radius was measured on the live coordination root before any edit, by judging every release
+record with the same `authoritative()` predicate: of 20 claims (15 legacy, 5 ordered), **none**
+stops being suppressed under the stricter rule, because every release already on disk is
+authoritative. The defect was real and reproducible but had never been exercised here, so the
+repair creates no reconciliation backlog.
+
+The candidate carries its own cases for this round in `tests/coordination.test.ts`, under
+`C00.R repair round 3: legacy release records`: an unauthorized record leaves a legacy claim held
+and a third claimant refused, the holder and the integrator-with-a-reason each still end it and
+recover at `claims/releases/<id>.json`, and an authoritative legacy release still ends the claim,
+so ambiguous claims are retained without retaining every claim. The reviewer's own suite
+(`C00.R-2-tests.patch`) is **not** carried in the candidate: it is applied at review time, as the
+reviewer applied it before, and it targets an external review worktree.
+
+Mutation, restoring and comparing the source by sha256 after each: re-opening the exemption for
+every claim is killed by five cases (two from round 2, three from round 3); re-opening it only for
+legacy claims, by trusting the `<id>.released.json` name again — the exact C00-R2-1 defect — is
+killed by the three round-3 cases and by no round-2 case, which is the review gap itself.
+
+Verification of the third round: `tests/coordination.test.ts` 85 and `tests/c00-independent.test.ts`
+27, so 112 passed; full `vitest run` green; `tsc --noEmit` exit 0; `vite build` exit 0. Run
+separately against the reviewer's suite, 20 of its 21 cases pass, the exception being `R02`, which
+is C00-R2-2 and fails by design.
+
+The work ran under `claim_mu3ovgkg_29143976`, taken through `handoff_mu3ouwwr_8516a66b` after the
+integrator released, with recorded reasons, the two claims left by `fable/pid 48352` — verified not
+running at 2026-09-16T01:48:40 and again at 01:56:03. `AGENTS.md`, `shared/contract-revision.ts`
+and `tests/contract-revision.test.ts` were released and not re-claimed: the six-family H01
+amendment is not part of this round.

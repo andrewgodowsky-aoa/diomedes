@@ -880,6 +880,126 @@ describe('C00.R repair round 2: release records', () => {
   );
 });
 
+describe('C00.R repair round 3: legacy release records', () => {
+  /** A claim as the earlier tool left it: a claim file with no attempt record behind it. */
+  const legacyClaim = async (owner: Owner, paths: readonly string[], claimId: string) => {
+    const layout = coordinationLayout(root);
+    await fs.mkdir(layout.claims, { recursive: true });
+    const claim: Claim = {
+      schema_version: 1,
+      claimId,
+      program: PROGRAM,
+      node: 'C00.I',
+      owner,
+      paths,
+      baseSha: 'b',
+      createdAt: '2026-09-13T02:00:00.000Z',
+      handoffFrom: null,
+    };
+    await fs.writeFile(path.join(layout.claims, `${claimId}.json`), JSON.stringify(claim, null, 2));
+    return claim;
+  };
+  const writeRelease = async (claimId: string, releasedBy: Owner, note: string) =>
+    fs.writeFile(
+      path.join(coordinationLayout(root).claims, `${claimId}.released.json`),
+      JSON.stringify(
+        { claimId, releasedBy, authority: 'holder', at: '2026-09-13T03:00:00.000Z', note },
+        null,
+        2,
+      ),
+    );
+
+  test.each<[string, () => Owner, string]>([
+    [
+      'another process of the holder role',
+      () => ({ ...astra, pid: 201 }),
+      'ended by the earlier tool',
+    ],
+    ['the integrator without a reason', () => fable, ''],
+  ])(
+    'a release written by %s does not end a legacy claim either',
+    async (_case, releasedBy, note) => {
+      const claimId = 'claim_legacy01_aaaaaaaa';
+      await legacyClaim(astra, ['tests/a.ts'], claimId);
+      await writeRelease(claimId, releasedBy(), note);
+      await writeJournal(root, astra, { at: '2026-09-13T01:02:00.000Z', event: 'present' });
+
+      // The file name is not the release: the record is read and judged, so the claim is held.
+      expect((await activeClaims(root)).map((claim) => claim.claimId)).toEqual([claimId]);
+      const refused = expectHeld(
+        await claimPaths(root, {
+          owner: fable,
+          node: 'C00.I',
+          baseSha: 'b',
+          paths: ['TESTS/A.TS'],
+        }),
+      );
+      expect(refused.heldBy?.claimId).toBe(claimId);
+      expect(
+        (await workMode(root, { me: fable, partner: 'astra', wantsToEdit: ['tests/a.ts'] })).mode,
+      ).toBe('read-only');
+
+      // The holder can still end it, recorded beside the claims because the name is taken.
+      expect((await releaseClaim(root, claimId, { by: astra, note: 'done' })).authority).toBe(
+        'holder',
+      );
+      expect(
+        JSON.parse(
+          await fs.readFile(
+            path.join(coordinationLayout(root).releases, `${claimId}.json`),
+            'utf8',
+          ),
+        ).claimId,
+      ).toBe(claimId);
+      expect(await activeClaims(root)).toEqual([]);
+      await expect(releaseClaim(root, claimId, { by: astra, note: 'again' })).rejects.toThrow(
+        /already released/,
+      );
+      expect(
+        (
+          await claimPaths(root, {
+            owner: fable,
+            node: 'C00.I',
+            baseSha: 'b',
+            paths: ['tests/a.ts'],
+          })
+        ).ok,
+      ).toBe(true);
+    },
+  );
+
+  test('the integrator recovers a legacy claim whose release record has no authority', async () => {
+    const claimId = 'claim_legacy02_bbbbbbbb';
+    await legacyClaim(astra, ['tests/b.ts'], claimId);
+    await writeRelease(claimId, { ...astra, pid: 202 }, 'ended by the earlier tool');
+    expect((await activeClaims(root)).map((claim) => claim.claimId)).toEqual([claimId]);
+
+    await expect(releaseClaim(root, claimId, { by: fable, note: '' })).rejects.toThrow(
+      /recorded reason/,
+    );
+    expect(
+      (await releaseClaim(root, claimId, { by: fable, note: 'owner stopped' })).authority,
+    ).toBe('integrator');
+    expect(await activeClaims(root)).toEqual([]);
+  });
+
+  test('an authoritative legacy release still ends the claim', async () => {
+    const byHolder = 'claim_legacy03_cccccccc';
+    await legacyClaim(astra, ['tests/c.ts'], byHolder);
+    await writeRelease(byHolder, astra, 'the holder ended it');
+    const byIntegrator = 'claim_legacy04_dddddddd';
+    await legacyClaim(astra, ['tests/d.ts'], byIntegrator);
+    await writeRelease(byIntegrator, fable, 'the integrator ended it, with a reason');
+
+    // Neither is held: the repair retains ambiguous claims, it does not retain every claim.
+    expect(await activeClaims(root)).toEqual([]);
+    for (const paths of [['tests/c.ts'], ['tests/d.ts']])
+      expect(
+        (await claimPaths(root, { owner: fable, node: 'C00.I', baseSha: 'b', paths })).ok,
+      ).toBe(true);
+  });
+});
+
 describe('C00.R repair round 2: the slot', () => {
   test('a retried release cannot remove the slot the next holder took', async () => {
     const held = await requestSlot(root, { owner: astra, purpose: 'vitest', node: 'C00.R' });
