@@ -16,6 +16,7 @@ import { TESTED_VERSIONS } from '../server/engines/service.js';
 import { CLAUDE_VERSION } from '../server/engines/claude.js';
 import { OPENCODE_VERSION } from '../server/engines/opencode.js';
 import { CURSOR_VERSION } from '../server/engines/cursor.js';
+import { DEVIN_VERSION } from '../server/engines/devin.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 // Records stay stable across platforms, so separators are always slashes.
@@ -181,7 +182,7 @@ async function main(): Promise<void> {
       // shared/permissions.ts declares protocolVersion 2 on the grant type; it exports no constant.
       scopedGrant: 2,
       reviewer: REVIEWER_PROTOCOL_VERSION, agent: AGENT_PROTOCOL_VERSION, harness,
-      engines: { testedVersions: TESTED_VERSIONS, claude: CLAUDE_VERSION, opencode: OPENCODE_VERSION, cursor: CURSOR_VERSION },
+      engines: { testedVersions: TESTED_VERSIONS, claude: CLAUDE_VERSION, opencode: OPENCODE_VERSION, cursor: CURSOR_VERSION, devin: DEVIN_VERSION },
     },
     verification: {
       typecheck: options.typecheck,

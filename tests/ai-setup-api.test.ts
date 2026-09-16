@@ -19,7 +19,12 @@ afterEach(async () => {
 });
 async function fixture(engine: ExternalEngine = 'claude-code') {
   const version = TESTED_VERSIONS[engine];
-  const accountRoute = engine === 'cursor' ? 'cursor:cursor-account' : 'claude-code:claude.ai';
+  const accountRoute =
+    engine === 'cursor'
+      ? 'cursor:cursor-account'
+      : engine === 'devin'
+        ? 'devin:devin-account'
+        : 'claude-code:claude.ai';
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-ai-api-'));
   const generate = vi.fn<TextEngineAdapter['generate']>(async (input) => ({
     ...input,
@@ -113,11 +118,12 @@ describe('first-run AI setup and the existing Work pipeline', () => {
     const markup = renderToStaticMarkup(
       createElement(AIConnections, { settings: initial, save: async () => {} }),
     );
-    expect(markup.match(/<section class="service"/g)).toHaveLength(4);
+    expect(markup.match(/<section class="service"/g)).toHaveLength(5);
     expect(markup).toContain('aria-label="Cursor"');
+    expect(markup).toContain('aria-label="Devin"');
     expect(
       (await api('/ai/status')).data.connections.map((c: { engine: string }) => c.engine),
-    ).toEqual(['claude-code', 'opencode', 'oh-my-pi', 'cursor']);
+    ).toEqual(['claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin']);
     expect(
       (await api('/ai/status')).data.connections.every(
         (c: { installation: string }) => c.installation === 'not-checked',
@@ -158,7 +164,26 @@ describe('first-run AI setup and the existing Work pipeline', () => {
     });
     expect(download).not.toHaveBeenCalled();
   });
-  it.each(['claude-code', 'cursor'] as const)(
+  it('offers Devin browser sign-in without a console command or managed download', async () => {
+    const { api } = await fixture();
+    const offer = await api('/ai/install/devin');
+    expect(offer.status).toBe(200);
+    expect(offer.data).toMatchObject({
+      engine: 'devin',
+      available: false,
+      source: 'https://devin.ai',
+    });
+    expect(offer.data.detail).toContain('Install Devin');
+    expect((await api('/ai/install/devin', 'POST', { consent: true })).status).toBe(503);
+    expect(() => loginCommand('devin')).toThrow('browser flow');
+    const download = vi.fn<typeof fetch>();
+    const installer = new EngineInstaller('unused', { fetch: download });
+    await expect(installer.install('devin', true)).rejects.toMatchObject({
+      code: 'INSTALL_UNSUPPORTED',
+    });
+    expect(download).not.toHaveBeenCalled();
+  });
+  it.each(['claude-code', 'cursor', 'devin'] as const)(
     'requires separate inference consent and retains %s on its thread',
     async (engine) => {
       const { api, generate } = await fixture(engine);
@@ -186,11 +211,16 @@ describe('first-run AI setup and the existing Work pipeline', () => {
         projectId: project.id,
         threadId: thread.id,
         model: 'sonnet',
-        accountRoute: engine === 'cursor' ? 'cursor:cursor-account' : 'claude-code:claude.ai',
+        accountRoute:
+          engine === 'cursor'
+            ? 'cursor:cursor-account'
+            : engine === 'devin'
+              ? 'devin:devin-account'
+              : 'claude-code:claude.ai',
       });
     },
   );
-  it.each(['claude-code', 'cursor'] as const)(
+  it.each(['claude-code', 'cursor', 'devin'] as const)(
     'keeps %s Plan read-only and Work proposals behind exact approval and History',
     async (engine) => {
       const { api } = await fixture(engine);

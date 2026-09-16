@@ -29,12 +29,14 @@ const versions: Record<ExternalEngine, string> = {
   opencode: '1.18.4',
   'oh-my-pi': '18.0.6',
   cursor: '2026.08.11',
+  devin: '3000.10.23',
 };
 const names: Record<ExternalEngine, string> = {
   'claude-code': 'Claude Code',
   opencode: 'OpenCode',
   'oh-my-pi': 'oh-my-pi',
   cursor: 'Cursor',
+  devin: 'Devin',
 };
 const modelOf = (engine: ExternalEngine): EngineModel => ({
   slug: `${engine}/fixture-model`,

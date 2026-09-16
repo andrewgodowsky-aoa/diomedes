@@ -8,6 +8,7 @@ import { ClaudeAdapter, CLAUDE_VERSION } from './claude.js';
 import { OpenCodeAdapter } from './opencode.js';
 import { OmpAdapter } from './omp.js';
 import { CursorAdapter, cursorCommand, resolveCursorEntry } from './cursor.js';
+import { DevinAdapter } from './devin.js';
 import { managedBinary, verifyManagedBinary } from './install.js';
 import { capture, engineEnvironment, EngineError } from './process.js';
 import type { TextEngineAdapter, TextRequest } from './contract.js';
@@ -24,6 +25,7 @@ export const TESTED_VERSIONS: Record<ExternalEngine, string> = {
   opencode: '1.18.4',
   'oh-my-pi': '18.0.6',
   cursor: '2026.08.11',
+  devin: '3000.10.23',
 };
 export interface EngineServiceDeps {
   discover(): Promise<IntegrationStatus[]>;
@@ -82,6 +84,7 @@ export class EngineService {
         if (engine === 'claude-code') return new ClaudeAdapter(file, cwd);
         if (engine === 'opencode') return new OpenCodeAdapter(file, cwd);
         if (engine === 'cursor') return new CursorAdapter(file, cwd);
+        if (engine === 'devin') return new DevinAdapter(file, cwd);
         return new OmpAdapter(file, cwd);
       },
       ...deps,
@@ -111,7 +114,7 @@ export class EngineService {
       const found = await this.deps.discover();
       for (const id of EXTERNAL_ENGINES) {
         let hit = found.find((row) => row.id === id && row.found);
-        if (!hit && this.nativeDiscovery && id !== 'cursor') {
+        if (!hit && this.nativeDiscovery && id !== 'cursor' && id !== 'devin') {
           const file = managedBinary(this.root, id);
           try {
             await fs.access(file);
@@ -215,6 +218,7 @@ export class EngineService {
     try {
       if (
         engine !== 'cursor' &&
+        engine !== 'devin' &&
         path.resolve(saved.location) === path.resolve(managedBinary(this.root, engine))
       )
         await verifyManagedBinary(this.root, engine);
@@ -303,7 +307,9 @@ export class EngineService {
         'Selected text is sent to the chosen service using its native account route.',
         engine === 'cursor'
           ? 'Cursor denies tools through native permissions and stops on tool events; this is not an operating-system sandbox.'
-          : 'Tools are disabled by the engine configuration; this is not an operating-system sandbox.',
+          : engine === 'devin'
+            ? 'Devin runs in ask mode with project deny rules and stops on tool events; its own MCP configuration still loads. This is not an operating-system sandbox.'
+            : 'Tools are disabled by the engine configuration; this is not an operating-system sandbox.',
         'Diomedes reviews exact file proposals through its existing approvals and History.',
         'Usage remaining is unknown unless reported by the provider.',
       ],

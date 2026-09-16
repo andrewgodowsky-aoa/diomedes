@@ -13,3 +13,4 @@ output/
 .remember/
 .data-*
 .profile-smoke/
+.dev-server.json

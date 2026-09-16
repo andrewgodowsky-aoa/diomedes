@@ -1,11 +1,13 @@
 # DIOMEDES PROJECT MEMORY — CANONICAL
 
-Version: 2026-09-10.7
-Last reconciled: September 10, 2026
+Version: 2026-09-15.4
+Last reconciled: September 15, 2026
 Cloud canonical: 13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw
 Repository mirror: docs/DIOMEDES_PROJECT_MEMORY.md
 
 ## How this memory is organized
+
+Current entry offer, pricing version 2026-09-15.2: the 90-Day Workflow Starter is $299/month for 3 months ($897 total), with no separate Business subscription during the program. Scope is one supported workflow, one location/unit, up to two supported sources/connections and 60-90 minutes remote onboarding, reasonable rules, bounded usage, human review and handoff. Custom connectors/integrations, substantial cleanup, on-site implementation, major engineering, unlimited support, priority incident response and an SLA are excluded. After 90 days there is no automatic continuation: stop, or separately agree planned self-managed Business from $199/org/month once operational, or Managed from $750/month with scope and availability confirmed. Billing and operational managed service remain in development. This is a distinct bounded entry engagement; it does not lower the professional implementation anchors below.
 
 This is the current definition and decision index. The complete previous standing-memory body is retained unchanged at docs/reference/DIOMEDES_PROJECT_MEMORY_BASE_2026-09-10.2.md, with a cloud snapshot at https://docs.google.com/document/d/1VEqHFWvKNVGLcLP88GNnQmWqcddWTj940Aw15U7WEN8/edit. Its detailed product requirements remain incorporated where not explicitly superseded here. They have not been discarded or relabeled as implemented. Use this current index first; retrieve the detailed base sections relevant to the task rather than injecting every past discussion indiscriminately.
 
@@ -23,7 +25,7 @@ Mode → Agent → Model → Effort is the conceptual control model, not a rigid
 
 Self-configuration means structured facts → reviewable candidate → deterministic validation → rehearsal and approval → versioned activation → observed operation → reviewed improvements. Use deterministic templates with optional model assistance, existing mutation/admission services and expected-base checks. Missing connections stay unsupported; rollback never restores revoked grants or old credit. Corrections change an attempt, not silently the Agent or organization's governing rules.
 
-The illustrative $300/month with $100 inference allowance is a commercial candidate; existing approved price anchors remain until explicitly superseded. Entitlement, Trust permission and budget admission are different checks. Managed inference uses company-held server credentials and tenant-bound reserve/settle accounting including Team/reviewer/correction calls. Local/BYO is not silently charged against that allowance. No unlimited usage, automatic overage, invisible payer fallback or assumption that online inference provides an always-on execution host.
+The September 15, 2026 commercial decision supersedes the older price anchors. Diomedes Business is planned from $199/month per organization, but the exact included managed-inference allowance remains unresolved and must be cost-qualified rather than inherited from the older illustrative $300/$100 candidate. Entitlement, Trust permission and budget admission are different checks. Managed inference uses company-held server credentials and tenant-bound reserve/settle accounting including Team/reviewer/correction calls. Local/BYO is not silently charged against that allowance. No unlimited usage, automatic overage, invisible payer fallback or assumption that online inference provides an always-on execution host.
 
 Standing Opus 5 prompting preference: complete context, explicit scope/end state, short milestone prompts and repository references. Avoid giant phase-by-phase instructions, repeated warnings, exhaustive checks in every prompt and redundant self-verification/subagent review. Mandatory repository checks still apply. GLM implementation prompts may use Goal / Context / Constraints / Done when. See docs/product/personal-business/08_SOURCES_AND_LICENSING.md for checked first-party guidance.
 
@@ -121,6 +123,26 @@ Business deployment can be local, hosted or hybrid based on workload, privacy, c
 
 Recursive improvement remains observed failure/correction -> candidate rule/skill/prompt/routing/workflow change -> replay/eval -> versioned promotion -> monitor/rollback. Weight tuning follows sufficient legitimate data and measured gains; it is not the first implementation milestone. Candidates cannot self-promote, rewrite permissions or change data access/billing/tenant scope. Keep provenance, held-out evaluations, independent checks where warranted and rollback. Never train on private customer material merely because it was processed during a job.
 
+## Customer-owned Private AI - owner decision, 2026-09-15
+
+Diomedes Private AI is a major Business expansion for sustained workloads, particularly shared work across locations. It is engineering, integration, deployment, reliability and support around customer-owned infrastructure; models, inference runtimes and hardware remain interchangeable resources. The customer normally sees useful capabilities rather than model files, quantization or runtime details. Core extends existing H01/direct-model, execution, Trust, capability-pack and remote-host boundaries; it does not create a competing hardware product or agent runtime.
+
+Cloud, private/local and hybrid are deployment choices. Local-only data cannot silently move to cloud after an outage; customer-owned remote hosts still require destination authorization and client/location isolation. Always-on, business-hours, manual, maintenance and supported wake/reconnect policies are planned choices, not current runtime promises. Low-power idle may be preferable to nightly shutdown.
+
+Clients normally buy hardware directly, retaining receipt/warranty/replacement relationships; facilitated hardware passes through at cost, without markup. Stopping Managed Diomedes must not intentionally disable purchased local infrastructure: retain a functional self-managed deployment where technically/licensing-wise possible, with documented configuration, backup/recovery and support offboarding. Paid company-funded inference and ongoing human work remain separate services, not artificial lock-in.
+
+Preserve internal/personal use -> consultant operating layer -> narrow restaurant pilot -> measured case study -> repeatable hospitality. Private/hybrid infrastructure follows workload evidence; the first restaurant and Starter do not require hardware. Pricing 2026-09-15.3 separates the new strategic assessment/deployment ranges from smaller existing local setup services. No new public price constant is approved by this pass.
+
+"Should Your Business Run AI Locally?" is a future transparent three/five-year TCO assessment with cloud-preferred and no-break-even outcomes. "Diomedes Verified Local" is a future repeatable workload-evidence program, not certification. Current source has discovery, catalog, durable-work and fallback-policy foundations; local model execution, lifecycle, scheduling and production remote/multi-location management remain gaps. Definitions and inventory: `docs/product/2026-09-15-local-infrastructure.md`; commercial policy: `docs/business/2026-09-15-private-ai.md`; planned implementation: LI-01 through LI-12 in `docs/implementation/2026-09-15-local-infrastructure-work-items.md`.
+
+## Paid-service pages: owner-first, optionally deep
+
+Paid-service and scope pages retain a plain-English outcome when disclosures are closed and expose grouped engineering, configuration, integration, testing, training, handover and support for buyers who choose to inspect them. This owner decision supersedes the absolute rule that owners and technical evaluators cannot share a commercial page. Product implementation internals can still live in Docs/Roadmap. Preserve the Field design, native keyboard behavior, reduced motion and readable mobile columns; do not nest disclosures merely for complexity.
+
+The website uses one `ScopeDisclosure.astro` primitive with typed `serviceScope.ts` data. Agreed professional deliverables remain separate from product capability status; broad scope lists never imply every item belongs in every quote. Keep model/runtime/hardware independence, explicit human control, hardware at cost, functional self-managed handover, bounded support and the option to recommend cloud AI. Public prices remain unchanged under pricing 2026-09-15.3.
+
+The pattern is published on pricing, Private AI and Security from source `08f0b0fc52de1c249162d34f6b95bdbb531b99dd`; publication evidence is `diomedes-site/docs/verification/2026-09-15-service-scope-publication/REPORT.md`. The owner requirement is `docs/business/SERVICE_SCOPE_PROGRESSIVE_DISCLOSURE_2026-09-15.md`. This website completion changes no Local Infrastructure runtime status: LI-01 through LI-12 retain their existing acceptance gates.
+
 ## Current business correction — variety is the thesis
 
 One configurable product should serve multiple kinds of small business. Hospitality and remodeling/construction administration are initial validation contexts, not competing company identities. Generic primitives include intake, classification, retrieval, comparisons, drafts/quotes, follow-ups, weekly briefs, invoice capture and scheduling coordination. Industry packs should reuse the core through configurations, mappings, tools, skills and rules; new vendor semantics still need real integration work and tests. Two examples do not prove universal compatibility.
@@ -129,11 +151,11 @@ Services-assisted software adoption is an intended route. Locally delivered SaaS
 
 Andrew's current hospitality relationships are in North Carolina's Triangle. Employer/prospect relationships do not establish ownership, signed pilot status, lawful data access, purchasing approval, references or endorsement. A remodeling contact is also a prospect/example unless separately authorized. Keep names/logos and internal revenue projections off public marketing without permission. Do not infer willingness to buy from a named establishment's size or presumed software sophistication.
 
-Andrew is willing to hire. A support/implementation hire is an option after measured workload and cash contribution justify it, not an immediate commitment or proof of unlimited capacity. Preserve affordable entry and scope larger work honestly instead of simply multiplying every price.
+Andrew is willing to hire. A support/implementation hire is an option after measured workload and cash contribution justify it, not an immediate commitment or proof of unlimited capacity. Preserve an accessible software product while pricing professional implementation, on-site work and recurring human responsibility high enough to support dependable delivery.
 
 ## Commercial decisions and research status
 
-Approved public anchors remain first hour free; $100/hour agreed continuation; $299 Quick Start; $350 audit; $249 local plan; from $749 single-machine local deployment; from $1,250 shared local or bounded pilot; from $2,500 broader/custom implementation; planned Business from $99/month per organization; optional Managed from $249/month. Consult docs/business/PRICING_STRATEGY_2026-09-10.md for scopes and credits. Free discovery is distinct from private pilot waivers and from saying the product is free for now.
+Current commercial anchors are governed by docs/business/PRICING_STRATEGY_2026-09-15.md: first fit hour free; focused advisory $150/hour; Quick Start from $750; Workflow Audit / Weak Point Map from $1,000; Local Hardware and Model Plan $500; Local AI Deployment from $2,500 plus hardware/travel; shared/team or on-site deployment from $5,000; bounded pilot from $3,500; broader/custom implementation from $5,000, with substantial multi-system or multi-location work commonly $7,500-$15,000+ by scope; planned Business from $199/month per organization; Managed Diomedes from $750/month; Fractional AI Ops from $2,000/month. The first three-location restaurant design partner may receive a $1,500-$2,500 founding rate against an approximately $4,500 reference-value bounded pilot because the engagement also produces structured product-learning value. Free discovery is distinct from private design-partner discounts and from saying the product is free for now.
 
 A $39-$49 starter, blanket $175-$225 hourly rate, and high minimum replacement prices from the outside assessment remain proposals, not approved prices. Larger scope-based implementation quotes are possible under the existing custom line. Monthly managed support is not unlimited labor or a 24/7 staffed guarantee.
 
@@ -141,7 +163,7 @@ Company-funded hosted Diomedes inference is paid-account-only through a server-c
 
 No measured average savings, sales conversion rate, signed design partner, customer count or probability-weighted income forecast was established in the supplied material. Use scenarios and collect actual evidence. Time returned is net of new review/correction/maintenance, and salary capacity is not automatically cash savings.
 
-Marketability/income analysis: docs/business/MARKETABILITY_AND_INCOME_2026-09-10.md; cloud https://docs.google.com/document/d/17-_I4q-h95yVQiY-G8mrySVM6V92BRnYcg8XnQsJNV4/edit. Scenario inputs: docs/business/income_model_2026-09-10.json. These are planning assumptions, not customer-facing promises.
+Current pricing: docs/business/PRICING_STRATEGY_2026-09-15.md and the canonical Drive pricing document. The September 10 marketability/income analysis and income_model_2026-09-10.json remain historical planning assumptions based on the old price ladder until deliberately recalculated; they are not current quotes, forecasts or customer-facing promises.
 
 ## Website and execution handoff
 

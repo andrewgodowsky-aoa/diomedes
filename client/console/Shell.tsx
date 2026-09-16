@@ -243,7 +243,7 @@ export function Shell({
   // Live engine catalogues for the Models group, read exactly as the Picker does.
   useEffect(() => {
     let alive = true;
-    for (const id of ['codex', 'claude-code', 'opencode', 'oh-my-pi', 'cursor'] as const) {
+    for (const id of ['codex', 'claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin'] as const) {
       const found = integrations.find((i) => i.id === id);
       const on =
         !!found &&

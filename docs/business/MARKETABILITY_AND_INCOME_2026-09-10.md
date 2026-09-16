@@ -1,5 +1,7 @@
 # Diomedes: marketability, income scenarios and commercial execution
 
+> Historical planning model using the September 10 price ladder. Current quotes follow [September 15 pricing](PRICING_STRATEGY_2026-09-15.md), version 2026-09-15.1. The revenue scenarios and linked JSON remain unchanged assumptions until deliberately recalculated; the pricing revision does not validate a forecast.
+
 Version: 2026-09-10.1
 Date: September 10, 2026
 Status: Founder planning assessment, not a guaranteed earnings forecast or public customer claim.

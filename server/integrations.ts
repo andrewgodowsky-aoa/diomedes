@@ -709,6 +709,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         pick('opencode'),
         pick('oh-my-pi'),
         pick('cursor'),
+        pick('devin'),
         pick('hermes'),
         localai,
         pick('ollama'),

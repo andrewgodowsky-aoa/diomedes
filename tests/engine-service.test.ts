@@ -70,6 +70,7 @@ describe('AI setup readiness and dispatch', () => {
       'opencode',
       'oh-my-pi',
       'cursor',
+      'devin',
     ]);
     expect(discover).not.toHaveBeenCalled();
     expect(inspect).not.toHaveBeenCalled();

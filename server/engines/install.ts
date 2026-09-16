@@ -41,7 +41,7 @@ const RELEASES = {
       'Uses a separate native oh-my-pi profile with an OpenAI API key configured in models.yml. API billing is separate from ChatGPT; credentials stay with oh-my-pi.',
   },
 } satisfies Record<
-  Exclude<ExternalEngine, 'cursor'>,
+  Exclude<ExternalEngine, 'cursor' | 'devin'>,
   {
     version: string;
     publisher: string;
@@ -56,12 +56,16 @@ const RELEASES = {
 export function managedBinary(root: string, engine: ExternalEngine) {
   if (engine === 'cursor')
     throw new EngineError('INSTALL_UNSUPPORTED', 'Install Cursor from cursor.com, then recheck.');
+  if (engine === 'devin')
+    throw new EngineError('INSTALL_UNSUPPORTED', 'Install Devin, then recheck.');
   const release = RELEASES[engine];
   return path.join(root, 'installed', engine, release.version, release.binary);
 }
 export async function verifyManagedBinary(root: string, engine: ExternalEngine) {
   if (engine === 'cursor')
     throw new EngineError('INSTALL_UNSUPPORTED', 'Cursor is not managed by Diomedes.');
+  if (engine === 'devin')
+    throw new EngineError('INSTALL_UNSUPPORTED', 'Devin is not managed by Diomedes.');
   // OpenCode's ZIP digest and its extracted executable digest are different.
   // This executable digest was obtained only after verifying the pinned ZIP.
   const expected =
@@ -151,6 +155,21 @@ export class EngineInstaller {
         detail:
           'Install Cursor from cursor.com, then check this computer again. Diomedes does not install Cursor.',
       };
+    if (engine === 'devin')
+      return {
+        engine,
+        publisher: 'Cognition',
+        source: 'https://devin.ai',
+        version: '3000.10.23',
+        destination: 'Chosen by the Devin installer',
+        dependencies: [],
+        privileges: 'Managed by the Devin installer.',
+        account:
+          'Sign in through the Devin browser flow. Devin ACP authenticates each session and does not reuse the Devin CLI sign-in.',
+        available: false,
+        detail:
+          'Install Devin Desktop or the Devin CLI, then check this computer again. Diomedes does not install Devin.',
+      };
     const release = RELEASES[engine];
     const available =
       (this.deps.platform ?? process.platform) === 'win32' &&
@@ -180,7 +199,7 @@ export class EngineInstaller {
         'CONSENT_REQUIRED',
         'Review and confirm the selected installation first.',
       );
-    if (engine === 'cursor' || !this.offer(engine).available)
+    if (engine === 'cursor' || engine === 'devin' || !this.offer(engine).available)
       throw new EngineError('INSTALL_UNSUPPORTED', this.offer(engine).detail);
     if (this.active.has(engine))
       throw new EngineError('INSTALL_ACTIVE', 'This tool already has an installation in progress.');

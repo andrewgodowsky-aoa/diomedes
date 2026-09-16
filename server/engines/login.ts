@@ -6,12 +6,18 @@ import type { EngineConnection } from '../../shared/engines.js';
 import { killOwnedProcess } from '../integrations.js';
 import { engineEnvironment, EngineError, psQuote } from './process.js';
 import { cursorCommand, resolveCursorEntry } from './cursor.js';
+import { resolveDevinEntry, startDevinLogin } from './devin.js';
 
 export function loginCommand(engine: ExternalEngine): string[] {
   if (engine === 'claude-code')
     return ['--safe-mode', '--setting-sources', '', 'auth', 'login', '--claudeai'];
   if (engine === 'opencode') return ['auth', 'login', '--pure', '--provider', 'opencode-go'];
   if (engine === 'cursor') return ['login'];
+  if (engine === 'devin')
+    throw new EngineError(
+      'LOGIN_UNSUPPORTED',
+      'Devin signs in through its ACP browser flow, not a console command.',
+    );
   throw new EngineError(
     'LOGIN_UNSUPPORTED',
     'Direct OpenAI API access uses the native OMP models.yml configuration, not OAuth login.',
@@ -90,6 +96,35 @@ export class NativeLogin {
       };
     const cwd = path.join(this.root, engine);
     await fs.mkdir(cwd, { recursive: true });
+    if (engine === 'devin') {
+      // Devin ACP authenticates its own process and never reuses the native CLI
+      // sign-in, so login starts the browser flow instead of a console window.
+      const entry = await resolveDevinEntry(connection.location);
+      const { child, done } = startDevinLogin(entry, cwd);
+      await new Promise<void>((resolve, reject) => {
+        child.once('spawn', resolve);
+        child.once('error', () =>
+          reject(new EngineError('LOGIN_FAILED', 'The Devin sign-in could not start.')),
+        );
+      });
+      const timer = setTimeout(() => {
+        void this.stop(engine);
+      }, 600_000);
+      timer.unref();
+      this.active.set(engine, { child, timer });
+      child.once('exit', () => {
+        clearTimeout(timer);
+        this.active.delete(engine);
+      });
+      done.then(
+        () => this.stop(engine),
+        () => this.stop(engine),
+      ).catch(() => {});
+      return {
+        detail:
+          'Complete the Devin sign-in in the browser window that opened, then use Check sign-in and models in Diomedes.',
+      };
+    }
     const env = engineEnvironment();
     if (engine === 'opencode') {
       const nativeHome = process.env.USERPROFILE ?? process.env.HOME;

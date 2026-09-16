@@ -1,5 +1,7 @@
 # Diomedes pricing and service scope
 
+> Historical pricing snapshot. The approved [September 15 pricing decision](PRICING_STRATEGY_2026-09-15.md), version 2026-09-15.1, supersedes the price anchors below. Retained for provenance; do not use this table for current quotes.
+
 Version: 2026-09-10.3
 Date: September 10, 2026
 Status: Approved launch price anchors retained; new operating recommendations are explicitly proposals.
