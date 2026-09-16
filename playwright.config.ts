@@ -58,6 +58,7 @@ export default defineConfig({
     'field.spec.ts',
     'ai-engines-ui.spec.ts',
     'autonomy-ui.spec.ts',
+    'change-review-ui.spec.ts',
     'reviewer-ui.spec.ts',
     'agent-ui.spec.ts',
     'app-updates-ui.spec.ts',

@@ -233,6 +233,10 @@ export class NativeWorkService {
     private reviewer?: ReviewerService,
     /** Resolves the worker identity. Absent leaves runs unattributed, as before. */
     private agents?: AgentRegistry,
+    /** Automatic Change Review baseline capture; absent in tests that predate it. */
+    private changeReview?: {
+      runStarted(projectId: string, sessionId: string, taskId: string | null): Promise<void>;
+    },
   ) {}
   running(projectId: string) {
     return this.runs.has(projectId);
@@ -526,6 +530,8 @@ export class NativeWorkService {
       await this.fail(run, error);
       throw error;
     }
+    // The baseline precedes generation: every later write is inside its window.
+    await this.changeReview?.runStarted(projectId, session.id, session.taskId);
     // The network request is deliberately not awaited while holding Store.locked.
     const job = this.prepare(run);
     this.jobs.add(job);

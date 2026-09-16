@@ -45,6 +45,7 @@ import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText }
 import { buildSupportBundle, renderSupportBundle } from './support-bundle.js';
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
+import { ChangeReviewService } from './change-review/service.js';
 import { askCodex, getIntegrationStatuses, type NativeTeamOptions } from './integrations.js';
 import { MODES, modeOf } from './modes.js';
 import { fakeCodexSnapshot, usageService } from './usage.js';
@@ -391,7 +392,11 @@ function validateSettings(current: Settings, body: unknown): Settings {
 export async function createApp(options: AppOptions) {
   const store = new Store(path.resolve(options.dataDir), options.projectRoot);
   await store.init();
-  const work = new WorkService(store, options.stepMs);
+  // Automatic Change Review: deterministic per-run evidence. Constructed before
+  // the work services so every run can capture its baseline from the start.
+  const changeReview = new ChangeReviewService(store);
+  await changeReview.init();
+  const work = new WorkService(store, options.stepMs, changeReview);
   const engines = options.engineService ?? new EngineService(path.join(store.dataDir, 'engines'));
   const installer = new EngineInstaller(engines.root);
   const login = new NativeLogin(engines.root);
@@ -478,6 +483,7 @@ export async function createApp(options: AppOptions) {
       }),
     reviewer,
     agents,
+    changeReview,
   );
   const harness = createHarnessHost({
     store,
@@ -1804,6 +1810,26 @@ export async function createApp(options: AppOptions) {
       ),
     ),
   );
+  // Automatic Change Review: the deterministic per-run manifest, and the two
+  // fixed Business examples running through the same pipeline.
+  app.get(
+    '/api/projects/:id/change-review/session/:sessionId',
+    route(async (req) => ({
+      manifest: await changeReview.manifestForSession(id(req), String(req.params.sessionId)),
+    })),
+  );
+  app.get(
+    '/api/projects/:id/change-review/task/:taskId',
+    route(async (req) => ({
+      manifest: await changeReview.manifestForTask(id(req), String(req.params.taskId)),
+    })),
+  );
+  app.get(
+    '/api/projects/:id/change-review/examples/:exampleId',
+    route(async (req) => ({
+      manifest: await changeReview.exampleManifest(String(req.params.exampleId), id(req)),
+    })),
+  );
   app.get(
     '/api/projects/:id/conversations',
     route(async (req) => ({ conversations: store.state(id(req)).conversations })),
@@ -2608,6 +2634,7 @@ export async function createApp(options: AppOptions) {
   app.locals.store = store;
   app.locals.work = work;
   app.locals.nativeWork = nativeWork;
+  app.locals.changeReview = changeReview;
   app.locals.harness = harness;
   app.locals.connections = connections;
   app.locals.workControl = workControl;
@@ -2617,6 +2644,10 @@ export async function createApp(options: AppOptions) {
     deliveryClosed = true;
     store.off('change', deliverFor);
     await Promise.allSettled([...deliveries]);
+    // Change-review writes into the data dir; drain its queued builds before
+    // the remaining services' close persists can settle, or a late record
+    // write can race removal of the data dir.
+    await changeReview.close();
     engines.close();
     await login.close();
     await connections.close();

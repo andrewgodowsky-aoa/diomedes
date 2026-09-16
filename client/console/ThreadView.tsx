@@ -29,6 +29,7 @@ import { ProjectInstructions } from './ProjectInstructions';
 import { FollowUpQueue } from './FollowUpQueue';
 import { StopMenu, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
+import { ChangeReview } from './ChangeReview';
 
 function fmtDur(ms: number): string {
   const s = ms / 1000;
@@ -411,6 +412,16 @@ export function ThreadView({
               needs={allNeeds ?? needs}
               history={history}
             />
+          )}
+          {projectId && task && (
+            <ChangeReview
+              projectId={projectId}
+              taskId={task.id}
+              refreshKey={`${last?.id ?? ''}:${last?.state ?? ''}:${changes.length}:${history.length}`}
+            />
+          )}
+          {projectId && !task && (
+            <ChangeReview projectId={projectId} taskId={null} refreshKey="" />
           )}
           {needs.map((n) => (
             <div id={`need-${n.id}`} key={n.id}>
