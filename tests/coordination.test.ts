@@ -6,12 +6,17 @@
  * These tests run against a temporary root; they never touch the real one
  * under the Git common directory.
  */
-import { describe, expect, test, beforeEach, afterEach } from 'vitest';
+import { describe, expect, test, beforeEach, afterEach, vi } from 'vitest';
+import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
+  activeClaims,
   claimPaths,
+  currentSlot,
+  pendingAttempts,
   releaseClaim,
   requestSlot,
   releaseSlot,
@@ -19,6 +24,15 @@ import {
   writeJournal,
   readJournal,
   CHARTER_HOT_FILES,
+  PROGRAM,
+  canonicalPath,
+  coordinationLayout,
+  isHotFile,
+  issueHandoff,
+  orderEntryName,
+  ownerFromArgs,
+  processStartOf,
+  type Claim,
   type Owner,
 } from '../scripts/coordination.js';
 
@@ -193,4 +207,1047 @@ describe('journals and work mode', () => {
     expect(mode.mode).toBe('read-only');
     expect(mode.why).toMatch(/integrator/);
   });
+});
+
+// --- C00.R repair: C00-R1 path identity and overlap, C00-R2 handoffs, C00-R3 identity ---
+
+const keyOf = (spelling: string) => {
+  const result = canonicalPath(spelling);
+  if (!result.ok) throw new Error(`${spelling}: ${result.detail}`);
+  return result.value.key;
+};
+/** Test-local overlap: equal identities, or one is a directory above the other. */
+const overlaps = (left: readonly string[], right: readonly string[]) =>
+  left.some((a) =>
+    right.some((b) => {
+      const [x, y] = [keyOf(a), keyOf(b)];
+      return x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`);
+    }),
+  );
+const worker = (index: number): Owner => ({
+  ...astra,
+  pid: 1000 + index,
+  worktree: `F:/wt/contender-${index}`,
+});
+const expectHeld = (result: Awaited<ReturnType<typeof claimPaths>>) => {
+  if (result.ok) throw new Error(`expected a refusal, got claim ${result.claim.claimId}`);
+  return result;
+};
+
+describe('canonical path identity', () => {
+  test('spellings of one repository path resolve to one identity', () => {
+    const spellings = [
+      'tests/a.ts',
+      './tests/a.ts',
+      'tests\\a.ts',
+      'TESTS/A.TS',
+      'tests/../tests/a.ts',
+      'tests//a.ts',
+      'tests/./a.ts',
+    ];
+    expect(new Set(spellings.map(keyOf))).toEqual(new Set(['tests/a.ts']));
+    expect(canonicalPath('evidence/unified-20260913/')).toEqual({
+      ok: true,
+      value: {
+        path: 'evidence/unified-20260913/',
+        key: 'evidence/unified-20260913',
+        directory: true,
+      },
+    });
+    expect(canonicalPath('evidence/x/..')).toEqual({
+      ok: true,
+      value: { path: 'evidence/', key: 'evidence', directory: true },
+    });
+  });
+
+  test.each([
+    '',
+    '   ',
+    '.',
+    'tests/..',
+    '/etc/passwd',
+    '\\\\server\\share\\a.ts',
+    'C:/Diomedes/a.ts',
+    'c:a.ts',
+    '../outside.ts',
+    'tests/../../outside.ts',
+    'a.ts:stream',
+    'con',
+    'tests/NUL.txt',
+    'tests/a.ts.',
+    'tests/a.ts ',
+    ' tests/a.ts',
+    'PROGRA~1/a.ts',
+    'tests/\u0000a.ts',
+    'tests/\u00e9.ts',
+    'tests/a?.ts',
+    'x'.repeat(1025),
+  ])('refuses the ambiguous or escaping spelling %j', (spelling) => {
+    expect(canonicalPath(spelling).ok).toBe(false);
+  });
+
+  test('hot-file identity covers respellings, parents and descendants, and fails closed', () => {
+    for (const hot of [
+      'SERVER/APP.TS',
+      'server/../server/app.ts',
+      '.\\server\\app.ts',
+      'shared/',
+      'shared',
+      'desktop/main.ts',
+      'DESKTOP',
+      '',
+      '../server/app.ts',
+    ])
+      expect([hot, isHotFile(hot)]).toEqual([hot, true]);
+    for (const cold of ['server/apps.ts', 'server/app.ts.bak', 'desktopx/a.ts', 'tests/app.ts'])
+      expect([cold, isHotFile(cold)]).toEqual([cold, false]);
+  });
+
+  test('a claim records canonical paths, sorted, without paths its own directory covers', async () => {
+    const result = await claimPaths(root, {
+      owner: astra,
+      node: 'C00.R',
+      baseSha: 'b',
+      paths: ['tests/a.ts', 'tests/', './TESTS/', 'b.md'],
+    });
+    if (!result.ok) throw new Error(result.detail);
+    expect(result.claim.paths).toEqual(['b.md', 'tests/']);
+  });
+
+  test('one invalid path refuses the whole claim', async () => {
+    const result = expectHeld(
+      await claimPaths(root, {
+        owner: astra,
+        node: 'C00.R',
+        baseSha: 'b',
+        paths: ['tests/a.ts', '../x.ts'],
+      }),
+    );
+    expect(result.reason).toBe('invalid');
+    expect(result.detail).toContain('../x.ts');
+  });
+
+  test('a parent directory spelled without a slash conflicts with files under it, a sibling prefix does not', async () => {
+    const claim = (owner: Owner, paths: string[]) =>
+      claimPaths(root, { owner, node: 'C00.R', baseSha: 'b', paths });
+    expect((await claim(fable, ['tests/unit/a.ts'])).ok).toBe(true);
+    expect(expectHeld(await claim(astra, ['tests/unit'])).reason).toBe('held');
+    expect(expectHeld(await claim(astra, ['TESTS'])).reason).toBe('held');
+    expect((await claim(astra, ['tests/unit-other.ts'])).ok).toBe(true);
+  });
+});
+
+describe('overlap exclusion under concurrency', () => {
+  test('contenders racing for spellings of one path and its directories: exactly one winner, and every loser names it', async () => {
+    const spellings = [
+      'tests/a.ts',
+      'TESTS/A.TS',
+      'tests/../tests/a.ts',
+      './tests/a.ts',
+      'tests/',
+      'tests',
+      'tests\\a.ts',
+      'tests/./a.ts',
+    ];
+    for (let round = 0; round < 5; round += 1) {
+      const roundRoot = path.join(root, `round-${round}`);
+      const ordered = spellings.map((_, index) => spellings[(index + round) % spellings.length]);
+      const results = await Promise.all(
+        ordered.map((spelling, index) =>
+          claimPaths(roundRoot, {
+            owner: worker(index),
+            node: 'race',
+            baseSha: 'b',
+            paths: [spelling],
+          }),
+        ),
+      );
+      const winners = results.flatMap((result) => (result.ok ? [result.claim] : []));
+      expect(winners).toHaveLength(1);
+      for (const result of results) {
+        if (result.ok) continue;
+        expect(result.reason).toBe('held');
+        expect(result.heldBy?.claimId).toBe(winners[0].claimId);
+      }
+      const claimFiles = (await fs.readdir(path.join(roundRoot, 'claims'))).filter((name) =>
+        name.endsWith('.json'),
+      );
+      expect(claimFiles).toEqual([`${winners[0].claimId}.json`]);
+    }
+  });
+
+  test('racing nested and disjoint claims never leaves two overlapping winners', async () => {
+    const sets = [
+      ['tests/a.ts'],
+      ['tests/'],
+      ['tests/b.ts', 'docs/x.md'],
+      ['docs/'],
+      ['server/harness/run.ts'],
+      ['server/harness/'],
+      ['client/a.tsx'],
+      ['client/b.tsx'],
+    ];
+    for (let rotation = 0; rotation < sets.length; rotation += 1) {
+      const rotationRoot = path.join(root, `rotation-${rotation}`);
+      const ordered = sets.map((_, index) => sets[(index + rotation) % sets.length]);
+      const results = await Promise.all(
+        ordered.map((paths, index) =>
+          claimPaths(rotationRoot, { owner: worker(index), node: 'mixed', baseSha: 'b', paths }),
+        ),
+      );
+      const winners: Claim[] = results.flatMap((result) => (result.ok ? [result.claim] : []));
+      for (const [index, left] of winners.entries())
+        for (const right of winners.slice(index + 1))
+          expect([left.paths, right.paths, overlaps(left.paths, right.paths)]).toEqual([
+            left.paths,
+            right.paths,
+            false,
+          ]);
+      for (const [index, result] of results.entries()) {
+        if (result.ok) continue;
+        expect(result.reason).toBe('held');
+        const holder = winners.find((claim) => claim.claimId === result.heldBy?.claimId);
+        expect(holder).toBeDefined();
+        expect(overlaps(holder?.paths ?? [], ordered[index])).toBe(true);
+      }
+      expect(winners.map((claim) => claim.paths)).toEqual(
+        expect.arrayContaining([['client/a.tsx'], ['client/b.tsx']]),
+      );
+    }
+  });
+
+  test('an attempt that never decides blocks overlapping claims until its holder or the integrator ends it', async () => {
+    const layout = coordinationLayout(root);
+    await fs.mkdir(layout.attempts, { recursive: true });
+    await fs.mkdir(layout.order, { recursive: true });
+    const stuck: Claim = {
+      schema_version: 1,
+      claimId: 'claim_stuck00_0000abcd',
+      program: PROGRAM,
+      node: 'crashed',
+      owner: astra,
+      paths: ['tests/a.ts'],
+      baseSha: 'b',
+      createdAt: '2026-09-13T01:00:00.000Z',
+      handoffFrom: null,
+    };
+    const attemptFile = path.join(layout.attempts, `${stuck.claimId}.json`);
+    await fs.writeFile(attemptFile, JSON.stringify(stuck, null, 2));
+    await fs.link(attemptFile, path.join(layout.order, orderEntryName(0)));
+    const claim = (paths: string[]) =>
+      claimPaths(root, { owner: fable, node: 'C00.R', baseSha: 'b', paths, settleMs: 30 });
+
+    const blocked = expectHeld(await claim(['TESTS/A.TS']));
+    expect(blocked.reason).toBe('held');
+    expect(blocked.heldBy?.claimId).toBe(stuck.claimId);
+    expect(blocked.detail).toMatch(/not finished deciding/);
+    expect((await claim(['docs/b.md'])).ok).toBe(true);
+
+    await expect(
+      releaseClaim(root, stuck.claimId, { by: { ...astra, pid: 201 }, note: 'not mine' }),
+    ).rejects.toThrow(/holder/);
+    await expect(releaseClaim(root, stuck.claimId, { by: fable, note: '  ' })).rejects.toThrow(
+      /reason/,
+    );
+    const ended = await releaseClaim(root, stuck.claimId, {
+      by: fable,
+      note: 'astra exited while claiming',
+    });
+    expect(ended.authority).toBe('integrator');
+    expect((await claim(['tests/a.ts'])).ok).toBe(true);
+  });
+
+  test('a claim written by the earlier tool still excludes overlapping claims until it is released', async () => {
+    const layout = coordinationLayout(root);
+    await fs.mkdir(layout.locks, { recursive: true });
+    const legacy: Claim = {
+      schema_version: 1,
+      claimId: 'claim_legacy0_0000beef',
+      program: PROGRAM,
+      node: 'C00.I',
+      owner: fable,
+      paths: ['evidence/unified-20260913/'],
+      baseSha: '212106e',
+      createdAt: '2026-09-13T01:00:00.000Z',
+      handoffFrom: null,
+    };
+    await fs.writeFile(
+      path.join(layout.claims, `${legacy.claimId}.json`),
+      JSON.stringify(legacy, null, 2),
+    );
+    const lock = path.join(layout.locks, `${encodeURIComponent(legacy.paths[0])}.lock`);
+    await fs.writeFile(lock, legacy.claimId);
+    const attempt = () =>
+      claimPaths(root, {
+        owner: astra,
+        node: 'C00.R',
+        baseSha: 'b',
+        paths: ['EVIDENCE/unified-20260913/C00.I.json'],
+      });
+
+    expect(expectHeld(await attempt()).heldBy?.claimId).toBe(legacy.claimId);
+    await releaseClaim(root, legacy.claimId, { by: fable, note: 'C00.I evidence returned' });
+    await expect(fs.access(lock)).rejects.toThrow();
+    expect((await attempt()).ok).toBe(true);
+  });
+
+  test('a won claim leaves the lock file the earlier tool checks, and release removes it', async () => {
+    const won = await claimPaths(root, {
+      owner: fable,
+      node: 'C00.R',
+      baseSha: 'b',
+      paths: ['tests/a.ts'],
+    });
+    if (!won.ok) throw new Error(won.detail);
+    const lock = path.join(
+      coordinationLayout(root).locks,
+      `${encodeURIComponent('tests/a.ts')}.lock`,
+    );
+    expect(await fs.readFile(lock, 'utf8')).toBe(won.claim.claimId);
+    await releaseClaim(root, won.claim.claimId, { by: fable, note: 'done' });
+    await expect(fs.access(lock)).rejects.toThrow();
+  });
+});
+
+type HandoffInput = Parameters<typeof issueHandoff>[1];
+type ClaimInput = Parameters<typeof claimPaths>[1];
+
+describe('recorded handoffs', () => {
+  const issue = (change: Partial<HandoffInput> = {}) =>
+    issueHandoff(root, {
+      by: fable,
+      to: astra,
+      node: 'H03.I',
+      baseSha: '212106e',
+      paths: ['shared/types.ts'],
+      note: 'astra carries the shared type change for H03',
+      ...change,
+    });
+  const claimWith = (handoffFrom: string, change: Partial<ClaimInput> = {}) =>
+    claimPaths(root, {
+      owner: astra,
+      node: 'H03.I',
+      baseSha: '212106e',
+      paths: ['shared/types.ts'],
+      handoffFrom,
+      ...change,
+    });
+
+  test('an integrator-issued handoff lets exactly its recipient claim exactly its scope, once', async () => {
+    const handoff = await issue();
+    const taken = await claimWith(handoff.handoffId, { paths: ['SHARED/types.ts'] });
+    if (!taken.ok) throw new Error(taken.detail);
+    expect(taken.claim.handoffFrom).toBe(handoff.handoffId);
+    await releaseClaim(root, taken.claim.claimId, { by: astra, note: 'done' });
+    const replay = expectHeld(await claimWith(handoff.handoffId));
+    expect(replay.reason).toBe('handoff-invalid');
+    expect(replay.detail).toMatch(/already used/);
+  });
+
+  test.each<[string, Partial<HandoffInput>, Partial<ClaimInput>]>([
+    ['another process of the recipient role claims', {}, { owner: { ...astra, pid: 201 } }],
+    [
+      'another lifetime of the recipient pid claims',
+      {},
+      { owner: { ...astra, processStart: '2026-09-14T00:00:00.000Z' } },
+    ],
+    ['the node differs', {}, { node: 'H04.I' }],
+    ['the base differs', {}, { baseSha: 'ffffff0' }],
+    ['the claim is wider than the scope', {}, { paths: ['shared/types.ts', 'shared/harness.ts'] }],
+    [
+      'the claim is narrower than the scope',
+      { paths: ['shared/types.ts', 'shared/harness.ts'] },
+      {},
+    ],
+    ['the claim names the parent directory', {}, { paths: ['shared/'] }],
+  ])('a handoff does not apply when %s', async (_case, handoffChange, claimChange) => {
+    const handoff = await issue(handoffChange);
+    expect(expectHeld(await claimWith(handoff.handoffId, claimChange)).reason).toBe(
+      'handoff-invalid',
+    );
+  });
+
+  test('an id nobody issued, or a record the integrator did not issue, authorizes nothing', async () => {
+    for (const id of ['never-issued', 'handoff_mtzaaaaa_0000cafe'])
+      expect([id, expectHeld(await claimWith(id)).reason]).toEqual([id, 'handoff-invalid']);
+    const layout = coordinationLayout(root);
+    await fs.mkdir(layout.handoffs, { recursive: true });
+    const forgedId = 'handoff_forged0_0000f00d';
+    await fs.writeFile(
+      path.join(layout.handoffs, `${forgedId}.json`),
+      JSON.stringify({
+        schema_version: 1,
+        handoffId: forgedId,
+        program: PROGRAM,
+        issuedBy: astra,
+        recipient: astra,
+        node: 'H03.I',
+        baseSha: '212106e',
+        paths: ['shared/types.ts'],
+        note: 'self-issued',
+        issuedAt: '2026-09-13T01:00:00.000Z',
+      }),
+    );
+    const forged = expectHeld(await claimWith(forgedId));
+    expect(forged.reason).toBe('handoff-invalid');
+    expect(forged.detail).toMatch(/integrator/);
+  });
+
+  test('only the integrator issues a handoff, and it records why, to whom and for which paths', async () => {
+    await expect(issue({ by: astra })).rejects.toThrow(/integrator/);
+    await expect(issue({ note: '  ' })).rejects.toThrow(/note/);
+    await expect(issue({ paths: ['../shared/types.ts'] })).rejects.toThrow(/path/);
+    await expect(issue({ paths: [] })).rejects.toThrow(/path/);
+    await expect(issue({ to: { ...astra, pid: 0 } })).rejects.toThrow(/identity/);
+  });
+
+  test('a valid handoff does not displace a live claim, and a refused attempt does not use it up', async () => {
+    const live = await claimPaths(root, {
+      owner: fable,
+      node: 'H03.I',
+      baseSha: '212106e',
+      paths: ['shared/types.ts'],
+    });
+    if (!live.ok) throw new Error(live.detail);
+    const handoff = await issue();
+    const refused = expectHeld(await claimWith(handoff.handoffId));
+    expect(refused.reason).toBe('held');
+    expect(refused.heldBy?.claimId).toBe(live.claim.claimId);
+    await releaseClaim(root, live.claim.claimId, { by: fable, note: 'handing H03 types to astra' });
+    expect((await claimWith(handoff.handoffId)).ok).toBe(true);
+  });
+
+  test('work mode lets a handoff recipient edit only the hot path its own claim covers', async () => {
+    await writeJournal(root, fable, { at: '2026-09-13T01:02:00.000Z', event: 'present' });
+    const taken = await claimWith((await issue()).handoffId);
+    if (!taken.ok) throw new Error(taken.detail);
+    const mode = (me: Owner, wantsToEdit: string[]) =>
+      workMode(root, { me, partner: 'fable', wantsToEdit });
+    expect((await mode(astra, ['shared/types.ts'])).mode).toBe('edit');
+    const elsewhere = await mode(astra, ['shared/harness.ts']);
+    expect(elsewhere.mode).toBe('read-only');
+    expect(elsewhere.why).toMatch(/integrator/);
+    expect((await mode({ ...astra, pid: 201 }, ['shared/types.ts'])).mode).toBe('read-only');
+  });
+});
+
+describe('complete owner identity', () => {
+  const holdBoth = async () => {
+    const claim = await claimPaths(root, {
+      owner: astra,
+      node: 'C00.R',
+      baseSha: 'b',
+      paths: ['tests/a.ts'],
+    });
+    const slot = await requestSlot(root, { owner: astra, purpose: 'vitest', node: 'C00.R' });
+    if (!claim.ok || !slot.ok) throw new Error('fixture setup failed');
+    await writeJournal(root, fable, { at: '2026-09-13T01:02:00.000Z', event: 'present' });
+    return { claimId: claim.claim.claimId, slotId: slot.slot.slotId };
+  };
+
+  test.each<[string, Partial<Owner>]>([
+    ['another pid', { pid: 201 }],
+    ['another lifetime of the same pid', { processStart: '2026-09-14T00:00:00.000Z' }],
+    ['the same pid on another host', { host: 'other-host' }],
+    ['another worktree', { worktree: 'F:/wt/elsewhere' }],
+    ['another non-integrator role', { role: 'opus' }],
+  ])('%s is not the holder of a live claim or the slot', async (_case, change) => {
+    const impostor: Owner = { ...astra, ...change };
+    const { claimId, slotId } = await holdBoth();
+    await expect(
+      releaseClaim(root, claimId, { by: impostor, note: 'not the holder' }),
+    ).rejects.toThrow(/holder/);
+    await expect(releaseSlot(root, slotId, { by: impostor })).rejects.toThrow(/holder/);
+    const mode = await workMode(root, {
+      me: impostor,
+      partner: 'fable',
+      wantsToEdit: ['tests/a.ts'],
+    });
+    expect(mode.mode).toBe('read-only');
+    await releaseClaim(root, claimId, { by: astra, note: 'done' });
+    await releaseSlot(root, slotId, { by: astra });
+  });
+
+  test('the same identity respelled is still the holder', async () => {
+    const respelled: Owner = {
+      ...astra,
+      host: 'TEST-HOST',
+      processStart: '2026-09-12T21:00:01-04:00',
+      worktree: 'F:\\wt\\astra\\',
+    };
+    const { claimId, slotId } = await holdBoth();
+    const mode = await workMode(root, {
+      me: respelled,
+      partner: 'fable',
+      wantsToEdit: ['tests/a.ts'],
+    });
+    expect(mode.mode).toBe('edit');
+    expect((await releaseClaim(root, claimId, { by: respelled, note: 'done' })).authority).toBe(
+      'holder',
+    );
+    await releaseSlot(root, slotId, { by: respelled });
+  });
+
+  test("the integrator may end another worker's claim only with a recorded reason", async () => {
+    const { claimId } = await holdBoth();
+    await expect(releaseClaim(root, claimId, { by: fable, note: '' })).rejects.toThrow(/reason/);
+    const release = await releaseClaim(root, claimId, { by: fable, note: 'astra session ended' });
+    expect(release.authority).toBe('integrator');
+    expect(release.releasedBy).toEqual(fable);
+  });
+
+  test.each<[string, Record<string, unknown>]>([
+    ['pid 0', { pid: 0 }],
+    ['a negative pid', { pid: -1 }],
+    ['a fractional pid', { pid: 1.5 }],
+    ['a NaN pid', { pid: Number.NaN }],
+    ['an undated start', { processStart: 'yesterday' }],
+    ['an empty start', { processStart: '' }],
+    ['an empty host', { host: '' }],
+    ['a blank worktree', { worktree: ' ' }],
+    ['an unknown role', { role: 'root' }],
+  ])(
+    'a malformed identity (%s) cannot claim, take the slot or write a journal',
+    async (_case, change) => {
+      const malformed = { ...astra, ...change } as unknown as Owner;
+      const claim = expectHeld(
+        await claimPaths(root, { owner: malformed, node: 'C00.R', baseSha: 'b', paths: ['a.ts'] }),
+      );
+      expect(claim.reason).toBe('invalid');
+      expect(
+        await requestSlot(root, { owner: malformed, purpose: 'vitest', node: 'C00.R' }),
+      ).toMatchObject({ ok: false, heldBy: null });
+      await expect(
+        writeJournal(root, malformed, { at: '2026-09-13T01:00:00.000Z', event: 'x' }),
+      ).rejects.toThrow(/identity/);
+    },
+  );
+
+  test('a journal entry records the full process identity', async () => {
+    await writeJournal(root, astra, { at: '2026-09-13T01:02:00.000Z', event: 'present' });
+    expect((await readJournal(root, 'astra'))[0]).toMatchObject({
+      pid: astra.pid,
+      host: astra.host,
+      processStart: astra.processStart,
+      worktree: astra.worktree,
+    });
+  });
+});
+
+describe('command-line identity', () => {
+  const start = '2026-09-13T01:00:00.5556400Z';
+
+  test('the command line refuses to guess which process it speaks for', async () => {
+    const lookup = async () => start;
+    await expect(ownerFromArgs(['--role', 'fable'], lookup)).rejects.toThrow(/--pid is required/);
+    await expect(ownerFromArgs(['--role', 'fable', '--pid', 'abc'], lookup)).rejects.toThrow(
+      /--pid/,
+    );
+    await expect(ownerFromArgs(['--pid', '4242'], lookup)).rejects.toThrow(/--role/);
+    await expect(
+      ownerFromArgs(['--role', 'fable', '--pid', '4242', '--start', 'yesterday'], lookup),
+    ).rejects.toThrow(/start/);
+  });
+
+  test('the start time is read for the named process, never taken from the command-line process', async () => {
+    const asked: number[] = [];
+    const owner = await ownerFromArgs(
+      ['--role', 'fable', '--pid', '4242', '--host', 'test-host', '--worktree', 'F:/wt/fable'],
+      async (pid) => {
+        asked.push(pid);
+        return start;
+      },
+    );
+    expect(asked).toEqual([4242]);
+    expect(owner).toEqual({
+      role: 'fable',
+      host: 'test-host',
+      pid: 4242,
+      processStart: start,
+      worktree: 'F:/wt/fable',
+    });
+    await expect(
+      ownerFromArgs(['--role', 'fable', '--pid', '4242'], async () => null),
+    ).rejects.toThrow(/not running/);
+    const explicit = await ownerFromArgs(
+      ['--role', 'fable', '--pid', '4242', '--start', '2026-09-13T01:00:00.000Z'],
+      async () => {
+        throw new Error('the lookup must not run');
+      },
+    );
+    expect(explicit.processStart).toBe('2026-09-13T01:00:00.000Z');
+  });
+
+  test.runIf(process.platform === 'win32' || process.platform === 'linux')(
+    'the operating system reports when this process started, and nothing for an absent process',
+    async () => {
+      const reported = await processStartOf(process.pid);
+      expect(reported).not.toBeNull();
+      const expected = Date.now() - process.uptime() * 1000;
+      expect(Math.abs(Date.parse(reported ?? '') - expected)).toBeLessThan(10_000);
+      expect(await processStartOf(2 ** 31 - 2)).toBeNull();
+    },
+    60_000,
+  );
+});
+
+// --- C00.R repair, second round: counterexamples from the hostile pre-check of 74939ae ---
+
+/** An attempt in order with no decision, as a process that exited while claiming leaves it. */
+async function undecidedAttempt(seq: number, claim: Claim) {
+  const layout = coordinationLayout(root);
+  await fs.mkdir(layout.attempts, { recursive: true });
+  await fs.mkdir(layout.order, { recursive: true });
+  const file = path.join(layout.attempts, `${claim.claimId}.json`);
+  await fs.writeFile(file, JSON.stringify(claim, null, 2));
+  await fs.link(file, path.join(layout.order, orderEntryName(seq)));
+  return claim;
+}
+const recordOf = (fields: Pick<Claim, 'claimId' | 'owner' | 'paths'> & Partial<Claim>): Claim => ({
+  schema_version: 1,
+  program: PROGRAM,
+  node: 'crashed',
+  baseSha: 'b',
+  createdAt: '2026-09-13T01:00:00.000Z',
+  handoffFrom: null,
+  ...fields,
+});
+/** The undecided attempt `owner` has published, once it appears. */
+const attemptOf = (owner: Owner) =>
+  vi.waitFor(
+    async () => {
+      const found = (await pendingAttempts(root)).find((entry) => entry.owner.pid === owner.pid);
+      if (!found) throw new Error(`pid ${owner.pid} has not published an attempt yet`);
+      return found;
+    },
+    { timeout: 5000, interval: 10 },
+  );
+const opus: Owner = { ...astra, role: 'opus', pid: 300, worktree: 'F:/wt/opus' };
+
+describe('C00.R repair round 2: release records', () => {
+  test.each<[string, Owner, string]>([
+    ['another process of the holder role', { ...astra, pid: 201 }, 'released by the earlier tool'],
+    ['the integrator without a reason', fable, ''],
+  ])(
+    'a release written by %s does not end a claim, and the holder can still release it',
+    async (_case, releasedBy, note) => {
+      const won = await claimPaths(root, {
+        owner: astra,
+        node: 'C00.R',
+        baseSha: 'b',
+        paths: ['tests/a.ts'],
+      });
+      if (!won.ok) throw new Error(won.detail);
+      const { claimId } = won.claim;
+      // The earlier tool checks only the releasing role and records no authority, so it leaves this.
+      await fs.writeFile(
+        path.join(coordinationLayout(root).claims, `${claimId}.released.json`),
+        JSON.stringify({ claimId, releasedBy, at: '2026-09-13T02:00:00.000Z', note }, null, 2),
+      );
+      await writeJournal(root, astra, { at: '2026-09-13T01:02:00.000Z', event: 'present' });
+      expect((await activeClaims(root)).map((claim) => claim.claimId)).toEqual([claimId]);
+      const refused = expectHeld(
+        await claimPaths(root, {
+          owner: fable,
+          node: 'C00.I',
+          baseSha: 'b',
+          paths: ['TESTS/A.TS'],
+        }),
+      );
+      expect(refused.heldBy?.claimId).toBe(claimId);
+      expect(
+        (await workMode(root, { me: fable, partner: 'astra', wantsToEdit: ['tests/a.ts'] })).mode,
+      ).toBe('read-only');
+
+      expect((await releaseClaim(root, claimId, { by: astra, note: 'done' })).authority).toBe(
+        'holder',
+      );
+      expect(await activeClaims(root)).toEqual([]);
+      await expect(releaseClaim(root, claimId, { by: astra, note: 'again' })).rejects.toThrow(
+        /already released/,
+      );
+      expect(
+        (
+          await claimPaths(root, {
+            owner: fable,
+            node: 'C00.I',
+            baseSha: 'b',
+            paths: ['tests/a.ts'],
+          })
+        ).ok,
+      ).toBe(true);
+    },
+  );
+});
+
+describe('C00.R repair round 3: legacy release records', () => {
+  /** A claim as the earlier tool left it: a claim file with no attempt record behind it. */
+  const legacyClaim = async (owner: Owner, paths: readonly string[], claimId: string) => {
+    const layout = coordinationLayout(root);
+    await fs.mkdir(layout.claims, { recursive: true });
+    const claim: Claim = {
+      schema_version: 1,
+      claimId,
+      program: PROGRAM,
+      node: 'C00.I',
+      owner,
+      paths,
+      baseSha: 'b',
+      createdAt: '2026-09-13T02:00:00.000Z',
+      handoffFrom: null,
+    };
+    await fs.writeFile(path.join(layout.claims, `${claimId}.json`), JSON.stringify(claim, null, 2));
+    return claim;
+  };
+  const writeRelease = async (claimId: string, releasedBy: Owner, note: string) =>
+    fs.writeFile(
+      path.join(coordinationLayout(root).claims, `${claimId}.released.json`),
+      JSON.stringify(
+        { claimId, releasedBy, authority: 'holder', at: '2026-09-13T03:00:00.000Z', note },
+        null,
+        2,
+      ),
+    );
+
+  test.each<[string, () => Owner, string]>([
+    [
+      'another process of the holder role',
+      () => ({ ...astra, pid: 201 }),
+      'ended by the earlier tool',
+    ],
+    ['the integrator without a reason', () => fable, ''],
+  ])(
+    'a release written by %s does not end a legacy claim either',
+    async (_case, releasedBy, note) => {
+      const claimId = 'claim_legacy01_aaaaaaaa';
+      await legacyClaim(astra, ['tests/a.ts'], claimId);
+      await writeRelease(claimId, releasedBy(), note);
+      await writeJournal(root, astra, { at: '2026-09-13T01:02:00.000Z', event: 'present' });
+
+      // The file name is not the release: the record is read and judged, so the claim is held.
+      expect((await activeClaims(root)).map((claim) => claim.claimId)).toEqual([claimId]);
+      const refused = expectHeld(
+        await claimPaths(root, {
+          owner: fable,
+          node: 'C00.I',
+          baseSha: 'b',
+          paths: ['TESTS/A.TS'],
+        }),
+      );
+      expect(refused.heldBy?.claimId).toBe(claimId);
+      expect(
+        (await workMode(root, { me: fable, partner: 'astra', wantsToEdit: ['tests/a.ts'] })).mode,
+      ).toBe('read-only');
+
+      // The holder can still end it, recorded beside the claims because the name is taken.
+      expect((await releaseClaim(root, claimId, { by: astra, note: 'done' })).authority).toBe(
+        'holder',
+      );
+      expect(
+        JSON.parse(
+          await fs.readFile(
+            path.join(coordinationLayout(root).releases, `${claimId}.json`),
+            'utf8',
+          ),
+        ).claimId,
+      ).toBe(claimId);
+      expect(await activeClaims(root)).toEqual([]);
+      await expect(releaseClaim(root, claimId, { by: astra, note: 'again' })).rejects.toThrow(
+        /already released/,
+      );
+      expect(
+        (
+          await claimPaths(root, {
+            owner: fable,
+            node: 'C00.I',
+            baseSha: 'b',
+            paths: ['tests/a.ts'],
+          })
+        ).ok,
+      ).toBe(true);
+    },
+  );
+
+  test('the integrator recovers a legacy claim whose release record has no authority', async () => {
+    const claimId = 'claim_legacy02_bbbbbbbb';
+    await legacyClaim(astra, ['tests/b.ts'], claimId);
+    await writeRelease(claimId, { ...astra, pid: 202 }, 'ended by the earlier tool');
+    expect((await activeClaims(root)).map((claim) => claim.claimId)).toEqual([claimId]);
+
+    await expect(releaseClaim(root, claimId, { by: fable, note: '' })).rejects.toThrow(
+      /recorded reason/,
+    );
+    expect(
+      (await releaseClaim(root, claimId, { by: fable, note: 'owner stopped' })).authority,
+    ).toBe('integrator');
+    expect(await activeClaims(root)).toEqual([]);
+  });
+
+  test('an authoritative legacy release still ends the claim', async () => {
+    const byHolder = 'claim_legacy03_cccccccc';
+    await legacyClaim(astra, ['tests/c.ts'], byHolder);
+    await writeRelease(byHolder, astra, 'the holder ended it');
+    const byIntegrator = 'claim_legacy04_dddddddd';
+    await legacyClaim(astra, ['tests/d.ts'], byIntegrator);
+    await writeRelease(byIntegrator, fable, 'the integrator ended it, with a reason');
+
+    // Neither is held: the repair retains ambiguous claims, it does not retain every claim.
+    expect(await activeClaims(root)).toEqual([]);
+    for (const paths of [['tests/c.ts'], ['tests/d.ts']])
+      expect(
+        (await claimPaths(root, { owner: fable, node: 'C00.I', baseSha: 'b', paths })).ok,
+      ).toBe(true);
+  });
+});
+
+describe('C00.R repair round 2: the slot', () => {
+  test('a retried release cannot remove the slot the next holder took', async () => {
+    const held = await requestSlot(root, { owner: astra, purpose: 'vitest', node: 'C00.R' });
+    if (!held.ok) throw new Error(held.detail);
+    const readFile = fs.readFile.bind(fs) as (...args: unknown[]) => Promise<unknown>;
+    let slotReads = 0;
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    // The first read of the slot record hands back its contents only after the slot changed hands.
+    const spy = vi.spyOn(fs, 'readFile').mockImplementation((async (...args: unknown[]) => {
+      const contents = await readFile(...args);
+      if (String(args[0]).endsWith('heavy.json') && (slotReads += 1) === 1) await gate;
+      return contents;
+    }) as unknown as typeof fs.readFile);
+    try {
+      const stale = releaseSlot(root, held.slot.slotId, { by: astra }).then(
+        () => 'released',
+        (error: unknown) => String(error),
+      );
+      await vi.waitFor(() => expect(slotReads).toBe(1));
+      await releaseSlot(root, held.slot.slotId, { by: astra });
+      const next = await requestSlot(root, { owner: fable, purpose: 'playwright', node: 'C00.I' });
+      if (!next.ok) throw new Error(next.detail);
+      open();
+      expect(await stale).toMatch(/already/);
+      expect((await currentSlot(root))?.slotId).toBe(next.slot.slotId);
+    } finally {
+      open();
+      spy.mockRestore();
+    }
+  });
+});
+
+describe('C00.R repair round 2: attempts still deciding', () => {
+  const typesHandoff = () =>
+    issueHandoff(root, {
+      by: fable,
+      to: astra,
+      node: 'H03.I',
+      baseSha: '212106e',
+      paths: ['shared/types.ts'],
+      note: 'astra carries the shared type change for H03',
+    });
+  const typesClaim = (handoffFrom: string) =>
+    claimPaths(root, {
+      owner: astra,
+      node: 'H03.I',
+      baseSha: '212106e',
+      paths: ['shared/types.ts'],
+      handoffFrom,
+      settleMs: 20_000,
+    });
+
+  test('an attempt ended before it wins does not use up its handoff', async () => {
+    const stuck = await undecidedAttempt(
+      0,
+      recordOf({ claimId: 'claim_stuck01_0000abcd', owner: opus, paths: ['shared/'] }),
+    );
+    const handoff = await typesHandoff();
+    const waiting = typesClaim(handoff.handoffId);
+    const attempt = await attemptOf(astra);
+    await releaseClaim(root, attempt.claimId, { by: fable, note: 'astra stopped waiting' });
+    await releaseClaim(root, stuck.claimId, { by: fable, note: 'the crashed attempt is over' });
+    expect(expectHeld(await waiting).detail).toMatch(/abandoned/);
+    const retried = await typesClaim(handoff.handoffId);
+    if (!retried.ok) throw new Error(retried.detail);
+    expect(retried.claim.handoffFrom).toBe(handoff.handoffId);
+  }, 30_000);
+
+  test('an attempt that wins after its handoff was used by another claim gives the claim back', async () => {
+    const stuck = await undecidedAttempt(
+      0,
+      recordOf({ claimId: 'claim_stuck02_0000abcd', owner: opus, paths: ['shared/'] }),
+    );
+    const handoff = await typesHandoff();
+    const waiting = typesClaim(handoff.handoffId);
+    await attemptOf(astra);
+    // The same process used the handoff in another claim, which won and ended while this one waited.
+    await fs.writeFile(
+      path.join(coordinationLayout(root).handoffs, `${handoff.handoffId}.consumed.json`),
+      JSON.stringify({
+        schema_version: 1,
+        handoffId: handoff.handoffId,
+        claimId: 'claim_other00_0000abcd',
+        at: '2026-09-13T02:00:00.000Z',
+      }),
+    );
+    await releaseClaim(root, stuck.claimId, { by: fable, note: 'the crashed attempt is over' });
+    const refused = expectHeld(await waiting);
+    expect(refused.reason).toBe('handoff-invalid');
+    expect(refused.detail).toContain('claim_other00_0000abcd');
+    expect(await activeClaims(root)).toEqual([]);
+    expect(await pendingAttempts(root)).toEqual([]);
+    expect(
+      (
+        await claimPaths(root, {
+          owner: fable,
+          node: 'H03.I',
+          baseSha: '212106e',
+          paths: ['shared/types.ts'],
+        })
+      ).ok,
+    ).toBe(true);
+  }, 30_000);
+
+  test('work mode is read-only while another process has an undecided overlapping attempt', async () => {
+    const pending = await undecidedAttempt(
+      0,
+      recordOf({ claimId: 'claim_pending_0000abcd', owner: astra, paths: ['tests/'] }),
+    );
+    await writeJournal(root, astra, { at: '2026-09-13T01:02:00.000Z', event: 'present' });
+    await writeJournal(root, fable, { at: '2026-09-13T01:02:00.000Z', event: 'present' });
+    const mode = (me: Owner, partner: Owner['role'], wantsToEdit: string[]) =>
+      workMode(root, { me, partner, wantsToEdit });
+    const blocked = await mode(fable, 'astra', ['TESTS/a.ts']);
+    expect(blocked.mode).toBe('read-only');
+    expect(blocked.why).toContain(pending.claimId);
+    expect((await mode(fable, 'astra', ['docs/a.md'])).mode).toBe('edit');
+    expect((await mode(astra, 'fable', ['tests/a.ts'])).mode).toBe('edit');
+  });
+
+  test('a claim the earlier tool writes while an attempt waits still refuses that attempt', async () => {
+    const stuck = await undecidedAttempt(
+      0,
+      recordOf({ claimId: 'claim_stuck03_0000abcd', owner: astra, paths: ['tests/a.ts'] }),
+    );
+    const waiting = claimPaths(root, {
+      owner: fable,
+      node: 'C00.I',
+      baseSha: 'b',
+      paths: ['tests/a.ts'],
+      settleMs: 20_000,
+    });
+    await attemptOf(fable);
+    const legacy = recordOf({
+      claimId: 'claim_legacy1_0000beef',
+      owner: opus,
+      node: 'H01.I',
+      paths: ['tests/'],
+    });
+    await fs.writeFile(
+      path.join(coordinationLayout(root).claims, `${legacy.claimId}.json`),
+      JSON.stringify(legacy, null, 2),
+    );
+    await releaseClaim(root, stuck.claimId, { by: fable, note: 'the crashed attempt is over' });
+    expect(expectHeld(await waiting).heldBy?.claimId).toBe(legacy.claimId);
+  }, 30_000);
+});
+
+describe('C00.R repair round 2: lock files the earlier tool reads', () => {
+  test('a path too long for its lock file is refused before anything is published', async () => {
+    // encodeURIComponent turns `tests/` into `tests%2F`: 239 letters make a 255-character lock name.
+    const fits = `tests/${'a'.repeat(239)}.ts`;
+    const tooLong = `tests/${'a'.repeat(240)}.ts`;
+    expect([canonicalPath(fits).ok, canonicalPath(tooLong).ok]).toEqual([true, true]);
+    const refused = expectHeld(
+      await claimPaths(root, {
+        owner: astra,
+        node: 'C00.R',
+        baseSha: 'b',
+        paths: ['docs/a.md', tooLong],
+      }),
+    );
+    expect(refused.reason).toBe('invalid');
+    expect(refused.detail).toMatch(/lock/);
+    expect(await pendingAttempts(root)).toEqual([]);
+    expect(await activeClaims(root)).toEqual([]);
+    const taken = await claimPaths(root, {
+      owner: astra,
+      node: 'C00.R',
+      baseSha: 'b',
+      paths: [fits],
+    });
+    if (!taken.ok) throw new Error(taken.detail);
+    const lock = path.join(coordinationLayout(root).locks, `${encodeURIComponent(fits)}.lock`);
+    expect(await fs.readFile(lock, 'utf8')).toBe(taken.claim.claimId);
+  });
+});
+
+/** One contender process: import the tool, report ready, claim on "go", print the result. */
+const CONTENDER = `
+const [moduleUrl, root, pid, spelling] = process.argv.slice(1);
+const { claimPaths } = await import(moduleUrl);
+const owner = { role: 'astra', host: 'test-host', pid: Number(pid), processStart: '2026-09-13T01:00:01.000Z', worktree: 'F:/wt/contender-' + pid };
+process.stdout.write('ready\\n');
+await new Promise((resolve) => process.stdin.once('data', resolve));
+const result = await claimPaths(root, { owner, node: 'race', baseSha: 'b', paths: [spelling], settleMs: 20000 });
+process.stdout.write(JSON.stringify(result) + '\\n', () => process.exit(0));
+`;
+
+describe('C00.R repair round 2: exclusion across processes', () => {
+  test('contenders in separate processes racing for spellings of one path: exactly one winner, and every loser names it', async () => {
+    const moduleUrl = new URL('../scripts/coordination.ts', import.meta.url).href;
+    const cwd = fileURLToPath(new URL('..', import.meta.url));
+    const spellings = ['tests/a.ts', 'TESTS/A.TS', 'tests/../tests/a.ts', 'tests/'];
+    const contenders = spellings.map((spelling, index) => {
+      const child = spawn(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          '--input-type=module',
+          '-e',
+          CONTENDER,
+          moduleUrl,
+          root,
+          String(3000 + index),
+          spelling,
+        ],
+        { cwd, windowsHide: true },
+      );
+      let stdout = '';
+      let stderr = '';
+      child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk));
+      const ready = new Promise<void>((resolve, reject) => {
+        child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+          stdout += chunk;
+          if (stdout.startsWith('ready\n')) resolve();
+        });
+        child.once('exit', (code) =>
+          reject(
+            new Error(`contender ${index} exited with ${code} before it was ready: ${stderr}`),
+          ),
+        );
+      });
+      const result = new Promise<Awaited<ReturnType<typeof claimPaths>>>((resolve, reject) =>
+        child.once('close', (code) => {
+          const line = stdout.split('\n')[1];
+          if (code !== 0 || !line)
+            reject(new Error(`contender ${index} exited with ${code}: ${stderr}`));
+          else resolve(JSON.parse(line) as Awaited<ReturnType<typeof claimPaths>>);
+        }),
+      );
+      result.catch(() => undefined);
+      return { child, ready, result };
+    });
+    await Promise.all(contenders.map((contender) => contender.ready));
+    for (const { child } of contenders) child.stdin.write('go\n');
+    const results = await Promise.all(contenders.map((contender) => contender.result));
+    const winners = results.flatMap((result) => (result.ok ? [result.claim] : []));
+    expect(winners).toHaveLength(1);
+    for (const result of results) {
+      if (result.ok) continue;
+      expect(result.reason).toBe('held');
+      expect(result.heldBy?.claimId).toBe(winners[0].claimId);
+    }
+    expect(await activeClaims(root)).toEqual(winners);
+  }, 60_000);
 });

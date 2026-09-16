@@ -84,10 +84,13 @@ Fable's own claim for this node (`claim_mtzduvno_9b5dcf0d`): `AGENTS.md`,
 
 ## 5. Coordination root and tool
 
-Layout: `claims/` (atomic `wx` claim files plus per-path locks under `claims/paths/`),
-`external-claims/`, `journals/<role>.jsonl`, `slot/heavy.json`, `work-orders/<node>.json`,
-`results/`, `handoffs/`. `scripts/coordination.ts` implements it; `tests/coordination.test.ts`
-proves the required acceptance cases:
+Layout after the C00 repair (section 14): `claims/` (winning claims and `.released.json`
+records; `claims/attempts/`, the dense `claims/order/` sequence and one `claims/decisions/`
+record per attempt; `claims/paths/` lock files kept only for the earlier tool),
+`handoffs/issued/` (integrator handoffs and their single use), `external-claims/`,
+`journals/<role>.jsonl`, `slot/heavy.json`, `work-orders/<node>.json`, `results/`.
+`scripts/coordination.ts` implements it; `tests/coordination.test.ts` proves the acceptance
+cases the original candidate had, and section 14 lists what the repair added:
 
 - two workers claiming the same path: exactly one wins, the loser is told the holder;
 - a stale timestamp alone does not permit a steal;
@@ -106,7 +109,7 @@ Additive. `HARNESS_CONTRACT_VERSION`, `WORK_CONTROL_CONTRACT_VERSION`,
 `shared/harness.ts`, `shared/agents.ts`, `shared/engines.ts` and
 `shared/capability-packs.ts` were inspected and not changed.
 
-| frozen thing | schema | built from |
+| proposed shape | schema | built from |
 |---|---|---|
 | command identity and expected revision | `commandIdentitySchema` | `commandIdSchema` regex and `payloadDigest` shape from `server/command-admission.ts`, plus `expectedRevision` |
 | authoritative run/turn/event IDs | `authoritativeIdsSchema` | `HarnessEvent{v,seq,runId}`, `Session.id`, turn id; authority is always `host` |
@@ -133,7 +136,9 @@ list, and tool refs carry effect and permission for the live re-authorize path i
 `server/harness/lifecycle.ts`); a model alias changing identity (`requested` and
 `reported` stay apart and `source` says whether the runtime reported at all); an
 activated-but-unauthorized pack (`activatedAt` is a date, not a grant; Trust decides).
-No consumer was written in this patch. Test: `tests/contract-revision.test.ts` (23 cases).
+No consumer was written in this patch. Test: `tests/contract-revision.test.ts` (23 cases on the
+original candidate; 31 after the C00 repair, which makes the model source agree with the reported
+model and binds every run reference to the run store's identifier pattern, section 14).
 
 ## 7. Inventory
 
@@ -148,7 +153,7 @@ rows below were verified by Fable against `212106e`.
 - **Model-profile resolvers**: `server/execution.ts:225 resolveExecution` (with the entitlement, trust and budget gates at `:66,:111,:147`), `shared/agents.ts:309 agentCompatibility` (there is no `resolveAgent`), `shared/effort.ts`, `server/models.ts` catalog.
 - **Pack manifests**: one capability pack, `diomedes.software-engineering` 0.1.0 (`shared/capability-packs.ts:124-147`); `shared/packs.ts` is the weekly-brief template compiler, deliberately not a capability pack.
 - **Console surfaces**: 24 files under `client/console/` (ActivityOverview, AgentPicker, Allowance, BoardView, BusinessSetup, Composer, Configuration, FilesPane, FollowUpQueue, Ledger, Mark, Need, PackSettings, Palette, PermissionPanel, Picker, ProjectInstructions, Rail, Shell, StopMenu, TeamView, ThreadView, Wake, Workspaces).
-- **Anchors the package names that do not exist on `212106e`**: 38, all `services/control-plane/**`, `docs/operations/`, and site paths; each is marked `proposed-new` in its work order (`evidence/unified-20260913/dependency-order.md`).
+- **Anchors the package names that are not in the app on `212106e`**: the original candidate recorded 38 `missing-on-base` entries and one `proposed-new` (B00.I's `services/control-plane/contract/`); this line wrongly called all 38 `proposed-new`. The C00 repair binds the 14 site entries (W02's combined `tests/` and `scripts/check-copy.mjs` entry is now two) to `diomedes-site` at `cf784de`, where 11 name paths that exist and 3 are descriptive, and marks the Google Docs mirrors external. The remaining 24 `missing-on-base` entries are all `services/control-plane/**` or `docs/operations/` (`evidence/unified-20260913/dependency-order.md`).
 
 ## 8. Coverage audit
 
@@ -212,13 +217,171 @@ install, site changes.
 Recorded in `evidence/unified-20260913/C00.I.json` with actual output. Focused suites
 were written first and failed for the missing modules (`Cannot find module
 '../shared/contract-revision.js'` and `'../scripts/coordination.js'`), then passed after
-the smallest implementation. The combined full gates run on the integration branch, not
-on this leaf, under the heavy slot.
+the smallest implementation (32 cases). The combined full gates run on the integration
+branch, not on this leaf, under the heavy slot. Section 14 records the repair pass's own
+verification.
 
 ## 13. Status
 
-- implementation: candidate complete on `fable/c00-rebaseline-20260913` (uncommitted until Andrew's per-patch approval is applied; Andrew pre-authorized commit and push to main for this run on 2026-09-13).
-- independent review (`C00.R`): not run.
+- implementation: the original candidate `a034163` was committed and integrated into `origin/main` `03a1b80` on 2026-09-13. The C00 repair (section 14) is committed locally on `fable/c00-rebaseline-20260913` and is not pushed.
+- independent review (`C00.R`): **failed** on `a034163` (Astra, findings C00-R1 to C00-R5); a renewed review is requested on the repair candidate.
 - live provider: not applicable (no live call in scope).
 - packaged / publication / deployment: not run.
-- blockers: local `main` cannot be fast-forwarded while Astra's FIL-02 is uncommitted in the main checkout; Playwright needs the heavy slot; `C00.R` is Astra's.
+- blockers: `B00.I` (03a) and `H01.I` (03b) wait for a renewed `C00.R` acceptance; contract revision `2026-09-13.1` stays proposed until then.
+
+## 14. C00 repair pass
+
+Astra's `C00.R` failed candidate `a034163` with five findings
+(`evidence/unified-20260913/C00.R.md`). On 2026-09-13 Andrew asked for Astra's counterexamples
+to be committed and C00 repaired before 03a and 03b. Claude Opus 5 did the repair in the fable
+seat (session pid 48352) under the coordination root handoffs
+`astra-c00-r-regression-files.json` and `fable-seat-c00-repair.json`. Astra's
+`tests/c00-independent.test.ts` and review evidence were committed unchanged first, failing as
+reported (13 of 27).
+
+| finding | repair | tests |
+|---|---|---|
+| C00-R1: aliases and directories defeat exclusive paths | `canonicalPath` gives one repository-relative identity. Separators, `.`/`..` segments and case do not make a second path, and escaping, absolute, drive, stream, reserved-device and short-name spellings are refused. Two claims overlap when one identity equals or contains the other. Exclusion is ordered: each attempt is hard-linked under the next free dense sequence number in `claims/order/` and yields to every earlier overlapping attempt that won or has not decided, so overlapping attempts cannot both win. An attempt that never decides blocks until its holder or the integrator releases it. Hot-file checks use the same identity and fail closed. Claims written by the earlier tool still exclude, and won claims leave the lock files that tool checks. | canonical path identity (26), overlap exclusion under concurrency (5) |
+| C00-R2: an arbitrary handoff string bypasses integrator ownership | `issueHandoff`: only the integrator issues a handoff, with a note, to one exact process identity, node, base and canonical scope. A claim that names it must match exactly. An id nobody issued, a record the integrator did not issue, any mismatch or a second use is refused as `handoff-invalid`. A valid handoff does not displace a live claim and is used only by a winning claim. Work mode lets the recipient edit only the hot path its own handed-off claim covers. | recorded handoffs (12) |
+| C00-R3: owner checks omit process identity | An owner is role, host, pid, process start instant and worktree, compared after respelling (host and worktree case, separators, time zone). Claim release, slot release and work mode use it. The integrator ends another holder's claim only with a recorded reason (`authority: integrator`). A malformed identity cannot claim, take the slot or write a journal. The CLI requires `--pid` for the long-lived process and reads its start time from the operating system (`Win32_Process.CreationDate`; `/proc` on Linux) unless `--start` is given. | complete owner identity (17), command-line identity (3) |
+| C00-R4: the proposed schemas admit contradictions | `profileSnapshotSchema.model` says `runtime` exactly when it names a reported model, as `directOrigin` records it, and `compatibilityForSavedRun` skips contradictory step records. `RUN_ID_PATTERN` is copied byte-identically from the run store and parity-tested; `authoritativeIds.runId`, `event.runId` and every continuation `ofRunId` use it. The first round left `forkPoint` a bounded id, wrongly saying no step-id pattern existed; the second round (below) gives it the run service's pattern. | 8 new contract cases (31 in all) |
+| C00-R5: the manifest does not reconstruct its candidate | `C00.I.json` no longer hashes itself or its patch. The outer manifest, outside the tree, records the candidate commits, Git blob ids, sha256 over blob bytes (Git stores these files LF-normalized; working copies may be CRLF), patch digests and test results. The status text, the anchor labels (section 7), the HAR-10 and `AGENTS.md` wording and the `dependency-order.md` encoding are corrected, and the site anchors are bound to `diomedes-site` at `cf784de`. | none needed |
+
+Verification of the repair, in the order it ran:
+
+- RED: the new producer cases against the unrepaired code, 103 cases: 34 passed and 69 failed, each on a missing function or the reported defect (five winners in the alias race, impostor releases accepted, malformed identities accepted, `run/other` accepted).
+- GREEN: `tests/coordination.test.ts` 72, `tests/contract-revision.test.ts` 31 and `tests/c00-independent.test.ts` 27, so 130 passed. The affected runtime suites (`harness-provider-outcomes`, `harness-lifecycle`, `harness`, `harness-negative`) passed 118.
+- Repeats: the coordination and independent suites five times in a row, 99 of 99 each time, while the runtime suites ran alongside.
+- Mutation: treating an undecided earlier attempt as settled is caught by the stuck-attempt test. Skipping the order scan (check-then-write) is caught by 11 tests, including the race (8 winners) and C01, C02, C04 and C05.
+- CLI smoke against a scratch root: identity from the operating system, `--pid` required, an absent pid refused, an alias claim held, a claim under a handoff, a non-holder release refused and a holder release recorded.
+- Type check: `tsc --noEmit` over the changed files and their imports with the project's compiler options, exit 0. The full-project run under the heavy slot is recorded in the outer manifest.
+
+### Second round, after a hostile pre-check
+
+Before `74939ae` went to Astra, a Claude Opus 5 hostile review (read-only, scratch roots only)
+attacked it. Every finding below was reproduced before it was repaired, and each repair has a test
+that failed first. The coordination root journal (`journals/fable.jsonl`, 2026-09-13T09:50Z)
+records why the candidate was held back.
+
+| finding | repair | tests |
+|---|---|---|
+| F1: the earlier tool on the shared root defeats exclusion (a directory claim then a child claim, an alias spelling, a role-only release of a repaired claim followed by a third claimant, an exact-path race) | Two parts are defects of the repaired tool and are fixed. An ordered claim now ends only by a release from its holder or from the integrator with a reason; a release record without that authority is ignored, the holder or integrator can still release, and that release is then recorded as `claims/releases/<id>.json`. A claim the earlier tool writes while an attempt waits is read again just before the attempt can win. The rest is the earlier tool's blindness to aliases, directories and ordered attempts, which the repaired tool cannot prevent: see the rollout requirement below. | release records (2); attempts still deciding (1) |
+| F2: a retried `unslot` removes the next holder's slot | A slot is released once: `slot/releases/<slotId>.json` is published exclusively before `heavy.json` is removed, and a release that finds the record removes nothing. A slot id is checked before it names a file. If a process dies between the record and the removal, `heavy.json` stays, and the integrator removes it by hand after confirming that `slot/releases/<slotId>.json` names it; an automatic recovery would reopen the same race. | the slot (1) |
+| F3: `forkPoint` accepts ids the runtime refuses (`step/2`, `../step`, `-x`, 150 characters) and rewrites `" step_2 "` | `STEP_ID_PATTERN` copies `STEP_ID` from `server/harness/run-service.ts` byte-identically, and `forkPoint` uses it without trimming. The test compares the schema with `RunService.step` on the same samples, because a fork point can only name a step the service recorded. | fork point (1) |
+| E1: a path whose lock file name exceeds 255 characters throws after the claim won and leaves it held | Refused as `invalid` before anything is published. | lock files (1) |
+| E2: an undecided attempt is invisible to work mode | Work mode is read-only while another process has an overlapping attempt that has not decided. | attempts still deciding (1) |
+| E3: the handoff is used before the decision, so an attempt the integrator ends while it waits uses it up | Only a winning claim uses its handoff. A claim that wins after another claim of the same process used that handoff gives its paths back. | attempts still deciding (2) |
+
+The review also asked for contention between separate processes: four processes race for
+spellings of one path, and exactly one wins (exclusion across processes, 1).
+
+Rollout requirement: the coordination tool on `origin/main` is still the earlier one. While any
+session claims with it, exclusion between it and the repaired tool is not guaranteed. The earlier
+tool checks only exact-path lock files, so it misses the repaired tool's directory claims, alias
+spellings and undecided attempts, and its release checks only the releasing role. The repaired
+tool writes those lock files and honors the earlier tool's claims, which narrows the gap but cannot
+close it. Retiring the earlier tool takes three steps: land the repaired tool on `main` (Andrew's
+push approval), switch every session to it, and have the integrator release, with notes, the
+claims the earlier tool left in the coordination root.
+
+Verification of the second round, in the order it ran:
+
+- RED: the new cases against `74939ae`. Coordination: 81 cases, 74 passed and 7 failed. Contract: 32 cases, 31 passed and 1 failed. Each failure was the reported defect: a release without authority ended a claim (two cases), a retried slot release went through, an abandoned attempt used up its handoff, work mode ignored an undecided attempt, a claim the earlier tool wrote during a wait was missed, a 256-character lock name threw `ENOENT` after the claim won, and the schema accepted a 129-character fork point that the run service refuses. The cross-process race and the late-winner handoff case passed before the repair and stay as guards.
+- GREEN, one finding at a time with a run after each, then again after formatting: `tests/coordination.test.ts` 81, `tests/contract-revision.test.ts` 32 and `tests/c00-independent.test.ts` 27, so 140 passed. The affected runtime suites passed 118.
+- Mutation: eleven mutants, each killed. Each second-round mutant is killed by its own new test: an unrecorded slot release, any release record ending a claim, the handoff used before the decision, a late winner keeping its paths, work mode ignoring undecided attempts, no lock-name limit, no second look for the earlier tool's claims, a decision overwriting the first, and a trimmed fork point. The first-round mutants still fail 5 and 13 tests. Sources were restored and compared by sha256 after each.
+- The pre-check's own scripts, rerun on the repaired code: a second slot release is refused and removes nothing; the long path is refused with nothing held; work mode is read-only; the later claim under the same handoff succeeds; fork points agree with `STEP_ID`. In the mixed-tool cases the third claimant after a role-only release is refused, while a directory claim, an alias and an exact-path race still let both tools hold, as the rollout requirement says.
+- Type check: full-project `tsc --noEmit` under the heavy slot, exit 0 with no diagnostics.
+
+### Third round, after the independent review rejected the second
+
+`C00.R-2` rejected candidate `b750406` on 2026-09-16 at 01:40 (`commit_authorized: false`) on two
+P1 findings, both reproduced by the reviewer against the earlier tool loaded from Git bytes at
+`a0341639`. This round repairs the one that is repairable here, and the environment defect that had
+blocked the review twice before it could start. Full evidence:
+`evidence/unified-20260913/C00.R-2-repair.md`.
+
+| finding | repair | tests |
+|---|---|---|
+| C00-R2-1: an unauthorized release still ends a **legacy** claim. `legacyActiveClaims` treated the presence of a `<id>.released.json` file as the release itself and never read it, so a release by a non-holder of the holder's role, or by the integrator with an empty reason, ended the claim and let a third owner take the path. The second round's authority check reached ordered claims only, because `releaseOf` and `releaseClaim` applied it behind a `!ordered` short-circuit. | The exemption is removed rather than narrowed: `releaseOf` no longer takes an `ordered` parameter, so no call site can reintroduce it, and `legacyActiveClaims` is expressed in terms of that single judgment instead of duplicating release-reading with a name set. Every claim now ends the same way, whichever tool wrote it — by its holder, or by the integrator with a recorded reason. An ambiguous legacy claim is retained until such a release exists. `releaseClaim` drops the same short-circuit, so a legacy claim whose `<id>.released.json` name is held by a record without authority is still releasable by its holder or the integrator, recorded at `claims/releases/<id>.json`; an unauthorized record can no longer make a claim unreleasable. | legacy release records (4) |
+| The producer's OS lookup fails in a sandbox. `processStartOf` fell through to `powershell.exe` only on `ENOENT` and rethrew everything else, so a sandbox that forbids the spawn raised a raw `spawn EPERM` and killed the run before any review work began — twice. | Any failure to *run* the shell is a reason to try the next one; when both refuse, the caller gets the actionable "pass `--start`" guidance naming each shell and why it refused, instead of the raw error. Output that did arrive is still judged, so an unreadable value remains an integrity error and still throws. Reading a start time is one way to learn an identity, never the only one. | existing command-line identity case; A/B proof against `b750406` in the evidence |
+
+**C00-R2-2 is not repaired and remains the rollout prerequisite.** The earlier tool checks only
+exact-path lock files, so no change inside this tool can make it see a directory claim: the
+reviewer's `R02` still fails by design, and the rollout requirement above is unchanged. Closing it
+is a documented, verified transition of every writer to an agreed repaired tool, which the reviewer
+states explicitly need not be a push.
+
+Blast radius was measured on the live coordination root before any edit, by judging every release
+record with the same `authoritative()` predicate: in that snapshot, of 20 claims (15 legacy, 5
+ordered), **none** stops being suppressed under the stricter rule, because every release record
+then on disk is authoritative. So the repair leaves no reconciliation backlog to work through.
+This measures the current records and not history: it cannot prove that no unauthorized release was
+ever written and later overwritten or removed, since these records are not append-only. The claim
+is the narrow one — nothing presently in the root is reclassified by the repair.
+
+The candidate carries its own cases for this round in `tests/coordination.test.ts`, under
+`C00.R repair round 3: legacy release records`: an unauthorized record leaves a legacy claim held
+and a third claimant refused, the holder and the integrator-with-a-reason each still end it and
+recover at `claims/releases/<id>.json`, and an authoritative legacy release still ends the claim,
+so ambiguous claims are retained without retaining every claim. The reviewer's own suite
+(`C00.R-2-tests.patch`) is **not** carried in the candidate: it is applied at review time, as the
+reviewer applied it before, and it targets an external review worktree.
+
+Mutation, restoring and comparing the source by sha256 after each: re-opening the exemption for
+every claim is killed by five cases (two from round 2, three from round 3); re-opening it only for
+legacy claims, by trusting the `<id>.released.json` name again — the exact C00-R2-1 defect — is
+killed by the three round-3 cases and by no round-2 case, which is the review gap itself.
+
+Verification of the third round: `tests/coordination.test.ts` 85 and `tests/c00-independent.test.ts`
+27, so 112 passed; full `vitest run` green; `tsc --noEmit` exit 0; `vite build` exit 0. Run
+separately against the reviewer's suite, 20 of its 21 cases pass, the exception being `R02`, which
+is C00-R2-2 and fails by design.
+
+The work ran under `claim_mu3ovgkg_29143976`, taken through `handoff_mu3ouwwr_8516a66b` after the
+integrator released, with recorded reasons, the two claims left by `fable/pid 48352` — verified not
+running at 2026-09-16T01:48:40 and again at 01:56:03. `AGENTS.md`, `shared/contract-revision.ts`
+and `tests/contract-revision.test.ts` were released and not re-claimed: the six-family H01
+amendment is not part of this round.
+
+### Outcome of C00.R-3
+
+`results/C00.R-3.md` (sha256 `ad0bd13d302d85053d76224cd9fea675ae6ab688d49ddbe066c2a7fdf759c03a`) and
+`results/C00.R-3.json` (sha256 `bce82dcd3407cb5495982f4548f5bd5a50d0617e4f4a070e917ffe0cb95c5cd1`),
+2026-09-16 02:35. **Rejected, and only for the retained rollout prerequisite C00-R2-2.**
+`commit_authorized: false`, `approved_contract_revision: null`.
+
+- **C00-R2-1: resolved**, on the reviewer's own attacks, not on this ledger's word. Its R03 cases
+  (the real earlier tool loaded from Git bytes at `a0341639`) now pass; new R15 (five cases:
+  different pid, reused pid with a new lifetime, another host, another worktree, a whitespace-only
+  integrator reason), R16 (holder and reasoned-integrator recovery, re-read by a separate process)
+  and R17 (an authoritative earlier-tool release still ends a claim) pass. The reviewer audited every
+  `releaseOf`, `releaseFile`, `releaseRecordFile` and `.released.json` reference and found no
+  remaining filename-only release judgment.
+- **The launch-failure repair passes**, R18-R22, eight cases, with `acceptance_blocker: false`.
+  `EPERM`, `EACCES` and `EFTYPE` on the first shell each fall through to the second and return its
+  timestamp; both failing names each shell, each refusal and `--start`; successful-but-unreadable
+  output still throws and a later valid answer cannot hide it; empty output stays `null` rather than
+  an invented identity. The reviewer confirms no tested integrity error is swallowed into success.
+  In that sandbox the real lookup still fails (`pwsh.exe` EPERM, `powershell.exe` exit 1) — but it
+  now fails *actionably*, which is the whole point of the repair.
+- **Reconstruction passed**: manifest sha256 `9b9755ca…`, 15 blobs verified, every manifest patch
+  verified, initial `HEAD` and empty status confirmed.
+- **C00-R2-2 still blocks**, exactly as scoped. R02 fails as expected: a repaired-tool owner holds
+  `tests/tree/` and a separate process running the actual earlier tool still claims
+  `tests/tree/leaf.ts`. The reviewer states plainly that **a push is neither required nor authorized
+  by this review**, and that a pinned local repaired tool is a valid route before publication.
+
+**What closes C00-R2-2**, in the reviewer's words: the integrator records and verifies a controlled
+transition of every participating writer and launcher to an agreed exact repaired tool, inventories
+and reconciles legacy and undecided records through authorized releases or handoffs, and
+demonstrates overlap exclusion through the actual post-transition invocation paths — recording the
+tool hash, the participating identities, the retirement or redirection of old invocations, and the
+reconciliation outcomes. R02 need not go green by changing an immutable old executable once that
+mixed configuration is demonstrably retired. This is an integrator decision and is not started here.
+
+Two corrections the review asked for are applied above and in `evidence/unified-20260913/`:
+`C00.I.json` no longer describes the second round as current, and the blast-radius statement is
+scoped to what was actually measured — the records present in that snapshot — since it cannot prove
+that no unauthorized release ever existed historically in a root whose records are not append-only.
+Neither correction touches `scripts/coordination.ts`, which stays byte-identical to the reviewed
+candidate `ad21353` (blob `56d3617523cc8dbb7978a8e31e0155c752a85307`).

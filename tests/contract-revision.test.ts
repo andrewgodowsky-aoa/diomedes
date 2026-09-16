@@ -25,12 +25,21 @@ import {
   COMMAND_ID_PATTERN,
   DIGEST_PATTERN,
   PRE_REVISION,
+  RUN_ID_PATTERN,
+  STEP_ID_PATTERN,
   compatibilityForSavedRun,
   receiptRevision,
   type SavedRunCompatibility,
 } from '../shared/contract-revision.js';
-import { HARNESS_CONTRACT_VERSION, type HarnessRun } from '../shared/harness.js';
-import { FileRunStore } from '../server/harness/run-store.js';
+import { directOrigin } from '../shared/attribution.js';
+import {
+  HARNESS_CONTRACT_VERSION,
+  type CapabilityManifest,
+  type HarnessPrincipal,
+  type HarnessRun,
+} from '../shared/harness.js';
+import { RunService } from '../server/harness/index.js';
+import { FileRunStore, validateRunId } from '../server/harness/run-store.js';
 import { commandIdSchema, digestSchema, payloadDigest } from '../server/command-admission.js';
 
 describe('the revision identity', () => {
@@ -355,6 +364,206 @@ describe('compatibility for existing saved runs and receipts', () => {
       expect(() => compatibilityForSavedRun({ ...run, v: 2 } as unknown as HarnessRun)).toThrow(
         /version/,
       );
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a saved run reports a runtime model only from a step record that names one', () => {
+    const modelOf = (...models: unknown[]) =>
+      compatibilityForSavedRun({
+        ...baseRun(),
+        steps: models.map((model) => ({ origin: { model } })),
+      } as unknown as HarnessRun).profile.model;
+    const named = { requested: 'gpt-5.5', reported: 'gpt-5.5-2026-08', source: 'runtime' };
+    const contradictory = { requested: 'gpt-5.5', reported: null, source: 'runtime' };
+    const nothing = { requested: null, reported: null, source: 'not-recorded' };
+    expect(modelOf(named, contradictory)).toEqual(named);
+    expect(modelOf(contradictory)).toEqual(nothing);
+    expect(modelOf({ ...named, reported: '' })).toEqual(nothing);
+    expect(modelOf({ ...named, requested: 7 })).toEqual(nothing);
+    expect(
+      profileSnapshotSchema.safeParse({
+        ...CONTRACT_EXAMPLES.profile,
+        model: modelOf(named, contradictory),
+      }).success,
+    ).toBe(true);
+  });
+});
+
+describe('C00.R repair: run identifiers and model reporting agree with the runtime', () => {
+  const storeAccepts = (value: string) => {
+    try {
+      validateRunId(value);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  test('the run identifier pattern accepts and rejects exactly what the run store does', () => {
+    const samples = [
+      'run_01',
+      'R0123456789ab',
+      'a',
+      'A.b-c_9',
+      'x'.repeat(128),
+      'x'.repeat(129),
+      '',
+      'run/other',
+      '../run',
+      'run\\other',
+      ' run_01',
+      'run_01 ',
+      'run_01\n',
+      '.hidden',
+      '-dash',
+      'run:01',
+      'unicodé',
+    ];
+    for (const sample of samples)
+      expect([sample, RUN_ID_PATTERN.test(sample)]).toEqual([sample, storeAccepts(sample)]);
+  });
+
+  test.each(['run/other', '../run', ' run_01', 'run_01 ', ''])(
+    'run references refuse %j in every position',
+    (bad) => {
+      const ids = CONTRACT_EXAMPLES.ids;
+      expect(
+        authoritativeIdsSchema.safeParse({
+          ...ids,
+          runId: bad,
+          event: { ...ids.event, runId: bad },
+        }).success,
+      ).toBe(false);
+      expect(
+        continuationModeSchema.safeParse({
+          mode: 'resume',
+          ofRunId: bad,
+          kind: 'host',
+          nativeSession: null,
+        }).success,
+      ).toBe(false);
+      expect(
+        continuationModeSchema.safeParse({ mode: 'retry', ofRunId: bad, nativeSession: null })
+          .success,
+      ).toBe(false);
+      expect(
+        continuationModeSchema.safeParse({
+          mode: 'fork',
+          ofRunId: bad,
+          forkPoint: 'step_3',
+          nativeSession: null,
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  test('a profile snapshot names a reported model exactly when the runtime reported one', () => {
+    const accepts = (model: unknown) =>
+      profileSnapshotSchema.safeParse({ ...CONTRACT_EXAMPLES.profile, model }).success;
+    expect(accepts({ requested: 'gpt-5.5', reported: 'gpt-5.5-2026-08', source: 'runtime' })).toBe(
+      true,
+    );
+    expect(accepts({ requested: 'gpt-5.5', reported: null, source: 'not-recorded' })).toBe(true);
+    expect(accepts({ requested: null, reported: null, source: 'not-recorded' })).toBe(true);
+    expect(accepts({ requested: 'gpt-5.5', reported: 'invented', source: 'not-recorded' })).toBe(
+      false,
+    );
+    expect(accepts({ requested: 'gpt-5.5', reported: null, source: 'runtime' })).toBe(false);
+    expect(accepts({ requested: 'gpt-5.5', reported: '', source: 'runtime' })).toBe(false);
+    // Every model the existing attribution constructor records is accepted as recorded.
+    for (const reportedModel of [undefined, null, '', 'gpt-5.5-2026-08'])
+      expect([
+        reportedModel,
+        accepts(directOrigin({ engine: 'codex', requestedModel: 'gpt-5.5', reportedModel }).model),
+      ]).toEqual([reportedModel, true]);
+  });
+});
+
+describe('C00.R repair round 2: a fork point is a step id the run service accepts', () => {
+  const principal: HarnessPrincipal = {
+    id: 'worker',
+    tenantId: 'a',
+    projectId: 'p',
+    capabilities: ['calculate', 'sum'],
+    identityGeneration: 1,
+  };
+  const capability: CapabilityManifest = {
+    id: 'fixture',
+    version: 'v1',
+    label: 'Fixture capability',
+    description: 'A synthetic capability for the fork point check.',
+    tools: ['sum'],
+    requestedPermissions: [],
+    approvalPolicy: 'show-first',
+    maxTurns: 8,
+    supportedPlatforms: ['win32'],
+  };
+
+  test('the fork point accepts exactly the step ids a run can record, and never rewrites one', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-fork-point-'));
+    try {
+      const service = new RunService(new FileRunStore(dir), { clock: () => 1000 });
+      await service.start({
+        id: 'r',
+        tenantId: 'a',
+        projectId: 'p',
+        capability,
+        principal,
+        budget: { units: 100, modelCalls: 100, toolCalls: 100, wallMs: null },
+      });
+      await service.claim('r', 'host', 100);
+      // RunService.fork looks the fork point up among recorded steps, so a fork point can only be
+      // a step id that RunService.step accepted.
+      const stepAccepts = async (stepId: string) => {
+        try {
+          await service.step(
+            'r',
+            'host',
+            { id: stepId, version: '1', kind: 'tool', effect: 'pure', input: {}, cost: 0 },
+            () => ({ ok: true }),
+            principal,
+          );
+          return true;
+        } catch (error) {
+          if ((error as { code?: string }).code === 'invalid_step') return false;
+          throw error;
+        }
+      };
+      const samples = [
+        'step_2',
+        'one',
+        'A.b:c-d_9',
+        'x'.repeat(128),
+        'x'.repeat(129),
+        '',
+        ' step_2',
+        'step_2 ',
+        'step/2',
+        '../step',
+        'step\\2',
+        '-x',
+        '.hidden',
+        'has space',
+        'unicodé',
+        'step_2\n',
+      ];
+      const accepted = new Map<string, boolean>();
+      for (const sample of samples) accepted.set(sample, await stepAccepts(sample));
+      for (const sample of samples) {
+        const parsed = continuationModeSchema.safeParse({
+          mode: 'fork',
+          ofRunId: 'run_1',
+          forkPoint: sample,
+          nativeSession: null,
+        });
+        expect([sample, parsed.success]).toEqual([sample, accepted.get(sample)]);
+        if (parsed.success && parsed.data.mode === 'fork')
+          expect(parsed.data.forkPoint).toBe(sample);
+      }
+      for (const sample of samples)
+        expect([sample, STEP_ID_PATTERN.test(sample)]).toEqual([sample, accepted.get(sample)]);
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
