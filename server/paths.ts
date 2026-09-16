@@ -181,9 +181,9 @@ export async function readTextOrNull(absolute: string): Promise<string | null> {
 }
 
 export const textKind = (name: string): 'markdown' | 'text' | 'unsupported' =>
-  /\.md$/i.test(name)
+  /\.(md|markdown)$/i.test(name)
     ? 'markdown'
-    : /\.(txt|json|csv|js|jsx|ts|tsx|css|html|py|toml|yaml|yml|xml|log|ini|bat|ps1|sh|sql)$/i.test(
+    : /\.(txt|json|csv|tsv|js|jsx|ts|tsx|css|html|py|toml|yaml|yml|xml|log|ini|bat|ps1|sh|sql)$/i.test(
           name,
         )
       ? 'text'

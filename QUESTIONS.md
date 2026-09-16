@@ -134,6 +134,42 @@ earlier installer, so they were left as they are. Andrew decides whether this ca
 becomes 0.1.2 or stays an unpublished experimental 0.1.1, and when the product identity is
 renamed, once, on purpose.
 
+### O8. ACP provider and version compatibility checks
+
+The rule is settled and lives in the roadmap (2026-09-13.1, "Runtime seam"): Diomedes
+contract first; ACP is the preferred external transport. What is not settled is what the
+pinned providers actually do. Each item below is answered by a probe against the installed
+binary, recorded the way `server/engines/cursor.ts` records its initialize exchange, never by
+a vendor page alone.
+
+1. Does the installed Devin CLI verify the way Cursor's did (version pinned, sign-in state
+   readable, `devin acp` initialize negotiated, models listed), so it can be the second
+   independent ACP conformance route in H05?
+2. Does the pinned OpenCode 1.18.4 expose an ACP subcommand, and if so with what
+   capabilities against its native session route (H04)?
+3. Does ACP v1 `session/new` carry MCP servers in the shape the loopback `diomedes_team`
+   host needs, for Cursor and for Devin (H14)?
+4. Can Cursor's `Mcp(*:*)` native deny rule carve out the loopback team server while
+   still denying every other MCP server (H05, H14)?
+5. For each ACP route with client-served filesystem and terminal: can the mediated
+   operations be bypassed by uncontained native tooling? Until answered no with evidence,
+   the route's facts stay `engine-reported` or `not-measured` (H05, H12).
+
+### O9. The History page can stay on the Console when two settings writes cross
+
+Raised 2026-09-15. `openInBook` in `client/App.tsx` sends the guarded whole-settings write
+(`PUT` with `If-Match`, `surface: 'workbook'`) at the same moment as `navigate`'s unguarded
+`lastPage` patch. When the server handles the patch first, it refuses the guarded write with
+409 ("Settings changed while this screen was saving. The saved settings were reloaded.") and
+the surface stays `console`, so the History page never opens. Holding the guarded write for
+150 ms makes the History check in `tests/ai-engines-ui.spec.ts` fail with both the 7adf603
+spec and the spec before it; holding the patch instead makes both pass. Unforced, the check
+failed 4 of 25 runs with the 7adf603 spec and 0 of 15 with the earlier one, which is not a
+significant difference. A person can hit this, so retrying the test would hide a product bug.
+Still open: which change in `App.tsx` makes the two writes safe to cross (for example,
+`openInBook` waiting for the `lastPage` patch, or `navigate` skipping the patch while a guarded
+write is in flight), carried under its own work order rather than as a test change.
+
 ## Resolved
 
 ### R7. History retention was configured and not enforced (raised as O5)

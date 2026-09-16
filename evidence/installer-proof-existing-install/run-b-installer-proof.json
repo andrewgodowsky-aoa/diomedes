@@ -1,0 +1,35 @@
+{
+  "startedAt": "2026-09-13T09:14:00.5046113Z",
+  "installer": "F:\\Diomedes\\deliverables\\windows-release-20260912-4fb8656\\Diomedes-Experimental-0.1.1-unsigned-setup.exe",
+  "installerSha256": "d9eccbd5101b675968a17f2adbb760b66db627e247da24f8c4d07aa66b0e369d",
+  "installTarget": "F:\\Diomedes\\diomedes-wt\\installer-proof-existing-install-20260913\\test-results\\proof-existing-B\\installation",
+  "registryKeys": [
+    "HKCU:\\Software\\Diomedes\\Experimental\\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001",
+    "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001"
+  ],
+  "preExistingRegistration": {
+    "present": true,
+    "installDir": "C:\\Users\\andre\\AppData\\Local\\Programs\\Diomedes Experimental 20260909",
+    "installDirFileCount": 78,
+    "snapshot": "F:\\Diomedes\\diomedes-wt\\installer-proof-existing-install-20260913\\test-results\\proof-existing-B\\registration-before\\snapshot.json"
+  },
+  "checks": [
+    "Installed all payload files with identical SHA-256; both current-user keys and the Start Menu shortcut name this installation",
+    "Installed executable passed full Connections desktop/crash/restart smoke with isolated profile",
+    "Same-version repair install retained unknown data and isolated profile; all program hashes and the registration still match",
+    "Uninstall removed only owned payload/registration/shortcut; unknown file and isolated profile retained",
+    "The registration found before the proof (2 keys, 1 Start Menu files) was handed back and reads back identical; the existing installation's 78 files and every Diomedes taskbar pin are unchanged"
+  ],
+  "passed": true,
+  "registration": {
+    "displayName": "Diomedes Experimental 2026-09-09 (Unsigned)",
+    "displayVersion": "0.1.1"
+  },
+  "payloadFileCount": 76,
+  "runtime": "F:\\Diomedes\\diomedes-wt\\installer-proof-existing-install-20260913\\test-results\\proof-existing-B\\runtime-proof\\proof.json",
+  "registrationRestore": {
+    "result": "restored",
+    "afterFailure": false
+  },
+  "finishedAt": "2026-09-13T09:14:32.3102532Z"
+}

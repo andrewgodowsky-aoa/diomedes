@@ -2,8 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { selectedEngine } from '../../shared/ai-selection';
 import { formatOrigin, originForNeed, originForSession } from '../../shared/attribution';
 import type { ScopeGrantView } from '../../shared/permissions';
-import { isRoute, isExternalEngine, ENGINE_NAMES } from '../../shared/engines';
-import { selectTaskSources } from '../../shared/task-sources';
+import { isRoute, isExternalEngine } from '../../shared/engines';
+import {
+  selectTaskSources,
+  taskDocumentProblem,
+  TASK_SOURCE_LIMITS,
+} from '../../shared/task-sources';
+import { TaskDocumentSelect } from './TaskDocumentSelect';
 import type {
   Change,
   Conversation,
@@ -27,6 +32,7 @@ import type {
 } from '../../shared/types';
 import { api, listDocuments } from '../api';
 import { reconcileWorkStarts, startWork } from '../work-start';
+import { createTask as admitTaskCreation } from '../task-create';
 import { decideApproval, reconcileApprovals } from '../approval-decisions';
 import {
   ApprovalStatus,
@@ -40,6 +46,7 @@ import {
 import { Mark } from './Mark';
 import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
+import { SendConfirmation } from './SendConfirmation';
 import { PermissionPanel } from './PermissionPanel';
 import { Ledger } from './Ledger';
 import { Picker } from './Picker';
@@ -117,9 +124,13 @@ export function Shell({
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [scopeGrants, setScopeGrants] = useState<ScopeGrantView[]>([]);
-  const [sendTask, setSendTask] = useState<{ task: Task; route: Route; sources: string[] } | null>(
-    null,
-  );
+  const [sendTask, setSendTask] = useState<{
+    task: Task;
+    route: Route;
+    sources: string[];
+    namedSources: string[];
+    documents: DocumentInfo[];
+  } | null>(null);
   const [team, setTeam] = useState<TeamState>(emptyTeam);
   const [teamAvailable, setTeamAvailable] = useState(false);
   const [toast, setToast] = useState('');
@@ -362,8 +373,8 @@ export function Shell({
   // `statePayload` strips `documents` from the SSE fan-out, so the listing is
   // fetched here: when the pane or the palette wants it, and again on each
   // state event while one of them is open. Nothing reads `state.documents`.
-  // The Board wants the listing too, so a Start can pick the documents a task
-  // names without a round trip between the click and the command.
+  // The Board uses the same listing for the new task's document picker.
+  // Starts refresh it again before presenting the selection and dispatching.
   const wantDocuments = filesOpen || paletteOpen || view === 'Board';
   const documentsFor = useRef<string | null>(null);
   useEffect(() => {
@@ -615,21 +626,16 @@ export function Shell({
     });
   }
   /**
-   * The Console's one task-creation path. It posts the same `POST /tasks` the
-   * frozen Workbook's plan import already uses, then reloads: a task with no run
-   * is projected into Ready by `taskEvidence`, so no move follows and no second
-   * lifecycle is introduced. The error is reported and rethrown, because the
-   * board keeps its form open when the task was not made.
+   * Creation uses ordinary command admission. The returned Task is already
+   * Ready by projection; no run or task move follows. Only an unconfirmed create
+   * keeps the form open: a later refresh failure must not invite a second task.
    */
-  async function createTask(input: { name: string; description: string }) {
+  async function createTask(input: { name: string; description: string; sourceDocument?: string }) {
     setBusy(true);
     try {
-      await api<Task>(`${base}/tasks`, 'POST', {
-        name: input.name,
-        description: input.description,
-        owner: 'you',
-      });
-      await load();
+      // The pending record carries the chosen document, so a retry re-sends exactly it.
+      await admitTaskCreation(projectId, input);
+      await load().catch(report);
     } catch (error) {
       report(error);
       throw error;
@@ -637,29 +643,41 @@ export function Shell({
       setBusy(false);
     }
   }
-  // The documents the task itself names travel with it; a task that names
-  // none sends none, and the confirmation says which. The listing is fetched
-  // here because the state fan-out strips `documents`.
-  async function taskSources(task: Task): Promise<string[]> {
-    const listed =
-      documentsFor.current === projectId ? documents : (await listDocuments(projectId)).documents;
-    return selectTaskSources(task, listed);
-  }
   async function startTask(task: Task, route: Route) {
-    if (isExternalEngine(route)) {
-      const sources = await taskSources(task).catch(() => [] as string[]);
-      setSendTask({ task, route, sources });
+    if (route !== 'sample') {
+      setBusy(true);
+      try {
+        const listed = (await listDocuments(projectId)).documents;
+        if (currentId.current !== projectId) return;
+        // Keep an unavailable saved path visible so the person can replace it.
+        const sources = task.sourceDocument !== undefined
+          ? [task.sourceDocument]
+          : selectTaskSources(task, listed);
+        setSendTask({ task, route, sources, namedSources: sources, documents: listed });
+      } catch (error) {
+        report(error);
+      } finally {
+        setBusy(false);
+      }
       return;
     }
     await dispatchTask(task, route);
   }
   async function dispatchTask(task: Task, route: Route, sources?: string[]) {
     await perform(async () => {
+      if (route !== 'sample') {
+        const listed = (await listDocuments(projectId)).documents;
+        for (const source of sources ?? []) {
+          const problem = taskDocumentProblem(source, listed);
+          if (problem) throw new Error(problem);
+        }
+      }
+      if (currentId.current !== projectId) return;
       const thread = state?.conversations.find((item) => item.taskId === task.id);
       await startWork(projectId, {
         taskId: task.id,
         route,
-        sources: sources ?? (await taskSources(task)),
+        sources: sources ?? [],
         consent: true,
         ...(thread ? { threadId: thread.id } : {}),
       });
@@ -697,7 +715,7 @@ export function Shell({
             consent: true,
             threadId: thread.id,
             attachedTo: thread.attachedTo,
-            ...(sources?.length ? { sources } : {}),
+            ...(sources ? { sources } : {}),
             ...(mode === 'fix' && failing ? { failing } : {}),
           },
           control.signal,
@@ -723,6 +741,44 @@ export function Shell({
         }
       }
     });
+  }
+  async function messageSources(
+    thread: Conversation,
+    mode: Mode,
+    text: string,
+    failingDocument: string,
+  ): Promise<string[]> {
+    // Preserve explicit attachments and Fix's failing document. Ask may also
+    // carry documents named by the person in this message or its owning task.
+    // Never infer scope from assistant prose or the rest of the transcript.
+    const sources = [...new Set([
+      ...(mode === 'fix' && failingDocument ? [failingDocument] : []),
+      ...(['document', 'plan'].includes(thread.attachedTo.kind)
+        ? [thread.attachedTo.ref]
+        : []),
+    ])];
+    if (mode !== 'ask') return sources;
+    const listed = (await listDocuments(projectId)).documents;
+    const task = taskOf(thread);
+    const named = selectTaskSources({
+      name: text,
+      description: task ? `${task.name}\n${task.description ?? ''}` : '',
+    }, listed);
+    // Attachments are also included by the server. Reserve their room before
+    // adding named documents so the preview and submitted list stay identical.
+    let bytes = sources.reduce(
+      (sum, source) => sum + (listed.find((d) => d.path === source)?.size ?? 0),
+      0,
+    );
+    for (const source of named) {
+      if (sources.includes(source)) continue;
+      const size = listed.find((d) => d.path === source)!.size;
+      if (sources.length >= TASK_SOURCE_LIMITS.files || bytes + size > TASK_SOURCE_LIMITS.bytes)
+        continue;
+      sources.push(source);
+      bytes += size;
+    }
+    return sources;
   }
   function cancelAsk() {
     askControl.current?.abort();
@@ -1066,6 +1122,7 @@ export function Shell({
               onMode={changeMode}
               onPermission={(p) => void setPermission(selected, p)}
               onRename={() => setRenaming({ id: selected.id, name: threadName(selected, state) })}
+              prepareSources={(m, text, doc) => messageSources(selected, m, text, doc)}
               onSend={(m, text, r, failing, sources) =>
                 void send(selected, m, text, r, failing, sources)
               }
@@ -1175,6 +1232,9 @@ export function Shell({
               onOpenTeam={() => setView('Team')}
               onOpenThread={(task) => openTaskThread(task)}
               onCreateTask={createTask}
+              documents={documentsFor.current === projectId ? documents : []}
+              documentsLoading={documentsLoading}
+              documentsFailure={documentsFailure}
             />
           </section>
         )}
@@ -1255,30 +1315,39 @@ export function Shell({
         />
       )}
       {sendTask && (
-        <Modal title="Send this task?" onClose={() => setSendTask(null)}>
-          <p className="prose">
-            Send the instruction for {sendTask.task.name} to{' '}
-            {isExternalEngine(sendTask.route) ? ENGINE_NAMES[sendTask.route] : sendTask.route} using
-            its selected model and account.{' '}
-            {sendTask.sources.length
-              ? `The ${sendTask.sources.length === 1 ? 'document' : 'documents'} the task names ${sendTask.sources.length === 1 ? 'goes' : 'go'} with it: ${sendTask.sources.join(', ')}.`
-              : 'The task names no project document, so none is included and the engine can only propose new files.'}{' '}
-            File proposals will wait for exact approval.
-          </p>
-          <div className="dialog-actions">
-            <Button onClick={() => setSendTask(null)}>Cancel</Button>
-            <Button
-              tone="primary"
-              onClick={() => {
-                const pending = sendTask;
-                setSendTask(null);
-                void dispatchTask(pending.task, pending.route, pending.sources);
-              }}
-            >
-              Send task
-            </Button>
-          </div>
-        </Modal>
+        <SendConfirmation
+          kind="task"
+          instruction={sendTask.task.description
+            ? `${sendTask.task.name}\n${sendTask.task.description}`
+            : sendTask.task.name}
+          route={sendTask.route}
+          sources={sendTask.sources}
+          mode="build"
+          picker={
+            <TaskDocumentSelect
+              documents={sendTask.documents}
+              value={sendTask.sources.length > 1 ? 'named' : sendTask.sources[0] ?? ''}
+              namedSources={sendTask.namedSources}
+              onChange={(value) =>
+                setSendTask({
+                  ...sendTask,
+                  sources: value === 'named' ? sendTask.namedSources : value ? [value] : [],
+                })
+              }
+            />
+          }
+          disabled={
+            busy ||
+            !online ||
+            sendTask.sources.some((source) => !!taskDocumentProblem(source, sendTask.documents))
+          }
+          onClose={() => setSendTask(null)}
+          onSend={() => {
+            const pending = sendTask;
+            setSendTask(null);
+            void dispatchTask(pending.task, pending.route, pending.sources);
+          }}
+        />
       )}
       {permissionsOpen && selected && (
         <Modal title="Task permissions" onClose={() => setPermissionsOpen(false)}>

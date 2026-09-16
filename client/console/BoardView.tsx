@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { pendingTaskCreation } from '../task-create';
 import type { Slot, Task, TeamMember } from '../../shared/types';
 import { formatOrigin, originForSession } from '../../shared/attribution';
 import type { BoardProps } from './types';
@@ -9,6 +10,8 @@ import {
   type TaskColumn as Column,
 } from '../workbench/task-evidence';
 import './board.css';
+import { TaskDocumentSelect } from './TaskDocumentSelect';
+import { taskDocumentProblem } from '../../shared/task-sources';
 
 const ORDER: Column[] = ['Ready', 'Queued', 'Working', 'Review', 'Blocked', 'Done'];
 const WHY: Record<Column, string> = {
@@ -69,6 +72,9 @@ export function BoardView({
   policy,
   focusTaskId,
   busy,
+  documents,
+  documentsLoading,
+  documentsFailure,
   onStart,
   onPause,
   onReview,
@@ -85,6 +91,40 @@ export function BoardView({
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [newDocument, setNewDocument] = useState('');
+  const [retryingCreate, setRetryingCreate] = useState(false);
+  const [creationIssue, setCreationIssue] = useState('');
+  function restoreCreation() {
+    try {
+      const pending = pendingTaskCreation(project.id);
+      setCreationIssue('');
+      setRetryingCreate(!!pending);
+      if (pending) {
+        setNewName(pending.name);
+        setNewDescription(pending.description);
+        // The saved request names one exact document or none; the retry sends that.
+        setNewDocument(pending.sourceDocument ?? '');
+        setCreating(true);
+      }
+    } catch (error) {
+      setCreationIssue(
+        error instanceof Error ? error.message : 'The saved task request could not be checked.',
+      );
+    }
+  }
+  useEffect(() => {
+    setCreating(false);
+    setNewName('');
+    setNewDescription('');
+    setNewDocument('');
+    restoreCreation();
+  }, [project.id]);
+  const invalidDocument = !!newDocument && (
+    documentsLoading || !!documentsFailure || !!taskDocumentProblem(newDocument, documents)
+  );
+  // A retry re-sends the saved request as it is; the server answers with the replayed
+  // task or with the reason the document no longer qualifies.
+  const blockedDocument = invalidDocument && !retryingCreate;
   // `busy` only turns true after the Shell's state settles, so a second click
   // can arrive before the first render. The ref refuses it in the same tick.
   const sending = useRef(false);
@@ -199,6 +239,7 @@ export function BoardView({
     setCreating(false);
     setNewName('');
     setNewDescription('');
+    setNewDocument('');
   }
 
   // One control, one path: the same `POST /tasks` the plan import already uses.
@@ -207,13 +248,18 @@ export function BoardView({
   async function submitNew(event: React.FormEvent) {
     event.preventDefault();
     const name = newName.trim();
-    if (!name || sending.current) return;
+    if (!name || sending.current || blockedDocument) return;
     sending.current = true;
     try {
-      await onCreateTask({ name, description: newDescription.trim() });
+      await onCreateTask({
+        name,
+        description: retryingCreate ? newDescription : newDescription.trim(),
+        ...(newDocument ? { sourceDocument: newDocument } : {}),
+      });
       closeNew();
     } catch {
       // The Shell reported it. Keep the words the person typed.
+      restoreCreation();
     } finally {
       sending.current = false;
     }
@@ -231,7 +277,13 @@ export function BoardView({
           className="verb light new"
           aria-expanded={creating}
           disabled={busy}
-          onClick={() => (creating ? closeNew() : setCreating(true))}
+          onClick={() => {
+            if (creating) closeNew();
+            else {
+              setCreating(true);
+              restoreCreation();
+            }
+          }}
         >
           New task
         </button>
@@ -270,6 +322,11 @@ export function BoardView({
             {effective === 'first' ? 'Confirm each start' : 'Start on click'}
           </span>
         )}
+        {creationIssue && (
+          <p className="creation-issue" role="alert">
+            {creationIssue}
+          </p>
+        )}
         {creating && (
           <form
             className="newtask"
@@ -286,6 +343,7 @@ export function BoardView({
               placeholder="Task name"
               maxLength={200}
               value={newName}
+              readOnly={busy || retryingCreate}
               onChange={(event) => setNewName(event.target.value)}
             />
             <input
@@ -294,10 +352,23 @@ export function BoardView({
               placeholder="What should happen (optional)"
               maxLength={10_000}
               value={newDescription}
+              readOnly={busy || retryingCreate}
               onChange={(event) => setNewDescription(event.target.value)}
             />
-            <button type="submit" className="go" disabled={busy || !newName.trim()}>
-              Create
+            <TaskDocumentSelect
+              documents={documents}
+              loading={documentsLoading}
+              failure={documentsFailure}
+              value={newDocument}
+              onChange={setNewDocument}
+              disabled={busy || retryingCreate}
+            />
+            <button
+              type="submit"
+              className="go"
+              disabled={busy || !!creationIssue || !newName.trim() || blockedDocument}
+            >
+              {retryingCreate ? 'Retry create' : 'Create'}
             </button>
             <button type="button" onClick={closeNew}>
               Not now
@@ -469,6 +540,9 @@ function TaskRow({
         </span>
         <span className="mono age">{age}</span>
       </div>
+      {task.sourceDocument && (
+        <div className="x" title={task.sourceDocument}>Default document: {task.sourceDocument}</div>
+      )}
       {(evidenceLine || focus) && (
         <div className="x">
           {evidenceLine && <span className="why">{evidenceLine}</span>}
@@ -535,6 +609,23 @@ function TaskRow({
           </button>
         )}
       </span>
+      {task.creationReceipt && (
+        <details className="creation-receipt">
+          <summary>Creation receipt</summary>
+          <dl>
+            <dt>Created</dt>
+            <dd>
+              <time dateTime={task.creationReceipt.admittedAt}>
+                {new Date(task.creationReceipt.admittedAt).toLocaleString()}
+              </time>
+            </dd>
+            <dt>Command</dt>
+            <dd className="mono">{task.creationReceipt.commandId}</dd>
+            <dt>History event</dt>
+            <dd className="mono">{task.creationReceipt.eventId}</dd>
+          </dl>
+        </details>
+      )}
       {canStart && confirmOpen && (
         <div className="confirm">
           <span>Hand to {worker}?</span>

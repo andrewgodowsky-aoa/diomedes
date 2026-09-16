@@ -1,10 +1,12 @@
 import { parseApprovalCommand } from './approval-admission.js';
+import { taskDocumentProblem } from '../shared/task-sources.js';
 import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
 import { ConfigurationService } from './configuration.js';
 import { mountConfigurationRoutes } from './configuration-routes.js';
 import { WeeklyBriefService } from './weekly-brief.js';
+import { browseImports, inspectImport, importExports } from './file-imports.js';
 import { isActiveMember } from '../shared/workspaces.js';
 import { AllowanceLedger } from './managed-usage.js';
 import { ManagedGateway } from './managed-gateway.js';
@@ -61,6 +63,7 @@ import { FIXTURE_ENGINE } from './harness/approval.js';
 import { CODEX_ENGINE, type ResolveHarnessAuthority } from './harness/codex-engine.js';
 import { roleInstructions } from './team/prompts.js';
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
+import { parseTaskCommand } from './task-admission.js';
 import { WorkControl } from './work-control.js';
 import { DesktopConnections } from './connections/desktop.js';
 import packageInfo from '../package.json' with { type: 'json' };
@@ -1070,6 +1073,27 @@ export async function createApp(options: AppOptions) {
     route(async (req) => ({ documents: await store.listDocuments(id(req)) })),
   );
   app.get(
+    '/api/projects/:id/imports/browse',
+    route(async (req) => {
+      store.state(id(req));
+      return browseImports(
+        typeof req.query.path === 'string' && req.query.path.trim()
+          ? req.query.path : store.projectRoot,
+      );
+    }),
+  );
+  app.post(
+    '/api/projects/:id/imports/inspect',
+    route(async (req) => {
+      store.state(id(req));
+      return inspectImport(body(req).path);
+    }),
+  );
+  app.post(
+    '/api/projects/:id/imports',
+    route(async (req) => importExports(store, id(req), body(req).files)),
+  );
+  app.get(
     '/api/projects/:id/documents/read',
     route(async (req) =>
       store.readDocument(id(req), asString(req.query.path, 'a document path', 1000)),
@@ -1242,16 +1266,51 @@ export async function createApp(options: AppOptions) {
     route(async (req) => {
       const b = body(req),
         state = store.state(id(req));
+      const command = parseTaskCommand(b);
+      if (command) {
+        // A replay answers before validation: the admitted task is the evidence.
+        const replay = store.taskCommand(
+          id(req),
+          command.admission.commandId,
+          command.admission.payloadDigest,
+        );
+        if (replay) return replay;
+      }
+      // The document is checked against a fresh listing on both the versioned and the
+      // unversioned path, before anything is created.
+      const requested = command ? command.input.sourceDocument : b.sourceDocument;
+      const sourceDocument = requested === undefined ? undefined : relativeName(requested);
+      if (sourceDocument !== undefined) {
+        if (sourceDocument.length > 1000)
+          throw new ApiError(400, 'Select a project document with a shorter path.');
+        const problem = taskDocumentProblem(sourceDocument, await store.listDocuments(id(req)));
+        if (problem) throw new ApiError(400, problem);
+      }
       const task = store.createTask(state, {
-        name: asString(b.name, 'a task name', 200),
-        description: typeof b.description === 'string' ? b.description.slice(0, 10000) : '',
-        owner: b.owner === undefined ? 'you' : choice(b.owner, owners, 'owner'),
+        ...(command?.input ?? {
+          name: asString(b.name, 'a task name', 200),
+          description: typeof b.description === 'string' ? b.description.slice(0, 10000) : '',
+          owner: b.owner === undefined ? 'you' : choice(b.owner, owners, 'owner'),
+        }),
+        ...(sourceDocument !== undefined ? { sourceDocument } : {}),
       });
-      store.addEntry(state, {
+      const entry = store.addEntry(state, {
         kind: 'tasks-made',
         sentence: `You made a task: ${task.name}`,
         taskId: task.id,
       });
+      if (command) {
+        task.creationReceipt = {
+          protocolVersion: 1,
+          ...command.admission,
+          projectId: state.project.id,
+          taskId: task.id,
+          eventId: entry.id,
+          admittedAt: entry.time,
+          actor: 'local-client',
+          scope: 'local-prototype',
+        };
+      }
       await store.persist(state);
       return task;
     }),

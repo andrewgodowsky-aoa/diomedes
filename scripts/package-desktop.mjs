@@ -95,6 +95,9 @@ try {
     nativeRuntime: { version: '0.153.4', sha256: hashes },
     signing: 'unsigned-experimental', builtAt: new Date().toISOString() };
   await fs.writeFile(path.join(stage, 'BUILD_INFO.json'), JSON.stringify(buildInfo, null, 2));
+  // The packager only warns about a missing icon and ships Electron's instead; fail here.
+  const icon = path.join(root, 'desktop/diomedes.ico');
+  await fs.access(icon);
   const outputs = await packager({
     dir: stage,
     out: path.join(root, 'release'),
@@ -102,6 +105,7 @@ try {
     platform: 'win32',
     arch: 'x64',
     asar: true,
+    icon,
     electronVersion: JSON.parse(
       await fs.readFile(path.join(root, 'node_modules/electron/package.json'), 'utf8'),
     ).version,

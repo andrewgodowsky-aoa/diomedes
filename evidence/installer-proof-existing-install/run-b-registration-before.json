@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "installTarget": "F:\\Diomedes\\diomedes-wt\\installer-proof-existing-install-20260913\\test-results\\proof-existing-B\\installation",
+  "takenAt": "2026-09-13T09:14:00.3236959Z",
+  "keys": [
+    {
+      "subKey": "Software\\Diomedes\\Experimental\\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001",
+      "present": true,
+      "values": [
+        {
+          "name": "InstallDir",
+          "kind": "String",
+          "data": "QwA6AFwAVQBzAGUAcgBzAFwAYQBuAGQAcgBlAFwAQQBwAHAARABhAHQAYQBcAEwAbwBjAGEAbABcAFAAcgBvAGcAcgBhAG0AcwBcAEQAaQBvAG0AZQBkAGUAcwAgAEUAeABwAGUAcgBpAG0AZQBuAHQAYQBsACAAMgAwADIANgAwADkAMAA5AA=="
+        },
+        {
+          "name": "ProductId",
+          "kind": "String",
+          "data": "RABpAG8AbQBlAGQAZQBzAC4ARQB4AHAAZQByAGkAbQBlAG4AdABhAGwALgA4AGMAMgA3AGQANgAxAGEALQAxADkAMQA5AC0ANABiADEAMgAtADkAZABmADcALQAyADAAMgA2ADAAOQAwADkAZQAwADAAMQA="
+        }
+      ]
+    },
+    {
+      "subKey": "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001",
+      "present": true,
+      "values": [
+        {
+          "name": "DisplayName",
+          "kind": "String",
+          "data": "RABpAG8AbQBlAGQAZQBzACAARQB4AHAAZQByAGkAbQBlAG4AdABhAGwAIAAyADAAMgA2AC0AMAA5AC0AMAA5ACAAKABVAG4AcwBpAGcAbgBlAGQAKQA="
+        },
+        {
+          "name": "DisplayVersion",
+          "kind": "String",
+          "data": "MAAuADEALgAxAA=="
+        },
+        {
+          "name": "DisplayIcon",
+          "kind": "String",
+          "data": "QwA6AFwAVQBzAGUAcgBzAFwAYQBuAGQAcgBlAFwAQQBwAHAARABhAHQAYQBcAEwAbwBjAGEAbABcAFAAcgBvAGcAcgBhAG0AcwBcAEQAaQBvAG0AZQBkAGUAcwAgAEUAeABwAGUAcgBpAG0AZQBuAHQAYQBsACAAMgAwADIANgAwADkAMAA5AFwAYQBwAHAAXABEAGkAbwBtAGUAZABlAHMALgBlAHgAZQA="
+        },
+        {
+          "name": "InstallLocation",
+          "kind": "String",
+          "data": "QwA6AFwAVQBzAGUAcgBzAFwAYQBuAGQAcgBlAFwAQQBwAHAARABhAHQAYQBcAEwAbwBjAGEAbABcAFAAcgBvAGcAcgBhAG0AcwBcAEQAaQBvAG0AZQBkAGUAcwAgAEUAeABwAGUAcgBpAG0AZQBuAHQAYQBsACAAMgAwADIANgAwADkAMAA5AA=="
+        },
+        {
+          "name": "UninstallString",
+          "kind": "String",
+          "data": "IgBDADoAXABVAHMAZQByAHMAXABhAG4AZAByAGUAXABBAHAAcABEAGEAdABhAFwATABvAGMAYQBsAFwAUAByAG8AZwByAGEAbQBzAFwARABpAG8AbQBlAGQAZQBzACAARQB4AHAAZQByAGkAbQBlAG4AdABhAGwAIAAyADAAMgA2ADAAOQAwADkAXABVAG4AaQBuAHMAdABhAGwAbAAgAEQAaQBvAG0AZQBkAGUAcwAgAEUAeABwAGUAcgBpAG0AZQBuAHQAYQBsAC4AZQB4AGUAIgA="
+        },
+        {
+          "name": "NoModify",
+          "kind": "DWord",
+          "data": 1
+        },
+        {
+          "name": "NoRepair",
+          "kind": "DWord",
+          "data": 1
+        }
+      ]
+    }
+  ],
+  "startMenu": {
+    "path": "C:\\Users\\andre\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Diomedes Experimental 20260909",
+    "present": true,
+    "creationTimeUtcTicks": 639248836005387707,
+    "lastWriteTimeUtcTicks": 639248836006421786,
+    "files": [
+      {
+        "name": "Diomedes Experimental.lnk",
+        "bytes": 1529,
+        "sha256": "c029f1546d4127fc310788fd6f02f1ebafbab9c812cb64b81e108d1664d4e62e",
+        "attributes": "Archive",
+        "creationTimeUtcTicks": 639248836006421786,
+        "lastWriteTimeUtcTicks": 639248836006475365
+      }
+    ]
+  }
+}

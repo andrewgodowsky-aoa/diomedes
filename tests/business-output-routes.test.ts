@@ -143,6 +143,10 @@ describe('binding where a business writes', () => {
   test('an ordinary member cannot choose where the company writes', async () => {
     const projectId = await makeProject('Company books');
     const organizationId = await makeOrganization('Fernbrook Joinery');
+    expect(
+      (await request(`/workspace/organizations/${organizationId}/output`, 'POST', { projectId }))
+        .status,
+    ).toBe(200);
     const invited = await request<{ code: string }>(
       `/workspace/organizations/${organizationId}/invitations`,
       'POST',
@@ -160,6 +164,15 @@ describe('binding where a business writes', () => {
       projectId,
     });
     expect(bound.status).toBe(403);
+
+    // New per-run source choices must not let an ordinary member replace the
+    // owner's configured read scope through a hand-written HTTP request.
+    const brief = await request(`/workspace/organizations/${organizationId}/brief`, 'POST', {
+      projectId,
+      sources: [{ path: 'member-choice.csv', sha: 'a'.repeat(64) }],
+    });
+    expect(brief.status).toBe(403);
+    expect(brief.data.code).toBe('not_a_configurer');
   });
 
   test('someone outside the company cannot bind its output', async () => {
@@ -298,11 +311,7 @@ describe('a business gets a brief it can read', () => {
     );
     expect(scope.length).toBeGreaterThan(0);
     for (const name of scope)
-      await fs.writeFile(
-        path.join(folderFor('Company books'), name),
-        EXPORT_FIXTURE,
-        'utf8',
-      );
+      await fs.writeFile(path.join(folderFor('Company books'), name), EXPORT_FIXTURE, 'utf8');
 
     // Still refused, because where has not been decided. This is the assertion
     // that would have caught the gap: an activated setup is not enough.
@@ -341,5 +350,38 @@ describe('a business gets a brief it can read', () => {
     // Every claim in a brief carries its source; the fixture's own words are
     // what proves the draft came from the file rather than from a template.
     expect(draft).toContain('cabinets fitted');
+
+    // The new route uses real imports, with arbitrary export names rather than
+    // the pack's historical fixture paths. A stale bound project is refused.
+    const exportPath = path.join(root, 'chosen-export.csv');
+    await fs.writeFile(exportPath, 'rooms,ready\nDining,yes');
+    const inspected = await request<{ path: string; sha: string }>(
+      `/projects/${projectId}/imports/inspect`,
+      'POST',
+      { path: exportPath },
+    );
+    expect(inspected.status).toBe(200);
+    const copied = await request<{ files: { path: string; sha: string }[] }>(
+      `/projects/${projectId}/imports`,
+      'POST',
+      { files: [inspected.data] },
+    );
+    expect(copied.status).toBe(200);
+    const mismatch = await request(`/workspace/organizations/${organizationId}/brief`, 'POST', {
+      projectId: 'a-different-project',
+      sources: copied.data.files,
+    });
+    expect(mismatch.status).toBe(409);
+    const explicit = await request(`/workspace/organizations/${organizationId}/brief`, 'POST', {
+      projectId,
+      sources: copied.data.files,
+    });
+    expect(explicit.status).toBe(200);
+    const selectedDraft = await fs.readFile(
+      path.join(folderFor('Company books'), ran.data.destination),
+      'utf8',
+    );
+    expect(selectedDraft).toContain('Dining,yes');
+    expect(selectedDraft).not.toContain('cabinets fitted');
   });
 });

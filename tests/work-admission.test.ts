@@ -10,6 +10,7 @@ import type { NativeGenerator } from '../server/native-work.js';
 import { hash, Store } from '../server/store.js';
 import { parseWorkCommand, MAX_WORK_RECEIPTS } from '../server/work-admission.js';
 import type { Need, ProjectState, Session, Task } from '../shared/types.js';
+import { selectTaskSources } from '../shared/task-sources.js';
 
 const original = '\ufeff# Brief\r\n\r\nSynthetic before bytes.\r\n';
 const revised = `${original}Reviewed addition.\r\n`;
@@ -546,6 +547,66 @@ describe('durable task Work admission', () => {
     expect(blank.status).toBe(400);
     expect(current().tasks).toHaveLength(before + 1);
   });
+
+  test('a saved task document survives reload and uses exact approval and attributed History', async () => {
+    const made = await request<Task>(`/projects/${projectId}/tasks`, 'POST', {
+      name: 'Add a reviewed sentence', sourceDocument: 'Brief.md', owner: 'you',
+    });
+    expect(made.status).toBe(200);
+    expect(made.data.sourceDocument).toBe('Brief.md');
+    expect(generate).not.toHaveBeenCalled();
+    expect(await store().current(projectId, 'Brief.md')).toBe(original);
+    await close();
+    await launch();
+    const task = current().tasks.find((item) => item.id === made.data.id)!;
+    const sources = selectTaskSources(task, await store().listDocuments(projectId));
+    const started = await start({ ...command(), taskId: task.id, sources });
+    expect(started.status).toBe(200);
+    const waiting = await until((s) => s.needs.some((n) => n.state === 'open'));
+    const need = waiting.needs.find((n) => n.taskId === task.id)!;
+    expect(generate.mock.calls[0][0].documents).toEqual([{ path: 'Brief.md', text: original }]);
+    expect(need.preview?.map((change) => change.path)).toEqual(['Brief.md']);
+    expect(await store().current(projectId, 'Brief.md')).toBe(original);
+    expect(current().history.some((entry) => entry.kind === 'changed' && entry.taskId === task.id)).toBe(false);
+    expect((await request(`/projects/${projectId}/needs/${need.id}/resolve`, 'POST', approval(need))).status).toBe(200);
+    expect(await store().current(projectId, 'Brief.md')).toBe(revised);
+    const entry = current().history.find((entry) => entry.kind === 'changed' && entry.taskId === task.id)!;
+    expect(entry).toMatchObject({ sessionId: started.data.id, actor: 'diomedes-with-ok',
+      origin: { mode: 'direct', engine: { id: 'codex' }, model: { reported: 'deterministic-fixture', source: 'runtime' } } });
+    expect(entry.files).toEqual([expect.objectContaining({ path: 'Brief.md', before: hash(original), after: hash(revised) })]);
+  });
+
+  test.each(['nested/Brief.md', 'nested\\Brief.md', ' leading space.md'])(
+    'task selection preserves the exact relative document path: %s', async (sourceDocument) => {
+      const canonical = sourceDocument.replaceAll('\\', '/');
+      await fs.mkdir(path.dirname(path.join(current().project.folder, canonical)), { recursive: true });
+      await fs.writeFile(path.join(current().project.folder, canonical), original);
+      const result = await request<Task>(`/projects/${projectId}/tasks`, 'POST', {
+        name: 'Revise this document', sourceDocument,
+      });
+      expect(result.status).toBe(200);
+      expect(result.data.sourceDocument).toBe(canonical);
+      expect(generate).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(['missing.md', '../Brief.md', '.hidden.md', 'node_modules/hidden.md', 'binary.bin', 'large.md', 'x'.repeat(1001), '', null, 42])(
+    'task creation refuses an invalid or invisible document without making a task: %j', async (sourceDocument) => {
+      const folder = current().project.folder;
+      await fs.writeFile(path.join(folder, '.hidden.md'), 'Hidden text');
+      await fs.mkdir(path.join(folder, 'node_modules'), { recursive: true });
+      await fs.writeFile(path.join(folder, 'node_modules', 'hidden.md'), 'Excluded text');
+      await fs.writeFile(path.join(folder, 'binary.bin'), Buffer.from([0, 1]));
+      await fs.writeFile(path.join(folder, 'large.md'), 'x'.repeat(128_001));
+      const before = current().tasks.length;
+      const history = current().history.length;
+      const result = await request(`/projects/${projectId}/tasks`, 'POST', { name: 'Update selected document', sourceDocument });
+      expect([400, 403]).toContain(result.status);
+      expect(current().tasks).toHaveLength(before);
+      expect(current().history).toHaveLength(history);
+      expect(generate).not.toHaveBeenCalled();
+    },
+  );
 
   test('incompatible saved receipts stop loading before project state is rewritten', async () => {
     await start();

@@ -519,6 +519,7 @@ describe('the thread says it once, and only where something loaded', () => {
         onMode: () => {},
         onPermission: () => {},
         onRename: () => {},
+        prepareSources: async () => [],
         onSend: () => {},
         onResolve: () => {},
         onPreview: () => {},

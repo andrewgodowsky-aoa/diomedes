@@ -188,6 +188,12 @@ export function mountWorkspaceRoutes(
       const target = await workspaces.briefTarget(id);
       if (!target.ready)
         throw new ApiError(409, target.message, { code: target.code.replace(/-/g, '_') });
+      // Replacing the configured read scope is an owner/admin choice, using
+      // the same authority check as editing that configuration. A member may
+      // still run the legacy configured sources, but cannot widen them here.
+      if (body(req).sources !== undefined) configuration.assertMayConfigure(id);
+      if (body(req).sources !== undefined && body(req).projectId !== target.projectId)
+        throw new ApiError(409, 'The output project changed. Reopen the workspace and choose its files again.');
       const manifest = configuration.active(id);
       if (!manifest)
         throw new ApiError(
@@ -199,6 +205,7 @@ export function mountWorkspaceRoutes(
         projectId: target.projectId,
         manifest,
         at: new Date().toISOString(),
+        sources: body(req).sources,
       });
       return {
         organizationId: target.organizationId,

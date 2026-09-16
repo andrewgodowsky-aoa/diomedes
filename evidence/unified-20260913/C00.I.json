@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "node_id": "C00.I",
+  "actual_model_route": "Claude Code desktop, claude-fable-5-1 (Fable 5.1); delegated read-only inventories: opencode-go/glm-5.3-flash x3 and opencode/muse-spark-1.3-contributor-free x1 via ask-opencode.ps1 -Mode ask; adversarial reviews of Astra's slices: Claude Code Agent tool model opus",
+  "base_sha": "212106e75a710242e74620c3c5947aef4bbeef23",
+  "worktree": "F:/Diomedes/diomedes-wt/c00-rebaseline-20260913",
+  "branch": "fable/c00-rebaseline-20260913",
+  "owned_paths": [
+    "AGENTS.md",
+    "docs/implementation/2026-09-13-rebaseline.md",
+    "evidence/unified-20260913/",
+    "scripts/coordination.ts",
+    "shared/contract-revision.ts",
+    "tests/contract-revision.test.ts",
+    "tests/coordination.test.ts"
+  ],
+  "patch_path": "F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913/results/C00.I.patch",
+  "patch_sha256": "sha256:2fc947138f7f4b75e08a254a7199bfed0062aa420cb184736780c862b45de499",
+  "patch_bytes": 202101,
+  "changed_paths": [
+    "AGENTS.md",
+    "docs/implementation/2026-09-13-rebaseline.md",
+    "evidence/unified-20260913/C00.I.json",
+    "evidence/unified-20260913/coverage-audit.md",
+    "evidence/unified-20260913/dependency-order.md",
+    "evidence/unified-20260913/work-orders.json",
+    "scripts/coordination.ts",
+    "shared/contract-revision.ts",
+    "tests/contract-revision.test.ts",
+    "tests/coordination.test.ts"
+  ],
+  "changed_file_sha256": {
+    "AGENTS.md": "sha256:b0fc27ee0aa97a47cf20ae4f5bb97642567beede5d0f957c1d19ea32ff59cfc0",
+    "docs/implementation/2026-09-13-rebaseline.md": "sha256:aa9cff75569c44b82d4936a687f23e41d9994eed4b4647557fbd14cf69103492",
+    "evidence/unified-20260913/C00.I.json": "sha256:3ed5e22121616bd5b2c9ed1a59d6abd6204a2c461b004507ceaa7c7e025b1e13",
+    "evidence/unified-20260913/coverage-audit.md": "sha256:fa8e605fa3842eb5a0fa37d51b519df000e8a5b7a45376a93daabd71af2f41af",
+    "evidence/unified-20260913/dependency-order.md": "sha256:b2bfd67eb3431a2b17ae8825c36d073a69529d986c62013af10e92d0ca9ef6b1",
+    "evidence/unified-20260913/work-orders.json": "sha256:2b78761f1ad7465700a7ff616aa318e58a3e4b4c3107e33795f0c6118b6c377a",
+    "scripts/coordination.ts": "sha256:fe7c6d901a6406abf32dbb407c4dfdd9b1c2c874148d3bb9c39f6851a066001c",
+    "shared/contract-revision.ts": "sha256:d224f36bbccd657fab33303498b96201d851333ff58e8025627c4235db5c5849",
+    "tests/contract-revision.test.ts": "sha256:30d29923e09116441dadae84e8ffe207369b56ef8cc75b9b929b3ec96705d28c",
+    "tests/coordination.test.ts": "sha256:f842dafa66387e55a2d6b385e72a9850fe732ab6c701835c99f53040a1dd0e48"
+  },
+  "consumed_contract_revision": null,
+  "produced_contract_revision": "2026-09-13.1 (proposed; shared/contract-revision.ts; harness/work-control/capability-packs/agents contract versions unchanged at 1)",
+  "commands": [
+    {
+      "command": "git worktree add -b fable/c00-rebaseline-20260913 F:/Diomedes/diomedes-wt/c00-rebaseline-20260913 212106e",
+      "cwd": "F:/Diomedes/diomedes",
+      "result": "HEAD is now at 212106e; node_modules junction to F:/Diomedes/diomedes/node_modules; tsc 5.9.3 resolves through it"
+    },
+    {
+      "command": "./node_modules/.bin/vitest run tests/coordination.test.ts tests/contract-revision.test.ts",
+      "cwd": "F:/Diomedes/diomedes-wt/c00-rebaseline-20260913",
+      "when": "before implementation",
+      "result": "2 files failed, no tests ran: Cannot find module '../shared/contract-revision.js'; Cannot find module '../scripts/coordination.js'"
+    },
+    {
+      "command": "./node_modules/.bin/vitest run tests/coordination.test.ts tests/contract-revision.test.ts",
+      "cwd": "F:/Diomedes/diomedes-wt/c00-rebaseline-20260913",
+      "when": "after implementation, first run",
+      "result": "28 passed, 2 failed; both failures were test-authoring errors (a self-contradicting delivered-ack assertion; a non-integrator re-claiming a hot file in the release test); tests corrected, production unchanged"
+    },
+    {
+      "command": "./node_modules/.bin/prettier --write scripts/coordination.ts shared/contract-revision.ts tests/coordination.test.ts tests/contract-revision.test.ts",
+      "cwd": "F:/Diomedes/diomedes-wt/c00-rebaseline-20260913",
+      "result": "formatted"
+    },
+    {
+      "command": "./node_modules/.bin/vitest run tests/coordination.test.ts tests/contract-revision.test.ts",
+      "cwd": "F:/Diomedes/diomedes-wt/c00-rebaseline-20260913",
+      "when": "final",
+      "result": "Test Files 2 passed (2); Tests 32 passed (32)"
+    },
+    {
+      "command": "./node_modules/.bin/tsc --noEmit",
+      "cwd": "F:/Diomedes/diomedes-wt/c00-rebaseline-20260913",
+      "result": "exit 0"
+    },
+    {
+      "command": "./node_modules/.bin/tsx scripts/coordination.ts claim --role fable --node C00.I --base 212106e75a710242e74620c3c5947aef4bbeef23 --pid 41804 --paths AGENTS.md,docs/implementation/2026-09-13-rebaseline.md,evidence/unified-20260913/,scripts/coordination.ts,shared/contract-revision.ts,tests/contract-revision.test.ts,tests/coordination.test.ts",
+      "cwd": "F:/Diomedes/diomedes-wt/c00-rebaseline-20260913",
+      "result": "ok; claimId claim_mtzduvno_9b5dcf0d; root resolved from the worktree to F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913"
+    },
+    {
+      "command": "./node_modules/.bin/tsx scripts/coordination.ts status",
+      "cwd": "F:/Diomedes/diomedes-wt/c00-rebaseline-20260913",
+      "result": "slot null (free); 1 active claim; journals fable 2, astra 0, opus 0"
+    },
+    {
+      "command": "python coverage_audit.py <package> evidence/unified-20260913/coverage-audit.md",
+      "cwd": "F:/Diomedes/diomedes-wt/c00-rebaseline-20260913",
+      "result": "{'partial': 18, 'present-and-verified': 11, 'externally-blocked': 1, 'absent': 11}"
+    },
+    {
+      "command": "python (RUN_ORDER.json + anchors.json -> work orders)",
+      "cwd": "F:/Diomedes/diomedes-wt/c00-rebaseline-20260913",
+      "result": "52 work orders written; 104-node dependency order; 38 anchors missing on base marked proposed-new"
+    },
+    {
+      "command": "ask-opencode.ps1 -Model opencode-go/glm-5.3-flash -Mode ask (routes inventory; ENG audit; HAR audit)",
+      "cwd": "F:/Diomedes/diomedes-wt/c00-rebaseline-20260913",
+      "result": "three read-only runs, exit 0 each; deliverables captured to scratchpad inventory/routes.md (117 lines), audit-eng.md (13/13 rows), audit-har.md (16/16 rows); first attempt lost output through a truncated capture and was re-run"
+    },
+    {
+      "command": "ask-opencode.ps1 -Model opencode/muse-spark-1.3-contributor-free -Mode ask (FIL/PAK audit)",
+      "cwd": "F:/Diomedes/diomedes-wt/c00-rebaseline-20260913",
+      "result": "read-only run, exit 0; audit-filpak.md (12/12 rows)"
+    },
+    {
+      "command": "Agent tool model opus (read-only review of Astra's three finished slices; second dispatch for FIL-02)",
+      "cwd": "n/a",
+      "result": "dispatched with OPUS_5/00_DELEGATION.md prepended; results recorded in the integration step, not in this node"
+    }
+  ],
+  "evidence": [
+    "docs/implementation/2026-09-13-rebaseline.md",
+    "evidence/unified-20260913/coverage-audit.md",
+    "evidence/unified-20260913/dependency-order.md",
+    "evidence/unified-20260913/work-orders.json",
+    "tests/coordination.test.ts (9 cases)",
+    "tests/contract-revision.test.ts (23 cases)",
+    "F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913/ (README, external-claims/*, claims/, journals/fable.jsonl, work-orders/*.json)",
+    "scratchpad inventory/routes.md, audit-eng.md, audit-har.md, audit-filpak.md (delegated read-only inputs)"
+  ],
+  "observed_versions": {
+    "app_base": "212106e75a710242e74620c3c5947aef4bbeef23",
+    "site_base": "cf784de56a5102ffb9948878eaeee31af51f7e10",
+    "node": "22.23.2",
+    "npm": "12.0.2",
+    "electron": "44.2.0",
+    "vite": "7.3.6",
+    "vitest": "3.2.7",
+    "typescript": "5.9.3",
+    "zod": "4.5.4",
+    "express": "5.2.1",
+    "playwright": "1.63.0",
+    "codex_cli": "0.153.4",
+    "ai_sdk": "not installed (registry ai 7.0.99, @ai-sdk/openai 4.0.66, @ai-sdk/anthropic 4.0.53)",
+    "routes_observed": "codex, claude-code, opencode, oh-my-pi, cursor, harness-runtime, sample (shared/capabilities.ts ROUTE_CAPABILITIES)",
+    "pack_versions": "diomedes.software-engineering 0.1.0",
+    "canonical_docs": "pillars 2026-09-10.1, roadmap 2026-09-12.2, memory 2026-09-10.7 (repo); Drive mirrors roadmap 2026-09-10.4 and memory 2026-09-10.4 are behind",
+    "spend": "fixed USD 0, variable USD 0, no live provider call"
+  },
+  "status": {
+    "implementation": "passed (candidate complete; focused tests 30/30; tsc exit 0)",
+    "independent_review": "not-run (C00.R is Astra's)",
+    "live_provider": "not-applicable-with-reason: no live call is in C00 scope",
+    "packaged": "not-run",
+    "publication": "not-run",
+    "deployment": "not-run"
+  },
+  "blockers": [
+    "Local main cannot be fast-forwarded while Astra's FIL-02 is uncommitted in the main checkout; integration goes through integration/unified-20260913 and a push of that branch to origin main under Andrew's 2026-09-13 instruction.",
+    "Combined gates (full vitest, vite build, Playwright three specs) run on the integration candidate under the heavy slot, not on this leaf.",
+    "Decision 14 instruction-delivery wording needs Andrew's reconciled sentence (flag A3 in the ledger)."
+  ],
+  "safe_prerequisite_release": null,
+  "pillar_impact": "No pillar semantics changed. Supports the attribution and truthful-evidence pillars by freezing requested-vs-reported model, four-outcome evidence and activation-is-not-authorization as schemas; proposed amendments A1 (owner priorities) and A2 (automatic-profile requirement) are recorded for Andrew, not applied.",
+  "roadmap_impact": "No status changes. C00 records the 41-row audit on 212106e (11 present-and-verified, 18 partial, 11 absent, 1 externally-blocked) and flags that the Drive mirrors of roadmap/memory are behind the repository (D01).",
+  "uncommitted_paths": [
+    "AGENTS.md",
+    "docs/implementation/2026-09-13-rebaseline.md",
+    "evidence/unified-20260913/C00.I.json",
+    "evidence/unified-20260913/coverage-audit.md",
+    "evidence/unified-20260913/dependency-order.md",
+    "evidence/unified-20260913/work-orders.json",
+    "scripts/coordination.ts",
+    "shared/contract-revision.ts",
+    "tests/contract-revision.test.ts",
+    "tests/coordination.test.ts"
+  ],
+  "unpublished_changes": [
+    "everything in changed_paths until Andrew's per-patch commit approval is applied"
+  ],
+  "recorded_at": "2026-09-13T05:54:14.509614+00:00"
+}

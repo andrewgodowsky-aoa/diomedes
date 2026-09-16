@@ -1,0 +1,87 @@
+.file-import,
+.brief-files {
+  min-width: 0;
+  white-space: normal;
+}
+.import-location {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+.import-location label {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.import-location input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.import-list {
+  max-height: 260px;
+  overflow: auto;
+  border-block: 1px solid var(--hair);
+}
+.console .import-list > button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  border-bottom: 1px solid var(--hair);
+  padding: 8px;
+  overflow-wrap: anywhere;
+}
+.console .import-list > button:hover {
+  background: var(--raised);
+}
+.console .import-list > button:disabled {
+  opacity: 0.45;
+}
+.import-selection {
+  list-style: none;
+  padding: 0;
+}
+.import-selection li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.import-selection li > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.brief-files {
+  margin-block: 12px;
+}
+.brief-file-list {
+  max-height: 220px;
+  overflow: auto;
+  margin-block: 8px;
+}
+.brief-file-list label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 0;
+}
+.brief-file-list label span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.brief-file-list input {
+  flex: 0 0 auto;
+  width: 18px;
+}
+.console .files-import {
+  margin: 0 0 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+}

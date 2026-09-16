@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { Server } from 'node:http';
 import { createApp } from '../server/app';
 import type { NativeGenerator } from '../server/native-work';
-import type { ApprovalCommand, Conversation, Need, Project, ProjectState, Session, TaskCandidate } from '../shared/types';
+import type { ApprovalCommand, Conversation, Need, Project, ProjectState, Session, Task, TaskCandidate } from '../shared/types';
 
 // This scenario exercises the native controller and browser plumbing with an
 // injected generator. It never calls a model, uses credentials, or spends quota.
@@ -354,6 +354,11 @@ test('Console New task makes a task, Ready shows it, and Start admits one run', 
   const row = ready.locator('.crow').filter({ hasText: 'Draft the operations brief' });
   await expect(row).toBeVisible();
   await expect(form).toHaveCount(0);
+  const created = (await api<ProjectState>(`/projects/${fresh.id}/state`)).tasks[0];
+  expect(created.creationReceipt?.commandId).toBeTruthy();
+  await row.getByText('Creation receipt', { exact: true }).click();
+  await expect(row.locator('.creation-receipt')).toContainText(created.creationReceipt!.commandId);
+  await expect(row.locator('.creation-receipt')).toContainText(created.creationReceipt!.eventId);
   await row.getByRole('button', { name: 'Start', exact: true }).click();
   const confirm = row.locator('.confirm');
   await expect(confirm).toBeVisible();
@@ -369,6 +374,89 @@ test('Console New task makes a task, Ready shows it, and Start admits one run', 
   expect(state.history.filter(entry => entry.kind === 'work-admitted')).toHaveLength(1);
   await page.screenshot({ path: testInfo.outputPath('console-new-task.png'), animations: 'disabled', fullPage: true });
   expect(errors).toEqual([]);
+});
+
+test('Console retries a lost task creation response after reload and shows the durable receipt', async ({ page }, testInfo) => {
+  const fresh = await api<Project>('/projects/sample', 'POST', {});
+  await api('/settings', 'PUT', { surface: 'console', openProjects: [fresh.id] });
+  const commands: string[] = [];
+  const endpoint = `**/api/projects/${fresh.id}/tasks`;
+  await page.route(endpoint, async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    commands.push(route.request().postDataJSON().commandId);
+    await route.fetch();
+    await route.abort('failed');
+  });
+  await page.goto(baseURL);
+  const rail = page.getByRole('navigation', { name: 'Threads and views' });
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  const board = page.locator('.board[aria-label="Board"]');
+  await board.getByRole('button', { name: 'New task', exact: true }).click();
+  const form = board.locator('form.newtask');
+  const name = 'Prepare the reopening brief';
+  await form.getByLabel('Task name').fill(name);
+  await form.getByLabel('What should happen (optional)').fill('Summarize the approved plan.');
+  await form.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(form.getByRole('button', { name: 'Retry create', exact: true })).toBeVisible();
+  expect(commands).toHaveLength(2);
+  expect(new Set(commands).size).toBe(1);
+  const beforeReload = await api<ProjectState>(`/projects/${fresh.id}/state`);
+  expect(beforeReload.tasks).toHaveLength(1);
+  expect(beforeReload.sessions).toHaveLength(0);
+  const receipt = beforeReload.tasks[0].creationReceipt!;
+  await page.unroute(endpoint);
+  await page.route(endpoint, async (route) => {
+    if (route.request().method() === 'POST') commands.push(route.request().postDataJSON().commandId);
+    await route.continue();
+  });
+  await page.reload();
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  await expect(form.getByLabel('Task name')).toHaveValue(name);
+  await expect(form.getByLabel('What should happen (optional)')).toHaveValue('Summarize the approved plan.');
+  await form.getByRole('button', { name: 'Retry create', exact: true }).click();
+  await expect(form).toHaveCount(0);
+  expect(commands).toEqual([receipt.commandId, receipt.commandId, receipt.commandId]);
+  const after = await api<ProjectState>(`/projects/${fresh.id}/state`);
+  expect(after.tasks).toHaveLength(1);
+  expect(after.tasks[0].creationReceipt).toEqual(receipt);
+  expect(after.history.filter((entry) => entry.kind === 'tasks-made')).toHaveLength(1);
+  expect(after.sessions).toHaveLength(0);
+  expect(after.tasks[0].moves).toEqual([]);
+  const row = board.locator('.column[aria-label="Ready"] .crow').filter({ hasText: name });
+  await row.getByText('Creation receipt', { exact: true }).click();
+  await expect(row.locator('.creation-receipt')).toContainText(receipt.commandId);
+  await expect(row.locator('.creation-receipt')).toContainText(receipt.eventId);
+  await expect(row.locator('.creation-receipt dd.mono').first()).toHaveCSS('text-transform', 'none');
+  await expect.poll(() => page.evaluate(() => Object.keys(sessionStorage)
+    .filter((key) => key.startsWith('diomedes.task-create.pending.')).length)).toBe(0);
+  await expect(row.locator('time')).toHaveAttribute('datetime', receipt.admittedAt);
+  await expect(page.locator('html')).toHaveJSProperty('scrollWidth', await page.evaluate(() => window.innerWidth));
+  await page.screenshot({ path: testInfo.outputPath('console-task-creation-receipt.png'), fullPage: true, animations: 'disabled' });
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
+test('Console closes a confirmed creation even if refreshing the Board fails', async ({ page }) => {
+  const fresh = await api<Project>('/projects/sample', 'POST', {});
+  await api('/settings', 'PUT', { surface: 'console', openProjects: [fresh.id] });
+  await page.goto(baseURL);
+  const rail = page.getByRole('navigation', { name: 'Threads and views' });
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  const board = page.locator('.board[aria-label="Board"]');
+  await board.getByRole('button', { name: 'New task', exact: true }).click();
+  const form = board.locator('form.newtask');
+  await form.getByLabel('Task name').fill('Keep the confirmed creation');
+  const stateEndpoint = `**/api/projects/${fresh.id}/state`;
+  await page.route(stateEndpoint, (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"Synthetic refresh failure"}' }));
+  await form.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(form).toHaveCount(0);
+  await expect(page.getByRole('alert')).toContainText('Synthetic refresh failure');
+  expect((await api<ProjectState>(`/projects/${fresh.id}/state`)).tasks).toHaveLength(1);
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith('diomedes.task-create.pending.')))).toHaveLength(0);
+  await page.unroute(stateEndpoint);
+  await page.reload();
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  await expect(board.locator('.crow')).toHaveCount(1);
+  await expect(form).toHaveCount(0);
 });
 
 test('Console Start again restarts a faulted task through the same admission', async ({ page }, testInfo) => {
@@ -407,4 +495,126 @@ test('Console Start again restarts a faulted task through the same admission', a
     .filter(key => key.startsWith('diomedes.work-start.pending.')).length)).toBe(0);
   await page.screenshot({ path: testInfo.outputPath('console-start-again.png'), animations: 'disabled', fullPage: true });
   expect(errors).toEqual([]);
+});
+
+for (const selectAt of ['creation', 'start'] as const) {
+  test(`Console document selection at ${selectAt} proposes the exact file and retains History attribution`, async ({ page }, testInfo) => {
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    const fixture = await api<Project>('/projects/sample', 'POST', {});
+    const before = await fs.readFile(path.join(fixture.folder, 'Reopening plan.md'), 'utf8');
+    await fs.writeFile(path.join(fixture.folder, '.hidden.md'), 'Hidden fixture');
+    await fs.writeFile(path.join(fixture.folder, 'photo.png'), Buffer.from([0, 1]));
+    const longPath = `notes/${'long-document-name-'.repeat(8)}brief.md`;
+    await fs.mkdir(path.join(fixture.folder, 'notes'), { recursive: true });
+    await fs.writeFile(path.join(fixture.folder, longPath), 'Unselected fixture');
+    await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id], services: { codex: true, defaultEngine: 'codex' } });
+    if (selectAt === 'start')
+      await api(`/projects/${fixture.id}/tasks`, 'POST', { name: 'Append a short validation section', owner: 'you' });
+    await page.goto(baseURL);
+    const rail = page.getByRole('navigation', { name: 'Threads and views' });
+    await rail.getByRole('button', { name: /^Board/ }).click();
+    const board = page.locator('.board[aria-label="Board"]');
+    if (selectAt === 'creation') {
+      await board.getByRole('button', { name: 'New task', exact: true }).click();
+      const form = board.locator('form.newtask');
+      await form.getByLabel('Task name').fill('Append a short validation section');
+      const picker = form.getByLabel('Project document', { exact: true });
+      await expect(picker).toBeEnabled();
+      expect(await picker.locator('option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value)))
+        .not.toEqual(expect.arrayContaining(['.hidden.md', 'photo.png']));
+      await picker.selectOption(longPath);
+      await page.setViewportSize({ width: 1024, height: 768 });
+      expect(await picker.evaluate(element => element.getBoundingClientRect().right <= window.innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath('task-document-long-path.png'), animations: 'disabled', fullPage: true });
+      await picker.selectOption('Reopening plan.md');
+      await form.getByRole('button', { name: 'Create', exact: true }).click();
+      await expect(form).toHaveCount(0);
+      const saved = await api<ProjectState>(`/projects/${fixture.id}/state`);
+      expect(saved.tasks[0].sourceDocument).toBe('Reopening plan.md');
+      expect(saved.sessions).toHaveLength(0);
+      // The choice is durable, not a component-local draft attached to the row.
+      await page.reload();
+      await rail.getByRole('button', { name: /^Board/ }).click();
+    }
+    const row = board.locator('.column[aria-label="Ready"] .crow').filter({ hasText: 'Append a short validation section' });
+    await row.getByRole('button', { name: 'Start', exact: true }).click();
+    await row.locator('.confirm').getByRole('button', { name: 'Start', exact: true }).click();
+    const send = page.getByRole('dialog', { name: 'Send this task?', exact: true });
+    await expect(send).toBeVisible();
+    const picker = send.getByLabel('Project document', { exact: true });
+    if (selectAt === 'start') await picker.selectOption('Reopening plan.md');
+    await expect(picker).toHaveValue('Reopening plan.md');
+    await expect(send.locator('.task-sources')).toContainText('Reopening plan.md');
+    await page.screenshot({ path: testInfo.outputPath(`task-document-${selectAt}.png`), animations: 'disabled', fullPage: true });
+    const generationsBefore = generationCount;
+    const commands: { sources: string[]; commandId: string }[] = [];
+    page.on('request', request => {
+      if (request.url().endsWith(`/projects/${fixture.id}/work/start`)) commands.push(request.postDataJSON());
+    });
+    await send.getByRole('button', { name: 'Send task', exact: true }).click();
+    await expect.poll(async () => (await api<ProjectState>(`/projects/${fixture.id}/state`)).needs.length).toBe(1);
+    expect(commands).toHaveLength(1);
+    expect(commands[0].sources).toEqual(['Reopening plan.md']);
+    expect(generationCount).toBe(generationsBefore + 1);
+    expect(generatedInput?.documents).toEqual([{ path: 'Reopening plan.md', text: before }]);
+    expect(await fs.readFile(path.join(fixture.folder, 'Reopening plan.md'), 'utf8')).toBe(before);
+    const reviewRow = board.locator('.column[aria-label="Review"] .crow').filter({ hasText: 'Append a short validation section' });
+    await reviewRow.getByRole('button', { name: 'Review', exact: true }).click();
+    const notice = page.getByRole('region', { name: 'Needs your OK' });
+    await expect(notice).toBeVisible();
+    await notice.getByRole('button', { name: 'Show me first', exact: true }).click();
+    const preview = page.getByRole('dialog', { name: /proposes to apply the proposed changes to 1 file/ });
+    await expect(preview).toContainText('Reopening plan.md');
+    await expect(preview).toContainText('Validation-only approved revision.');
+    expect(await fs.readFile(path.join(fixture.folder, 'Reopening plan.md'), 'utf8')).toBe(before);
+    await preview.getByRole('button', { name: 'Go ahead', exact: true }).click();
+    await expect.poll(async () => (await api<ProjectState>(`/projects/${fixture.id}/state`)).history.filter(entry => entry.kind === 'changed').length).toBe(1);
+    const completed = await api<ProjectState>(`/projects/${fixture.id}/state`);
+    const entry = completed.history.find(entry => entry.kind === 'changed')!;
+    expect(entry).toMatchObject({ taskId: completed.tasks[0].id, sessionId: completed.sessions[0].id,
+      origin: { mode: 'direct', engine: { id: 'codex' }, model: { reported: 'Injected browser-test generator' } } });
+    expect(entry.files.map(file => file.path)).toEqual(['Reopening plan.md']);
+    expect(completed.needs[0].approvalReceipt?.commandId).toBeTruthy();
+    expect(await fs.readFile(path.join(fixture.folder, 'Reopening plan.md'), 'utf8')).toBe(proposed);
+    expect(await fs.readFile(path.join(fixture.folder, longPath), 'utf8')).toBe('Unselected fixture');
+    await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
+    expect(errors).toEqual([]);
+    await api('/settings', 'PUT', { services: { defaultEngine: 'sample' } });
+  });
+}
+
+test('Console document selection blocks stale paths and listing failures without admitting work', async ({ page }) => {
+  const fixture = await api<Project>('/projects/sample', 'POST', {});
+  const task = await api<Task>(`/projects/${fixture.id}/tasks`, 'POST', {
+    name: 'Update the introduction', sourceDocument: 'Reopening plan.md', owner: 'you',
+  });
+  await fs.rename(path.join(fixture.folder, 'Reopening plan.md'), path.join(fixture.folder, 'Moved plan.md'));
+  await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id], services: { codex: true, defaultEngine: 'codex' } });
+  await page.goto(baseURL);
+  await page.getByRole('navigation', { name: 'Threads and views' }).getByRole('button', { name: /^Board/ }).click();
+  const row = page.locator('.board .crow').filter({ hasText: task.name });
+  await row.getByRole('button', { name: 'Start', exact: true }).click();
+  await row.locator('.confirm').getByRole('button', { name: 'Start', exact: true }).click();
+  const send = page.getByRole('dialog', { name: 'Send this task?', exact: true });
+  await expect(send.getByRole('alert')).toContainText('no longer listed');
+  await expect(send.getByRole('button', { name: 'Send task', exact: true })).toBeDisabled();
+  await send.getByLabel('Project document', { exact: true }).selectOption('Moved plan.md');
+  await expect(send.getByRole('button', { name: 'Send task', exact: true })).toBeEnabled();
+  // Recheck visibility when sending, even if the picker was valid when opened.
+  await fs.rename(path.join(fixture.folder, 'Moved plan.md'), path.join(fixture.folder, '.hidden-plan.md'));
+  await send.getByRole('button', { name: 'Send task', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('no longer listed');
+  await expect(send).toHaveCount(0);
+  expect((await api<ProjectState>(`/projects/${fixture.id}/state`)).sessions).toHaveLength(0);
+  await page.route(`**/api/projects/${fixture.id}/documents`, route => route.fulfill({
+    status: 503, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Fixture document listing unavailable' } }),
+  }));
+  const generationsBefore = generationCount;
+  await row.locator('.confirm').getByRole('button', { name: 'Start', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Fixture document listing unavailable');
+  await expect(send).toHaveCount(0);
+  expect((await api<ProjectState>(`/projects/${fixture.id}/state`)).sessions).toHaveLength(0);
+  expect(generationCount).toBe(generationsBefore);
+  await api('/settings', 'PUT', { services: { defaultEngine: 'sample' } });
 });

@@ -431,6 +431,64 @@ describe('the recorded write', () => {
 });
 
 describe('refusals', () => {
+  test('explicit selected revisions replace configured fixture paths without changing the active manifest', async () => {
+    await writeFixture('chosen.csv', 'item,count\nTables,7');
+    await writeFixture('excluded.csv', 'Never include this line.');
+    const manifest = manifestFor();
+    const saved = structuredClone(manifest);
+    const result = await service.run({
+      projectId,
+      manifest,
+      at: AT,
+      sources: [{ path: 'chosen.csv', sha: hash('item,count\nTables,7') }],
+    });
+    expect(result.draft.markdown).toContain('Tables,7');
+    expect(result.draft.markdown).not.toContain('Never include');
+    expect(result.draft.markdown).toContain(`SHA-256: ${hash('item,count\nTables,7')}`);
+    expect(result.draft.missing).toEqual([]);
+    expect(result.draft.sources.map((source) => source.path)).toEqual(['chosen.csv']);
+    expect(manifest).toEqual(saved);
+  });
+
+  test('stale, absent, duplicate and escaping selected sources refuse before a recorded write', async () => {
+    await writeFixture('chosen.csv', 'Current');
+    const manifest = manifestFor();
+    const writer = vi.spyOn(store, 'writeRecorded');
+    const good = { path: 'chosen.csv', sha: hash('Current') };
+    for (const sources of [
+      [],
+      [good, good],
+      [{ ...good, sha: hash('old') }],
+      [{ ...good, path: 'missing.csv' }],
+      [{ ...good, path: '../escape.csv' }],
+      [{ ...good, path: 'credentials.json' }],
+      [{ ...good, path: 'weekly-operations-brief.md' }],
+    ]) {
+      await expect(service.run({ projectId, manifest, at: AT, sources })).rejects.toThrow();
+    }
+    expect(writer).not.toHaveBeenCalled();
+  });
+
+  test('source edits during composition are refused before the writer runs', async () => {
+    await writeFixture('chosen.csv', 'Selected');
+    const current = store.current.bind(store);
+    let reads = 0;
+    vi.spyOn(store, 'current').mockImplementation(async (id, name) => {
+      if (name === 'chosen.csv' && ++reads === 2) await writeFixture(name, 'Changed');
+      return current(id, name);
+    });
+    const writer = vi.spyOn(store, 'writeRecorded');
+    await expect(
+      service.run({
+        projectId,
+        manifest: manifestFor(),
+        at: AT,
+        sources: [{ path: 'chosen.csv', sha: hash('Selected') }],
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(writer).not.toHaveBeenCalled();
+  });
+
   test('a staged manifest is refused before any write', async () => {
     await writeFixture('kitchen-log.md', KITCHEN_LOG);
     await writeFixture('dining-room-notes.md', DINING_NOTES);

@@ -113,7 +113,11 @@ Numbering is stable; tests and comments cite these by number. Full text and reas
     contract serves both. Diomedes does not become a coding IDE.
 13. **One Files surface, two tiers.** Approved 2026-09-10; first Core slice implemented 2026-09-11
     within a stated boundary (a read-only Files pane, an activity overview, pack activation and
-    instruction-file discovery, each with tests: `docs/implementation/2026-09-11-*.md`). **Files are not inherently a software feature**, so Core carries the general file and
+    instruction-file discovery, each with tests: `docs/implementation/2026-09-11-*.md`). FIL-02
+    (2026-09-13, `docs/implementation/2026-09-13-fil02-export-import.md`) adds local export import
+    through that same pane and the one recorded write path, plus per-run source selection for the
+    weekly brief, so the pane is no longer read-only; the wider FIL-02 direction (drop and paste,
+    image, PDF and spreadsheet import, provider attachments) is still open. **Files are not inherently a software feature**, so Core carries the general file and
     artifact surface: the project folder and artifact model, ordinary preview, text and Markdown
     viewing, search, generated artifacts, history and version inspection, references into Threads, and
     open-externally behaviour. The IDE-grade version of that **same** surface is supplied by the
@@ -193,6 +197,26 @@ Take these to Andrew rather than choosing:
 - Packaging requires `Diomedes.exe` to be closed, and anything Andrew will click is packaged from
   `main` only, so every exe is a commit you can name.
 - Do not bump the version or touch the native-runtime hashes unless that is your task.
+
+### Unified execution program (from 2026-09-13)
+
+- The coordination root is `<git common dir>/diomedes-coordination/unified-20260913/` (for this
+  repository, `F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913/`). Claims, the
+  heavy-test slot and per-role journals live there; `scripts/coordination.ts` reads and writes
+  them (`./node_modules/.bin/tsx scripts/coordination.ts status`). Only coordination files go
+  there; never Git's own files.
+- Claim exact paths before editing, atomically, and release them when the patch returns. A stale
+  timestamp is not permission to steal a claim. If your partner's journal is absent, do read-only
+  work; do not start a second implementation.
+- Fable (Claude Code) integrates and owns the charter's shared hot files (`package.json` and
+  lockfiles, `shared/types.ts`, the shared harness/Agent/pack contracts, `server/app.ts`,
+  `server/store.ts`, `server/native-work.ts`, `client/api.ts`, `client/console/Shell.tsx`,
+  `desktop/`). Others inspect them and return patches. Astra (Codex) reviews exact base+patch
+  candidates and owns independent tests; Opus is a bounded worker under a written work order.
+- The heavy-test / Playwright / packaging / live-call slot is one, shared by this repository and
+  the site. Take it through the tool before running those; release it after.
+- Contract revision `2026-09-13.1` (`shared/contract-revision.ts`) is the frozen additive
+  amendment later items consume. Ledger: `docs/implementation/2026-09-13-rebaseline.md`.
 
 ---
 

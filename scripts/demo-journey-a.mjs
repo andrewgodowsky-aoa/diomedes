@@ -559,18 +559,31 @@ await step('17-ask-for-one-revision', async () => {
   if (!(await composer.isVisible().catch(() => false)))
     return { status: 'not-reachable', note: 'No thread was open and none could be opened from the rail, so the composer was not reachable.' };
   await page.getByRole('radiogroup', { name: 'Mode' }).getByRole('radio', { name: 'ask' }).click().catch(() => {});
-  await composer.fill('Shorten the brief to the three things that changed most, and keep the source markers.');
+  const instruction = 'Shorten the brief to the three things that changed most, and keep the source markers.';
+  const sentAt = new Date().toISOString();
+  const settings = await api('/settings');
+  const needsConfirmation = accountRoute && accountRoute !== 'sample' &&
+    (accountRoute !== 'codex' || settings.permissions.sending);
+  await composer.fill(instruction);
   await composer.press('Enter');
-  // The instruction has left the machine as soon as the composer accepts it, so
-  // it is counted as spent whether or not a reply is ever recorded.
+  if (needsConfirmation) {
+    const confirmation = page.getByRole('dialog', { name: 'Send this message?' });
+    await confirmation.waitFor({ timeout: 20_000 });
+    await confirmation.getByRole('button', { name: 'Send message', exact: true }).click();
+  }
+  // Count dispatch only after the send decision, whether or not a reply arrives.
   if (!dry && accountRoute && accountRoute !== 'sample') liveTurns += 1;
   // An ask is not a session, so waiting on `sessions` would return at once.
   // Wait on the thread's own turns instead.
   let reply = null;
+  let sentSources = [];
   for (let i = 0; i < 90; i += 1) {
     await page.waitForTimeout(4000);
     const s = await api(`/projects/${state.projectId}/state`);
-    const thread = s.conversations.find((c) => (c.turns ?? []).some((t) => t.role === 'you'));
+    const thread = s.conversations.find((c) => (c.turns ?? []).some((t) =>
+      t.role === 'you' && t.text === instruction && t.at >= sentAt));
+    const sent = thread?.turns?.findLast((t) => t.role === 'you' && t.text === instruction && t.at >= sentAt);
+    sentSources = sent?.sources ?? [];
     const last = thread?.turns?.at(-1);
     if (last && last.role !== 'you') {
       reply = last;
@@ -581,7 +594,7 @@ await step('17-ask-for-one-revision', async () => {
   const said = String(reply?.text ?? '').replace(/\s+/g, ' ').slice(0, 220);
   return {
     status: reply ? 'traversed' : 'intervention',
-    note: `Revision sent from the thread composer on the ${accountRoute} route. ${reply ? `Reply recorded from ${reply.role} via ${reply.route ?? 'unrecorded route'}, model ${reply.model ?? 'not recorded'}: "${said}"` : `No reply was recorded within six minutes; the thread still showed ${waiting ? 'a Stop control, so the turn was still in flight' : 'no reply and no running turn'}.`} The composer sends the instruction with no confirmation of its own, unlike the Board's Start, and in ask mode it carries no project document with it. The brief itself is deterministic, so a revision of it is a model turn about a document no model wrote.`,
+    note: `Revision sent from the thread composer on the ${accountRoute} route. ${needsConfirmation ? 'The send confirmation was shown and accepted.' : 'This route and sending preference did not require a separate confirmation.'} Recorded source documents: ${sentSources.length ? sentSources.join(', ') : 'none'}. ${reply ? `Reply recorded from ${reply.role} via ${reply.route ?? 'unrecorded route'}, model ${reply.model ?? 'not recorded'}: "${said}"` : `No reply was recorded within six minutes; the thread still showed ${waiting ? 'a Stop control, so the turn was still in flight' : 'no reply and no running turn'}.`} The brief itself is deterministic, so a revision of it is a model turn about a document no model wrote.`,
   };
 });
 
