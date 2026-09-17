@@ -201,6 +201,48 @@ export const defaults = (): Settings => ({
   services: { codex: false },
 });
 
+/**
+ * Windows denies a replacement while any handle is open on the destination, so
+ * a reader that holds `state.json` for the microseconds of one read - the
+ * desktop client, a backup or indexing service, a second Diomedes, a test
+ * polling the file - makes this rename fail with EPERM while nothing is wrong.
+ * The next attempt succeeds. Without the retry a single unlucky read turns a
+ * durable write into a thrown error, and because every state write runs inside
+ * `locked()`, that throw reloads the last state from disk and fails the person's
+ * run: the proposal they were about to be shown is discarded for a collision
+ * nobody needed to see. `FileRunStore` already guards its run records this way
+ * (server/harness/run-store.ts); project state never got the same guard.
+ * Attempts are bounded and the final failure is still raised, so a real
+ * permission fault is reported rather than retried into silence.
+ *
+ * `guard` is re-run before every attempt, not once: it is the caller's
+ * last look at the file it is about to replace, and running it once would
+ * stretch that look-to-replace window from microseconds to the whole retry
+ * budget. Only a failed `rename` is retried, so a guard that refuses - the
+ * file changed, the scope lapsed - still stops the write on the first try.
+ */
+async function replaceFile(temp: string, target: string, guard?: () => Promise<void>) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await guard?.();
+      await fs.rename(temp, target);
+      return;
+    } catch (error) {
+      if (
+        process.platform !== 'win32' ||
+        attempt >= 5 ||
+        !(error instanceof Error) ||
+        !('code' in error) ||
+        !('syscall' in error) ||
+        error.syscall !== 'rename' ||
+        !['EPERM', 'EACCES', 'EBUSY'].includes(String(error.code))
+      )
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, 20 * (attempt + 1)));
+    }
+  }
+}
+
 async function durableWrite(target: string, bytes: string, beforeReplace?: () => Promise<void>) {
   await fs.mkdir(path.dirname(target), { recursive: true });
   const temp = `${target}.${identifier()}.tmp`;
@@ -212,8 +254,7 @@ async function durableWrite(target: string, bytes: string, beforeReplace?: () =>
     await handle.close();
   }
   try {
-    await beforeReplace?.();
-    await fs.rename(temp, target);
+    await replaceFile(temp, target, beforeReplace);
   } catch (error) {
     await fs.unlink(temp);
     throw error;
