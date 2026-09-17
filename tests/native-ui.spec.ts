@@ -618,3 +618,40 @@ test('Console document selection blocks stale paths and listing failures without
   expect(generationCount).toBe(generationsBefore);
   await api('/settings', 'PUT', { services: { defaultEngine: 'sample' } });
 });
+
+test('Workbook Tasks header keeps every view label on one line', async ({ page }) => {
+  const fixture = await api<Project>('/projects/sample', 'POST', {});
+  await api('/settings', 'PUT', { surface: 'workbook', detail: 'guided', openProjects: [fixture.id] });
+  await page.goto(baseURL);
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
+  await page.getByRole('navigation', { name: 'Project pages' }).getByRole('button', { name: /^Tasks/ }).click();
+  const toggle = page.locator('.segmented.compact');
+  await expect(toggle.getByRole('button', { name: 'Board', exact: true })).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  // A label that wraps leaves scrollWidth equal to clientWidth, so the
+  // width-based overflow checks elsewhere cannot see it: "Board" once broke
+  // after "Boar" and every such check still passed. Count the line boxes the
+  // text actually painted, and confirm it still fits the segment it was given.
+  const segments = await toggle.evaluate((strip: HTMLElement) =>
+    [...strip.querySelectorAll('button')].map(button => {
+      const range = document.createRange();
+      range.selectNodeContents(button);
+      return {
+        label: button.textContent ?? '',
+        lines: range.getClientRects().length,
+        textWidth: range.getBoundingClientRect().width,
+        innerWidth: button.clientWidth,
+        width: button.getBoundingClientRect().width,
+      };
+    }),
+  );
+  expect(segments.map(segment => segment.label)).toEqual(['Board', 'List']);
+  for (const segment of segments) {
+    expect(segment.lines, `${segment.label} painted on ${segment.lines} lines`).toBe(1);
+    expect(segment.textWidth, `${segment.label} is wider than its own segment`)
+      .toBeLessThanOrEqual(segment.innerWidth);
+  }
+  // The columns are sized together, so the segments stay equal to each other.
+  expect(Math.abs(segments[0].width - segments[1].width)).toBeLessThan(1);
+  await api('/settings', 'PUT', { surface: 'console' });
+});

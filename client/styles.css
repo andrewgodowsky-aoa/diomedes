@@ -1006,17 +1006,25 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   padding: 4px 14px 12px;
 }
 /* Quiet segmented controls everywhere (Board/List toggle, Settings): the
-   current choice is --t1 on --raised, never a filled block. */
+   current choice is --t1 on --raised, never a filled block.
+   Grid rather than flex, because a flex basis of 0 sizes every segment alike
+   without consulting its label: the widest one was held under its own text
+   and, with the inherited overflow-wrap, broke mid-word. Grid sizes the
+   columns together, so equal segments still never fall below the longest
+   label. */
 .segmented {
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(max-content, 1fr);
   border: 1px solid var(--dm-rule);
   border-radius: 5px;
   min-height: 36px;
   overflow: hidden;
 }
 .segmented button {
-  flex: 1;
   text-align: center;
+  /* One word to a segment: a label is never broken across lines. */
+  white-space: nowrap;
   border-right: 1px solid var(--dm-rule);
   padding: 6px 12px;
   min-width: 60px;
