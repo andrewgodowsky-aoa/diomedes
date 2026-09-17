@@ -82,7 +82,7 @@ The future public anchor may be "Private AI Deployment - from $15,000 + hardware
 
 ### Existing smaller-service credits
 
-A $500 Local Hardware and Model Plan may be credited toward a qualifying Local AI Deployment started within 30 days. Up to $500 of a paid Workflow Audit may be credited toward a qualifying pilot started within 30 days. Credits are stated in the accepted quote, do not stack unless explicitly approved, and never make the same fee payable twice.
+A $500 Local Hardware and Model Plan may be credited toward a qualifying Customer-owned Private AI deployment started within 30 days. Up to $500 of a paid Workflow Audit may be credited toward a qualifying pilot started within 30 days. Credits are stated in the accepted quote, do not stack unless explicitly approved, and never make the same fee payable twice.
 
 Do not use discounts to hide an unsustainable base price. A discount must have a reason: limited scope, design-partner status, reuse value, scheduling, nonprofit/community policy, or another explicit commercial decision.
 
