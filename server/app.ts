@@ -429,6 +429,7 @@ export async function createApp(options: AppOptions) {
     tenantFor: (organizationId) => workspaces.organization(organizationId)?.tenantId ?? null,
     memberOf: (organizationId, personId) =>
       isActiveMember(workspaces.membershipOf(organizationId, personId)),
+    billingStatusFor: (organizationId) => billing.statusOf(organizationId),
     policyFor: (organizationId) => {
       const active = configuration.active(organizationId);
       return {

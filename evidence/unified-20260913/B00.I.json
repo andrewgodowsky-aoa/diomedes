@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "node_id": "B00.I",
+  "actual_model_route": "Devin CLI, SWE-2 (devin.exe pid 12652 initial session; pid 21904 repair session 2026-09-17, process start 2026-09-17T03:36:47.2704046Z) occupying the fable integrator seat per the recorded Opus-5 precedent; exploration delegated to read-only SWE-2 subagents; no other model wrote code",
+  "base_sha": "e2c1e1576eea5ba0265a522c1506820c947425a9",
+  "worktree": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+  "branch": "devin/b00-h01-20260916",
+  "owned_paths": [
+    "services/control-plane/contract/",
+    "docs/implementation/2026-09-16-b00-control-plane-contract.md",
+    "docs/product/personal-business/09_ZERO_BUDGET_VENDOR_DECISION.md",
+    "tests/b00-control-plane-contract.test.ts",
+    "tests/managed-gateway.test.ts",
+    "server/managed-gateway.ts",
+    "server/app.ts (billingStatusFor wiring only; file shared with H01.I claim)",
+    "tsconfig.json (services include only)"
+  ],
+  "record_scope": "In-tree record of the B00.I candidate. It carries no hash of itself or of any patch that contains it; the outer manifest records working-tree sha256 digests and gate results.",
+  "outer_manifest": "F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913/results/B00.I-H01.I.manifest.json",
+  "hashing_convention": "sha256 over working-tree file bytes; the candidate is an uncommitted diff over base_sha, so no Git blobs exist yet.",
+  "changed_paths": [
+    "server/managed-gateway.ts",
+    "server/app.ts",
+    "tsconfig.json",
+    "tests/managed-gateway.test.ts",
+    "services/control-plane/contract/contract.ts",
+    "services/control-plane/contract/vendors.ts",
+    "services/control-plane/contract/fixtures.ts",
+    "services/control-plane/contract/index.ts",
+    "tests/b00-control-plane-contract.test.ts",
+    "docs/implementation/2026-09-16-b00-control-plane-contract.md",
+    "docs/product/personal-business/09_ZERO_BUDGET_VENDOR_DECISION.md",
+    "server/managed-usage.ts",
+    "server/secrets.ts",
+    "server/rules.ts",
+    "server/app.ts",
+    "shared/adapter-contract.ts (preview sink identity fields consumed by B00-adjacent engine wiring; joint H01.I ownership)",
+    "tests/b00-h01-repair.test.ts",
+    "tests/swe2-independent-review.test.ts (byte-identical verifier import, sha256 dd74f55)",
+    "docs/implementation/2026-09-17-b00-h01-requirement-matrix.md"
+  ],
+  "consumed_contract_revision": "2026-09-13.1",
+  "produced_contract_revision": null,
+  "commands": [
+    {
+      "command": "./node_modules/.bin/vitest run tests/b00-control-plane-contract.test.ts",
+      "cwd": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+      "when": "before implementation",
+      "result": "failed to collect: Cannot find module '../services/control-plane/contract/index.js' — the required red state"
+    },
+    {
+      "command": "./node_modules/.bin/vitest run tests/b00-control-plane-contract.test.ts",
+      "cwd": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+      "when": "after implementation",
+      "result": "Test Files 1 passed (1); Tests 22 passed (22)"
+    },
+    {
+      "command": "./node_modules/.bin/vitest run tests/managed-gateway.test.ts",
+      "cwd": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+      "when": "after suspension binding + 2 new cases",
+      "result": "Test Files 1 passed (1); Tests 16 passed (16) — includes 'a paid invoice cannot override a security suspension' and the suspended-security refusal"
+    },
+    {
+      "command": "npx tsc --noEmit",
+      "cwd": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+      "when": "final candidate",
+      "result": "exit 0"
+    },
+    {
+      "command": "npx vitest run",
+      "cwd": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+      "when": "final candidate, heavy slot slot_mu3u5hjq_d87fdd29",
+      "result": "Test Files 106 passed (106); Tests 1954 passed, 1 skipped (1955); Duration 46.82s"
+    },
+    {
+      "command": "npx vite build",
+      "cwd": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+      "when": "final candidate",
+      "result": "exit 0 in 2.46s; chunk-size warning only (pre-existing)"
+    },
+    {
+      "command": "npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts",
+      "cwd": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+      "when": "final candidate, heavy slot slot_mu3u5hjq_d87fdd29",
+      "result": "34 passed (49.1s), 0 failed"
+    },
+    {
+      "command": "./node_modules/.bin/vitest run tests/swe2-independent-review.test.ts",
+      "cwd": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+      "when": "2026-09-17, byte-identical verifier import before repairs",
+      "result": "18 failed / 4 passed (22) — Codex findings reproduced"
+    },
+    {
+      "command": "./node_modules/.bin/vitest run tests/b00-h01-repair.test.ts",
+      "cwd": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+      "when": "2026-09-17, repair tests before fixes",
+      "result": "35 failed / 9 passed (44) — producer-side red state"
+    },
+    {
+      "command": "./node_modules/.bin/vitest run tests/swe2-independent-review.test.ts tests/b00-h01-repair.test.ts",
+      "cwd": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+      "when": "2026-09-17, after repairs",
+      "result": "Test Files 2 passed (2); Tests 66 passed (66) — 22 independent + 44 repair"
+    },
+    {
+      "command": "./node_modules/.bin/vitest run tests/engine-service.test.ts tests/b00-control-plane-contract.test.ts tests/managed-gateway.test.ts tests/h01-adapter-contract.test.ts tests/h01-event-stream.test.ts tests/h01-conformance.test.ts tests/cursor-adapter.test.ts tests/devin-adapter.test.ts tests/claude-adapter.test.ts tests/opencode-adapter.test.ts tests/omp-adapter.test.ts tests/harness.test.ts tests/harness-negative.test.ts tests/step-origin.test.ts tests/rule-hooks.test.ts tests/ai-setup-api.test.ts tests/picker-setup.test.ts tests/integrations.test.ts tests/native-agent.test.ts tests/codex-engine.test.ts",
+      "cwd": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+      "when": "2026-09-17, focused suite after repairs",
+      "result": "20 files passed; 507 tests passed"
+    },
+    {
+      "command": "npx tsc --noEmit",
+      "cwd": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+      "when": "2026-09-17, repaired candidate",
+      "result": "exit 0"
+    },
+    {
+      "command": "npx vitest run",
+      "cwd": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+      "when": "2026-09-17, final repaired candidate, heavy slot slot_mu52lsii_3948dff8",
+      "result": "Test Files 108 passed (108); Tests 2020 passed, 1 skipped (2021); 0 failed. Raw logs in deliverables/swe2-b00-h01-repair-20260917/logs. Note: tests/work-admission.test.ts 'restart expires an unapproved proposal' failed twice earlier in the same session under parallel load (vi.waitFor timeout reading a state file mid-write) and passes in isolation and on the recorded final run — an observed intermittent timing flake, unchanged by this patch's code paths"
+    },
+    {
+      "command": "npx vite build && npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts",
+      "cwd": "F:/Diomedes/diomedes-wt/devin-b00-h01-20260916",
+      "when": "2026-09-17, final repaired candidate, heavy slot slot_mu52lsii_3948dff8",
+      "result": "vite build exit 0 (1.22s, pre-existing chunk-size warning); playwright 34 passed / 0 failed (47.0s)"
+    }
+  ],
+  "evidence": [
+    "services/control-plane/contract/{contract,vendors,fixtures,index}.ts",
+    "tests/b00-control-plane-contract.test.ts (22 cases)",
+    "tests/managed-gateway.test.ts (16 cases, 2 new suspension cases through the real gateway)",
+    "docs/implementation/2026-09-16-b00-control-plane-contract.md",
+    "docs/product/personal-business/09_ZERO_BUDGET_VENDOR_DECISION.md",
+    "docs/implementation/2026-09-17-b00-h01-requirement-matrix.md (03a/03b acceptance cases mapped to tests)",
+    "tests/b00-h01-repair.test.ts (44 producer-side regression cases)",
+    "tests/swe2-independent-review.test.ts (22 cases; byte-identical verifier import)",
+    "coordination claim: B00.I claim set held under the pinned tool (tool/coordination.ts, reviewed blob 56d36175, sha256 5beadb59…61901B)"
+  ],
+  "observed_versions": {
+    "app_base": "e2c1e1576eea5ba0265a522c1506820c947425a9 (main 5da4fec merged with the C00 record through 8ff9136)",
+    "node": "22.23.2",
+    "vite": "7.3.6",
+    "vitest": "3.2.7",
+    "typescript": "5.9.3",
+    "playwright": "1.63.0",
+    "canonical_docs": "pillars 2026-09-10.1, roadmap 2026-09-15.5, memory 2026-09-15.4 (repo)",
+    "spend": "fixed USD 0, variable USD 0, no live provider call; SPEND_POLICY deep-frozen at those values"
+  },
+  "status": {
+    "implementation": "uncommitted candidate over e2c1e15; all four gates pass on the exact candidate: tsc exit 0; vitest 108 files / 2020 passed / 1 skipped / 0 failed (one intermittent work-admission timing flake observed and rerun green); vite build exit 0; playwright 34 passed 0 failed",
+    "independent_review": "pending — B00.R (ASTRA prompt 04a). Not self-approved.",
+    "live_provider": "not-applicable-with-reason: no live call is in B00 scope; no credentials installed",
+    "packaged": "not-run",
+    "publication": "not-run",
+    "deployment": "not-run"
+  },
+  "blockers": [
+    "C00.R-3 recorded verdict 'rejected' with commit_authorized false and downstream blocked stands. The C00 transition record at deliverables/c00-repair-20260913/transition-20260916/TRANSITION.md remains INCOMPLETE — it is not acceptance and this record does not claim it as one. B00.I/H01.I proceed solely under Andrew's explicit owner override assigning 03a/03b; the candidate is handed for independent review, not merged, and B00.R (04a) must re-run independently.",
+    "No commit, push or release without Andrew's explicit approval for this patch."
+  ],
+  "review_disposition": {
+    "swe2-b00-h01-review-20260917": "REQUEST CHANGES addressed in-candidate: fail-closed clocks in contract.ts (leaseUsable/snapshotAt/assertMembership), verifyAuthorization + admit clock validation in managed-gateway.ts, reserve ceiling/clock validation in managed-usage.ts, vendor matrix dated sources/finite limits/accountState=unverified/Stripe processing-vs-Billing split in vendors.ts + decision doc, preview signal-abort refusal via EngineService wiring. All findings mapped in docs/implementation/2026-09-17-b00-h01-requirement-matrix.md; independent suite re-runs 22/22 on the repaired tree."
+  },
+  "safe_prerequisite_release": null,
+  "pillar_impact": "No pillar semantics changed. Advances the zero-budget and truthful-evidence constraints: SPEND_POLICY is frozen at USD 0 and refuses questionnaire/model overrides; unknown never coerces to free or entitled; suspension can never be overridden by a paid invoice; BYO/local routes cannot be held hostage by a suspended company account.",
+  "roadmap_impact": "03a B00.I implemented as an uncommitted candidate. No roadmap status line was changed; status belongs to the reviewer/integrator record.",
+  "uncommitted_paths": "the entire candidate — see changed_paths plus shared paths owned jointly with H01.I in the manifest",
+  "unpublished_changes": [
+    "All of it — branch devin/b00-h01-20260916 is local; nothing pushed."
+  ],
+  "regenerated_artifacts": [
+    "evidence/screenshots/{approval-console-record,approval-workbook-preview,work-admission-workbook}.png refreshed by the Playwright gate run — output of the required gate, not hand edits"
+  ],
+  "recorded_at": "2026-09-17T05:10:00Z"
+}

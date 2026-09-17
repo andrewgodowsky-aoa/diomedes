@@ -306,6 +306,21 @@ export class AllowanceLedger {
    * the envelope.
    */
   async reserve(input: ReserveInput): Promise<Reservation> {
+    // The ceiling is money: a non-integer or non-finite value is not a bound,
+    // and NaN would slip past every comparison below. The clock mints the
+    // hold's record, so it must be readable before anything is written.
+    if (!Number.isSafeInteger(input.maxMicroUsd) || input.maxMicroUsd < 0)
+      throw refuse(
+        400,
+        'A reservation ceiling must be a whole number of micro-USD, zero or more.',
+        'invalid_ceiling',
+      );
+    if (!Number.isFinite(Date.parse(input.at)))
+      throw refuse(
+        400,
+        'The reservation clock is not readable; no hold was taken.',
+        'invalid_clock',
+      );
     const stored = this.storedFor(input.organizationId);
     const existing = stored.reservations.find((item) => item.id === input.reservationId);
     if (existing) {

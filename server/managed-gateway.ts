@@ -94,6 +94,15 @@ export interface GatewayDependencies {
   readonly tenantFor: (organizationId: string) => string | null;
   readonly memberOf: (organizationId: string, personId: string) => boolean;
   readonly policyFor: (organizationId: string) => OrganizationPolicy;
+  /**
+   * The billing record's own answer on security suspension. Consulted only on
+   * the managed path — a suspended company account never blocks a person's
+   * own key or a local route, and a paid invoice never lifts a suspension.
+   */
+  readonly billingStatusFor: (organizationId: string) => Promise<{
+    suspended: boolean;
+    suspendedReason: string | null;
+  }>;
 }
 
 const refuse = (code: string, message: string, payer: Payer = 'refused'): Admission => ({
@@ -155,6 +164,28 @@ export class ManagedGateway {
       // The company's own key, the company's own bill. Nothing is held here
       // because nothing of the company's allowance is at stake.
       return { admitted: true, payer: 'byo', reservation: null, authorization: null };
+
+    // Entitlement and the absence of a security suspension answer together on
+    // the managed path. Suspension is checked first: it is a property of the
+    // billing record itself, so no invoice, plan or request field outranks it.
+    // An unreadable request clock refuses before any of this: no reservation
+    // may be minted against a time that cannot be proven, and the
+    // authorization's expiry is derived from it.
+    if (!Number.isFinite(Date.parse(request.at)))
+      return refuse(
+        'invalid_clock',
+        'The request time is not readable; nothing was reserved and nothing was admitted.',
+        'managed',
+      );
+
+    const billing = await this.deps.billingStatusFor(organizationId);
+    if (billing.suspended)
+      return refuse(
+        'security_suspended',
+        billing.suspendedReason ||
+          'This business is under a security suspension. Paying an invoice does not lift it.',
+        'managed',
+      );
 
     if (!entitlement.managedInference)
       return refuse('no_entitlement', entitlement.reason || NO_ENTITLEMENT_REASON, 'managed');
@@ -227,7 +258,12 @@ export function verifyAuthorization(
     return { valid: false, reason: 'This authorization is for a different upstream service.' };
   if (authorization.requestDigest !== against.requestDigest)
     return { valid: false, reason: 'This authorization was issued for a different request.' };
-  if (Date.parse(against.at) >= Date.parse(authorization.expiresAt))
-    return { valid: false, reason: 'This authorization has expired.' };
+  const at = Date.parse(against.at);
+  if (!Number.isFinite(at))
+    return { valid: false, reason: 'The observation time is not readable.' };
+  const expires = Date.parse(authorization.expiresAt);
+  if (!Number.isFinite(expires))
+    return { valid: false, reason: 'This authorization carries an unreadable expiry.' };
+  if (at >= expires) return { valid: false, reason: 'This authorization has expired.' };
   return { valid: true, reason: '' };
 }

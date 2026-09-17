@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "node_id": "H01.R",
+  "review_id": "H01.R-20260917",
+  "recorded_at": "2026-09-17",
+  "actual_model_route": "Codex primary reviewer; no delegated model calls",
+  "base_sha": "e2c1e1576eea5ba0265a522c1506820c947425a9",
+  "worktree": "F:/Diomedes/diomedes-wt/review-swe2-integration-20260917",
+  "owned_paths": [
+    "tests/swe2-acceptance-20260917.test.ts",
+    "server/harness/conformance.ts (review-copy immediate repair)",
+    "server/engines/service.ts (review-copy immediate repair)"
+  ],
+  "patch_path": "F:/Diomedes/deliverables/swe2-acceptance-20260917/review-candidate.patch",
+  "patch_sha256": "13085c1b0dddfbc34995177a75e6c5589d4dcf0dd288092a9fdf5d7ea37c3a02",
+  "candidate_tree": "1b5c89a35133e8187528c9e946641176c09fba3c",
+  "original_patch_sha256": "17626908e8213a6b40e2fb47cafe710b8abb709af9f2dbd6ba966021f76213fd",
+  "outer_manifest": "F:/Diomedes/deliverables/swe2-acceptance-20260917/review-candidate.manifest.json",
+  "changed_file_sha256": {},
+  "hashing_convention": "Detached manifest records all 55 raw file hashes and the reconstructable corrected Git tree. This record does not hash itself.",
+  "consumed_contract_revision": "2026-09-13.1",
+  "produced_contract_revision": null,
+  "approved_contract_revision": null,
+  "verdict": "rejected",
+  "immediate_repairs": [
+    "Malformed adapter descriptors return a failed conformance verdict instead of crashing.",
+    "Conformance rejects a uniformly wrong event runId by comparing it with the enclosing run.id.",
+    "EngineService closes the preview signal on terminal success or failure so a retained callback cannot publish after completion."
+  ],
+  "commands": [
+    {
+      "command": "Focused independent and producer repair suites on the reconstructed candidate",
+      "passed": 66,
+      "failed": 0,
+      "evidence": "F:/Diomedes/deliverables/swe2-acceptance-20260917/logs/previous-regressions.log"
+    },
+    {
+      "command": "New B00/H01 adversarial tests before reviewer repairs",
+      "passed": 1,
+      "failed": 16,
+      "evidence": "F:/Diomedes/deliverables/swe2-acceptance-20260917/logs/new-regressions-red.log"
+    },
+    {
+      "command": "Focused suite after reviewer repairs, nine files",
+      "passed": 164,
+      "failed": 0,
+      "evidence": "F:/Diomedes/deliverables/swe2-acceptance-20260917/logs/focused-fixed.log"
+    },
+    {
+      "command": "TypeScript on the full corrected reviewer candidate",
+      "exit_code": 0,
+      "evidence": "F:/Diomedes/deliverables/swe2-acceptance-20260917/logs/review-typecheck.log"
+    }
+  ],
+  "blockers": [
+    {
+      "id": "H01-R1",
+      "priority": "P1",
+      "path": "server/engines/service.ts",
+      "line": 392,
+      "finding": "EngineService still dispatches adapter.generate directly. TextEngineAdapter and ModelAdapter remain separate operative interfaces with a start commandGate added; there is no common RunService step/lifecycle behind these text routes.",
+      "required": "Make the existing Harness/RunService the operative seam. Model operations and narrow text support must implement that seam; no parallel runtime."
+    },
+    {
+      "id": "H01-R2",
+      "priority": "P1",
+      "path": "shared/adapter-contract.ts",
+      "line": 156,
+      "finding": "Transient previews carry project/thread/request/sequence only, without durable run/step/attempt or fence identity. server/app.ts:2375 reduces the frame to text. A cancellation signal does not prove attempt ownership across restart, takeover or reconnect.",
+      "required": "Carry stable authoritative run/step/attempt attribution and live fencing through preview delivery, with bounded buffering and durable replay."
+    },
+    {
+      "id": "H01-R3",
+      "priority": "P1",
+      "path": "server/engines/cursor.ts",
+      "line": 371,
+      "finding": "Cursor and Devin share the RPC/session initializer but retain separate prompt/update/cancellation choreography (Devin prompt at server/engines/devin.ts:404). A second ACP route is still more than launcher/profile configuration.",
+      "required": "One shared ACP session/update/permission/cancellation implementation, with route-specific launch/authentication/capability configuration."
+    },
+    {
+      "id": "H01-R4",
+      "priority": "P1",
+      "path": "docs/implementation/2026-09-17-b00-h01-requirement-matrix.md",
+      "line": 37,
+      "finding": "The required OpenCode connection-drop-during-SSE fixture is explicitly missing; general timeout/cancellation cases do not establish the same behavior.",
+      "required": "Exercise a real fixture SSE response that drops midstream; assert one authoritative result and no invented completion. Complete the original five-family acceptance matrix."
+    }
+  ],
+  "evidence": [
+    "F:/Diomedes/deliverables/swe2-acceptance-20260917/review-candidate.manifest.json",
+    "F:/Diomedes/deliverables/swe2-acceptance-20260917/review-snapshot/",
+    "F:/Diomedes/deliverables/swe2-acceptance-20260917/H01-NEXT-PROMPT.md",
+    "docs/implementation/2026-09-17-swe2-independent-acceptance.md"
+  ],
+  "status": {
+    "implementation": "Partially implemented; immediate review fixes preserved in the isolated corrected candidate, excluded from the B00 merge",
+    "independent_review": "rejected; green focused tests do not meet original architectural and acceptance requirements",
+    "live_provider": "not-run",
+    "packaged": "not-run",
+    "publication": "not-run",
+    "deployment": "not-run"
+  },
+  "safe_prerequisite_release": null,
+  "pillar_impact": "Preserves the existing runtime, truthful trace attribution and evidence boundaries; avoids freezing unsupported runtime claims.",
+  "roadmap_impact": "04b/H01.R remains incomplete. H01-dependent SDKR/H19 extension consumers are not released. B00 proceeds separately.",
+  "uncommitted_paths": [
+    "Full corrected B00/H01 reviewer candidate: exact 55-file list in review-candidate.manifest.json. Producer worktree is untouched."
+  ],
+  "unpublished_changes": [
+    "All H01 changes remain local and unmerged."
+  ],
+  "commit_authorized": false
+}

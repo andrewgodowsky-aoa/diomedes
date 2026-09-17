@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "node_id": "C00.R",
+  "review_id": "C00.R-local-rollout-20260917",
+  "recorded_at": "2026-09-17",
+  "actual_model_route": "Codex primary reviewer and local integrator; no delegation",
+  "base_sha": "5da4fec42db90d6fe631a790070b1bde2a608a68",
+  "candidate_base_sha": "e2c1e1576eea5ba0265a522c1506820c947425a9",
+  "worktree": "F:/Diomedes/diomedes-wt/integration-swe2-b00-20260917",
+  "owned_paths": [
+    "AGENTS.md",
+    "evidence/unified-20260913/C00.R-rollout-20260917.json"
+  ],
+  "verdict": "accepted",
+  "acceptance_scope": "Repaired C00 code plus the current local-main rollout. This is a new dated verdict, not a rewrite of historical C00.R-3.",
+  "consumed_contract_revision": "2026-09-13.1",
+  "produced_contract_revision": "2026-09-13.1",
+  "approved_contract_revision": "2026-09-13.1",
+  "reviewed_code_blob": "56d3617523cc8dbb7978a8e31e0155c752a85307",
+  "pinned_tool_sha256": "5beadb5912de2ba50741d5e8687641a49bf228c4928e8fff74925280b7918c3f",
+  "pinned_tool": "F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913/tool/coordination.ts",
+  "historical_verdict": "C00.R-3 rejected ad21353 for C00-R2-2 only. Its C00-R2-1/launch repairs passed; that historic rejection and owner override remain recorded unchanged.",
+  "rollout_changes": [
+    "Land the reviewed repaired script on local main using the existing C00 history.",
+    "AGENTS.md names the shared pinned tool for all operations and forbids old-worktree copies.",
+    "Only this integrator holds an active claim and heavy slot in the current shared root; no pending attempts. Producer handoff released its claims.",
+    "Old worktrees and origin/main remain historical and cannot be used as tool launchers. No remote rollout is claimed."
+  ],
+  "commands": [
+    {
+      "command": "Full integration Vitest run",
+      "passed": 1921,
+      "skipped": 1,
+      "failed": 0,
+      "coordination_tests_passed": 85,
+      "evidence": "F:/Diomedes/deliverables/swe2-acceptance-20260917/logs/integration-vitest.json"
+    },
+    {
+      "command": "node verify-coordination-rollout.cjs <integration checkout> <candidate proof>",
+      "passed": 2,
+      "failed": 0,
+      "evidence": "F:/Diomedes/deliverables/swe2-acceptance-20260917/coordination-candidate-proof.json",
+      "detail": "Separate OS processes using the actual pin and proposed local-default script: directory/child and case/dot alias both have exactly one winner and one active holder."
+    }
+  ],
+  "post_merge_requirement": "Confirm local main and the tested integration have the same Git tree, the main script is the reviewed blob, and rerun the two invocation-path probes against main. Results belong in detached integration-final.json and coordination-main-proof.json.",
+  "status": {
+    "implementation": "Reviewed C00 source carried in integration ancestry; local default and instruction repair ready for fast-forward",
+    "independent_review": "accepted for local rollout; complete only when post-merge identity and invocation proof are recorded",
+    "live_provider": "not-applicable",
+    "packaged": "not-run",
+    "publication": "not-run; origin/main remains unchanged",
+    "deployment": "not-run"
+  },
+  "blockers": [],
+  "safe_prerequisite_release": "Local C00 contract consumers after verified fast-forward and post-merge invocation proof; other node reviews remain mandatory.",
+  "patch_path": "F:/Diomedes/deliverables/swe2-acceptance-20260917/integration-candidate.patch",
+  "outer_manifest": "F:/Diomedes/deliverables/swe2-acceptance-20260917/integration-candidate.manifest.json",
+  "changed_file_sha256": {},
+  "hashing_convention": "Final detached manifest covers the cumulative main-base diff, including these records.",
+  "commit_authorized": true,
+  "authorization": "Andrew explicitly requested merging passing previous worktrees and the immediate repairs in this review.",
+  "pillar_impact": "No new product semantics; restores safe single-writer coordination without claiming historical records were append-only or all old tools are compatible.",
+  "roadmap_impact": "Closes the remaining local C00 rollout prerequisite through repaired main/default invocation. Does not claim remote publication.",
+  "uncommitted_paths": [
+    "AGENTS.md",
+    "evidence/unified-20260913/C00.R-rollout-20260917.json"
+  ],
+  "unpublished_changes": [
+    "Local integration only; final merge evidence is detached."
+  ]
+}
