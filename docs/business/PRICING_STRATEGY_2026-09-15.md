@@ -1,6 +1,6 @@
 # Diomedes pricing and service scope
 
-Version: 2026-09-17.1
+Version: 2026-09-17.2
 Date: September 15, 2026
 Status: Approved commercial pricing direction. Supersedes the 2026-09-10.3 launch anchors where they conflict.
 Company direction: Diomedes Systems
@@ -51,11 +51,13 @@ Private AI scope amendment: the local plan, local setup and shared/on-site rows 
 | Customer-owned Private AI deployment | From $15,000 plus equipment and travel | Hardware sizing and sourcing, installation, model setup, agreed business workflows, benchmarking, representative workload and recovery testing, documentation, training and operational handover. Assessment required. Never quoted below a $10,000 floor: a genuine local build carries hardware, integration and operational responsibility that a smaller fee cannot cover. |
 | Bounded workflow pilot | From $2,500 | One narrow measurable workflow on the systems the customer already has, with approved inputs, acceptance checks, human review, testing, training and a defined stopping point. Quoted above the starting price for longer or more complicated work. |
 | Broader/custom implementation | From $5,000, plus $2,000 for each location after the first | Production implementation beyond a small pilot. New integrations, several systems, multiple locations or meaningful reliability work will commonly be $7,500-$15,000+ and are quoted from scope. Each additional location repeats discovery, its own information, its own staff training and its own acceptance, so it is priced rather than absorbed. |
-| Diomedes Business | Planned from $199/month per organization | Software/workspace access and bounded product entitlements as released. Final user, location, host, inference and support limits must be explicit before sale. |
+| Diomedes Business | From $199/month per organization | Software/workspace access and bounded product entitlements as released. Final user, location, host, inference and support limits must be explicit before sale. |
 | Managed Diomedes | From $750/month | Agreed monitoring, health review, compatibility triage, maintenance and limited support after a working deployment. Typical managed accounts may be $750-$1,500+ depending on supported systems and service allowance. |
 | Fractional AI Ops / continuous improvement | From $2,000/month | High-touch ongoing relationship for businesses that want Diomedes Systems to keep finding, improving and maintaining workflows. Scope, included hours and response expectations are explicit. |
 
-The public website leads with the 90-Day Workflow Starter at $299/month for 3 months ($897 total), followed by the different scopes available: free fit call, Workflow Audit from $1,000, pilot from $2,500, implementation from $5,000 plus $2,000 for each location after the first, Private AI deployment from $15,000 plus hardware, and Managed Diomedes from $750/month. Starter does not include a separate Business subscription. Planned self-managed Business from $199/org/month is an option after Starter once operational. Keep the page readable as scoped engagements, not a software-tier grid.
+The public website leads with the 90-Day Workflow Starter at $299/month for 3 months ($897 total), followed by the different scopes available: free fit call, Local Hardware and Model Plan from $500, Cloud AI Quick Start from $750, Workflow Audit from $1,000, pilot from $2,500, implementation from $5,000 plus $2,000 for each location after the first, Private AI deployment from $15,000 plus hardware, and Managed Diomedes from $750/month. Starter does not include a separate Business subscription. Self-managed Business is stated at from $199/org/month as an option after Starter. Keep the page readable as scoped engagements, not a software-tier grid.
+
+Owner decision, 2026-09-17 (.2). The first two paid rows were approved here from the start but were held back from the public list, so the site opened at the $1,000 audit and the smallest businesses had no priced way in. They are now published. Diomedes Business is stated as a real subscription rather than a planned one: it is not sold from the page, and the user, location, host, inference and support limits this table already requires are fixed in the quote before any sale, which is what keeps the claim honest while the workspace and billing finish. The $150/hour focused consultation stays unpublished by owner decision, because a single hour is rarely long enough to advise a business usefully; it is still quoted directly.
 
 ## Delivery rate floor
 
@@ -65,6 +67,8 @@ A starting price therefore implies an hour ceiling. Past it, the scope is requot
 
 | Offer | Starting price | Hours at $150/hour | Hours at $100/hour |
 | --- | ---: | ---: | ---: |
+| Local Hardware and Model Plan | $500 | 3.5 | 5 |
+| Cloud AI Quick Start | $750 | 5 | 7.5 |
 | Bounded workflow pilot | $2,500 | 17 | 25 |
 | Broader/custom implementation | $5,000 | 33 | 50 |
 | Each location after the first | $2,000 | 13 | 20 |
