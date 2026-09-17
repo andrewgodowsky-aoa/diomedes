@@ -225,6 +225,10 @@ export class RuleModelAdapter implements ModelAdapter {
     this.id = inner.id;
     this.version = `${inner.version}-scoped-rules-v1`;
   }
+  /** The wrapped adapter's route contract — scoping changes context, not binding. */
+  get contract() {
+    return this.inner.contract;
+  }
   capabilities() {
     return this.inner.capabilities();
   }

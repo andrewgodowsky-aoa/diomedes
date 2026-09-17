@@ -60,7 +60,12 @@ const stepId = z.string().regex(STEP_ID_PATTERN);
 const iso = z.string().datetime({ offset: true });
 const digest = z.string().regex(DIGEST_PATTERN);
 
-/** Command families that already carry a versioned command identity, plus the ones later items add. */
+/**
+ * Command families that already carry a versioned command identity, plus the
+ * ones later items add. `interrupt`, `resume`, `retry`, `fork`, `status`,
+ * `reconcile` and `close` were added by H01 for the adapter command surface
+ * (`shared/adapter-contract.ts` binds each lifecycle command to one of these).
+ */
 export const COMMAND_FAMILIES = [
   'work.start',
   'approval.decide',
@@ -69,6 +74,13 @@ export const COMMAND_FAMILIES = [
   'follow-up.queue',
   'stop',
   'steer',
+  'interrupt',
+  'resume',
+  'retry',
+  'fork',
+  'status',
+  'reconcile',
+  'close',
 ] as const;
 
 // --- 1. command identity and expected revision ------------------------------------

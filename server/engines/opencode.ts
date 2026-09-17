@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import type { EngineModel } from '../../shared/types.js';
+import { routeContractFor } from '../harness/route-contract.js';
 import {
   contextMessage,
   type AdapterInspection,
@@ -229,6 +230,7 @@ export function opencodeArguments(port: number): string[] {
 
 export class OpenCodeAdapter implements TextEngineAdapter {
   readonly id = 'opencode' as const;
+  readonly contract = routeContractFor('opencode');
   private readonly fetcher: Fetcher;
   private readonly spawnProcess: NonNullable<OpenCodeAdapterDeps['spawn']>;
   private readonly reserve: NonNullable<OpenCodeAdapterDeps['reservePort']>;

@@ -46,6 +46,7 @@ import {
 import { Mark } from './Mark';
 import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
+import { acceptPreview, type PreviewPosition } from './engine-text-preview';
 import { SendConfirmation } from './SendConfirmation';
 import { PermissionPanel } from './PermissionPanel';
 import { Ledger } from './Ledger';
@@ -162,6 +163,8 @@ export function Shell({
   const askThreadId = useRef<string | null>(null);
   const askEngine = useRef<Route | null>(null);
   const streamingId = useRef<string | null>(null);
+  const streamingRunId = useRef<string | null>(null);
+  const streamingPosition = useRef<PreviewPosition>(null);
   // The member a palette Message picked. The lane view has no composer yet,
   // so opening Team records the target here for the pass that adds one.
   const teamTarget = useRef<Slot | null>(null);
@@ -282,6 +285,16 @@ export function Shell({
       clearTimeout(timer);
       timer = setTimeout(() => void load().catch(report), 70);
     };
+    const discardPreview = () => {
+      if (streamingId.current == null || streamingPosition.current === 'lost') return;
+      streamingPosition.current = 'lost';
+      setStreaming(null);
+      update();
+    };
+    // EventSource reconnects without replaying ephemeral text. A missed frame
+    // invalidates the whole preview; read the durable outcome without dispatch.
+    es.addEventListener('error', discardPreview);
+    es.addEventListener('open', update);
     [
       'state',
       'project',
@@ -301,6 +314,11 @@ export function Shell({
         projectId?: unknown;
         threadId?: unknown;
         requestId?: unknown;
+        runId?: unknown;
+        stepId?: unknown;
+        attempt?: unknown;
+        fence?: unknown;
+        seq?: unknown;
         kind?: unknown;
         text?: unknown;
       };
@@ -310,6 +328,7 @@ export function Shell({
         return;
       }
       if (
+        !data ||
         typeof data.projectId !== 'string' ||
         typeof data.threadId !== 'string' ||
         typeof data.requestId !== 'string' ||
@@ -320,8 +339,13 @@ export function Shell({
       if (data.projectId !== currentId.current) return;
       if (data.kind === 'started') {
         if (askThreadId.current == null || data.threadId !== askThreadId.current) return;
+        if (typeof data.runId !== 'string' || !data.runId) return;
         if (streamingId.current != null) return;
         streamingId.current = data.requestId;
+        // The stream binds to the run that owns it: deltas and the end frame
+        // only count when they carry the same authoritative run identity.
+        streamingRunId.current = data.runId;
+        streamingPosition.current = null;
         setStreaming({
           requestId: data.requestId,
           threadId: data.threadId,
@@ -330,20 +354,29 @@ export function Shell({
         });
         return;
       }
+      if (streamingId.current == null || data.requestId !== streamingId.current) return;
+      if (
+        data.runId !== streamingRunId.current || data.threadId !== askThreadId.current
+      )
+        return;
       if (data.kind === 'delta') {
-        if (streamingId.current == null || data.requestId !== streamingId.current) return;
-        if (data.threadId !== askThreadId.current) return;
-        const chunk = typeof data.text === 'string' ? data.text : '';
-        if (!chunk) return;
+        const accepted = acceptPreview(streamingPosition.current, { ...data, kind: 'text-delta' });
+        if (accepted.kind === 'discard') {
+          discardPreview();
+          return;
+        }
+        if (accepted.kind === 'ignore') return;
+        streamingPosition.current = accepted.cursor;
         setStreaming((prev) => {
           if (!prev || prev.requestId !== data.requestId) return prev;
-          const next = (prev.text + chunk).slice(0, MAX_STREAM_CHARS);
+          const next = (prev.text + accepted.text).slice(0, MAX_STREAM_CHARS);
           return next === prev.text ? prev : { ...prev, text: next };
         });
         return;
       }
-      if (streamingId.current == null || data.requestId !== streamingId.current) return;
       streamingId.current = null;
+      streamingRunId.current = null;
+      streamingPosition.current = null;
       setStreaming((prev) => (prev && prev.requestId === data.requestId ? null : prev));
     };
     es.addEventListener('engine-text', onEngineText as EventListener);
@@ -360,6 +393,8 @@ export function Shell({
       askControl.current = null;
       askThreadId.current = null;
       streamingId.current = null;
+      streamingRunId.current = null;
+      streamingPosition.current = null;
       setStreaming(null);
     };
   }, [projectId]);
@@ -723,15 +758,21 @@ export function Shell({
         await load();
         // The persisted turn is in; drop the ephemeral text if still ours.
         streamingId.current = null;
+        streamingRunId.current = null;
+        streamingPosition.current = null;
         setStreaming((prev) => (prev && prev.threadId === thread.id ? null : prev));
       } catch (e) {
         if (control.signal.aborted || isAbortError(e)) {
           streamingId.current = null;
+          streamingRunId.current = null;
+          streamingPosition.current = null;
           setStreaming((prev) => (prev && prev.threadId === thread.id ? null : prev));
           report(new Error('Request stopped. The provider may still consume usage.'));
           return;
         }
         streamingId.current = null;
+        streamingRunId.current = null;
+        streamingPosition.current = null;
         setStreaming((prev) => (prev && prev.threadId === thread.id ? null : prev));
         throw e;
       } finally {

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { EngineModel } from '../../shared/types.js';
+import { routeContractFor } from '../harness/route-contract.js';
 import {
   contextMessage,
   type AdapterInspection,
@@ -84,6 +85,7 @@ function sameModel(requested: string, reported: string) {
 }
 export class ClaudeAdapter implements TextEngineAdapter {
   readonly id = 'claude-code' as const;
+  readonly contract = routeContractFor('claude-code');
   private readonly launch: ProcessFactory;
   private readonly account: (signal?: AbortSignal) => Promise<Record<string, unknown>>;
   constructor(

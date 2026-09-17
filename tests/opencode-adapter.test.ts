@@ -46,6 +46,7 @@ async function fixture(mode = 'ok', startupTimeoutMs = 5_000) {
   await fs.writeFile(
     file,
     `import http from 'node:http';
+import fs from 'node:fs';
 const mode=${JSON.stringify(mode)}; let stream;
 const send=(res,value)=>{res.write('data: '+JSON.stringify(value)+'\\n\\n')};
 const server=http.createServer(async(req,res)=>{
@@ -53,8 +54,8 @@ const server=http.createServer(async(req,res)=>{
  if(req.url==='/provider'){if(mode==='start-hang')return; res.setHeader('content-type','application/json');return res.end(JSON.stringify(mode==='zen'?{connected:['opencode'],all:[{id:'opencode',models:{'zen-model':{id:'zen-model',name:'Zen model'}}}]}:{connected:['opencode-go'],all:[{id:'opencode-go',models:{'go-model':{id:'go-model',name:'Go model',description:'fixture'}}}]}));}
  if(req.url==='/event'){res.writeHead(200,{'content-type':'text/event-stream'});stream=res;send(res,{type:'server.connected',properties:{}});return;}
  if(req.url==='/session'&&req.method==='POST'){let b='';for await(const c of req)b+=c;res.setHeader('content-type','application/json');return res.end(JSON.stringify({id:'session-1'}));}
- if(req.url==='/session/session-1/prompt_async'){res.writeHead(204);res.end(); if(mode==='hang')return; setTimeout(()=>{if(!stream)return; if(mode==='malformed'){stream.write('data: {bad\\n\\n');return;} if(mode==='retry'){send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'retry',attempt:1,message:'retry',next:1}}});return;} if(mode==='tools'){send(stream,{type:'message.part.updated',properties:{part:{sessionID:'session-1',messageID:'assistant-1',type:'tool',text:''}}});return;} if(mode==='noise'){send(stream,{type:'message.updated',properties:{info:{id:'noise',sessionID:'other-session',role:'assistant',providerID:'other',modelID:'other'}}});} const provider=mode==='mismatch'?'other':'opencode-go'; send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Answer'}}); send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1,completed:2},finish:'stop'}}}); send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'idle'}}});},5);return;}
- if(req.url==='/session/session-1/abort'||req.url==='/session/session-1'){res.writeHead(200);return res.end('true');}
+ if(req.url==='/session/session-1/prompt_async'){res.writeHead(204);res.end(); if(mode==='hang')return; setTimeout(()=>{if(!stream)return; if(mode==='malformed'){stream.write('data: {bad\\n\\n');return;} if(mode==='retry'){send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'retry',attempt:1,message:'retry',next:1}}});return;} if(mode==='tools'){send(stream,{type:'message.part.updated',properties:{part:{sessionID:'session-1',messageID:'assistant-1',type:'tool',text:''}}});return;} if(mode==='stream-drop'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); stream.write('data: '+JSON.stringify({type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}})+'\\n\\n',()=>{if(stream.socket)stream.socket.destroy();}); return;} if(mode==='noise'){send(stream,{type:'message.updated',properties:{info:{id:'noise',sessionID:'other-session',role:'assistant',providerID:'other',modelID:'other'}}});} const provider=mode==='mismatch'?'other':'opencode-go'; send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Answer'}}); send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1,completed:2},finish:'stop'}}}); send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'idle'}}});},5);return;}
+ if(req.url==='/session/session-1/abort'||req.url==='/session/session-1'){fs.appendFileSync('drop-seen.log',req.url+'\\n');res.writeHead(200);return res.end('true');}
  res.writeHead(404);res.end();
 }); server.listen(Number(process.argv[2]),'127.0.0.1');`,
   );
@@ -72,7 +73,7 @@ const server=http.createServer(async(req,res)=>{
     startupTimeoutMs,
     requestTimeoutMs: mode === 'hang' ? 30 : 1_000,
   });
-  return { adapter, launches };
+  return { adapter, launches, root };
 }
 
 describe('OpenCode 1.18.4 authenticated text route', () => {
@@ -160,6 +161,23 @@ describe('OpenCode 1.18.4 authenticated text route', () => {
       message:
         'OpenCode did not start within 2 seconds. Recheck the engine in Settings before starting another request.',
     });
+  });
+  it('an SSE connection drop midstream never fabricates a completion and aborts the remote session', async () => {
+    const { adapter, root } = await fixture('stream-drop');
+    const deltas: string[] = [];
+    const outcome = await adapter
+      .generate({ ...request, onDelta: (value) => deltas.push(value) })
+      .then(() => ({ resolved: true as const }), (error: unknown) => ({ error }));
+    // The socket dropped after a partial delta — no finished answer exists to
+    // report, and the request must fail rather than resolve on partial text.
+    expect(outcome).toHaveProperty('error');
+    const error = (outcome as { error: { code: string; ambiguous: boolean } }).error;
+    expect(['PROTOCOL_ERROR', 'PROVIDER_ERROR']).toContain(error.code);
+    expect(error.ambiguous).toBe(true);
+    expect(deltas).toEqual(['Partial ']);
+    // The dropped run told the server to stop the orphaned remote session.
+    const seen = await fs.readFile(path.join(root, 'drop-seen.log'), 'utf8');
+    expect(seen).toContain('/session/session-1/abort');
   });
   it('preserves the request failure and reports uncertain process cleanup safely', async () => {
     const { adapter } = await fixture('malformed');

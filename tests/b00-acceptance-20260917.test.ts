@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
 import { EngineService, TESTED_VERSIONS } from '../server/engines/service.js';
+import { routeContractFor } from '../server/harness/route-contract.js';
 import { Store } from '../server/store.js';
 import { AllowanceLedger } from '../server/managed-usage.js';
 import { RATE_CARD_V1, dollars, type MicroUsd } from '../shared/managed-usage.js';
@@ -105,11 +106,13 @@ describe('B00 independent acceptance: existing host remains authoritative', () =
       version: async () => TESTED_VERSIONS[engine],
       adapter: () => ({
         id: engine,
+        contract: routeContractFor(engine),
         inspect: async () => ({ authentication: 'signed-in', accountRoute: 'byo:fixture',
           models: [{ slug: 'fixture-model', name: 'Fixture', description: '', efforts: [], defaultEffort: null }], detail: 'Offline fixture' }),
         generate: async (input) => {
           dispatches++;
-          return { ...input, text: 'Personal BYO result', version: TESTED_VERSIONS[engine] };
+          return { projectId: input.projectId, threadId: input.threadId, requestId: input.requestId,
+            model: input.model, text: 'Personal BYO result', version: TESTED_VERSIONS[engine] };
         },
       }),
     });

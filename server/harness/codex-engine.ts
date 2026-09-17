@@ -22,6 +22,8 @@ import { ADAPTER_CAPABILITIES } from './adapters.js';
 import { CODEX_ENGINE, REPORT_PATH } from './approval.js';
 export { CODEX_ENGINE } from './approval.js';
 import { copy, digest, HarnessError, validatePrincipal } from './policy.js';
+import { commandGate } from '../../shared/adapter-contract.js';
+import { routeContractFor } from './route-contract.js';
 import type { RunService } from './run-service.js';
 import type { ToolRegistry } from './tools.js';
 import type { Capability, PrincipalRef, ResolveHarnessAuthority } from './trust-port.js';
@@ -109,6 +111,8 @@ const INSTRUCTIONS =
 export class CodexEngineAdapter {
   readonly id = CODEX_ENGINE;
   readonly version = CODEX_PROTOCOL_VERSION;
+  /** The codex-report route descriptor this driver is bound to. */
+  readonly contract = routeContractFor('codex-report');
   private readonly epoch = randomUUID();
   private readonly grants = new Map<string, CodexRunInput>();
   constructor(
@@ -344,6 +348,12 @@ export class CodexEngineAdapter {
   }
 
   async run(run: HarnessRun, owner: string) {
+    const gate = commandGate(this.contract, 'start');
+    if (!gate.admitted)
+      throw new HarnessError(
+        gate.code === 'command_unsupported' ? 'unsupported_command' : 'invalid_contract',
+        gate.reason,
+      );
     const input = inputSchema.parse(run.input);
     const principal = (
       await this.authorityForRun(

@@ -17,4 +17,12 @@ export {
 export { ToolRegistry, type ToolDefinition } from './tools.js';
 export { NativeAgent, type ModelAdapter } from './native-agent.js';
 export { ADAPTER_CAPABILITIES, guaranteeSentences, weakestGuarantee, type AdapterId } from './adapters.js';
+export { ROUTE_CONTRACTS, routeContractFor } from './route-contract.js';
+export {
+  conformanceReport,
+  contractChecks,
+  streamChecks,
+  type ConformanceCheck,
+  type EvidenceOutcome,
+} from './conformance.js';
 export { needFromWaitingStep, presentRun } from './present.js';

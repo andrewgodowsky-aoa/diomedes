@@ -16,6 +16,8 @@ import {
   windowsFromRateLimits,
   type UsageService,
 } from './usage.js';
+import { commandGate } from '../shared/adapter-contract.js';
+import { routeContractFor } from './harness/route-contract.js';
 
 // Protocol generated from the installed 0.153.4 CLI. An upgrade needs a new
 // isolation proof, particularly for the experimental empty-environments field.
@@ -758,6 +760,15 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     /** In-process host grant check. Never accepted from renderer/request JSON. */
     beforeDispatch?: (identity: CodexDispatchIdentity) => Promise<void>;
   }): Promise<{ text: string; model?: string; threadId?: string; version?: string }> {
+    // The codex route's declared contract is operative here too: a descriptor
+    // that withdraws `start` support stops this entry point, not only the
+    // EngineService dispatch.
+    const gate = commandGate(routeContractFor('codex'), 'start');
+    if (!gate.admitted)
+      throw new IntegrationError(
+        gate.code === 'command_unsupported' ? 'COMMAND_UNSUPPORTED' : 'CONTRACT_INVALID',
+        gate.reason,
+      );
     if (!input.prompt.trim())
       throw new IntegrationError('EMPTY_PROMPT', 'Enter a question or planning request.');
     if (input.signal?.aborted) throw abortError();

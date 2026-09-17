@@ -12,6 +12,7 @@ import {
   ToolRegistry,
   type ModelAdapter,
 } from '../server/harness/index.js';
+import { routeContractFor } from '../server/harness/route-contract.js';
 import { needFromWaitingStep, sessionOriginFromRun } from '../server/harness/present.js';
 import { Store } from '../server/store.js';
 import { createHarnessHost, type HarnessHost } from '../server/harness/host.js';
@@ -83,6 +84,7 @@ const directAdapter = (
 ): ModelAdapter => ({
   id,
   version: '9.9.9',
+  contract: routeContractFor('native-fixture'),
   capabilities: () => ({
     engineId: id,
     engineVersion: '9.9.9',

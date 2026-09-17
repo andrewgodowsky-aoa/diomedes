@@ -1,5 +1,6 @@
 import type { Json, ModelRequest } from '../../shared/harness.js';
 import type { ModelAdapter } from '../harness/native-agent.js';
+import { routeContractFor } from '../harness/route-contract.js';
 
 const registered = new WeakSet<ModelAdapter>();
 
@@ -12,6 +13,7 @@ export function connectionFixtureModel(
   const adapter: ModelAdapter = {
     id: 'connections-fixture-model',
     version: '1',
+    contract: routeContractFor('native-fixture'),
     capabilities: () => ({
       engineId: 'connections-fixture-model',
       engineVersion: '1',

@@ -1,3 +1,4 @@
+import type { AdapterRouteContract, TransientPreview } from '../../shared/adapter-contract.js';
 import type { EngineModel, ExternalEngine } from '../../shared/types.js';
 export interface TextRequest {
   projectId: string;
@@ -10,6 +11,19 @@ export interface TextRequest {
   accountRoute: string;
   effort?: string;
   signal?: AbortSignal;
+  /**
+   * Caller-facing preview channel: stamped, redacted, byte-bounded frames.
+   * A caller never receives raw adapter text — see `previewSink` in
+   * shared/adapter-contract.ts. Reconnects re-read the durable record;
+   * nothing replays deltas.
+   */
+  onPreview?: (frame: TransientPreview) => void;
+  /**
+   * Adapter-facing raw text sink — set only by EngineService when it wraps
+   * the caller's `onPreview`. A caller-supplied `onDelta` is refused: raw
+   * deltas are unbounded, unstamped and unredacted, and the contract does
+   * not let them reach a caller.
+   */
   onDelta?: (text: string) => void;
 }
 export interface TextResponse {
@@ -28,6 +42,12 @@ export interface AdapterInspection {
 }
 export interface TextEngineAdapter {
   id: ExternalEngine;
+  /**
+   * The route's versioned contract — the command surface it honestly answers,
+   * its streaming shape, model source, authentication and the binary version
+   * the evidence covers. Registered in `server/harness/route-contract.ts`.
+   */
+  readonly contract: AdapterRouteContract;
   inspect(signal?: AbortSignal): Promise<AdapterInspection>;
   generate(input: TextRequest): Promise<TextResponse>;
 }
