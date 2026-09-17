@@ -170,7 +170,7 @@ test('imports exports through Files, removes a source, runs and revises the acti
   expect(imported.needs).toEqual([]);
   const pane = page.getByRole('complementary', { name: 'Files', exact: true });
   await pane.getByRole('button', { name: 'Back', exact: true }).click();
-  await pane.getByRole('button', { name: /kitchen-export.md/ }).click();
+  await pane.getByRole('treeitem', { name: /kitchen-export.md/ }).click();
   await expect(pane).toContainText('Restock the welcome leaflets');
   expect(await pane.locator('img, script').count()).toBe(0);
   expect(await page.locator('body').getAttribute('data-import-executed')).toBeNull();
