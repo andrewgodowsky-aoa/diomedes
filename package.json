@@ -15,6 +15,7 @@
     "gates": "tsx scripts/gates.ts",
     "probe:team": "tsx scripts/team-probe.ts",
     "fixtures": "tsx scripts/fixtures.ts",
+    "theme-pack:handoff": "tsx scripts/theme-pack-handoff.ts",
     "prepare-native": "tsx scripts/prepare-native.ts",
     "test:ui": "playwright test",
     "verify:native-work": "tsx scripts/native-work-smoke.ts",

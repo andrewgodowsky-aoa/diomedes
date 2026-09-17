@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "id": "harbor-quiet",
+  "revision": 1,
+  "baseTheme": "harbor",
+  "surfaces": ["app-console", "website"],
+  "provenance": {
+    "author": "Diomedes design",
+    "createdAt": "2026-09-17T00:00:00.000Z",
+    "tool": "diomedes-design-studio/1",
+    "notes": "Harbor with the accents pulled back and separators barely there."
+  },
+  "tokens": {
+    "color": {
+      "chrome": { "$type": "color", "$value": "#0d1020" },
+      "surface": { "$type": "color", "$value": "#12162a" },
+      "raised": { "$type": "color", "$value": "#181d35" },
+      "hair": { "$type": "color", "$value": "#ffffff0f" },
+      "hair2": { "$type": "color", "$value": "#ffffff1a" },
+      "t1": { "$type": "color", "$value": "#dde0ea" },
+      "t2": { "$type": "color", "$value": "#9aa0b6" },
+      "t3": { "$type": "color", "$value": "#7d8399" },
+      "light": { "$type": "color", "$value": "#7d93e0" },
+      "attn": { "$type": "color", "$value": "#d4a75c" },
+      "fail": { "$type": "color", "$value": "#d06a6a" }
+    },
+    "lightScheme": { "$type": "boolean", "$value": false }
+  },
+  "typography": {
+    "interfaceScale": 1,
+    "readingScale": 1.1,
+    "codeScale": 1,
+    "lineHeight": 1.6,
+    "interfaceFont": "schibsted-grotesk",
+    "readingFont": "ibm-plex-serif",
+    "codeFont": "ibm-plex-mono"
+  },
+  "geometry": {
+    "controlRadius": 6,
+    "separatorStrength": 0.35,
+    "density": "standard"
+  },
+  "artwork": {
+    "sceneTreatment": {
+      "assetHash": "b28b66d844601c653a817e41e494c0bf8922a2740acb16479a78557c564e6afb",
+      "focal": { "x": 0.5, "y": 0.5 },
+      "crop": { "x": 0, "y": 0, "width": 1, "height": 1 },
+      "opacity": 0.2,
+      "blend": "soft-light",
+      "mask": "diffuse"
+    }
+  },
+  "motion": {
+    "presetId": "settle",
+    "duration": 160,
+    "intensity": 0.25,
+    "reducedMotionBehaviour": "static"
+  },
+  "assets": {
+    "b28b66d844601c653a817e41e494c0bf8922a2740acb16479a78557c564e6afb": {
+      "mime": "image/png",
+      "bytes": 232,
+      "width": 16,
+      "height": 16
+    }
+  }
+}
