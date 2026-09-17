@@ -4,6 +4,13 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
+// The version the packaged build reports comes from package.json; read the
+// expectation from the same file so a bump cannot leave a green assertion
+// describing a version that is no longer built.
+const { version: appVersion } = JSON.parse(
+  await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'),
+);
+
 const executablePath = path.resolve(process.argv[2] ?? '');
 const root = path.resolve(process.argv[3] ?? '');
 if (path.basename(executablePath) !== 'Diomedes.exe' || !process.argv[3]) throw new Error('Supply exact packaged executable and a NEW isolated proof directory.');
@@ -36,7 +43,7 @@ async function openConnections() {
 }
 try {
   await launch(); proof.version = (await api('/health')).version;
-  expect(proof.version).toBe('0.1.1');
+  expect(proof.version).toBe(appVersion);
   project = await api('/projects/sample', 'POST', {});
   await api('/settings', 'PUT', { detail: 'technical', surface: 'console', openProjects: [project.id],
     onboarding: { work: 'business', detail: 'technical', familiarity: 'some', resumeAt: 'done', completedAt: new Date().toISOString() } });

@@ -5,6 +5,13 @@ import { once } from 'node:events';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+// The build under test reports package.json's version, so the expectation is
+// read from the same place. Restated as a literal it survived a version bump
+// as a passing test that no longer described the build it ran against.
+const { version: appVersion } = JSON.parse(
+  await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'),
+);
+
 // Compiled-candidate evidence. Network bytes and the UI's install callback are
 // synthetic; the separate helper checks use the real packaged Electron binary
 // and helper. Neither check can launch an installer or alter an installation.
@@ -142,7 +149,7 @@ try {
   const defaultURL = new URL(page.url()).origin;
   const status = await request(defaultURL, '/updates/status');
   expect(status).toMatchObject({
-    installedVersion: '0.1.1',
+    installedVersion: appVersion,
     platform: 'win32',
     packaged: true,
     installed: false,

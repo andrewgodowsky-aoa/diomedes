@@ -1,0 +1,30 @@
+UPDATES
+  This is the first stable release on the update channel, and the first build
+  whose version differs from the experimental builds before it. Settings >
+  App updates offers stable releases only: every experimental build so far
+  reported version 0.1.1, and the check found nothing to offer because no
+  stable release existed. From this release on, those builds will be offered
+  this one when you press Check for updates. Nothing is downloaded, verified
+  or installed until you confirm it, and the download is accepted only when
+  its SHA-256 matches the digest the release publishes.
+  On these exact bytes the check, the digest verification, the staging and the
+  guarded install were exercised against an injected release feed, and a real
+  upgrade between two installed builds was exercised on a live profile. The
+  one step not yet exercised is the whole path against the live public
+  channel, which cannot be run until a stable release exists to run it
+  against. Treat that step as present, not proven.
+
+LIMITS
+  Unsigned, experimental, one machine tested.
+  Engine routes were checked with one live turn each through the app's own
+  local service, on commit b115b3c. Since that commit this build changes only
+  interface files, tests, build tooling and the version number: server/,
+  shared/, services/ and desktop/ are unchanged, so the service and the engine
+  adapters are the ones those turns ran against. Claude Code
+  (claude-sonnet-5) produced a reviewed file proposal. OpenCode (opencode-go)
+  did not start within 45 seconds in three of four attempts while the project
+  folder sat inside a large git repository, and its one start there returned
+  no usable proposal; with the project folder outside any git repository it
+  produced a proposal in about 10 seconds.
+  Codex, oh-my-pi, Cursor and Devin were not live-tested on this build.
+  Connections runs on synthetic data only. The local service is loopback-only.

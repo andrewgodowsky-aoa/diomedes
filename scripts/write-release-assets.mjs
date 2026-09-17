@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url';
 //     --installer <path to the exact installer the record names> \
 //     --payload <packaged app directory the record hashes> \
 //     --out <empty or script-owned output directory> \
-//     --tag v0.1.1-experimental.3
+//     --tag v0.1.2 \
+//     --notes <text file: this build's UPDATES and LIMITS sections>
 //
 // It refuses to proceed unless the installer's bytes hash to what the record
 // says and the payload's Diomedes.exe and app.asar hash to what the record says,
@@ -42,7 +43,18 @@ const installerPath = path.resolve(need('installer'));
 const payloadDir = path.resolve(need('payload'));
 const outDir = path.resolve(need('out'));
 const tag = need('tag');
-if (!/^v\d+\.\d+\.\d+-experimental\.\d+$/.test(tag)) throw new Error(`Tag ${tag} is not v<version>-experimental.<n>.`);
+const notesPath = path.resolve(need('notes'));
+/**
+ * Both a stable `v<version>` tag and an experimental `v<version>-experimental.<n>`
+ * tag are accepted, and the choice decides whether this release can ever update
+ * anyone. The app parses a release's version out of its tag with an anchored
+ * `^v?X.Y.Z$`, so a tag carrying `-experimental.<n>` does not parse at all and
+ * the update check reports a malformed feed rather than offering the build.
+ * Only a stable tag is an update source.
+ */
+const TAG = /^v(\d+\.\d+\.\d+)(?:-experimental\.\d+)?$/;
+const tagMatch = TAG.exec(tag);
+if (!tagMatch) throw new Error(`Tag ${tag} is neither v<version> nor v<version>-experimental.<n>.`);
 
 const sha256 = async (file) => createHash('sha256').update(await fs.readFile(file)).digest('hex');
 const run = (command, argv, options = {}) =>
@@ -59,7 +71,7 @@ const run = (command, argv, options = {}) =>
 const record = JSON.parse(await fs.readFile(recordPath, 'utf8'));
 if (record.named !== true) throw new Error('The record is not a named candidate.');
 const version = record.appVersion;
-if (!tag.startsWith(`v${version}-`)) throw new Error(`Tag ${tag} does not carry the record's version ${version}.`);
+if (tagMatch[1] !== version) throw new Error(`Tag ${tag} does not carry the record's version ${version}.`);
 
 // The bytes must be the tested bytes.
 const installerSha = await sha256(installerPath);
@@ -93,6 +105,21 @@ const installerName = record.installer.filename;
 await fs.copyFile(installerPath, path.join(outDir, installerName));
 const launcherName = 'Start-Experimental.ps1';
 await fs.copyFile(path.join(root, 'scripts', 'release-support', launcherName), path.join(outDir, launcherName));
+
+/**
+ * Everything else in the README is derived from the record. These closing
+ * sections are the part only this build knows — what the update channel will do
+ * with this release, and which engine routes were exercised live and on which
+ * commit — so they are a required input rather than a constant in this file.
+ * As a constant the text went stale and was corrected by hand after generation
+ * twice, which is worse than stale: SHA256SUMS.txt below is computed from the
+ * README this script writes, so a README edited afterwards no longer matches
+ * the checksums published beside it.
+ */
+const notes = (await fs.readFile(notesPath, 'utf8')).replace(/\r\n/g, '\n').trimEnd();
+if (!notes.trim()) throw new Error(`${notesPath} is empty; the build-specific notes are required.`);
+if (!/^[A-Z][A-Z ]+$/m.test(notes))
+  throw new Error(`${notesPath} has no SECTION heading; it should continue the README's sections.`);
 
 const commit = record.build.baseCommit;
 const short = commit.slice(0, 7);
@@ -130,7 +157,8 @@ FIRST RUN
   Open Diomedes from the Start menu (installer) or from the extracted folder.
   On first run it offers to look for AI engines already on this computer and
   looks only if you say yes. Diomedes holds no credential of its own: it uses the
-  sign-in an engine already has (Codex, Claude Code, OpenCode or Cursor).
+  sign-in an engine already has (Codex, Claude Code, OpenCode, oh-my-pi, Cursor
+  or Devin). Which of those were exercised live on this build is under LIMITS.
 
 ISOLATED EVALUATION
   ${launcherName} -Executable <path to Diomedes.exe> starts the app with a
@@ -144,10 +172,7 @@ WHAT WAS VERIFIED ON THESE EXACT BYTES
   release-manifest.json lists the hashes. The source repository's
   evidence/release-candidates/${record.releaseId}.json is the full record.
 
-LIMITS
-  Unsigned, experimental, one machine tested. Codex, Claude Code and OpenCode
-  can each produce a reviewed file proposal; Cursor's live route is unproven.
-  Connections runs on synthetic data only. The local service is loopback-only.
+${notes}
 `;
 await fs.writeFile(path.join(outDir, 'README.txt'), readme.replaceAll('\n', '\r\n'));
 
