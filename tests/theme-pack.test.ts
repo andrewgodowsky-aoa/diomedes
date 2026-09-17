@@ -154,8 +154,14 @@ describe('validateThemePack', () => {
 
   test('refuses executable strings hidden in an object key', () => {
     const pack = mythic();
-    (pack.assets as Record<string, unknown>)['javascript:x'] = { ...pack.assets[plateHash] };
-    expect(reject(pack).length).toBeGreaterThan(0);
+    (pack.tokens.color as unknown as Record<string, unknown>)['t1<script>'] = {
+      $type: 'color',
+      $value: '#ffffff',
+    };
+    expect(reject(pack).join()).toMatch(/not allowed/i);
+    const asset = mythic();
+    (asset.assets as Record<string, unknown>)['javascript:x'] = { ...asset.assets[plateHash] };
+    expect(reject(asset).length).toBeGreaterThan(0);
   });
 
   test('refuses colours that are not hex', () => {
@@ -330,6 +336,24 @@ describe('resolveAppearance', () => {
     });
     expect(refused.vars['--light']).toBe('#4ff0ff');
     expect(refused.origins['--light']).toBe('theme');
+  });
+
+  test('the layers that are not validated packs are re-checked at the door', () => {
+    const pack = accept(mythic());
+    const resolved = resolveAppearance({
+      theme: pack,
+      workspace: {
+        authorized: true,
+        colors: { light: 'url(https://example.test/x.png)', attn: 'rgba(0,0,0,.5)' },
+      },
+      personal: { interfaceScale: 3 as never, textureOpacity: 9 },
+    });
+    expect(resolved.vars['--light']).toBe('#4ff0ff');
+    expect(resolved.origins['--light']).toBe('theme');
+    expect(resolved.vars['--attn']).toBe('#c77dff');
+    expect(resolved.vars['--dm-ui-scale']).toBe('1');
+    expect(resolved.origins['--dm-ui-scale']).toBe('theme');
+    expect(resolved.vars['--dm-texture-opacity']).toBe('1');
   });
 
   test('personal preferences override workspace branding for the fields they own', () => {

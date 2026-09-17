@@ -20,10 +20,13 @@
  */
 
 import {
+  APPROVED_SCALES,
   BASE_THEME_COLORS,
   COLOR_TOKEN_NAMES,
   DEFAULT_BASE_THEME,
+  DENSITIES,
   FONT_STACKS,
+  HEX_COLOR_PATTERN,
   type ApprovedScale,
   type BaseThemeId,
   type ColorTokenName,
@@ -131,6 +134,17 @@ const CSS_VAR_FOR_TOKEN: Record<ColorTokenName, string> = {
 
 /** The roles that carry text and therefore owe a contrast floor. */
 const TEXT_ROLES: readonly ColorTokenName[] = ['t1', 't2', 't3'];
+
+/**
+ * The workspace and personal layers do not arrive through `validateThemePack`
+ * — they come from settings and from an entitlement decision. Only values that
+ * pass these guards are emitted, so nothing unchecked reaches the DOM.
+ */
+const isHexColor = (value: unknown): value is string =>
+  typeof value === 'string' && HEX_COLOR_PATTERN.test(value);
+
+const isApprovedScale = (value: unknown): value is ApprovedScale =>
+  typeof value === 'number' && (APPROVED_SCALES as readonly number[]).includes(value);
 
 // ---------------------------------------------------------------------------
 // Colour arithmetic (hex in, hex out — no CSS functions are ever emitted)
@@ -321,28 +335,39 @@ export function resolveAppearance(layers: AppearanceLayers): ResolvedAppearance 
   // 3. authorized workspace branding ---------------------------------------
   if (workspace) {
     for (const [token, value] of Object.entries(workspace.colors ?? {})) {
+      // A theme is validated before it gets here; these two layers come from
+      // live settings and entitlement, so they are re-checked at the door. An
+      // unusable value is dropped, never emitted and never half-applied.
+      if (!(COLOR_TOKEN_NAMES as readonly string[]).includes(token)) continue;
+      if (!isHexColor(value)) continue;
       colors[token as ColorTokenName] = value;
       colorLayer[token as ColorTokenName] = 'workspace';
     }
-    if (workspace.density) out.setData('density', workspace.density, 'workspace');
-    if (workspace.interfaceFont)
+    if (workspace.density && DENSITIES.includes(workspace.density))
+      out.setData('density', workspace.density, 'workspace');
+    if (workspace.interfaceFont && FONT_STACKS[workspace.interfaceFont])
       out.setVar('--dm-font-ui', FONT_STACKS[workspace.interfaceFont], 'workspace');
-    if (workspace.readingFont)
+    if (workspace.readingFont && FONT_STACKS[workspace.readingFont])
       out.setVar('--dm-font-read', FONT_STACKS[workspace.readingFont], 'workspace');
-    if (workspace.codeFont)
+    if (workspace.codeFont && FONT_STACKS[workspace.codeFont])
       out.setVar('--dm-font-code', FONT_STACKS[workspace.codeFont], 'workspace');
   }
 
   // 4. personal preferences -------------------------------------------------
-  if (personal.interfaceScale !== undefined)
+  if (isApprovedScale(personal.interfaceScale))
     out.setVar('--dm-ui-scale', String(personal.interfaceScale), 'personal');
-  if (personal.readingScale !== undefined)
+  if (isApprovedScale(personal.readingScale))
     out.setVar('--dm-read-scale', String(personal.readingScale), 'personal');
-  if (personal.codeScale !== undefined)
+  if (isApprovedScale(personal.codeScale))
     out.setVar('--dm-code-scale', String(personal.codeScale), 'personal');
-  if (personal.density !== undefined) out.setData('density', personal.density, 'personal');
-  if (personal.textureOpacity !== undefined)
-    out.setVar('--dm-texture-opacity', String(personal.textureOpacity), 'personal');
+  if (personal.density !== undefined && DENSITIES.includes(personal.density))
+    out.setData('density', personal.density, 'personal');
+  if (typeof personal.textureOpacity === 'number' && Number.isFinite(personal.textureOpacity))
+    out.setVar(
+      '--dm-texture-opacity',
+      String(Math.max(0, Math.min(1, personal.textureOpacity))),
+      'personal',
+    );
   if (personal.motion === 'reduced') {
     out.setData('motion', 'reduced', 'personal');
     out.setVar('--dm-motion-intensity', '0', 'personal');
