@@ -965,7 +965,7 @@ html[data-surface='console'] body {
   font-size: var(--dm-type-caption);
 }
 .console .ledger .ev {
-  font: 400 var(--dm-type-body) / 1.7 var(--mono);
+  font: 400 var(--dm-type-meta) / 1.7 var(--mono);
   color: var(--t3);
 }
 .console .ledger .ev li {

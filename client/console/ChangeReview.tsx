@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import type {
   ChangeEntry,
   ChangeReviewManifest,
@@ -15,7 +15,9 @@ import './change-review.css';
  * Every sentence on screen was rendered server-side from facts that name their
  * evidence; this component only lays them out. The deterministic manifest is
  * fetched fresh whenever `refreshKey` moves (a run starts, ends, or a change
- * settles), so the review a person reads is the review the records prove.
+ * settles), so the review a person reads is the review the records prove. The
+ * last review stays on screen while the next one loads, and nothing renders for
+ * a task until its first answer arrives, so no empty state flashes before a review.
  */
 
 const CHECK_ICON: Record<ReviewCheck['state'], string> = {
@@ -33,6 +35,15 @@ const KIND_TEXT: Record<ChangeEntry['kind'], string> = {
   renamed: 'renamed',
   unchanged: 'unchanged',
 };
+
+const EXAMPLES = [
+  { id: 'restaurant-weekly-report', label: 'a restaurant report' },
+  { id: 'automation-invoice-reminder', label: 'a business automation' },
+] as const;
+
+function count(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
 
 function outcomeCaption(manifest: ChangeReviewManifest): string {
   switch (manifest.outcome) {
@@ -156,7 +167,7 @@ function ChangeRow({ entry }: { entry: ChangeEntry }) {
           )}
           <ul className="crev-refs">
             {entry.evidence.slice(0, 6).map((ref, index) => (
-              <li key={index} className="mono">
+              <li key={index} className="mono lc">
                 {ref.kind}
                 {'entryId' in ref && ` · ${ref.entryId}`}
                 {'sha' in ref && ` · ${ref.sha.slice(0, 12)}`}
@@ -185,78 +196,138 @@ export function ChangeReview({
   taskId: string | null;
   refreshKey: string;
 }) {
-  const [manifest, setManifest] = useState<ChangeReviewManifest | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
+  const headingId = useId();
+  // Everything fetched is keyed to the task it belongs to, so another task's review
+  // never shows and a refresh keeps the current review until the next one arrives.
+  const key = taskId ? `${projectId}/${taskId}` : null;
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    manifest: ChangeReviewManifest | null;
+  } | null>(null);
+  const [failedKey, setFailedKey] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [details, setDetails] = useState(false);
-  const [example, setExample] = useState<ChangeReviewManifest | null>(null);
+  const [example, setExample] = useState<{ id: string; manifest: ChangeReviewManifest } | null>(
+    null,
+  );
+  const [exampleFailed, setExampleFailed] = useState(false);
+  // Opening an example replaces the link that opened it, and closing one removes the
+  // Close button, so focus moves to the control that takes their place.
+  const [focusTarget, setFocusTarget] = useState<string | null>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const exampleButtons = useRef(new Map<string, HTMLButtonElement>());
 
   useEffect(() => {
+    if (!key || !taskId) return;
     let live = true;
-    setManifest(null);
-    setFailed(null);
-    if (!taskId) return;
     api<{ manifest: ChangeReviewManifest | null }>(
       `/projects/${encodeURIComponent(projectId)}/change-review/task/${encodeURIComponent(taskId)}`,
     )
       .then((result) => {
-        if (live) setManifest(result.manifest);
+        if (!live) return;
+        setLoaded({ key, manifest: result.manifest });
+        setFailedKey(null);
       })
       .catch((error: unknown) => {
-        if (live)
-          setFailed(
-            error instanceof ApiError && error.status === 404
-              ? null
-              : 'The change review could not be loaded.',
-          );
+        if (!live) return;
+        if (error instanceof ApiError && error.status === 404) {
+          setLoaded({ key, manifest: null });
+          setFailedKey(null);
+        } else {
+          setFailedKey(key);
+        }
       });
     return () => {
       live = false;
     };
-  }, [projectId, taskId, refreshKey]);
+  }, [key, projectId, taskId, refreshKey, attempt]);
 
-  const shown = manifest ?? example;
-  const loadExample = (id: string) =>
+  useEffect(() => {
+    setExample(null);
+    setExampleFailed(false);
+  }, [key]);
+
+  useEffect(() => {
+    if (focusTarget === null) return;
+    (focusTarget === 'close'
+      ? closeButton.current
+      : exampleButtons.current.get(focusTarget)
+    )?.focus();
+    setFocusTarget(null);
+  }, [focusTarget]);
+
+  const settled = loaded !== null && loaded.key === key;
+  const manifest = settled ? loaded.manifest : null;
+  const failed = key !== null && failedKey === key;
+  const shown = manifest ?? example?.manifest ?? null;
+
+  const loadExample = (id: string) => {
+    setExampleFailed(false);
     api<{ manifest: ChangeReviewManifest }>(
       `/projects/${encodeURIComponent(projectId)}/change-review/examples/${encodeURIComponent(id)}`,
     )
-      .then((result) => setExample(result.manifest))
-      .catch(() => setFailed('The example could not be loaded.'));
+      .then((result) => {
+        setExample({ id, manifest: result.manifest });
+        setFocusTarget('close');
+      })
+      .catch(() => setExampleFailed(true));
+  };
+  const closeExample = () => {
+    const id = example?.id ?? null;
+    setExample(null);
+    setFocusTarget(id);
+  };
+  const exampleLinks = (lead: string) => (
+    <>
+      <p className="crev-note crev-examples">
+        {lead}{' '}
+        {EXAMPLES.map((item, index) => (
+          <Fragment key={item.id}>
+            {index > 0 && ' · '}
+            <button
+              type="button"
+              ref={(node) => {
+                if (node) exampleButtons.current.set(item.id, node);
+                else exampleButtons.current.delete(item.id);
+              }}
+              onClick={() => loadExample(item.id)}
+            >
+              {item.label}
+            </button>
+          </Fragment>
+        ))}
+      </p>
+      {exampleFailed && (
+        <p className="crev-note" role="status">
+          The example could not be loaded.
+        </p>
+      )}
+    </>
+  );
 
   // Plain threads carry no review: only the example affordance, not an empty section.
-  if (!taskId && !shown)
-    return (
-      <p className="crev-note crev-examples">
-        See what a change review looks like:{' '}
-        <button type="button" onClick={() => void loadExample('restaurant-weekly-report')}>
-          a restaurant report
-        </button>
-        {' · '}
-        <button type="button" onClick={() => void loadExample('automation-invoice-reminder')}>
-          a business automation
-        </button>
-      </p>
-    );
+  if (!taskId && !example) return exampleLinks('See what a change review looks like:');
+  // A task's section waits for its first answer rather than flashing the empty state.
+  if (taskId && !settled && !failed && !example) return null;
 
   return (
-    <section className="crev" aria-label="What changed">
+    <section className="crev" aria-labelledby={headingId}>
       <header className="crev-head">
-        <h2>What changed</h2>
+        <h2 id={headingId}>What changed</h2>
         <span className="caption">Deterministic · no AI model wrote this</span>
       </header>
-      {failed && <p className="crev-note">{failed}</p>}
-      {!manifest && !example && !failed && (
+      {failed && (
+        <p className="crev-note" role="status">
+          The change review could not be loaded.{' '}
+          <button type="button" onClick={() => setAttempt((n) => n + 1)}>
+            Try again
+          </button>
+        </p>
+      )}
+      {!shown && settled && !failed && (
         <div className="crev-empty">
-          {taskId && <p className="crev-note">No change review exists for this task yet.</p>}
-          <p className="crev-note">
-            See what a review looks like:{' '}
-            <button type="button" onClick={() => void loadExample('restaurant-weekly-report')}>
-              a restaurant report
-            </button>
-            {' · '}
-            <button type="button" onClick={() => void loadExample('automation-invoice-reminder')}>
-              a business automation
-            </button>
-          </p>
+          <p className="crev-note">No change review exists for this task yet.</p>
+          {exampleLinks('See what a review looks like:')}
         </div>
       )}
       {shown && (
@@ -264,7 +335,7 @@ export function ChangeReview({
           {example && !manifest && (
             <p className="crev-note">
               Example review — {shown.subject.label}.{' '}
-              <button type="button" onClick={() => setExample(null)}>
+              <button type="button" ref={closeButton} onClick={closeExample}>
                 Close
               </button>
             </p>
@@ -273,7 +344,7 @@ export function ChangeReview({
           {shown.baselineReason && <p className="crev-note">{shown.baselineReason}</p>}
           <ul className="crev-sentences">
             {shown.summary.whatChanged.map((line) => (
-              <li key={line.id} title={`${line.templateId} · ${line.factIds.join(', ')}`}>
+              <li key={line.id} data-template={line.templateId} data-facts={line.factIds.join(' ')}>
                 {line.text}
               </li>
             ))}
@@ -294,19 +365,20 @@ export function ChangeReview({
             <div className="crev-checks">
               <h3>Checks</h3>
               <ul>
-                {shown.checks.map((check) => (
-                  <li key={check.id} className={`crev-check ${check.state}`}>
-                    <span className={`crev-check-state ${check.state}`}>
-                      {CHECK_ICON[check.state]}
-                    </span>
-                    <span className="crev-check-label">{check.label}</span>
-                    {(check.detail || (check.reason && check.state !== 'passed')) && (
-                      <span className="crev-check-detail">
-                        {check.detail ?? check.reason}
+                {shown.checks.map((check) => {
+                  const detail = check.detail ?? (check.state !== 'passed' ? check.reason : null);
+                  return (
+                    <li key={check.id} className={`crev-check ${check.state}`}>
+                      <span className={`crev-check-state ${check.state}`}>
+                        {CHECK_ICON[check.state]}
                       </span>
-                    )}
-                  </li>
-                ))}
+                      <span className="crev-check-text">
+                        <span className="crev-check-label">{check.label}</span>
+                        {detail && <span className="crev-check-detail">{detail}</span>}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
@@ -320,33 +392,38 @@ export function ChangeReview({
               </ul>
             </div>
           )}
-          <button type="button" className="crev-details" onClick={() => setDetails(!details)}>
-            {details ? 'Hide technical details' : 'Technical details'}
+          <button
+            type="button"
+            className="crev-details"
+            aria-expanded={details}
+            onClick={() => setDetails(!details)}
+          >
+            Technical details
           </button>
           {details && (
             <div className="crev-technical">
               <dl>
                 <dt>Manifest</dt>
-                <dd className="mono">{shown.id}</dd>
+                <dd className="mono lc">{shown.id}</dd>
                 <dt>Digest</dt>
-                <dd className="mono">{shown.digest}</dd>
+                <dd className="mono lc">{shown.digest}</dd>
                 <dt>Rules</dt>
-                <dd className="mono">{shown.rulesVersion}</dd>
+                <dd className="mono lc">{shown.rulesVersion}</dd>
                 <dt>Built</dt>
-                <dd className="mono">{shown.generatedAt}</dd>
+                <dd className="mono lc">{shown.generatedAt}</dd>
                 {shown.baseline && (
                   <>
                     <dt>Baseline</dt>
-                    <dd className="mono">
-                      {shown.baseline.files.length} files · {shown.baseline.listingDigest.slice(7, 19)} ·{' '}
-                      {shown.baseline.capturedAt}
+                    <dd className="mono lc">
+                      {count(shown.baseline.files.length, 'file', 'files')} ·{' '}
+                      {shown.baseline.listingDigest.slice(7, 19)} · {shown.baseline.capturedAt}
                     </dd>
                   </>
                 )}
                 {shown.baseline?.git && (
                   <>
                     <dt>Git baseline</dt>
-                    <dd className="mono">
+                    <dd className="mono lc">
                       {shown.baseline.git.captured
                         ? `HEAD ${shown.baseline.git.head ?? 'none'} · ${shown.baseline.git.statusDigest?.slice(7, 19)}`
                         : `not captured — ${shown.baseline.git.reason ?? 'unavailable'}`}
@@ -355,7 +432,7 @@ export function ChangeReview({
                 )}
                 <dt>Inspected</dt>
                 <dd>
-                  {shown.coverage.inspected} files
+                  {count(shown.coverage.inspected, 'file', 'files')}
                   {shown.coverage.skipped.length > 0 &&
                     ` · ${shown.coverage.skipped.length} not inspected`}
                   {shown.coverage.blocked.length > 0 &&

@@ -579,8 +579,10 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
                     </p>
                   ) : (
                     <p className="caption">
-                      Sign-in runs in the provider's own tool in your terminal. Diomedes never asks
-                      for provider secrets.
+                      {engine === 'devin'
+                        ? 'Sign-in opens the Devin browser flow.'
+                        : "Sign-in runs in the provider's own tool in your terminal."}{' '}
+                      Diomedes never asks for provider secrets.
                     </p>
                   )}
                   {loginDetail[engine] !== undefined && (

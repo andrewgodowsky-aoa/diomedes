@@ -1,250 +1,246 @@
-/* Automatic Change Review — one transcript block in the Console's own rhythm. */
+/* Automatic Change Review — one transcript block in the Console's own vocabulary:
+   the run inspector's reading type, the ledger's section labels, the transcript's
+   hanging markers, the record's quiet links and the instructions panel for verbatim
+   text. Every rule is scoped to `.console` so it outranks the shell's own resets
+   (`.console button`, `.console .mono`) instead of losing to them. */
 
-.crev {
-  border-top: 1px solid var(--hair-2);
-  padding: 10px 0 6px;
-  font: 400 var(--dm-type-ui) / 1.45 var(--ui);
+.console .crev {
+  min-width: 0;
+  padding: 12px 0 8px;
+  font: 400 var(--dm-type-body) / 1.5 var(--ui);
   color: var(--t1);
 }
 
-.crev-head {
+.console .crev-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+}
+.console .crev-head h2 {
+  margin: 0;
+  font: 500 var(--dm-type-body) / 1.5 var(--ui);
+  color: var(--t1);
+}
+.console .crev h3 {
+  margin: 18px 0 6px;
+  font: 500 var(--dm-type-meta) / 1.5 var(--ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+/* zero-specificity reset, so each list's own margins below still apply */
+.console .crev :where(ul, ol) {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* notes and their links: the record's quiet underline, not the browser's */
+.console .crev-note {
+  margin-block: 4px;
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+}
+.console .crev-note button {
+  color: var(--t2);
+  border-bottom: 1px solid var(--hair-2);
+}
+.console .crev-note button:hover {
+  color: var(--t1);
+}
+/* on a plain thread the examples line stands alone under the permission note */
+.console .transcript .col > .crev-examples {
+  margin-block: 12px 0;
+}
+
+.console .crev-sentences {
+  margin-top: 8px;
+}
+.console .crev-sentences li {
+  margin-block: 2px;
+  overflow-wrap: anywhere;
+}
+
+/* attention and failure hang a marker in the transcript gutter, like a need does */
+.console .crev-flag,
+.console .crev-check:is(.failed, .error) {
+  position: relative;
+}
+.console .crev-flag::before,
+.console .crev-check:is(.failed, .error)::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: calc(0.75em - 3px);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--attn);
+}
+.console .crev-check:is(.failed, .error)::before {
+  top: 0.75em; /* the row's 3px block padding plus half the first line, less half the dot */
+  background: var(--fail);
+}
+.console .crev-flag {
+  margin-block: 4px;
+  overflow-wrap: anywhere;
+}
+
+/* checks and changes share one left column: the state or kind word, then the text */
+.console .crev-check {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: 0 10px;
+  align-items: baseline;
+  padding-block: 3px;
+}
+.console .crev-check-state {
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+}
+.console .crev-check-state.passed {
+  color: var(--t2);
+}
+.console .crev-check-state:is(.failed, .error) {
+  color: var(--fail);
+}
+.console .crev-check-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .crev-check-detail {
+  margin-left: 10px;
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+}
+
+.console .crev-row {
+  border-bottom: 1px solid var(--hair);
+}
+.console .crev-row:first-child {
+  border-top: 1px solid var(--hair);
+}
+.console .crev-path {
   display: flex;
   align-items: baseline;
   gap: 10px;
-}
-.crev-head h2 {
-  font: 500 var(--dm-type-section) / 1.2 var(--ui);
-  color: var(--t1);
-  margin: 0;
-}
-.crev h3 {
-  font: 500 var(--dm-type-caption) / 1.3 var(--ui);
-  color: var(--t3);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin: 12px 0 4px;
-}
-
-.crev-note {
-  color: var(--t3);
-  font-size: var(--dm-type-caption);
-  margin: 4px 0;
-}
-.crev-note button,
-.crev-empty button {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--light);
-  font: inherit;
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-.crev-sentences {
-  list-style: none;
-  margin: 6px 0 0;
-  padding: 0;
-}
-.crev-sentences li {
-  margin: 2px 0;
-  overflow-wrap: anywhere;
-}
-
-.crev-attention {
-  border-left: 2px solid var(--attn);
-  padding-left: 10px;
-  margin-top: 8px;
-}
-.crev-attention h3 {
-  color: var(--attn);
-  margin-top: 0;
-}
-.crev-attention ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.crev-flag {
-  margin: 3px 0;
-  color: var(--t1);
-  overflow-wrap: anywhere;
-}
-
-.crev-checks ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.crev-check {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 3px 0;
-  min-width: 0;
-}
-.crev-check-state {
-  flex: none;
-  font: 500 var(--dm-type-meta) / 1 var(--ui);
-  padding: 2px 6px;
-  border-radius: var(--rb);
-  border: 1px solid var(--hair-2);
-  color: var(--t2);
-  min-width: 44px;
-  text-align: center;
-}
-.crev-check-state.passed {
-  color: var(--light);
-  border-color: var(--light);
-}
-.crev-check-state.failed,
-.crev-check-state.error {
-  color: var(--fail);
-  border-color: var(--fail);
-}
-.crev-check-state.not-run,
-.crev-check-state.skipped {
-  color: var(--t3);
-}
-.crev-check-label {
-  color: var(--t1);
-}
-.crev-check-detail {
-  color: var(--t3);
-  font-size: var(--dm-type-caption);
-  overflow-wrap: anywhere;
-  min-width: 0;
-}
-
-.crev-changes ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.crev-row {
-  border-bottom: 1px solid var(--hair);
-}
-.crev-path {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
   width: 100%;
-  background: none;
-  border: none;
-  padding: 4px 0;
-  font: inherit;
-  color: var(--t1);
-  cursor: pointer;
-  text-align: left;
   min-width: 0;
+  padding-block: 4px;
+  text-align: left;
+  color: var(--t1);
 }
-.crev-kind {
-  flex: none;
-  font: 500 var(--dm-type-meta) / 1 var(--ui);
-  color: var(--t3);
-  min-width: 52px;
-}
-.crev-row.added .crev-kind {
+.console .crev-path:hover .crev-name {
   color: var(--light);
 }
-.crev-row.deleted .crev-kind {
-  color: var(--fail);
+.console .crev-kind {
+  flex: none;
+  width: 4.5rem;
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
 }
-.crev-row.renamed .crev-kind {
-  color: var(--attn);
-}
-.crev-name {
+.console .crev-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.crev-observed {
+.console .crev-observed {
   flex: none;
-  font-size: var(--dm-type-meta);
+  font-size: var(--dm-type-caption);
   color: var(--attn);
 }
-.crev-evidence {
-  padding: 2px 0 8px 60px;
-  color: var(--t2);
+.console .crev-evidence {
+  padding: 2px 0 12px calc(4.5rem + 10px);
   font-size: var(--dm-type-caption);
-}
-.crev-evidence p {
-  margin: 2px 0;
-}
-.crev-patch {
-  margin: 4px 0;
-  padding: 6px 8px;
-  border: 1px solid var(--hair);
-  border-radius: var(--rb);
-  font: 400 var(--dm-type-meta) / 1.5 var(--mono);
   color: var(--t2);
-  max-height: 240px;
+}
+.console .crev-evidence p {
+  margin-block: 4px;
+}
+/* verbatim file text reads like the instructions panel: code role, chrome ground */
+.console .crev-patch {
+  margin: 6px 0;
+  padding: 10px 12px;
+  max-height: 320px;
   overflow: auto;
+  min-width: 0;
+  background: var(--chrome);
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  font: 400 var(--dm-type-code) / 1.55 var(--mono);
+  color: var(--t2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.crev-fields {
-  list-style: none;
-  margin: 4px 0;
-  padding: 0;
+.console .crev-fields {
+  margin-block: 6px;
 }
-.crev-fields li {
-  margin: 2px 0;
+.console .crev-fields li {
+  margin-block: 2px;
   overflow-wrap: anywhere;
 }
-.crev-dim {
+.console .crev-fields b {
+  font-weight: 500;
+  color: var(--t1);
+}
+.console .crev-dim {
   color: var(--t3);
 }
-.crev-refs {
-  list-style: none;
-  margin: 4px 0 0;
-  padding: 0;
+.console .crev-refs {
+  margin-top: 6px;
 }
-.crev-refs li {
-  font-size: var(--dm-type-meta);
-  color: var(--t3);
+.console .crev-refs li {
   overflow-wrap: anywhere;
 }
 
-.crev-details {
-  margin-top: 8px;
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--t3);
-  font: inherit;
+/* technical details open like the run inspector's own disclosure */
+.console .crev-details {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-block: 4px;
   font-size: var(--dm-type-caption);
-  cursor: pointer;
-  text-decoration: underline;
+  color: var(--t3);
 }
-.crev-technical {
-  margin-top: 6px;
-  padding: 8px 0;
+.console .crev-details::before {
+  content: '';
+  width: 6px;
+  height: 8px;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  transition: transform var(--move);
+}
+.console .crev-details[aria-expanded='true']::before {
+  transform: rotate(90deg);
+}
+.console .crev-details:hover {
+  color: var(--t1);
+}
+.console .crev-technical {
+  margin-top: 4px;
+  padding-top: 10px;
   border-top: 1px solid var(--hair);
-}
-.crev-technical dl {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 3px 12px;
-  margin: 0;
   font-size: var(--dm-type-caption);
 }
-.crev-technical dt {
+.console .crev-technical dl {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(0, 3fr);
+  gap: 6px 16px;
+  margin: 0;
+}
+.console .crev-technical dt {
   color: var(--t3);
 }
-.crev-technical dd {
+.console .crev-technical dd {
   margin: 0;
-  color: var(--t2);
   min-width: 0;
+  color: var(--t2);
   overflow-wrap: anywhere;
 }
-.crev-technical .mono {
-  font-family: var(--mono);
-}
-.crev-limits {
-  list-style: none;
-  margin: 6px 0 0;
-  padding: 0;
+.console .crev-limits {
+  margin-top: 6px;
 }

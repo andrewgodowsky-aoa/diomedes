@@ -176,7 +176,10 @@ test('CR-UI-01: the task thread renders the verified review with evidence drill-
   await expect(rows.first().locator('.crev-refs li').first()).toContainText(/history-entry|file-record/);
 
   // Technical detail stays one click deeper: digest, rules version, baseline.
-  await review.getByRole('button', { name: 'Technical details' }).click();
+  const disclosure = review.getByRole('button', { name: 'Technical details' });
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+  await disclosure.click();
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
   const technical = review.locator('.crev-technical');
   await expect(technical).toBeVisible();
   await expect(technical).toContainText(/sha256:/);
@@ -194,6 +197,8 @@ test('CR-UI-02: a plain thread serves the two business examples through the same
   const review = page.locator('.crev');
   await expect(review).toBeVisible();
   await expect(review).toContainText('Example review');
+  // The link that opened the example is gone, so focus lands on its Close.
+  await expect(review.getByRole('button', { name: 'Close' })).toBeFocused();
   await expect(review.locator('.crev-sentences')).toContainText(
     'Monday 7:00 AM → Monday 6:00 AM',
   );
@@ -208,6 +213,7 @@ test('CR-UI-02: a plain thread serves the two business examples through the same
   // The second domain reuses the identical mechanism. Close returns the
   // affordance; sensitive values never render.
   await review.getByRole('button', { name: 'Close' }).click();
+  await expect(page.getByRole('button', { name: 'a restaurant report' })).toBeFocused();
   await page.getByRole('button', { name: 'a business automation' }).click();
   await expect(review.locator('.crev-sentences')).toContainText('On → Off');
   await expect(review.locator('.crev-sentences')).toContainText('Service key changed');

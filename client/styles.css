@@ -212,7 +212,8 @@ html[data-package='paper'] {
   --t2: #4b5563;
   --t3: #666d7a;
   --light: #0e7c86;
-  --attn: #b7791f;
+  /* amber stays text-legible (≥4.5:1) on surface, chrome and raised */
+  --attn: #8c5d18;
   --fail: #c53030;
   --dm-glacier-ink: #ffffff;
   --dm-signal-ink: #ffffff;
