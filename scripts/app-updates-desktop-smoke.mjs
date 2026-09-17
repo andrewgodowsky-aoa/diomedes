@@ -11,6 +11,17 @@ import path from 'node:path';
 const { version: appVersion } = JSON.parse(
   await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'),
 );
+// The fixture release below has to be strictly newer than the build under test,
+// or the app answers "current" — correctly — and the offered-update path this
+// smoke exists to exercise never runs. Written as the literal 0.1.2 it did
+// exactly that as soon as the app's own version reached 0.1.2.
+const nextVersion = (() => {
+  const parts = appVersion.split('.').map(Number);
+  if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part) || part < 0))
+    throw new Error(`package.json version ${JSON.stringify(appVersion)} is not X.Y.Z.`);
+  return `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
+})();
+const nextAssetName = `Diomedes-Experimental-${nextVersion}-unsigned-setup.exe`;
 
 // Compiled-candidate evidence. Network bytes and the UI's install callback are
 // synthetic; the separate helper checks use the real packaged Electron binary
@@ -64,10 +75,10 @@ async function realHelperProof(mode) {
   await fs.mkdir(ownedDir, { recursive: true });
   const bytes = Buffer.alloc(1_100_000, 7);
   const artifact = {
-    path: path.join(ownedDir, 'Diomedes-Experimental-0.1.2-unsigned-setup.exe'),
+    path: path.join(ownedDir, nextAssetName),
     size: bytes.length,
     sha256: sha256(bytes),
-    version: '0.1.2',
+    version: nextVersion,
   };
   await fs.writeFile(artifact.path, bytes, { flag: 'wx' });
   const readyFile = path.join(root, mode, 'ready.json');
@@ -178,7 +189,10 @@ try {
 
   // No production hook: load the same compiled factory as main.mjs in the
   // test-controlled Electron VM, with an owned second HTTP fixture host.
-  fixtureURL = await desktop.evaluate(async ({ app }) => {
+  // The fixture versions are passed in rather than closed over: this function
+  // body is serialised and run inside the Electron main process, which cannot
+  // see this script's scope. That is why they were literals here.
+  fixtureURL = await desktop.evaluate(async ({ app }, fixtureVersion) => {
     const nodePath = process.getBuiltinModule('node:path');
     const { createServer } = process.getBuiltinModule('node:http');
     const crypto = process.getBuiltinModule('node:crypto');
@@ -195,9 +209,9 @@ try {
     const port = server.address().port;
     const bytes = Buffer.alloc(1_100_000, 7);
     const digest = crypto.createHash('sha256').update(bytes).digest('hex');
-    const assetName = 'Diomedes-Experimental-0.1.2-unsigned-setup.exe';
+    const assetName = fixtureVersion.assetName;
     const base = 'https://github.com/andrewgodowsky-aoa/diomedes/releases';
-    const assetURL = `${base}/download/v0.1.2/${assetName}`;
+    const assetURL = `${base}/download/v${fixtureVersion.version}/${assetName}`;
     const state = { checked: 0, accepted: 0, handedOff: [] };
     const fixture = await compiled.createApp({
       dataDir: nodePath.join(process.env.DIOMEDES_DESKTOP_PROFILE, '..', 'fixture-data'),
@@ -215,8 +229,8 @@ try {
           fetchRelease: async () => {
             state.checked += 1;
             return {
-              tag_name: 'v0.1.2',
-              html_url: `${base}/tag/v0.1.2`,
+              tag_name: `v${fixtureVersion.version}`,
+              html_url: `${base}/tag/v${fixtureVersion.version}`,
               prerelease: false,
               draft: false,
               assets: [
@@ -240,13 +254,13 @@ try {
     server.on('request', fixture);
     globalThis.__updateFixture = { app: fixture, server, state };
     return `http://127.0.0.1:${port}`;
-  });
+  }, { version: nextVersion, assetName: nextAssetName });
   await request(fixtureURL, '/settings', 'PUT', settings);
   await page.goto(fixtureURL);
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('button', { name: 'App updates', exact: true }).click();
   await page.getByRole('button', { name: 'Check for updates', exact: true }).click();
-  await expect(page.locator('.app-updates')).toContainText('Version 0.1.2 is available');
+  await expect(page.locator('.app-updates')).toContainText(`Version ${nextVersion} is available`);
   await page.getByRole('button', { name: 'Download', exact: true }).click();
   await expect(page.locator('.app-updates')).toContainText('published digest verified');
   await screenshot(page, 'desktop-app-updates-verified.png');
