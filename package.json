@@ -12,6 +12,7 @@
     "start": "tsx server/index.ts --production",
     "test": "vitest run",
     "check": "tsc --noEmit",
+    "gates": "tsx scripts/gates.ts",
     "probe:team": "tsx scripts/team-probe.ts",
     "fixtures": "tsx scripts/fixtures.ts",
     "prepare-native": "tsx scripts/prepare-native.ts",
