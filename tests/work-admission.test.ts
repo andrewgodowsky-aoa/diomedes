@@ -409,11 +409,22 @@ describe('durable task Work admission', () => {
     await until((s) => s.sessions[0]?.state === 'waiting');
     // In-memory waiting precedes the async durable write. Capture a genuinely
     // saved proposal, not the earlier admission bytes that happen to be on disk.
+    //
+    // The budget is explicit because vi.waitFor defaults to one second and
+    // testTimeout does not raise it: this polls a durable write to disk, whose
+    // latency is not bounded by anything this test controls. On a machine busy
+    // with other work the write arrived late and the read found no need at all,
+    // failing as `expected undefined to be 'open'` three runs in a row while
+    // passing alone every time. Ten seconds is still far inside the 30s test
+    // timeout, and the assertion itself is unchanged.
     let snapshot!: Buffer;
-    await vi.waitFor(async () => {
-      snapshot = await fs.readFile(store().statePath(projectId));
-      expect(JSON.parse(snapshot.toString('utf8')).needs[0]?.state).toBe('open');
-    });
+    await vi.waitFor(
+      async () => {
+        snapshot = await fs.readFile(store().statePath(projectId));
+        expect(JSON.parse(snapshot.toString('utf8')).needs[0]?.state).toBe('open');
+      },
+      { timeout: 10_000 },
+    );
     await close();
     // Restore the last running-process bytes to emulate loss without a clean close.
     await fs.writeFile(path.join(root, 'data', 'projects', projectId, 'state.json'), snapshot);
