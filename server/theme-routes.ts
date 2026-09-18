@@ -14,6 +14,7 @@ import type { Express, Request, Response } from 'express';
 import { ApiError } from './paths.js';
 import type { Store } from './store.js';
 import type { ThemeService } from './themes.js';
+import { probeWebsiteStudio } from './website-studio.js';
 
 const themeId = (req: Request) => String(req.params.id ?? '');
 
@@ -73,12 +74,38 @@ export function mountThemeRoutes(app: Express, store: Store, themes: ThemeServic
     '/api/themes/:id',
     route(async (req, res) => {
       const id = themeId(req);
+      // `draft: true` rides beside the pack rather than inside it: the contract
+      // refuses unknown top-level keys, and a draft is a fact about this save,
+      // not about the design. It is taken off before validation and the pack
+      // itself is checked exactly as an explicit save would be.
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const { draft: flag, ...packBody } = body;
+      // One value, or absent. A misspelled flag read as "not a draft" would
+      // turn an autosave into a recorded revision without anyone asking.
+      if (flag !== undefined && flag !== true)
+        throw new ApiError(400, 'The draft flag is either true or left out.', {
+          code: 'invalid_draft_flag',
+        });
+      const draft = flag === true;
+      const pack = themes.validate(id, packBody);
+      if (draft) {
+        const saved = await store.locked(() => themes.saveDraft(id, pack));
+        return { ...saved, draft: true };
+      }
       const expected = expectedRevision(req);
-      const pack = themes.validate(id, req.body);
       const saved = await store.locked(() => themes.save(id, pack, expected));
       res.setHeader('ETag', `"${saved.revision}"`);
       return saved;
     }, false),
+  );
+
+  /** Throw away an autosave without touching the saved theme. */
+  app.delete(
+    '/api/themes/:id/draft',
+    route(async (req) => {
+      await themes.discardDraft(themeId(req));
+      return { ok: true };
+    }),
   );
 
   app.post(
@@ -100,5 +127,15 @@ export function mountThemeRoutes(app: Express, store: Store, themes: ThemeServic
   app.post(
     '/api/themes/:id/restore/:revision',
     route(async (req) => themes.restore(themeId(req), Number(req.params.revision))),
+  );
+
+  /**
+   * Whether the local Website Studio is running. Read-only, takes no lock, and
+   * is the one place in the Design Center that opens a socket at all — to
+   * loopback, for one second. See `server/website-studio.ts`.
+   */
+  app.get(
+    '/api/design-center/website-studio',
+    route(async () => probeWebsiteStudio(), false),
   );
 }

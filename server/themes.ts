@@ -5,6 +5,7 @@
  *   <data>/themes/<scope>/<id>/revisions/<n>.json   every revision, immutable
  *   <data>/themes/<scope>/<id>/assets/              bytes a pack declares
  *   <data>/themes/<scope>/<id>/last-known-good.json the last pack that applied
+ *   <data>/themes/<scope>/<id>/draft.json           the editor's autosave
  *
  * Three boundaries this module exists to hold:
  *
@@ -18,7 +19,14 @@
  *    save recorded. Restoring an old revision writes a *new* one carrying the
  *    old content; it never moves the number back.
  *
- * 3. **Scope is not a convenience.** Every path is built from a scope key
+ * 3. **A draft is not a theme.** The Design Center autosaves while someone is
+ *    still moving a slider. That autosave lands in `draft.json` alone: it
+ *    records no revision, does not become `pack.json`, is never the
+ *    last-known-good, and never moves `appearance.activeTheme`. Only an
+ *    explicit save — a `PUT` without the `draft` flag — can produce something
+ *    this app will apply.
+ *
+ * 4. **Scope is not a convenience.** Every path is built from a scope key
  *    derived from the live workspace and person, so one account's drafts are
  *    not another's. The key is a hash: an id never becomes a path segment, and
  *    two ids that differ only in case cannot share a folder on Windows.
@@ -72,6 +80,22 @@ export interface ThemeSummary {
   baseTheme: string;
   updatedAt: string | null;
   active: boolean;
+  /**
+   * True when this theme has only ever been autosaved: there is a `draft.json`
+   * and no saved pack. It is shown so a half-finished design is not invisible,
+   * and it cannot be applied — `activate` reads `pack.json` and there is none.
+   */
+  isDraft: boolean;
+  /** True when an autosaved draft exists beside the saved pack. */
+  hasDraft: boolean;
+}
+
+/** An autosave: the pack as it stood, and the saved revision it was edited from. */
+export interface ThemeDraft {
+  pack: ThemePackV1;
+  /** The `pack.json` revision this draft started from; 0 when there was none. */
+  basedOnRevision: number;
+  savedAt: string;
 }
 
 /** What the renderer needs to paint, and why it is painting that and not the pack. */
@@ -162,7 +186,24 @@ export class ThemeService {
       if (!THEME_PACK_ID_PATTERN.test(id)) continue;
       const file = path.join(dir, id, 'pack.json');
       const read = accept(await readJsonOrNull(file));
+      const draft = await this.readDraft(path.join(dir, id));
       if ('reason' in read) {
+        // A theme that has only ever been autosaved has no pack.json yet. It is
+        // listed as a draft so a half-finished design is not invisible; it is
+        // not a candidate for activation, because there is nothing to apply.
+        if (draft) {
+          summaries.push({
+            id: draft.pack.id,
+            name: draft.pack.name,
+            revision: draft.basedOnRevision,
+            baseTheme: draft.pack.baseTheme,
+            updatedAt: draft.savedAt,
+            active: false,
+            isDraft: true,
+            hasDraft: true,
+          });
+          continue;
+        }
         // Skipped, loudly. A theme that vanished from the list without a word
         // would read as deleted, which is a different and worse story.
         console.warn(`Skipping the stored theme ${id}: ${read.reason}`);
@@ -181,18 +222,52 @@ export class ThemeService {
         baseTheme: read.pack.baseTheme,
         updatedAt,
         active: read.pack.id === activeId,
+        isDraft: false,
+        hasDraft: draft !== null,
       });
     }
     return summaries;
   }
 
-  /** One theme with its revision history, or a refusal naming what is wrong. */
-  async read(id: string): Promise<{ pack: ThemePackV1; revisions: number[] }> {
+  /**
+   * The autosaved draft for one theme folder, or null.
+   *
+   * The pack inside it is validated exactly like a saved one: a draft file
+   * edited by hand is not a way past the contract.
+   */
+  private async readDraft(dir: string): Promise<ThemeDraft | null> {
+    const raw = await readJsonOrNull(path.join(dir, 'draft.json'));
+    if (raw === null || typeof raw !== 'object') return null;
+    const record = raw as Record<string, unknown>;
+    const read = accept(record.pack ?? null);
+    if ('reason' in read) return null;
+    const based = record.basedOnRevision;
+    return {
+      pack: read.pack,
+      basedOnRevision: Number.isInteger(based) && (based as number) >= 0 ? (based as number) : 0,
+      savedAt: typeof record.savedAt === 'string' ? record.savedAt : new Date(0).toISOString(),
+    };
+  }
+
+  /**
+   * One theme with its revision history and its autosaved draft, or a refusal
+   * naming what is wrong.
+   *
+   * A theme that has only ever been autosaved answers with the draft and a null
+   * pack, so the editor can reopen what someone was in the middle of, and every
+   * other caller — activation included — sees that there is nothing to apply.
+   */
+  async read(
+    id: string,
+  ): Promise<{ pack: ThemePackV1 | null; revisions: number[]; draft: ThemeDraft | null }> {
     const dir = this.themeDir(id);
     const read = accept(await readJsonOrNull(path.join(dir, 'pack.json')));
-    if ('reason' in read)
+    const draft = await this.readDraft(dir);
+    if ('reason' in read) {
+      if (draft) return { pack: null, revisions: await this.revisions(id), draft };
       throw refuse(404, `That theme cannot be read here: ${read.reason}.`, 'theme_unreadable');
-    return { pack: read.pack, revisions: await this.revisions(id) };
+    }
+    return { pack: read.pack, revisions: await this.revisions(id), draft };
   }
 
   async revisions(id: string): Promise<number[]> {
@@ -319,7 +394,45 @@ export class ThemeService {
     // revision, so leaving it behind would paint an older pack than the one the
     // editor is looking at, and say nothing about the difference.
     if (this.store.settings.appearance.activeTheme?.id === id) await this.point(id, revision);
+    // The autosave has been overtaken by a real save. Leaving it would reopen
+    // the editor on work that is now behind the saved revision.
+    await this.discardDraft(id);
     return { pack, revision };
+  }
+
+  /**
+   * Record an autosave and nothing else.
+   *
+   * No revision, no `pack.json`, no last-known-good, no pointer move: the whole
+   * point is that the editor can save every few seconds while someone is still
+   * deciding, and none of it can become the applied theme. There is no
+   * `If-Match` either — an autosave that refused itself on a stale header would
+   * simply stop saving, and a draft overwriting an earlier draft loses nothing
+   * that was ever applied. The revision it was edited from is recorded so an
+   * explicit save can tell whether the saved theme moved underneath it.
+   */
+  async saveDraft(id: string, validated: ThemePackV1): Promise<{ draft: ThemeDraft }> {
+    const dir = this.themeDir(id);
+    const existing = accept(await readJsonOrNull(path.join(dir, 'pack.json')));
+    const draft: ThemeDraft = {
+      pack: validated,
+      basedOnRevision: 'pack' in existing ? existing.pack.revision : 0,
+      savedAt: new Date().toISOString(),
+    };
+    await jsonWrite(path.join(dir, 'draft.json'), draft);
+    return { draft };
+  }
+
+  /** Forget the autosave. Called when a draft becomes a save, or is discarded. */
+  async discardDraft(id: string): Promise<void> {
+    const target = path.join(this.themeDir(id), 'draft.json');
+    try {
+      await fs.rm(target, { force: true });
+    } catch {
+      // A draft that will not delete is not a reason to fail the save that
+      // replaced it: the saved pack is already the truth, and the next autosave
+      // overwrites this file anyway.
+    }
   }
 
   /** Write one revision, refusing a target that is already there. */
@@ -369,6 +482,12 @@ export class ThemeService {
   /** Apply a theme. It must be readable here first: activation cannot fail open. */
   async activate(id: string): Promise<{ pack: ThemePackV1 }> {
     const { pack } = await this.read(id);
+    if (!pack)
+      throw refuse(
+        409,
+        'This theme has only been saved as a draft. Save it before applying it.',
+        'theme_is_draft',
+      );
     await this.point(pack.id, pack.revision);
     return { pack };
   }

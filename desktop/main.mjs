@@ -23,6 +23,11 @@ function openSetupReference(destination) {
     'https://github.com/can1357/oh-my-pi/releases/download/v18.0.6/omp-windows-x64.exe',
     // Official Diomedes release notes, opened from Settings > App updates.
     'https://github.com/andrewgodowsky-aoa/diomedes/releases',
+    // The local Website Studio, opened from the Design Center's Website target.
+    // Loopback by address and listed explicitly: the allowlist is the whole
+    // mechanism, so a studio on this computer is named here or it does not open.
+    // Byte-identical to WEBSITE_STUDIO_URL in server/website-studio.ts.
+    'http://127.0.0.1:4400/',
   ]);
   if (!allowed.has(destination) && !isUpdateReleaseReference(destination)) return;
   void shell
