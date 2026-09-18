@@ -16,7 +16,12 @@ import {
   type ThemePackV1,
 } from '../shared/theme-pack/types.js';
 import { migrate, validateThemePack } from '../shared/theme-pack/validate.js';
-import { APPEARANCE_DEFAULTS, resolveAppearance } from '../shared/theme-pack/resolve.js';
+import {
+  APPEARANCE_DEFAULTS,
+  contrastRatio,
+  resolveAppearance,
+  textureOpacityCeiling,
+} from '../shared/theme-pack/resolve.js';
 import {
   APPEARANCE_OUTPUTS,
   THEME_PACK_COMPATIBILITY,
@@ -372,6 +377,19 @@ describe('checkCompatibility', () => {
 describe('resolveAppearance', () => {
   const surfaceOf = (vars: Record<string, string>) => vars['--surface'];
 
+  /** Flatten an opaque colour at `alpha` onto another, the way a browser does. */
+  const compositeHex = (top: string, alpha: number, bottom: string): string => {
+    const parts = (hex: string) =>
+      [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)) as [number, number, number];
+    const [tr, tg, tb] = parts(top);
+    const [br, bg, bb] = parts(bottom);
+    const mix = (a: number, b: number) =>
+      Math.round(a * alpha + b * (1 - alpha))
+        .toString(16)
+        .padStart(2, '0');
+    return `#${mix(tr, br)}${mix(tg, bg)}${mix(tb, bb)}`;
+  };
+
   test('defaults alone produce a complete, labelled Field appearance', () => {
     const resolved = resolveAppearance({});
     expect(surfaceOf(resolved.vars)).toBe(BASE_THEME_COLORS.field.colors.surface);
@@ -496,6 +514,89 @@ describe('resolveAppearance', () => {
     expect(resolved.vars['--dm-texture-opacity']).toBe('0');
     expect(resolved.dataset.texture).toBe('off');
     expect(resolved.origins['--dm-texture-opacity']).toBe('accessibility');
+  });
+
+  /**
+   * A texture is the one decoration a theme can ask for that sits between the
+   * surface and every label on it. Nothing in this product can decode the
+   * picture, so the ceiling is computed against the two colours that could do
+   * the most harm — pure white and pure black — and the tighter one is taken.
+   */
+  const withTexture = (pack: ReturnType<typeof accept>, opacity: number) => {
+    const hash = 'a'.repeat(64);
+    pack.artwork.texture = {
+      assetHash: hash,
+      focal: { x: 0.5, y: 0.5 },
+      crop: { x: 0, y: 0, width: 1, height: 1 },
+      opacity,
+      blend: 'normal',
+      mask: 'none',
+    };
+    pack.assets[hash] = { mime: 'image/png', bytes: 232, width: 16, height: 16 };
+    return pack;
+  };
+
+  test('a texture is capped at the opacity this theme’s own colours can survive', () => {
+    const pack = withTexture(accept(mythic()), 1);
+    const resolved = resolveAppearance({ theme: pack });
+    const painted = Number(resolved.vars['--dm-texture-opacity']);
+    expect(painted).toBeGreaterThan(0);
+    expect(painted).toBeLessThan(1);
+    expect(resolved.origins['--dm-texture-opacity']).toBe('accessibility');
+
+    // The cap is the claim, so check the claim: at the painted opacity every
+    // text role still clears 4.5:1 over the worst texture it could be hiding.
+    for (const worst of ['#ffffff', '#000000']) {
+      const over = compositeHex(worst, painted, resolved.vars['--surface']);
+      for (const role of ['--t1', '--t2', '--t3'])
+        expect(contrastRatio(resolved.vars[role], over)).toBeGreaterThanOrEqual(4.5);
+    }
+    // One step above it, something is unreadable — the cap is not slack.
+    const tooFar = compositeHex('#ffffff', painted + 0.02, resolved.vars['--surface']);
+    expect(
+      Math.min(...['--t1', '--t2', '--t3'].map((r) => contrastRatio(resolved.vars[r], tooFar))),
+    ).toBeLessThan(4.5);
+  });
+
+  test('a texture a theme already keeps modest is left exactly where it was put', () => {
+    const pack = withTexture(accept(mythic()), 0.01);
+    const resolved = resolveAppearance({ theme: pack });
+    expect(resolved.vars['--dm-texture-opacity']).toBe('0.01');
+    expect(resolved.origins['--dm-texture-opacity']).toBe('theme');
+  });
+
+  test('the cap holds a personal preference too, and texture-off still wins over the cap', () => {
+    const pack = withTexture(accept(mythic()), 0.01);
+    const raised = resolveAppearance({ theme: pack, personal: { textureOpacity: 1 } });
+    expect(Number(raised.vars['--dm-texture-opacity'])).toBeLessThan(1);
+    expect(raised.origins['--dm-texture-opacity']).toBe('accessibility');
+    const off = resolveAppearance({
+      theme: pack,
+      personal: { textureOpacity: 1 },
+      accessibility: { textureOff: true },
+    });
+    expect(off.vars['--dm-texture-opacity']).toBe('0');
+    expect(off.dataset.texture).toBe('off');
+  });
+
+  test('every shipped scheme states the texture opacity it can carry', () => {
+    const measured = Object.entries(BASE_THEME_COLORS).map(([id, base]) => [
+      id,
+      textureOpacityCeiling(
+        [base.colors.t1, base.colors.t2, base.colors.t3],
+        base.colors.surface,
+        4.5,
+      ),
+    ]) as [string, number][];
+    // Every scheme can carry *some* texture: none of them ships a text role
+    // that already fails on its own surface, and a ceiling of 0 would say one
+    // does. They are all small, because a quiet text role sits near the floor
+    // before a picture is put under it — that is a fact about the schemes, not
+    // a fudge in the cap.
+    for (const [id, ceiling] of measured) {
+      expect(ceiling, id).toBeGreaterThan(0);
+      expect(ceiling, id).toBeLessThan(0.2);
+    }
   });
 
   test('a text role below the contrast floor is lifted, and the lift is attributed', () => {

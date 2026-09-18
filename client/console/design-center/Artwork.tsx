@@ -16,6 +16,7 @@
  * product, so what you import is what is stored and the browser scales it.
  */
 import { useRef, useState } from 'react';
+import type { ResolvedAppearance } from '../../../shared/theme-pack/resolve';
 import {
   ARTWORK_MASKS,
   BLEND_MODES,
@@ -82,14 +83,45 @@ function Slider({
   );
 }
 
+/**
+ * What the texture will actually be painted at, when that is not what was
+ * asked for. The slider still moves the whole way and the pack still stores the
+ * number the author chose — the theme is not rewritten behind their back — but
+ * the resolver caps the painted opacity so a label cannot be pushed under the
+ * contrast floor by a picture nothing here can see the colours of. Saying the
+ * number is the difference between a safety rule and a mystery.
+ */
+function TextureCeiling({ resolved, asked }: { resolved: ResolvedAppearance; asked: number }) {
+  if (resolved.origins['--dm-texture-opacity'] !== 'accessibility') return null;
+  const painted = Number(resolved.vars['--dm-texture-opacity']);
+  if (!Number.isFinite(painted) || painted >= asked) return null;
+  if (resolved.dataset.texture === 'off')
+    return (
+      <p className="caption">
+        Texture is switched off for this person, so this picture is not painted at all. It still
+        travels with the theme.
+      </p>
+    );
+  return (
+    <p className="caption">
+      These theme colours allow the texture up to {Math.round(painted * 100)}%, and that is what is
+      painted. Above it a label on this surface could fall below the 4.5:1 contrast floor. Lighter
+      text colours raise the ceiling.
+    </p>
+  );
+}
+
 export function Artwork({
   pack,
   themeId,
+  resolved,
   onChange,
 }: {
   pack: ThemePackV1;
   /** The theme these pictures are stored under: where an import lands. */
   themeId: string;
+  /** The appearance this pack resolves to, so a capped value can be shown. */
+  resolved: ResolvedAppearance;
   onChange(next: ThemePackV1): void;
 }) {
   const inputs = useRef<Partial<Record<ArtworkSlot, HTMLInputElement | null>>>({});
@@ -228,6 +260,7 @@ export function Artwork({
                   value={entry.opacity}
                   onChange={(value) => onChange(artworkEdits.adjust(pack, slot, { opacity: value }))}
                 />
+                {slot === 'texture' && <TextureCeiling resolved={resolved} asked={entry.opacity} />}
 
                 <label className="dc-art-control">
                   <span>How it mixes</span>

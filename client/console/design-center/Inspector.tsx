@@ -353,7 +353,7 @@ export function Inspector({
         </Field>
       </section>
 
-      <Artwork pack={pack} themeId={pack.id} onChange={onChange} />
+      <Artwork pack={pack} themeId={pack.id} resolved={resolved} onChange={onChange} />
 
       <section className="dc-section" aria-label="Movement">
         <h3>Movement</h3>

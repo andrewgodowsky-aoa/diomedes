@@ -138,6 +138,9 @@ const CSS_VAR_FOR_TOKEN: Record<ColorTokenName, string> = {
 /** The roles that carry text and therefore owe a contrast floor. */
 const TEXT_ROLES: readonly ColorTokenName[] = ['t1', 't2', 't3'];
 
+/** WCAG 2.1 §1.4.3 for body text. The floor a texture may not push text below. */
+export const MINIMUM_TEXT_CONTRAST = 4.5;
+
 /**
  * The workspace and personal layers do not arrive through `validateThemePack`
  * — they come from settings and from an entitlement decision. Only values that
@@ -231,6 +234,45 @@ function liftToContrast(foreground: string, background: string, target: number):
     if (contrastRatio(hex, background) >= target) return hex;
   }
   return toward === 0 ? '#000000' : '#ffffff';
+}
+
+/**
+ * The largest texture opacity at which every text role still clears `target`
+ * over the texture composited on the surface.
+ *
+ * There is no image decoder in this product, so nothing here can know what
+ * colour the texture actually is. The ceiling is therefore computed against the
+ * two colours that can do the most damage — pure white and pure black — and the
+ * tighter of the two is taken. A theme may ask for any opacity it likes; this
+ * is the most of it that will ever be painted.
+ *
+ * Compositing is linear in sRGB bytes but contrast is not, so the alpha is
+ * found by bisection rather than algebra: 24 halvings, no state, same answer
+ * every time. A role that already fails on its own surface yields 0, which is
+ * correct — a texture cannot be allowed to make an unreadable label worse.
+ */
+export function textureOpacityCeiling(
+  textColors: readonly string[],
+  surface: string,
+  target: number,
+): number {
+  const under = parseHex(surface);
+  const worstCases = [parseHex('#ffffff'), parseHex('#000000')];
+  const readableAt = (alpha: number): boolean =>
+    worstCases.every((texture) => {
+      const composited = toHex(over({ ...texture, a: alpha }, under));
+      return textColors.every((color) => contrastRatio(color, composited) >= target);
+    });
+  if (readableAt(1)) return 1;
+  let safe = 0;
+  let unsafe = 1;
+  for (let step = 0; step < 24; step++) {
+    const middle = (safe + unsafe) / 2;
+    if (readableAt(middle)) safe = middle;
+    else unsafe = middle;
+  }
+  // Rounded down to a whole percent: a number a person can be told.
+  return Math.floor(safe * 100) / 100;
 }
 
 /** Scale a hairline's alpha without touching its hue. */
@@ -408,6 +450,23 @@ export function resolveAppearance(layers: AppearanceLayers): ResolvedAppearance 
         colorLayer[role] = 'accessibility';
       }
     }
+  }
+  // A texture is decoration painted between the surface and every label on it,
+  // so it is the one thing a theme can ask for that changes the contrast of
+  // text the theme has already been checked for. The check above lifts a text
+  // colour off its *surface*; this one caps how far the surface is allowed to
+  // move. Both the theme's opacity and a personal preference are capped —
+  // turning texture off is written after nothing, so `textureOff` still wins.
+  if (theme?.artwork.texture && !demands.textureOff) {
+    const target = demands.minimumContrast ?? MINIMUM_TEXT_CONTRAST;
+    const ceiling = textureOpacityCeiling(
+      TEXT_ROLES.map((role) => colors[role]),
+      colors.surface,
+      target,
+    );
+    const asked = Number(out.vars['--dm-texture-opacity']);
+    if (Number.isFinite(asked) && asked > ceiling)
+      out.setVar('--dm-texture-opacity', String(ceiling), 'accessibility');
   }
   if (demands.focusVisible) {
     out.setVar('--dm-focus-width', '2px', 'accessibility');

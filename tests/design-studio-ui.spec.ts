@@ -470,6 +470,10 @@ test('D07: a picture is imported, placed, adjusted, applied, exported and read b
 
   // Apply. The theme with its picture becomes the app's appearance.
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  // Wait for the sentence the screen says when the save has landed. The theme
+  // was already applied by D01, so `data-theme-pack` alone would be true before
+  // this save finished and the read below would race it.
+  await expect(page.locator('.dc-state')).toContainText('is applied.');
   await expect(page.locator('html')).toHaveAttribute('data-theme-pack', THEME_ID);
   const saved = await request.get(`/api/themes/${THEME_ID}`, { headers: HEADERS });
   expect(saved.ok()).toBe(true);
@@ -711,15 +715,18 @@ test('D10: a file the app cannot read is refused with a sentence, not a stack tr
   // An SVG named .png, so the picker offers it. The bytes are what is read.
   const svg = testInfo.outputPath('not-a-picture.png');
   await fsp.writeFile(svg, '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>', 'utf8');
+  // Scoped to the Pictures panel: the stage carries its own fixture alerts, and
+  // the sentence that matters is the one beside the control that was used.
+  const refusal = page.locator('[aria-label="Artwork"] [role="alert"]');
   await page.locator('[data-dc-artwork-input="logo"]').setInputFiles(svg);
-  await expect(page.getByRole('alert')).toContainText('SVG is not accepted in this release');
+  await expect(refusal).toContainText('SVG is not accepted in this release');
   await expect(page.locator('[data-dc-artwork-empty="logo"]')).toBeVisible();
 
   // A truncated PNG: a real signature and nothing behind it.
   const truncated = testInfo.outputPath('truncated.png');
   await fsp.writeFile(truncated, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
   await page.locator('[data-dc-artwork-input="logo"]').setInputFiles(truncated);
-  await expect(page.getByRole('alert')).toContainText('not a PNG, JPEG or WebP picture');
+  await expect(refusal).toContainText('not a PNG, JPEG or WebP picture');
   await expect(page.locator('[data-dc-artwork-empty="logo"]')).toBeVisible();
 
   await page.screenshot({ path: `${SHOTS}/09-refused-picture.png`, fullPage: true });
