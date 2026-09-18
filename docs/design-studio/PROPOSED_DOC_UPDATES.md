@@ -1,5 +1,17 @@
 # Proposed wording for the canonical documents — Design Center
 
+**2026-09-18 — the owner decided, and one sentence below is superseded.** Andrew decided that
+the Design Center is published on diomedes.net as `in-progress`, and that the appearance work
+is included in a Diomedes Business subscription — our own design team builds and installs the
+first look and delivers one graphical update a month — with no price moved and no add-on
+created. That decision is recorded in the website repository as commit `5272b97` with its
+verification record `docs/verification/2026-09-18-design-included.md`. It supersedes the
+closing sentence of this file — "it must not appear on the website at all until it can produce
+an honest capture of something a visitor could actually buy or use" — and with it the "No
+mention on the website" bullet in the roadmap section, which omitted the capability because it
+is not purchasable. The release notes for v0.1.3 are written to agree with the decision.
+Everything else in this file stands as the historical proposal it was written as, unedited.
+
 **Status: proposed, unpublished, and not applied.** Nothing in
 `docs/DIOMEDES_CORE_PILLARS.md`, `docs/DIOMEDES_LIVE_ROADMAP.md`,
 `docs/DIOMEDES_PROJECT_MEMORY.md` or `docs/business/PRICING_STRATEGY_2026-09-15.md` was

@@ -1,0 +1,69 @@
+WHAT IS NEW
+  This build adds the Design Center: Settings > Design Center > Open Design
+  Center. It changes how Diomedes looks - colours, type, spacing, corner radius,
+  motion, and imported pictures - with the real screens previewing live beside
+  the controls. It needs no internet connection, no account and no AI engine,
+  and it sends nothing anywhere.
+  Appearance work is included in a Diomedes Business subscription and is done by
+  our own design team: we build and install your first look, and you get one
+  graphical update a month. You do not have to author it yourself, and there is
+  no add-on to buy.
+  Authoring inside the app is developer-only in 0.1.3, because the account and
+  subscription software it depends on is not shipped yet. In an ordinary install
+  you can open the Design Center, change things and watch the preview, while
+  Apply, Save as new theme and Import do not work - the screen says so. Authoring
+  is switched on only by starting Diomedes with the environment variable
+  DIOMEDES_DESIGN_AUTHORING=1, which the included Start-Experimental.ps1 launcher
+  sets. It cannot be turned on from inside the running app; it permits designing
+  on that one computer and grants nothing else - no organization branding, no
+  account, no spending, and no authority for any agent.
+  Nothing about appearance costs money to undo. Built-in schemes, text size,
+  zoom, contrast, reduced motion, texture off, focus visibility and the safe
+  reset are free and always work; Settings > Appearance > any built-in scheme
+  puts everything back.
+  A theme is data, never a plug-in. It cannot carry CSS, HTML, JavaScript, a web
+  address or a downloadable font. Imported pictures must be PNG, JPEG or WebP;
+  SVG is refused with a sentence.
+  Applying a theme does not restart anything. The app changes colour where it
+  stands; unsent messages, scroll position and running work are untouched.
+  A theme that will not load is not a broken app. Diomedes falls back to the last
+  version that worked, then to the built-in package, and says which one you are
+  looking at.
+  Themes are private to the account and workspace they were made in.
+  Nothing about the website changed. The Design Center can export a
+  .diomedes-theme file, and it can tell you whether the local Website Studio is
+  running on this computer; it never edits a web page. The Website Studio is a
+  separate local tool that lives in the website's own repository and is not part
+  of this build.
+  If you never open it, nothing changes for you except one new Design Center
+  entry in the Settings list on desktop.
+
+UPDATES
+  Settings > App updates offers stable releases only, and this is a stable
+  release. An installed 0.1.2 is offered this build when you press Check for
+  updates. Nothing is downloaded, verified or installed until you confirm it,
+  and the download is accepted only when its SHA-256 matches the digest the
+  release publishes.
+
+LIMITS
+  Unsigned, experimental, one machine tested.
+  No live engine turn was run on these bytes. Engine routes were last checked
+  with one live turn each through the app's own local service, on commit
+  b115b3c. What changed under server/, shared/, services/ and desktop/ since is
+  the Design Center itself - theme storage, theme routes, theme assets, the
+  customization gate and its benefit ledger, the Website Studio probe and the
+  ThemePack format - plus server/app.ts mounting those routes and
+  server/store.ts, which retries an atomic rename that Windows briefly refused
+  and now also writes raw bytes. No engine adapter and no engine route changed.
+  Claude Code (claude-sonnet-5) produced a reviewed file proposal on b115b3c.
+  OpenCode (opencode-go) did not start within 45 seconds in three of four
+  attempts while the project folder sat inside a large git repository, and its
+  one start there returned no usable proposal; with the project folder outside
+  any git repository it produced a proposal in about 10 seconds.
+  Codex, oh-my-pi, Cursor and Devin were not live-tested on this build.
+  Connections runs on synthetic data only. The local service is loopback-only.
+  A texture is capped so that text over it stays readable, and because nothing
+  decodes the picture the cap is worst case: a dark texture is dimmed as hard as
+  a white one. A large picture is scaled by the browser rather than by a
+  thumbnail step. There is no delete for a theme, and removing a picture from a
+  theme leaves its bytes on disk.
