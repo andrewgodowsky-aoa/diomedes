@@ -395,4 +395,59 @@ describe('the routes enforce it, not the buttons', () => {
     });
     expect(bought.status).toBe(403);
   });
+
+  test('an unrecognised fixture name is a 400, not a quiet fallback', async () => {
+    await launch({ DIOMEDES_TEST_MODE: '1', DIOMEDES_ENTITLEMENT_FIXTURE: 'paid' });
+    // A mistyped state must fail loudly. Answering it from the launch profile
+    // would let a test assert "free sees no Apply" against the paid profile.
+    const asked = await request<{ code: string }>(
+      '/design-center/entitlement',
+      'GET',
+      undefined,
+      { 'X-Diomedes-Entitlement-Fixture': 'fre' },
+    );
+    expect(asked.status).toBe(400);
+    expect(asked.data.code).toBe('unknown_entitlement_fixture');
+    // A prototype key is a name like any other, and the table does not hold it.
+    const proto = await request('/design-center/entitlement', 'GET', undefined, {
+      'X-Diomedes-Entitlement-Fixture': 'constructor',
+    });
+    expect(proto.status).toBe(400);
+    // No header is still the launch profile, unchanged.
+    const launched = await request<CustomizationStatus>('/design-center/entitlement');
+    expect(launched.status).toBe(200);
+    expect(launched.data).toMatchObject({ granted: true, entitlementState: 'active' });
+  });
+
+  test('the same name in an ordinary build is refused, not rejected as unknown', async () => {
+    // The header is not read at all without fixtures, so a build that never
+    // opted in cannot be probed for which fixture names exist.
+    await launch({});
+    const asked = await request('/design-center/entitlement', 'GET', undefined, {
+      'X-Diomedes-Entitlement-Fixture': 'fre',
+    });
+    expect(asked.status).toBe(200);
+    expect(asked.data).toMatchObject({ granted: false });
+  });
+
+  test('the status payload says about activating exactly what the route enforces', async () => {
+    // A personal scope has no organization question: activating is the same
+    // question as authoring, and the payload must not claim otherwise.
+    await launch({
+      DIOMEDES_TEST_MODE: '1',
+      DIOMEDES_ENTITLEMENT_FIXTURE: 'free',
+      DIOMEDES_DESIGN_AUTHORING: '1',
+    });
+    const granted = await request<CustomizationStatus>('/design-center/entitlement');
+    expect(granted.data).toMatchObject({ granted: true, canActivateForOrganization: true });
+    // And the route agrees: the activation this claims is really allowed.
+    expect((await request('/themes/activate-try', 'PUT', pack('activate-try'))).status).toBe(200);
+    expect((await request('/themes/activate-try/activate', 'POST')).status).toBe(200);
+  });
+
+  test('with no plan the payload claims no activation either', async () => {
+    await launch({ DIOMEDES_TEST_MODE: '1', DIOMEDES_ENTITLEMENT_FIXTURE: 'free' });
+    const refused = await request<CustomizationStatus>('/design-center/entitlement');
+    expect(refused.data).toMatchObject({ granted: false, canActivateForOrganization: false });
+  });
 });

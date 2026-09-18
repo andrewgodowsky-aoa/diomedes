@@ -15,8 +15,11 @@
  * the request.
  *
  * **A repeat is not a second event.** Every transition carries an idempotency
- * key. A key already applied changes nothing and reports so — a retried request
- * after a dropped connection is the ordinary case, not a new engagement.
+ * key, remembered as `step:key`. The same key on the same step changes nothing
+ * and reports so — a retried request after a dropped connection is the ordinary
+ * case, not a new engagement. The step is part of what is remembered because a
+ * caller that derives one key per engagement, rather than one per request,
+ * would otherwise find its second genuine step silently swallowed as a retry.
  *
  * **A failed draft costs nothing.** `fail` returns a drafted engagement to
  * `eligible` and clears what it was about. The benefit was promised and not
@@ -88,7 +91,10 @@ export interface BenefitView {
  * leaves — a list of every retry key is this service's business, not a caller's.
  */
 type Record_ = { -readonly [K in keyof BenefitView]: BenefitView[K] } & {
-  /** Every idempotency key applied, so a retry is applied at most once. */
+  /**
+   * Every idempotency key applied, as `step:key`, so a retry is applied at most
+   * once and the same key on a different step is still its own event.
+   */
   seen: string[];
 };
 
@@ -180,9 +186,11 @@ export class CustomizationBenefitLedger {
         view: view(record),
       };
 
-    // A key already applied is the same event arriving twice. Answering with
-    // the current state — and not an error — is what makes a retry safe.
-    if (record.seen.includes(input.idempotencyKey))
+    // A key already applied *to this step* is the same event arriving twice.
+    // Answering with the current state — and not an error — is what makes a
+    // retry safe.
+    const seenKey = `${input.step}:${input.idempotencyKey}`;
+    if (record.seen.includes(seenKey))
       return {
         applied: false,
         code: 'benefit_already_applied',
@@ -248,7 +256,7 @@ export class CustomizationBenefitLedger {
         break;
     }
 
-    record.seen.push(input.idempotencyKey);
+    record.seen.push(seenKey);
     await this.persist(input.organizationId, record);
     return { applied: true, view: view(record) };
   }

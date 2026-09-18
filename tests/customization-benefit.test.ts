@@ -206,6 +206,29 @@ test('a repeated step with the same key is recorded once', async () => {
   expect(retried.data.benefit.sequence).toBe(4);
 });
 
+test('the same key on a different step is a different event', async () => {
+  await business();
+  // A caller that derives one key per engagement rather than one per request is
+  // the ordinary mistake. Each step must still be its own event, or the second
+  // one is swallowed as a retry and the engagement silently stops advancing.
+  const shared = 'engagement-7';
+  expect((await step('request', { idempotencyKey: shared })).data.benefit).toMatchObject({
+    state: 'requested',
+    sequence: 1,
+  });
+  const drafted = await step('draft', {
+    idempotencyKey: shared,
+    themeId: 'ridge-brand',
+    themeRevision: 1,
+  });
+  expect(drafted.data).toMatchObject({ applied: true });
+  expect(drafted.data.benefit).toMatchObject({ state: 'draft', sequence: 2 });
+  // And the retry protection still holds within a step.
+  const repeated = await step('draft', { idempotencyKey: shared, themeId: 'ridge-brand' });
+  expect(repeated.data).toMatchObject({ applied: false, code: 'benefit_already_applied' });
+  expect(repeated.data.benefit.sequence).toBe(2);
+});
+
 test('a failed draft returns to eligible and the benefit is still owed', async () => {
   await business();
   await step('request', { idempotencyKey: 'q1' });

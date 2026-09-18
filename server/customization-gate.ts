@@ -25,7 +25,11 @@
  *   reach the fixture table. The per-request header below is subject to the
  *   same two conditions: it can only pick a *different* fixture in a profile
  *   that already opted into fixtures, because one shared dev server has to
- *   answer for six named states in the browser suite.
+ *   answer for six named states in the browser suite. In such a process a name
+ *   the fixture table does not hold is a 400 — a test that asks for a state
+ *   that does not exist must fail loudly rather than be quietly answered from
+ *   the launch profile. In an ordinary build the header is not read at all, so
+ *   it can neither grant anything nor provoke an error.
  */
 import type { Request } from 'express';
 import {
@@ -35,7 +39,6 @@ import {
   type EntitlementSnapshot,
 } from '../services/control-plane/contract/index.js';
 import {
-  CUSTOMIZATION_REFUSAL,
   FREE_APPEARANCE_FEATURES,
   PAID_CUSTOMIZATION_FEATURES,
   canActivateOrganizationRevision,
@@ -83,8 +86,12 @@ export class CustomizationGate {
   ) {
     this.launchAuthoring = env.DIOMEDES_DESIGN_AUTHORING === '1';
     const named = env.DIOMEDES_ENTITLEMENT_FIXTURE ?? '';
+    // `Object.hasOwn`, never `in`: `in` walks the prototype chain, so a profile
+    // named `constructor` or `toString` would otherwise resolve to a function.
     this.launchFixture =
-      env.DIOMEDES_TEST_MODE === '1' && named !== '' && named in PROFILES ? named : null;
+      env.DIOMEDES_TEST_MODE === '1' && named !== '' && Object.hasOwn(PROFILES, named)
+        ? named
+        : null;
   }
 
   /** Whether the fixture table may be consulted at all in this process. */
@@ -92,22 +99,33 @@ export class CustomizationGate {
     return this.launchFixture !== null;
   }
 
-  private profileFor(name: string | null): FixtureProfile | null {
-    if (!this.fixturesEnabled) return null;
-    const chosen = name ?? this.launchFixture;
-    return (chosen !== null && PROFILES[chosen]) || null;
+  private profileNamed(name: string): FixtureProfile | null {
+    return Object.hasOwn(PROFILES, name) ? PROFILES[name] : null;
   }
 
   /**
    * The fixture this request asked for, when the process already runs on
-   * fixtures. Anything unrecognised falls back to the launch profile rather
-   * than inventing a state.
+   * fixtures.
+   *
+   * No header means the profile the process was launched on. A header naming a
+   * state the fixture table does not hold is refused with 400: silently falling
+   * back to the launch profile would let a mistyped test assert the wrong
+   * entitlement and pass.
    */
   private requestedProfile(req: Request | null): FixtureProfile | null {
     if (!this.fixturesEnabled) return null;
     const header = req?.headers[ENTITLEMENT_FIXTURE_HEADER];
-    const name = typeof header === 'string' && header.trim() !== '' ? header.trim() : null;
-    return this.profileFor(name);
+    // A repeated header arrives as an array; joined, it cannot be a valid name,
+    // so it takes the same refusal rather than picking one of the values.
+    const raw = Array.isArray(header) ? header.join(',') : (header ?? '');
+    const name = raw.trim();
+    if (name === '') return this.profileNamed(this.launchFixture ?? '');
+    const asked = this.profileNamed(name);
+    if (!asked)
+      throw new ApiError(400, `There is no "${name}" entitlement fixture in this build.`, {
+        code: 'unknown_entitlement_fixture',
+      });
+    return asked;
   }
 
   /**
@@ -146,9 +164,13 @@ export class CustomizationGate {
     const scope = this.source.workspace();
     const decision = canEditThemeScope(actor, scope);
     const observed = snapshotAt(actor.entitlement, actor.at);
+    // Exactly what `assertCanActivate` would do, so the payload cannot claim
+    // less — or more — than the route. A personal scope has no organization
+    // question, so activating is the same question as authoring; a business
+    // scope must pass both checks, and so must this field.
     const activate = isBusiness(scope)
       ? canActivateOrganizationRevision(actor, scope.organizationId)
-      : { allowed: false as const, code: CUSTOMIZATION_REFUSAL.notAMember, reason: '' };
+      : decision;
     return {
       capability: 'customization',
       granted: decision.allowed,
@@ -156,7 +178,7 @@ export class CustomizationGate {
       authoring: actor.authoring,
       entitlementState: observed.state,
       planId: observed.planId,
-      canActivateForOrganization: activate.allowed,
+      canActivateForOrganization: decision.allowed && activate.allowed,
       code: decision.allowed ? null : decision.code,
       reason: decision.allowed ? '' : decision.reason,
       freeFeatures: FREE_APPEARANCE_FEATURES,

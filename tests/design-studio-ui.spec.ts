@@ -902,3 +902,51 @@ test('D14: design authoring shows a badge and grants the local scope', async ({ 
   await page.getByRole('button', { name: 'Developer', exact: true }).click();
   await expect(page.locator('[data-design-authoring="on"]')).toContainText('set at launch');
 });
+
+test('D15: an edit made before the plan answers is autosaved once it does', async ({
+  page,
+  request,
+}) => {
+  // The entitlement status arrives one round trip after the screen does, and
+  // until it has, the session may not write a draft. The edits made in that
+  // window must be waiting for the answer, not thrown away: the autosave delay
+  // is 900ms and a person can easily move a slider inside it.
+  let answer = () => {};
+  const held = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  await page.route('**/api/design-center/entitlement', async (route) => {
+    await held;
+    await route.continue();
+  });
+
+  // Start with no draft, so anything found afterwards was written by this test.
+  const cleared = await request.delete(`/api/themes/${THEME_ID}/draft`, { headers: HEADERS });
+  expect(cleared.ok(), await cleared.text()).toBe(true);
+
+  await openDesignCenter(page);
+  await page.getByRole('slider', { name: 'Control radius' }).fill('7');
+  await expect(page.locator('.dc-state')).toContainText(/Editing/);
+
+  // Well past the autosave delay. With no answer yet nothing may be sent, and
+  // the service has nothing.
+  await page.waitForTimeout(2_000);
+  const early = await request.get(`/api/themes/${THEME_ID}`, { headers: HEADERS });
+  expect(((await early.json()) as { draft: unknown }).draft ?? null).toBeNull();
+
+  answer();
+  await expect(page.locator('.dc-state')).toContainText(/Draft saved/, { timeout: 15_000 });
+  const after = await request.get(`/api/themes/${THEME_ID}`, { headers: HEADERS });
+  const stored = (await after.json()) as {
+    draft: { pack: { geometry: { controlRadius: number } } } | null;
+  };
+  expect(stored.draft?.pack.geometry.controlRadius).toBe(7);
+
+  await page.unroute('**/api/design-center/entitlement');
+  // The draft is the test's litter: the next reader of this theme would open on
+  // it rather than on the saved pack.
+  expect((await request.delete(`/api/themes/${THEME_ID}/draft`, { headers: HEADERS })).ok()).toBe(
+    true,
+  );
+  await page.locator('.design-center').getByRole('button', { name: 'Close', exact: true }).click();
+});

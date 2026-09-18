@@ -85,7 +85,9 @@ export function packProblem(pack: ThemePackV1): string {
  * @param autosave Whether a draft may be written at all. A draft goes through
  * the same gated route an explicit save uses, so without the customization
  * capability the timer would only produce a refusal every `AUTOSAVE_DELAY_MS`.
- * Editing still works in the screen; nothing is sent.
+ * Editing still works in the screen; nothing is sent. The last edit is kept
+ * pending rather than thrown away, so if this turns true — the entitlement
+ * status resolved after the screen opened — that edit is autosaved then.
  */
 export function useStudioSession(
   initial: ThemePackV1 | null,
@@ -150,8 +152,12 @@ export function useStudioSession(
 
   const schedule = useCallback(
     (value: ThemePackV1) => {
-      if (!autosave) return;
+      // Remembered even when a draft may not be written yet. The entitlement
+      // status arrives one round trip after the screen does, so the first edits
+      // of a session can land while `autosave` is still false; dropping them
+      // here would mean the work before the answer came back is never saved.
       pending.current = value;
+      if (!autosave) return;
       clearTimeout(timer.current);
       timer.current = setTimeout(() => {
         const next = pending.current;
@@ -165,6 +171,12 @@ export function useStudioSession(
     },
     [save, autosave],
   );
+
+  // Authoring became possible — the status answered, or the person was granted
+  // it — so the edit that was held rather than written now gets its timer.
+  useEffect(() => {
+    if (autosave && pending.current) schedule(pending.current);
+  }, [autosave, schedule]);
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
