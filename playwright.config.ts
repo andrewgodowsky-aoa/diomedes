@@ -128,6 +128,12 @@ export default defineConfig({
       DIOMEDES_DATA_DIR: path.join(runRoot, 'data'),
       DIOMEDES_PROJECTS_DIR: path.join(runRoot, 'projects'),
       DIOMEDES_TEST_MODE: '1',
+      // A5 gates Design Center authoring on the customization capability. The
+      // suite runs one dev server for every spec, so the launch profile is the
+      // entitled one and the specs that need a different named state ask for it
+      // per test with `X-Diomedes-Entitlement-Fixture`. Both the env var and the
+      // header are inert without `DIOMEDES_TEST_MODE=1`.
+      DIOMEDES_ENTITLEMENT_FIXTURE: 'paid',
       CODEX_HOME: codexHome,
     },
     stdout: 'pipe',

@@ -38,6 +38,11 @@ const PERSONAL: WorkspaceRef = { kind: 'personal' };
 
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-theme-assets-'));
+  // Importing a picture is a paid feature from A5 on. This file proves the
+  // storage, so it runs on the named `paid` fixture; the refusal without one is
+  // proven in tests/customization-entitlement.test.ts.
+  process.env.DIOMEDES_TEST_MODE = '1';
+  process.env.DIOMEDES_ENTITLEMENT_FIXTURE = 'paid';
   const app = await createApp({
     dataDir: path.join(root, 'data'),
     projectRoot: path.join(root, 'projects'),
@@ -50,6 +55,8 @@ beforeEach(async () => {
 afterEach(async () => {
   const current = server;
   server = undefined;
+  delete process.env.DIOMEDES_TEST_MODE;
+  delete process.env.DIOMEDES_ENTITLEMENT_FIXTURE;
   if (current) await new Promise<void>((resolve) => current.close(() => resolve()));
   await fs.rm(root, { recursive: true, force: true });
 });

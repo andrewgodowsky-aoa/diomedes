@@ -1,0 +1,91 @@
+{
+  "v": 1,
+  "what": "Named entitlement profiles for the Design Center's customization capability. Test data only: the loader in server/customization-gate.ts reads this file only when DIOMEDES_TEST_MODE=1 and DIOMEDES_ENTITLEMENT_FIXTURE names a profile, so a production build with neither set never opens it. A profile is a fixture, not a purchase: nothing here is evidence anybody paid for anything.",
+  "planNote": "plan_business is the fixture id for Diomedes Business, the lowest paid software tier in docs/business/PRICING_STRATEGY_2026-09-15.md (version 2026-09-17.2). Prices live in that document, never here and never in code.",
+  "profiles": {
+    "free": {
+      "why": "A person with no plan. Built-in schemes, text and zoom size, contrast, reduced motion, texture off, focus visibility and reset all work; nothing premium does.",
+      "authoring": false,
+      "snapshot": {
+        "state": "none",
+        "planId": null,
+        "planVersion": null,
+        "issuedAt": null,
+        "expiresAt": null,
+        "revokedAt": null,
+        "revision": 0,
+        "reason": "No plan covers this installation."
+      }
+    },
+    "paid": {
+      "why": "The lowest paid software tier, which includes advanced customization.",
+      "authoring": false,
+      "snapshot": {
+        "state": "active",
+        "planId": "plan_business",
+        "planVersion": "plan_business.1",
+        "issuedAt": "2026-01-01T00:00:00.000Z",
+        "expiresAt": "2099-01-01T00:00:00.000Z",
+        "revokedAt": null,
+        "revision": 1,
+        "reason": ""
+      }
+    },
+    "designer": {
+      "why": "No plan, and the launch-time design authoring authorization is on. Local scope authoring only, never organization activation and never agent authority.",
+      "authoring": true,
+      "snapshot": {
+        "state": "none",
+        "planId": null,
+        "planVersion": null,
+        "issuedAt": null,
+        "expiresAt": null,
+        "revokedAt": null,
+        "revision": 0,
+        "reason": "No plan covers this installation; design authoring was authorized at launch."
+      }
+    },
+    "unauthorized": {
+      "why": "An active plan that does not include customization. Paying for something is not paying for this, and the plan id is the check.",
+      "authoring": false,
+      "snapshot": {
+        "state": "active",
+        "planId": "plan_candidate",
+        "planVersion": "plan_candidate.1",
+        "issuedAt": "2026-01-01T00:00:00.000Z",
+        "expiresAt": "2099-01-01T00:00:00.000Z",
+        "revokedAt": null,
+        "revision": 1,
+        "reason": "This plan does not include advanced customization."
+      }
+    },
+    "offline": {
+      "why": "The entitlement service could not be asked. Unknown is a real state and refuses like none; it never reads as active.",
+      "authoring": false,
+      "snapshot": {
+        "state": "unknown",
+        "planId": null,
+        "planVersion": null,
+        "issuedAt": null,
+        "expiresAt": null,
+        "revokedAt": null,
+        "revision": 0,
+        "reason": "The plan could not be checked from this computer."
+      }
+    },
+    "downgraded": {
+      "why": "A plan that was active and has been revoked. The snapshot still says active as written; observation time is what reads it as revoked.",
+      "authoring": false,
+      "snapshot": {
+        "state": "active",
+        "planId": "plan_business",
+        "planVersion": "plan_business.1",
+        "issuedAt": "2026-01-01T00:00:00.000Z",
+        "expiresAt": "2099-01-01T00:00:00.000Z",
+        "revokedAt": "2026-06-01T00:00:00.000Z",
+        "revision": 2,
+        "reason": "This plan was ended."
+      }
+    }
+  }
+}

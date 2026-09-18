@@ -5,6 +5,9 @@ import { WorkspaceService } from './workspaces.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
 import { ThemeService, THEME_PACK_ID_PATTERN } from './themes.js';
 import { mountThemeRoutes } from './theme-routes.js';
+import { CustomizationGate } from './customization-gate.js';
+import { CustomizationBenefitLedger } from './customization-benefit.js';
+import { mountCustomizationBenefitRoutes } from './customization-benefit-routes.js';
 import { ConfigurationService } from './configuration.js';
 import { mountConfigurationRoutes } from './configuration-routes.js';
 import { WeeklyBriefService } from './weekly-brief.js';
@@ -444,6 +447,20 @@ export async function createApp(options: AppOptions) {
     workspace: () => workspaces.active(),
     personId: () => workspaces.currentPerson().id,
   });
+  // Who may change how this app looks. It reads the same live workspace the
+  // storage does, so the scope a mutation is checked against is the scope it
+  // would be written to. `DIOMEDES_DESIGN_AUTHORING` is read once, here, from
+  // the environment the service was launched in.
+  const customization = new CustomizationGate({
+    workspace: () => workspaces.active(),
+    personId: () => workspaces.currentPerson().id,
+    membershipOf: (organizationId, personId) => workspaces.membershipOf(organizationId, personId),
+    entitlementOf: (organizationId) => workspaces.entitlementOf(organizationId),
+  });
+  // The one design engagement a paid plan includes, recorded beside the
+  // billing records because it is a promise with money behind it.
+  const customizationBenefit = new CustomizationBenefitLedger(store);
+  await customizationBenefit.init();
   // The setup those answers compile into. It reads the Agent registry and Trust
   // live on every check, so a staged configuration cannot ride on an old reading.
   const configuration = new ConfigurationService(store, workspaces, agents);
@@ -658,7 +675,8 @@ export async function createApp(options: AppOptions) {
   });
   mountPermissionRoutes(app, store, nativeWork);
   mountWorkspaceRoutes(app, store, workspaces, configuration, briefs);
-  mountThemeRoutes(app, store, themes);
+  mountThemeRoutes(app, store, themes, customization);
+  mountCustomizationBenefitRoutes(app, store, workspaces, customization, customizationBenefit);
   mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces);
   mountConfigurationRoutes(app, store, workspaces, configuration, agents);
   connections.mount(app);

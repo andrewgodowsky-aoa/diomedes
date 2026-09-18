@@ -13,6 +13,7 @@ import { freshnessLine, planLine, shouldShowEmptyDetail } from './usage-presenta
 import { AIConnections } from './AISetup';
 import { isExternalEngine } from '../shared/engines';
 import { SCHEMES, schemeId } from './console/schemes';
+import { readCustomizationStatus } from './console/design-center/entitlement-api';
 import {
   Button,
   Mark,
@@ -79,6 +80,12 @@ export function SettingsPage({
   // Failures on the Appearance and Design Center screens, which share nothing
   // with the connection check above and must not borrow its message line.
   const [appearanceError, setAppearanceError] = useState('');
+  /**
+   * The launch-time design authoring authorization, read from the service. Only
+   * stated, never offered as a control: it is set in the environment the app was
+   * started in, and no setting here could change it.
+   */
+  const [designAuthoring, setDesignAuthoring] = useState(false);
   const [section, setSection] = useState('Interface detail');
   const [disclosure, setDisclosure] = useState<IntegrationStatus | null>(null);
   const [connectionError, setConnectionError] = useState('');
@@ -99,6 +106,19 @@ export function SettingsPage({
       refresh();
     }
   }, [helpersOpen, integrations, refresh, settings.onboarding.discoveryConsentAt]);
+  useEffect(() => {
+    let live = true;
+    void readCustomizationStatus()
+      .then((status) => {
+        if (live) setDesignAuthoring(status.authoring);
+      })
+      .catch(() => {
+        // Off is the conservative reading, and it is already in state.
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
   // What each engine says it can run. Only engines with a ready adapter are
   // asked, and the key is the id list so an unchanged roster does not refetch.
   const [catalogs, setCatalogs] = useState<Record<string, EngineCatalog>>({});
@@ -697,6 +717,21 @@ export function SettingsPage({
                 <p className="prose">
                   Requests from other origins are blocked. The local service has no sign-in; other
                   software running on this computer can access it.
+                </p>
+                <h2>Design authoring</h2>
+                {/*
+                  Read-only on purpose. This is a launch-time authorization the
+                  service reads from its own environment, so it cannot be turned
+                  on or off from inside the running app — stating it here and
+                  offering no switch is the honest shape.
+                */}
+                <p className="code" data-design-authoring={designAuthoring ? 'on' : 'off'}>
+                  Design authoring: {designAuthoring ? 'on (set at launch)' : 'off'}
+                </p>
+                <p className="prose">
+                  When it is on, themes can be authored for this computer without a plan. It grants
+                  nothing else: no organization branding, no agent authority, and it cannot be
+                  changed from here.
                 </p>
               </>
             )}

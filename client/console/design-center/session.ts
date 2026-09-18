@@ -81,7 +81,16 @@ export function packProblem(pack: ThemePackV1): string {
   return result.ok ? '' : result.errors[0];
 }
 
-export function useStudioSession(initial: ThemePackV1 | null): StudioSession | null {
+/**
+ * @param autosave Whether a draft may be written at all. A draft goes through
+ * the same gated route an explicit save uses, so without the customization
+ * capability the timer would only produce a refusal every `AUTOSAVE_DELAY_MS`.
+ * Editing still works in the screen; nothing is sent.
+ */
+export function useStudioSession(
+  initial: ThemePackV1 | null,
+  autosave = true,
+): StudioSession | null {
   const [pack, setPack] = useState<ThemePackV1 | null>(initial);
   const [baseline, setBaseline] = useState<ThemePackV1 | null>(initial);
   const [past, setPast] = useState<ThemePackV1[]>([]);
@@ -141,6 +150,7 @@ export function useStudioSession(initial: ThemePackV1 | null): StudioSession | n
 
   const schedule = useCallback(
     (value: ThemePackV1) => {
+      if (!autosave) return;
       pending.current = value;
       clearTimeout(timer.current);
       timer.current = setTimeout(() => {
@@ -153,7 +163,7 @@ export function useStudioSession(initial: ThemePackV1 | null): StudioSession | n
         inflight.current = run;
       }, AUTOSAVE_DELAY_MS);
     },
-    [save],
+    [save, autosave],
   );
 
   useEffect(() => () => clearTimeout(timer.current), []);

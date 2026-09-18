@@ -45,7 +45,20 @@ async function request<T = any>(
   return { status: response.status, data: (await response.json()) as T };
 }
 
+/**
+ * A5 gates theme authoring on the customization capability, so this file — which
+ * is about storage, not about who may pay for it — runs on the named `paid`
+ * fixture. The gate reads the environment when the app is built, so it is set
+ * before `createApp`. `tests/customization-entitlement.test.ts` is where the
+ * refusals are proven.
+ */
+function payFor() {
+  process.env.DIOMEDES_TEST_MODE = '1';
+  process.env.DIOMEDES_ENTITLEMENT_FIXTURE = 'paid';
+}
+
 async function launch() {
+  payFor();
   const app = await createApp({
     dataDir: path.join(root, 'data'),
     projectRoot: path.join(root, 'projects'),
@@ -161,6 +174,8 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await stop();
+  delete process.env.DIOMEDES_TEST_MODE;
+  delete process.env.DIOMEDES_ENTITLEMENT_FIXTURE;
   await fs.rm(root, { recursive: true, force: true }).catch(() => undefined);
 });
 

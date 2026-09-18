@@ -22,13 +22,18 @@ import type { Settings } from '../../shared/types';
 import { resolveAppearance } from '../../shared/theme-pack/resolve';
 import { importThemePackage, THEME_PACKAGE_EXTENSION } from '../../shared/theme-pack/package';
 import type { BaseThemeId, ThemePackV1 } from '../../shared/theme-pack/types';
-import { Button, Modal } from '../components';
+import { Button, Mark, Modal } from '../components';
 import { schemeId } from './schemes';
 import { Inspector } from './design-center/Inspector';
 import { Navigator } from './design-center/Navigator';
 import { Preview, PREVIEW_PIECES, type PreviewMode } from './design-center/Preview';
 import { SIDEBAR_WIDTHS, packFromBaseTheme, themeIdFrom } from './design-center/pack';
 import { packProblem, useStudioSession } from './design-center/session';
+import {
+  NO_CUSTOMIZATION,
+  readCustomizationStatus,
+  type CustomizationStatus,
+} from './design-center/entitlement-api';
 import {
   activateTheme,
   buildPackage,
@@ -47,6 +52,10 @@ import './design-center.css';
 type Target = 'app' | 'website';
 
 const NEW_THEME_NAME = 'My theme';
+
+/** Shown only if the service answered nothing at all; normally it says why. */
+const CUSTOMIZATION_LOCKED =
+  'Customization requires an active plan. You can look through this screen, and built-in themes, text size, contrast, reduced motion and reset keep working without one.';
 
 export function DesignCenter({
   settings,
@@ -74,8 +83,33 @@ export function DesignCenter({
   const [reducedMotionPreview, setReducedMotionPreview] = useState(false);
   const [replay, setReplay] = useState(0);
   const importInput = useRef<HTMLInputElement>(null);
+  /**
+   * What the service says this person may do. Asked once on opening, never
+   * computed here, and `NO_CUSTOMIZATION` until it answers so the first paint
+   * is the conservative one rather than a control that vanishes a moment later.
+   */
+  const [rights, setRights] = useState<CustomizationStatus>(NO_CUSTOMIZATION);
+  const canAuthor = rights.granted;
 
-  const session = useStudioSession(starting);
+  useEffect(() => {
+    let live = true;
+    void readCustomizationStatus()
+      .then((status) => {
+        if (live) setRights(status);
+      })
+      .catch(() => {
+        // The conservative answer is already in state. A Design Center that
+        // could not ask is a Design Center that shows the free half.
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // Autosave writes a draft through the same gated route an explicit save uses.
+  // Without the capability it would be a refusal every nine hundred
+  // milliseconds, so the session is told not to schedule one at all.
+  const session = useStudioSession(starting, canAuthor);
 
   /**
    * Open on the applied theme when there is one, and otherwise on a new pack
@@ -375,6 +409,22 @@ export function DesignCenter({
           Everything here works with no internet connection and no AI engine. Nothing in this screen
           asks a model anything.
         </p>
+        {/*
+          The authoring badge is deliberately visible. Design authoring is an
+          explicit launch-time authorization, not a hidden bypass, so a build
+          running with it on says so on the screen it affects.
+        */}
+        {rights.authoring && (
+          <p className="caption dc-badge" data-dc-authoring="on">
+            <Mark state="working" /> Design authoring is on for this computer. It was set when the
+            app was launched, it covers your own themes only, and it gives no agent any authority.
+          </p>
+        )}
+        {!canAuthor && (
+          <p className="prose dc-locked" role="note" data-dc-customization="locked">
+            {rights.reason || CUSTOMIZATION_LOCKED}
+          </p>
+        )}
       </header>
 
       {!session || !previewPack || !resolved ? (
@@ -423,24 +473,30 @@ export function DesignCenter({
             <Button tone="quiet" onClick={() => setHistoryOpen(true)}>
               Versions
             </Button>
-            <Button tone="quiet" onClick={() => importInput.current?.click()}>
-              Import
-            </Button>
+            {canAuthor && (
+              <Button tone="quiet" onClick={() => importInput.current?.click()}>
+                Import
+              </Button>
+            )}
             <Button tone="quiet" onClick={() => void exportFile()}>
               Export
             </Button>
-            <Button
-              tone="quiet"
-              onClick={() => {
-                setSaveAsName(`${session.pack.name} copy`);
-                setSaveAsOpen(true);
-              }}
-            >
-              Save as new theme
-            </Button>
-            <Button tone="primary" disabled={busy} onClick={() => void apply()}>
-              Apply
-            </Button>
+            {canAuthor && (
+              <Button
+                tone="quiet"
+                onClick={() => {
+                  setSaveAsName(`${session.pack.name} copy`);
+                  setSaveAsOpen(true);
+                }}
+              >
+                Save as new theme
+              </Button>
+            )}
+            {canAuthor && (
+              <Button tone="primary" disabled={busy} onClick={() => void apply()}>
+                Apply
+              </Button>
+            )}
             <input
               ref={importInput}
               type="file"
@@ -602,13 +658,15 @@ export function DesignCenter({
                         {revision === savedRevision ? ' — the saved one' : ''} of “
                         {session.pack.name}”
                       </span>
-                      <Button
-                        tone="quiet"
-                        disabled={busy || revision === savedRevision}
-                        onClick={() => void restore(revision)}
-                      >
-                        Restore
-                      </Button>
+                      {canAuthor && (
+                        <Button
+                          tone="quiet"
+                          disabled={busy || revision === savedRevision}
+                          onClick={() => void restore(revision)}
+                        >
+                          Restore
+                        </Button>
+                      )}
                     </li>
                   ))}
                 </ul>

@@ -11,6 +11,7 @@
  * sends none is refused on an existing theme rather than quietly winning.
  */
 import express, { type Express, type Request, type Response } from 'express';
+import type { CustomizationGate } from './customization-gate.js';
 import { ApiError } from './paths.js';
 import type { Store } from './store.js';
 import { ASSET_UPLOAD_TYPES, ThemeAssetService } from './theme-assets.js';
@@ -60,7 +61,30 @@ function assetBody(): (req: Request, res: Response, next: (error?: unknown) => v
     });
 }
 
-export function mountThemeRoutes(app: Express, store: Store, themes: ThemeService) {
+/**
+ * Which routes cost money, and where that is decided.
+ *
+ * Every privileged mutation calls the gate as its first statement, before
+ * validation and before the store lock: refusing is cheaper than validating,
+ * and a refusal inside `store.locked` would cost a whole store reload. The
+ * checks themselves live in `shared/customization-entitlement.ts` and are
+ * resolved by `server/customization-gate.ts`; this file only asks.
+ *
+ * Deliberately ungated, because the owner said these must keep working with no
+ * plan, no network and no AI engine: every `GET`, discarding an autosave, and
+ * `POST /api/themes/reset` — the safe way back to a built-in package. A person
+ * whose plan lapsed must always be able to put the app back the way it was.
+ *
+ * Hiding a button is not enforcement. The client asks the same gate through
+ * `GET /api/design-center/entitlement` and reflects the answer, but nothing it
+ * does or omits changes what these routes accept.
+ */
+export function mountThemeRoutes(
+  app: Express,
+  store: Store,
+  themes: ThemeService,
+  gate: CustomizationGate,
+) {
   const assets = new ThemeAssetService(themes);
   const route =
     (action: (req: Request, res: Response) => Promise<unknown>, locked = true) =>
@@ -104,6 +128,9 @@ export function mountThemeRoutes(app: Express, store: Store, themes: ThemeServic
   app.put(
     '/api/themes/:id',
     route(async (req, res) => {
+      // First, before the body is read: an autosave is authoring too, and a
+      // draft that lands without a plan is a premium mutation with a small name.
+      gate.assertCanAuthor(req);
       const id = themeId(req);
       // `draft: true` rides beside the pack rather than inside it: the contract
       // refuses unknown top-level keys, and a draft is a fact about this save,
@@ -144,6 +171,7 @@ export function mountThemeRoutes(app: Express, store: Store, themes: ThemeServic
     '/api/themes/:id/assets',
     assetBody(),
     route(async (req) => {
+      gate.assertCanAuthor(req);
       const body: unknown = req.body;
       if (!(body instanceof Buffer))
         throw new ApiError(
@@ -202,6 +230,11 @@ export function mountThemeRoutes(app: Express, store: Store, themes: ThemeServic
   app.post(
     '/api/themes/:id/activate',
     route(async (req) => {
+      // Applying a theme is the paid `theme-pack-application` feature, and in a
+      // business scope it is additionally the owner/admin question: putting a
+      // revision in front of everyone in the company is not the same act as
+      // editing it.
+      gate.assertCanActivate(req);
       const { pack } = await themes.activate(themeId(req));
       return { pack, settings: store.settings };
     }),
@@ -209,7 +242,25 @@ export function mountThemeRoutes(app: Express, store: Store, themes: ThemeServic
 
   app.post(
     '/api/themes/:id/restore/:revision',
-    route(async (req) => themes.restore(themeId(req), Number(req.params.revision))),
+    route(async (req) => {
+      // A restore records a new revision, so it is a write to theme storage and
+      // gated as authoring. It mints no customization benefit — see
+      // `server/customization-benefit.ts`.
+      gate.assertCanAuthor(req);
+      return themes.restore(themeId(req), Number(req.params.revision));
+    }),
+  );
+
+  /**
+   * What this person may do in the Design Center, and why.
+   *
+   * The client reflects this answer; it never computes one. Read-only, no lock,
+   * and it is the same gate the mutating routes consult, so a client that
+   * ignored it would be refused at the route rather than quietly allowed.
+   */
+  app.get(
+    '/api/design-center/entitlement',
+    route(async (req) => gate.status(req), false),
   );
 
   /**
