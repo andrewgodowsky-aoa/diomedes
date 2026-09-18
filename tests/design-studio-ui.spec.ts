@@ -10,6 +10,7 @@
  * A3 extends this file with the editor itself.
  */
 import { test, expect, type Page } from '@playwright/test';
+import fsp from 'node:fs/promises';
 import type { Project, Settings } from '../shared/types';
 
 test.describe.configure({ mode: 'serial' });
@@ -423,4 +424,303 @@ test('D06: the Website target reports compatibility and how to start the studio'
   await page.screenshot({ path: `${SHOTS}/04-website-target.png`, fullPage: true });
   await page.getByRole('button', { name: 'Close' }).click();
   await expect(page.locator('.design-center')).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------------------
+// A4: pictures, and what must stay visible over them
+// ---------------------------------------------------------------------------
+
+/** The fixture PNG, as the file input receives it: 16×16, 232 bytes. */
+const FIXTURE_PNG = 'shared/theme-pack/fixtures/bust-plate.png';
+const FIXTURE_BYTES = 232;
+
+test('D07: a picture is imported, placed, adjusted, applied, exported and read back', async ({
+  page,
+  request,
+}, testInfo) => {
+  await openDesignCenter(page);
+
+  // Import. The file never leaves this computer: the input posts its bytes to
+  // the local service, which reads the header and stores the original.
+  await page.locator('[data-dc-artwork-input="bust"]').setInputFiles(FIXTURE_PNG);
+  await expect(page.locator('[data-dc-artwork="bust"]')).toBeVisible();
+  // The size shown is the one read from the bytes, not from the file name.
+  await expect(page.locator('[data-dc-artwork-size="bust"]')).toContainText('16×16');
+
+  // The picture is in the pack, which is what makes it survivable: A3's
+  // placement controls were session-only precisely because it could not be.
+  const painted = await page
+    .locator('[data-dc-artwork-slot="bust"] .dm-artwork-slot')
+    .evaluate((element) => getComputedStyle(element).backgroundImage);
+  expect(painted).toContain('/api/themes/');
+  expect(painted).toContain('/assets/');
+
+  // Adjust: the opacity slider moves the picture in the preview and nowhere
+  // else. The document is still wearing the applied theme.
+  await page.getByRole('slider', { name: 'Portrait plate opacity' }).fill('0.4');
+  await expect
+    .poll(() =>
+      page
+        .locator('[data-dc-artwork-slot="bust"] .dm-artwork-slot')
+        .evaluate((element) => getComputedStyle(element).opacity),
+    )
+    .toBe('0.4');
+
+  await page.screenshot({ path: `${SHOTS}/05-picture-placed.png`, fullPage: true });
+
+  // Apply. The theme with its picture becomes the app's appearance.
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme-pack', THEME_ID);
+  const saved = await request.get(`/api/themes/${THEME_ID}`, { headers: HEADERS });
+  expect(saved.ok()).toBe(true);
+  const stored = (await saved.json()) as {
+    pack: {
+      artwork: Record<string, { assetHash: string; opacity: number }>;
+      assets: Record<string, { width: number; height: number; bytes: number }>;
+    };
+  };
+  expect(stored.pack.artwork.bust.opacity).toBe(0.4);
+  const hash = stored.pack.artwork.bust.assetHash;
+  expect(hash).toMatch(/^[0-9a-f]{64}$/);
+  // The record in the pack is the one read from the bytes, and it is the only
+  // asset: nothing else was dragged along.
+  expect(Object.keys(stored.pack.assets)).toEqual([hash]);
+  expect(stored.pack.assets[hash]).toMatchObject({ width: 16, height: 16, bytes: FIXTURE_BYTES });
+
+  // The bytes come back from the service under their own name.
+  const served = await request.get(`/api/themes/${THEME_ID}/assets/${hash}`);
+  expect(served.ok()).toBe(true);
+  expect(served.headers()['content-type']).toBe('image/png');
+  expect((await served.body()).length).toBe(FIXTURE_BYTES);
+
+  // Export: the file must carry the picture, or Import cannot read it back.
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Export', exact: true }).click(),
+  ]);
+  const file = testInfo.outputPath('exported.diomedes-theme');
+  await download.saveAs(file);
+  const container = JSON.parse(await fsp.readFile(file, 'utf8')) as {
+    manifest: { assetCount: number; totalAssetBytes: number };
+    assets: Record<string, string>;
+  };
+  expect(container.manifest.assetCount).toBe(1);
+  expect(container.manifest.totalAssetBytes).toBe(FIXTURE_BYTES);
+  expect(Object.keys(container.assets)).toEqual([hash]);
+
+  // Re-import the file this app just wrote. A round trip is a round trip: the
+  // bytes go back on disk under this account before the pack is adopted.
+  await page.locator('[data-dc-import="theme"]').setInputFiles(file);
+  await expect(page.getByText('with its picture')).toBeVisible();
+  await expect(page.locator('[data-dc-artwork-size="bust"]')).toContainText('16×16');
+  await page.screenshot({ path: `${SHOTS}/06-picture-round-trip.png`, fullPage: true });
+});
+
+test('D08: a texture never covers an approval control’s label', async ({ page }) => {
+  await openDesignCenter(page);
+
+  // A texture over the whole stage, fully opaque, blended as harshly as the
+  // contract allows: the worst case a theme is able to ask for.
+  await page.locator('[data-dc-artwork-input="texture"]').setInputFiles(FIXTURE_PNG);
+  await expect(page.locator('[data-dc-artwork="texture"]')).toBeVisible();
+  await page.getByRole('slider', { name: 'Background texture opacity' }).fill('1');
+  await page.getByLabel('Background texture blend').selectOption('multiply');
+
+  const layer = page.locator('.dc-stage > .dm-texture-layer');
+  await expect(layer).toHaveCount(1);
+  // Decorative, and unreachable: hidden from assistive technology and taking no
+  // pointer event, so it can neither be read out nor swallow a click.
+  await expect(layer).toHaveAttribute('aria-hidden', 'true');
+  expect(await layer.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe('none');
+  expect(await layer.evaluate((element) => getComputedStyle(element).zIndex)).toBe('-1');
+
+  const approval = page.locator('[data-dc-piece="notice"]');
+  await expect(approval.getByRole('button', { name: 'Go ahead', exact: true })).toBeVisible();
+
+  /**
+   * The claim, hit-tested rather than inferred from a z-index.
+   *
+   * `elementFromPoint` skips anything with `pointer-events: none`, so the layer
+   * is made clickable for the length of the check — otherwise this would pass
+   * even if the texture were painted on top of everything. What is asserted is
+   * paint order: with the layer taking events, the topmost element over the
+   * middle of every approval control is still that control.
+   */
+  const hitTest = async () =>
+    page.evaluate(() => {
+      const layer = document.querySelector('.dc-stage > .dm-texture-layer') as HTMLElement | null;
+      if (!layer) return ['there is no texture layer to test'];
+      const previous = layer.style.pointerEvents;
+      layer.style.pointerEvents = 'auto';
+      const problems: string[] = [];
+      let tested = 0;
+      try {
+        const notice = document.querySelector('[data-dc-piece="notice"]');
+        for (const button of notice?.querySelectorAll('button') ?? []) {
+          // `elementFromPoint` works in viewport coordinates and answers with
+          // nothing at all for a point that is scrolled off screen, so each
+          // control is brought into view before it is asked about.
+          button.scrollIntoView({ block: 'center' });
+          const box = button.getBoundingClientRect();
+          if (box.width === 0 || box.height === 0) continue;
+          tested += 1;
+          const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+          if (!top || !button.contains(top))
+            problems.push(
+              `“${button.textContent?.trim()}” is covered by <${top?.tagName.toLowerCase() ?? 'nothing'} class="${
+                (top as HTMLElement | null)?.className ?? ''
+              }">`,
+            );
+        }
+      } finally {
+        layer.style.pointerEvents = previous;
+      }
+      // A run that hit-tested nothing would pass for the wrong reason.
+      if (tested === 0) problems.push('no approval control was on screen to test');
+      return problems;
+    });
+
+  expect(await hitTest(), 'A texture must never sit over a permission control').toEqual([]);
+
+  // And with one of them focused, so the focus ring is on screen while the
+  // same question is asked again.
+  await approval.getByRole('button', { name: 'Go ahead', exact: true }).focus();
+  expect(
+    await hitTest(),
+    'A texture must never sit over a permission control, focused or not',
+  ).toEqual([]);
+
+  await page.screenshot({ path: `${SHOTS}/07-texture-under-labels.png`, fullPage: true });
+});
+
+test('D09: every button state stays readable over the composited background', async ({ page }) => {
+  await openDesignCenter(page);
+  await page.locator('[data-dc-artwork-input="texture"]').setInputFiles(FIXTURE_PNG);
+  await expect(page.locator('[data-dc-artwork="texture"]')).toBeVisible();
+  await page.getByRole('slider', { name: 'Background texture opacity' }).fill('1');
+
+  const measured = await page.evaluate(async () => {
+    // sRGB relative luminance and contrast, WCAG 2.1 §1.4.3.
+    const channel = (value: number) => {
+      const c = value / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    const luminance = (rgb: number[]) =>
+      0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2]);
+    const ratio = (a: number[], b: number[]) => {
+      const [high, low] = luminance(a) >= luminance(b) ? [a, b] : [b, a];
+      return (luminance(high) + 0.05) / (luminance(low) + 0.05);
+    };
+    const parse = (text: string): number[] => {
+      const found = String(text).match(/[\d.]+/g);
+      if (!found) return [0, 0, 0, 0];
+      return [
+        Number(found[0]),
+        Number(found[1]),
+        Number(found[2]),
+        found[3] === undefined ? 1 : Number(found[3]),
+      ];
+    };
+    /** Paint `over` onto `under` at `over`'s own alpha. */
+    const composite = (under: number[], over: number[]) => {
+      const alpha = over[3] === undefined ? 1 : over[3];
+      return [0, 1, 2].map((i) => under[i] * (1 - alpha) + over[i] * alpha);
+    };
+
+    const stage = document.querySelector('.dc-stage') as HTMLElement;
+    const layer = document.querySelector('.dc-stage > .dm-texture-layer') as HTMLElement;
+
+    // A texture is not one colour, so the composite is measured against the
+    // mean of the pixels actually painted. That is the honest single number,
+    // and the report says so rather than implying a flat background.
+    const url = getComputedStyle(layer).backgroundImage.replace(/^url\(["']?|["']?\)$/g, '');
+    const image = new Image();
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+      image.src = url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d')!;
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let a = 0;
+    for (let at = 0; at < pixels.length; at += 4) {
+      r += pixels[at];
+      g += pixels[at + 1];
+      b += pixels[at + 2];
+      a += pixels[at + 3] / 255;
+    }
+    const count = pixels.length / 4;
+    const layerOpacity = Number(getComputedStyle(layer).opacity);
+    const texture = [r / count, g / count, b / count, (a / count) * layerOpacity];
+
+    const surface = parse(getComputedStyle(stage).backgroundColor);
+    const overTexture = composite(surface, texture);
+
+    const rows: { state: string; ratio: number; exempt: boolean }[] = [];
+    for (const element of document.querySelectorAll('[data-dc-piece="buttons"] button')) {
+      const button = element as HTMLButtonElement;
+      const style = getComputedStyle(button);
+      // Surface, then the texture over it, then the button's own background at
+      // whatever alpha it carries: what the label is actually read against.
+      const background = composite(overTexture, parse(style.backgroundColor));
+      // The text's own alpha counts too — a quiet label at 65% is not the
+      // colour it names.
+      const text = composite(background, parse(style.color));
+      rows.push({
+        state: (button.textContent ?? '').trim(),
+        ratio: Math.round(ratio(text, background) * 100) / 100,
+        exempt: button.disabled || button.getAttribute('aria-busy') === 'true',
+      });
+    }
+    const round = (rgb: number[]) => rgb.map((value) => Math.round(value * 100) / 100);
+    return {
+      rows,
+      surface: round(surface),
+      texture: round(texture),
+      composited: round(overTexture),
+      layerOpacity,
+    };
+  });
+
+  // Printed so the report quotes what was measured rather than a claim about it.
+  console.log('D09 contrast over the composited background:', JSON.stringify(measured, null, 2));
+
+  expect(measured.rows.length).toBeGreaterThan(5);
+  const failing = measured.rows.filter((row) => !row.exempt && row.ratio < 4.5);
+  expect(
+    failing,
+    `These button labels fall below 4.5:1 over the composited background: ${JSON.stringify(failing)}`,
+  ).toEqual([]);
+  // Disabled and busy controls are measured and reported but not asserted:
+  // WCAG 1.4.3 exempts an inactive control, and this app deliberately dims one.
+  await page.screenshot({ path: `${SHOTS}/08-contrast-over-texture.png`, fullPage: true });
+});
+
+test('D10: a file the app cannot read is refused with a sentence, not a stack trace', async ({
+  page,
+}, testInfo) => {
+  await openDesignCenter(page);
+
+  // An SVG named .png, so the picker offers it. The bytes are what is read.
+  const svg = testInfo.outputPath('not-a-picture.png');
+  await fsp.writeFile(svg, '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>', 'utf8');
+  await page.locator('[data-dc-artwork-input="logo"]').setInputFiles(svg);
+  await expect(page.getByRole('alert')).toContainText('SVG is not accepted in this release');
+  await expect(page.locator('[data-dc-artwork-empty="logo"]')).toBeVisible();
+
+  // A truncated PNG: a real signature and nothing behind it.
+  const truncated = testInfo.outputPath('truncated.png');
+  await fsp.writeFile(truncated, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  await page.locator('[data-dc-artwork-input="logo"]').setInputFiles(truncated);
+  await expect(page.getByRole('alert')).toContainText('not a PNG, JPEG or WebP picture');
+  await expect(page.locator('[data-dc-artwork-empty="logo"]')).toBeVisible();
+
+  await page.screenshot({ path: `${SHOTS}/09-refused-picture.png`, fullPage: true });
 });

@@ -282,7 +282,7 @@ export function DesignCenter({
       }
       const pictures = Object.keys(result.assets).length;
       try {
-        if (pictures > 0) await restoreAssets(result.pack.id, result.assets);
+        if (pictures > 0) await restoreAssets(result.pack.id, result.pack, result.assets);
       } catch (error) {
         setProblem(
           error instanceof Error
@@ -421,7 +421,7 @@ export function DesignCenter({
             <Button tone="quiet" onClick={() => importInput.current?.click()}>
               Import
             </Button>
-            <Button tone="quiet" onClick={exportFile}>
+            <Button tone="quiet" onClick={() => void exportFile()}>
               Export
             </Button>
             <Button
@@ -441,6 +441,8 @@ export function DesignCenter({
               type="file"
               accept=".diomedes-theme,application/json"
               className="dc-file"
+              data-dc-import="theme"
+              aria-label="Read a theme file"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 e.target.value = '';

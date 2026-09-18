@@ -154,11 +154,18 @@ export async function buildPackage(pack: ThemePackV1): Promise<ThemePackage> {
  */
 export async function restoreAssets(
   themeId: string,
+  pack: ThemePackV1,
   assets: Record<string, Uint8Array>,
 ): Promise<void> {
   for (const [hash, data] of Object.entries(assets)) {
+    // The type the pack records, which `importThemePackage` has already checked
+    // against the bytes themselves. The upload route accepts the three picture
+    // types and nothing else, so a Blob with no type at all would be refused at
+    // the door — and the service would then never get to read the bytes it
+    // would have accepted.
+    const type = pack.assets[hash]?.mime ?? 'image/png';
     // A fresh copy: a view onto a larger buffer would send the whole buffer.
-    const stored = await uploadAsset(themeId, new Blob([new Uint8Array(data)]));
+    const stored = await uploadAsset(themeId, new Blob([new Uint8Array(data)], { type }));
     if (stored.hash !== hash)
       throw new ApiError(
         'A picture in that file is not the picture it is named after.',
