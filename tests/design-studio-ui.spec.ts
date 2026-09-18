@@ -807,3 +807,87 @@ test('D11: saving a copy under a new name takes the pictures with it', async ({
   expect(served.ok()).toBe(true);
   expect((await served.body()).length).toBe(FIXTURE_BYTES);
 });
+
+/**
+ * A5: what the free, paid and designer profiles actually see.
+ *
+ * The dev server is launched on the `paid` fixture, which is why every test
+ * above can save. These ask for a different named state per test with the
+ * `X-Diomedes-Entitlement-Fixture` header, which the service honours only
+ * because it was launched with `DIOMEDES_TEST_MODE=1` and a fixture profile
+ * already named. Nothing a browser sends can reach the fixture table in an
+ * ordinary build — `tests/customization-entitlement.test.ts` proves that.
+ *
+ * `openDesignCenter` applies a theme on the way in, which is itself a premium
+ * mutation, so these open the Design Center on the entitled profile and let the
+ * page's own request carry the profile under test.
+ */
+async function openStudioAs(page: Page, profile: string) {
+  const applied = await page.request.post(`/api/themes/${THEME_ID}/activate`, {
+    headers: { ...HEADERS, 'X-Diomedes-Entitlement-Fixture': 'paid' },
+  });
+  expect(applied.ok(), await applied.text()).toBe(true);
+  await page.setExtraHTTPHeaders({ ...HEADERS, 'X-Diomedes-Entitlement-Fixture': profile });
+  await openConsole(page);
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Design Center', exact: true }).click();
+  await page.getByRole('button', { name: 'Open Design Center' }).click();
+  await expect(page.locator('.design-center')).toBeVisible();
+  await expect(page.locator('.dc-stage')).toBeVisible();
+}
+
+test('D12: a free profile keeps the built-in schemes and is shown no premium control', async ({
+  page,
+}) => {
+  await openStudioAs(page, 'free');
+  const center = page.locator('.design-center');
+  // The premium half is gone, and the screen says why rather than offering a
+  // control that is about to be refused.
+  await expect(center.getByRole('button', { name: 'Apply', exact: true })).toHaveCount(0);
+  await expect(center.getByRole('button', { name: 'Save as new theme' })).toHaveCount(0);
+  await expect(center.getByRole('button', { name: 'Import', exact: true })).toHaveCount(0);
+  await expect(page.locator('[data-dc-customization="locked"]')).toContainText(
+    /requires an active plan/i,
+  );
+  // The free half is untouched: the preview, Export, and every built-in scheme
+  // still offered in Settings.
+  await expect(center.getByRole('button', { name: 'Export', exact: true })).toBeVisible();
+  await center.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await expect(page.locator('.radio-list input[type="radio"]').first()).toBeVisible();
+
+  // And the service refuses the same save whatever the screen shows.
+  const refused = await page.request.put(`/api/themes/${THEME_ID}`, {
+    headers: { ...HEADERS, 'X-Diomedes-Entitlement-Fixture': 'free' },
+    data: themePack(),
+  });
+  expect(refused.status()).toBe(403);
+});
+
+test('D13: the entitled profile saves and applies, with no authoring badge', async ({ page }) => {
+  await openStudioAs(page, 'paid');
+  const center = page.locator('.design-center');
+  await expect(page.locator('[data-dc-customization="locked"]')).toHaveCount(0);
+  await expect(page.locator('[data-dc-authoring="on"]')).toHaveCount(0);
+  await center.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(center.locator('.dc-state')).toContainText(/applied/i);
+});
+
+test('D14: design authoring shows a badge and grants the local scope', async ({ page }) => {
+  await openStudioAs(page, 'designer');
+  const badge = page.locator('[data-dc-authoring="on"]');
+  await expect(badge).toBeVisible();
+  await expect(badge).toContainText(/when the app was launched/i);
+  await expect(badge).toContainText(/no agent any authority/i);
+  // It is a grant, not a hidden bypass: the premium controls are there, and the
+  // Developer section states it read-only with no switch beside it.
+  await expect(
+    page.locator('.design-center').getByRole('button', { name: 'Apply', exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('[data-dc-customization="locked"]')).toHaveCount(0);
+  await page.locator('.design-center').getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Developer', exact: true }).click();
+  await expect(page.locator('[data-design-authoring="on"]')).toContainText('set at launch');
+});
