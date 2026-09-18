@@ -57,8 +57,16 @@ export interface StudioSession {
   /** Replace the whole session — after an Apply, a Save-as, an import or a restore. */
   adopt(pack: ThemePackV1, asBaseline?: boolean): void;
   setShowing(showing: 'after' | 'before'): void;
-  /** Write the autosave now rather than waiting for the timer. */
-  flush(): Promise<void>;
+  /**
+   * Drop the pending autosave and wait for one already in flight.
+   *
+   * Called first by every path that saves the theme for real. A draft write
+   * that landed *after* an explicit save would resurrect the autosave the save
+   * had just cleared, and the theme would show as having unsaved changes the
+   * moment it was applied. The pending write is dropped rather than flushed:
+   * writing a draft only to delete it on the next line is work for nothing.
+   */
+  cancelAutosave(): Promise<void>;
 }
 
 const same = (a: ThemePackV1, b: ThemePackV1) => JSON.stringify(a) === JSON.stringify(b);
@@ -85,6 +93,11 @@ export function useStudioSession(initial: ThemePackV1 | null): StudioSession | n
   // have to be rebuilt — and the effect re-run — on every keystroke.
   const pending = useRef<ThemePackV1 | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The autosave in flight, so an explicit save can wait for it rather than
+  // race it, and a counter so a write that finishes after the session moved on
+  // reports nothing. `adopt` bumps the counter; a stale write is then silent.
+  const inflight = useRef<Promise<void> | null>(null);
+  const generation = useRef(0);
 
   // A different theme opened: the session starts again, history and all.
   const initialId = initial ? `${initial.id}@${initial.revision}` : null;
@@ -102,6 +115,7 @@ export function useStudioSession(initial: ThemePackV1 | null): StudioSession | n
   }, [initialId, initial]);
 
   const save = useCallback(async (value: ThemePackV1) => {
+    const mine = generation.current;
     const found = packProblem(value);
     if (found) {
       // Nothing is sent. A pack the service would refuse costs it a store
@@ -113,9 +127,13 @@ export function useStudioSession(initial: ThemePackV1 | null): StudioSession | n
     setSaveState('saving');
     try {
       await api(`/themes/${encodeURIComponent(value.id)}`, 'PUT', { ...value, draft: true });
+      // The session moved on while this was in the air — an Apply, a Save as, a
+      // restore. Saying "Draft saved" now would contradict what just happened.
+      if (generation.current !== mine) return;
       setProblem('');
       setSaveState('saved');
     } catch (error) {
+      if (generation.current !== mine) return;
       setProblem(error instanceof Error ? error.message : 'The draft could not be saved.');
       setSaveState('failed');
     }
@@ -128,7 +146,11 @@ export function useStudioSession(initial: ThemePackV1 | null): StudioSession | n
       timer.current = setTimeout(() => {
         const next = pending.current;
         pending.current = null;
-        if (next) void save(next);
+        if (!next) return;
+        const run = save(next).finally(() => {
+          if (inflight.current === run) inflight.current = null;
+        });
+        inflight.current = run;
       }, AUTOSAVE_DELAY_MS);
     },
     [save],
@@ -136,12 +158,11 @@ export function useStudioSession(initial: ThemePackV1 | null): StudioSession | n
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  const flush = useCallback(async () => {
+  const cancelAutosave = useCallback(async () => {
     clearTimeout(timer.current);
-    const next = pending.current;
     pending.current = null;
-    if (next) await save(next);
-  }, [save]);
+    await inflight.current;
+  }, []);
 
   const edit = useCallback(
     (next: ThemePackV1) => {
@@ -186,6 +207,7 @@ export function useStudioSession(initial: ThemePackV1 | null): StudioSession | n
   const adopt = useCallback((next: ThemePackV1, asBaseline = true) => {
     clearTimeout(timer.current);
     pending.current = null;
+    generation.current += 1;
     setPack(next);
     if (asBaseline) setBaseline(next);
     setPast([]);
@@ -219,6 +241,6 @@ export function useStudioSession(initial: ThemePackV1 | null): StudioSession | n
     resetTheme,
     adopt,
     setShowing,
-    flush,
+    cancelAutosave,
   };
 }

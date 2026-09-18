@@ -373,6 +373,15 @@ test('D05: a radius change shows in the preview, undoes, and applies to the app'
 
   await page.screenshot({ path: `${SHOTS}/03-radius-edited-app-unchanged.png`, fullPage: true });
 
+  // The claim stated literally: editing and undoing in the Studio wrote no
+  // settings at all. The pointer still names revision 1, the saved theme.
+  const before = await request.get('/api/settings', { headers: HEADERS });
+  expect(before.ok()).toBe(true);
+  const settingsBefore = (await before.json()) as {
+    appearance: { activeTheme: { id: string; revision: number } | null };
+  };
+  expect(settingsBefore.appearance.activeTheme).toEqual({ id: THEME_ID, revision: 1 });
+
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   // The document now carries the edited value — the C06 assertion shape.
   await expect.poll(async () => rootVar(page, '--r')).toBe('2px');

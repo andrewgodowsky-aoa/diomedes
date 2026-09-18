@@ -186,6 +186,9 @@ export function DesignCenter({
     setProblem('');
     setSaid('');
     try {
+      // Before the real save, so a draft write already on the wire cannot land
+      // after it and put the freshly applied theme back into "unsaved changes".
+      await session.cancelAutosave();
       const found = packProblem(session.pack);
       if (found) {
         setProblem(found);
@@ -214,6 +217,7 @@ export function DesignCenter({
     setBusy(true);
     setProblem('');
     try {
+      await session.cancelAutosave();
       const copy: ThemePackV1 = { ...session.pack, id, name, revision: 1 };
       const found = packProblem(copy);
       if (found) {
@@ -240,6 +244,7 @@ export function DesignCenter({
       setBusy(true);
       setProblem('');
       try {
+        await session.cancelAutosave();
         const result = await restoreRevision(session.pack.id, revision);
         session.adopt(result.pack);
         setSavedRevision(result.revision);
