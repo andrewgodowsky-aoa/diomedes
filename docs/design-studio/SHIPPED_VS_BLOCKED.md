@@ -35,7 +35,6 @@ fails if the behaviour goes away.
 | The free half — reading, discarding a draft, the safe reset, text size — is never gated | `server/theme-routes.ts` | `tests/customization-entitlement.test.ts` |
 | An entitlement that cannot be checked refuses new premium changes, and the applied theme keeps being applied | `server/customization-gate.ts` | `tests/customization-entitlement.test.ts` |
 | The included customization benefit is a ledger: consumed once, retries are not second events, a failed draft is still owed | `server/customization-benefit.ts` | `tests/customization-benefit.test.ts` |
-| The desktop titlebar resolves a chrome/text pair from a custom theme's base scheme | `desktop/main.mjs` | `npm run test:desktop` |
 
 ## 2. Built, with a known gap
 
@@ -60,7 +59,8 @@ place rather than left in five report files.
 | **The handoff bundle in `F:\Diomedes\deliverables\theme-pack-v1\` is a copy, not a package.** | If any of the five source files changes, the bundle goes stale silently. `npm run theme-pack:handoff` re-makes it. | A1 report, concern 5 |
 | **Motion preset ids (`none|settle|drift|signal|lift`) were chosen here**, not by the owner, and the website's Motion V3 Signal work may have its own vocabulary. | They are the app's vocabulary and the website extends rather than shares them, but the two should be reconciled before anything public depends on the names. | A1 report, concern 4; A1 ruling |
 | **`paper.attn` differs between `client/schemes.ts` and `client/styles.css`.** | The mirror follows `schemes.ts` and a drift test pins it there. Someone should decide which is canonical. | A1 report, concern 2 |
-| **`themeScopeKey` is duplicated in `desktop/main.mjs`.** | Six lines, because Electron cannot import the service's TypeScript. A text-level guard fails when the two stop agreeing; no test drives a real Electron titlebar against a custom theme. | A2 report, concern 4 |
+| **`themeScopeKey` is duplicated in `desktop/main.mjs`.** | Six lines, because Electron cannot import the service's TypeScript. A text-level guard in `tests/themes.test.ts` fails when the two stop agreeing. | A2 report, concern 4 |
+| **The desktop titlebar resolves a chrome/text pair from a custom theme's base scheme** (`desktop/main.mjs`), and nothing proves it end to end. | The only evidence is source-level: `tests/themes.test.ts` reads `main.mjs` as text. `npm run test:desktop` starts the packaged app with no custom theme applied, so it proves packaging and launch, not resolution. The fallbacks mean a drift would show as the base scheme's colours rather than as a failure. | A2 report, concern 4 |
 | **There is no delete route for a theme.** | Nothing needs one yet. | A2 report, concern 5 |
 | **Every refused write inside `store.locked` costs a store reload.** | Pre-existing `locked` behaviour, not introduced here. The editor validates before sending to keep refusals off the hot path. | A2 report, concern 6 |
 

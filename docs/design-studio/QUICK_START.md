@@ -18,8 +18,8 @@ if that is what you see — you will still be able to look, but not to keep anyt
 ## 1. Open it
 
 1. Open Diomedes.
-2. Click **Settings** (top of the window).
-3. Click **Design Center** in the list on the left.
+2. Click **Settings** (top right of the window).
+3. Click **Design Center** in the list down the left-hand side.
 4. Click **Open Design Center**.
 
 Settings closes and the Design Center fills the window. The app is still underneath it,
@@ -27,8 +27,11 @@ exactly as you left it; nothing restarted.
 
 ## 2. What you are looking at
 
-There are three parts.
+There are four parts.
 
+- **The left** is a list of the pieces you can look at — **Buttons**, **Navigation rail**,
+  **Conversation**, and so on. Clicking one scrolls the middle to it. Underneath it, once you
+  have saved any, is **Your themes**.
 - **The middle** is the *preview*. It is not a picture of Diomedes — it is real Diomedes
   buttons, real messages, a real approval box, drawn with fixture examples. It shows you
   exactly what you will get.
