@@ -85,6 +85,7 @@ export default defineConfig({
     'ui.spec.ts',
     'native-ui.spec.ts',
     'field.spec.ts',
+    'design-studio-ui.spec.ts',
     'ai-engines-ui.spec.ts',
     'autonomy-ui.spec.ts',
     'change-review-ui.spec.ts',

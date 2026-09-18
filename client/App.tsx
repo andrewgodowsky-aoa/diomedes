@@ -31,6 +31,12 @@ import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
 import { Workspace } from './Workspace';
 import { Wake } from './console/Wake';
+import {
+  applyResolvedAppearance,
+  clearResolvedAppearance,
+} from './console/theme-runtime';
+import { resolveAppearance } from '../shared/theme-pack/resolve';
+import type { ThemePackV1 } from '../shared/theme-pack/types';
 import { useWake } from './console/useWake';
 
 export function App() {
@@ -67,6 +73,11 @@ export function App() {
   const [query, setQuery] = useState('');
   const [landingText, setLandingText] = useState('');
   const [landingProjectId, setLandingProjectId] = useState<string | null>(null);
+  // The custom theme on the document, and the one sentence that explains a
+  // fallback. Both are absent for every built-in appearance package.
+  const [activeTheme, setActiveTheme] = useState<ThemePackV1 | null>(null);
+  const [appearanceNotice, setAppearanceNotice] = useState('');
+  const themeKey = useRef<string | null>(null);
   const settingsRef = useRef(settings);
   const scaleWrites = useRef<Promise<void>>(Promise.resolve());
   settingsRef.current = settings;
@@ -174,6 +185,44 @@ export function App() {
       es.close();
     };
   }, [refreshProjects, refreshUsage, report]);
+  /**
+   * The applied custom theme, fetched once per `<id>@<revision>`.
+   *
+   * Kept out of the appearance effect below on purpose: that effect runs on
+   * every settings change, and a fetch inside it would go back to the service
+   * each time someone pressed Ctrl+Plus.
+   */
+  useEffect(() => {
+    const pointer = settings?.appearance.activeTheme ?? null;
+    if (!pointer) {
+      themeKey.current = null;
+      setActiveTheme(null);
+      setAppearanceNotice('');
+      return;
+    }
+    const key = `${pointer.id}@${pointer.revision}`;
+    if (key === themeKey.current) return;
+    themeKey.current = key;
+    let live = true;
+    void api<{ pack: ThemePackV1 | null; source: string; notice: string | null }>('/themes/active')
+      .then((answer) => {
+        if (!live) return;
+        setActiveTheme(answer.pack);
+        setAppearanceNotice(answer.notice ?? '');
+      })
+      .catch(() => {
+        // A theme that cannot be fetched is not a reason to stop painting. The
+        // built-in package is already on the document; say so and leave it.
+        if (!live) return;
+        setActiveTheme(null);
+        setAppearanceNotice(
+          'Your saved theme could not be read. The built-in appearance package is showing.',
+        );
+      });
+    return () => {
+      live = false;
+    };
+  }, [settings?.appearance.activeTheme?.id, settings?.appearance.activeTheme?.revision]);
   useEffect(() => {
     if (!settings) return;
     const root = document.documentElement;
@@ -181,17 +230,51 @@ export function App() {
     root.dataset.surface = surface;
     // The Console shows the machinery; components that gate on 'technical' follow it.
     root.dataset.detail = surface === 'console' ? 'technical' : settings.detail;
+    // One owner for the appearance. With no custom theme this is the code that
+    // has always run, unchanged, so the ten built-in schemes behave exactly as
+    // before; with one, the resolver decides and the runtime writes, and the
+    // built-in branch is skipped rather than fighting it.
+    const scales = {
+      'ui-scale': settings.appearance.interfaceScale ?? 1,
+      'read-scale': settings.appearance.readingScale ?? 1,
+      'code-scale': settings.appearance.codeScale ?? 1,
+    };
+    try {
+      if (activeTheme) {
+        applyResolvedAppearance(
+          resolveAppearance({
+            surface: 'app-console',
+            theme: activeTheme,
+            personal: { motion: settings.appearance.motion },
+            accessibility: {
+              reducedMotion: settings.appearance.motion === 'reduced',
+              textureOff: settings.appearance.textureOff === true,
+            },
+          }),
+        );
+        // The resolver's personal layer only carries the four approved scales,
+        // and Ctrl+Plus writes any size between 0.75 and 2. A person's own size
+        // is theirs whatever a theme asked for, so it is re-asserted here.
+        for (const [name, value] of Object.entries(scales))
+          root.style.setProperty(`--dm-${name}`, String(value));
+        return;
+      }
+      clearResolvedAppearance();
+    } catch {
+      // Painting must never be what fails. An exception thrown from an effect
+      // unmounts the tree and leaves a blank window, which is the one outcome
+      // worse than the built-in scheme.
+      clearResolvedAppearance();
+      setAppearanceNotice(
+        'Your saved theme could not be applied. The built-in appearance package is showing.',
+      );
+    }
     root.dataset.package = settings.appearance.package;
     root.dataset.motion = settings.appearance.motion;
     // Surface changes never resize the interface. Explicit size preferences win.
-    const effectiveUiScale = settings.appearance.interfaceScale ?? 1;
-    for (const [name, value] of Object.entries({
-      'ui-scale': effectiveUiScale,
-      'read-scale': settings.appearance.readingScale ?? 1,
-      'code-scale': settings.appearance.codeScale ?? 1,
-    }))
+    for (const [name, value] of Object.entries(scales))
       root.style.setProperty(`--dm-${name}`, String(value));
-  }, [settings]);
+  }, [settings, activeTheme]);
   useEffect(() => {
     const change = (command: ScaleCommand) => {
       // Serialize held/repeated shortcuts and read the current preference each time.
@@ -786,6 +869,18 @@ export function App() {
           <Mark state="fault" />
           <span>{error}</span>
           <Button tone="quiet" onClick={() => setError('')}>
+            Dismiss
+          </Button>
+        </div>
+      )}
+      {/* A theme that could not be applied is a fact about the appearance, not a
+          failed request: the app is running and readable, and this says which
+          appearance it is running in and why. */}
+      {appearanceNotice && (
+        <div className="error-bar appearance-notice" role="status">
+          <Mark state="waiting" />
+          <span>{appearanceNotice}</span>
+          <Button tone="quiet" onClick={() => setAppearanceNotice('')}>
             Dismiss
           </Button>
         </div>
