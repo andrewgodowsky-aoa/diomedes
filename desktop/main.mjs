@@ -98,6 +98,11 @@ async function customTitleBar(settings) {
     const identity = JSON.parse(
       await fs.readFile(path.join(dataDir, 'workspaces', 'identity.json'), 'utf8'),
     );
+    // The stored workspace, not the service's demoted one: the shell cannot
+    // check a membership. A revoked member's titlebar therefore keeps the old
+    // colours until the service writes Personal back on the next read, which is
+    // a cosmetic lag and never access — the themes themselves are served only
+    // through the scope `workspaces.active()` resolves.
     const scope = themeScopeKey(settings.activeWorkspace, identity?.id);
     const pack = JSON.parse(
       await fs.readFile(path.join(dataDir, 'themes', scope, active.id, 'pack.json'), 'utf8'),

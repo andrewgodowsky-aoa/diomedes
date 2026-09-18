@@ -15,6 +15,7 @@
  */
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import fs from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import type { Server } from 'node:http';
@@ -369,18 +370,34 @@ test('a theme cannot take a name the route table already spells', async () => {
 
 test('the desktop titlebar derives the theme scope the same way this service does', async () => {
   // desktop/main.mjs is the Electron shell and cannot import this service, so
-  // its themeScopeKey is a copy. Read it as text — importing it would start
-  // Electron — and fail when the two derivations stop agreeing.
-  const shell = await fs.readFile(
-    path.join(process.cwd(), 'desktop', 'main.mjs'),
-    'utf8',
-  );
-  for (const fragment of [
-    "createHash('sha256')",
-    ".digest('hex').slice(0, 16)",
-    'business-${of(workspace.organizationId)}',
-    'personal-${of(personId)}',
-    "'themes', scope, active.id, 'pack.json'",
-  ])
-    expect(shell, `desktop/main.mjs no longer carries ${fragment}`).toContain(fragment);
+  // its themeScopeKey is a copy. Importing the file would start Electron, so
+  // its one function is lifted out of the source text and run here, and its
+  // answers are compared against this service's own — in both directions, for
+  // both kinds of workspace. A fragment check would pass a copy that had been
+  // reworded; this fails the moment the two stop agreeing on a key.
+  const shell = await fs.readFile(path.join(process.cwd(), 'desktop', 'main.mjs'), 'utf8');
+  const start = shell.indexOf('function themeScopeKey(');
+  expect(start, 'desktop/main.mjs no longer defines themeScopeKey').toBeGreaterThan(-1);
+  const end = shell.indexOf('\n}', start);
+  expect(end, 'desktop/main.mjs themeScopeKey is never closed').toBeGreaterThan(start);
+  const lifted = new Function(
+    'createHash',
+    `${shell.slice(start, end + 2)}\nreturn themeScopeKey;`,
+  )(createHash) as (workspace: unknown, personId: string) => string;
+
+  const business: WorkspaceRef = { kind: 'business', organizationId: 'org_Ab3-xY9z' };
+  for (const [workspace, personId] of [
+    [PERSONAL, 'person_abc123'],
+    [PERSONAL, 'person_ZZZ'],
+    [business, 'person_abc123'],
+  ] as const) {
+    expect(lifted(workspace, personId)).toBe(themeScopeKey(workspace, personId));
+    expect(lifted(workspace, personId)).toMatch(/^(personal|business)-[0-9a-f]{16}$/);
+  }
+  // Two accounts must not land in one folder on either side of the copy.
+  expect(lifted(PERSONAL, 'person_abc123')).not.toBe(lifted(PERSONAL, 'person_ZZZ'));
+  expect(lifted(business, 'person_abc123')).not.toBe(lifted(PERSONAL, 'person_abc123'));
+  // The path the shell then reads is not inside that function, so it is checked
+  // as text: the layout this service writes is the layout the shell opens.
+  expect(shell).toContain("'themes', scope, active.id, 'pack.json'");
 });

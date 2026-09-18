@@ -38,6 +38,14 @@ test('a value carrying CSS syntax is refused, never written', () => {
   for (const value of [
     'red; background: url(http://example.test/x.png)',
     'url(evil.png)',
+    'URL(evil.png)',
+    // Every other way a value can reach outside the document. A blocklist of
+    // `url(` alone lets each of these through, which is why this is a list of
+    // the functions that are allowed and not of the ones that are not.
+    'image-set("//host/x.png" 1x)',
+    '-webkit-image-set("//host/x.png" 1x)',
+    'src("//host/x.woff2")',
+    'element(#x)',
     '} html { display: none } :root {',
     'expression(alert(1))',
     'javascript:alert(1)',
@@ -45,6 +53,15 @@ test('a value carrying CSS syntax is refused, never written', () => {
     'red\nbackground: red',
   ])
     expect(isSafeProperty('--surface', value), value).toBe(false);
+  // The functions a token legitimately needs still pass.
+  for (const value of [
+    'cubic-bezier(0.2, 0, 0, 1)',
+    'var(--light)',
+    'rgba(255, 255, 255, 0.07)',
+    'clamp(1rem, 2vw, 2rem)',
+    'calc(100% - 8px)',
+  ])
+    expect(isSafeProperty('--dm-ease', value), value).toBe(true);
   expect(isSafeProperty('--x;background', 'red')).toBe(false);
   expect(isSafeProperty('color', 'red')).toBe(false);
 

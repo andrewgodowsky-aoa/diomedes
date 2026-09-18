@@ -62,13 +62,23 @@ export function mountThemeRoutes(app: Express, store: Store, themes: ThemeServic
     route(async (req) => themes.read(themeId(req)), false),
   );
 
+  /**
+   * The name, the header and the pack are checked before the store lock is
+   * taken. `store.locked` treats a throw as a failed write and reloads the
+   * whole store behind it, and a pack that does not validate yet is the
+   * ordinary case while someone is still editing — that must not cost a
+   * recovery pass. Only the read-modify-write runs under the lock.
+   */
   app.put(
     '/api/themes/:id',
     route(async (req, res) => {
-      const saved = await themes.save(themeId(req), req.body, expectedRevision(req));
+      const id = themeId(req);
+      const expected = expectedRevision(req);
+      const pack = themes.validate(id, req.body);
+      const saved = await store.locked(() => themes.save(id, pack, expected));
       res.setHeader('ETag', `"${saved.revision}"`);
       return saved;
-    }),
+    }, false),
   );
 
   app.post(

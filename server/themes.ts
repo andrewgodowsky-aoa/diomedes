@@ -252,12 +252,17 @@ export class ThemeService {
    * revision the caller believed it was editing, and a mismatch is refused
    * rather than merged, so two screens saving at once lose nothing silently.
    */
-  async save(
-    id: string,
-    body: unknown,
-    expected: number | null,
-  ): Promise<{ pack: ThemePackV1; revision: number }> {
-    const dir = this.themeDir(id);
+  /**
+   * Everything about a proposed save that can be decided without touching the
+   * disk: the name, the pack itself, and whether it was built for this surface.
+   *
+   * Separate from `save` and called *outside* `store.locked`, because
+   * `locked()` treats a throw as a failed write and reloads the whole store
+   * behind it. A pack that does not validate is the ordinary case while someone
+   * is still editing, and it must not cost the process a recovery pass.
+   */
+  validate(id: string, body: unknown): ThemePackV1 {
+    this.themeDir(id);
     const validated = validateThemePack(body);
     if (!validated.ok)
       throw new ApiError(400, 'That theme is not one this computer can apply.', {
@@ -272,7 +277,15 @@ export class ThemeService {
         code: 'theme_incompatible',
         errors: compatibility.errors,
       });
+    return validated.pack;
+  }
 
+  async save(
+    id: string,
+    validated: ThemePackV1,
+    expected: number | null,
+  ): Promise<{ pack: ThemePackV1; revision: number }> {
+    const dir = this.themeDir(id);
     const existing = accept(await readJsonOrNull(path.join(dir, 'pack.json')));
     const stored = 'pack' in existing ? existing.pack : null;
     if (stored) {
@@ -292,7 +305,7 @@ export class ThemeService {
 
     const history = await this.revisions(id);
     const revision = Math.max(stored?.revision ?? 0, ...history, 0) + 1;
-    const pack: ThemePackV1 = { ...validated.pack, revision };
+    const pack: ThemePackV1 = { ...validated, revision };
     // History first: a revision file that exists without a current pack is a
     // recoverable state, and a current pack with no history is not.
     await this.writeRevision(dir, revision, pack);
