@@ -460,9 +460,16 @@ export function SettingsPage({
                           tone="quiet"
                           onClick={() => {
                             setAppearanceError('');
-                            void api('/themes/reset', 'POST').catch(() =>
-                              setAppearanceError('The theme could not be put away.'),
-                            );
+                            // Reset clears the pointer on the server; the patch that
+                            // follows re-affirms the package this app was already
+                            // wearing and is what hands back fresh settings, so this
+                            // card stops saying a theme is applied. Same two steps,
+                            // same order, as the radio list below.
+                            void api('/themes/reset', 'POST')
+                              .then(() =>
+                                patchAppearance({ package: schemeId(settings.appearance.package) }),
+                              )
+                              .catch(() => setAppearanceError('The theme could not be put away.'));
                           }}
                         >
                           Use the built-in package
