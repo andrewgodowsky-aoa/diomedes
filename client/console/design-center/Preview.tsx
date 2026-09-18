@@ -395,8 +395,11 @@ export function Preview({
           <Button tone="primary" onClick={act('Keep the change')}>
             Keep
           </Button>
+          {/* "Undo this change", not "Undo": the toolbar above the stage has an
+              Undo of its own, and two buttons with one name in one screen is a
+              thing a person reading aloud cannot tell apart. */}
           <Button tone="quiet" onClick={act('Undo the change')}>
-            Undo
+            Undo this change
           </Button>
         </ChangeCard>
       </Piece>
