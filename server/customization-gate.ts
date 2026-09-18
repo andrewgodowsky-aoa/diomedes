@@ -40,7 +40,6 @@ import {
   PAID_CUSTOMIZATION_FEATURES,
   canActivateOrganizationRevision,
   canEditThemeScope,
-  hasCustomizationEntitlement,
   type CustomizationActor,
   type CustomizationDecision,
   type CustomizationStatus,
@@ -93,11 +92,6 @@ export class CustomizationGate {
     return this.launchFixture !== null;
   }
 
-  /** The launch-time authorization, for Settings > Developer to state read-only. */
-  get designAuthoring(): boolean {
-    return this.launchAuthoring || (this.profileFor(null)?.authoring ?? false);
-  }
-
   private profileFor(name: string | null): FixtureProfile | null {
     if (!this.fixturesEnabled) return null;
     const chosen = name ?? this.launchFixture;
@@ -146,11 +140,6 @@ export class CustomizationGate {
     };
   }
 
-  /** The scope every Design Center mutation is stored under. */
-  scope(): WorkspaceRef {
-    return this.source.workspace();
-  }
-
   /** What `GET /api/design-center/entitlement` answers. */
   status(req: Request | null = null): CustomizationStatus {
     const actor = this.actor(req);
@@ -173,12 +162,6 @@ export class CustomizationGate {
       freeFeatures: FREE_APPEARANCE_FEATURES,
       paidFeatures: PAID_CUSTOMIZATION_FEATURES,
     };
-  }
-
-  /** True when the capability itself is granted, ignoring scope and role. */
-  entitled(req: Request | null = null): boolean {
-    const actor = this.actor(req);
-    return hasCustomizationEntitlement(actor.entitlement, actor.at);
   }
 
   private enforce(decision: CustomizationDecision): void {

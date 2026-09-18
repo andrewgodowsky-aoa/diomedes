@@ -62,6 +62,14 @@ export function mountCustomizationBenefitRoutes(
     route(async () => ({ benefit: await benefit.read(organizationId()) }), false),
   );
 
+  /**
+   * Everything that can refuse runs before the store lock is taken.
+   * `store.locked` treats a throw as a failed write and reloads the whole store
+   * behind it, and a caller sending a step out of order or forgetting a key is
+   * the ordinary case rather than an emergency — the same reason
+   * `PUT /api/themes/:id` validates outside its lock. Only `benefit.apply` runs
+   * under it, because that is the read-modify-write.
+   */
   const step = (name: BenefitStep) =>
     route(async (req) => {
       const id = organizationId();
@@ -87,17 +95,19 @@ export function mountCustomizationBenefitRoutes(
         throw new ApiError(400, 'A theme version is a whole number from 1 up.', {
           code: 'benefit_invalid_revision',
         });
-      const result = await benefit.apply({
-        organizationId: id,
-        step: name,
-        idempotencyKey: key,
-        actor: workspaces.currentPerson().id,
-        at: new Date().toISOString(),
-        engagementId: text(input.engagementId),
-        themeId: text(input.themeId),
-        themeRevision: revision as number | undefined,
-        reason: text(input.reason),
-      });
+      const result = await store.locked(() =>
+        benefit.apply({
+          organizationId: id,
+          step: name,
+          idempotencyKey: key,
+          actor: workspaces.currentPerson().id,
+          at: new Date().toISOString(),
+          engagementId: text(input.engagementId),
+          themeId: text(input.themeId),
+          themeRevision: revision as number | undefined,
+          reason: text(input.reason),
+        }),
+      );
       // A repeat is reported, not thrown: the caller asked for a state and this
       // is the state. An invalid transition is a genuine conflict.
       if (!result.applied && result.code === 'benefit_invalid_transition')
@@ -110,7 +120,7 @@ export function mountCustomizationBenefitRoutes(
         reason: result.applied ? '' : result.reason,
         benefit: result.view,
       };
-    });
+    }, false);
 
   app.post('/api/benefits/customization/request', step('request'));
   app.post('/api/benefits/customization/draft', step('draft'));

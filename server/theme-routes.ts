@@ -128,8 +128,11 @@ export function mountThemeRoutes(
   app.put(
     '/api/themes/:id',
     route(async (req, res) => {
-      // First, before the body is read: an autosave is authoring too, and a
-      // draft that lands without a plan is a premium mutation with a small name.
+      // First, before validation and before the store lock: an autosave is
+      // authoring too, and a draft that lands without a plan is a premium
+      // mutation with a small name. (The body itself is already parsed by
+      // `express.json` upstream; the gate is about what may be stored, not
+      // about what may be sent over loopback.)
       gate.assertCanAuthor(req);
       const id = themeId(req);
       // `draft: true` rides beside the pack rather than inside it: the contract
@@ -166,6 +169,11 @@ export function mountThemeRoutes(
    * Everything is checked before the store lock is taken, because a refusal
    * inside `store.locked` costs a whole store reload and a person choosing the
    * wrong file is the ordinary case, not an emergency.
+   *
+   * `assetBody()` buffers the bytes before the capability is checked, so a
+   * caller without the capability can still spend the per-asset limit before
+   * being refused. On a loopback-only server that is a bounded cost, not an
+   * exposure, and it keeps the refusal reason in one place.
    */
   app.post(
     '/api/themes/:id/assets',
