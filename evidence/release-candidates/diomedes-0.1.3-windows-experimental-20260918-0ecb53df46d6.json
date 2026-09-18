@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "diomedes-0.1.3-windows-experimental-20260918-0ecb53df46d6",
+  "named": true,
+  "product": "Diomedes",
+  "appVersion": "0.1.3",
+  "channel": "experimental",
+  "build": {
+    "baseCommit": "0ecb53df46d6c241dfab6086f48511ab86f2ad36",
+    "sourceStatus": "committed",
+    "sourceDigest": "c01fbda35a0f21db9425ae5add7b0d9e114a361feb6315bdb2b1f3f60c8f37ae",
+    "builtAt": "2026-09-18T06:47:59.505Z",
+    "identityEmbeddedIn": "resources/app.asar:BUILD_INFO.json",
+    "sourceFiles": 291
+  },
+  "package": {
+    "directory": "release/Diomedes-win32-x64",
+    "executableSha256": "d39e3f8fb50cb89bcadcfab34b0d226b4cd3c95c0882c45b750b2a459b06be37",
+    "asarSha256": "909099859420ccfb3093d341d29f419f8438e2d7357874d7db28ef332be678df",
+    "electron": "44.2.0"
+  },
+  "installer": {
+    "filename": "Diomedes-Experimental-0.1.3-unsigned-setup.exe",
+    "bytes": 266075172,
+    "sha256": "40a4b0983045bd92875d8868bd0f26022ebc42576b3282a0f984087d0d530b89",
+    "productId": "Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001",
+    "appTreeSha256": "828aadc298e2081c47b4c2fdd955a7a099cd8c7193f13578c67107e4b68e29a5",
+    "compiler": {
+      "name": "NSIS",
+      "version": "3.12"
+    }
+  },
+  "nativeRuntime": {
+    "version": "0.153.4",
+    "sha256": {
+      "codex.exe": "a1cf6360ca71918d5466bc3a32d9f18b7044c9128756d1949e715d277b88c9b6",
+      "codex-command-runner.exe": "08b56828cca57c83d14f03eb9ec62c73a2cd6648248cc731ae8fedd5fa3ae566",
+      "codex-windows-sandbox-setup.exe": "682cf7b351a871f3479b78fe3b7ea7348554de655bd98b0f322cef2d006a8d62"
+    }
+  },
+  "protocols": {
+    "workCommand": 1,
+    "scopedGrant": 2,
+    "reviewer": 3,
+    "agent": 1,
+    "harness": [
+      "harness-v1",
+      "in-process",
+      "codex app-server 0.153.4",
+      "codex app-server 0.153.4 with diomedes_team MCP"
+    ],
+    "engines": {
+      "testedVersions": {
+        "claude-code": "2.1.252",
+        "opencode": "1.18.4",
+        "oh-my-pi": "18.0.6",
+        "cursor": "2026.08.11",
+        "devin": "3000.10.23"
+      },
+      "claude": "2.1.252",
+      "opencode": "1.18.4",
+      "cursor": "2026.08.11",
+      "devin": "3000.10.23"
+    }
+  },
+  "verification": {
+    "typecheck": "passed",
+    "unit": {
+      "passed": 2080,
+      "failed": 0,
+      "pending": 1,
+      "total": 2081,
+      "files": 112,
+      "report": "test-results/candidate/unit-results.json"
+    },
+    "browser": {
+      "expected": 85,
+      "unexpected": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "report": "test-results/candidate/browser-results.json",
+      "lastRun": "passed"
+    }
+  },
+  "signing": {
+    "application": "NotSigned",
+    "installer": "NotSigned",
+    "publisher": null
+  },
+  "recordedAt": "2026-09-18T06:51:40.314Z"
+}
