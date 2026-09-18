@@ -32,7 +32,7 @@ Every one of these files imports only from this folder. That is enforced by a te
 can be copied to another repository (see `scripts/theme-pack-handoff.ts`) and used as it stands, with
 no dependencies and no build step beyond TypeScript.
 
-`npm run theme-pack:handoff` publishes the folder to `F:\Diomedes\deliverables	heme-pack-v1` with a
+`npm run theme-pack:handoff` publishes the folder to `F:\Diomedes\deliverables\theme-pack-v1` with a
 `MANIFEST.sha256`. It writes only into a destination it can recognise as its own — one that does not
 exist, is empty, or already holds a `MANIFEST.sha256` — and refuses anything else rather than
 recursively deleting a folder someone is using.
@@ -43,7 +43,9 @@ A pack never carries CSS, HTML, JavaScript, a remote URL, a font to download, or
 It carries values the renderer already knows how to use. The validator refuses any string containing
 `url(`, `<`, `javascript:` or `expression(`, anywhere in the document, including object keys.
 
-No string anywhere in a pack — value or object key — may contain a control character either.
+No string anywhere in a pack — value or object key — may contain a control character either. That
+range (`U+0000`–`U+001F` and `U+007F`) includes tab and newline, so every string in a pack is a
+single line: `provenance.notes` is one paragraph of plain text, not a formatted block.
 
 Colours are hex only: `#rrggbb` or `#rrggbbaa`. Functional notation is a parser surface, not a value.
 The built-in schemes write their hairlines as `rgba(255,255,255,.07)`; the pack equivalent is
