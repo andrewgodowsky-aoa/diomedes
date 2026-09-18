@@ -525,7 +525,10 @@ export function App() {
             accessibility layer says so. `.app` is a stacking context, so this
             paints above its background and below every label and focus ring in
             it without any other rule having to know it is there. */}
-        <TextureLayer themeId={settings.appearance.activeTheme?.id ?? null} pack={activeTheme} />
+        {/* The pack's own id, not the pointer's: the pointer is global over
+            per-workspace storage, and the asset URLs this builds must name the
+            theme that is actually painting. */}
+        <TextureLayer themeId={activeTheme?.id ?? null} pack={activeTheme} />
         {settings.onboarding.resumeAt !== 'done' ? (
           <Setup settings={settings} save={saveSettings} busy={busy} />
         ) : (
