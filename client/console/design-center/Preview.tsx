@@ -31,6 +31,8 @@ import {
 } from '../../components';
 import { resolveAppearance } from '../../../shared/theme-pack/resolve';
 import type { ThemePackV1 } from '../../../shared/theme-pack/types';
+import { ArtworkImage, TextureLayer } from '../theme-artwork';
+import { ARTWORK_SLOT_LABELS } from './pack';
 import { clearPreview, paintPreview } from './preview-paint';
 import {
   fixtureChange,
@@ -142,6 +144,12 @@ export const PREVIEW_PIECES: readonly PreviewPiece[] = [
     name: 'Nothing here yet',
     about: 'The empty state, which carries more of a theme than most screens.',
   },
+  {
+    id: 'artwork',
+    group: 'States',
+    name: 'Pictures',
+    about: 'The pictures this theme places, each in its own slot, at its own opacity.',
+  },
 ];
 
 /** By id, so the stage cannot drift out of step with the list's order. */
@@ -239,6 +247,36 @@ export function Preview({
       onSubmitCapture={intercept}
       onChangeCapture={intercept}
     >
+      {/* Decorative, and underneath. The stage is a stacking context
+          (design-center.css), so this paints above the stage's own surface
+          colour and below every piece in it — the same arrangement the running
+          app uses, which is the point of previewing it at all. */}
+      <TextureLayer themeId={pack.id} pack={pack} />
+
+      <Piece piece={PIECE['artwork']} selectedId={selectedId}>
+        {Object.keys(pack.artwork).length === 0 ? (
+          <p className="caption" data-dc-artwork-preview="empty">
+            This theme places no pictures. Choose one in Pictures, on the right.
+          </p>
+        ) : (
+          <div className="dc-row dc-art-slots">
+            {(['logo', 'bust', 'emptyState'] as const).map((slot) =>
+              pack.artwork[slot] ? (
+                <figure key={slot} className="dc-art-slot" data-dc-artwork-slot={slot}>
+                  <ArtworkImage themeId={pack.id} pack={pack} slot={slot} />
+                  <figcaption className="caption">{ARTWORK_SLOT_LABELS[slot]}</figcaption>
+                </figure>
+              ) : null,
+            )}
+            {pack.artwork.texture && (
+              <p className="caption" data-dc-artwork-slot="texture">
+                The background texture is behind this whole stage, not in a box of its own.
+              </p>
+            )}
+          </div>
+        )}
+      </Piece>
+
       <Piece piece={PIECE['buttons']} selectedId={selectedId}>
         <div className="dc-row">
           <Button onClick={act('Primary button')}>Primary</Button>

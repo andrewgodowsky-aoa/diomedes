@@ -256,6 +256,59 @@ html[data-motion-preset='none'] {
 html[data-texture='off'] {
   --dm-texture-opacity: 0;
 }
+/* ---------------------------------------------------------------------------
+   A theme's pictures.
+
+   The texture layer sits at z-index -1 inside a stacking context its container
+   makes (`.app` below, `.dc-stage` in design-center.css). A stacking context
+   paints its own background first, then its negative-z children, then
+   everything else — so the texture is above the surface colour and beneath
+   every label, control and focus ring in the container, and no other rule in
+   this stylesheet has to know it is there. It never takes a pointer event, so
+   it also cannot intercept a click meant for the control it sits behind.
+
+   Its opacity is the `--dm-texture-opacity` channel and not the theme's own
+   number, because turning texture off has to win: the resolver writes the
+   theme's value into that channel, the person's preference lowers it, and the
+   accessibility layer zeroes it.
+
+   Blend and mask are closed lists in the contract, rendered as class names onto
+   the rules below. There is no declaration anywhere built from a theme's text.
+   --------------------------------------------------------------------------- */
+.dm-texture-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--dm-texture-opacity);
+}
+.dm-artwork-slot {
+  display: block;
+  background-color: transparent;
+}
+.dm-blend-normal {
+  mix-blend-mode: normal;
+}
+.dm-blend-multiply {
+  mix-blend-mode: multiply;
+}
+.dm-blend-screen {
+  mix-blend-mode: screen;
+}
+.dm-blend-soft-light {
+  mix-blend-mode: soft-light;
+}
+.dm-mask-none {
+  mask-image: none;
+}
+/* A mask reads the alpha channel, so these are alpha gradients, not greys. */
+.dm-mask-edge-fade {
+  mask-image: radial-gradient(ellipse at center, rgb(0 0 0 / 100%) 55%, rgb(0 0 0 / 0%) 100%);
+}
+.dm-mask-diffuse {
+  mask-image: radial-gradient(ellipse at center, rgb(0 0 0 / 70%) 0%, rgb(0 0 0 / 0%) 85%);
+  filter: blur(2px);
+}
 /* Information density, with the meaning it already has in the Console: guided
    gives the reading column more room, technical takes some back. */
 html[data-density='guided'] {
@@ -566,6 +619,11 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* The stacking context the theme's texture layer lives at the bottom of.
+     `isolation` also keeps a texture's blend mode inside the app rather than
+     letting it reach the page behind it. */
+  position: relative;
+  isolation: isolate;
 }
 .top-bar {
   min-height: 40px;

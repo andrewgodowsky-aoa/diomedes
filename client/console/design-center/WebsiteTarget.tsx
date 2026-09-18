@@ -13,10 +13,11 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { checkCompatibility, THEME_PACK_COMPATIBILITY } from '../../../shared/theme-pack/compatibility';
-import { exportThemePackage, THEME_PACKAGE_EXTENSION } from '../../../shared/theme-pack/package';
+import { THEME_PACKAGE_EXTENSION } from '../../../shared/theme-pack/package';
 import type { ThemePackV1 } from '../../../shared/theme-pack/types';
 import { api } from '../../api';
 import { Button } from '../../components';
+import { buildPackage } from './themes-api';
 
 interface Probe {
   reachable: boolean;
@@ -51,22 +52,28 @@ export function WebsiteTarget({ pack }: { pack: ThemePackV1 }) {
   const ignored = THEME_PACK_COMPATIBILITY.filter((entry) => entry.support.website === 'ignores');
   const rendered = THEME_PACK_COMPATIBILITY.filter((entry) => entry.support.website === 'renders');
 
-  const exportPackage = () => {
+  const exportPackage = async () => {
     setProblem('');
-    const result = exportThemePackage(pack, {});
-    if (!result.ok) {
-      setProblem(result.errors[0]);
-      return;
+    try {
+      // The same builder the toolbar's Export uses, so the two files cannot
+      // differ — they already drifted apart once, and now they have pictures
+      // to disagree about as well. The bytes come from this computer's own
+      // service on loopback.
+      const built = await buildPackage(pack);
+      // A Blob and an object URL: the file is built in this page and saved by
+      // the browser. Nothing is uploaded and no service sees it.
+      const blob = new Blob([JSON.stringify(built, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${pack.id}${THEME_PACKAGE_EXTENSION}`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setProblem(
+        error instanceof Error ? error.message : 'This theme could not be written to a file.',
+      );
     }
-    // A Blob and an object URL: the file is built in this page and saved by the
-    // browser. Nothing is uploaded and no service sees it.
-    const blob = new Blob([JSON.stringify(result.package, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${pack.id}${THEME_PACKAGE_EXTENSION}`;
-    anchor.click();
-    URL.revokeObjectURL(url);
   };
 
   return (

@@ -6,7 +6,11 @@
  * one call that needs a header is written out here rather than bending the
  * shared helper into a shape only this screen wants.
  */
-import type { ThemePackV1 } from '../../../shared/theme-pack/types';
+import {
+  exportThemePackage,
+  type ThemePackage,
+} from '../../../shared/theme-pack/package';
+import type { AssetRecord, ThemePackV1 } from '../../../shared/theme-pack/types';
 import { ApiError, api } from '../../api';
 
 export interface ThemeSummary {
@@ -72,4 +76,94 @@ export async function saveTheme(
     );
   }
   return payload as unknown as { pack: ThemePackV1; revision: number };
+}
+
+// ---------------------------------------------------------------------------
+// Pictures
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a stored picture is read from.
+ *
+ * Built here from a validated theme id and a hash, never from anything a theme
+ * file said. A theme carries a hash, and this app decides what URL that means:
+ * that is the difference between data and a link somebody else chose.
+ */
+export const assetUrl = (themeId: string, hash: string) =>
+  `/api/themes/${encodeURIComponent(themeId)}/assets/${encodeURIComponent(hash)}`;
+
+/**
+ * Import a picture into a theme.
+ *
+ * The body is the file itself. There is no multipart form and no filename,
+ * because the service names the picture after its own bytes and a filename is
+ * one more thing to have to distrust.
+ */
+export async function uploadAsset(
+  themeId: string,
+  file: Blob,
+): Promise<{ hash: string; record: AssetRecord }> {
+  const response = await fetch(`/api/themes/${encodeURIComponent(themeId)}/assets`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Diomedes-Client': '1',
+    },
+    body: file,
+  });
+  const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!response.ok)
+    throw new ApiError(
+      typeof payload.error === 'string' ? payload.error : 'That picture could not be imported.',
+      response.status,
+      payload,
+    );
+  return payload as unknown as { hash: string; record: AssetRecord };
+}
+
+/** The bytes of one stored picture, for the export container. */
+export async function fetchAssetBytes(themeId: string, hash: string): Promise<Uint8Array> {
+  const response = await fetch(assetUrl(themeId, hash));
+  if (!response.ok) throw new ApiError('A picture in this theme could not be read.', response.status, {});
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+/**
+ * The `.diomedes-theme` container for a pack, with the bytes of every picture
+ * it declares.
+ *
+ * One builder for both places that write the file — the toolbar's Export and
+ * the Website target's own — because A3 already had to fix these two drifting
+ * apart once, and now they have assets to disagree about as well.
+ */
+export async function buildPackage(pack: ThemePackV1): Promise<ThemePackage> {
+  const bytes: Record<string, Uint8Array> = {};
+  for (const hash of Object.keys(pack.assets)) bytes[hash] = await fetchAssetBytes(pack.id, hash);
+  const result = exportThemePackage(pack, bytes);
+  if (!result.ok) throw new ApiError(result.errors[0], 400, {});
+  return result.package;
+}
+
+/**
+ * Put the pictures from an imported package back on disk, under this account.
+ *
+ * Every hash is checked against what the service says it stored. A package that
+ * carried bytes under the wrong name would otherwise produce a pack naming a
+ * picture nobody holds — which the save refuses, at the point where it is far
+ * less obvious why.
+ */
+export async function restoreAssets(
+  themeId: string,
+  assets: Record<string, Uint8Array>,
+): Promise<void> {
+  for (const [hash, data] of Object.entries(assets)) {
+    // A fresh copy: a view onto a larger buffer would send the whole buffer.
+    const stored = await uploadAsset(themeId, new Blob([new Uint8Array(data)]));
+    if (stored.hash !== hash)
+      throw new ApiError(
+        'A picture in that file is not the picture it is named after.',
+        400,
+        {},
+      );
+  }
 }

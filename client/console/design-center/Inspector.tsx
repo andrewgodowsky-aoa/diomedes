@@ -13,34 +13,27 @@
 import { useRef, useState, type ReactNode } from 'react';
 import {
   APPROVED_SCALES,
-  ARTWORK_MASKS,
   BASE_THEME_IDS,
-  BLEND_MODES,
   DENSITIES,
   FONT_CHOICES,
   MOTION_PRESET_IDS,
-  type ArtworkSlot,
   type BaseThemeId,
   type ColorTokenName,
   type ThemePackV1,
 } from '../../../shared/theme-pack/types';
 import type { AppearanceLayerName, ResolvedAppearance } from '../../../shared/theme-pack/resolve';
 import { Button } from '../../components';
+import { Artwork } from './Artwork';
 import {
-  ARTWORK_SLOT_LABELS,
   BRAND_TOKENS,
   DENSITY_LABELS,
-  EDITABLE_ARTWORK_SLOTS,
   FONT_LABELS,
-  MASK_LABELS,
   MOTION_LABELS,
   SEMANTIC_TOKENS,
   SIDEBAR_WIDTHS,
   TOKEN_LABELS,
-  editPlacement,
   packEdits,
   packFromBaseTheme,
-  type ArtworkPlacementDraft,
 } from './pack';
 
 /** Which custom property or dataset key carries each control's answer. */
@@ -111,8 +104,6 @@ export function Inspector({
   pack,
   resolved,
   selectedPiece,
-  placements,
-  onPlacements,
   sidebarWidth,
   onSidebarWidth,
   reducedMotionPreview,
@@ -123,8 +114,6 @@ export function Inspector({
   pack: ThemePackV1;
   resolved: ResolvedAppearance;
   selectedPiece: { name: string; about: string } | null;
-  placements: Partial<Record<ArtworkSlot, ArtworkPlacementDraft>>;
-  onPlacements(next: Partial<Record<ArtworkSlot, ArtworkPlacementDraft>>): void;
   sidebarWidth: string;
   onSidebarWidth(id: string): void;
   reducedMotionPreview: boolean;
@@ -364,144 +353,7 @@ export function Inspector({
         </Field>
       </section>
 
-      <section className="dc-section" aria-label="Artwork">
-        <h3>Pictures</h3>
-        <p className="caption">
-          Where a picture sits in its slot. Adding the picture itself arrives in a later version;
-          until it does, these settings are kept for this session and are not part of the saved
-          theme, because the contract stores a placement only with the picture it places.
-        </p>
-        {EDITABLE_ARTWORK_SLOTS.map((slot) => {
-          const placement = placements[slot];
-          return (
-            <Field key={slot} label={ARTWORK_SLOT_LABELS[slot]}>
-              {!placement ? (
-                <Button
-                  onClick={() =>
-                    onPlacements({
-                      ...placements,
-                      [slot]: {
-                        focal: { x: 0.5, y: 0.5 },
-                        crop: { x: 0, y: 0, width: 1, height: 1 },
-                        opacity: 1,
-                        blend: 'normal',
-                        mask: 'none',
-                      },
-                    })
-                  }
-                >
-                  Place a picture here
-                </Button>
-              ) : (
-                <div className="dc-placement">
-                  <div className="dc-placeholder" aria-hidden="true">
-                    No picture yet
-                  </div>
-                  <label>
-                    <span>Across</span>
-                    <input
-                      type="range"
-                      aria-label={`${ARTWORK_SLOT_LABELS[slot]} focal point across`}
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={placement.focal.x}
-                      onChange={(e) =>
-                        onPlacements({
-                          ...placements,
-                          [slot]: editPlacement(placement, { focalX: Number(e.target.value) }),
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    <span>Down</span>
-                    <input
-                      type="range"
-                      aria-label={`${ARTWORK_SLOT_LABELS[slot]} focal point down`}
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={placement.focal.y}
-                      onChange={(e) =>
-                        onPlacements({
-                          ...placements,
-                          [slot]: editPlacement(placement, { focalY: Number(e.target.value) }),
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    <span>How solid</span>
-                    <input
-                      type="range"
-                      aria-label={`${ARTWORK_SLOT_LABELS[slot]} opacity`}
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={placement.opacity}
-                      onChange={(e) =>
-                        onPlacements({
-                          ...placements,
-                          [slot]: editPlacement(placement, { opacity: Number(e.target.value) }),
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    <span>How it mixes</span>
-                    <select
-                      aria-label={`${ARTWORK_SLOT_LABELS[slot]} blend`}
-                      value={placement.blend}
-                      onChange={(e) =>
-                        onPlacements({
-                          ...placements,
-                          [slot]: editPlacement(placement, { blend: e.target.value }),
-                        })
-                      }
-                    >
-                      {BLEND_MODES.map((blend) => (
-                        <option key={blend} value={blend}>
-                          {blend}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>Edge</span>
-                    <select
-                      aria-label={`${ARTWORK_SLOT_LABELS[slot]} mask`}
-                      value={placement.mask}
-                      onChange={(e) =>
-                        onPlacements({
-                          ...placements,
-                          [slot]: editPlacement(placement, { mask: e.target.value }),
-                        })
-                      }
-                    >
-                      {ARTWORK_MASKS.map((mask) => (
-                        <option key={mask} value={mask}>
-                          {MASK_LABELS[mask]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <Button
-                    tone="quiet"
-                    onClick={() => {
-                      const next = { ...placements };
-                      delete next[slot];
-                      onPlacements(next);
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              )}
-            </Field>
-          );
-        })}
-      </section>
+      <Artwork pack={pack} themeId={pack.id} onChange={onChange} />
 
       <section className="dc-section" aria-label="Movement">
         <h3>Movement</h3>

@@ -36,6 +36,7 @@ import {
   applyResolvedAppearance,
   clearResolvedAppearance,
 } from './console/theme-runtime';
+import { TextureLayer } from './console/theme-artwork';
 import { resolveAppearance } from '../shared/theme-pack/resolve';
 import type { ThemePackV1 } from '../shared/theme-pack/types';
 import { useWake } from './console/useWake';
@@ -507,6 +508,12 @@ export function App() {
     <>
       {wakeLayer}
       <div className="app">
+        {/* The applied theme's texture: decorative, beneath everything, and
+            switched off by `--dm-texture-opacity` whenever the person or the
+            accessibility layer says so. `.app` is a stacking context, so this
+            paints above its background and below every label and focus ring in
+            it without any other rule having to know it is there. */}
+        <TextureLayer themeId={settings.appearance.activeTheme?.id ?? null} pack={activeTheme} />
         {settings.onboarding.resumeAt !== 'done' ? (
           <Setup settings={settings} save={saveSettings} busy={busy} />
         ) : (

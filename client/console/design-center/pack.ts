@@ -23,11 +23,14 @@ import {
   MOTION_DURATION_MAX,
   MOTION_DURATION_MIN,
   MOTION_PRESET_IDS,
+  type ArtworkEntry,
   type ArtworkMask,
   type ArtworkSlot,
+  type AssetRecord,
   type BaseThemeId,
   type BlendMode,
   type ColorTokenName,
+  type CropRect,
   type ThemePackV1,
 } from '../../../shared/theme-pack/types';
 import { APPEARANCE_DEFAULTS } from '../../../shared/theme-pack/resolve';
@@ -266,25 +269,19 @@ export const packEdits = {
   },
 };
 
-/**
- * Artwork placement, held beside the pack rather than inside it.
- *
- * The contract says `assetHash` must be a key of `assets`, so a slot with no
- * picture is not a pack field that happens to be empty — it is a field the
- * validator refuses. Uploads arrive in A4. Until then the placement controls
- * are real and their values are kept for the session, and the inspector says
- * plainly that they are stored with the picture. Writing an invalid pack so a
- * slider could pretend to persist would be the worse answer.
- */
-export interface ArtworkPlacementDraft {
-  focal: { x: number; y: number };
-  crop: { x: number; y: number; width: number; height: number };
-  opacity: number;
-  blend: BlendMode;
-  mask: ArtworkMask;
-}
+// ---------------------------------------------------------------------------
+// Artwork
+//
+// A placement now lives in the pack, because A4 gives it the one thing it was
+// missing: a picture. The contract says `assetHash` must be a key of `assets`,
+// so a slot is only ever written together with the asset record the import
+// route returned — never with an empty hash, which is the pack A3 correctly
+// refused to write.
+// ---------------------------------------------------------------------------
 
-export const defaultPlacement = (): ArtworkPlacementDraft => ({
+/** How a picture sits in its slot when it is first placed: whole, and solid. */
+const wholePlacement = (assetHash: string): ArtworkEntry => ({
+  assetHash,
   focal: { x: 0.5, y: 0.5 },
   crop: { x: 0, y: 0, width: 1, height: 1 },
   opacity: 1,
@@ -292,22 +289,114 @@ export const defaultPlacement = (): ArtworkPlacementDraft => ({
   mask: 'none',
 });
 
-export function editPlacement(
-  placement: ArtworkPlacementDraft,
-  patch: Partial<{ focalX: number; focalY: number; opacity: number; blend: string; mask: string }>,
-): ArtworkPlacementDraft {
+/** What one control can change about a placement. Each is bounded here. */
+export interface PlacementPatch {
+  focalX?: number;
+  focalY?: number;
+  cropX?: number;
+  cropY?: number;
+  cropWidth?: number;
+  cropHeight?: number;
+  opacity?: number;
+  blend?: string;
+  mask?: string;
+}
+
+/**
+ * A crop rectangle that stays inside the picture.
+ *
+ * The contract wants every component in 0–1 with the rectangle contained, so
+ * moving the left edge past what the width allows moves the width rather than
+ * producing a rectangle that falls off the right-hand side. Sliding a crop
+ * around should never be able to produce a pack that cannot be saved.
+ */
+function fitCrop(crop: CropRect, patch: PlacementPatch): CropRect {
+  const width = tidy(clamp(patch.cropWidth ?? crop.width, 0.05, 1));
+  const height = tidy(clamp(patch.cropHeight ?? crop.height, 0.05, 1));
   return {
-    ...placement,
-    focal: {
-      x: patch.focalX === undefined ? placement.focal.x : tidy(clamp(patch.focalX, 0, 1)),
-      y: patch.focalY === undefined ? placement.focal.y : tidy(clamp(patch.focalY, 0, 1)),
-    },
-    opacity: patch.opacity === undefined ? placement.opacity : tidy(clamp(patch.opacity, 0, 1)),
-    blend: (BLEND_MODES as readonly string[]).includes(patch.blend ?? '')
-      ? (patch.blend as BlendMode)
-      : placement.blend,
-    mask: (ARTWORK_MASKS as readonly string[]).includes(patch.mask ?? '')
-      ? (patch.mask as ArtworkMask)
-      : placement.mask,
+    x: tidy(clamp(patch.cropX ?? crop.x, 0, 1 - width)),
+    y: tidy(clamp(patch.cropY ?? crop.y, 0, 1 - height)),
+    width,
+    height,
   };
 }
+
+export const artworkEdits = {
+  /**
+   * Put an imported picture in a slot, and record the asset it needs.
+   *
+   * The record is the one the service read from the bytes, not anything this
+   * screen worked out: the pack must describe the picture the way the file
+   * does, or the save is refused (and rightly).
+   */
+  place(
+    pack: ThemePackV1,
+    slot: ArtworkSlot,
+    assetHash: string,
+    record: AssetRecord,
+  ): ThemePackV1 {
+    const existing = pack.artwork[slot];
+    return {
+      ...pack,
+      artwork: {
+        ...pack.artwork,
+        // Replacing the picture in a slot keeps how it was placed. Someone who
+        // has already set a focal point and an opacity is swapping the picture,
+        // not starting again.
+        [slot]: existing ? { ...existing, assetHash } : wholePlacement(assetHash),
+      },
+      assets: { ...pack.assets, [assetHash]: record },
+    };
+  },
+
+  /** Change how the picture in a slot sits. Every value is bounded here. */
+  adjust(pack: ThemePackV1, slot: ArtworkSlot, patch: PlacementPatch): ThemePackV1 {
+    const entry = pack.artwork[slot];
+    if (!entry) return pack;
+    return {
+      ...pack,
+      artwork: {
+        ...pack.artwork,
+        [slot]: {
+          ...entry,
+          focal: {
+            x: patch.focalX === undefined ? entry.focal.x : tidy(clamp(patch.focalX, 0, 1)),
+            y: patch.focalY === undefined ? entry.focal.y : tidy(clamp(patch.focalY, 0, 1)),
+          },
+          crop: fitCrop(entry.crop, patch),
+          opacity: patch.opacity === undefined ? entry.opacity : tidy(clamp(patch.opacity, 0, 1)),
+          blend: (BLEND_MODES as readonly string[]).includes(patch.blend ?? '')
+            ? (patch.blend as BlendMode)
+            : entry.blend,
+          mask: (ARTWORK_MASKS as readonly string[]).includes(patch.mask ?? '')
+            ? (patch.mask as ArtworkMask)
+            : entry.mask,
+        },
+      },
+    };
+  },
+
+  /**
+   * Take the picture out of a slot.
+   *
+   * The asset record goes with it only when no other slot still uses those
+   * bytes — two slots sharing one picture is an ordinary thing to want, and
+   * dropping the record out from under the other one would produce a pack the
+   * validator refuses. The bytes on disk are left alone either way: they are
+   * immutable and another revision may still name them.
+   */
+  remove(pack: ThemePackV1, slot: ArtworkSlot): ThemePackV1 {
+    const entry = pack.artwork[slot];
+    if (!entry) return pack;
+    const artwork = { ...pack.artwork };
+    delete artwork[slot];
+    const stillUsed = new Set(
+      Object.values(artwork).flatMap((other) =>
+        other ? [other.assetHash, ...Object.values(other.surfaces ?? {}).map((o) => o?.assetHash)] : [],
+      ),
+    );
+    const assets = { ...pack.assets };
+    if (!stillUsed.has(entry.assetHash)) delete assets[entry.assetHash];
+    return { ...pack, artwork, assets };
+  },
+};

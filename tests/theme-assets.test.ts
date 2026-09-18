@@ -59,7 +59,7 @@ async function upload(id: string, bytes: Uint8Array, contentType = 'image/png') 
   const response = await fetch(`${url}/api/themes/${id}/assets`, {
     method: 'POST',
     headers: { ...HEADERS, 'Content-Type': contentType },
-    body: bytes,
+    body: bytes as unknown as BodyInit,
   });
   return {
     status: response.status,

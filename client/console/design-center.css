@@ -109,6 +109,11 @@
      element does not inherit. The stage applies its own, so changing the
      interface size in the inspector is visible where it is being chosen. */
   zoom: var(--dm-ui-scale);
+  /* The stacking context the previewed texture sits at the bottom of, exactly
+     as `.app` does for the running app (styles.css). The stage paints its own
+     background first, then the texture, then every piece on top of it. */
+  position: relative;
+  isolation: isolate;
 }
 .dc-stage[data-mode='design'] {
   cursor: crosshair;
@@ -331,6 +336,54 @@
   border-radius: var(--rb);
   color: var(--dm-text-3);
   font-size: var(--dm-type-caption);
+}
+/* One control per row: a label, the control, and the number it is showing.
+   The number is what makes a slider a value rather than a gesture. */
+.dc-art-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--dm-type-caption);
+}
+/* The picture as it will be painted, on a chequerboard so transparency reads
+   as transparency rather than as whatever the inspector happens to be. */
+.dc-art-preview {
+  height: 96px;
+  border: 1px solid var(--dm-rule);
+  border-radius: var(--rb);
+  overflow: hidden;
+  background-color: var(--dm-well);
+  background-image:
+    linear-gradient(45deg, var(--dm-rule) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--dm-rule) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--dm-rule) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--dm-rule) 75%);
+  background-size: 12px 12px;
+  background-position:
+    0 0,
+    0 6px,
+    6px -6px,
+    -6px 0;
+}
+.dc-art-preview .dm-artwork-slot {
+  width: 100%;
+  height: 100%;
+}
+.dc-art-slots {
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.dc-art-slot {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dc-art-slot .dm-artwork-slot {
+  width: 96px;
+  height: 96px;
+  border-radius: var(--r);
 }
 
 /* --- themes and website --------------------------------------------------- */

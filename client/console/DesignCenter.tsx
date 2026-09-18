@@ -20,29 +20,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Settings } from '../../shared/types';
 import { resolveAppearance } from '../../shared/theme-pack/resolve';
-import {
-  exportThemePackage,
-  importThemePackage,
-  THEME_PACKAGE_EXTENSION,
-} from '../../shared/theme-pack/package';
-import type { ArtworkSlot, BaseThemeId, ThemePackV1 } from '../../shared/theme-pack/types';
+import { importThemePackage, THEME_PACKAGE_EXTENSION } from '../../shared/theme-pack/package';
+import type { BaseThemeId, ThemePackV1 } from '../../shared/theme-pack/types';
 import { Button, Modal } from '../components';
 import { schemeId } from './schemes';
 import { Inspector } from './design-center/Inspector';
 import { Navigator } from './design-center/Navigator';
 import { Preview, PREVIEW_PIECES, type PreviewMode } from './design-center/Preview';
-import {
-  SIDEBAR_WIDTHS,
-  packFromBaseTheme,
-  themeIdFrom,
-  type ArtworkPlacementDraft,
-} from './design-center/pack';
+import { SIDEBAR_WIDTHS, packFromBaseTheme, themeIdFrom } from './design-center/pack';
 import { packProblem, useStudioSession } from './design-center/session';
 import {
   activateTheme,
+  buildPackage,
   discardDraft,
   listThemes,
   readTheme,
+  restoreAssets,
   restoreRevision,
   saveTheme,
   type ThemeSummary,
@@ -76,9 +69,6 @@ export function DesignCenter({
   const [saveAsOpen, setSaveAsOpen] = useState(false);
   const [saveAsName, setSaveAsName] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [placements, setPlacements] = useState<Partial<Record<ArtworkSlot, ArtworkPlacementDraft>>>(
-    {},
-  );
   const [sidebarWidth, setSidebarWidth] = useState('standard');
   const [reducedMotionPreview, setReducedMotionPreview] = useState(false);
   const [replay, setReplay] = useState(0);
@@ -264,22 +254,51 @@ export function DesignCenter({
     [session],
   );
 
+  /**
+   * Read a `.diomedes-theme` file, pictures and all.
+   *
+   * `importThemePackage` has already checked every asset's base64, its hash
+   * against its own bytes, its declared type and size against what the bytes
+   * say, and the manifest's checksum against the pack. What is left is to put
+   * those bytes on disk under this account before the pack that names them is
+   * adopted: an explicit save refuses a pack naming a picture nobody holds, and
+   * finding that out three clicks later would be a puzzle rather than a fact.
+   */
   const importFile = useCallback(
     async (file: File) => {
       setProblem('');
+      let result: ReturnType<typeof importThemePackage>;
       try {
-        const result = importThemePackage(JSON.parse(await file.text()));
-        if (!result.ok) {
-          setProblem(result.errors[0]);
-          return;
-        }
-        session?.adopt(result.pack, false);
-        setSavedRevision(0);
-        setRevisions([]);
-        setSaid(`“${result.pack.name}” was read. Apply or Save it to keep it.`);
+        result = importThemePackage(JSON.parse(await file.text()));
       } catch {
+        // A file that is not JSON at all. The parser's own words here would be
+        // about tokens and offsets, which is not what went wrong for a person.
         setProblem('That file is not a Diomedes theme this app can read.');
+        return;
       }
+      if (!result.ok) {
+        setProblem(result.errors[0]);
+        return;
+      }
+      const pictures = Object.keys(result.assets).length;
+      try {
+        if (pictures > 0) await restoreAssets(result.pack.id, result.assets);
+      } catch (error) {
+        setProblem(
+          error instanceof Error
+            ? error.message
+            : 'The pictures in that file could not be stored here.',
+        );
+        return;
+      }
+      session?.adopt(result.pack, false);
+      setSavedRevision(0);
+      setRevisions([]);
+      setSaid(
+        pictures === 0
+          ? `“${result.pack.name}” was read. Apply or Save it to keep it.`
+          : `“${result.pack.name}” was read, with ${pictures === 1 ? 'its picture' : `${pictures} pictures`}. Apply or Save it to keep it.`,
+      );
     },
     [session],
   );
@@ -293,21 +312,26 @@ export function DesignCenter({
    * builds the file — the same one the Website target uses — so the two halves
    * of the round trip cannot drift apart again.
    */
-  const exportFile = useCallback(() => {
+  const exportFile = useCallback(async () => {
     if (!session) return;
     setProblem('');
-    const result = exportThemePackage(session.pack, {});
-    if (!result.ok) {
-      setProblem(result.errors[0]);
-      return;
+    try {
+      // `buildPackage` fetches the bytes of every picture the pack declares and
+      // carries them in the container. A theme with a picture and no bytes is
+      // a file the importer refuses — including this app's own Import.
+      const built = await buildPackage(session.pack);
+      const blob = new Blob([JSON.stringify(built, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${session.pack.id}${THEME_PACKAGE_EXTENSION}`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setProblem(
+        error instanceof Error ? error.message : 'This theme could not be written to a file.',
+      );
     }
-    const blob = new Blob([JSON.stringify(result.package, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${session.pack.id}${THEME_PACKAGE_EXTENSION}`;
-    anchor.click();
-    URL.revokeObjectURL(url);
   }, [session]);
 
   const selectedPiece = PREVIEW_PIECES.find((piece) => piece.id === selectedId) ?? null;
@@ -490,8 +514,6 @@ export function DesignCenter({
               pack={previewPack}
               resolved={resolved}
               selectedPiece={selectedPiece}
-              placements={placements}
-              onPlacements={setPlacements}
               sidebarWidth={sidebarWidth}
               onSidebarWidth={setSidebarWidth}
               reducedMotionPreview={reducedMotionPreview}
