@@ -65,6 +65,15 @@
   --dm-t-view: 160ms;
   --dm-t-extend: 200ms;
   --dm-ease: cubic-bezier(0.2, 0, 0, 1);
+  /* The channels a ThemePack resolves into (shared/theme-pack/resolve.ts). Each
+     one is declared here with the value the built-in appearance already has, so
+     a theme that sets it changes something and a theme that does not changes
+     nothing. Only a custom theme writes them; the ten built-in schemes leave
+     every one of them at the value below. */
+  --dm-motion-intensity: 0.5;
+  --dm-texture-opacity: 1;
+  --dm-focus-width: 1px;
+  --dm-focus-color: var(--dm-glacier);
 }
 html {
   font-size: 100%;
@@ -222,6 +231,44 @@ html[data-motion='reduced'] {
   --dm-t-quick: 0ms;
   --dm-t-view: 0ms;
   --dm-t-extend: 0ms;
+}
+/* --- what a custom theme changes, and only a custom theme ---------------------
+   Every selector below needs a `data-*` value that the built-in appearance path
+   never writes, so none of these rules is live until a ThemePack is applied.
+   `data-theme-pack` carries the applied pack's id and is absent otherwise, which
+   makes it the hook for anything that must not touch a built-in scheme. */
+html[data-color-scheme='light'] {
+  color-scheme: light;
+}
+html[data-color-scheme='dark'] {
+  color-scheme: dark;
+}
+/* The named motion behaviour. `static` in v1 means the preset becomes none, and
+   the resolver forces that under reduced motion; this honours it either way. */
+html[data-motion-preset='none'] {
+  --dm-t-quick: 0ms;
+  --dm-t-view: 0ms;
+  --dm-t-extend: 0ms;
+  --dm-motion-intensity: 0;
+}
+/* Decorative texture. The opacity is the theme's; off is the person's or the
+   accessibility layer's, and it wins by zeroing the same channel. */
+html[data-texture='off'] {
+  --dm-texture-opacity: 0;
+}
+/* Information density, with the meaning it already has in the Console: guided
+   gives the reading column more room, technical takes some back. */
+html[data-density='guided'] {
+  --dm-measure-prose: 62ch;
+}
+html[data-density='technical'] {
+  --dm-measure-prose: 74ch;
+}
+/* A theme may widen the focus ring but never narrow it: 2px is the floor the
+   built-in appearance already guarantees, and a theme is not allowed under it. */
+html[data-theme-pack] :focus-visible {
+  outline-width: max(2px, var(--dm-focus-width));
+  outline-color: var(--dm-focus-color);
 }
 body {
   margin: 0;
@@ -1300,6 +1347,11 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .feedback > span:nth-child(2),
 .error-bar > span:nth-child(2) {
   max-width: 70ch;
+}
+/* A fallback is not a fault, and it sits above the error bar rather than under it. */
+.error-bar.appearance-notice {
+  bottom: 76px;
+  border-left-color: var(--dm-signal);
 }
 .error-bar .button,
 .feedback .button {

@@ -132,11 +132,15 @@ emits, with `existsInAppToday` saying whether `client/styles.css` already declar
 A test asserts that flag against the real stylesheet, so the list cannot quietly go stale.
 
 The colour tokens, `--r`/`--rb`, the three scales, the three fonts, `--dm-line-body`, the three
-`--dm-t-*` timings, `data-package` and `data-motion` **already exist**. These do **not**, and A2 is
-adding them rather than consuming them: `--dm-motion-intensity`, `--dm-texture-opacity`,
-`--dm-focus-width`, `--dm-focus-color`, `data-theme-pack`, `data-density`, `data-texture`,
-`data-color-scheme` and `data-motion-preset`. Emitting a property nothing reads is harmless;
-assuming it already works is not.
+`--dm-t-*` timings, `data-package` and `data-motion` already existed before the Studio. The other
+nine — `--dm-motion-intensity`, `--dm-texture-opacity`, `--dm-focus-width`, `--dm-focus-color`,
+`data-theme-pack`, `data-density`, `data-texture`, `data-color-scheme` and `data-motion-preset` —
+were added to `client/styles.css` by A2, and their flags flipped with them. Every rule that reads
+one needs a value the built-in appearance path never writes, so applying a built-in scheme is
+unchanged: `data-theme-pack` is absent unless a pack is applied, which makes it the hook for
+anything that must not touch a built-in scheme. `--dm-texture-opacity` is declared and zeroed by
+`data-texture='off'`, but no painted texture layer reads it yet — emitting a property nothing reads
+is harmless; assuming it already works is not.
 
 `dataset.package` is always the **base scheme id**, even for a custom pack, because
 `desktop/main.mjs` keys `FIELD_TITLEBAR` by scheme id. A custom theme therefore always resolves a
