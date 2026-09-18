@@ -823,8 +823,19 @@ test('D11: saving a copy under a new name takes the pictures with it', async ({
  * page's own request carry the profile under test.
  */
 async function openStudioAs(page: Page, profile: string) {
+  const entitled = { ...HEADERS, 'X-Diomedes-Entitlement-Fixture': 'paid' };
+  // D01 normally leaves this theme behind. Made here when it has not, so these
+  // three can also be run on their own without depending on run order.
+  const existing = await page.request.get(`/api/themes/${THEME_ID}`, { headers: entitled });
+  if (!existing.ok() || ((await existing.json()) as { pack: unknown }).pack === null) {
+    const made = await page.request.put(`/api/themes/${THEME_ID}`, {
+      headers: entitled,
+      data: themePack(),
+    });
+    expect(made.ok(), await made.text()).toBe(true);
+  }
   const applied = await page.request.post(`/api/themes/${THEME_ID}/activate`, {
-    headers: { ...HEADERS, 'X-Diomedes-Entitlement-Fixture': 'paid' },
+    headers: entitled,
   });
   expect(applied.ok(), await applied.text()).toBe(true);
   await page.setExtraHTTPHeaders({ ...HEADERS, 'X-Diomedes-Entitlement-Fixture': profile });
