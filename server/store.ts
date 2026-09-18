@@ -201,7 +201,11 @@ export const defaults = (): Settings => ({
   services: { codex: false },
 });
 
-async function durableWrite(target: string, bytes: string, beforeReplace?: () => Promise<void>) {
+export async function durableWrite(
+  target: string,
+  bytes: string,
+  beforeReplace?: () => Promise<void>,
+) {
   await fs.mkdir(path.dirname(target), { recursive: true });
   const temp = `${target}.${identifier()}.tmp`;
   const handle = await fs.open(temp, 'wx');

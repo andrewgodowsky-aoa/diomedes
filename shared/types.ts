@@ -59,6 +59,18 @@ export interface Settings {
     interfaceScale?: number;
     readingScale?: number;
     codeScale?: number;
+    /**
+     * The custom ThemePack currently applied, or absent for a built-in scheme.
+     *
+     * A pointer, never the pack: the pack itself lives under
+     * `<data>/themes/<scope>/<id>/pack.json` and is validated on every read.
+     * A pointer at a theme that is gone or corrupt is not an error state — the
+     * app falls back to last-known-good and then to the base scheme, and says
+     * so — so nothing here has to be kept in step with the store.
+     */
+    activeTheme?: { id: string; revision: number } | null;
+    /** Turn decorative texture off for everyone on this install. */
+    textureOff?: boolean;
   };
   seen: {
     onlineServiceNotice: boolean;

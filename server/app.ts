@@ -3,6 +3,8 @@ import { taskDocumentProblem } from '../shared/task-sources.js';
 import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
+import { ThemeService, THEME_PACK_ID_PATTERN } from './themes.js';
+import { mountThemeRoutes } from './theme-routes.js';
 import { ConfigurationService } from './configuration.js';
 import { mountConfigurationRoutes } from './configuration-routes.js';
 import { WeeklyBriefService } from './weekly-brief.js';
@@ -302,6 +304,33 @@ function validateSettings(current: Settings, body: unknown): Settings {
           throw new ApiError(400, 'Text scale must be between 0.75 and 2.');
         result.appearance[key] = n;
       }
+    if (value.textureOff !== undefined) {
+      if (typeof value.textureOff !== 'boolean')
+        throw new ApiError(400, 'Texture must be on or off.');
+      result.appearance.textureOff = value.textureOff;
+    }
+    // Shape only. Whether the theme still exists, still validates, or was
+    // written by this install is decided when it is read, by the theme service
+    // and its fallback — not here, where a stale pointer would become a saved
+    // settings failure instead of a notice.
+    if (value.activeTheme !== undefined) {
+      if (value.activeTheme === null) result.appearance.activeTheme = null;
+      else {
+        const theme = plain(value.activeTheme);
+        for (const key of Object.keys(theme))
+          if (!['id', 'revision'].includes(key))
+            throw new ApiError(400, `Unknown active theme field: ${key}`);
+        if (typeof theme.id !== 'string' || !THEME_PACK_ID_PATTERN.test(theme.id))
+          throw new ApiError(400, 'That theme name is not one this computer can store.');
+        if (
+          typeof theme.revision !== 'number' ||
+          !Number.isInteger(theme.revision) ||
+          theme.revision < 1
+        )
+          throw new ApiError(400, 'A theme revision is a whole number from 1 up.');
+        result.appearance.activeTheme = { id: theme.id, revision: theme.revision };
+      }
+    }
   }
   if (supplied.services) {
     const value = plain(supplied.services);
@@ -408,6 +437,13 @@ export async function createApp(options: AppOptions) {
   // creates is a labelled local fixture rather than a hosted organization.
   const workspaces = new WorkspaceService(store);
   await workspaces.init();
+  // Design Studio storage. It reads the *live* workspace rather than the stored
+  // reference, so a revoked business member reads their Personal themes and not
+  // the ones they can no longer see.
+  const themes = new ThemeService(store, {
+    workspace: () => workspaces.active(),
+    personId: () => workspaces.currentPerson().id,
+  });
   // The setup those answers compile into. It reads the Agent registry and Trust
   // live on every check, so a staged configuration cannot ride on an old reading.
   const configuration = new ConfigurationService(store, workspaces, agents);
@@ -622,6 +658,7 @@ export async function createApp(options: AppOptions) {
   });
   mountPermissionRoutes(app, store, nativeWork);
   mountWorkspaceRoutes(app, store, workspaces, configuration, briefs);
+  mountThemeRoutes(app, store, themes);
   mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces);
   mountConfigurationRoutes(app, store, workspaces, configuration, agents);
   connections.mount(app);
