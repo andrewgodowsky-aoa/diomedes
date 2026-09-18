@@ -156,15 +156,27 @@ export function Modal({
   children,
   onClose,
   wide = false,
+  inline = false,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  /**
+   * Render in place instead of taking the top layer.
+   *
+   * The Design Center previews this exact component, and `showModal()` would
+   * put a real modal dialog over the editor the moment the preview mounted. An
+   * open `<dialog>` with no `showModal()` is the same element with the same
+   * markup, styles and children, sitting where it is put. Nothing but the
+   * preview passes this.
+   */
+  inline?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
   useEffect(() => {
+    if (inline) return;
     const el = ref.current;
     const focused = document.activeElement;
     el?.showModal();
@@ -172,12 +184,13 @@ export function Modal({
       el?.close();
       if (focused instanceof HTMLElement) focused.focus();
     };
-  }, []);
+  }, [inline]);
   return (
     <dialog
       ref={ref}
+      open={inline || undefined}
       aria-labelledby={id}
-      className={`dialog ${wide ? 'wide' : ''}`}
+      className={`dialog ${wide ? 'wide' : ''} ${inline ? 'inline' : ''}`}
       onCancel={(e) => {
         e.preventDefault();
         onClose();

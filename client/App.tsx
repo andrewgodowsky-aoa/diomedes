@@ -26,6 +26,7 @@ import {
   titleCase,
 } from './components';
 import { Shell } from './console/Shell';
+import { DesignCenter } from './console/DesignCenter';
 import { MarkGlyph } from './console/Mark';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
@@ -53,6 +54,7 @@ export function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [page, setPage] = useState<Page>('home');
   const [showSettings, setShowSettings] = useState(false);
+  const [designCenter, setDesignCenter] = useState(false);
   const [account, setAccount] = useState(false);
   const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
   const [usage, setUsage] = useState<UsageSnapshot[]>([]);
@@ -129,6 +131,23 @@ export function App() {
       setSettings(await writeSettings(value));
     } catch (e) {
       if (e instanceof SettingsConflict) setSettings(e.settings);
+      report(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  /**
+   * One appearance field, named. The whole-settings PUT on the Appearance
+   * screen echoed `appearance.activeTheme` back from whatever snapshot that
+   * screen was holding, so a theme applied from the Design Center could be
+   * un-applied by an unrelated control. Nothing outside the theme routes sends
+   * `activeTheme` any more.
+   */
+  async function patchAppearance(patch: Record<string, unknown>) {
+    setBusy(true);
+    try {
+      setSettings(await patchSettings({ appearance: patch }));
+    } catch (e) {
       report(e);
     } finally {
       setBusy(false);
@@ -619,10 +638,18 @@ export function App() {
                 <SettingsPage
                   settings={settings}
                   save={saveSettings}
+                  patchAppearance={patchAppearance}
                   integrations={integrations}
                   usage={usage}
                   openHelpersSignal={helpersRequest}
                   refresh={() => void refreshIntegrations(true)}
+                  onOpenDesignCenter={() => {
+                    // Settings closes behind it, so closing the Design Center
+                    // leaves the person back in the Console they were working
+                    // in rather than three screens deep.
+                    setShowSettings(false);
+                    setDesignCenter(true);
+                  }}
                 />
               ) : selected && surface === 'console' ? (
                 <Shell
@@ -864,6 +891,13 @@ export function App() {
           </>
         )}
       </div>
+      {/* The Design Center is a full-surface workspace over whatever is showing
+          rather than a page of its own. Opening it must not unmount the work
+          underneath: applying a theme changes presentation, and presentation
+          changing is not a reason to lose an unsent message. */}
+      {designCenter && settings && (
+        <DesignCenter settings={settings} onClose={() => setDesignCenter(false)} />
+      )}
       {error && (
         <div className="error-bar" role="alert">
           <Mark state="fault" />

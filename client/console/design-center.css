@@ -1,0 +1,341 @@
+/* The Design Center.
+
+   Three columns: navigator, preview, inspector. Everything reads the app's own
+   tokens, so the editor is themed by whatever the app is wearing — while the
+   preview inside it is themed by whatever is being edited.
+
+   The rules under `.dc-stage[data-…]` restate the handful in client/styles.css
+   that are anchored to `html`. Custom properties inherit into the stage without
+   help; `html[data-density='technical']` does not, so density, texture,
+   colour-scheme, the motion preset and the focus-ring floor are repeated here
+   with the same values and the same meanings. When one of those changes in
+   styles.css, this block changes with it or the preview starts lying. */
+
+.design-center {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: var(--dm-frame);
+  overflow: auto;
+}
+.dc-head h1 {
+  margin: 0;
+  font-size: var(--dm-type-title);
+}
+.dc-head .row,
+.dc-toolbar,
+.dc-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dc-target {
+  margin-left: 16px;
+}
+.dc-loading {
+  padding: 24px 0;
+}
+.dc-file {
+  display: none;
+}
+.dc-body {
+  display: grid;
+  grid-template-columns: var(--dc-sidebar, 260px) minmax(0, 1fr) 340px;
+  gap: 12px;
+  align-items: start;
+  min-height: 0;
+}
+.dc-body-website {
+  display: block;
+  max-width: 78ch;
+}
+
+/* --- navigator ------------------------------------------------------------ */
+.dc-navigator {
+  border: 1px solid var(--dm-rule);
+  border-radius: var(--r);
+  padding: 8px;
+  background: var(--dm-raised, var(--raised));
+}
+.dc-navigator h3 {
+  margin: 8px 4px 4px;
+  font-size: var(--dm-type-caption);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dm-text-3);
+}
+.dc-navigator ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.dc-navigator button {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--rb);
+}
+.dc-navigator button.on {
+  background: var(--dm-well);
+  color: var(--dm-text-1);
+}
+
+/* --- the stage ------------------------------------------------------------ */
+.dc-centre {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.dc-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--dm-rule);
+  border-radius: var(--r);
+  /* The stage paints itself with the theme being edited, so it must not inherit
+     the editor's own surface colour. */
+  background: var(--surface);
+  color: var(--t1);
+  font-family: var(--dm-font-ui);
+  line-height: var(--dm-line-body);
+}
+.dc-stage[data-mode='design'] {
+  cursor: crosshair;
+}
+.dc-stage[data-density='guided'] {
+  --dm-measure-prose: 62ch;
+}
+.dc-stage[data-density='technical'] {
+  --dm-measure-prose: 74ch;
+}
+.dc-stage[data-texture='off'] {
+  --dm-texture-opacity: 0;
+}
+.dc-stage[data-motion-preset='none'] {
+  --dm-t-quick: 0ms;
+  --dm-t-view: 0ms;
+  --dm-t-extend: 0ms;
+  --dm-motion-intensity: 0;
+}
+.dc-stage[data-theme-pack] :focus-visible {
+  outline-width: max(2px, var(--dm-focus-width));
+  outline-color: var(--dm-focus-color);
+}
+.dc-piece {
+  border: 1px dashed transparent;
+  border-radius: var(--r);
+  padding: 8px;
+}
+.dc-stage[data-mode='design'] .dc-piece:hover {
+  border-color: var(--hair-2);
+}
+.dc-piece.selected {
+  border-color: var(--light);
+  border-style: solid;
+}
+.dc-piece-name {
+  margin: 0 0 6px;
+  font-size: var(--dm-type-caption);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--t3);
+}
+.dc-piece-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dc-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.dc-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--t2);
+}
+.dc-rail {
+  max-width: 260px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+}
+.dc-conversation,
+.dc-document,
+.dc-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dc-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.dc-tasks .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dc-document pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--dm-font-code);
+  font-size: calc(var(--dm-type-body) * var(--dm-code-scale));
+}
+.dc-conversation .prose {
+  font-family: var(--dm-font-read);
+  font-size: calc(var(--dm-type-body) * var(--dm-read-scale));
+  margin: 4px 0 0;
+}
+/* A dialog rendered in place rather than in the top layer. */
+.dialog.inline {
+  position: static;
+  display: block;
+  margin: 0;
+  max-width: 100%;
+}
+
+/* --- the action log ------------------------------------------------------- */
+.dc-log {
+  border: 1px solid var(--dm-rule);
+  border-radius: var(--r);
+  padding: 8px 12px;
+}
+.dc-log h3 {
+  margin: 0 0 4px;
+  font-size: var(--dm-type-caption);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dm-text-3);
+}
+.dc-log ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+/* --- inspector ------------------------------------------------------------ */
+.dc-inspector {
+  border: 1px solid var(--dm-rule);
+  border-radius: var(--r);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: calc(100vh - 220px);
+  overflow: auto;
+}
+.dc-section h3 {
+  margin: 0 0 4px;
+  font-size: var(--dm-type-ui);
+}
+.dc-section h4 {
+  margin: 12px 0 4px;
+}
+.dc-selection {
+  border-bottom: 1px solid var(--dm-rule);
+  padding-bottom: 8px;
+}
+.dc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+}
+.dc-field .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dc-field-label {
+  font-weight: 600;
+}
+.dc-field input[type='range'] {
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.dc-origin {
+  font-size: var(--dm-type-caption);
+  color: var(--dm-text-3);
+}
+.dc-origin.theme {
+  color: var(--dm-glacier);
+}
+.dc-origin.accessibility,
+.dc-origin.personal {
+  color: var(--dm-signal, var(--attn));
+}
+.dc-colour {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dc-colour input[type='color'] {
+  width: 44px;
+  padding: 2px;
+}
+.dc-placement {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dc-placement label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dc-placeholder {
+  display: grid;
+  place-items: center;
+  height: 64px;
+  border: 1px dashed var(--dm-rule);
+  border-radius: var(--rb);
+  color: var(--dm-text-3);
+  font-size: var(--dm-type-caption);
+}
+
+/* --- themes and website --------------------------------------------------- */
+.dc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dc-website .dc-list {
+  list-style: disc;
+  padding-left: 20px;
+}
+.dc-themes li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dc-website {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (max-width: 1100px) {
+  .dc-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dc-inspector {
+    max-height: none;
+  }
+}

@@ -48,18 +48,37 @@ function resetLine(resetsAt: string | null): string {
 export function SettingsPage({
   settings,
   save,
+  patchAppearance,
   integrations,
   usage,
   openHelpersSignal,
   refresh,
+  onOpenDesignCenter,
 }: {
   settings: SettingsModel;
   save: (value: SettingsModel) => Promise<void>;
+  /**
+   * Write one appearance field and name only that field.
+   *
+   * The Appearance screen used to send `{ ...settings, appearance: { ...settings.appearance, … } }`
+   * for every control on it. Two things were wrong with that. It echoed
+   * `appearance.activeTheme` back from a snapshot this screen may have taken
+   * before a theme was applied, which quietly un-applied it; and picking a
+   * built-in scheme while a theme was applied did nothing visible, because the
+   * theme is what the resolver paints and the scheme underneath it is not.
+   * Every control here now owns one field, the way the Ctrl+Plus handler does.
+   */
+  patchAppearance: (patch: Record<string, unknown>) => Promise<void>;
   integrations: IntegrationStatus[];
   usage: UsageSnapshot[];
   openHelpersSignal?: number;
   refresh: () => void;
+  /** Opens the full Design Center workspace. Console only. */
+  onOpenDesignCenter?: () => void;
 }) {
+  // Failures on the Appearance and Design Center screens, which share nothing
+  // with the connection check above and must not borrow its message line.
+  const [appearanceError, setAppearanceError] = useState('');
   const [section, setSection] = useState('Interface detail');
   const [disclosure, setDisclosure] = useState<IntegrationStatus | null>(null);
   const [connectionError, setConnectionError] = useState('');
@@ -133,7 +152,7 @@ export function SettingsPage({
     'History',
     'Appearance',
     'About',
-    ...(isDesk ? ['Engines', 'App updates', 'Rules', 'Developer'] : []),
+    ...(isDesk ? ['Design Center', 'Engines', 'App updates', 'Rules', 'Developer'] : []),
   ];
   return (
     <div className="settings-layout">
@@ -402,6 +421,58 @@ export function SettingsPage({
                 </div>
               </>
             )}
+            {section === 'Design Center' && (
+              <>
+                <p className="prose">
+                  The Design Center is where you change how Diomedes looks: its colours, its type,
+                  how round its controls are, how much it moves. It works with no internet
+                  connection and no AI engine, and nothing in it asks a model anything.
+                </p>
+                <div className="service-list">
+                  <section className="service">
+                    <div className="row">
+                      <h3>
+                        <Mark state={settings.appearance.activeTheme ? 'done' : 'todo'} />
+                        Appearance
+                      </h3>
+                      <span className="caption push-right">
+                        {settings.appearance.activeTheme
+                          ? `Theme applied (version ${settings.appearance.activeTheme.revision})`
+                          : 'Built-in package'}
+                      </span>
+                    </div>
+                    <p>
+                      {settings.appearance.activeTheme
+                        ? `“${settings.appearance.activeTheme.id}” is applied to this app.`
+                        : `The built-in “${schemeId(settings.appearance.package)}” package is showing. Open the Design Center to make a theme of your own.`}
+                    </p>
+                    <p className="caption">
+                      A theme made here can be applied to this app and exported for the website as a
+                      single .diomedes-theme file.
+                    </p>
+                    {appearanceError && <p role="alert">{appearanceError}</p>}
+                    <div className="actions">
+                      <Button tone="primary" onClick={() => onOpenDesignCenter?.()}>
+                        Open Design Center
+                      </Button>
+                      {settings.appearance.activeTheme && (
+                        <Button
+                          tone="quiet"
+                          onClick={() => {
+                            setAppearanceError('');
+                            void api('/themes/reset', 'POST').catch(() =>
+                              setAppearanceError('The theme could not be put away.'),
+                            );
+                          }}
+                        >
+                          Use the built-in package
+                        </Button>
+                      )}
+                    </div>
+                  </section>
+                </div>
+              </>
+            )}
             {section === 'App updates' && <AppUpdates />}
             {section === 'Permissions' && (
               <>
@@ -457,21 +528,37 @@ export function SettingsPage({
             {section === 'Appearance' && (
               <>
                 <h2>Appearance package</h2>
+                {settings.appearance.activeTheme && (
+                  <p className="caption">
+                    A theme from the Design Center is applied. Choosing a built-in package below
+                    puts that theme away and shows the package instead; the theme itself is kept.
+                  </p>
+                )}
                 <div className="radio-list">
                   {SCHEMES.map((s) => {
-                    const selected = schemeId(settings.appearance.package) === s.id;
+                    const selected =
+                      !settings.appearance.activeTheme &&
+                      schemeId(settings.appearance.package) === s.id;
                     return (
                       <label className={`radio-row ${selected ? 'selected' : ''}`} key={s.id}>
                         <input
                           type="radio"
                           name="appearance"
                           checked={selected}
-                          onChange={() =>
-                            void save({
-                              ...settings,
-                              appearance: { ...settings.appearance, package: s.id },
-                            })
-                          }
+                          onChange={() => {
+                            // Two writes, each owning one thing: the theme
+                            // routes own `activeTheme` and nothing else may
+                            // send it, and the package is patched on its own.
+                            // Picking a scheme while a theme is applied used to
+                            // be a visual no-op, because the theme is what the
+                            // resolver paints.
+                            setAppearanceError('');
+                            void api('/themes/reset', 'POST')
+                              .then(() => patchAppearance({ package: s.id }))
+                              .catch(() =>
+                                setAppearanceError('The appearance package could not be changed.'),
+                              );
+                          }}
                         />
                         <span
                           className="palette-dot"
@@ -487,19 +574,14 @@ export function SettingsPage({
                     );
                   })}
                 </div>
+                {appearanceError && <p role="alert">{appearanceError}</p>}
                 <label className="setting-row">
                   <span>Reduced motion</span>
                   <input
                     type="checkbox"
                     checked={settings.appearance.motion === 'reduced'}
                     onChange={(e) =>
-                      void save({
-                        ...settings,
-                        appearance: {
-                          ...settings.appearance,
-                          motion: e.target.checked ? 'reduced' : 'normal',
-                        },
-                      })
+                      void patchAppearance({ motion: e.target.checked ? 'reduced' : 'normal' })
                     }
                   />
                 </label>
@@ -515,15 +597,7 @@ export function SettingsPage({
                               ? (settings.appearance.interfaceScale ?? effectiveInterfaceScale)
                               : (settings.appearance[key] ?? 1)
                           }
-                          onChange={(e) =>
-                            void save({
-                              ...settings,
-                              appearance: {
-                                ...settings.appearance,
-                                [key]: Number(e.target.value),
-                              },
-                            })
-                          }
+                          onChange={(e) => void patchAppearance({ [key]: Number(e.target.value) })}
                         >
                           {key === 'interfaceScale' ? (
                             <>
