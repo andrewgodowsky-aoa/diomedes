@@ -20,7 +20,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Settings } from '../../shared/types';
 import { resolveAppearance } from '../../shared/theme-pack/resolve';
-import { importThemePackage } from '../../shared/theme-pack/package';
+import {
+  exportThemePackage,
+  importThemePackage,
+  THEME_PACKAGE_EXTENSION,
+} from '../../shared/theme-pack/package';
 import type { ArtworkSlot, BaseThemeId, ThemePackV1 } from '../../shared/theme-pack/types';
 import { Button, Modal } from '../components';
 import { schemeId } from './schemes';
@@ -280,13 +284,28 @@ export function DesignCenter({
     [session],
   );
 
+  /**
+   * Write the file Import reads back.
+   *
+   * This used to write a bare `ThemePackV1` while `importFile` requires the A1
+   * package container, so a person who pressed Export and then Import on the
+   * same file was told their own theme was not a Diomedes theme. One function
+   * builds the file — the same one the Website target uses — so the two halves
+   * of the round trip cannot drift apart again.
+   */
   const exportFile = useCallback(() => {
     if (!session) return;
-    const blob = new Blob([JSON.stringify(session.pack, null, 2)], { type: 'application/json' });
+    setProblem('');
+    const result = exportThemePackage(session.pack, {});
+    if (!result.ok) {
+      setProblem(result.errors[0]);
+      return;
+    }
+    const blob = new Blob([JSON.stringify(result.package, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `${session.pack.id}.diomedes-theme`;
+    anchor.download = `${session.pack.id}${THEME_PACKAGE_EXTENSION}`;
     anchor.click();
     URL.revokeObjectURL(url);
   }, [session]);
@@ -461,8 +480,14 @@ export function DesignCenter({
                 )}
               </section>
             </div>
+            {/* `previewPack`, not `session.pack`: while "Showing before" is on,
+                the stage paints the baseline, and an inspector showing the
+                edited values beside it — with origin labels resolved from the
+                baseline — would describe two different themes at once. The
+                controls read the theme on screen. Editing turns the toggle
+                back to "after" before any change lands. */}
             <Inspector
-              pack={session.pack}
+              pack={previewPack}
               resolved={resolved}
               selectedPiece={selectedPiece}
               placements={placements}

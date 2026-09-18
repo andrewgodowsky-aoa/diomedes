@@ -26,6 +26,11 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
 import { themeScopeKey } from '../server/themes.js';
 import { probeWebsiteStudio } from '../server/website-studio.js';
+import {
+  exportThemePackage,
+  importThemePackage,
+  THEME_PACKAGE_EXTENSION,
+} from '../shared/theme-pack/package.js';
 import type { ThemePackV1 } from '../shared/theme-pack/types.js';
 import type { Person, WorkspaceRef } from '../shared/workspaces.js';
 import type { Settings } from '../shared/types.js';
@@ -346,4 +351,133 @@ test('the route answers the same thing, and nothing on this computer is listenin
   expect(typeof probed.data.reachable).toBe('boolean');
   expect(probed.data.url).toBe('http://127.0.0.1:4400/');
   expect(typeof probed.data.detail).toBe('string');
+});
+
+/**
+ * Export writes the file Import reads.
+ *
+ * The Design Center's Export used to write a bare `ThemePackV1` while its
+ * Import required the package container, so a person who exported a theme and
+ * then imported the same file was told it was not a Diomedes theme. Both halves
+ * now go through `shared/theme-pack/package.ts`, and this is the assertion that
+ * says so: the exact bytes that leave the Export button, parsed back in.
+ */
+test('a theme exported from the Design Center imports again unchanged', () => {
+  const original = pack('round-trip');
+  const exported = exportThemePackage(original, {});
+  expect(exported.ok, exported.ok ? '' : exported.errors.join('; ')).toBe(true);
+  if (!exported.ok) return;
+
+  // What the Blob would carry: the container, serialized, nothing else.
+  const onDisk = JSON.stringify(exported.package, null, 2);
+  expect(THEME_PACKAGE_EXTENSION).toBe('.diomedes-theme');
+
+  const back = importThemePackage(JSON.parse(onDisk));
+  expect(back.ok, back.ok ? '' : back.errors.join('; ')).toBe(true);
+  if (!back.ok) return;
+  expect(back.pack).toEqual(original);
+});
+
+/**
+ * The preview restates, scoped to the stage, every rule in `client/styles.css`
+ * that is anchored to `html`.
+ *
+ * Custom properties inherit into the stage without help. `html[data-density]`,
+ * `html[data-color-scheme]` and the rest do not: they select the document
+ * element, and the stage is not it. Each one therefore has a `.dc-stage`
+ * counterpart in `client/console/design-center.css`, or the preview quietly
+ * shows the app's own density, colour scheme or contrast carve-out instead of
+ * the theme being designed — which is the one thing this screen exists to do
+ * honestly.
+ *
+ * This test is the thing that notices when a rule is added to one file and not
+ * the other. A rule that deliberately has no counterpart goes in the allowlist
+ * below **with the reason written down**, not silently.
+ */
+// Keys are written with double quotes because selectors are normalized to that
+// form before they are looked up; the stylesheets themselves use single quotes.
+const STAGE_RESTATEMENT_EXEMPT = new Map<string, string>([
+  // The eleven built-in scheme blocks define --chrome, --surface, --t1 and the
+  // rest. The resolver writes every one of those custom properties onto the
+  // stage as an inline value from the theme's own tokens, which beats a
+  // stylesheet rule, so restating them would be dead weight that could only go
+  // stale. See resolve.ts's colour token map.
+  ...(
+    [
+      'field',
+      'deep-field',
+      'graphite',
+      'verdigris',
+      'harbor',
+      'cobalt',
+      'ember',
+      'moss',
+      'dusk',
+      'ink',
+      'paper',
+    ] as const
+  ).map(
+    (scheme) =>
+      [
+        `html[data-package="${scheme}"]`,
+        'the resolver writes these tokens onto the stage inline',
+      ] as [string, string],
+  ),
+  // The reduced-motion freeze. Restating it scoped to the stage is on the
+  // ledger rather than done here, so the stage's reduced-motion preview zeroes
+  // the duration channels (which it does restate) without reproducing the
+  // `!important` blanket the document-level rule lays over every animation.
+  ['html[data-motion="reduced"] *', 'ledger: the !important freeze is not reproduced'],
+  ['html[data-motion="reduced"] *::before', 'ledger: the !important freeze is not reproduced'],
+  ['html[data-motion="reduced"] *::after', 'ledger: the !important freeze is not reproduced'],
+]);
+
+/** Every selector in a stylesheet, comments removed, one per entry. */
+function selectorsOf(css: string): string[] {
+  const clean = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const found: string[] = [];
+  // Selector groups are what sits between the end of the previous rule or block
+  // and the next `{`. At-rule bodies are skipped by ignoring anything starting
+  // with `@`, which is enough here: nothing inside a media query is anchored to
+  // `html[data-`.
+  for (const match of clean.matchAll(/(^|[{}])([^{}]+)\{/g)) {
+    for (const part of match[2].split(',')) {
+      const selector = part.trim().replace(/\s+/g, ' ');
+      if (selector && !selector.startsWith('@')) found.push(selector);
+    }
+  }
+  return found;
+}
+
+test('every html[data-…] rule in styles.css is restated for the preview stage', async () => {
+  const here = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+  const app = await fs.readFile(path.join(here, '..', 'client', 'styles.css'), 'utf8');
+  const stage = await fs.readFile(
+    path.join(here, '..', 'client', 'console', 'design-center.css'),
+    'utf8',
+  );
+  const restated = new Set(selectorsOf(stage).map((s) => s.replace(/["']/g, '"')));
+
+  const anchored = selectorsOf(app).filter((s) => s.startsWith('html[data-'));
+  // If this is ever zero the test has stopped reading the file and is passing
+  // for the wrong reason.
+  expect(anchored.length).toBeGreaterThan(15);
+
+  const missing: string[] = [];
+  for (const selector of anchored) {
+    const key = selector.replace(/["']/g, '"');
+    if (STAGE_RESTATEMENT_EXEMPT.has(key)) continue;
+    if (!restated.has(key.replace(/^html/, '.dc-stage'))) missing.push(selector);
+  }
+  expect(
+    missing,
+    `client/console/design-center.css does not restate these rules from client/styles.css, so the preview will show the app's own values instead of the theme being designed. Add a .dc-stage-scoped counterpart, or an allowlist entry saying why not: ${missing.join(' | ')}`,
+  ).toEqual([]);
+});
+
+test('a bare pack is not a package, which is why Export must not write one', () => {
+  // The old Export's output, checked explicitly so the regression cannot come
+  // back quietly: a lone pack has no manifest and Import refuses it.
+  const bare = importThemePackage(JSON.parse(JSON.stringify(pack('bare'))));
+  expect(bare.ok).toBe(false);
 });

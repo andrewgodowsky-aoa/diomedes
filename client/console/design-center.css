@@ -122,6 +122,21 @@
 .dc-stage[data-texture='off'] {
   --dm-texture-opacity: 0;
 }
+/* `color-scheme` is what native controls read — the select in the model-picker
+   row, the scrollbars, the focus rings the platform draws. Without this the
+   stage previews a light theme with dark native controls, or the reverse. It is
+   inherited, so restating it on the stage re-themes everything inside it. */
+.dc-stage[data-color-scheme='light'] {
+  color-scheme: light;
+}
+.dc-stage[data-color-scheme='dark'] {
+  color-scheme: dark;
+}
+.dc-stage[data-motion='reduced'] {
+  --dm-t-quick: 0ms;
+  --dm-t-view: 0ms;
+  --dm-t-extend: 0ms;
+}
 .dc-stage[data-motion-preset='none'] {
   --dm-t-quick: 0ms;
   --dm-t-view: 0ms;
@@ -131,6 +146,14 @@
 .dc-stage[data-theme-pack] :focus-visible {
   outline-width: max(2px, var(--dm-focus-width));
   outline-color: var(--dm-focus-color);
+}
+/* Paper is light, and the amber signal label reads 3.31:1 on it — below the
+   4.5:1 floor — so Paper keeps the amber border and takes a --dm-text-1 label
+   instead (styles.css:516). A preview that showed the amber label on Paper
+   would be showing a contrast failure the app does not actually ship. */
+.dc-stage[data-package='paper'] .button.signal,
+.dc-stage[data-package='paper'] .button.signal:hover:not(:disabled) {
+  color: var(--dm-text-1);
 }
 .dc-piece {
   border: 1px dashed transparent;

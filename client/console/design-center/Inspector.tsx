@@ -10,7 +10,7 @@
  * The labels are the ones the app already uses. Density is still guided,
  * standard and technical; a theme does not get to rename the product's words.
  */
-import type { ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import {
   APPROVED_SCALES,
   ARTWORK_MASKS,
@@ -612,6 +612,26 @@ function ColourInput({
   onChange(value: string): void;
 }) {
   const opaque = value.length === 9 ? value.slice(0, 7) : value;
+  /**
+   * The hex box keeps its own text while it is being typed.
+   *
+   * It used to be driven straight from the pack and commit only a complete
+   * colour, which meant every keystroke of a hand-typed `#2b7a78` was thrown
+   * away the moment it was made: the field snapped back to the old value and
+   * typing a colour by hand was impossible. The draft lives here until it is a
+   * colour, and an abandoned half-colour is put back on blur rather than left
+   * on screen pretending to be the theme.
+   */
+  const [text, setText] = useState(value);
+  const committed = useRef(value);
+  if (committed.current !== value) {
+    committed.current = value;
+    setText(value);
+  }
+  const commit = (next: string) => {
+    setText(next);
+    if (COLOUR_HEX.test(next.trim())) onChange(next.trim());
+  };
   return (
     <span className="dc-colour">
       <input
@@ -624,13 +644,14 @@ function ColourInput({
         type="text"
         aria-label={`${label} hex`}
         className="mono"
-        value={value}
+        value={text}
         spellCheck={false}
-        onChange={(e) => {
-          const next = e.target.value.trim();
-          if (/^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(next)) onChange(next);
-        }}
+        onChange={(e) => commit(e.target.value)}
+        onBlur={() => setText(value)}
       />
     </span>
   );
 }
+
+/** `#rrggbb` or `#rrggbbaa`, the two forms a colour token takes. */
+const COLOUR_HEX = /^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
