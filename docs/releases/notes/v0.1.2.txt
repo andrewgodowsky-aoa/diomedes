@@ -17,10 +17,10 @@ UPDATES
 LIMITS
   Unsigned, experimental, one machine tested.
   Engine routes were checked with one live turn each through the app's own
-  local service, on commit b115b3c. Since that commit this build changes only
-  interface files, tests, build tooling and the version number: server/,
-  shared/, services/ and desktop/ are unchanged, so the service and the engine
-  adapters are the ones those turns ran against. Claude Code
+  local service, on commit b115b3c. One file under server/, shared/, services/
+  or desktop/ has changed since: server/store.ts, which now retries an atomic
+  rename that Windows briefly refused. The engine adapters and the route code
+  those turns exercised are unchanged. Claude Code
   (claude-sonnet-5) produced a reviewed file proposal. OpenCode (opencode-go)
   did not start within 45 seconds in three of four attempts while the project
   folder sat inside a large git repository, and its one start there returned
