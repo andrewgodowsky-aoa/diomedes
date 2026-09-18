@@ -18,6 +18,8 @@ const HEADERS = { 'X-Diomedes-Client': '1' };
 const PROJECT_NAME = 'The Studio under test';
 const THEME_ID = 'studio-proof';
 const DRAFT = 'A half-typed message that must survive the theme';
+/** Where the run leaves the pictures the A3 report points at. */
+const SHOTS = 'docs/verification/2026-09-17-design-center';
 
 let originalSettings: Settings | null = null;
 let projectId = '';
@@ -273,4 +275,143 @@ test('D03: a theme that cannot be read leaves the base scheme showing and says s
   expect(await rootVar(page, '--surface')).toBe('#16191d');
   const cleared = await page.request.post('/api/themes/reset', { headers: HEADERS });
   expect(cleared.ok()).toBe(true);
+});
+
+/**
+ * Open the Design Center the way a person does: the Console, then Settings,
+ * then the section, then the button. Settings closes behind it, so the Console
+ * is mounted underneath the workspace.
+ */
+async function openDesignCenter(page: Page) {
+  // D02 and D03 put the theme away, so these tests apply it themselves rather
+  // than depending on what the file happened to leave behind.
+  const applied = await page.request.post(`/api/themes/${THEME_ID}/activate`, { headers: HEADERS });
+  expect(applied.ok(), await applied.text()).toBe(true);
+  await openConsole(page);
+  await expect
+    .poll(async () => page.evaluate(() => document.documentElement.dataset.themePack))
+    .toBe(THEME_ID);
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Design Center', exact: true }).click();
+  await page.getByRole('button', { name: 'Open Design Center' }).click();
+  await expect(page.locator('.design-center')).toBeVisible();
+  await expect(page.locator('.dc-stage')).toBeVisible();
+}
+
+test('D04: Design mode selects a real button and never fires its action; Interact does', async ({
+  page,
+}) => {
+  await openDesignCenter(page);
+
+  // The button under test is the app's own Button component, rendered by the
+  // harness with a fixture callback. Nothing else on the page can move the log.
+  const buttons = page.locator('[data-dc-piece="buttons"]');
+  const primary = buttons.getByRole('button', { name: 'Start work' });
+  await expect(page.locator('[data-dc-log="empty"]')).toBeVisible();
+
+  await primary.click();
+  // Selected, outlined, named in the inspector...
+  await expect(buttons).toHaveClass(/selected/);
+  await expect(page.locator('.dc-selection h3')).toHaveText('Buttons');
+  // ...and its action did not run. The log is the claim, not the inference.
+  await expect(page.locator('[data-dc-log="empty"]')).toBeVisible();
+  expect(await page.locator('[data-dc-log="entries"] li').count()).toBe(0);
+
+  // Interact mode against the same fixtures: the action runs, and still only
+  // touches the log.
+  await page.getByRole('button', { name: 'Interact', exact: true }).click();
+  await primary.click();
+  await expect(page.locator('[data-dc-log="entries"] li')).toHaveText(['Emphasised button']);
+  await page.getByRole('button', { name: 'Design', exact: true }).click();
+  await page.screenshot({ path: `${SHOTS}/01-design-mode-selection.png`, fullPage: true });
+});
+
+test('D05: a radius change shows in the preview, undoes, and applies to the app', async ({
+  page,
+  request,
+}) => {
+  await openDesignCenter(page);
+
+  const stage = page.locator('.dc-stage');
+  const stageVar = (name: string) =>
+    stage.evaluate(
+      (element, property) => getComputedStyle(element).getPropertyValue(property).trim(),
+      name,
+    );
+
+  // The preview is painted by the pack being edited, not by the document. It
+  // starts on the applied theme, whose radius D01 saved as 10px.
+  await expect.poll(() => stageVar('--r')).toBe('10px');
+  // ...and the document is still wearing the applied theme, untouched.
+  expect(await rootVar(page, '--r')).toBe('10px');
+
+  await page.screenshot({ path: `${SHOTS}/02-preview-before-edit.png`, fullPage: true });
+
+  const radius = page.getByRole('slider', { name: 'Control radius' });
+  await radius.fill('2');
+  await expect.poll(() => stageVar('--r')).toBe('2px');
+  // Editing changed the preview and nothing else. The app has not moved.
+  expect(await rootVar(page, '--r')).toBe('10px');
+
+  // Undo is Studio-only: it walks the preview back and still writes no settings.
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(() => stageVar('--r')).toBe('10px');
+  expect(await rootVar(page, '--r')).toBe('10px');
+
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect.poll(() => stageVar('--r')).toBe('2px');
+
+  // A half-typed message in the Console underneath. Applying a theme changes
+  // presentation; presentation changing is not a reason to lose it.
+  const composer = page.getByRole('textbox', { name: 'Message this thread' });
+  await composer.fill(DRAFT);
+  await expect(composer).toHaveValue(DRAFT);
+  await page.evaluate(() => {
+    (window as unknown as Record<string, unknown>).__designConsole =
+      document.querySelector('.console');
+  });
+
+  await page.screenshot({ path: `${SHOTS}/03-radius-edited-app-unchanged.png`, fullPage: true });
+
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  // The document now carries the edited value — the C06 assertion shape.
+  await expect.poll(async () => rootVar(page, '--r')).toBe('2px');
+  await expect(page.locator('html')).toHaveAttribute('data-theme-pack', THEME_ID);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as Record<string, unknown>).__designConsole ===
+        document.querySelector('.console'),
+    ),
+    'Applying from the Design Center must not remount the Console',
+  ).toBe(true);
+  await expect(composer).toHaveValue(DRAFT);
+
+  // The applied theme is the one that was just saved, and its history grew
+  // rather than being rewritten.
+  const read = await request.get(`/api/themes/${THEME_ID}`, { headers: HEADERS });
+  expect(read.ok()).toBe(true);
+  const stored = (await read.json()) as { pack: { geometry: { controlRadius: number } }; revisions: number[] };
+  expect(stored.pack.geometry.controlRadius).toBe(2);
+  expect(stored.revisions).toEqual([1, 2]);
+});
+
+test('D06: the Website target reports compatibility and how to start the studio', async ({
+  page,
+}) => {
+  await openDesignCenter(page);
+  await page.getByRole('button', { name: 'Website', exact: true }).click();
+
+  // This pack declares only app-console, so the website panel says so plainly
+  // rather than offering an export that would be refused there.
+  await expect(page.getByText('This theme was not built for the website.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Export for website' })).toBeVisible();
+
+  // Nothing is listening on 4400 in the test host, so the start instructions
+  // show. No network was reached: the probe is loopback with a one-second cap.
+  await expect(page.getByText('Start Website Studio')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Check again' })).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/04-website-target.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Close' }).click();
+  await expect(page.locator('.design-center')).toHaveCount(0);
 });

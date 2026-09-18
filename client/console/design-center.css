@@ -105,6 +105,10 @@
   color: var(--t1);
   font-family: var(--dm-font-ui);
   line-height: var(--dm-line-body);
+  /* The interface size is `zoom` on `html` (styles.css:81), which a nested
+     element does not inherit. The stage applies its own, so changing the
+     interface size in the inspector is visible where it is being chosen. */
+  zoom: var(--dm-ui-scale);
 }
 .dc-stage[data-mode='design'] {
   cursor: crosshair;

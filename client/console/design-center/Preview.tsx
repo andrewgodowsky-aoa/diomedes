@@ -144,6 +144,11 @@ export const PREVIEW_PIECES: readonly PreviewPiece[] = [
   },
 ];
 
+/** By id, so the stage cannot drift out of step with the list's order. */
+const PIECE: Record<string, PreviewPiece> = Object.fromEntries(
+  PREVIEW_PIECES.map((piece) => [piece.id, piece]),
+);
+
 export const PREVIEW_GROUPS = [...new Set(PREVIEW_PIECES.map((piece) => piece.group))];
 
 function Piece({
@@ -234,7 +239,7 @@ export function Preview({
       onSubmitCapture={intercept}
       onChangeCapture={intercept}
     >
-      <Piece piece={PREVIEW_PIECES[0]} selectedId={selectedId}>
+      <Piece piece={PIECE['buttons']} selectedId={selectedId}>
         <div className="dc-row">
           <Button onClick={act('Primary button')}>Primary</Button>
           <Button tone="primary" onClick={act('Emphasised button')}>
@@ -266,7 +271,7 @@ export function Preview({
         </div>
       </Piece>
 
-      <Piece piece={PREVIEW_PIECES[1]} selectedId={selectedId}>
+      <Piece piece={PIECE['model-picker']} selectedId={selectedId}>
         <div className="row choice-row">
           <span className="caption">Default</span>
           <select aria-label="Default choice" defaultValue={fixtureModels[0].slug}>
@@ -286,7 +291,7 @@ export function Preview({
         </div>
       </Piece>
 
-      <Piece piece={PREVIEW_PIECES[2]} selectedId={selectedId}>
+      <Piece piece={PIECE['marks']} selectedId={selectedId}>
         <div className="dc-row">
           {(['todo', 'working', 'waiting', 'done'] as const).map((state) => (
             <span className="dc-mark" key={state}>
@@ -297,7 +302,7 @@ export function Preview({
         </div>
       </Piece>
 
-      <Piece piece={PREVIEW_PIECES[3]} selectedId={selectedId}>
+      <Piece piece={PIECE['rail']} selectedId={selectedId}>
         <nav className="rail dc-rail" aria-label="Threads and views (example)">
           <div className="rail-head">
             <h2>Threads</h2>
@@ -338,7 +343,7 @@ export function Preview({
         </nav>
       </Piece>
 
-      <Piece piece={PREVIEW_PIECES[4]} selectedId={selectedId}>
+      <Piece piece={PIECE['engines-card']} selectedId={selectedId}>
         <div className="service-list">
           <section className="service">
             <div className="row">
@@ -377,7 +382,7 @@ export function Preview({
         </div>
       </Piece>
 
-      <Piece piece={PREVIEW_PIECES[5]} selectedId={selectedId}>
+      <Piece piece={PIECE['notice']} selectedId={selectedId}>
         <Notice
           need={fixtureNeed}
           decide={(resolution) => onFixtureAction(`Approval ${resolution}`)}
@@ -385,7 +390,7 @@ export function Preview({
         />
       </Piece>
 
-      <Piece piece={PREVIEW_PIECES[6]} selectedId={selectedId}>
+      <Piece piece={PIECE['review-card']} selectedId={selectedId}>
         <ChangeCard change={fixtureChange} detail="technical">
           <Button tone="primary" onClick={act('Keep the change')}>
             Keep
@@ -396,7 +401,7 @@ export function Preview({
         </ChangeCard>
       </Piece>
 
-      <Piece piece={PREVIEW_PIECES[7]} selectedId={selectedId}>
+      <Piece piece={PIECE['modal']} selectedId={selectedId}>
         <Modal inline title="An example dialog" onClose={act('Close the dialog')}>
           <p className="prose">
             A dialog carries the raised surface, the separator and the control radius all at once,
@@ -413,7 +418,7 @@ export function Preview({
         </Modal>
       </Piece>
 
-      <Piece piece={PREVIEW_PIECES[8]} selectedId={selectedId}>
+      <Piece piece={PIECE['conversation']} selectedId={selectedId}>
         <div className="dc-conversation">
           {fixtureTurns.map((turn) => (
             <article key={turn.id} className={`turn ${turn.role}`}>
@@ -427,14 +432,14 @@ export function Preview({
         </div>
       </Piece>
 
-      <Piece piece={PREVIEW_PIECES[9]} selectedId={selectedId}>
+      <Piece piece={PIECE['document']} selectedId={selectedId}>
         <div className="dc-document">
           <p className="caption">{fixtureDocument.path}</p>
           <pre className="code">{fixtureDocument.excerpt}</pre>
         </div>
       </Piece>
 
-      <Piece piece={PREVIEW_PIECES[10]} selectedId={selectedId}>
+      <Piece piece={PIECE['tasks']} selectedId={selectedId}>
         <ul className="dc-tasks">
           {fixtureTasks.map((task) => (
             <li key={task.id} className="row">
@@ -446,7 +451,7 @@ export function Preview({
         </ul>
       </Piece>
 
-      <Piece piece={PREVIEW_PIECES[11]} selectedId={selectedId}>
+      <Piece piece={PIECE['usage']} selectedId={selectedId}>
         <div className="usage-block">
           <div className="usage-row">
             <span>{fixtureWindow.label}</span>
@@ -461,7 +466,7 @@ export function Preview({
         </div>
       </Piece>
 
-      <Piece piece={PREVIEW_PIECES[12]} selectedId={selectedId}>
+      <Piece piece={PIECE['error-state']} selectedId={selectedId}>
         <p role="alert" className="fault-text">
           That did not work: the example service did not answer. Nothing was changed.
         </p>
@@ -470,7 +475,7 @@ export function Preview({
         </div>
       </Piece>
 
-      <Piece piece={PREVIEW_PIECES[13]} selectedId={selectedId}>
+      <Piece piece={PIECE['empty-state']} selectedId={selectedId}>
         <Empty
           title="Nothing here yet"
           action={
