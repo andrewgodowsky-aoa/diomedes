@@ -106,7 +106,15 @@ export function SettingsPage({
       refresh();
     }
   }, [helpersOpen, integrations, refresh, settings.onboarding.discoveryConsentAt]);
+  // Which surface this is. Read here rather than further down because the
+  // Design Center is a desktop-only section and the request below is too.
+  const surface = surfaceOf(settings);
+  const isDesk = surface === 'console';
   useEffect(() => {
+    // The Design Center is not listed outside the Console, so nothing on this
+    // page reads the answer there. Asking anyway spent a request on every
+    // Settings open for every person on the browser surface.
+    if (!isDesk) return;
     let live = true;
     void readCustomizationStatus()
       .then((status) => {
@@ -118,7 +126,7 @@ export function SettingsPage({
     return () => {
       live = false;
     };
-  }, []);
+  }, [isDesk]);
   // What each engine says it can run. Only engines with a ready adapter are
   // asked, and the key is the id list so an unchanged roster does not refetch.
   const [catalogs, setCatalogs] = useState<Record<string, EngineCatalog>>({});
@@ -158,8 +166,6 @@ export function SettingsPage({
       ...settings,
       services: { ...settings.services, codexModel: model, codexEffort: effort },
     });
-  const surface = surfaceOf(settings);
-  const isDesk = surface === 'console';
   const helpersSection = isDesk ? 'Engines' : 'Helpers on this computer';
   // The top-bar chip asks for the helpers section by raising this signal.
   useEffect(() => {
@@ -580,7 +586,13 @@ export function SettingsPage({
                             // be a visual no-op, because the theme is what the
                             // resolver paints.
                             setAppearanceError('');
-                            void api('/themes/reset', 'POST')
+                            // With no theme applied there is nothing to put
+                            // away, and the reset would be a second request
+                            // that can only fail. One control, one write.
+                            const put = settings.appearance.activeTheme
+                              ? api('/themes/reset', 'POST').then(() => undefined)
+                              : Promise.resolve();
+                            void put
                               .then(() => patchAppearance({ package: s.id }))
                               .catch(() =>
                                 setAppearanceError('The appearance package could not be changed.'),

@@ -198,6 +198,9 @@ test('a theme is saved, listed, read back and applied', async () => {
   expect(activated.data.settings.appearance.activeTheme).toEqual({
     id: 'midnight-quiet',
     revision: 1,
+    // Applying records which scope's storage the theme came from; a pointer
+    // without it would name a folder the next workspace has no copy of.
+    scope: themeScopeKey(PERSONAL, (await currentPerson()).id),
   });
 
   const active = await request<{ pack: ThemePackV1 | null; source: string; notice: null }>(
@@ -229,6 +232,71 @@ test('two accounts cannot see each other’s themes', async () => {
   expect(bobDir).not.toBe(aliceDir);
   await fs.access(path.join(aliceDir, 'pack.json'));
   await fs.access(path.join(bobDir, 'pack.json'));
+});
+
+/**
+ * The applied-theme pointer lives in the one global settings file; the themes
+ * themselves live per scope. Without the scope recorded beside it, a pointer
+ * written in one workspace names a folder the next workspace has no copy of —
+ * and the app greets a switch with "the theme you chose could not be read".
+ *
+ * A theme applied elsewhere is not a theme that failed. It is simply not here:
+ * the built-in appearance, no sentence, and the pointer left exactly as it is
+ * so that switching back puts the theme back.
+ */
+test('a theme applied in one scope is not applied — and not a failure — in another', async () => {
+  const alice = await restartAs('alice');
+  await save('quiet-hours', pack('quiet-hours'));
+  const applied = await request<{ settings: Settings }>('/themes/quiet-hours/activate', 'POST');
+  expect(applied.status).toBe(200);
+  expect(applied.data.settings.appearance.activeTheme?.scope).toBe(
+    themeScopeKey(PERSONAL, alice.id),
+  );
+  expect((await request<{ source: string }>('/themes/active')).data.source).toBe('pack');
+
+  await restartAs('beatrix');
+  // The pointer is untouched — it is one file for the whole install — but this
+  // scope has no such theme, so the built-in appearance shows, with no notice.
+  const foreign = await request<{ pack: unknown; source: string; notice: string | null }>(
+    '/themes/active',
+  );
+  expect(foreign.data.pack).toBe(null);
+  expect(foreign.data.source).toBe('none');
+  expect(foreign.data.notice).toBe(null);
+  // Nor is another scope's pointer allowed to claim a theme that happens to
+  // share its name here.
+  await save('quiet-hours', pack('quiet-hours', { name: 'Beatrix’s own' }));
+  const listed = await request<{ themes: { id: string; active: boolean }[] }>('/themes');
+  expect(listed.data.themes).toEqual([expect.objectContaining({ id: 'quiet-hours', active: false })]);
+  const untouched = await request<Settings>('/settings');
+  expect(untouched.data.appearance.activeTheme).toMatchObject({
+    id: 'quiet-hours',
+    scope: themeScopeKey(PERSONAL, alice.id),
+  });
+
+  // Back where it was applied, the theme is applied again.
+  await restartAs('alice');
+  const home = await request<{ pack: ThemePackV1 | null; source: string }>('/themes/active');
+  expect(home.data.source).toBe('pack');
+  expect(home.data.pack?.id).toBe('quiet-hours');
+});
+
+test('a pointer written before scopes were recorded is still honoured', async () => {
+  await save('legacy', pack('legacy'));
+  // Exactly the shape an install upgrading from 0.1.2 has on disk: an id and a
+  // revision and nothing else. It must keep painting rather than become a
+  // silent no-theme.
+  const stored = await request<Settings>('/settings', 'PUT', {
+    appearance: { activeTheme: { id: 'legacy', revision: 1 } },
+  });
+  expect(stored.status).toBe(200);
+  expect(stored.data.appearance.activeTheme).toEqual({ id: 'legacy', revision: 1 });
+  const active = await request<{ pack: ThemePackV1 | null; source: string }>('/themes/active');
+  expect(active.data.source).toBe('pack');
+  expect(active.data.pack?.id).toBe('legacy');
+  expect((await request<{ themes: { active: boolean }[] }>('/themes')).data.themes[0].active).toBe(
+    true,
+  );
 });
 
 test('a recorded revision is never rewritten, and restore only ever moves forward', async () => {
@@ -360,7 +428,7 @@ test('editing the applied theme moves the pointer with it, and it survives a res
   const edited = await save('living', pack('living', { name: 'After' }), 1);
   expect(edited.data.revision).toBe(2);
   const settings = await request<Settings>('/settings');
-  expect(settings.data.appearance.activeTheme).toEqual({ id: 'living', revision: 2 });
+  expect(settings.data.appearance.activeTheme).toMatchObject({ id: 'living', revision: 2 });
   const active = await request<{ pack: ThemePackV1 }>('/themes/active');
   expect(active.data.pack.name).toBe('After');
 
@@ -369,7 +437,7 @@ test('editing the applied theme moves the pointer with it, and it survives a res
   // the base scheme.
   await restart();
   const reread = await request<Settings>('/settings');
-  expect(reread.data.appearance.activeTheme).toEqual({ id: 'living', revision: 2 });
+  expect(reread.data.appearance.activeTheme).toMatchObject({ id: 'living', revision: 2 });
   const stillActive = await request<{ pack: ThemePackV1; source: string }>('/themes/active');
   expect(stillActive.data.source).toBe('pack');
   expect(stillActive.data.pack.name).toBe('After');

@@ -635,7 +635,11 @@ export function DesignCenter({
                 It will be stored as <span className="mono">{themeIdFrom(saveAsName.trim() || NEW_THEME_NAME)}</span>.
               </p>
               <div className="actions">
-                <Button tone="primary" disabled={busy} onClick={() => void saveAs()}>
+                {/* Gated like every other write on this screen. The dialog is
+                    only reachable through a canAuthor button, but the capability
+                    can resolve away while it is open, and the route would then
+                    answer 403 to a control that still looked live. */}
+                <Button tone="primary" disabled={busy || !canAuthor} onClick={() => void saveAs()}>
                   Save
                 </Button>
                 <Button tone="quiet" onClick={() => setSaveAsOpen(false)}>

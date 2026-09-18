@@ -3,7 +3,7 @@ import { taskDocumentProblem } from '../shared/task-sources.js';
 import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
-import { ThemeService, THEME_PACK_ID_PATTERN } from './themes.js';
+import { ThemeService, THEME_PACK_ID_PATTERN, THEME_SCOPE_PATTERN } from './themes.js';
 import { mountThemeRoutes } from './theme-routes.js';
 import { CustomizationGate } from './customization-gate.js';
 import { CustomizationBenefitLedger } from './customization-benefit.js';
@@ -321,7 +321,7 @@ function validateSettings(current: Settings, body: unknown): Settings {
       else {
         const theme = plain(value.activeTheme);
         for (const key of Object.keys(theme))
-          if (!['id', 'revision'].includes(key))
+          if (!['id', 'revision', 'scope'].includes(key))
             throw new ApiError(400, `Unknown active theme field: ${key}`);
         if (typeof theme.id !== 'string' || !THEME_PACK_ID_PATTERN.test(theme.id))
           throw new ApiError(400, 'That theme name is not one this computer can store.');
@@ -331,7 +331,16 @@ function validateSettings(current: Settings, body: unknown): Settings {
           theme.revision < 1
         )
           throw new ApiError(400, 'A theme revision is a whole number from 1 up.');
-        result.appearance.activeTheme = { id: theme.id, revision: theme.revision };
+        // Shape only, and never stamped here: the theme routes own which scope
+        // a pointer was written in. A pointer sent without one is a pointer
+        // written before scopes were recorded, and stays that way.
+        if (theme.scope !== undefined && !THEME_SCOPE_PATTERN.test(String(theme.scope)))
+          throw new ApiError(400, 'That theme scope is not one this computer writes.');
+        result.appearance.activeTheme = {
+          id: theme.id,
+          revision: theme.revision,
+          ...(theme.scope === undefined ? {} : { scope: String(theme.scope) }),
+        };
       }
     }
   }

@@ -379,9 +379,11 @@ test('D05: a radius change shows in the preview, undoes, and applies to the app'
   const before = await request.get('/api/settings', { headers: HEADERS });
   expect(before.ok()).toBe(true);
   const settingsBefore = (await before.json()) as {
-    appearance: { activeTheme: { id: string; revision: number } | null };
+    appearance: { activeTheme: { id: string; revision: number; scope?: string } | null };
   };
-  expect(settingsBefore.appearance.activeTheme).toEqual({ id: THEME_ID, revision: 1 });
+  // `toMatchObject`, not `toEqual`: an applied pointer also records the theme
+  // storage scope it was written in, which is not what this claim is about.
+  expect(settingsBefore.appearance.activeTheme).toMatchObject({ id: THEME_ID, revision: 1 });
 
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   // The document now carries the edited value — the C06 assertion shape.

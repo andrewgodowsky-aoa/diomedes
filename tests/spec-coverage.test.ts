@@ -22,6 +22,10 @@ const CONFIGS = [
   'playwright.config.ts',
   'playwright.responsive.config.ts',
   'playwright.connections.config.ts',
+  // Added with `tests/a6-acceptance.spec.ts` in e79c015 but not listed here,
+  // which made this guard report the spec it registers as unregistered — the
+  // guard failing on the very thing it was written to catch.
+  'playwright.acceptance.config.ts',
 ] as const;
 
 /**

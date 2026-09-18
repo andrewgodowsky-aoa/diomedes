@@ -67,8 +67,17 @@ export interface Settings {
      * A pointer at a theme that is gone or corrupt is not an error state — the
      * app falls back to last-known-good and then to the base scheme, and says
      * so — so nothing here has to be kept in step with the store.
+     *
+     * `scope` is the theme storage scope the pointer was written in — the same
+     * key `themeScopeKey` derives for the workspace and person who applied it.
+     * Settings are one global file while themes are stored per scope, so a
+     * pointer without it would name a theme the next workspace cannot read. A
+     * pointer whose `scope` is not the current one means "no theme here": the
+     * built-in appearance shows, with no notice, and the pointer is left alone
+     * so switching back restores the theme. A pointer with no `scope` at all
+     * was written before this existed and is accepted as-is.
      */
-    activeTheme?: { id: string; revision: number } | null;
+    activeTheme?: { id: string; revision: number; scope?: string } | null;
     /** Turn decorative texture off for everyone on this install. */
     textureOff?: boolean;
   };

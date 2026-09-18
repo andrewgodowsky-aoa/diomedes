@@ -2,9 +2,11 @@
  * Design Studio theme routes.
  *
  * Loopback HTTP on the same Express app as everything else — there is no
- * preload and no IPC by design. Every mutating route runs inside `store.locked`
+ * preload and no IPC by design. Every mutating route writes inside `store.locked`
  * because activating, restoring and resetting all write settings, and the store
- * owns that serialization already.
+ * owns that serialization already — but only the write is inside it. The gate
+ * and the name are settled first, because `store.locked` reads any throw as a
+ * failed write and reloads the whole store behind it.
  *
  * `PUT` carries the revision the caller was editing in `If-Match`, the same
  * shape `/api/settings` uses for its own concurrent-save guard. A caller that
@@ -218,13 +220,19 @@ export function mountThemeRoutes(
     }
   });
 
-  /** Throw away an autosave without touching the saved theme. */
+  /**
+   * Throw away an autosave without touching the saved theme.
+   *
+   * The name is checked before the lock is taken, like every other refusal on
+   * this file: a 400 inside `store.locked` would cost a whole store reload.
+   */
   app.delete(
     '/api/themes/:id/draft',
     route(async (req) => {
-      await themes.discardDraft(themeId(req));
+      const id = themes.assertThemeId(themeId(req));
+      await store.locked(() => themes.discardDraft(id));
       return { ok: true };
-    }),
+    }, false),
   );
 
   app.post(
@@ -243,9 +251,14 @@ export function mountThemeRoutes(
       // revision in front of everyone in the company is not the same act as
       // editing it.
       gate.assertCanActivate(req);
-      const { pack } = await themes.activate(themeId(req));
+      // The gate and the name are settled before the lock. In a shipped build
+      // `hasCustomizationEntitlement` is false, so every press of Apply is a
+      // 403 — and a 403 thrown inside `store.locked` is read as a failed write
+      // and pays for a full store recovery pass.
+      const id = themes.assertThemeId(themeId(req));
+      const { pack } = await store.locked(() => themes.activate(id));
       return { pack, settings: store.settings };
-    }),
+    }, false),
   );
 
   app.post(
@@ -255,8 +268,10 @@ export function mountThemeRoutes(
       // gated as authoring. It mints no customization benefit — see
       // `server/customization-benefit.ts`.
       gate.assertCanAuthor(req);
-      return themes.restore(themeId(req), Number(req.params.revision));
-    }),
+      const id = themes.assertThemeId(themeId(req));
+      const revision = themes.assertRevisionNumber(Number(req.params.revision));
+      return store.locked(() => themes.restore(id, revision));
+    }, false),
   );
 
   /**

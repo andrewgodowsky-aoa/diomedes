@@ -212,6 +212,14 @@ export function App() {
    * every settings change, and a fetch inside it would go back to the service
    * each time someone pressed Ctrl+Plus.
    */
+  // Which workspace this is, as one string. Theme storage is per scope while
+  // the pointer is global, so a switch changes what `/themes/active` answers
+  // without changing the pointer at all. It belongs in the fetch key, not only
+  // in the dependency list: the key is what the early return below compares.
+  const workspaceKey =
+    settings?.activeWorkspace?.kind === 'business'
+      ? `business:${settings.activeWorkspace.organizationId}`
+      : 'personal';
   useEffect(() => {
     const pointer = settings?.appearance.activeTheme ?? null;
     if (!pointer) {
@@ -220,7 +228,7 @@ export function App() {
       setAppearanceNotice('');
       return;
     }
-    const key = `${pointer.id}@${pointer.revision}`;
+    const key = `${workspaceKey}/${pointer.id}@${pointer.revision}`;
     if (key === themeKey.current) return;
     themeKey.current = key;
     let live = true;
@@ -242,7 +250,11 @@ export function App() {
     return () => {
       live = false;
     };
-  }, [settings?.appearance.activeTheme?.id, settings?.appearance.activeTheme?.revision]);
+  }, [
+    workspaceKey,
+    settings?.appearance.activeTheme?.id,
+    settings?.appearance.activeTheme?.revision,
+  ]);
   useEffect(() => {
     if (!settings) return;
     const root = document.documentElement;

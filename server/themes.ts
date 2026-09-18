@@ -67,6 +67,9 @@ const refuse = (status: number, message: string, code: string) =>
  * and change the other; `tests/themes.test.ts` reads that file as text and
  * fails when the two derivations stop agreeing.
  */
+/** The shape `themeScopeKey` produces, for validating a stored pointer's scope. */
+export const THEME_SCOPE_PATTERN = /^(personal|business)-[0-9a-f]{16}$/;
+
 export function themeScopeKey(workspace: WorkspaceRef, personId: string): string {
   const of = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 16);
   return workspace.kind === 'business'
@@ -148,12 +151,28 @@ export class ThemeService {
     private readonly scope: ThemeScopeSource,
   ) {}
 
+  /** The storage scope this request is acting in. One derivation, one place. */
+  private currentScope(): string {
+    return themeScopeKey(this.scope.workspace(), this.scope.personId());
+  }
+
   private scopeDir(): string {
-    return path.join(
-      this.store.dataDir,
-      'themes',
-      themeScopeKey(this.scope.workspace(), this.scope.personId()),
-    );
+    return path.join(this.store.dataDir, 'themes', this.currentScope());
+  }
+
+  /**
+   * Whether the applied-theme pointer names *this* theme in *this* scope.
+   *
+   * The pointer lives in the one global settings file; the themes live per
+   * scope. Without the scope test, a theme that happens to share an id in
+   * another workspace would move — or claim — the other workspace's pointer.
+   * A pointer written before `scope` existed carries none and is taken at its
+   * word, which is the behaviour every existing install already has.
+   */
+  private pointsHere(id: string): boolean {
+    const pointer = this.store.settings.appearance.activeTheme;
+    if (!pointer || pointer.id !== id) return false;
+    return pointer.scope === undefined || pointer.scope === this.currentScope();
   }
 
   private themeDir(id: string): string {
@@ -193,7 +212,6 @@ export class ThemeService {
     } catch {
       return [];
     }
-    const activeId = this.store.settings.appearance.activeTheme?.id ?? null;
     const summaries: ThemeSummary[] = [];
     for (const id of entries.sort()) {
       if (!THEME_PACK_ID_PATTERN.test(id)) continue;
@@ -234,7 +252,7 @@ export class ThemeService {
         revision: read.pack.revision,
         baseTheme: read.pack.baseTheme,
         updatedAt,
-        active: read.pack.id === activeId,
+        active: this.pointsHere(read.pack.id),
         isDraft: false,
         hasDraft: draft !== null,
       });
@@ -305,6 +323,12 @@ export class ThemeService {
   async active(): Promise<ActiveTheme> {
     const pointer = this.store.settings.appearance.activeTheme;
     if (!pointer) return { pack: null, source: 'none', notice: null };
+    // A theme applied in another workspace is not a theme that failed to load.
+    // It is simply not in this scope's storage, so this scope has no theme —
+    // the built-in appearance, and nothing to apologise for. The pointer is
+    // left exactly as it is, so switching back puts the theme back.
+    if (pointer.scope !== undefined && pointer.scope !== this.currentScope())
+      return { pack: null, source: 'none', notice: null };
     if (!THEME_PACK_ID_PATTERN.test(pointer.id))
       return {
         pack: null,
@@ -349,8 +373,28 @@ export class ThemeService {
    * behind it. A pack that does not validate is the ordinary case while someone
    * is still editing, and it must not cost the process a recovery pass.
    */
-  validate(id: string, body: unknown): ThemePackV1 {
+  /**
+   * Refuse a name this app cannot store, before anything takes the lock.
+   *
+   * Public for the same reason `validate` is: the routes that mutate must be
+   * able to reject a malformed or reserved id *outside* `store.locked`, where a
+   * throw costs the process a whole recovery-and-reload pass. The message lives
+   * here so the route never restates it.
+   */
+  assertThemeId(id: string): string {
     this.themeDir(id);
+    return id;
+  }
+
+  /** The same refusal for a revision number, and for the same reason. */
+  assertRevisionNumber(revision: number): number {
+    if (!Number.isInteger(revision) || revision < 1)
+      throw refuse(400, 'A theme revision is a whole number from 1 up.', 'invalid_revision');
+    return revision;
+  }
+
+  validate(id: string, body: unknown): ThemePackV1 {
+    this.assertThemeId(id);
     const validated = validateThemePack(body);
     if (!validated.ok)
       throw new ApiError(400, 'That theme is not one this computer can apply.', {
@@ -415,7 +459,7 @@ export class ThemeService {
     // Editing the theme that is applied shows the edit. The pointer carries the
     // revision, so leaving it behind would paint an older pack than the one the
     // editor is looking at, and say nothing about the difference.
-    if (this.store.settings.appearance.activeTheme?.id === id) await this.point(id, revision);
+    if (this.pointsHere(id)) await this.point(id, revision);
     // The autosave has been overtaken by a real save. Leaving it would reopen
     // the editor on work that is now behind the saved revision.
     await this.discardDraft(id);
@@ -479,8 +523,7 @@ export class ThemeService {
 
   /** Bring an earlier revision back as a new one. History only ever grows. */
   async restore(id: string, revision: number): Promise<{ pack: ThemePackV1; revision: number }> {
-    if (!Number.isInteger(revision) || revision < 1)
-      throw refuse(400, 'A theme revision is a whole number from 1 up.', 'invalid_revision');
+    this.assertRevisionNumber(revision);
     const dir = this.themeDir(id);
     const read = accept(await readJsonOrNull(path.join(dir, 'revisions', `${revision}.json`)));
     if ('reason' in read)
@@ -497,7 +540,7 @@ export class ThemeService {
     await this.writeRevision(dir, next, pack);
     await jsonWrite(path.join(dir, 'pack.json'), pack);
     await jsonWrite(path.join(dir, 'last-known-good.json'), pack);
-    if (this.store.settings.appearance.activeTheme?.id === id) await this.point(id, next);
+    if (this.pointsHere(id)) await this.point(id, next);
     return { pack, revision: next };
   }
 
@@ -527,11 +570,18 @@ export class ThemeService {
    * Move the pointer and nothing else. One appearance field, written the narrow
    * way the interface-scale shortcut writes its own, so a theme change cannot
    * carry an unrelated settings screen's stale copy of everything else with it.
+   *
+   * The scope travels with it. Settings are one file for the whole install and
+   * themes are stored per scope, so a pointer that did not say which scope it
+   * was written in would name a folder the next workspace has no copy of.
    */
   private async point(id: string, revision: number): Promise<void> {
     await this.store.saveSettings({
       ...this.store.settings,
-      appearance: { ...this.store.settings.appearance, activeTheme: { id, revision } },
+      appearance: {
+        ...this.store.settings.appearance,
+        activeTheme: { id, revision, scope: this.currentScope() },
+      },
     });
   }
 }

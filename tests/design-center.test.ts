@@ -16,7 +16,7 @@
  *
  * Nothing here calls a provider. The probe test binds its own loopback server.
  */
-import { afterEach, beforeEach, expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
@@ -24,6 +24,7 @@ import os from 'node:os';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
+import { Store } from '../server/store.js';
 import { themeScopeKey } from '../server/themes.js';
 import { probeWebsiteStudio } from '../server/website-studio.js';
 import {
@@ -213,7 +214,7 @@ test('an explicit save overtakes the draft, clears it, and only then can be appl
   const applied = await request('/themes/settled/activate', 'POST');
   expect(applied.status).toBe(200);
   const settings = await request<Settings>('/settings');
-  expect(settings.data.appearance.activeTheme).toEqual({ id: 'settled', revision: 1 });
+  expect(settings.data.appearance.activeTheme).toMatchObject({ id: 'settled', revision: 1 });
 });
 
 test('a draft beside a saved theme is reported, is refused as a pack field, and can be discarded', async () => {
@@ -480,6 +481,65 @@ test('every html[data-…] rule in styles.css is restated for the preview stage'
     missing,
     `client/console/design-center.css does not restate these rules from client/styles.css, so the preview will show the app's own values instead of the theme being designed. Add a .dc-stage-scoped counterpart, or an allowlist entry saying why not: ${missing.join(' | ')}`,
   ).toEqual([]);
+});
+
+/**
+ * A refusal must not cost a store recovery pass.
+ *
+ * `Store.locked` reads any throw as a failed write: it latches
+ * `recoveryRequired` and runs `recoverAndReload()`, which re-reads every
+ * project state and the settings file. In a shipped build the customization
+ * entitlement is always absent, so *every* press of Apply is a 403 — and a 403
+ * thrown inside the lock would pay for a full reload of the store each time.
+ * The capability and the theme name are therefore settled before the lock is
+ * taken, and this is the test that says so.
+ *
+ * The spy is on `Store.prototype`, which is the same class `createApp` builds,
+ * and the last block is a positive control: a spy that never fires would pass
+ * this test for the wrong reason.
+ */
+test('a refused activate and a malformed name never cost a store recovery pass', async () => {
+  const recovered = vi.spyOn(Store.prototype as unknown as { recoverAndReload: () => Promise<void> }, 'recoverAndReload');
+  try {
+    await request('/themes/refusable', 'PUT', pack('refusable'));
+
+    // The process runs on the `paid` fixture; this one request asks to be the
+    // free one, which is what every shipped install is.
+    const free = { 'X-Diomedes-Entitlement-Fixture': 'free' };
+    const applied = await request('/themes/refusable/activate', 'POST', undefined, free);
+    expect(applied.status).toBe(403);
+    const restored = await request('/themes/refusable/restore/1', 'POST', undefined, free);
+    expect(restored.status).toBe(403);
+
+    // A name this app cannot store is the other refusal that used to throw
+    // inside the lock. `ab` is too short for THEME_PACK_ID_PATTERN.
+    expect((await request('/themes/ab/activate', 'POST')).status).toBe(400);
+    expect((await request('/themes/ab/restore/1', 'POST')).status).toBe(400);
+    expect((await request('/themes/ab/draft', 'DELETE')).status).toBe(400);
+    // And a revision number that is not one.
+    expect((await request('/themes/refusable/restore/0', 'POST')).status).toBe(400);
+
+    expect(recovered).not.toHaveBeenCalled();
+
+    // The store is not in a latched recovery state either: the next write works.
+    const saved = await request('/themes/refusable', 'PUT', pack('refusable'), {
+      'If-Match': '"1"',
+    });
+    expect(saved.status).toBe(200);
+    expect(recovered).not.toHaveBeenCalled();
+
+    // Positive control: a throw inside `locked` does reach `recoverAndReload`,
+    // so the assertions above are about the routes and not about the spy.
+    const control = new Store(path.join(root, 'control'), path.join(root, 'projects'));
+    await control.init();
+    recovered.mockClear();
+    await expect(
+      control.locked(() => Promise.reject(new Error('a failed write'))),
+    ).rejects.toThrow('a failed write');
+    expect(recovered).toHaveBeenCalledTimes(1);
+  } finally {
+    recovered.mockRestore();
+  }
 });
 
 test('a bare pack is not a package, which is why Export must not write one', () => {

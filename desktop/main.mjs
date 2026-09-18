@@ -109,6 +109,11 @@ async function customTitleBar(settings) {
     // a cosmetic lag and never access — the themes themselves are served only
     // through the scope `workspaces.active()` resolves.
     const scope = themeScopeKey(settings.activeWorkspace, identity?.id);
+    // A theme applied in another workspace is not this workspace's theme. The
+    // service answers the built-in appearance for it, so the titlebar must too,
+    // rather than reading a folder that belongs to a different scope. A pointer
+    // with no scope was written before scopes were recorded; it is taken as-is.
+    if (active.scope !== undefined && active.scope !== scope) return null;
     const pack = JSON.parse(
       await fs.readFile(path.join(dataDir, 'themes', scope, active.id, 'pack.json'), 'utf8'),
     );
