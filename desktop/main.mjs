@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, Menu, shell } from 'electron';
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { watch } from 'node:fs';
 import path from 'node:path';
@@ -66,6 +67,51 @@ function titleBarFor(packageId) {
   return { color, symbolColor, height: 40 };
 }
 
+/**
+ * The folder one account's themes live in.
+ *
+ * Mirrored from `themeScopeKey` in server/themes.ts, which owns it. This file
+ * is the Electron shell and cannot import the service's TypeScript, so the six
+ * lines are duplicated rather than shared. Change one and change the other.
+ */
+function themeScopeKey(workspace, personId) {
+  const of = (value) => createHash('sha256').update(String(value)).digest('hex').slice(0, 16);
+  return workspace?.kind === 'business'
+    ? `business-${of(workspace.organizationId)}`
+    : `personal-${of(personId)}`;
+}
+
+/**
+ * The titlebar for a custom theme: its own chrome and t1 when both are plain
+ * six-digit hex, and otherwise the built-in entry for the scheme it was built
+ * on. Every pack names a `baseTheme`, so there is always an answer here — which
+ * is exactly why `dataset.package` carries the base scheme id too.
+ *
+ * Nothing is trusted: the pack is read as data, two colours are taken from it,
+ * and anything unreadable falls through to the scheme.
+ */
+async function customTitleBar(settings) {
+  const active = settings?.appearance?.activeTheme;
+  if (!active || typeof active.id !== 'string' || !/^[a-z0-9][a-z0-9-]{2,63}$/.test(active.id))
+    return null;
+  try {
+    const identity = JSON.parse(
+      await fs.readFile(path.join(dataDir, 'workspaces', 'identity.json'), 'utf8'),
+    );
+    const scope = themeScopeKey(settings.activeWorkspace, identity?.id);
+    const pack = JSON.parse(
+      await fs.readFile(path.join(dataDir, 'themes', scope, active.id, 'pack.json'), 'utf8'),
+    );
+    const chrome = pack?.tokens?.color?.chrome?.$value;
+    const text = pack?.tokens?.color?.t1?.$value;
+    if (HEX_COLOR.test(String(chrome)) && HEX_COLOR.test(String(text)))
+      return { color: chrome, symbolColor: text, height: 40 };
+    return titleBarFor(pack?.baseTheme);
+  } catch {
+    return null;
+  }
+}
+
 // The service persists settings at settings.json in the data dir
 // (see server/store.ts). Read the saved appearance once, then re-apply
 // when it changes. No IPC or preload: this stays in the shell.
@@ -74,7 +120,8 @@ async function applyTitleBarOverlay() {
   try {
     const raw = await fs.readFile(path.join(dataDir, 'settings.json'), 'utf8');
     const settings = JSON.parse(raw);
-    window.setTitleBarOverlay(titleBarFor(settings?.appearance?.package));
+    const custom = await customTitleBar(settings);
+    window.setTitleBarOverlay(custom ?? titleBarFor(settings?.appearance?.package));
   } catch {
     // Missing file, unparsable JSON, or unknown id: keep the default overlay.
   }
