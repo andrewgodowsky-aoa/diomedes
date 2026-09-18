@@ -32,6 +32,7 @@ import { packProblem, useStudioSession } from './design-center/session';
 import {
   activateTheme,
   buildPackage,
+  copyAssets,
   discardDraft,
   listThemes,
   readTheme,
@@ -218,6 +219,10 @@ export function DesignCenter({
         setProblem(found);
         return;
       }
+      // The new theme needs its own copy of the pictures before it is saved:
+      // assets are stored per theme, and a save naming bytes this theme does
+      // not hold is refused.
+      await copyAssets(session.pack.id, id, copy);
       const saved = await saveTheme(copy, null);
       session.adopt(saved.pack);
       setSavedRevision(saved.revision);
@@ -466,7 +471,10 @@ export function DesignCenter({
             {said && <span className="caption push-right">{said}</span>}
           </div>
           {(problem || session.problem) && (
-            <p role="alert" className="fault-text">
+            // Named, because the stage below carries fixture alerts of its own
+            // and a test asking "did this screen refuse anything?" must be able
+            // to tell the screen's own sentence from a picture of one.
+            <p role="alert" className="fault-text" data-dc-problem="">
               {problem || session.problem}
             </p>
           )}

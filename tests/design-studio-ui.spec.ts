@@ -548,53 +548,91 @@ test('D08: a texture never covers an approval control’s label', async ({ page 
    * is made clickable for the length of the check — otherwise this would pass
    * even if the texture were painted on top of everything. What is asserted is
    * paint order: with the layer taking events, the topmost element over the
-   * middle of every approval control is still that control.
+   * middle of every control in the named regions is still that control.
+   *
+   * Taken as arguments rather than hard-coded, because the same claim has to
+   * hold in two different stacking contexts: the preview stage, and the running
+   * app after the theme is applied.
    */
-  const hitTest = async () =>
-    page.evaluate(() => {
-      const layer = document.querySelector('.dc-stage > .dm-texture-layer') as HTMLElement | null;
-      if (!layer) return ['there is no texture layer to test'];
-      const previous = layer.style.pointerEvents;
-      layer.style.pointerEvents = 'auto';
-      const problems: string[] = [];
-      let tested = 0;
-      try {
-        const notice = document.querySelector('[data-dc-piece="notice"]');
-        for (const button of notice?.querySelectorAll('button') ?? []) {
-          // `elementFromPoint` works in viewport coordinates and answers with
-          // nothing at all for a point that is scrolled off screen, so each
-          // control is brought into view before it is asked about.
-          button.scrollIntoView({ block: 'center' });
-          const box = button.getBoundingClientRect();
-          if (box.width === 0 || box.height === 0) continue;
-          tested += 1;
-          const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
-          if (!top || !button.contains(top))
-            problems.push(
-              `“${button.textContent?.trim()}” is covered by <${top?.tagName.toLowerCase() ?? 'nothing'} class="${
-                (top as HTMLElement | null)?.className ?? ''
-              }">`,
-            );
+  const hitTest = async (layerSelector: string, regions: string[]) =>
+    page.evaluate(
+      ({ layerSelector, regions }) => {
+        const layer = document.querySelector(layerSelector) as HTMLElement | null;
+        if (!layer) return [`there is no texture layer at ${layerSelector} to test`];
+        const previous = layer.style.pointerEvents;
+        layer.style.pointerEvents = 'auto';
+        const problems: string[] = [];
+        let tested = 0;
+        try {
+          for (const region of regions) {
+            for (const host of document.querySelectorAll(region)) {
+              for (const button of host.querySelectorAll('button')) {
+                // `elementFromPoint` works in viewport coordinates and answers
+                // with nothing at all for a point that is scrolled off screen,
+                // so each control is brought into view before it is asked about.
+                button.scrollIntoView({ block: 'center' });
+                const box = button.getBoundingClientRect();
+                if (box.width === 0 || box.height === 0) continue;
+                tested += 1;
+                const top = document.elementFromPoint(
+                  box.x + box.width / 2,
+                  box.y + box.height / 2,
+                );
+                if (!top || !button.contains(top))
+                  problems.push(
+                    `“${button.textContent?.trim()}” in ${region} is covered by <${
+                      top?.tagName.toLowerCase() ?? 'nothing'
+                    } class="${(top as HTMLElement | null)?.className ?? ''}">`,
+                  );
+              }
+            }
+          }
+        } finally {
+          layer.style.pointerEvents = previous;
         }
-      } finally {
-        layer.style.pointerEvents = previous;
-      }
-      // A run that hit-tested nothing would pass for the wrong reason.
-      if (tested === 0) problems.push('no approval control was on screen to test');
-      return problems;
-    });
+        // A run that hit-tested nothing would pass for the wrong reason.
+        if (tested === 0) problems.push(`nothing was on screen to test in ${regions.join(', ')}`);
+        return problems;
+      },
+      { layerSelector, regions },
+    );
 
-  expect(await hitTest(), 'A texture must never sit over a permission control').toEqual([]);
+  // Both places a theme is asked to approve something: the permission notice
+  // and the review card that keeps or undoes a change.
+  const STAGE_APPROVALS = ['[data-dc-piece="notice"]', '[data-dc-piece="review-card"]'];
+  await expect(
+    page.locator('[data-dc-piece="review-card"]').getByRole('button', { name: 'Keep' }),
+  ).toBeVisible();
+  expect(
+    await hitTest('.dc-stage > .dm-texture-layer', STAGE_APPROVALS),
+    'A texture must never sit over a permission control',
+  ).toEqual([]);
 
   // And with one of them focused, so the focus ring is on screen while the
   // same question is asked again.
   await approval.getByRole('button', { name: 'Go ahead', exact: true }).focus();
   expect(
-    await hitTest(),
+    await hitTest('.dc-stage > .dm-texture-layer', STAGE_APPROVALS),
     'A texture must never sit over a permission control, focused or not',
   ).toEqual([]);
 
   await page.screenshot({ path: `${SHOTS}/07-texture-under-labels.png`, fullPage: true });
+
+  // The same claim in the running app, whose texture layer is `.app`'s own
+  // (client/App.tsx) and not the stage's. The theme is applied and the Design
+  // Center closed, so what is hit-tested is the Console a person actually uses.
+  // Every control in it is tested, which includes any approval the app is
+  // showing: the Console is never made to hold a real pending approval, because
+  // nothing in this spec may approve an action.
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.locator('.dc-state')).toContainText('is applied.');
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.locator('.design-center')).toHaveCount(0);
+  await expect(page.locator('.app > .dm-texture-layer')).toHaveCount(1);
+  expect(
+    await hitTest('.app > .dm-texture-layer', ['.console']),
+    'A texture must never sit over a control in the running app',
+  ).toEqual([]);
 });
 
 test('D09: every button state stays readable over the composited background', async ({ page }) => {
@@ -730,4 +768,42 @@ test('D10: a file the app cannot read is refused with a sentence, not a stack tr
   await expect(page.locator('[data-dc-artwork-empty="logo"]')).toBeVisible();
 
   await page.screenshot({ path: `${SHOTS}/09-refused-picture.png`, fullPage: true });
+});
+
+test('D11: saving a copy under a new name takes the pictures with it', async ({
+  page,
+  request,
+}) => {
+  await openDesignCenter(page);
+  await page.locator('[data-dc-artwork-input="bust"]').setInputFiles(FIXTURE_PNG);
+  await expect(page.locator('[data-dc-artwork="bust"]')).toBeVisible();
+
+  const COPY_ID = 'studio-proof-copy';
+  await page.getByRole('button', { name: 'Save as new theme' }).click();
+  await page.getByRole('textbox', { name: 'New theme name' }).fill('Studio proof copy');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  // A copy whose pictures had been left behind would be refused by the save
+  // with advice about a missing picture that nobody could act on.
+  await expect(page.locator('.dc-state')).toContainText('Saved as');
+  await expect(page.locator('[data-dc-problem]')).toHaveCount(0);
+
+  // The picture is painted from the new theme, not still borrowed from the old.
+  const painted = await page
+    .locator('[data-dc-artwork-slot="bust"] .dm-artwork-slot')
+    .evaluate((element) => getComputedStyle(element).backgroundImage);
+  expect(painted).toContain(`/api/themes/${COPY_ID}/assets/`);
+
+  const saved = await request.get(`/api/themes/${COPY_ID}`, { headers: HEADERS });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  const stored = (await saved.json()) as {
+    pack: { artwork: Record<string, { assetHash: string }>; assets: Record<string, unknown> };
+  };
+  const hash = stored.pack.artwork.bust.assetHash;
+  expect(Object.keys(stored.pack.assets)).toEqual([hash]);
+
+  // And the bytes really are under the new theme, not a record pointing at air.
+  const served = await request.get(`/api/themes/${COPY_ID}/assets/${hash}`);
+  expect(served.ok()).toBe(true);
+  expect((await served.body()).length).toBe(FIXTURE_BYTES);
 });

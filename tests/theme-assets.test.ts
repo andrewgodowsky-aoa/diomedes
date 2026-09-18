@@ -284,6 +284,30 @@ test('SVG is refused by name, however it is labelled', async () => {
   const withProlog = await upload('no-svg', declared, 'image/png');
   expect(withProlog.status).toBe(400);
   expect(errorCode(withProlog.data)).toBe('asset_svg_refused');
+
+  // With a UTF-8 byte-order mark, which plenty of editors on Windows write
+  // without being asked. Its three bytes are not the character U+FEFF once each
+  // byte is read as a character, so they have to be dropped as bytes or the
+  // root element is never reached and the file gets the wrong sentence.
+  const mark = [0xef, 0xbb, 0xbf];
+  const marked = new Uint8Array([...mark, ...declared]);
+  const withMark = await upload('no-svg', marked, 'image/png');
+  expect(withMark.status).toBe(400);
+  expect(errorCode(withMark.data)).toBe('asset_svg_refused');
+  expect(errorText(withMark.data)).toContain('SVG is not accepted in this release');
+
+  // With the generator comments a drawing program writes above the root, and a
+  // mark as well: whole comments are stepped over rather than read as content.
+  const commented = new Uint8Array([
+    ...mark,
+    ...bytesOf('<!-- Generator: an editor -->'),
+    ...bytesOf('<!-- and a second note -->'),
+    ...bytesOf('<svg xmlns="http://www.w3.org/2000/svg"/>'),
+  ]);
+  const withComments = await upload('no-svg', commented, 'image/png');
+  expect(withComments.status).toBe(400);
+  expect(errorCode(withComments.data)).toBe('asset_svg_refused');
+  expect(errorText(withComments.data)).toContain('SVG is not accepted in this release');
 });
 
 test('an empty body is refused', async () => {

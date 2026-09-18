@@ -90,10 +90,22 @@ const refuse = (status: number, message: string, code: string) =>
  * matched.
  */
 function looksLikeXml(bytes: Uint8Array): boolean {
-  const window = bytes.subarray(0, 256);
+  // A UTF-8 byte-order mark is the three bytes EF BB BF. Read one byte to one
+  // character, as this must be, they arrive as three separate characters and
+  // never as U+FEFF, so the mark is dropped as bytes before anything is read.
+  const from = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0;
+  const window = bytes.subarray(from, from + 256);
   let text = '';
   for (const byte of window) text += String.fromCharCode(byte);
-  const head = text.toLowerCase().replace(/^﻿/, '').trimStart();
+  let head = text.toLowerCase().trimStart();
+  // Any number of comments may stand before the declaration or the root
+  // element. Each whole one is stepped over; a comment still open at the end of
+  // the window is already enough to know this is not a picture.
+  while (head.startsWith('<!--')) {
+    const closed = head.indexOf('-->');
+    if (closed < 0) return true;
+    head = head.slice(closed + 3).trimStart();
+  }
   return head.startsWith('<?xml') || head.startsWith('<svg') || head.startsWith('<!doctype svg');
 }
 

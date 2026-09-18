@@ -152,6 +152,27 @@ export async function buildPackage(pack: ThemePackV1): Promise<ThemePackage> {
  * picture nobody holds — which the save refuses, at the point where it is far
  * less obvious why.
  */
+/**
+ * Give a second theme its own copy of the pictures the first one holds.
+ *
+ * Assets are content-addressed and stored per theme, so a pack copied under a
+ * new id names bytes that id does not hold: the save would refuse it with
+ * advice about a missing picture that nobody can act on, and any slot already
+ * placed would fetch a 404. The bytes are read back from the source theme and
+ * uploaded to the new one, which is idempotent — storing bytes already on disk
+ * returns the record and rewrites nothing.
+ */
+export async function copyAssets(
+  fromThemeId: string,
+  toThemeId: string,
+  pack: ThemePackV1,
+): Promise<void> {
+  if (fromThemeId === toThemeId) return;
+  const bytes: Record<string, Uint8Array> = {};
+  for (const hash of Object.keys(pack.assets)) bytes[hash] = await fetchAssetBytes(fromThemeId, hash);
+  await restoreAssets(toThemeId, pack, bytes);
+}
+
 export async function restoreAssets(
   themeId: string,
   pack: ThemePackV1,
