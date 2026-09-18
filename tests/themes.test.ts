@@ -274,11 +274,24 @@ test('a theme applied in one scope is not applied — and not a failure — in a
     scope: themeScopeKey(PERSONAL, alice.id),
   });
 
+  // Nor may this scope put away a theme it is not wearing. Reset answers, and
+  // changes nothing: the pointer belongs to a workspace this person is not in,
+  // and clearing it would undo a choice made there.
+  const reset = await request<{ settings: Settings }>('/themes/reset', 'POST');
+  expect(reset.status).toBe(200);
+  expect(reset.data.settings.appearance.activeTheme).toMatchObject({
+    id: 'quiet-hours',
+    scope: themeScopeKey(PERSONAL, alice.id),
+  });
+
   // Back where it was applied, the theme is applied again.
   await restartAs('alice');
   const home = await request<{ pack: ThemePackV1 | null; source: string }>('/themes/active');
   expect(home.data.source).toBe('pack');
   expect(home.data.pack?.id).toBe('quiet-hours');
+  // And here, where it *is* applied, reset still works.
+  const cleared = await request<{ settings: Settings }>('/themes/reset', 'POST');
+  expect(cleared.data.settings.appearance.activeTheme).toBe(null);
 });
 
 test('a pointer written before scopes were recorded is still honoured', async () => {

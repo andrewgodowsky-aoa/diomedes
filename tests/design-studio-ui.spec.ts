@@ -952,3 +952,90 @@ test('D15: an edit made before the plan answers is autosaved once it does', asyn
   );
   await page.locator('.design-center').getByRole('button', { name: 'Close', exact: true }).click();
 });
+
+/**
+ * A theme applied in another workspace must read as the built-in package here.
+ *
+ * The applied-theme pointer is one field in one global settings file while
+ * themes are stored per workspace, so a pointer written elsewhere survives a
+ * switch and names a theme this scope cannot read. The service answers the
+ * built-in package for it; every screen must say the same thing, or Settings
+ * claims a theme is applied over a built-in paint, shows no scheme selected,
+ * and offers to put away a theme that belongs somewhere else.
+ *
+ * The foreign scope is written directly rather than by creating a business and
+ * switching into it: the stranded pointer *is* the state under test, and
+ * `tests/themes.test.ts` proves the real switch produces exactly this shape
+ * without a browser. The scope here is a well-formed key this install never
+ * derives, which is what another workspace's key is from this one's point of
+ * view.
+ */
+test('D16: a theme applied in another workspace reads as the built-in package', async ({
+  page,
+  request,
+}) => {
+  const applied = await request.post(`/api/themes/${THEME_ID}/activate`, { headers: HEADERS });
+  expect(applied.ok(), await applied.text()).toBe(true);
+  const home = (await (await request.get('/api/settings', { headers: HEADERS })).json()) as Settings;
+  const pointer = home.appearance.activeTheme;
+  expect(pointer, 'the theme must be applied before it can be stranded').toBeTruthy();
+
+  const foreign = await request.put('/api/settings', {
+    headers: HEADERS,
+    data: {
+      appearance: {
+        activeTheme: { id: pointer!.id, revision: pointer!.revision, scope: 'personal-abcdef0123456789' },
+      },
+    },
+  });
+  expect(foreign.ok(), await foreign.text()).toBe(true);
+
+  await openConsole(page);
+  // Nothing of the theme is on the document: this workspace has no theme.
+  await expect
+    .poll(async () => page.evaluate(() => document.documentElement.dataset.themePack ?? null))
+    .toBe(null);
+
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Design Center', exact: true }).click();
+  const card = page.locator('.service').filter({ hasText: 'Appearance' }).first();
+  await expect(card).toContainText('Built-in package');
+  await expect(card).not.toContainText('Theme applied');
+  await expect(card.getByRole('button', { name: 'Use the built-in package' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await expect(page.getByText('A theme from the Design Center is applied.')).toHaveCount(0);
+  // Exactly one scheme is selected, and it is the package that is painting.
+  await expect(page.locator('.radio-list input[type="radio"]:checked')).toHaveCount(1);
+  const painting = await page.evaluate(() => document.documentElement.dataset.package);
+  await expect(page.locator('.radio-list .radio-row.selected')).toHaveCount(1);
+
+  // Picking a scheme here must not reach into the workspace the theme belongs
+  // to. The client does not send the reset, and the service would refuse to act
+  // on it if it did.
+  const other = page.locator('.radio-list .radio-row:not(.selected) input[type="radio"]').first();
+  await other.click();
+  await expect
+    .poll(async () => page.evaluate(() => document.documentElement.dataset.package))
+    .not.toBe(painting);
+  const after = (await (await request.get('/api/settings', { headers: HEADERS })).json()) as Settings;
+  expect(after.appearance.activeTheme).toMatchObject({
+    id: THEME_ID,
+    scope: 'personal-abcdef0123456789',
+  });
+
+  // And back where it was applied, it is applied again, with the screen saying so.
+  const back = await request.put('/api/settings', {
+    headers: HEADERS,
+    data: { appearance: { activeTheme: { id: pointer!.id, revision: pointer!.revision } } },
+  });
+  expect(back.ok(), await back.text()).toBe(true);
+  await openConsole(page);
+  await expect
+    .poll(async () => page.evaluate(() => document.documentElement.dataset.themePack ?? null))
+    .toBe(THEME_ID);
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await expect(page.getByText('A theme from the Design Center is applied.')).toBeVisible();
+  await expect(page.locator('.radio-list input[type="radio"]:checked')).toHaveCount(0);
+});

@@ -6,6 +6,7 @@ import type {
   Settings as SettingsModel,
   UsageSnapshot,
 } from '../shared/types';
+import type { ThemePackV1 } from '../shared/theme-pack/types';
 import { api } from './api';
 import { INTERFACE_SCALES } from '../shared/interface-scale';
 import { AppUpdates } from './AppUpdates';
@@ -55,6 +56,7 @@ export function SettingsPage({
   openHelpersSignal,
   refresh,
   onOpenDesignCenter,
+  appliedTheme = null,
 }: {
   settings: SettingsModel;
   save: (value: SettingsModel) => Promise<void>;
@@ -76,6 +78,19 @@ export function SettingsPage({
   refresh: () => void;
   /** Opens the full Design Center workspace. Console only. */
   onOpenDesignCenter?: () => void;
+  /**
+   * The custom theme this app is actually wearing, or null for a built-in
+   * package. The resolved answer from `GET /api/themes/active`, held by
+   * `client/App.tsx` and passed down — never `appearance.activeTheme`.
+   *
+   * The pointer is one field in one global settings file while themes are
+   * stored per workspace, so in a workspace where the theme was not applied
+   * the pointer is set and the built-in package is what paints. Reading the
+   * pointer here made this screen say a theme was applied over a built-in
+   * scheme, show no scheme as selected, and offer to "put away" a theme that
+   * belongs to another workspace.
+   */
+  appliedTheme?: ThemePackV1 | null;
 }) {
   // Failures on the Appearance and Design Center screens, which share nothing
   // with the connection check above and must not borrow its message line.
@@ -458,18 +473,18 @@ export function SettingsPage({
                   <section className="service">
                     <div className="row">
                       <h3>
-                        <Mark state={settings.appearance.activeTheme ? 'done' : 'todo'} />
+                        <Mark state={appliedTheme ? 'done' : 'todo'} />
                         Appearance
                       </h3>
                       <span className="caption push-right">
-                        {settings.appearance.activeTheme
-                          ? `Theme applied (version ${settings.appearance.activeTheme.revision})`
+                        {appliedTheme
+                          ? `Theme applied (version ${appliedTheme.revision})`
                           : 'Built-in package'}
                       </span>
                     </div>
                     <p>
-                      {settings.appearance.activeTheme
-                        ? `“${settings.appearance.activeTheme.id}” is applied to this app.`
+                      {appliedTheme
+                        ? `“${appliedTheme.id}” is applied to this app.`
                         : `The built-in “${schemeId(settings.appearance.package)}” package is showing. Open the Design Center to make a theme of your own.`}
                     </p>
                     <p className="caption">
@@ -481,7 +496,7 @@ export function SettingsPage({
                       <Button tone="primary" onClick={() => onOpenDesignCenter?.()}>
                         Open Design Center
                       </Button>
-                      {settings.appearance.activeTheme && (
+                      {appliedTheme && (
                         <Button
                           tone="quiet"
                           onClick={() => {
@@ -561,7 +576,7 @@ export function SettingsPage({
             {section === 'Appearance' && (
               <>
                 <h2>Appearance package</h2>
-                {settings.appearance.activeTheme && (
+                {appliedTheme && (
                   <p className="caption">
                     A theme from the Design Center is applied. Choosing a built-in package below
                     puts that theme away and shows the package instead; the theme itself is kept.
@@ -569,9 +584,11 @@ export function SettingsPage({
                 )}
                 <div className="radio-list">
                   {SCHEMES.map((s) => {
-                    const selected =
-                      !settings.appearance.activeTheme &&
-                      schemeId(settings.appearance.package) === s.id;
+                    // What is painted decides what is selected. A theme applied
+                    // in another workspace leaves the pointer set while the
+                    // built-in package paints, and reading the pointer here
+                    // showed no scheme selected at all.
+                    const selected = !appliedTheme && schemeId(settings.appearance.package) === s.id;
                     return (
                       <label className={`radio-row ${selected ? 'selected' : ''}`} key={s.id}>
                         <input
@@ -586,10 +603,13 @@ export function SettingsPage({
                             // be a visual no-op, because the theme is what the
                             // resolver paints.
                             setAppearanceError('');
-                            // With no theme applied there is nothing to put
+                            // With no theme painting there is nothing to put
                             // away, and the reset would be a second request
-                            // that can only fail. One control, one write.
-                            const put = settings.appearance.activeTheme
+                            // that can only fail. One control, one write. The
+                            // test is what is applied here, not the pointer: a
+                            // theme belonging to another workspace must not be
+                            // cleared by someone picking a scheme in this one.
+                            const put = appliedTheme
                               ? api('/themes/reset', 'POST').then(() => undefined)
                               : Promise.resolve();
                             void put

@@ -123,8 +123,11 @@ export function DesignCenter({
         const list = await listThemes();
         if (!live) return;
         setThemes(list);
-        const applied = settings.appearance.activeTheme?.id ?? null;
-        const open = applied ?? list.find((theme) => theme.active)?.id ?? null;
+        // The listing's own `active` flag, not `appearance.activeTheme`: the
+        // pointer is one global field over per-workspace storage, so in a
+        // workspace where the theme was not applied it names a theme this
+        // scope cannot read and opening on it was a 404.
+        const open = list.find((theme) => theme.active)?.id ?? null;
         if (open) {
           const read = await readTheme(open);
           if (!live) return;

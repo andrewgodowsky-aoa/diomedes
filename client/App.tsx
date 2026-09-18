@@ -662,6 +662,9 @@ export function App() {
                   usage={usage}
                   openHelpersSignal={helpersRequest}
                   refresh={() => void refreshIntegrations(true)}
+                  // What is actually painted, not what the pointer names: the
+                  // pointer is global and theme storage is per workspace.
+                  appliedTheme={activeTheme}
                   onOpenDesignCenter={() => {
                     // Settings closes behind it, so closing the Design Center
                     // leaves the person back in the Console they were working

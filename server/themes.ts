@@ -557,9 +557,19 @@ export class ThemeService {
     return { pack };
   }
 
-  /** Back to the built-in appearance package. The themes themselves stay. */
+  /**
+   * Back to the built-in appearance package. The themes themselves stay.
+   *
+   * A pointer belonging to another workspace is left exactly where it is. It
+   * is not applied here — this scope is already showing the built-in package —
+   * so there is nothing to put away, and clearing it would reach into a
+   * workspace the person is not in and undo a choice made there. Answering 200
+   * and doing nothing is the honest outcome: what was asked for is already so.
+   */
   async reset(): Promise<void> {
-    if (!this.store.settings.appearance.activeTheme) return;
+    const pointer = this.store.settings.appearance.activeTheme;
+    if (!pointer) return;
+    if (pointer.scope !== undefined && pointer.scope !== this.currentScope()) return;
     await this.store.saveSettings({
       ...this.store.settings,
       appearance: { ...this.store.settings.appearance, activeTheme: null },
