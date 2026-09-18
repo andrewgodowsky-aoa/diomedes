@@ -1039,3 +1039,54 @@ test('D16: a theme applied in another workspace reads as the built-in package', 
   await expect(page.getByText('A theme from the Design Center is applied.')).toBeVisible();
   await expect(page.locator('.radio-list input[type="radio"]:checked')).toHaveCount(0);
 });
+
+/**
+ * A pointer of this workspace's own that nothing can be read through must keep
+ * the way back.
+ *
+ * Whether a pack was read and whether the pointer is this workspace's are two
+ * different questions, and the difference is a person who cannot get out: the
+ * theme paints nothing, the notice bar returns on every launch, and if the
+ * control that clears the pointer were gated on the pack there would be no
+ * remedy inside the app at all. The screen reads `applies` from
+ * `GET /api/themes/active`, never the notice — `client/App.tsx` writes a notice
+ * of its own when the fetch fails, and a server hiccup must not be able to
+ * clear a good pointer.
+ */
+test('D17: a theme that cannot be read is still one this workspace can put away', async ({
+  page,
+  request,
+}) => {
+  // This scope's own pointer — no scope field, id never stored — so nothing can
+  // be read through it and it is unmistakably this workspace's to clear.
+  const pointed = await request.put('/api/settings', {
+    headers: HEADERS,
+    data: { appearance: { activeTheme: { id: 'gone-for-good', revision: 1 } } },
+  });
+  expect(pointed.ok(), await pointed.text()).toBe(true);
+  const answer = await request.get('/api/themes/active', { headers: HEADERS });
+  expect(await answer.json()).toMatchObject({ pack: null, source: 'none', applies: true });
+
+  await openConsole(page);
+  await expect(page.locator('.appearance-notice')).toBeVisible();
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Design Center', exact: true }).click();
+  const card = page.locator('.service').filter({ hasText: 'Appearance' }).first();
+  await expect(card).toContainText('could not be read');
+  const back = card.getByRole('button', { name: 'Use the built-in package' });
+  await expect(back).toBeVisible();
+
+  // The scheme radio sends the reset for this pointer too, so either way out
+  // works. Proven on the control that exists for it.
+  await back.click();
+  await expect
+    .poll(async () => {
+      const settings = (await (
+        await request.get('/api/settings', { headers: HEADERS })
+      ).json()) as Settings;
+      return settings.appearance.activeTheme ?? null;
+    })
+    .toBe(null);
+  await expect(page.locator('.appearance-notice')).toHaveCount(0);
+  await expect(card).toContainText('Built-in package');
+});

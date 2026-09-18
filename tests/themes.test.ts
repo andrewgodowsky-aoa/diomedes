@@ -257,12 +257,18 @@ test('a theme applied in one scope is not applied — and not a failure — in a
   await restartAs('beatrix');
   // The pointer is untouched — it is one file for the whole install — but this
   // scope has no such theme, so the built-in appearance shows, with no notice.
-  const foreign = await request<{ pack: unknown; source: string; notice: string | null }>(
-    '/themes/active',
-  );
+  const foreign = await request<{
+    pack: unknown;
+    source: string;
+    notice: string | null;
+    applies: boolean;
+  }>('/themes/active');
   expect(foreign.data.pack).toBe(null);
   expect(foreign.data.source).toBe('none');
   expect(foreign.data.notice).toBe(null);
+  // Not this workspace's pointer, so this workspace is not offered the control
+  // that clears it — the other half of the same flag.
+  expect(foreign.data.applies).toBe(false);
   // Nor is another scope's pointer allowed to claim a theme that happens to
   // share its name here.
   await save('quiet-hours', pack('quiet-hours', { name: 'Beatrix’s own' }));
@@ -286,9 +292,12 @@ test('a theme applied in one scope is not applied — and not a failure — in a
 
   // Back where it was applied, the theme is applied again.
   await restartAs('alice');
-  const home = await request<{ pack: ThemePackV1 | null; source: string }>('/themes/active');
+  const home = await request<{ pack: ThemePackV1 | null; source: string; applies: boolean }>(
+    '/themes/active',
+  );
   expect(home.data.source).toBe('pack');
   expect(home.data.pack?.id).toBe('quiet-hours');
+  expect(home.data.applies).toBe(true);
   // And here, where it *is* applied, reset still works.
   const cleared = await request<{ settings: Settings }>('/themes/reset', 'POST');
   expect(cleared.data.settings.appearance.activeTheme).toBe(null);
@@ -369,19 +378,37 @@ test('a corrupt active pack falls back to last-known-good, then to the base sche
   expect((await request<{ themes: unknown[] }>('/themes')).data.themes).toEqual([]);
 
   await fs.writeFile(path.join(dir, 'last-known-good.json'), '{ "schemaVersion": 9 }', 'utf8');
-  const bare = await request<{ pack: null; source: string; notice: string }>('/themes/active');
+  const bare = await request<{ pack: null; source: string; notice: string; applies: boolean }>(
+    '/themes/active',
+  );
   expect(bare.data.source).toBe('none');
   expect(bare.data.pack).toBe(null);
   expect(bare.data.notice).toBeTruthy();
+  // Nothing can be read through it and it is still this person's pointer, so
+  // the way back to the built-in package must stay offered. `pack` being null
+  // does not say that — it is null for another workspace's pointer too — which
+  // is the whole reason this flag is separate.
+  expect(bare.data.applies).toBe(true);
 
   // A theme pointed at nothing at all is the same story, not a failure.
   await fs.rm(dir, { recursive: true, force: true });
-  const gone = await request<{ pack: null; source: string; notice: string }>('/themes/active');
+  const gone = await request<{ pack: null; source: string; notice: string; applies: boolean }>(
+    '/themes/active',
+  );
   expect(gone.data.source).toBe('none');
   expect(gone.data.notice).toBeTruthy();
+  expect(gone.data.applies).toBe(true);
   // The pointer is still saved: nothing here quietly edits settings behind a read.
   const settings = await request<Settings>('/settings');
   expect(settings.data.appearance.activeTheme?.id).toBe('fragile');
+
+  // And the way back works from exactly this state.
+  const cleared = await request<{ settings: Settings }>('/themes/reset', 'POST');
+  expect(cleared.status).toBe(200);
+  expect(cleared.data.settings.appearance.activeTheme).toBe(null);
+  const after = await request<{ notice: string | null; applies: boolean }>('/themes/active');
+  expect(after.data.notice).toBe(null);
+  expect(after.data.applies).toBe(false);
 });
 
 test('a pack that was not built for this app is refused', async () => {

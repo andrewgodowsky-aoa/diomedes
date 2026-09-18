@@ -57,6 +57,7 @@ export function SettingsPage({
   refresh,
   onOpenDesignCenter,
   appliedTheme = null,
+  themeApplies = false,
 }: {
   settings: SettingsModel;
   save: (value: SettingsModel) => Promise<void>;
@@ -91,6 +92,20 @@ export function SettingsPage({
    * belongs to another workspace.
    */
   appliedTheme?: ThemePackV1 | null;
+  /**
+   * `applies` from `GET /api/themes/active`: the pointer is this workspace's
+   * own, whether or not anything could be read through it.
+   *
+   * The two are not the same question, and the difference is a person who
+   * cannot get back. A pointer at a theme whose `pack.json` and
+   * last-known-good are both unreadable paints the built-in package and
+   * carries a notice on every launch — so `appliedTheme` is null while the
+   * pointer is very much still here. Gating the way back on the pack would
+   * hide the only control that clears it. Gating on the notice would be worse:
+   * `client/App.tsx` sets one of its own when the fetch fails, and a server
+   * hiccup must not be able to clear a good pointer.
+   */
+  themeApplies?: boolean;
 }) {
   // Failures on the Appearance and Design Center screens, which share nothing
   // with the connection check above and must not borrow its message line.
@@ -485,7 +500,13 @@ export function SettingsPage({
                     <p>
                       {appliedTheme
                         ? `“${appliedTheme.id}” is applied to this app.`
-                        : `The built-in “${schemeId(settings.appearance.package)}” package is showing. Open the Design Center to make a theme of your own.`}
+                        : themeApplies
+                          ? // The pointer is this workspace's own and nothing
+                            // could be read through it. Saying only "the
+                            // built-in package is showing" would leave the
+                            // button below looking like it had nothing to do.
+                            `The theme you chose could not be read, so the built-in “${schemeId(settings.appearance.package)}” package is showing. Put the theme away to stop being told so.`
+                          : `The built-in “${schemeId(settings.appearance.package)}” package is showing. Open the Design Center to make a theme of your own.`}
                     </p>
                     <p className="caption">
                       A theme made here can be applied to this app and exported for the website as a
@@ -496,7 +517,10 @@ export function SettingsPage({
                       <Button tone="primary" onClick={() => onOpenDesignCenter?.()}>
                         Open Design Center
                       </Button>
-                      {appliedTheme && (
+                      {/* The way back. Gated on the pointer belonging here, not
+                          on a pack having been read: a theme whose files are
+                          gone is exactly the pointer that needs clearing. */}
+                      {themeApplies && (
                         <Button
                           tone="quiet"
                           onClick={() => {
@@ -603,13 +627,15 @@ export function SettingsPage({
                             // be a visual no-op, because the theme is what the
                             // resolver paints.
                             setAppearanceError('');
-                            // With no theme painting there is nothing to put
-                            // away, and the reset would be a second request
-                            // that can only fail. One control, one write. The
-                            // test is what is applied here, not the pointer: a
-                            // theme belonging to another workspace must not be
-                            // cleared by someone picking a scheme in this one.
-                            const put = appliedTheme
+                            // With no pointer of this workspace's own there is
+                            // nothing to put away, and the reset would be a
+                            // second request that can only fail. One control,
+                            // one write. The test is whether the pointer is
+                            // *here* — not whether a pack was read through it,
+                            // which would strand an unreadable theme, and not
+                            // the raw pointer, which would let a scheme picked
+                            // here clear another workspace's theme.
+                            const put = themeApplies
                               ? api('/themes/reset', 'POST').then(() => undefined)
                               : Promise.resolve();
                             void put

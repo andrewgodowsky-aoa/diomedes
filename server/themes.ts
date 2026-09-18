@@ -108,6 +108,18 @@ export interface ActiveTheme {
   source: 'pack' | 'last-known-good' | 'none';
   /** One sentence for the person when what they chose is not what they got. */
   notice: string | null;
+  /**
+   * Whether the applied-theme pointer belongs to *this* scope — separate from
+   * whether anything could be read through it.
+   *
+   * A pointer at a theme whose files are gone still belongs here: it is this
+   * person's to put away, and the only control that clears it must be offered
+   * to them. `pack` being null does not say that, because it is also null for a
+   * pointer written in another workspace, which this scope must not clear. The
+   * notice does not say it either — the client sets one of its own when the
+   * fetch fails, and a server hiccup must never clear a good pointer.
+   */
+  applies: boolean;
 }
 
 /** Where a scope's themes live, and who that scope is. Injectable for tests. */
@@ -322,22 +334,29 @@ export class ThemeService {
    */
   async active(): Promise<ActiveTheme> {
     const pointer = this.store.settings.appearance.activeTheme;
-    if (!pointer) return { pack: null, source: 'none', notice: null };
+    if (!pointer) return { pack: null, source: 'none', notice: null, applies: false };
     // A theme applied in another workspace is not a theme that failed to load.
     // It is simply not in this scope's storage, so this scope has no theme —
     // the built-in appearance, and nothing to apologise for. The pointer is
-    // left exactly as it is, so switching back puts the theme back.
+    // left exactly as it is, so switching back puts the theme back, and
+    // `applies: false` tells the client this is not its pointer to clear.
     if (pointer.scope !== undefined && pointer.scope !== this.currentScope())
-      return { pack: null, source: 'none', notice: null };
+      return { pack: null, source: 'none', notice: null, applies: false };
+    // Everything from here is this scope's own pointer, so `applies` is true
+    // whatever can or cannot be read through it: a pointer at a theme whose
+    // files are gone is exactly the one that must still be clearable from
+    // Settings, and it is the only way back to the built-in package.
     if (!THEME_PACK_ID_PATTERN.test(pointer.id))
       return {
         pack: null,
         source: 'none',
         notice: 'The saved theme name is not one this computer can store. The built-in appearance package is showing.',
+        applies: true,
       };
     const dir = path.join(this.scopeDir(), pointer.id);
     const current = accept(await readJsonOrNull(path.join(dir, 'pack.json')));
-    if ('pack' in current) return { pack: current.pack, source: 'pack', notice: null };
+    if ('pack' in current)
+      return { pack: current.pack, source: 'pack', notice: null, applies: true };
     console.warn(`The active theme ${pointer.id} could not be applied: ${current.reason}`);
     const good = accept(await readJsonOrNull(path.join(dir, 'last-known-good.json')));
     if ('pack' in good)
@@ -345,12 +364,14 @@ export class ThemeService {
         pack: good.pack,
         source: 'last-known-good',
         notice: `“${good.pack.name}” could not be read as saved, so the last version that worked is showing instead.`,
+        applies: true,
       };
     return {
       pack: null,
       source: 'none',
       notice:
         'The theme you chose could not be read, and there is no earlier version to fall back to. The built-in appearance package is showing.',
+      applies: true,
     };
   }
 

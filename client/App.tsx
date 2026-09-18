@@ -79,6 +79,13 @@ export function App() {
   // The custom theme on the document, and the one sentence that explains a
   // fallback. Both are absent for every built-in appearance package.
   const [activeTheme, setActiveTheme] = useState<ThemePackV1 | null>(null);
+  /**
+   * Whether the applied-theme pointer is this workspace's own, which is a
+   * different question from whether a pack could be read through it. A pointer
+   * at a theme whose files are gone paints nothing and still has to be
+   * clearable from Settings — it is the only way back to the built-in package.
+   */
+  const [themeApplies, setThemeApplies] = useState(false);
   const [appearanceNotice, setAppearanceNotice] = useState('');
   const themeKey = useRef<string | null>(null);
   const settingsRef = useRef(settings);
@@ -225,6 +232,7 @@ export function App() {
     if (!pointer) {
       themeKey.current = null;
       setActiveTheme(null);
+      setThemeApplies(false);
       setAppearanceNotice('');
       return;
     }
@@ -232,17 +240,29 @@ export function App() {
     if (key === themeKey.current) return;
     themeKey.current = key;
     let live = true;
-    void api<{ pack: ThemePackV1 | null; source: string; notice: string | null }>('/themes/active')
+    void api<{
+      pack: ThemePackV1 | null;
+      source: string;
+      notice: string | null;
+      applies: boolean;
+    }>('/themes/active')
       .then((answer) => {
         if (!live) return;
         setActiveTheme(answer.pack);
+        setThemeApplies(answer.applies === true);
         setAppearanceNotice(answer.notice ?? '');
       })
       .catch(() => {
         // A theme that cannot be fetched is not a reason to stop painting. The
         // built-in package is already on the document; say so and leave it.
+        //
+        // `applies` stays unknown here, so it is left false: a server hiccup
+        // must not offer a control that clears a pointer, and the next
+        // successful read decides. The notice is the client's own and is never
+        // the discriminator for either.
         if (!live) return;
         setActiveTheme(null);
+        setThemeApplies(false);
         setAppearanceNotice(
           'Your saved theme could not be read. The built-in appearance package is showing.',
         );
@@ -668,6 +688,9 @@ export function App() {
                   // What is actually painted, not what the pointer names: the
                   // pointer is global and theme storage is per workspace.
                   appliedTheme={activeTheme}
+                  // Separate from the pack: a pointer whose theme cannot be
+                  // read paints nothing and is still this workspace's to clear.
+                  themeApplies={themeApplies}
                   onOpenDesignCenter={() => {
                     // Settings closes behind it, so closing the Design Center
                     // leaves the person back in the Console they were working
