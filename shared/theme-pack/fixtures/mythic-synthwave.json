@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "mythic-synthwave",
+  "name": "Mythic Synthwave",
   "revision": 3,
   "baseTheme": "graphite",
   "surfaces": ["app-console", "website"],

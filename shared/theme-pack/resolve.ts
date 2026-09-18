@@ -25,6 +25,7 @@ import {
   COLOR_TOKEN_NAMES,
   DEFAULT_BASE_THEME,
   DENSITIES,
+  FONT_CHOICES,
   FONT_STACKS,
   HEX_COLOR_PATTERN,
   type ApprovedScale,
@@ -32,6 +33,7 @@ import {
   type ColorTokenName,
   type Density,
   type FontChoice,
+  type MotionPresetId,
   type Surface,
   type ThemePackV1,
 } from './types.js';
@@ -112,6 +114,7 @@ export const APPEARANCE_DEFAULTS = {
   density: 'standard' as Density,
   motionDuration: 160,
   motionIntensity: 0.5,
+  motionPreset: 'settle' as MotionPresetId,
   textureOpacity: 1,
 } as const;
 
@@ -145,6 +148,14 @@ const isHexColor = (value: unknown): value is string =>
 
 const isApprovedScale = (value: unknown): value is ApprovedScale =>
   typeof value === 'number' && (APPROVED_SCALES as readonly number[]).includes(value);
+
+/**
+ * Membership, never truthiness: `FONT_STACKS['toString']` is a function, so a
+ * `value && FONT_STACKS[value]` guard would let every `Object.prototype` key
+ * through and put that function into a custom property.
+ */
+const isFontChoice = (value: unknown): value is FontChoice =>
+  typeof value === 'string' && (FONT_CHOICES as readonly string[]).includes(value);
 
 // ---------------------------------------------------------------------------
 // Colour arithmetic (hex in, hex out — no CSS functions are ever emitted)
@@ -294,6 +305,7 @@ export function resolveAppearance(layers: AppearanceLayers): ResolvedAppearance 
   out.setData('themePack', 'none', 'defaults');
   out.setData('density', APPEARANCE_DEFAULTS.density, 'defaults');
   out.setData('motion', 'normal', 'defaults');
+  out.setData('motionPreset', APPEARANCE_DEFAULTS.motionPreset, 'defaults');
   out.setData('texture', 'on', 'defaults');
   out.setData('colorScheme', base.lightScheme ? 'light' : 'dark', 'defaults');
 
@@ -317,6 +329,7 @@ export function resolveAppearance(layers: AppearanceLayers): ResolvedAppearance 
     out.setVar('--dm-font-read', FONT_STACKS[theme.typography.readingFont], 'theme');
     out.setVar('--dm-font-code', FONT_STACKS[theme.typography.codeFont], 'theme');
     out.setVar('--dm-motion-intensity', String(theme.motion.intensity), 'theme');
+    out.setData('motionPreset', theme.motion.presetId, 'theme');
     for (const [name, ratio] of Object.entries(DURATION_RATIOS))
       out.setVar(name, `${Math.round(theme.motion.duration * ratio)}ms`, 'theme');
     const texture = theme.artwork.texture;
@@ -345,11 +358,11 @@ export function resolveAppearance(layers: AppearanceLayers): ResolvedAppearance 
     }
     if (workspace.density && DENSITIES.includes(workspace.density))
       out.setData('density', workspace.density, 'workspace');
-    if (workspace.interfaceFont && FONT_STACKS[workspace.interfaceFont])
+    if (isFontChoice(workspace.interfaceFont))
       out.setVar('--dm-font-ui', FONT_STACKS[workspace.interfaceFont], 'workspace');
-    if (workspace.readingFont && FONT_STACKS[workspace.readingFont])
+    if (isFontChoice(workspace.readingFont))
       out.setVar('--dm-font-read', FONT_STACKS[workspace.readingFont], 'workspace');
-    if (workspace.codeFont && FONT_STACKS[workspace.codeFont])
+    if (isFontChoice(workspace.codeFont))
       out.setVar('--dm-font-code', FONT_STACKS[workspace.codeFont], 'workspace');
   }
 
@@ -370,13 +383,16 @@ export function resolveAppearance(layers: AppearanceLayers): ResolvedAppearance 
     );
   if (personal.motion === 'reduced') {
     out.setData('motion', 'reduced', 'personal');
+    out.setData('motionPreset', 'none', 'personal');
     out.setVar('--dm-motion-intensity', '0', 'personal');
     for (const name of Object.keys(DURATION_RATIOS)) out.setVar(name, '0ms', 'personal');
   }
 
   // 5. mandatory accessibility and safety -----------------------------------
   if (demands.reducedMotion) {
+    // reducedMotionBehaviour is 'static' in v1: the preset becomes none.
     out.setData('motion', 'reduced', 'accessibility');
+    out.setData('motionPreset', 'none', 'accessibility');
     out.setVar('--dm-motion-intensity', '0', 'accessibility');
     for (const name of Object.keys(DURATION_RATIOS)) out.setVar(name, '0ms', 'accessibility');
   }

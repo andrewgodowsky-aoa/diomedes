@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "harbor-quiet",
+  "name": "Harbor Quiet",
   "revision": 1,
   "baseTheme": "harbor",
   "surfaces": ["app-console", "website"],

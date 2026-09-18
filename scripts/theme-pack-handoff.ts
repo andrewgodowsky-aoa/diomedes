@@ -19,9 +19,9 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const source = path.join(root, 'shared/theme-pack');
-const destination = path.resolve(
-  process.argv[2] ?? path.join(root, '../../deliverables/theme-pack-v1'),
-);
+/** The path the brief names. A caller may override it, under the rule below. */
+export const DEFAULT_DESTINATION = 'F:\\Diomedes\\deliverables\\theme-pack-v1';
+const destination = path.resolve(process.argv[2] ?? DEFAULT_DESTINATION);
 
 const SOURCE_FILES = [
   'types.ts',
@@ -45,7 +45,21 @@ for (const file of SOURCE_FILES) {
       throw new Error(`${file} imports ${specifier}, which is outside the handoff bundle`);
 }
 
-await fs.rm(destination, { recursive: true, force: true });
+/**
+ * The destination is caller-supplied, and this script deletes it. It therefore
+ * only ever deletes a folder it can recognise as its own: one that does not
+ * exist, one that is empty, or one that already holds a MANIFEST.sha256 from a
+ * previous run. Anything else is someone's work, and we stop.
+ */
+const existing = await fs.readdir(destination).catch((error: NodeJS.ErrnoException) => {
+  if (error.code === 'ENOENT') return undefined;
+  throw error;
+});
+if (existing && existing.length > 0 && !existing.includes('MANIFEST.sha256'))
+  throw new Error(
+    `refusing to overwrite ${destination}: it is not empty and holds no MANIFEST.sha256, so it is not a handoff bundle this script wrote`,
+  );
+if (existing) await fs.rm(destination, { recursive: true, force: true });
 await fs.mkdir(path.join(destination, 'fixtures'), { recursive: true });
 
 const manifest: string[] = [];

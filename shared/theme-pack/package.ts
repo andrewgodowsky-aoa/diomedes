@@ -15,7 +15,13 @@
  * browser, in Node and in the Astro site with no dependencies at all.
  */
 
-import { THEME_PACK_LIMITS, type ThemePackLimits, type ThemePackV1 } from './types.js';
+import {
+  ASSET_MIME_TYPES,
+  THEME_PACK_LIMITS,
+  type AssetMimeType,
+  type ThemePackLimits,
+  type ThemePackV1,
+} from './types.js';
 import { validateThemePack } from './validate.js';
 
 export const THEME_PACKAGE_FORMAT = 'diomedes-theme';
@@ -158,6 +164,100 @@ export function fromBase64(value: string): Uint8Array | undefined {
 }
 
 // ---------------------------------------------------------------------------
+// Image headers
+//
+// Enough of PNG, JPEG and WebP to read the type and the real pixel dimensions.
+// Nothing is decoded and nothing is rendered: these read a fixed handful of
+// bytes so a package cannot declare a small image and carry a huge one.
+// ---------------------------------------------------------------------------
+
+export interface ImageHeader {
+  mime: AssetMimeType;
+  width: number;
+  height: number;
+}
+
+const ascii = (bytes: Uint8Array, at: number, text: string): boolean =>
+  [...text].every((char, index) => bytes[at + index] === char.charCodeAt(0));
+
+const u16 = (bytes: Uint8Array, at: number): number => (bytes[at] << 8) | bytes[at + 1];
+const u32 = (bytes: Uint8Array, at: number): number =>
+  ((bytes[at] << 24) | (bytes[at + 1] << 16) | (bytes[at + 2] << 8) | bytes[at + 3]) >>> 0;
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/** Start-of-frame markers that carry the frame size. C4, C8 and CC do not. */
+const JPEG_SOF = new Set([
+  0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
+]);
+
+function readPng(bytes: Uint8Array): ImageHeader | undefined {
+  if (bytes.length < 24) return undefined;
+  if (!PNG_SIGNATURE.every((byte, index) => bytes[index] === byte)) return undefined;
+  if (!ascii(bytes, 12, 'IHDR')) return undefined;
+  return { mime: 'image/png', width: u32(bytes, 16), height: u32(bytes, 20) };
+}
+
+function readJpeg(bytes: Uint8Array): ImageHeader | undefined {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return undefined;
+  let at = 2;
+  while (at + 3 < bytes.length) {
+    if (bytes[at] !== 0xff) return undefined;
+    const marker = bytes[at + 1];
+    // Padding, and the standalone markers that carry no length.
+    if (marker === 0xff) {
+      at += 1;
+      continue;
+    }
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) {
+      at += 2;
+      continue;
+    }
+    const length = u16(bytes, at + 2);
+    if (length < 2) return undefined;
+    if (JPEG_SOF.has(marker)) {
+      if (at + 9 > bytes.length) return undefined;
+      return { mime: 'image/jpeg', height: u16(bytes, at + 5), width: u16(bytes, at + 7) };
+    }
+    at += 2 + length;
+  }
+  return undefined;
+}
+
+function readWebp(bytes: Uint8Array): ImageHeader | undefined {
+  if (bytes.length < 30 || !ascii(bytes, 0, 'RIFF') || !ascii(bytes, 8, 'WEBP')) return undefined;
+  const size = (width: number, height: number): ImageHeader => ({
+    mime: 'image/webp',
+    width,
+    height,
+  });
+  if (ascii(bytes, 12, 'VP8X'))
+    return size(
+      1 + (bytes[24] | (bytes[25] << 8) | (bytes[26] << 16)),
+      1 + (bytes[27] | (bytes[28] << 8) | (bytes[29] << 16)),
+    );
+  if (ascii(bytes, 12, 'VP8L')) {
+    if (bytes[20] !== 0x2f) return undefined;
+    const bits = bytes[21] | (bytes[22] << 8) | (bytes[23] << 16) | (bytes[24] << 24);
+    return size(1 + (bits & 0x3fff), 1 + ((bits >>> 14) & 0x3fff));
+  }
+  if (ascii(bytes, 12, 'VP8 ')) {
+    // The lossy keyframe header: a 3-byte start code, then the sync code.
+    if (bytes[23] !== 0x9d || bytes[24] !== 0x01 || bytes[25] !== 0x2a) return undefined;
+    return size((bytes[26] | (bytes[27] << 8)) & 0x3fff, (bytes[28] | (bytes[29] << 8)) & 0x3fff);
+  }
+  return undefined;
+}
+
+/**
+ * The type and pixel dimensions an image's own bytes declare, or `undefined`
+ * if these bytes are not a supported image.
+ */
+export function readImageHeader(bytes: Uint8Array): ImageHeader | undefined {
+  return readPng(bytes) ?? readJpeg(bytes) ?? readWebp(bytes);
+}
+
+// ---------------------------------------------------------------------------
 // Checksum
 // ---------------------------------------------------------------------------
 
@@ -207,10 +307,26 @@ function checkAssetBytes(
       errors.push(`asset ${hash} does not hash to its key: the bytes are not the asset`);
     if (data.length > limits.assetBytes)
       errors.push(`asset ${hash} is larger than the per-asset limit of ${limits.assetBytes} bytes`);
-    if (record.width * record.height > limits.assetPixels)
+
+    // The pixel cap is measured from the image itself. A record could claim
+    // 1×1 for a 20000×20000 plate, and only the bytes can say otherwise.
+    const measured = readImageHeader(data);
+    if (!measured) {
       errors.push(
-        `asset ${hash} is ${record.width}×${record.height}, over the ${limits.assetPixels} pixel limit`,
+        `asset ${hash} is not a readable ${ASSET_MIME_TYPES.join(', ')} image: its dimensions cannot be verified`,
       );
+    } else {
+      if (measured.mime !== record.mime)
+        errors.push(`asset ${hash} declares ${record.mime} but its bytes are ${measured.mime}`);
+      if (measured.width !== record.width || measured.height !== record.height)
+        errors.push(
+          `asset ${hash} declares ${record.width}×${record.height} but its bytes are ${measured.width}×${measured.height}`,
+        );
+      if (measured.width * measured.height > limits.assetPixels)
+        errors.push(
+          `asset ${hash} is ${measured.width}×${measured.height}, over the ${limits.assetPixels} pixel limit`,
+        );
+    }
     total += data.length;
   }
   for (const hash of Object.keys(bytes))

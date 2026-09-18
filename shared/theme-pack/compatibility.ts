@@ -31,6 +31,12 @@ export const THEME_PACK_COMPATIBILITY: readonly CompatibilityEntry[] = [
     note: 'Identity of the pack on both surfaces; also the storage key.',
   },
   {
+    field: 'name',
+    optional: false,
+    support: { 'app-console': 'renders', website: 'renders' },
+    note: 'The display name, shown wherever the pack is listed or applied.',
+  },
+  {
     field: 'revision',
     optional: false,
     support: { 'app-console': 'renders', website: 'renders' },
@@ -173,3 +179,148 @@ export function checkCompatibility(pack: ThemePackV1, surface: Surface): Compati
 
   return { surface, ok: errors.length === 0, errors, warnings };
 }
+
+/**
+ * What `resolveAppearance` emits, and whether the app's stylesheet already
+ * reads it.
+ *
+ * `existsInAppToday: false` means A2 is **adding** that channel to
+ * `client/styles.css`, not consuming one that is already there. Emitting a
+ * custom property nothing reads is harmless; assuming it already works is not.
+ * The website adapter owns its own side of the same question.
+ */
+export interface AppearanceOutput {
+  /** A CSS custom property name, or a `data-*` attribute name. */
+  name: string;
+  kind: 'custom-property' | 'dataset';
+  /** True when `client/styles.css` already declares or selects on it. */
+  existsInAppToday: boolean;
+  note: string;
+}
+
+export const APPEARANCE_OUTPUTS: readonly AppearanceOutput[] = [
+  { name: '--chrome', kind: 'custom-property', existsInAppToday: true, note: 'Colour token.' },
+  { name: '--surface', kind: 'custom-property', existsInAppToday: true, note: 'Colour token.' },
+  { name: '--raised', kind: 'custom-property', existsInAppToday: true, note: 'Colour token.' },
+  { name: '--hair', kind: 'custom-property', existsInAppToday: true, note: 'Separator hairline.' },
+  {
+    name: '--hair-2',
+    kind: 'custom-property',
+    existsInAppToday: true,
+    note: 'Separator hairline.',
+  },
+  { name: '--t1', kind: 'custom-property', existsInAppToday: true, note: 'Text role.' },
+  { name: '--t2', kind: 'custom-property', existsInAppToday: true, note: 'Text role.' },
+  { name: '--t3', kind: 'custom-property', existsInAppToday: true, note: 'Text role.' },
+  { name: '--light', kind: 'custom-property', existsInAppToday: true, note: 'Accent.' },
+  { name: '--attn', kind: 'custom-property', existsInAppToday: true, note: 'Attention.' },
+  { name: '--fail', kind: 'custom-property', existsInAppToday: true, note: 'Fault.' },
+  { name: '--r', kind: 'custom-property', existsInAppToday: true, note: 'Control radius.' },
+  { name: '--rb', kind: 'custom-property', existsInAppToday: true, note: 'Inner radius.' },
+  {
+    name: '--dm-line-body',
+    kind: 'custom-property',
+    existsInAppToday: true,
+    note: 'Body line height.',
+  },
+  {
+    name: '--dm-ui-scale',
+    kind: 'custom-property',
+    existsInAppToday: true,
+    note: 'Interface scale.',
+  },
+  {
+    name: '--dm-read-scale',
+    kind: 'custom-property',
+    existsInAppToday: true,
+    note: 'Reading scale.',
+  },
+  { name: '--dm-code-scale', kind: 'custom-property', existsInAppToday: true, note: 'Code scale.' },
+  {
+    name: '--dm-font-ui',
+    kind: 'custom-property',
+    existsInAppToday: true,
+    note: 'Interface font.',
+  },
+  {
+    name: '--dm-font-read',
+    kind: 'custom-property',
+    existsInAppToday: true,
+    note: 'Reading font.',
+  },
+  { name: '--dm-font-code', kind: 'custom-property', existsInAppToday: true, note: 'Code font.' },
+  { name: '--dm-t-quick', kind: 'custom-property', existsInAppToday: true, note: 'Motion timing.' },
+  { name: '--dm-t-view', kind: 'custom-property', existsInAppToday: true, note: 'Motion timing.' },
+  {
+    name: '--dm-t-extend',
+    kind: 'custom-property',
+    existsInAppToday: true,
+    note: 'Motion timing.',
+  },
+  {
+    name: '--dm-motion-intensity',
+    kind: 'custom-property',
+    existsInAppToday: false,
+    note: 'A2 adds this; no rule reads it yet.',
+  },
+  {
+    name: '--dm-texture-opacity',
+    kind: 'custom-property',
+    existsInAppToday: false,
+    note: 'A2 adds this together with the texture layer itself.',
+  },
+  {
+    name: '--dm-focus-width',
+    kind: 'custom-property',
+    existsInAppToday: false,
+    note: 'A2 adds this; focus rings are hard-coded in the stylesheet today.',
+  },
+  {
+    name: '--dm-focus-color',
+    kind: 'custom-property',
+    existsInAppToday: false,
+    note: 'A2 adds this. Emitted only when the accessibility layer forces focus visibility.',
+  },
+  {
+    name: 'data-package',
+    kind: 'dataset',
+    existsInAppToday: true,
+    note: 'The base scheme id. Eleven existing selectors read it, and desktop/main.mjs keys the titlebar by it.',
+  },
+  {
+    name: 'data-motion',
+    kind: 'dataset',
+    existsInAppToday: true,
+    note: 'normal | reduced, already honoured by the stylesheet.',
+  },
+  {
+    name: 'data-theme-pack',
+    kind: 'dataset',
+    existsInAppToday: false,
+    note: 'A2 adds this. Identifies the applied pack; nothing styles on it yet.',
+  },
+  {
+    name: 'data-density',
+    kind: 'dataset',
+    existsInAppToday: false,
+    note: 'A2 adds this. Density exists as a setting but no selector reads it from the root today.',
+  },
+  {
+    name: 'data-texture',
+    kind: 'dataset',
+    existsInAppToday: false,
+    note: 'A2 adds this alongside --dm-texture-opacity.',
+  },
+  {
+    name: 'data-color-scheme',
+    kind: 'dataset',
+    existsInAppToday: false,
+    note: "A2 adds this. The stylesheet sets `color-scheme` per package today; a pack's lightScheme needs its own channel.",
+  },
+  {
+    name: 'data-motion-preset',
+    kind: 'dataset',
+    existsInAppToday: false,
+    note: 'A2 adds this. The named behaviour; forced to `none` under reduced motion.',
+  },
+];

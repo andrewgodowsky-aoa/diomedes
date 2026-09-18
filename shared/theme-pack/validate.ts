@@ -15,6 +15,7 @@ import {
   BASE_THEME_IDS,
   BLEND_MODES,
   COLOR_TOKEN_NAMES,
+  CONTROL_CHARACTER_PATTERN,
   CONTROL_RADIUS_MAX,
   CONTROL_RADIUS_MIN,
   DENSITIES,
@@ -29,6 +30,7 @@ import {
   SHA256_PATTERN,
   SURFACES,
   THEME_PACK_ID_PATTERN,
+  THEME_PACK_NAME_MAX,
   THEME_PACK_SCHEMA_VERSION,
   THEME_PACK_TOP_LEVEL_KEYS,
   WEBSITE_ONLY_ARTWORK_SLOTS,
@@ -64,6 +66,8 @@ class Checker {
   text(path: string, value: unknown, max = 512): value is string {
     if (typeof value !== 'string') return this.fail(`${path} must be a string`);
     if (value.length > max) return this.fail(`${path} is longer than ${max} characters`);
+    if (CONTROL_CHARACTER_PATTERN.test(value))
+      return this.fail(`${path} contains a control character, which is not allowed in a theme`);
     const lowered = value.toLowerCase();
     for (const fragment of FORBIDDEN_STRING_FRAGMENTS)
       if (lowered.includes(fragment))
@@ -283,6 +287,11 @@ export function validateThemePack(unknown: unknown): ThemePackValidation {
 
   if (!check.text('id', unknown.id, 64) || !THEME_PACK_ID_PATTERN.test(unknown.id as string))
     check.fail('id must match ^[a-z0-9][a-z0-9-]{2,63}$');
+  if (
+    check.text('name', unknown.name, THEME_PACK_NAME_MAX) &&
+    (unknown.name as string).trim() === ''
+  )
+    check.fail('name must not be blank');
   check.integer('revision', unknown.revision, 1, Number.MAX_SAFE_INTEGER);
   check.oneOf('baseTheme', unknown.baseTheme, BASE_THEME_IDS);
 

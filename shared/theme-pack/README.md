@@ -32,11 +32,18 @@ Every one of these files imports only from this folder. That is enforced by a te
 can be copied to another repository (see `scripts/theme-pack-handoff.ts`) and used as it stands, with
 no dependencies and no build step beyond TypeScript.
 
+`npm run theme-pack:handoff` publishes the folder to `F:\Diomedes\deliverables	heme-pack-v1` with a
+`MANIFEST.sha256`. It writes only into a destination it can recognise as its own — one that does not
+exist, is empty, or already holds a `MANIFEST.sha256` — and refuses anything else rather than
+recursively deleting a folder someone is using.
+
 ## A theme is data
 
 A pack never carries CSS, HTML, JavaScript, a remote URL, a font to download, or executable motion.
 It carries values the renderer already knows how to use. The validator refuses any string containing
 `url(`, `<`, `javascript:` or `expression(`, anywhere in the document, including object keys.
+
+No string anywhere in a pack — value or object key — may contain a control character either.
 
 Colours are hex only: `#rrggbb` or `#rrggbbaa`. Functional notation is a parser surface, not a value.
 The built-in schemes write their hairlines as `rgba(255,255,255,.07)`; the pack equivalent is
@@ -51,6 +58,7 @@ bounded numbers; a theme cannot describe a new animation, only pick one the rend
 ```
 schemaVersion  1
 id             ^[a-z0-9][a-z0-9-]{2,63}$
+name           display name, 1–64 characters, no markup and no control characters
 revision       integer ≥ 1
 baseTheme      one of the ten built-in scheme ids (default: field)
 surfaces       at least one of 'app-console' | 'website'
@@ -112,6 +120,22 @@ The result is:
 `data:<key>` for dataset values. That is what an editor shows when it explains where a value came
 from.
 
+`dataset.motionPreset` carries `motion.presetId` through to the renderer, and layer 5 forces it to
+`none` under reduced motion — which is what `reducedMotionBehaviour: 'static'` means in v1.
+
+### What the app reads today, and what A2 is adding
+
+`APPEARANCE_OUTPUTS` in `compatibility.ts` lists every custom property and dataset key the resolver
+emits, with `existsInAppToday` saying whether `client/styles.css` already declares or selects on it.
+A test asserts that flag against the real stylesheet, so the list cannot quietly go stale.
+
+The colour tokens, `--r`/`--rb`, the three scales, the three fonts, `--dm-line-body`, the three
+`--dm-t-*` timings, `data-package` and `data-motion` **already exist**. These do **not**, and A2 is
+adding them rather than consuming them: `--dm-motion-intensity`, `--dm-texture-opacity`,
+`--dm-focus-width`, `--dm-focus-color`, `data-theme-pack`, `data-density`, `data-texture`,
+`data-color-scheme` and `data-motion-preset`. Emitting a property nothing reads is harmless;
+assuming it already works is not.
+
 `dataset.package` is always the **base scheme id**, even for a custom pack, because
 `desktop/main.mjs` keys `FIELD_TITLEBAR` by scheme id. A custom theme therefore always resolves a
 working titlebar chrome/text pair.
@@ -154,6 +178,12 @@ version, the pack itself, the manifest checksum against the pack, that every ass
 that the decoded bytes hash to the key they are filed under, that the declared byte count is true,
 that no asset is carried which the pack did not declare and none it declared is missing, and every
 size cap. A single flipped byte fails the hash and the package is refused.
+
+Dimensions and type are read out of the image's own bytes — PNG IHDR, the JPEG SOF marker chain,
+and the WebP VP8/VP8L/VP8X headers — by `readImageHeader`, which reads a fixed handful of bytes and
+decodes nothing. A record that declares `16×16` for a 20000×20000 plate, or `image/png` for JPEG
+bytes, is refused, and the megapixel cap is applied to the **measured** size. Bytes that are not a
+readable PNG, JPEG or WebP are refused outright.
 
 ### `checksum(pack)` is content identity only
 

@@ -30,6 +30,15 @@ export const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 /** Lowercase SHA-256, as produced by `checksum()` and the asset hashes. */
 export const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 
+/** How long a pack's human-facing display name may be. */
+export const THEME_PACK_NAME_MAX = 64;
+
+/**
+ * Control characters are refused in every string in a pack. They carry no
+ * design meaning and are only ever a way to smuggle something past a reader.
+ */
+export const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/;
+
 /** Substrings that may never appear in any string anywhere in a pack. */
 export const FORBIDDEN_STRING_FRAGMENTS = ['url(', '<', 'javascript:', 'expression('] as const;
 
@@ -445,6 +454,8 @@ export interface ThemePackProvenance {
 export interface ThemePackV1 {
   schemaVersion: 1;
   id: string;
+  /** What a person calls this theme. 1–64 characters, display only. */
+  name: string;
   /** Integer ≥ 1; bumped on every saved change to the same id. */
   revision: number;
   baseTheme: BaseThemeId;
@@ -463,6 +474,7 @@ export interface ThemePackV1 {
 export const THEME_PACK_TOP_LEVEL_KEYS = [
   'schemaVersion',
   'id',
+  'name',
   'revision',
   'baseTheme',
   'surfaces',
