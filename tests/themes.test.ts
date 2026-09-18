@@ -63,6 +63,12 @@ async function stop() {
 
 const identityPath = () => path.join(root, 'data', 'workspaces', 'identity.json');
 
+/** Restart the host as whoever it was, so a stored pointer is read back fresh. */
+async function restart() {
+  await stop();
+  await launch();
+}
+
 /** Restart the host as a different local person against the same data dir. */
 async function restartAs(name: string): Promise<Person> {
   await stop();
@@ -332,7 +338,7 @@ test('validateSettings keeps the two new appearance fields, and refuses a bad on
   );
 });
 
-test('editing the applied theme moves the pointer with it', async () => {
+test('editing the applied theme moves the pointer with it, and it survives a restart', async () => {
   await save('living', pack('living', { name: 'Before' }));
   await request('/themes/living/activate', 'POST');
   const edited = await save('living', pack('living', { name: 'After' }), 1);
@@ -341,4 +347,40 @@ test('editing the applied theme moves the pointer with it', async () => {
   expect(settings.data.appearance.activeTheme).toEqual({ id: 'living', revision: 2 });
   const active = await request<{ pack: ThemePackV1 }>('/themes/active');
   expect(active.data.pack.name).toBe('After');
+
+  // The pointer is a stored setting, so it has to come back through readJson
+  // and migrateSettings intact: the app paints the theme after a restart, not
+  // the base scheme.
+  await restart();
+  const reread = await request<Settings>('/settings');
+  expect(reread.data.appearance.activeTheme).toEqual({ id: 'living', revision: 2 });
+  const stillActive = await request<{ pack: ThemePackV1; source: string }>('/themes/active');
+  expect(stillActive.data.source).toBe('pack');
+  expect(stillActive.data.pack.name).toBe('After');
+});
+
+test('a theme cannot take a name the route table already spells', async () => {
+  const shadow = await save('active', pack('active'));
+  expect(shadow.status).toBe(400);
+  expect(errorCode(shadow.data)).toBe('reserved_theme_id');
+  // The read of what is applied still answers, rather than a theme called active.
+  expect((await request<{ source: string }>('/themes/active')).data.source).toBe('none');
+});
+
+test('the desktop titlebar derives the theme scope the same way this service does', async () => {
+  // desktop/main.mjs is the Electron shell and cannot import this service, so
+  // its themeScopeKey is a copy. Read it as text — importing it would start
+  // Electron — and fail when the two derivations stop agreeing.
+  const shell = await fs.readFile(
+    path.join(process.cwd(), 'desktop', 'main.mjs'),
+    'utf8',
+  );
+  for (const fragment of [
+    "createHash('sha256')",
+    ".digest('hex').slice(0, 16)",
+    'business-${of(workspace.organizationId)}',
+    'personal-${of(personId)}',
+    "'themes', scope, active.id, 'pack.json'",
+  ])
+    expect(shell, `desktop/main.mjs no longer carries ${fragment}`).toContain(fragment);
 });

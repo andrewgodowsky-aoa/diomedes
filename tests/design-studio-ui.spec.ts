@@ -100,11 +100,16 @@ test.beforeAll(async ({ request }) => {
   });
   expect(created.ok()).toBe(true);
   projectId = ((await created.json()) as Project).id;
-  const thread = await request.post(`/api/projects/${projectId}/threads`, {
-    headers: HEADERS,
-    data: { name: 'Studio thread' },
-  });
-  expect(thread.ok()).toBe(true);
+  // Enough threads that the rail overflows at this viewport: scroll position is
+  // React state nowhere, so only a real scroller can prove a theme did not
+  // scroll the interface back to the top.
+  for (let index = 0; index < 40; index += 1) {
+    const thread = await request.post(`/api/projects/${projectId}/threads`, {
+      headers: HEADERS,
+      data: { name: `Studio thread ${index + 1}` },
+    });
+    expect(thread.ok()).toBe(true);
+  }
   const opened = await request.put('/api/settings', {
     headers: HEADERS,
     data: { openProjects: [projectId] },
@@ -167,6 +172,15 @@ test('D01: a saved theme applies without remounting the app or losing a draft', 
   await composer.fill(DRAFT);
   await expect(composer).toHaveValue(DRAFT);
 
+  // Scroll the thread rail away from the top. Nothing restores this on a
+  // remount, so it is lost the moment the tree is rebuilt.
+  const rail = page.getByRole('navigation', { name: 'Threads and views' });
+  await rail.evaluate((element) => {
+    element.scrollTop = 180;
+  });
+  const scrolled = await rail.evaluate((element) => element.scrollTop);
+  expect(scrolled, 'The rail must actually be scrollable for this to prove anything').toBeGreaterThan(0);
+
   // Hold on to the live Console element and the document itself, so "no
   // remount" and "no reload" are assertions rather than inferences.
   await page.evaluate(() => {
@@ -202,9 +216,10 @@ test('D01: a saved theme applies without remounting the app or losing a draft', 
     'The Console element must be the same object after the theme applies',
   ).toBe(true);
   await expect(composer).toHaveValue(DRAFT);
+  expect(await rail.evaluate((element) => element.scrollTop)).toBe(scrolled);
 });
 
-test('D02: a person’s own interface size survives the theme, and reset restores the scheme', async ({
+test('D02: a person’s own text size survives the theme, and reset restores the scheme', async ({
   page,
 }) => {
   await openConsole(page);
@@ -212,14 +227,17 @@ test('D02: a person’s own interface size survives the theme, and reset restore
     .poll(async () => page.evaluate(() => document.documentElement.dataset.themePack))
     .toBe(THEME_ID);
 
-  // A size a theme cannot name. The personal layer outranks the theme, so it
-  // must still be the size on the document.
+  // A size a theme cannot name: 1.12 is one of the Console's own reading sizes
+  // and is not one of the four the resolver's personal layer carries, so without
+  // the re-assert the theme's 1 would silently win. Reading size rather than
+  // interface size because ui.spec.ts asserts that a first run has never had an
+  // interface size written, and every spec here shares one service.
   const scaled = await page.request.put('/api/settings', {
     headers: HEADERS,
-    data: { appearance: { interfaceScale: 1.5 } },
+    data: { appearance: { readingScale: 1.12 } },
   });
   expect(scaled.ok()).toBe(true);
-  await expect.poll(async () => rootVar(page, '--dm-ui-scale')).toBe('1.5');
+  await expect.poll(async () => rootVar(page, '--dm-read-scale')).toBe('1.12');
   await expect(page.locator('html')).toHaveAttribute('data-theme-pack', THEME_ID);
 
   const reset = await page.request.post('/api/themes/reset', { headers: HEADERS });
@@ -230,10 +248,10 @@ test('D02: a person’s own interface size survives the theme, and reset restore
   await expect(page.locator('html')).toHaveAttribute('data-package', 'field');
   expect(await rootVar(page, '--surface')).toBe('#16191d');
   // The size preference is still the person's after the theme is gone.
-  expect(await rootVar(page, '--dm-ui-scale')).toBe('1.5');
+  expect(await rootVar(page, '--dm-read-scale')).toBe('1.12');
   const restored = await page.request.put('/api/settings', {
     headers: HEADERS,
-    data: { appearance: { interfaceScale: 1 } },
+    data: { appearance: { readingScale: 1 } },
   });
   expect(restored.ok()).toBe(true);
 });

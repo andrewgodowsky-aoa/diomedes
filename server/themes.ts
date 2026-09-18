@@ -40,6 +40,13 @@ export { THEME_PACK_ID_PATTERN };
 /** The surface these packs are stored for. The website stores its own. */
 const SURFACE = 'app-console' as const;
 
+/**
+ * Ids the route table already spells. `/api/themes/active` is a read of what is
+ * applied, so a theme literally called `active` could be written and never read
+ * back. Refusing the name is kinder than shadowing it.
+ */
+const RESERVED_THEME_IDS: readonly string[] = ['active', 'reset'];
+
 const refuse = (status: number, message: string, code: string) =>
   new ApiError(status, message, { code });
 
@@ -48,8 +55,8 @@ const refuse = (status: number, message: string, code: string) =>
  *
  * Mirrored in `desktop/main.mjs` (`themeScopeKey`), which reads the active
  * pack to colour the titlebar and has no way to import this file. Change one
- * and change the other; the desktop test for a custom titlebar is what catches
- * a drift.
+ * and change the other; `tests/themes.test.ts` reads that file as text and
+ * fails when the two derivations stop agreeing.
  */
 export function themeScopeKey(workspace: WorkspaceRef, personId: string): string {
   const of = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 16);
@@ -131,6 +138,8 @@ export class ThemeService {
         'A theme name is 3 to 64 characters of lower-case letters, numbers and hyphens.',
         'invalid_theme_id',
       );
+    if (RESERVED_THEME_IDS.includes(id))
+      throw refuse(400, `“${id}” is a name this app uses for itself. Choose another.`, 'reserved_theme_id');
     return path.join(this.scopeDir(), id);
   }
 
