@@ -1,0 +1,45 @@
+{
+  "openToFirstPaintMs": 149,
+  "inspectorChangeMs": {
+    "samples": [
+      38,
+      35,
+      22,
+      19,
+      21,
+      19,
+      20,
+      21
+    ],
+    "medianMs": 21,
+    "maxMs": 38
+  },
+  "exportedPackageBytes": 3176,
+  "largeTextScale": "1.5",
+  "reducedMotion": {
+    "appQuickTransition": "0ms",
+    "stageBeforeToggle": "normal",
+    "stageAfterToggle": "reduced",
+    "stageQuickTransition": "0ms"
+  },
+  "malformedPackageSaid": "name is required",
+  "idleCost": {
+    "method": "Win32_Process sampled from the test harness over the browser process tree; two 20s windows after a 5s settle.",
+    "cores": 16,
+    "rootPid": 31736,
+    "designCenterClosed": {
+      "seconds": 20.5,
+      "processes": 9,
+      "cpuPercentOfOneCore": 0.46,
+      "cpuPercentOfMachine": 0.03,
+      "workingSetMB": 581.6
+    },
+    "designCenterOpen": {
+      "seconds": 20.5,
+      "processes": 7,
+      "cpuPercentOfOneCore": 0.31,
+      "cpuPercentOfMachine": 0.02,
+      "workingSetMB": 544
+    }
+  }
+}
