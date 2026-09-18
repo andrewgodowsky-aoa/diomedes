@@ -201,16 +201,25 @@ export const defaults = (): Settings => ({
   services: { codex: false },
 });
 
+/**
+ * The one durable write in the process: temp file, fsync, atomic rename.
+ *
+ * `bytes` is text or raw bytes. The binary case is how an imported picture
+ * reaches disk (see `server/theme-assets.ts`); it is the same primitive rather
+ * than a second one, because a second write path is a second set of rules about
+ * when a file is really there.
+ */
 export async function durableWrite(
   target: string,
-  bytes: string,
+  bytes: string | Uint8Array,
   beforeReplace?: () => Promise<void>,
 ) {
   await fs.mkdir(path.dirname(target), { recursive: true });
   const temp = `${target}.${identifier()}.tmp`;
   const handle = await fs.open(temp, 'wx');
   try {
-    await handle.writeFile(bytes, 'utf8');
+    if (typeof bytes === 'string') await handle.writeFile(bytes, 'utf8');
+    else await handle.writeFile(bytes);
     await handle.sync();
   } finally {
     await handle.close();

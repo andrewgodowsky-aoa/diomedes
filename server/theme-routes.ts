@@ -10,11 +10,13 @@
  * shape `/api/settings` uses for its own concurrent-save guard. A caller that
  * sends none is refused on an existing theme rather than quietly winning.
  */
-import type { Express, Request, Response } from 'express';
+import express, { type Express, type Request, type Response } from 'express';
 import { ApiError } from './paths.js';
 import type { Store } from './store.js';
+import { ASSET_UPLOAD_TYPES, ThemeAssetService } from './theme-assets.js';
 import type { ThemeService } from './themes.js';
 import { probeWebsiteStudio } from './website-studio.js';
+import { THEME_PACK_LIMITS } from '../shared/theme-pack/types.js';
 
 const themeId = (req: Request) => String(req.params.id ?? '');
 
@@ -30,7 +32,36 @@ function expectedRevision(req: Request): number | null {
   return value;
 }
 
+/**
+ * The raw body of an imported picture, and nothing else.
+ *
+ * `express.json` upstream ignores these requests — it parses `application/json`
+ * alone — so this is the only parser that sees them. The type list is the same
+ * three the contract accepts, and the limit is the contract's own per-asset cap
+ * rather than a number invented here.
+ *
+ * The parser's own "too large" is an `entity.too.large`, which the app's error
+ * handler answers with a sentence about JSON. That would be a lie on this
+ * route, so it is translated where the fact is still known.
+ */
+function assetBody(): (req: Request, res: Response, next: (error?: unknown) => void) => void {
+  const parse = express.raw({ type: [...ASSET_UPLOAD_TYPES], limit: THEME_PACK_LIMITS.assetBytes });
+  return (req, res, next) =>
+    parse(req, res, (error?: unknown) => {
+      if (error && typeof error === 'object' && 'type' in error && error.type === 'entity.too.large')
+        return next(
+          new ApiError(
+            400,
+            `That picture is larger than the ${THEME_PACK_LIMITS.assetBytes} byte limit for one picture.`,
+            { code: 'asset_too_large' },
+          ),
+        );
+      next(error);
+    });
+}
+
 export function mountThemeRoutes(app: Express, store: Store, themes: ThemeService) {
+  const assets = new ThemeAssetService(themes);
   const route =
     (action: (req: Request, res: Response) => Promise<unknown>, locked = true) =>
     async (req: Request, res: Response, next: (error?: unknown) => void) => {
@@ -98,6 +129,58 @@ export function mountThemeRoutes(app: Express, store: Store, themes: ThemeServic
       return saved;
     }, false),
   );
+
+  /**
+   * Import one picture into this theme.
+   *
+   * The body is the file's own bytes — there is no multipart form, no field
+   * names and no filename, because none of that is information this app wants:
+   * a picture is its content, and its name here is the hash of that content.
+   * Everything is checked before the store lock is taken, because a refusal
+   * inside `store.locked` costs a whole store reload and a person choosing the
+   * wrong file is the ordinary case, not an emergency.
+   */
+  app.post(
+    '/api/themes/:id/assets',
+    assetBody(),
+    route(async (req) => {
+      const body: unknown = req.body;
+      if (!(body instanceof Buffer))
+        throw new ApiError(
+          415,
+          'Import a PNG, JPEG or WebP picture. SVG is not accepted in this release.',
+          { code: 'asset_type_not_accepted' },
+        );
+      const id = themeId(req);
+      const bytes = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+      // Validated outside the lock, written under it: the write is the only
+      // consequential half, and it is idempotent by construction.
+      const stored = await store.locked(() => assets.store(id, bytes));
+      return { hash: stored.hash, record: stored.record };
+    }, false),
+  );
+
+  /**
+   * The bytes of one stored picture.
+   *
+   * A `GET`, because this is what an `<img>` asks for and an image element
+   * cannot send the client header that mutating routes require. Nothing here
+   * writes, and the answer is the account's own file or nothing at all.
+   */
+  app.get('/api/themes/:id/assets/:hash', async (req, res, next) => {
+    try {
+      const { bytes, mime } = await assets.read(themeId(req), String(req.params.hash ?? ''));
+      res.setHeader('Content-Type', mime);
+      // The name is the content, so this file can never be a different file.
+      res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+      // `X-Content-Type-Options: nosniff` is already set for every response by
+      // the app's own header pass; it matters most here, where the body is the
+      // one thing in this service that is not JSON.
+      res.end(Buffer.from(bytes));
+    } catch (error) {
+      next(error);
+    }
+  });
 
   /** Throw away an autosave without touching the saved theme. */
   app.delete(

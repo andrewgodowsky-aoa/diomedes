@@ -42,6 +42,7 @@ import { THEME_PACK_ID_PATTERN, type ThemePackV1 } from '../shared/theme-pack/ty
 import type { WorkspaceRef } from '../shared/workspaces.js';
 import { ApiError } from './paths.js';
 import { durableWrite, jsonWrite, type Store } from './store.js';
+import { verifyStoredAssets } from './theme-assets.js';
 
 export { THEME_PACK_ID_PATTERN };
 
@@ -165,6 +166,18 @@ export class ThemeService {
     if (RESERVED_THEME_IDS.includes(id))
       throw refuse(400, `“${id}” is a name this app uses for itself. Choose another.`, 'reserved_theme_id');
     return path.join(this.scopeDir(), id);
+  }
+
+  /**
+   * Where this theme's imported pictures live, for this account and no other.
+   *
+   * Public because `server/theme-assets.ts` writes and serves those bytes, and
+   * there must be exactly one derivation of "whose theme is this" in the
+   * service. The id is validated on the way through, so a caller cannot reach
+   * a folder by naming one.
+   */
+  assetsDir(id: string): string {
+    return path.join(this.themeDir(id), 'assets');
   }
 
   // --- reads ------------------------------------------------------------------
@@ -377,6 +390,15 @@ export class ThemeService {
           'theme_revision_conflict',
         );
     }
+
+    // A saved revision may only name pictures this account actually holds, and
+    // the stored bytes must still be the bytes the pack describes. A pack that
+    // names a picture nobody has would validate, activate, and then paint a
+    // hole — and the first person to find out would be looking at it. A draft
+    // is allowed to be half-finished; a revision is not.
+    const missing = await verifyStoredAssets(path.join(dir, 'assets'), validated);
+    if (missing.length > 0)
+      throw refuse(400, `This theme cannot be saved yet: ${missing[0]}`, 'theme_assets_missing');
 
     const history = await this.revisions(id);
     const revision = Math.max(stored?.revision ?? 0, ...history, 0) + 1;
