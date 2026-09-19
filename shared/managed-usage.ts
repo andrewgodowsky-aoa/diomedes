@@ -305,6 +305,27 @@ export interface PlanDefinition {
   readonly sellable: false;
   readonly notSellableReason: string;
   readonly priceMicroUsd: MicroUsd;
+  /**
+   * The published unit: how many requests a period includes. A request is one
+   * thing a person asks Diomedes to do, and it counts once however many model
+   * calls it takes to finish.
+   *
+   * This is the only figure about included usage that is ever shown or sold.
+   * Owner decision of 2026-09-19: a buyer can check a count against their own
+   * month and cannot check a dollar figure against anything.
+   */
+  readonly includedRequests: number;
+  /**
+   * The internal ceiling on one request, never published. A request whose
+   * conservative pre-call estimate exceeds it stops and asks before it runs; it
+   * is never silently downgraded, split or billed.
+   */
+  readonly perRequestCeilingMicroUsd: MicroUsd;
+  /**
+   * The internal monthly bound, never published. It must equal
+   * `includedRequests * perRequestCeilingMicroUsd`, so the count that is sold
+   * and the money that backs it cannot drift apart.
+   */
   readonly includedAllowanceMicroUsd: MicroUsd;
   readonly rateCardVersion: string;
   readonly period: 'billing-period';
@@ -331,6 +352,8 @@ export const MANAGED_PLAN_CANDIDATE: PlanDefinition = Object.freeze({
   notSellableReason:
     'This is an engineering proposal. The price, the included allowance and every limit need commercial approval before anything can be sold, and no checkout exists in this build.',
   priceMicroUsd: dollars(300),
+  includedRequests: 1_000,
+  perRequestCeilingMicroUsd: dollars(0.1),
   includedAllowanceMicroUsd: dollars(100),
   rateCardVersion: RATE_CARD_V1.version,
   period: 'billing-period',
@@ -348,14 +371,23 @@ export const MANAGED_PLAN_CANDIDATE: PlanDefinition = Object.freeze({
 });
 
 /**
- * What the included allowance is, in the words it must always be described in.
+ * What the included usage is, in the words it must always be described in.
  *
- * The negatives carry the weight. Each one names something a reasonable person
- * would otherwise assume, and every one of those assumptions would be a
- * misrepresentation.
+ * Owner decision of 2026-09-19: the unit is a count of requests and never a
+ * dollar figure. An earlier version of this sentence opened "a USD allowance
+ * for managed model usage", which is what the ledger meters internally but not
+ * what anybody buys. A person can count the things they asked for against their
+ * own month; they cannot check a dollar figure against anything, and a number
+ * nobody can check is not a disclosure. The per-request ceiling and the monthly
+ * bound that back the count live in `MANAGED_PLAN_CANDIDATE` and in the pricing
+ * authority, and are not published.
+ *
+ * The negatives carry the rest of the weight. Each one names something a
+ * reasonable person would otherwise assume, and every one of those assumptions
+ * would be a misrepresentation.
  */
 export const ALLOWANCE_MEANING =
-  'The included allowance is a USD allowance for managed model usage, debited by the upstream charges your work actually incurs under a recorded rate card. It is not withdrawable money, not credit on a provider account, not a fixed number of tokens or words, and not a guaranteed number of jobs. What it buys depends on what you ask for.';
+  'Managed model access includes a set number of requests each period, and we pay for them. A request is one thing you ask Diomedes to do, and it counts once however many model calls it takes to finish. It is not withdrawable money, not credit on a provider account, not a fixed number of tokens or words, and not a guaranteed number of jobs. An unusually large request stops and asks before it runs, and extra usage needs your approval.';
 
 // --- who pays -----------------------------------------------------------------
 
