@@ -6,7 +6,7 @@ JEV-2026-09-19.1 | Coverage as measured, not as intended.
 - **Branch:** `feature/jev-evaluation-20260919`
 - **Commit:** `1bd3efa4ccca06546f19d0c13f54b20220341803`
 - **Source table:** the 80 scenarios J01-J80 in `08_FAILURE_MATRIX.md` of the handoff package
-- **Split: 31 COVERED, 43 GAP, 5 GATED, 1 OUT-OF-SCOPE.**
+- **Split: 30 COVERED, 44 GAP, 5 GATED, 1 OUT-OF-SCOPE.**
 
 This file records what was verified by reading the tests named below, not what the suite
 names suggest. The standard is the one the personal-business ledger already holds to: a row
@@ -109,7 +109,7 @@ for an evaluation is a GAP, however well the ledger's own contract is tested els
 |---|---|---|---|
 | J41 | Crash after reservation before dispatch | GAP | `tests/evaluation-step.test.ts` — must show the same step is recovered and an unused reservation reconciled against the dispatch record. No reservation is taken on this path at all; line 153 asserts only that the step's `maxAttempts` is one |
 | J42 | Crash after provider response before local persistence | GAP | `tests/evaluation-step.test.ts` — must show the outcome parks as uncertain, the hold is not released and the call is not repeated. The invariants exist elsewhere, in `tests/managed-usage.test.ts:194` for the hold and `tests/harness-provider-outcomes.test.ts:41` for the redispatch, but no evaluation step runs on either |
-| J43 | A saved successful evaluation is replayed | COVERED | `tests/evaluation-step.test.ts:202` — the saved observation is returned without a second provider call; line 211 asks again when the project changed under it, and line 145 asserts the egress authorizer runs again at the result phase before the observation may commit |
+| J43 | A saved successful evaluation is replayed | GAP | `tests/evaluation-step.test.ts` — must show current authority is revalidated before a saved observation is consumed. Two of the three halves are asserted, at line 202 where the saved answer is returned without a second provider call and at line 211 where a changed project asks again, but line 145 counts egress phases on a first run only and no test inspects authority on the replay path |
 | J44 | Task cancellation races with a late response | GAP | `tests/evaluation-step.test.ts` — must show a cancelled evaluation records its real usage and that a late answer creates no effect. `tests/evaluation-adapter.test.ts:175` covers only cancellation before dispatch, where nothing was sent |
 | J45 | Two hosts claim the same preparation step | COVERED | `tests/harness.test.ts:514` — two services over the same run folder cannot dispatch the same step under one lease generation, and line 269 refuses a steal of a live lease |
 | J46 | Network timeout after an external business action | COVERED | `tests/harness.test.ts:126` — a non-idempotent step whose acknowledgement is lost parks for reconciliation, its retry is refused, and the handler is proved to have run exactly once |
