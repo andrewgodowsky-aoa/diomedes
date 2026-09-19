@@ -83,6 +83,19 @@ function Get-ShortcutTarget([string]$Path) {
   (New-Object -ComObject WScript.Shell).CreateShortcut($Path).TargetPath
 }
 
+# Two spellings of one path are one path. Windows keeps 8.3 short names on most
+# volumes, and WScript.Shell canonicalises a shortcut's target when it reads it
+# back: a target stored as ...\LNKPRO~1\Diomedes.exe returns as its long form.
+# Comparing the raw strings then refuses a shortcut this proof wrote itself.
+# Resolving both sides cannot make two different files look like one - Windows
+# maps each path to a single canonical name - it only stops one file looking
+# like two. A path that cannot be resolved is returned unchanged, so an absent
+# or unreadable target still fails the comparison and still refuses.
+function Resolve-LongPath([string]$Path) {
+  if ([string]::IsNullOrEmpty($Path)) { return $Path }
+  try { (Get-Item -LiteralPath $Path -Force -ErrorAction Stop).FullName } catch { $Path }
+}
+
 function Test-KeyOwnedByProof($Record, [string]$InstallTarget) {
   foreach ($value in @($Record.values)) {
     if (($value.name -eq 'InstallDir' -or $value.name -eq 'InstallLocation') -and $value.kind -eq 'String' -and (ConvertFrom-Base64Text $value.data) -eq $InstallTarget) { return $true }
@@ -165,7 +178,7 @@ function Get-RestorePlan($Snapshot) {
     if ($live -and $want -and (Get-FileFingerprint $live) -ceq (Get-FileFingerprint $want)) { continue }
     $plan.differences.Add($path)
     # Replaceable: the proof's own shortcut, or the snapshot's bytes that a stopped restore wrote.
-    if ($live -and (Get-ShortcutTarget $current[$name].FullName) -ne $ownedExe -and -not ($want -and $live.sha256 -eq $want.sha256)) { $plan.refusals.Add("$path was changed by something other than this proof"); continue }
+    if ($live -and (Resolve-LongPath (Get-ShortcutTarget $current[$name].FullName)) -ne (Resolve-LongPath $ownedExe) -and -not ($want -and $live.sha256 -eq $want.sha256)) { $plan.refusals.Add("$path was changed by something other than this proof"); continue }
     $plan.actions.Add([ordered]@{ kind = $(if ($want) { 'file-restore' } else { 'file-remove' }); name = $name; record = $want })
   }
   if (-not $folder.present -and $exists) {
