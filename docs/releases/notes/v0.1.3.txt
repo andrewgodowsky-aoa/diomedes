@@ -5,9 +5,9 @@ WHAT IS NEW
   the controls. It needs no internet connection, no account and no AI engine,
   and it sends nothing anywhere.
   Appearance work is included in a Diomedes Business subscription and is done by
-  our own design team: we build and install your first look, and you get one
-  graphical update a month. You do not have to author it yourself, and there is
-  no add-on to buy.
+  our own design team: we build and install your first look after a design
+  consultation, and up to two revisions a year are included. You do not have to
+  author it yourself, and there is no add-on to buy.
   Authoring inside the app is developer-only in 0.1.3, because the account and
   subscription software it depends on is not shipped yet. In an ordinary install
   you can open the Design Center, change things and watch the preview, while

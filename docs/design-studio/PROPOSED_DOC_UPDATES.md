@@ -3,8 +3,9 @@
 **2026-09-18 — the owner decided, and one sentence below is superseded.** Andrew decided that
 the Design Center is published on diomedes.net as `in-progress`, and that the appearance work
 is included in a Diomedes Business subscription — our own design team builds and installs the
-first look and delivers one graphical update a month — with no price moved and no add-on
-created. That decision is recorded in the website repository as commit `5272b97` with its
+first look — with no price moved and no add-on created. (The monthly update that decision also
+carried was withdrawn on 2026-09-19 in favour of a design consultation, the first look and up to
+two revisions a year; see the pricing authority, "Included design work".) That decision is recorded in the website repository as commit `5272b97` with its
 verification record `docs/verification/2026-09-18-design-included.md`. It supersedes the
 closing sentence of this file — "it must not appear on the website at all until it can produce
 an honest capture of something a visitor could actually buy or use" — and with it the "No

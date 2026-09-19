@@ -46,7 +46,7 @@ Preserve human, organization, Agent/revision, Team, model, runtime and payer ide
 
 ## Pricing candidate
 
-Andrew's example is $300 per organization per month including $100 of managed API usage. It is a candidate for validation, not an approved public replacement for planned Business from $99/month or optional Managed from $249/month. Keep services pricing separate.
+Andrew's example is $300 per organization per month including $100 of managed API usage. It was a candidate for validation when this was written. The retired Business and Managed figures that stood in this sentence were removed on 2026-09-19; `docs/business/PRICING_STRATEGY_2026-09-15.md` now sets Business at that monthly price with a published request count in place of a dollar allowance. Keep services pricing separate.
 
 Recommended accounting: a USD inference allowance consumed by documented eligible upstream charges under a versioned rate card, with no cash redemption or guaranteed task count. Define cost categories, overage, rollover and limits before selling. Retries, reviewers, context and tools can change consumption substantially.
 

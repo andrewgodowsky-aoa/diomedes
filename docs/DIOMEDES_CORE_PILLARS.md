@@ -1,6 +1,6 @@
 # DIOMEDES CORE PILLARS — BINDING PRODUCT CONSTITUTION
 
-**Version:** 2026-09-10.1  
+**Version:** 2026-09-19.1  
 **Status:** Owner-approved product/business/agent/design authority  
 **Product:** Diomedes  
 **Company direction:** Diomedes Systems  
@@ -75,9 +75,9 @@ Each pillar has three representations:
 
 ## Pillar 07 — Diomedes is the agent; models and engines are interchangeable resources
 
-**Technical contract:** Native Diomedes Agent owns the supervisory loop and can use customer subscription-backed routes, local models, BYO APIs, Diomedes-hosted inference, or specialist external engines. Prefer appropriately capable intelligence the customer already pays for when policy and availability allow. Preserve actual model/engine/provider/payer attribution and never silently change payer, provider, data policy, or authority. Direct-agent mode remains distinct from native Diomedes-led work.
+**Technical contract:** Native Diomedes Agent owns the supervisory loop and can use customer subscription-backed routes, local models, BYO APIs, Diomedes-hosted inference, or specialist external engines. Preserve actual model/engine/provider/payer attribution and never silently change payer, provider, data policy, or authority. Direct-agent mode remains distinct from native Diomedes-led work.
 
-**Human version:** If you already pay for ChatGPT or Claude, Diomedes should be able to use that supported connection. If you have a capable local computer, it can use that too. You are paying for Diomedes to organize the work, not for a mystery model name.
+**Human version:** You do not need to bring, buy or share an AI subscription to use Diomedes. It can run on the AI a Business plan includes, on your organization's own provider account, or on a capable local computer. You are paying for Diomedes to organize the work, not for a mystery model name.
 
 **Real proof / website capture:** A real run shows “Diomedes Agent” as the supervisor while Technical details reveal one worker used GPT through the customer's Codex subscription, another used a local model, and a cheap Diomedes-hosted route handled a small task. The history preserves which route actually did each step.
 
@@ -175,3 +175,6 @@ Version changes:
 - **Patch:** wording/examples/proof clarifications with no semantic pillar change.
 - **Minor:** new pillar or material expansion approved by Andrew.
 - **Major:** a deliberate change to the Diomedes product/business constitution.
+
+Amendments:
+- **2026-09-19.1 (minor, Andrew's explicit decision):** Pillar 07 no longer says to prefer intelligence the customer already pays for, and its human version no longer opens with the customer's own ChatGPT or Claude subscription. Customers are not expected to bring, buy or share an AI subscription; a customer organization's own provider account and a local model remain valid routes, and a personal subscription is still never company inventory. No other pillar changed. The canonical cloud document could not be written from the session that made this change; a current cloud mirror of this version is recorded in docs/reference/CLOUD_SYNC_2026-09-19.md.

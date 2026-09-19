@@ -63,8 +63,9 @@ LIMITS
   switched on only by starting Diomedes with DIOMEDES_DESIGN_AUTHORING=1, which
   the included Start-Experimental.ps1 launcher sets.
   Appearance work is included in a Diomedes Business subscription and is done by
-  our own design team: we build and install your first look, and you get one
-  graphical update a month. There is nothing extra to buy.
+  our own design team: we build and install your first look after a design
+  consultation, and up to two revisions a year are included. There is nothing
+  extra to buy.
   Connections runs on synthetic data only. The local service is loopback-only.
   There is no delete for a theme, and removing a picture from a theme leaves its
   bytes on disk.

@@ -1,11 +1,13 @@
 # Diomedes Local Business Plan
 
+> **Retired prices removed, 2026-09-19.** By owner direction, Diomedes' own retired price figures were struck from this dated document and appear as "[retired price removed]". Market and hardware prices were kept as evidence. Totals and margins that were computed from the struck figures no longer have their inputs and are not current. Reason and scope: `docs/business/PRICING_STRATEGY_2026-09-15.md`, "Removed figures". Git history holds the original.
+
 Version: 2026-09-15.1
 Date: September 15, 2026
 Status: Proposal for Andrew's decision. Nothing here is built, approved, priced or shipped. This plan covers the market, verticals overview, go-to-market, delivery operations, the first 90 days and the hiring trigger; every hour, minute, rate and threshold in it is a placeholder pending Andrew's decision unless it is quoted from an approved line or a named source.
 Repository: docs/business/2026-09-15-local-business-plan.md
 Cloud canonical: none yet.
-Depends on: docs/business/2026-09-14-custom-capability-packs.md, docs/business/PRICING_STRATEGY_2026-09-10.md, docs/business/MARKETABILITY_AND_INCOME_2026-09-10.md, docs/business/income_model_2026-09-10.json, docs/business/OPEN_DECISIONS.md, docs/business/2026-09-15-pricing-and-packaging-proposals.md, docs/business/income_model_2026-09-15_proposal.json, docs/business/2026-09-15-managed-inference-and-local-models.md, docs/business/2026-09-15-appeal-offers-catalog.md, docs/business/2026-09-15-roadmap-and-package-impact.md, docs/business/playbooks/README.md, docs/research/2026-09-15-local-business-program/ (notes 02, 03, 04a, 04b, 05, 07, 08, 10, 11, 12), docs/research/2026-09-14-smb-mcp-landscape/ADDENDUM_2026-09-15.md, docs/DIOMEDES_CORE_PILLARS.md
+Depends on: docs/business/2026-09-14-custom-capability-packs.md, the 2026-09-10 pricing checkpoint (removed 2026-09-19), docs/business/MARKETABILITY_AND_INCOME_2026-09-10.md, the 2026-09-10 income-model inputs (removed 2026-09-19), docs/business/OPEN_DECISIONS.md, docs/business/2026-09-15-pricing-and-packaging-proposals.md, docs/business/income_model_2026-09-15_proposal.json, docs/business/2026-09-15-managed-inference-and-local-models.md, docs/business/2026-09-15-appeal-offers-catalog.md, docs/business/2026-09-15-roadmap-and-package-impact.md, docs/business/playbooks/README.md, docs/research/2026-09-15-local-business-program/ (notes 02, 03, 04a, 04b, 05, 07, 08, 10, 11, 12), docs/research/2026-09-14-smb-mcp-landscape/ADDENDUM_2026-09-15.md, docs/DIOMEDES_CORE_PILLARS.md
 
 ---
 
@@ -15,10 +17,10 @@ Depends on: docs/business/2026-09-14-custom-capability-packs.md, docs/business/P
 
 - **Owner of each topic.** This plan owns market, verticals overview, go-to-market, operations, the 90-day plan and the hiring trigger. Prices, scope boundaries, guarantees, payment and referral terms, benchmarks and income-model parameters belong to `docs/business/2026-09-15-pricing-and-packaging-proposals.md` and `docs/business/income_model_2026-09-15_proposal.json`. Routes, provider terms, inference costs and hardware belong to `docs/business/2026-09-15-managed-inference-and-local-models.md`. Offers, lines and objections belong to `docs/business/2026-09-15-appeal-offers-catalog.md`. Patch text belongs to `docs/business/2026-09-15-roadmap-and-package-impact.md`. This plan links to those rather than restating them.
 - **Labels used.**
-  - **APPROVED** means a line from the approved price table in `docs/business/PRICING_STRATEGY_2026-09-10.md`.
+  - **APPROVED** means a line from the approved price table in the 2026-09-10 pricing checkpoint (removed 2026-09-19).
   - **PLACEHOLDER** means an invented number, pending Andrew's decision. It is not a forecast, a commitment or a measurement.
   - **SYNTHETIC** means an invented example business or data set.
-  - **INCOME-2026-09-10** means a modelling assumption in `docs/business/income_model_2026-09-10.json`. Those are themselves unverified planning allowances, per that file's notes.
+  - **INCOME-2026-09-10** means a modelling assumption in the 2026-09-10 income-model inputs (removed 2026-09-19). Those are themselves unverified planning allowances, per that file's notes.
   - Market figures carry **high / medium / low** confidence from the Verification section of the cited research note.
 - **Computed numbers.** Every computed number was produced by a script (`node`) from the stated inputs. The formula sits next to each result. The scripts live under `docs/business/scripts/2026-09-15/` in the repository (run from the repository root with node).
 - **Playbooks.** The playbook paths below are frozen. All of `01`-`13` and the four vertical playbooks (restaurant, home-services-and-trades, professional-services, nonprofits) now exist in the working tree.
@@ -65,7 +67,7 @@ Four candidate verticals are under study: restaurant, home services and trades, 
 | 1 | OD-9 provider routes (urgent) | No customer work can run on a route whose terms are unsettled, including the Codex adapter question. |
 | 2 | OD-10 consultation and pilot route and payer | Every quote must name route and payer. |
 | 3 | OD-20 legal and insurance gate | Entity, services agreement and SOW, data-access consent, confidentiality, E&O and cyber quote, invoicing review. |
-| 4 | OD-15 pilot pack versus full pack scope | Sets what the $1,250 line buys. |
+| 4 | OD-15 pilot pack versus full pack scope | Sets what the [retired price removed] line buys. |
 | 5 | OD-12 then OD-3 | The vertical for pack 1, then the named pilot businesses. |
 | 6 | OD-22 regulated-verticals policy | Needed only if the chosen pilot touches PHI, tax-return information, legal matters, insurance or card data. |
 | 7 | OD-17 guarantee and OD-18 payment terms | Needed in the SOW. |
@@ -85,22 +87,22 @@ Section 11 gives the full decision order.
 ```
 Workflow Fit Call (free 60 min, fit only)
    |
-   +--> Workflow Audit / Weak Point Map ($350)   -- the default paid first step for pack work
-   +--> Cloud AI Quick Start ($299)             -- when the need is one working model route, not a workflow
-   +--> Local Hardware and Model Plan ($249)    -- when data must stay on premises  --> Local AI Deployment (from $749 + hardware)
+   +--> Workflow Audit / Weak Point Map ([retired price removed])   -- the default paid first step for pack work
+   +--> Cloud AI Quick Start ([retired price removed])             -- when the need is one working model route, not a workflow
+   +--> Local Hardware and Model Plan ([retired price removed])    -- when data must stay on premises  --> Local AI Deployment (from [retired price removed] + hardware)
    |
    v
-Pilot pack (Bounded workflow pilot, from $1,250)  -- one workflow, exports or admitted connectors, ends with a result card
+Pilot pack (Bounded workflow pilot, from [retired price removed])  -- one workflow, exports or admitted connectors, ends with a result card
    |
    +--> stop / narrow / repeat (result card decides)
    v
 Full pack (Broader/custom implementation, from $2,500)  -- 1-2 connected systems, 2-3 verified workflows, or a new connector
    |
    v
-Diomedes Business (planned from $99/month per organization)  -- when sellable (OD-27)
+Diomedes Business (planned from [retired price removed]/month per organization)  -- when sellable (OD-27)
    |
    v
-Managed Diomedes (from $249/month, optional)  -- after a working deployment, on named triggers (OD-25)
+Managed Diomedes (from [retired price removed]/month, optional)  -- after a working deployment, on named triggers (OD-25)
    |
    v
 Expansion (separate quote line)  -- only after a documented result
@@ -109,8 +111,8 @@ Expansion (separate quote line)  -- only after a documented result
 Three commercial categories stay separate in every quote: **initial configuration**, **maintenance** and **expansion** (proposal §7). Continued focused consultation at $100/hour is available at any stage, after the client accepts price and scope.
 
 Approved credits:
-- The $249 plan fee may be credited to a qualifying deployment.
-- A $200 audit credit may apply to a qualifying pilot of $1,250 or more within 30 days.
+- The [retired price removed] plan fee may be credited to a qualifying deployment.
+- A $200 audit credit may apply to a qualifying pilot of [retired price removed] or more within 30 days.
 - Credits do not stack.
 
 Credit mechanics and scope wording belong to `docs/business/2026-09-15-pricing-and-packaging-proposals.md`.
@@ -137,46 +139,46 @@ Founder-minute targets are **PLACEHOLDER** unless a source is named. Where an ap
 
 | Field | Content |
 | --- | --- |
-| Price line | APPROVED: $350 fixed. Written assessment of one recurring process, data, risks, options and next step. |
+| Price line | APPROVED: [retired price removed] fixed. Written assessment of one recurring process, data, risks, options and next step. |
 | Entry criteria | Fit outcome (a). Signed quote. OD-20 confidentiality and data-access consent in place before any real business information is discussed or shared. Regulated-data screen done (OD-22). |
 | Exit criteria | Written weak-point map delivered and walked through. Draft organization facts captured. Baseline method agreed: timed or observed. The owner's own estimate is recorded separately and labelled as an estimate. Recommendation made: pilot pack, full pack, Quick Start, local plan, or not now. |
 | Customer receives | The written assessment (one process, data sources and access route per system, risks, options, next step); the draft organization-facts sheet; a draft acceptance example if the pilot is recommended. |
 | Client inputs | The facts interview (paid work; proposal §5.1). Access-route answers per system: official, community, API or export (proposal §4). Sample exports where approved. The name of the person who can time the current process. |
-| Exclusions | Building, configuring or connecting anything; production access; legal, tax or compliance opinions; payroll, payments, vendor ordering, employment decisions, public publication (`PRICING_STRATEGY_2026-09-10.md`). |
-| Founder-minutes target | 210, from the `PRICING_STRATEGY_2026-09-10.md` control of about 3-4 hours (midpoint). |
+| Exclusions | Building, configuring or connecting anything; production access; legal, tax or compliance opinions; payroll, payments, vendor ordering, employment decisions, public publication (the 2026-09-10 pricing checkpoint (removed 2026-09-19)). |
+| Founder-minutes target | 210, from the the 2026-09-10 pricing checkpoint (removed 2026-09-19) control of about 3-4 hours (midpoint). |
 | Playbooks | `docs/business/playbooks/02-consultation-interview-guide.md`, `docs/business/playbooks/03-organization-facts-template.md`, `docs/business/playbooks/04-acceptance-example-template.md`. |
 
 #### Stage 1b. Cloud AI Quick Start
 
 | Field | Content |
 | --- | --- |
-| Price line | APPROVED: $299 fixed. One supported model/account route, one useful example, basic configuration and handoff. Custom connectors and production multi-user systems excluded. |
+| Price line | APPROVED: [retired price removed] fixed. One supported model/account route, one useful example, basic configuration and handoff. Custom connectors and production multi-user systems excluded. |
 | Entry criteria | The need is one working route, not a workflow pack. The customer has chosen this line and the organization-authorized commercial account route it configures (OD-9, OD-10). That route is optional, never required, and customers are never expected to bring, buy or share an AI subscription for Diomedes work. No such route is verified for customer work today, so this line waits until a row of `2026-09-15-managed-inference-and-local-models.md` §2.2 is verified (§7 gate 'Provider routes'). Never a consumer chat subscription used for company work, and never Andrew's personal accounts as the runtime route that rehearses or runs the work (setup tooling is disclosed separately under OD-10). The route and payer are named in the quote. |
 | Exit criteria | One example runs on the customer's machine with the customer's account; handoff notes delivered; the customer repeats the example unaided. |
 | Customer receives | Configured route, one example, a short handoff note. |
 | Client inputs | The commercial account, created and owned by the customer (Diomedes does not create accounts or enter the customer's credentials); one example task. |
 | Exclusions | Custom connectors; production multi-user; workflow packs; any claim beyond what `status.ts` marks available. |
-| Founder-minutes target | 180, from the `PRICING_STRATEGY_2026-09-10.md` control of about 2-3 hours (upper bound). |
+| Founder-minutes target | 180, from the the 2026-09-10 pricing checkpoint (removed 2026-09-19) control of about 2-3 hours (upper bound). |
 | Playbooks | `docs/business/playbooks/07-handoff-and-first-week.md` for the handoff note; route rules in `docs/business/2026-09-15-managed-inference-and-local-models.md`. |
 
 #### Stage 1c. Local Hardware and Model Plan, then Local AI Deployment
 
 | Field | Content |
 | --- | --- |
-| Price lines | APPROVED: plan $249 fixed; deployment from $749 plus hardware; shared/team local deployment from $1,250. |
+| Price lines | APPROVED: plan [retired price removed] fixed; deployment from [retired price removed] plus hardware; shared/team local deployment from [retired price removed]. |
 | Entry criteria | The customer wants processing kept on premises, or cloud routes are ruled out by OD-22 policy. |
 | Exit criteria | Plan: written recommendation for one deployment. Deployment: benchmark recorded, documentation and handoff delivered. The Diomedes connection is made only "where supported". `status.ts` lists local models as **planned**, so no Diomedes-local-model connection is promised today. |
 | Customer receives | Plan: hardware and workload review and a written recommendation. Deployment: one machine, runtime and model, tuning, benchmark, documentation, handoff. |
 | Client inputs | Workload description, current hardware, budget, and a hardware purchase made by the customer. |
 | Exclusions | Hardware cost; vendor prices used as anchors; shared hosts (separately scoped). |
-| Founder-minutes target | Plan PLACEHOLDER 180. Deployment 420, from the `PRICING_STRATEGY_2026-09-10.md` control of about 6-8 hours (midpoint). |
+| Founder-minutes target | Plan PLACEHOLDER 180. Deployment 420, from the the 2026-09-10 pricing checkpoint (removed 2026-09-19) control of about 6-8 hours (midpoint). |
 | Playbooks | None of the numbered playbooks covers this stage. Routes and hardware sit in `docs/business/2026-09-15-managed-inference-and-local-models.md`; handoff in `docs/business/playbooks/07-handoff-and-first-week.md`. |
 
 #### Delivery checklists for Stage 1b and Stage 1c
 
 No numbered playbook covers these two stages (corrected note above); this checklist stands in until one is written.
 
-**Cloud AI Quick Start ($299 fixed; about 2-3 delivery hours per `PRICING_STRATEGY_2026-09-10.md`).**
+**Cloud AI Quick Start ([retired price removed] fixed; about 2-3 delivery hours per the 2026-09-10 pricing checkpoint (removed 2026-09-19)).**
 
 Blocked until a runtime route is confirmed for customer work (section 7 gate "Provider routes"; OD-9).
 
@@ -190,16 +192,16 @@ Blocked until a runtime route is confirmed for customer work (section 7 gate "Pr
 
 Exclusions: no workflow pack, no connector, no scheduled work.
 
-**Local Hardware and Model Plan ($249 fixed).**
+**Local Hardware and Model Plan ([retired price removed] fixed).**
 
 1. Collect the workload description and current hardware.
 2. Assess fit per `docs/business/2026-09-15-managed-inference-and-local-models.md` §7.4.
 3. Check the licence of the exact model file and quantization (§7 gate "Regulated verticals").
 4. Check power, noise and placement.
 5. Write a plain statement of what "local" does and does not mean for this customer (`docs/business/2026-09-15-managed-inference-and-local-models.md` §7.6).
-6. Deliver a written recommendation, credit note included: "$249 may be credited to the qualifying deployment; credits do not combine."
+6. Deliver a written recommendation, credit note included: "[retired price removed] may be credited to the qualifying deployment; credits do not combine."
 
-**Local AI Deployment (from $749 plus hardware; shared or team from $1,250).**
+**Local AI Deployment (from [retired price removed] plus hardware; shared or team from [retired price removed]).**
 
 1. The customer buys the hardware.
 2. Install the runtime.
@@ -213,7 +215,7 @@ The quote states: "A Diomedes connection to a local model is not available today
 
 | Field | Content |
 | --- | --- |
-| Price line | APPROVED: bounded workflow pilot, from $1,250. One narrowly specified, measurable workflow using available integrations or approved exports, with testing and a stopping point. Target 10-12 delivery hours. |
+| Price line | APPROVED: bounded workflow pilot, from [retired price removed]. One narrowly specified, measurable workflow using available integrations or approved exports, with testing and a stopping point. Target 10-12 delivery hours. |
 | Scope (frozen program fact, OD-15) | One workflow. Approved exports or connectors already admitted to the registry. No new connector. Runs through rehearsal, shadow comparison and activation, ending with a result card. |
 | Entry criteria | Audit or pilot first session complete. Organization facts drafted. At least one acceptance example with a stop-or-ask case. Timed or observed baseline captured. SOW signed with route and payer named (OD-10), stopping point, change control, guarantee and payment terms (OD-17, OD-18). OD-20 cleared. OD-22 screen passed. Pack labelled unsigned local manifest. |
 | Exit criteria | Result card issued. Owner decision recorded: activate, narrow, repeat or stop. Handoff done with named duty owners, a manual fallback and one practised restore (proposal §5.2). Conversion path stated (OD-27). |
@@ -227,7 +229,7 @@ The quote states: "A Diomedes connection to a local model is not available today
 
 | Field | Content |
 | --- | --- |
-| Price line | APPROVED: broader/custom implementation, from $2,500. `PRICING_STRATEGY_2026-09-10.md` allows custom quotes of $2,500-$7,500. |
+| Price line | APPROVED: broader/custom implementation, from $2,500. the 2026-09-10 pricing checkpoint (removed 2026-09-19) allows custom quotes of $2,500-$7,500. |
 | Scope (frozen program fact, OD-15, OD-2) | One or two connected systems and two or three verified workflows, or any pack needing a new registry connector. |
 | Entry criteria | A pilot result card showing net time returned, or a documented equivalent. Connector discovery done on real accounts. For any new connector: admission checklist started, vendor gates identified (Square allowlist; Intuit about 7 days average initial security review; Google CASA for restricted scopes; proposal §4.3). |
 | Exit criteria | Each workflow passes its acceptance examples. Any generated connector passes review, restricted testing, approval and a pinned release. Result card per workflow. Handoff updated. |
@@ -241,7 +243,7 @@ The quote states: "A Diomedes connection to a local model is not available today
 
 | Field | Content |
 | --- | --- |
-| Price line | APPROVED: planned from $99/month per organization. Software and bounded paid-agent usage as released. Not unlimited users, locations, inference or support. Never described as including managed inference. |
+| Price line | APPROVED: planned from [retired price removed]/month per organization. Software and bounded paid-agent usage as released. Not unlimited users, locations, inference or support. Never described as including managed inference. |
 | Status | Not sellable today. `status.ts`: business-setup in development; managed-usage in development with no entitlement; paid-agent planned. The conversion rule while Business is not sellable is OD-27. |
 | Entry criteria | A working pack; the roadmap's own readiness criteria for Business met (see `docs/business/2026-09-15-roadmap-and-package-impact.md`); OD-27 settled. |
 | Exit criteria | Not applicable (subscription). Review at 30/60/90 days of active use. |
@@ -255,10 +257,10 @@ The quote states: "A Diomedes connection to a local model is not available today
 
 | Field | Content |
 | --- | --- |
-| Price line | APPROVED: from $249/month, optional add-on. Agreed maintenance, health review and limited support after a working deployment. |
+| Price line | APPROVED: from [retired price removed]/month, optional add-on. Agreed maintenance, health review and limited support after a working deployment. |
 | Entry criteria | A working deployment. Named triggers present (proposal from `10_services-pricing-and-packaging-benchmarks.md` §7.7). Whether an activated pack requires Managed is OD-25. |
 | Exit criteria | Monthly health review delivered. Support minutes logged against the account (section 8.3). |
-| Customer receives | Today: agreed maintenance and health review by a person under Managed Diomedes (from $249/month, optional); the automated loop is a design target. Design target (none of this exists today; playbook 08): the keeping-it-true loop in proposal §5.5: prevention, auto-recovery, support agent, then a person. Example event: Square tokens expire every 30 days, so re-authorization recovery is routine. |
+| Customer receives | Today: agreed maintenance and health review by a person under Managed Diomedes (from [retired price removed]/month, optional); the automated loop is a design target. Design target (none of this exists today; playbook 08): the keeping-it-true loop in proposal §5.5: prevention, auto-recovery, support agent, then a person. Example event: Square tokens expire every 30 days, so re-authorization recovery is routine. |
 | Client inputs | Re-authorization when asked; a named duty owner. |
 | Exclusions | Expansion work; unlimited support; new workflows. |
 | Founder-minutes target | 90 additional per account-month (INCOME-2026-09-10: 1.5 hours). |
@@ -282,14 +284,14 @@ The quote states: "A Diomedes connection to a local model is not available today
 **"Synthetic Bistro Group" (SYNTHETIC; three restaurant locations).** This mirrors the proposal §3.3 example.
 
 - **Fit Call.** The sponsor is the owner. The task is "operating brief for yesterday". A good result is a one-page brief by 9:00. Systems are the POS, a scheduling tool and email. Outcome (a): an audit is recommended.
-- **Audit, $350.** The facts interview records:
+- **Audit, [retired price removed].** The facts interview records:
   - The business day ends after midnight.
   - Net sales is defined, with exclusions.
   - Location exceptions route to that location's manager.
   - The rule "never change prices or place orders" is recorded.
   - The POS is reachable by export today. No live connection is named until the access route is confirmed on the real account.
   - Baseline: the general manager is timed at 45 minutes per day, 6 days per week. The owner's estimate of "about an hour" is recorded separately.
-- **Pilot pack, from $1,250, less the $200 audit credit, which may apply to a qualifying pilot within 30 days.**
+- **Pilot pack, from [retired price removed], less the $200 audit credit, which may apply to a qualifying pilot within 30 days.**
   - Route and payer: named in the quote once a route is verified for customer work (none is today; OD-9, OD-10). In this synthetic example the customer chose its own commercial API account, which is optional and never required.
   - Acceptance example 1: yesterday's exports in, expected net-sales total (deterministic), a brief in the agreed shape.
   - Acceptance example 2 (stop-or-ask): a location's export is missing, so the brief stops and asks rather than estimating.
@@ -693,7 +695,7 @@ Principle from `MARKETABILITY_AND_INCOME_2026-09-10.md`: hire only against colle
 | T3 | Support and maintenance share of program hours, 4 consecutive weeks | ≥ 25% of the 20-hour week | 5 hours per week |
 | T4 | Program hours over budget, 4 consecutive weeks | Actual total > 20 hours by 25% or more | Not computed; depends on the log |
 
-The $40/hour rate is the illustration in `MARKETABILITY_AND_INCOME_2026-09-10.md` and `PRICING_STRATEGY_2026-09-10.md`. The $50/hour rate is the contractor assumption in `income_model_2026-09-10.json`. Neither is a quote.
+The $40/hour rate is the illustration in `MARKETABILITY_AND_INCOME_2026-09-10.md` and the 2026-09-10 pricing checkpoint (removed 2026-09-19). The $50/hour rate is the contractor assumption in the 2026-09-10 income-model inputs (removed 2026-09-19). Neither is a quote.
 
 **First delegation candidates**, in order: acceptance-example reruns and re-authorization recovery; export preparation; handoff document formatting. **Never delegated first**: the facts interview, route and payer decisions, anything under OD-22.
 
@@ -745,22 +747,22 @@ The checklist is `docs/business/playbooks/10-legal-readiness-checklist.md`. This
 
 ### 8.1 Revenue building blocks by stage
 
-Prices are APPROVED lines. Parameters, scenarios and credit mechanics are owned by `docs/business/2026-09-15-pricing-and-packaging-proposals.md` and `docs/business/income_model_2026-09-15_proposal.json`. The existing model is `docs/business/income_model_2026-09-10.json` with `docs/business/MARKETABILITY_AND_INCOME_2026-09-10.md`. This table shows only the revenue per delivery hour implied by each line at the stage hours used in this plan.
+Prices are APPROVED lines. Parameters, scenarios and credit mechanics are owned by `docs/business/2026-09-15-pricing-and-packaging-proposals.md` and `docs/business/income_model_2026-09-15_proposal.json`. The existing model is the 2026-09-10 income-model inputs (removed 2026-09-19) with `docs/business/MARKETABILITY_AND_INCOME_2026-09-10.md`. This table shows only the revenue per delivery hour implied by each line at the stage hours used in this plan.
 
 **Formula:** revenue per delivery hour = approved (starting) price ÷ delivery hours.
 
 | Block | Category | Price | Hours (source) | Revenue per delivery hour |
 | --- | --- | --- | --- | --- |
 | Fit Call | Sales cost | $0 for 60 minutes | 1.5 (PLACEHOLDER) | $0 |
-| Quick Start | Initial configuration | $299 | 3 (control) | $99.67 |
-| Audit | Initial configuration | $350 | 3.5 (control) | $100.00 |
-| Local Hardware and Model Plan | Initial configuration | $249 | 3 (PLACEHOLDER) | $83.00 |
-| Pilot pack, templated | Initial configuration | from $1,250 | 12 (approved target; pricing §12 placeholder 10 build + 2 acceptance hours) | $104.17 |
-| Pilot pack, first in vertical | Initial configuration | from $1,250 | 20 (PLACEHOLDER) | $62.50 |
-| Audit then pilot, with $200 credit | Initial configuration | $350 + $1,250 − $200 = $1,400 | 3.5 + 12 = 15.5 | $90.32 |
+| Quick Start | Initial configuration | [retired price removed] | 3 (control) | $99.67 |
+| Audit | Initial configuration | [retired price removed] | 3.5 (control) | $100.00 |
+| Local Hardware and Model Plan | Initial configuration | [retired price removed] | 3 (PLACEHOLDER) | $83.00 |
+| Pilot pack, templated | Initial configuration | from [retired price removed] | 12 (approved target; pricing §12 placeholder 10 build + 2 acceptance hours) | $104.17 |
+| Pilot pack, first in vertical | Initial configuration | from [retired price removed] | 20 (PLACEHOLDER) | $62.50 |
+| Audit then pilot, with $200 credit | Initial configuration | [retired price removed] + [retired price removed] − $200 = $1,400 | 3.5 + 12 = 15.5 | $90.32 |
 | Full pack at its starting price | Initial configuration | from $2,500 | 30 (INCOME-2026-09-10) | $83.33 |
-| Diomedes Business | Recurring (planned; not sellable) | $99/month | See 8.3 | See 8.3 |
-| Managed Diomedes | Maintenance | $249/month | See 8.3 | See 8.3 |
+| Diomedes Business | Recurring (planned; not sellable) | [retired price removed]/month | See 8.3 | See 8.3 |
+| Managed Diomedes | Maintenance | [retired price removed]/month | See 8.3 | See 8.3 |
 | Expansion | Expansion | Quoted on the pilot or custom line | Per scope | Per scope |
 | Continued consultation | Any | $100/hour | 1 | $100.00 |
 
@@ -787,14 +789,14 @@ Proposal §9 names this as a primary risk. Illustration using INCOME-2026-09-10 
 
 | Account | Contribution before support | Break-even support per account-month | Contribution at the stated load |
 | --- | --- | --- | --- |
-| Business $99 | $76.03 | 1.52 hours (91 minutes) | At 1 hour (0.25 support + 0.75 pack maintenance): $26.03. At 1.5 hours: $1.03, matching `MARKETABILITY_AND_INCOME_2026-09-10.md`. |
-| Business $99 plus Managed $249 = $348 | $307.56 | 6.15 hours | At 2.5 hours (0.25 + 1.5 + 0.75): $182.56 |
+| Business [retired price removed] | $76.03 | 1.52 hours (91 minutes) | At 1 hour (0.25 support + 0.75 pack maintenance): $26.03. At 1.5 hours: $1.03, matching `MARKETABILITY_AND_INCOME_2026-09-10.md`. |
+| Business [retired price removed] plus Managed [retired price removed] = $348 | $307.56 | 6.15 hours | At 2.5 hours (0.25 + 1.5 + 0.75): $182.56 |
 
 Reading:
 - A Business account with one hand-maintained pack has little room. One re-authorization incident plus a facts-drift fix can pass 91 minutes in a month.
 - The mitigations are Managed on named triggers (OD-25), prevention and auto-recovery (proposal §5.5), and the section 6.5 minute log.
 - Separately, the $15 API allowance is at risk under multi-call agent loops (`docs/business/2026-09-15-managed-inference-and-local-models.md`).
-- Business at $99 never includes managed inference.
+- Business at [retired price removed] never includes managed inference.
 
 ### 8.4 Startup cash before customer #1 (proposal; amounts blank unless sourced)
 

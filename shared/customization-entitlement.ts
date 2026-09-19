@@ -38,9 +38,8 @@ export const CUSTOMIZATION_CONTRACT_VERSION = 1 as const;
 /**
  * The plans that include advanced customization.
  *
- * `plan_business` is the fixture id for "Diomedes Business, from $199/month per
- * organization", the lowest paid software tier in
- * `docs/business/PRICING_STRATEGY_2026-09-15.md` (version 2026-09-17.2). The
+ * `plan_business` is the fixture id for "Diomedes Business", the lowest paid
+ * software tier in `docs/business/PRICING_STRATEGY_2026-09-15.md`. The
  * price lives in that document and never in code, and there is no plan
  * catalogue in this repository yet — when a real one exists, this list is what
  * it replaces. Everything above the lowest tier includes it too, which is why

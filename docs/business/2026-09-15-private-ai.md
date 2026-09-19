@@ -16,7 +16,7 @@ Keep one configurable product across industries. Customer-owned infrastructure i
 4. Measured case study, published only with permission.
 5. Repeatable hospitality offering.
 
-After workload evidence exists, the customer can expand from workflow pilot to implementation, capability pack, private/hybrid infrastructure and optional Managed Diomedes. These are possible next scopes, not mandatory purchases. The first restaurant still proves a bounded workflow with authorized inputs; hardware is not a day-one dependency. Starter and its $299/month, three-month terms are unchanged.
+After workload evidence exists, the customer can expand from workflow pilot to implementation, capability pack, private/hybrid infrastructure and optional Managed Diomedes. These are possible next scopes, not mandatory purchases. The first restaurant still proves a bounded workflow with authorized inputs; hardware is not a day-one dependency. Starter and its three-month terms are governed by the pricing authority (the monthly figure that stood here was retired and removed on 2026-09-19).
 
 ## What a deployment buys
 

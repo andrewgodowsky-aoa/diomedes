@@ -6,9 +6,9 @@ PB-2026-09-10.1 | Checked September 10, 2026.
 
 Repository: https://github.com/andrewgodowsky-aoa/diomedes
 
-Inspected main: a70ae5d9523d81bf5db98304a657cf16ed014a7a. Relevant files: AGENTS.md; docs/DIOMEDES_LIVE_ROADMAP.md; docs/DIOMEDES_PROJECT_MEMORY.md; docs/business/PRICING_STRATEGY_2026-09-10.md; docs/harness/CHANGES.md; docs/harness/RUNTIME_VERIFICATION.md; shared/types.ts; shared/harness.ts; LICENSE. Some reports describe earlier checkpoints and are not current execution proof.
+Inspected main: a70ae5d9523d81bf5db98304a657cf16ed014a7a. Relevant files: AGENTS.md; docs/DIOMEDES_LIVE_ROADMAP.md; docs/DIOMEDES_PROJECT_MEMORY.md; the 2026-09-10 pricing checkpoint (removed 2026-09-19); docs/harness/CHANGES.md; docs/harness/RUNTIME_VERIFICATION.md; shared/types.ts; shared/harness.ts; LICENSE. Some reports describe earlier checkpoints and are not current execution proof.
 
-The 2026-09-10.3 roadmap/memory define shared Core/Runtime/Trust boundaries, local/BYO versus paid company-funded inference, Console-only work, preserved Engines typography, correction/evidence foundations and commercial gates. Pricing retains planned Business from $99/month and optional Managed from $249/month. This package adds the owner's newly approved product direction; $300 with $100 usage remains a candidate, not a silent public price replacement.
+The 2026-09-10.3 roadmap/memory define shared Core/Runtime/Trust boundaries, local/BYO versus paid company-funded inference, Console-only work, preserved Engines typography, correction/evidence foundations and commercial gates. Pricing at that date retained the then-planned Business and Managed figures (retired and removed from this sentence on 2026-09-19; see the pricing authority). This package adds the owner's newly approved product direction; $300 with $100 usage remains a candidate, not a silent public price replacement.
 
 Canonical roadmap: https://docs.google.com/document/d/1bRhz3zQPXOYuVlt95U1EIkz7pcm1dtSsoBvkDrLR3zE/edit
 Canonical memory: https://docs.google.com/document/d/13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw/edit

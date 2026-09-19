@@ -1,5 +1,7 @@
 # Current reconciliation and concurrent work
 
+> **Retired prices removed, 2026-09-19.** By owner direction, Diomedes' own retired price figures were struck from this dated document and appear as "[retired price removed]". Market and hardware prices were kept as evidence. Totals and margins that were computed from the struck figures no longer have their inputs and are not current. Reason and scope: `docs/business/PRICING_STRATEGY_2026-09-15.md`, "Removed figures". Git history holds the original.
+
 Date: September 10, 2026
 Read alongside the current 2026-09-10.3 roadmap, memory and pricing, not instead of them.
 
@@ -15,7 +17,7 @@ Opus must inspect and preserve that candidate plus current site main before chan
 
 Keep: practical email/calendar/export/photo inputs, shared capability manifests and workflow packs, controlled distribution/updater work, server-held API credentials, metering, ownership continuity, export/offboarding and cross-industry proof.
 
-Do not silently adopt: a per-location conversion of the $99 organization plan, $29/$39 tiers, mandatory extra setup charges, forced Managed retainers, annual-only setup waivers, unlimited workflows, lifetime 30% discounts, or higher replacement service prices. This reconciliation's 2026-09-10.3 retains approved prices; it is NOT adoption of the separate Fable document called pricing v3.
+Do not silently adopt: a per-location conversion of the [retired price removed] organization plan, $29/$39 tiers, mandatory extra setup charges, forced Managed retainers, annual-only setup waivers, unlimited workflows, lifetime 30% discounts, or higher replacement service prices. This reconciliation's 2026-09-10.3 retains approved prices; it is NOT adoption of the separate Fable document called pricing v3.
 
 Do not count the founder's employer or a warm introduction as owned restaurants, a signed design partner, consent to production data or no sales cycle. Do not use the consolidation's uncounted local market size or 1% penetration arithmetic as an acquisition forecast. Location counts and paying-organization counts are not interchangeable.
 
