@@ -195,6 +195,24 @@ Until that exists, every managed route is a route to nothing, and a client-side 
 assertion is exactly the thing J73 says the gateway must ignore. Designing that server is the next
 piece of work, not this one.
 
+## The acceptance record
+
+The package supplies 80 required scenarios and says none of them is claimed to have passed. The
+measured answer is in `docs/product/evaluation/ACCEPTANCE_COVERAGE.md`: 31 covered, 43 gaps, 5
+gated, 1 out of scope, each row citing a test file and line.
+
+`tests/evaluation-acceptance.test.ts` pins it. Every covered row must cite a line that really is a
+`test(` declaration, every gap must name where its test belongs and what it must show, every gated
+row must name its gate, and the split in the header must be the split in the table. A row cannot
+quietly become a claim: renaming a test or moving a line breaks the suite.
+
+The gaps are the honest part of the document. Two thirds of the matrix is unaddressed, mostly
+because the thing it describes was not built - there is no advisor, no routing, no retrieval and no
+grant model - and the ledger says so per row rather than in a preamble. What it establishes is
+narrower than the matrix and worth stating plainly: the cases about money, authority and honest
+unknowns are covered, and the cases about behavior under a live provider cannot be until there is
+a budget to run one.
+
 ## Blocking gates
 
 None of these is granted by this work, and none may be worked around.
