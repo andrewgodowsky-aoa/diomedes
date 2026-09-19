@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { FileRecord, HistoryEntry, Need, RestoreConflict, Session } from '../../shared/types';
+import type {
+  Change,
+  Detail,
+  FileRecord,
+  HistoryEntry,
+  Need,
+  RestoreConflict,
+  Session,
+} from '../../shared/types';
 import { formatOrigin, originForSession } from '../../shared/attribution';
 import { api, ApiError } from '../api';
-import { ApprovalStatus, Button, Modal, date, time } from '../components';
+import { ApprovalStatus, Button, ChangeCard, Modal, date, time } from '../components';
 import './history.css';
 
 /**
@@ -19,10 +27,12 @@ import './history.css';
  * restore is never a rewind: the server records it as a new entry, leaves the
  * old one where it is, and this view says so in those words.
  *
- * Presentation and one route. It owns no project state: `entries` arrive from
- * the caller, and a restore tells the caller through `onRestored` — though a
- * Console that is already reading the `state` event will see the new entry
- * arrive on its own.
+ * Presentation and three routes, all of them already shipped: `restore` above,
+ * `GET /history/:entryId/changes` for the before-and-after of one entry, and
+ * `POST /history/label` to save a version. It owns no project state: `entries`
+ * arrive from the caller, and a restore tells the caller through `onRestored` —
+ * though a Console that is already reading the `state` event will see the new
+ * entry arrive on its own.
  */
 
 /** Rows drawn before "Show older", and file rows drawn inside one entry. */
@@ -63,14 +73,30 @@ export interface HistoryViewProps {
   failure?: string | null;
   /** True while the caller is busy elsewhere; restoring waits. */
   busy?: boolean;
+  /**
+   * How much a change spells out about itself, passed straight to `ChangeCard`.
+   * The person's own setting, which is why this view does not decide it.
+   */
+  detail?: Detail;
   /** Called after a restore or an undo lands, with what the server answered. */
   onRestored?(result: RestoreResult): void;
+  /**
+   * A version was saved, so the caller can re-read the record. Without it the
+   * control still works and the new entry arrives with the next state event.
+   */
+  onSavedVersion?(): void;
   /** Open one file where the caller keeps files. Without it, no such control. */
   onOpenFile?(path: string): void;
   /**
    * Stop the work that is running, so a restore it blocks can go ahead. Work
    * control belongs to the caller: without this, the dialog says to stop the
    * work first instead of offering a button that is not wired to anything.
+   *
+   * `taskId` is what the server reported on the 409 and is passed on unread by
+   * anything here. A caller stops by `sessionId`: the session stop route looks
+   * the session up and takes the task from it, so a task this view could not
+   * name cannot leave a person stuck with a restore they are not allowed to
+   * make.
    */
   onStopWork?(work: { sessionId: string; taskId: string | null }): Promise<void>;
   /** Told about a failure as well; the person is always told either way. */
@@ -227,7 +253,9 @@ export function HistoryView({
   loading = false,
   failure = null,
   busy = false,
+  detail = 'standard',
   onRestored,
+  onSavedVersion,
   onOpenFile,
   onStopWork,
   onError,
@@ -236,6 +264,18 @@ export function HistoryView({
   const [shown, setShown] = useState(PAGE);
   const [openId, setOpenId] = useState<string | null>(null);
   const [shownFiles, setShownFiles] = useState(PAGE);
+  // The before and after of the open entry, read once it is opened. Null while
+  // it is on its way, and a sentence when it could not be read: an entry whose
+  // diff will not load still lists its files and still restores them.
+  const [changes, setChanges] = useState<Change[] | null>(null);
+  const [changesFailure, setChangesFailure] = useState<string | null>(null);
+  // Saving a version: the name is asked for first, the same way the Workbook
+  // asked, because an unnamed version is one nobody can find again.
+  const [naming, setNaming] = useState<string | null>(null);
+  // Which files in the open entry are showing their before and after. Opened
+  // one at a time on purpose: an entry can hold forty files, and forty diffs
+  // painted at once is not a thing anybody reads.
+  const [shownDiffs, setShownDiffs] = useState<string[]>([]);
   const [ask, setAsk] = useState<Ask | null>(null);
   const [working, setWorking] = useState(false);
   const [note, setNote] = useState<Note | null>(null);
@@ -278,7 +318,31 @@ export function HistoryView({
 
   useEffect(() => {
     setShownFiles(PAGE);
+    setShownDiffs([]);
   }, [openId]);
+
+  // The diff for the entry being read. Abandoned if the person leaves before it
+  // arrives, so a slow read cannot paint one entry's changes onto another.
+  useEffect(() => {
+    setChanges(null);
+    setChangesFailure(null);
+    if (!openId) return;
+    let live = true;
+    api<{ files: Change[] }>(`/projects/${projectId}/history/${openId}/changes`)
+      .then((result) => {
+        if (live) setChanges(result.files);
+      })
+      .catch((error: unknown) => {
+        if (!live) return;
+        setChangesFailure(
+          'Diomedes could not read what changed in this entry. The files below are still listed, and they can still be put back.',
+        );
+        onError?.(error);
+      });
+    return () => {
+      live = false;
+    };
+  }, [openId, projectId, onError]);
 
   // Reading one entry is a step deeper, so the heading takes the focus. Nothing
   // happens on the first render: the view opens on the list.
@@ -495,6 +559,38 @@ export function HistoryView({
     await run({ ...request, inProgress: undefined });
   }
 
+  /**
+   * Save a version: the Workbook's control, on the Workbook's route, in the one
+   * surface that is left. It writes nothing itself. `POST /history/label` asks
+   * the store for a snapshot, which arrives as an ordinary entry at the top of
+   * this list, so the confirmation is the record itself.
+   */
+  async function saveVersion(label: string) {
+    const name = label.trim();
+    if (!name) return;
+    setWorking(true);
+    try {
+      await api(`/projects/${projectId}/history/label`, 'POST', { label: name });
+      setNaming(null);
+      setNote({
+        tone: 'done',
+        text: `Saved this version as "${name}". It is at the top of History, and you can put the files back from it at any time.`,
+      });
+      onSavedVersion?.();
+    } catch (error) {
+      setNote({
+        tone: 'fail',
+        text:
+          error instanceof ApiError
+            ? `No version was saved. ${error.message}`
+            : 'No version was saved. Diomedes could not reach the service on this computer.',
+      });
+      onError?.(error);
+    } finally {
+      setWorking(false);
+    }
+  }
+
   function row(entry: HistoryEntry) {
     const files = restorable(entry);
     const paths = entry.files.map((file) => file.path);
@@ -652,32 +748,63 @@ export function HistoryView({
                   })
                 : 'None of these files were saved to History, so they cannot be put back.'}
             </p>
+            {changesFailure && (
+              <p className="hquiet">{changesFailure}</p>
+            )}
             <ul className="hfiles">
-              {files.map((file, index) => (
-                <li className="hfile" key={`${file.path}:${index}`}>
-                  <span className="hpath">{file.path}</span>
-                  <span className={`hwhat${file.recorded ? '' : ' warn'}`}>
-                    {fileOutcome(file, saved, 'this change')}
-                  </span>
-                  <span className="hfacts">
-                    {file.recorded && (
-                      <button
-                        type="button"
-                        className="verb"
-                        disabled={busy || working}
-                        onClick={() => askFile(entry, file)}
-                      >
-                        Put this file back
-                      </button>
+              {files.map((file, index) => {
+                const key = `${file.path}:${index}`;
+                const change = changes?.[index];
+                const showing = shownDiffs.includes(key);
+                return (
+                  <li className="hfile" key={key}>
+                    <span className="hpath">{file.path}</span>
+                    <span className={`hwhat${file.recorded ? '' : ' warn'}`}>
+                      {fileOutcome(file, saved, 'this change')}
+                    </span>
+                    <span className="hfacts">
+                      {file.recorded && (
+                        <button
+                          type="button"
+                          className="verb"
+                          disabled={busy || working}
+                          onClick={() => askFile(entry, file)}
+                        >
+                          Put this file back
+                        </button>
+                      )}
+                      {onOpenFile && file.op !== 'deleted' && (
+                        <button type="button" className="verb" onClick={() => onOpenFile(file.path)}>
+                          Open this file
+                        </button>
+                      )}
+                      {change && (
+                        <button
+                          type="button"
+                          className="verb"
+                          aria-expanded={showing}
+                          onClick={() =>
+                            setShownDiffs(
+                              showing
+                                ? shownDiffs.filter((item) => item !== key)
+                                : [...shownDiffs, key],
+                            )
+                          }
+                        >
+                          {showing ? 'Hide what changed' : 'Show what changed'}
+                        </button>
+                      )}
+                    </span>
+                    {change && showing && (
+                      <div className="hdiff">
+                        <ChangeCard change={change} detail={detail}>
+                          {null}
+                        </ChangeCard>
+                      </div>
                     )}
-                    {onOpenFile && file.op !== 'deleted' && (
-                      <button type="button" className="verb" onClick={() => onOpenFile(file.path)}>
-                        Open this file
-                      </button>
-                    )}
-                  </span>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
             {left > 0 && (
               <button
@@ -860,6 +987,16 @@ export function HistoryView({
             </button>
           ))}
         </div>
+        {/* A version is a marker a person puts down before they change something,
+            so it belongs where they can see what is already recorded. */}
+        <button
+          type="button"
+          className="verb light hsave"
+          disabled={busy || working}
+          onClick={() => setNaming('')}
+        >
+          Save a version
+        </button>
       </div>
       {/* Always mounted, so what a restore did is a change inside a region the
           reader is already on rather than a new one appearing under them. */}
@@ -908,6 +1045,39 @@ export function HistoryView({
         )}
       </div>
       {ask && dialog(ask)}
+      {naming !== null && (
+        <Modal title="Save a version" onClose={() => setNaming(null)}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveVersion(naming);
+            }}
+          >
+            <p className="prose">
+              This records every file in the project as it is right now, under a name you choose.
+              Nothing is changed and nothing is sent anywhere. You can put the files back the way
+              they are at this moment at any point after.
+            </p>
+            <label className="field">
+              Name this version
+              <input
+                autoFocus
+                value={naming}
+                onChange={(event) => setNaming(event.target.value)}
+                placeholder="Before the menu rewrite"
+                maxLength={120}
+                required
+              />
+            </label>
+            <div className="dialog-actions">
+              <Button onClick={() => setNaming(null)}>Cancel</Button>
+              <Button type="submit" tone="primary" disabled={working || !naming.trim()}>
+                Save this version
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </section>
   );
 }

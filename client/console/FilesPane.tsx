@@ -270,10 +270,13 @@ function Viewer({
   projectId,
   document: info,
   onBack,
+  onEdit,
 }: {
   projectId: string;
   document: DocumentInfo;
   onBack(): void;
+  /** Write in this file. Offered only for the kinds the editor can open. */
+  onEdit?(path: string): void;
 }) {
   const [content, setContent] = useState<DocumentContent | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -337,6 +340,15 @@ function Viewer({
               Raw
             </button>
           </span>
+        )}
+        {/* This pane stays a reader (decision 13, and the note at the top of
+            this file). Writing happens in the editor on the main stage, which
+            is a different surface reached from here, not one grown inside the
+            pane. */}
+        {onEdit && readable && (
+          <button type="button" className="files-edit" onClick={() => onEdit(info.path)}>
+            Write in this file
+          </button>
         )}
       </div>
       {marks(info).length > 0 && <p className="caption">{marks(info).join(' · ')}</p>}
@@ -403,6 +415,7 @@ function ProjectFilesPane({
   onOpen,
   onWidth,
   onClose,
+  onEdit,
 }: FilesPaneProps) {
   const [importing, setImporting] = useState(false);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set<string>());
@@ -495,6 +508,7 @@ function ProjectFilesPane({
               restoreFocus.current = true;
               onOpen(null);
             }}
+            onEdit={onEdit}
           />
         ) : (
           documents.length > 0 && (

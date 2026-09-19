@@ -233,7 +233,8 @@ export function SettingsPage({
             {section === 'Interface detail' && (
               <>
                 <p className="prose">
-                  Choose how Diomedes lays out your work and how much detail the Workbook shows.
+                  Choose how Diomedes lays out your work and how much detail it shows you about
+                  each change.
                 </p>
                 <h2>Surface</h2>
                 <div className="radio-list">
@@ -260,32 +261,27 @@ export function SettingsPage({
                     </label>
                   ))}
                 </div>
-                {surface === 'workbook' && (
-                  <>
-                    <h2>Detail</h2>
-                    <div className="radio-list">
-                      {(['guided', 'standard'] as const).map((d) => (
-                        <label
-                          key={d}
-                          className={`radio-row ${settings.detail === d ? 'selected' : ''}`}
-                        >
-                          <input
-                            type="radio"
-                            name="settings-detail"
-                            checked={settings.detail === d}
-                            onChange={() =>
-                              void save({ ...settings, detail: d, surface: 'workbook' })
-                            }
-                          />
-                          <span>
-                            <strong>{titleCase(d)}</strong>
-                            <span className="caption">{detailDescriptions[d]}</span>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </>
-                )}
+                {/* Detail stands on its own. It was gated on the Workbook, and
+                    choosing a level also wrote `surface: 'workbook'`, so picking
+                    one from the Console moved you out of it. Both are gone: this
+                    control writes the detail level and nothing else. */}
+                <h2>Detail</h2>
+                <div className="radio-list">
+                  {(['guided', 'standard', 'technical'] as const).map((d) => (
+                    <label key={d} className={`radio-row ${settings.detail === d ? 'selected' : ''}`}>
+                      <input
+                        type="radio"
+                        name="settings-detail"
+                        checked={settings.detail === d}
+                        onChange={() => void save({ ...settings, detail: d })}
+                      />
+                      <span>
+                        <strong>{titleCase(d)}</strong>
+                        <span className="caption">{detailDescriptions[d]}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
                 <section className="block">
                   <h3>Same work, two surfaces</h3>
                   <p className="prose">

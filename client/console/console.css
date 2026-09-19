@@ -317,13 +317,8 @@ html[data-surface='console'] body {
   height: 1px;
   background: var(--hair-2);
 }
-.console .rail .views {
-  margin-top: 18px;
-  padding: 10px 8px 0;
-  border-top: 1px solid var(--hair);
-}
-.console .rail .views button,
-.console .rail .foot button {
+.console .rail .foot button,
+.console .rail .foot .ev-trigger {
   display: flex;
   width: 100%;
   text-align: left;
@@ -333,17 +328,15 @@ html[data-surface='console'] body {
   gap: 10px;
   align-items: baseline;
 }
-.console .rail .views button:hover,
 .console .rail .foot button:hover {
   background: var(--raised);
   color: var(--t1);
 }
-.console .rail .views button.on,
 .console .rail .foot button.on {
   color: var(--t1);
   background: var(--surface);
 }
-.console .rail .views button .mono {
+.console .rail .foot button .mono {
   margin-left: auto;
 }
 .console .rail .foot {
@@ -1453,7 +1446,6 @@ html[data-motion='reduced'] .console .modes .ind b {
     max-width: 240px;
     overflow: auto;
   }
-  .console .rail .views,
   .console .rail .foot {
     display: flex;
     flex-direction: column;
@@ -1463,8 +1455,8 @@ html[data-motion='reduced'] .console .modes .ind b {
     border-top: 0;
     border-left: 1px solid var(--hair);
   }
-  .console .rail .views button,
-  .console .rail .foot button {
+  .console .rail .foot button,
+  .console .rail .foot .ev-trigger {
     white-space: nowrap;
     min-height: 28px;
   }

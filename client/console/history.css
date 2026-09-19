@@ -349,3 +349,32 @@
     margin-left: -8px;
   }
 }
+
+/* ---- saving a version ----
+
+   Right of the filters on a wide window, and wrapping under them rather than
+   squeezing the filters when there is no room. It is an action on the project,
+   not a way of reading the list, so it does not join the segmented control. */
+
+.console .hist .hhead .hsave {
+  margin-left: auto;
+}
+
+/* ---- one file's before and after ----
+
+   A third row under the file it belongs to, across both columns, so the diff
+   reads as part of that row and not as a new section. The card brings its own
+   type and colour from components.css; all this does is give it the width and
+   set it in from the file name above it. */
+
+.console .hist .hdiff {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  min-width: 0;
+  margin: 8px 0 2px;
+  padding-left: 14px;
+  border-left: 2px solid var(--hair);
+}
+.console .hist .hdiff .change-card {
+  margin: 0;
+}

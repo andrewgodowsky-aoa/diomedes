@@ -280,8 +280,11 @@ export function App() {
     const root = document.documentElement;
     const surface = surfaceOf(settings);
     root.dataset.surface = surface;
-    // The Console shows the machinery; components that gate on 'technical' follow it.
-    root.dataset.detail = surface === 'console' ? 'technical' : settings.detail;
+    // Detail is the person's own setting and nothing else decides it. It used to
+    // be pinned to 'technical' whenever the Console was showing, which made the
+    // setting unreachable for anybody working there; with one surface left that
+    // would have retired Detail altogether.
+    root.dataset.detail = settings.detail;
     // One owner for the appearance. With no custom theme this is the code that
     // has always run, unchanged, so the ten built-in schemes behave exactly as
     // before; with one, the resolver decides and the runtime writes, and the
@@ -650,23 +653,22 @@ export function App() {
                             {s === 'workbook' ? 'The Workbook' : 'The Console'}
                           </button>
                         ))}
-                        {surface === 'workbook' && (
-                          <>
-                            <p className="caption">Detail</p>
-                            {(['guided', 'standard'] as const).map((d) => (
-                              <button
-                                key={d}
-                                onClick={() => {
-                                  void saveSettings({ ...settings, detail: d });
-                                  setAccount(false);
-                                }}
-                              >
-                                <Mark state={d === settings.detail ? 'working' : 'todo'} />
-                                {titleCase(d)}
-                              </button>
-                            ))}
-                          </>
-                        )}
+                        {/* Not gated on a surface. Detail decides how much a change
+                            card spells out, which is the same question wherever the
+                            card is shown, so all three levels are offered here. */}
+                        <p className="caption">Detail</p>
+                        {(['guided', 'standard', 'technical'] as const).map((d) => (
+                          <button
+                            key={d}
+                            onClick={() => {
+                              void saveSettings({ ...settings, detail: d });
+                              setAccount(false);
+                            }}
+                          >
+                            <Mark state={d === settings.detail ? 'working' : 'todo'} />
+                            {titleCase(d)}
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -708,14 +710,6 @@ export function App() {
                   integrations={integrations}
                   usage={usage}
                   saveSettings={saveSettings}
-                  openInBook={(p) => {
-                    void saveSettings({
-                      ...settings,
-                      surface: 'workbook',
-                      detail: settings.detail === 'technical' ? 'standard' : settings.detail,
-                    });
-                    navigate(p);
-                  }}
                   openEngineSettings={() => {
                     setShowSettings(true);
                     setHelpersRequest((n) => n + 1);
