@@ -92,3 +92,33 @@ describe('the internal figures, when something does render one', () => {
     expect(formatMoney(MANAGED_PLAN_CANDIDATE.perRequestCeilingMicroUsd)).toMatch(/0\.10/);
   });
 });
+
+/**
+ * A helper call is work done inside a request, not another request.
+ *
+ * This matters more than it looks. If an internal evaluation were counted, the
+ * product would be charging a customer for its own decision to consult a second
+ * model - the count they were sold would shrink for a reason they cannot see or
+ * control, and the cheaper route would look more expensive than the one it
+ * replaced. The sentence below is the commitment; nothing counts requests yet,
+ * so it is a promise the copy makes and the code cannot break, which is exactly
+ * why it is worth pinning before anything starts counting.
+ */
+describe('a helper consulted inside a request', () => {
+  test('is covered by the sentence that says a request counts once', () => {
+    expect(ALLOWANCE_MEANING).toMatch(/counts once however many model calls it takes to finish/);
+  });
+
+  test('cannot be re-read as per-call billing', () => {
+    expect(ALLOWANCE_MEANING).not.toMatch(/per (model )?call/i);
+    expect(ALLOWANCE_MEANING).not.toMatch(/each model call/i);
+    expect(ALLOWANCE_MEANING).not.toMatch(/per request/i);
+  });
+
+  test('is still one request when the count is what is sold', () => {
+    // The unit sold is the request. A plan that sold model calls would have to
+    // say so here, and would then be counting the product's own choices.
+    expect(MANAGED_PLAN_CANDIDATE.includedRequests).toBeGreaterThan(0);
+    expect(ALLOWANCE_MEANING).toMatch(/a set number of requests/);
+  });
+});
