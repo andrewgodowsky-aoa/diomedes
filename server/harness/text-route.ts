@@ -300,9 +300,10 @@ export class TextRouteRuntime {
  */
 export function textDispatchAuthorizer(
   services: () => Record<string, unknown> | undefined,
+  capabilityIds: readonly string[] = [ENGINE_TEXT_TURN.id],
 ): (run: HarnessRun, intent: StepIntent, phase: 'dispatch' | 'result') => Promise<void> {
   return async (run, intent, phase) => {
-    if (run.capabilityId !== ENGINE_TEXT_TURN.id)
+    if (!capabilityIds.includes(run.capabilityId))
       throw new HarnessError('egress_denied', 'This run is not a text-route run.');
     if (intent.destination !== 'external') return;
     const engine = (intent.input as { engine?: unknown } | null)?.engine;

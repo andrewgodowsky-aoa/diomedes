@@ -58,6 +58,8 @@ import { ActivityOverview } from './ActivityOverview';
 import { projectActivity, type ActivityRow } from './activity';
 import { TeamView } from './TeamView';
 import { Connections } from '../connections/Connections';
+import { DiscoveryPage } from './DiscoveryPage';
+import { ReadinessPage } from './ReadinessPage';
 import { Palette } from './Palette';
 import { WorkspaceMark, WorkspacePanel, useWorkspace } from './Workspaces';
 import { applyQuery, buildEntries, type PaletteContext } from './paletteEntries';
@@ -1097,6 +1099,16 @@ export function Shell({
           onHistory={() => openInBook('history')}
           onEngines={openEngineSettings}
         />
+        {view === 'Discovery' && (
+          <section className="screen on" aria-label="Discovery">
+            <DiscoveryPage projectId={projectId} />
+          </section>
+        )}
+        {view === 'Readiness' && (
+          <section className="screen on" aria-label="Readiness">
+            <ReadinessPage projectId={projectId} />
+          </section>
+        )}
         {view === 'Connections' && (
           <section className="screen on" aria-label="Connections">
             <Connections projectId={projectId} />

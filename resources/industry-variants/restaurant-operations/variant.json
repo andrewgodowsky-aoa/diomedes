@@ -1,0 +1,34 @@
+{
+  "id": "restaurant-operations",
+  "contractVersion": 1,
+  "engine": "weekly-brief",
+  "label": "Restaurant operations",
+  "industry": "restaurant",
+  "keywords": [
+    "restaurant",
+    "cafe",
+    "café",
+    "bistro",
+    "diner",
+    "catering",
+    "bakery",
+    "pizzeria",
+    "pizza",
+    "brasserie",
+    "tavern",
+    "grill",
+    "eatery",
+    "food truck",
+    "coffeehouse"
+  ],
+  "scopeLabel": "Weekly operations exports",
+  "scopeSelection": ["weekly-operations-exports"],
+  "outputLabel": "Weekly operations brief",
+  "destination": "weekly-operations-brief.md",
+  "guidanceText": "Build the brief from the approved exports only. Cover what changed this week and what is now due, without touching payroll or orders.",
+  "terminology": {
+    "location": "restaurant",
+    "labor": "labor hours",
+    "sales": "sales"
+  }
+}

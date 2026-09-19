@@ -10,7 +10,7 @@ import type {
   UsageSnapshot,
 } from '../../shared/types';
 
-export type ShellView = 'Thread' | 'Board' | 'Team' | 'Connections';
+export type ShellView = 'Thread' | 'Board' | 'Team' | 'Connections' | 'Discovery' | 'Readiness';
 export type BoardProps = { project: Project; state: ProjectState; tasks: Task[]; policy: 'first' | 'go'; focusTaskId?: string; busy: boolean; onPolicyChange?(policy: 'first' | 'go'): void;
   documents: DocumentInfo[]; documentsLoading: boolean; documentsFailure: string | null;
   onStart(task: Task): Promise<void>; onPause(task: Task): Promise<void>; onReview(task: Task): void; onRoute(task: Task, to: Slot): Promise<void>; onReopen(task: Task): Promise<void>; onOpenTeam(task: Task): void; onOpenThread(task: Task): void;

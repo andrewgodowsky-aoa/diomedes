@@ -1,0 +1,18 @@
+{
+  "id": "tire-service",
+  "contractVersion": 1,
+  "engine": "weekly-brief",
+  "label": "Tire and vehicle service",
+  "industry": "automotive service",
+  "keywords": ["tire", "automotive", "vehicle service", "repair shop"],
+  "scopeLabel": "Service and inventory exports",
+  "scopeSelection": ["service-and-inventory-exports"],
+  "outputLabel": "Weekly service brief",
+  "destination": "Drafts/Weekly service brief.md",
+  "guidanceText": "Cite service and inventory exports and leave unmatched or missing records visible.",
+  "terminology": {
+    "location": "service center",
+    "labor": "technician hours",
+    "sales": "service sales"
+  }
+}

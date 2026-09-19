@@ -1,0 +1,13 @@
+[
+  {
+    "path": "weekly-summary.md",
+    "label": "Weekly service summary",
+    "default": true
+  },
+  {
+    "path": "location-{{location.index}}.csv",
+    "label": "Service-center export",
+    "default": true,
+    "slot": "location"
+  }
+]

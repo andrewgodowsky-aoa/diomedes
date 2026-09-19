@@ -110,6 +110,7 @@ export const RUN_EVENT_TYPES = [
   'run.forked',
   'step.started',
   'step.succeeded',
+  'step.checkpointed',
   'step.waiting_approval',
   'step.waiting_event',
   'step.retry_wait',

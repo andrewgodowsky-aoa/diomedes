@@ -1,0 +1,3 @@
+business,location,week,open_projects,project_value,craft_hours
+{{business.name}},{{location.name}},synthetic-week-1,14,238000,486
+{{business.name}},{{location.name}},synthetic-week-2,15,251500,503

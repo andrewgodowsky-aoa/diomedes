@@ -96,11 +96,36 @@ export function contractChecks(contract: AdapterRouteContract): ConformanceCheck
     'harness-agent',
     'single-turn-text',
   ];
+  // This external-session profile is driven by ClaudeSessionRuns/RunService.
+  // Do not grant every external-session descriptor a durable stream merely
+  // because this one now has a tested host integration.
+  const nativeRunBacked =
+    contract.routeId === 'claude-code-session' &&
+    contract.mode === 'external-session' &&
+    contract.engine.id === 'claude-code' &&
+    contract.engine.version === '2.1.252' &&
+    contract.engine.protocolVersion === 'stream-json' &&
+    contract.testedWith === '2.1.252' &&
+    contract.authentication === 'native-sign-in' &&
+    contract.models.source === 'runtime-reported' &&
+    contract.streaming.transientPreview === 'text-delta' &&
+    contract.streaming.durableEvents === 'run-record' &&
+    (['start', 'follow-up', 'interrupt', 'resume', 'fork', 'close'] as const)
+      .every(command => contract.commands[command].support === 'native') &&
+    contract.commands.retry.support === 'host' &&
+    contract.commands.status.support === 'host' &&
+    contract.commands.steer.support === 'unsupported' &&
+    contract.commands.reconcile.support === 'unsupported';
+  if (contract.routeId === 'claude-code-session')
+    checks.push(check(
+      'native-session-run-backing', nativeRunBacked,
+      'The opt-in Claude native profile must match the versioned RunService lifecycle integration; live provider acceptance is separate.',
+    ));
   checks.push(
     check(
       'streaming-matches-mode',
       contract.streaming.durableEvents === 'run-record'
-        ? RUN_DRIVEN_MODES.includes(contract.mode)
+        ? RUN_DRIVEN_MODES.includes(contract.mode) || nativeRunBacked
         : contract.mode !== 'harness-agent',
       contract.mode === 'harness-agent'
         ? 'Harness routes persist through the run record.'

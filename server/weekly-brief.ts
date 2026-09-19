@@ -21,7 +21,7 @@
  */
 
 import { diffLines } from 'diff';
-import type { ConfigurationManifest } from '../shared/configuration.js';
+import type { ConfigurationManifest, ConfigurationOwner } from '../shared/configuration.js';
 import { ApiError, relativeName } from './paths.js';
 import { hash, type Store } from './store.js';
 import { checkExport, fileReferences } from './file-imports.js';
@@ -47,8 +47,9 @@ export interface BriefSection {
 }
 
 export interface BriefDraft {
-  readonly organizationId: string;
-  readonly tenantId: string;
+  readonly owner?: ConfigurationOwner;
+  readonly organizationId: string | null;
+  readonly tenantId: string | null;
   readonly configurationRevision: number;
   readonly variantId: string;
   readonly title: string;
@@ -177,6 +178,7 @@ export function composeBrief(input: {
   }
   const output = outputFor(manifest);
   const base = {
+    owner: manifest.owner,
     organizationId: manifest.organizationId,
     tenantId: manifest.tenantId,
     configurationRevision: manifest.revision,
@@ -276,6 +278,10 @@ export class WeeklyBriefService {
     at: string;
     /** Explicit per-run selection. Omission preserves the configured legacy sources. */
     sources?: unknown;
+    /** Trusted rehearsal recording metadata; never populated from an HTTP body. */
+    recording?:
+      | { readonly sample: true; readonly route: 'synthetic'; readonly notice: string }
+      | { readonly sample: false; readonly route: 'approved-file'; readonly notice: string };
   }): Promise<{ draft: BriefDraft; entryId: string; destination: string }> {
     let manifest = structuredClone(input.manifest);
     if (manifest.state !== 'active')
@@ -347,7 +353,10 @@ export class WeeklyBriefService {
         throw new ApiError(413, 'Choose no more than 4 MB of exports for one brief.');
     } else sources = await this.gather(input.projectId, manifest);
     const previous = await this.store.current(input.projectId, destination);
-    const draft = composeBrief({ manifest, sources, previous, at: input.at });
+    const composed = composeBrief({ manifest, sources, previous, at: input.at });
+    const draft: BriefDraft = input.recording
+      ? { ...composed, markdown: `${input.recording.notice}\n\n${composed.markdown}` }
+      : composed;
     if (input.sources !== undefined) {
       for (const source of sources)
         if (hash(await this.store.current(input.projectId, source.path)) !== hash(source.text))
@@ -360,10 +369,13 @@ export class WeeklyBriefService {
       input.projectId,
       [{ path: destination, text: draft.markdown, expected: hash(previous) }],
       {
-        kind: 'weekly-brief',
+        kind: input.recording?.route ?? 'weekly-brief',
+        sample: input.recording?.sample ?? false,
         review: true,
         // The recorded sentence names the scope that was actually read.
-        sentence: `Diomedes drafted ${output.label} from ${
+        sentence: `Diomedes drafted ${output.label} via ${
+          input.recording?.route ?? 'weekly-brief'
+        } from ${
           input.sources === undefined ? 'the approved exports' : 'the files you chose'
         } for your review.`,
         label: output.label,

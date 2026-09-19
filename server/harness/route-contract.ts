@@ -62,7 +62,9 @@ const TEXT_ROUTE_COMMANDS = (engine: string): CommandSupportMap =>
 const HARNESS_COMMANDS = (note: string): CommandSupportMap =>
   commands({
     start: native(`RunService.start writes the run and its first event. ${note}`),
-    'follow-up': host('A follow-up is a new run for the same task; the run record stays the authority.'),
+    'follow-up': host(
+      'A follow-up is a new run for the same task; the run record stays the authority.',
+    ),
     steer: unsupported('No steering channel is proven on this route.'),
     interrupt: unsupported(
       'There is no in-band interrupt; run-level cancel is the only stop, and it parks non-idempotent work for reconciliation.',
@@ -101,6 +103,41 @@ const contract = (
 });
 
 export const ROUTE_CONTRACTS: Record<string, AdapterRouteContract> = Object.freeze({
+  'claude-code-session': contract(
+    'claude-code-session',
+    'external-session',
+    { id: 'claude-code', version: '2.1.252', protocolVersion: 'stream-json' },
+    commands({
+      start: native(
+        'Opt-in persistent stream-json process; each turn has a fenced RunService step.',
+      ),
+      'follow-up': native('Sequential user messages reuse the live process after a known result.'),
+      steer: unsupported('Active-turn steering has not been proven and is refused.'),
+      interrupt: native(
+        'Native control interrupt acknowledgment is distinct from turn completion.',
+      ),
+      resume: native(
+        'Explicit --resume after validated idle metadata; uncertain turns are never replayed.',
+      ),
+      retry: host(
+        'Duplicate command IDs replay durable outcomes; unknown dispatches refuse redispatch.',
+      ),
+      fork: native(
+        'Explicit --resume plus --fork-session starts a child run with no copied hidden state.',
+      ),
+      status: host('Durable run state and transport presence; no provider status is invented.'),
+      reconcile: unsupported(
+        'Unknown outcomes remain parked; no provider reconciliation API is proven.',
+      ),
+      close: native(
+        'Ends the owned transport; only a known idle session may later be explicitly resumed.',
+      ),
+    }),
+    { transientPreview: 'text-delta', durableEvents: 'run-record' },
+    { source: 'runtime-reported' },
+    'native-sign-in',
+    '2.1.252',
+  ),
   // --- the harness-side routes: the run service is the mechanism ------------
   'native-fixture': contract(
     'native-fixture',
