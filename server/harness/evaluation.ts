@@ -30,12 +30,8 @@
  * property that matters: change the project and it is a different step, so a
  * saved answer to a different question is never replayed as this one's.
  */
-import type {
-  HarnessLabel,
-  HarnessPrincipal,
-  Json,
-  OriginSnapshot,
-} from '../../shared/harness.js';
+import type { HarnessLabel, HarnessPrincipal, Json } from '../../shared/harness.js';
+import type { OriginSnapshot } from '../../shared/attribution.js';
 import { applicationOrigin, directOrigin } from '../../shared/attribution.js';
 import type { EvaluationObservation, EvaluationProfile } from '../../shared/evaluation.js';
 import { profileDigest } from '../../shared/evaluation.js';
