@@ -62,7 +62,7 @@ export function Rail({
   // outlive the build that wrote them, and a destination can be withdrawn.
   const shown = pinned.map((id) => byId.get(id)).filter((item): item is EverythingItem => !!item);
   return (
-    <nav className="rail" aria-label="Threads and what Diomedes can open">
+    <nav className="rail" aria-label="Threads and views">
       {top}
       <div className="rail-head">
         <h2>Threads</h2>

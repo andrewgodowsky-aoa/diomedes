@@ -90,12 +90,13 @@ interface ShellProps {
 const emptyTeam: TeamState = { members: [], messages: [], runs: [] };
 
 /**
- * What the rail carries before anybody changes it: the two screens that were
+ * What the rail carries before anybody changes it: the three screens that were
  * already in the view switch, the History the Console just gained, and the
- * Files pane that was already in its foot. Everything else is one click away
- * in Everything, and anything here can be taken out.
+ * Files pane that was already in its foot. That is six fewer decisions made for
+ * everybody than the eight fixed buttons this replaces, and every one of them
+ * can now be taken out. Everything else is one click away in Everything.
  */
-const DEFAULT_PINS = ['board', 'team', 'history', 'files'];
+const DEFAULT_PINS = ['thread', 'board', 'team', 'history', 'files'];
 
 // Cap for the live streamed display: ephemeral text never persists.
 const MAX_STREAM_CHARS = 256 * 1024;
@@ -946,18 +947,26 @@ export function Shell({
    *   a connection to anything this person owns, and presenting it as one would
    *   be the drift we just took off the marketing site.
    */
+  // A label names the screen it opens, so Board and Team keep the words their
+  // own headings use. The plain-language explanation belongs in `hint`, where
+  // it does not have to disagree with the place it takes you.
   const destinations: EverythingItem[] = [
     {
+      id: 'thread',
+      label: 'Thread',
+      hint: 'The conversation you are having, and everything it produced.',
+    },
+    {
       id: 'board',
-      label: 'Tasks',
+      label: 'Board',
       hint: 'Everything asked for, who has it, and what is waiting on you.',
       badge: openTasks > 0 ? `${openTasks} open` : undefined,
     },
     {
       id: 'team',
-      label: 'Workers',
+      label: 'Team',
       hint: 'The helpers on this project, what they are doing, and what they cost.',
-      badge: team.members.length > 0 ? `${team.members.length}` : undefined,
+      badge: team.members.length > 0 ? `${team.members.length} workers` : undefined,
     },
     {
       id: 'history',
@@ -1000,7 +1009,7 @@ export function Shell({
     },
   ];
   const destinationGroups = [
-    { heading: 'In this project', ids: ['board', 'team', 'history', 'files'] },
+    { heading: 'In this project', ids: ['thread', 'board', 'team', 'history', 'files'] },
     { heading: 'Diomedes', ids: ['engines', 'settings', 'projects'] },
     { heading: 'Not ready yet', ids: ['automations', 'connections'] },
   ];
@@ -1015,9 +1024,7 @@ export function Shell({
         ? 'team'
         : view === 'History'
           ? 'history'
-          : filesOpen
-            ? 'files'
-            : undefined;
+          : 'thread';
 
   function goTo(id: string) {
     // The editor is the one screen holding writing that only exists here. It
@@ -1028,7 +1035,8 @@ export function Shell({
       return;
     }
     if (editing) setEditing(null);
-    if (id === 'board') setView('Board');
+    if (id === 'thread') setView('Thread');
+    else if (id === 'board') setView('Board');
     else if (id === 'team') setView('Team');
     else if (id === 'history') setView('History');
     else if (id === 'files') setFilesOpen(!filesOpen);
