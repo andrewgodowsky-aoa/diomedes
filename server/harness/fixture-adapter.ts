@@ -3,6 +3,7 @@ import { ADAPTER_CAPABILITIES } from './adapters.js';
 import { FIXTURE_ENGINE, REPORT_PATH } from './approval.js';
 import type { ModelAdapter } from './native-agent.js';
 import { HarnessError } from './policy.js';
+import { routeContractFor } from './route-contract.js';
 
 function textFrom(value: Json | undefined): string {
   if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.text !== 'string')
@@ -14,6 +15,7 @@ function textFrom(value: Json | undefined): string {
 export class ScriptedModelAdapter implements ModelAdapter {
   readonly id = FIXTURE_ENGINE;
   readonly version = 'v1';
+  readonly contract = routeContractFor('native-fixture');
   constructor(
     private readonly target: (
       runId: string,

@@ -8,7 +8,7 @@ import { FileRunStore, validateRunId, type RunStore } from './run-store.js';
 import { RunService, type StepDefinition, type StepHandler } from './run-service.js';
 import { ToolRegistry } from './tools.js';
 import { HarnessError } from './policy.js';
-import { HarnessBridge } from './bridge.js';
+import { HarnessBridge, localHarnessPrincipal } from './bridge.js';
 import { ScriptedModelAdapter } from './fixture-adapter.js';
 import { REPORT_PATH } from './approval.js';
 import { registerFormatReport } from './capabilities/format-report.js';
@@ -17,6 +17,11 @@ import { askCodex } from '../integrations.js';
 import { parseWorkCommand } from '../work-admission.js';
 import { identifier } from '../store.js';
 import { currentAuthority as resolveTrustAuthority } from '../trust/index.js';
+import {
+  ENGINE_TEXT_TURN,
+  TextRouteRuntime,
+  textDispatchAuthorizer,
+} from './text-route.js';
 
 export const HARNESS_POLICY_VERSION = 'diomedes-host-policy-v1';
 
@@ -302,12 +307,15 @@ export function createHarnessHost({
   currentAuthority,
   codexGenerator,
   codexAccountRoute,
+  textLeaseMs,
 }: {
   store: Store;
   dataDir: string;
   currentAuthority?: ResolveHarnessAuthority;
   codexGenerator?: typeof askCodex;
   codexAccountRoute?: () => Promise<string>;
+  /** Lease TTL for text-route runs; the default covers a slow provider turn. */
+  textLeaseMs?: number;
 }) {
   if (path.resolve(dataDir) !== store.dataDir)
     throw new Error('The harness must use the Store data folder.');
@@ -315,12 +323,18 @@ export function createHarnessHost({
   const redact = secretScrubber(secrets);
   const files = new ProjectRunStore(store, dataDir);
   let codex: CodexEngineAdapter;
-  const runs = new HostRunService(files, {
+  let textRoute: TextRouteRuntime;
+  const textAuthorize = textDispatchAuthorizer(() => store.settings.services);
+  const runs: HostRunService = new HostRunService(files, {
     clock: Date.now,
     policyVersion: HARNESS_POLICY_VERSION,
     redact,
-    authorizeEgress: (runId, intent, principal, phase) =>
-      codex.authorize(runId, intent, principal, phase),
+    authorizeEgress: async (runId, intent, principal, phase) => {
+      const run = await runs.get(runId);
+      if (run.capabilityId === ENGINE_TEXT_TURN.id)
+        return textAuthorize(run, intent, phase);
+      return codex.authorize(runId, intent, principal, phase);
+    },
   });
   const tools = new ToolRegistry();
   const adapter = new ScriptedModelAdapter(async (runId) => {
@@ -341,6 +355,10 @@ export function createHarnessHost({
     codexAccountRoute,
   );
   const adapters = { 'native-fixture': adapter, codex };
+  textRoute = new TextRouteRuntime(runs, {
+    owner: identifier('text-route-'),
+    leaseMs: textLeaseMs,
+  });
   const bridge = new HarnessBridge(store, runs, tools, adapter, redact, codex);
   files.saved = (run) => bridge.enqueue(run);
   runs.afterStep = () => bridge.flush();
@@ -390,6 +408,7 @@ export function createHarnessHost({
     adapters,
     bridge,
     codex,
+    textRoute,
     /** Host-only until authenticated client admission is supplied by Trust.
      * Reuses the same command parser, collision check, receipt and Store lock. */
     startCodexReport(
@@ -459,8 +478,13 @@ export function createHarnessHost({
     async init() {
       await refreshSecrets();
       await files.list();
-      for (const project of await store.projects())
-        await bridge.recover(project.id, await savedRuns(project.id));
+      for (const project of await store.projects()) {
+        const saved = await savedRuns(project.id);
+        await bridge.recover(project.id, saved);
+        // Text-route runs are not the bridge's sessions; the runtime's own
+        // recovery invalidates dead leases and parks in-flight dispatches.
+        for (const run of saved) await textRoute.recover(run.id, run);
+      }
       await bridge.flush();
     },
     close: () => bridge.close(),

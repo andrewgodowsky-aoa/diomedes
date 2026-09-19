@@ -77,7 +77,11 @@ export interface StepContext {
   input: Json;
   idempotencyKey: string;
   attempt: number;
+  /** The execution generation this attempt was started under. A preview or result that outlives it cannot claim the attempt's identity. */
+  fence: number;
   signal: AbortSignal;
+  /** Publish ephemeral output only while this exact attempt still owns a live lease. */
+  publishPreview: (publish: () => void) => Promise<void>;
   /**
    * Host-only channel for runtime-reported provenance discovered during the
    * handler (for example a transcript model id). Host code calls this with
@@ -172,7 +176,7 @@ type StartOutcome =
   | { cached: Json | null }
   | { suspended: 'approval' }
   | { blocked: string }
-  | { fence: number; attempt: number; key: string };
+  | { fence: number; attempt: number; key: string; signal: AbortSignal };
 
 export class RunService {
   private hooks: HarnessHook[] = [];
@@ -494,6 +498,10 @@ export class RunService {
           : 'queued';
       this.note(run, 'run.recovered', { fence: run.fence });
       await this.commit(run);
+      this.controllers
+        .get(runId)
+        ?.abort(new HarnessError('stale_lease', 'stale lease'));
+      this.controllers.delete(runId);
     });
   }
 
@@ -519,6 +527,10 @@ export class RunService {
         expiresAt: run.leaseExpiresAt,
       });
       await this.commit(run);
+      if (!renewal) {
+        this.controllers.get(runId)?.abort(new HarnessError('stale_lease', 'stale lease'));
+        this.controllers.delete(runId);
+      }
       return run.fence;
     });
   }
@@ -646,6 +658,7 @@ export class RunService {
         fence: run.fence,
         attempt: s.attempt,
         key: digest({ runId, stepId: intent.stepId, intentHash: s.intentHash }),
+        signal: this.controller(runId).signal,
       });
     });
 
@@ -653,7 +666,32 @@ export class RunService {
     if ('suspended' in start) throw new Suspended('approval', 'approval required');
     if ('blocked' in start) throw new HarnessError('blocked', start.blocked);
 
-    const signal = this.controller(runId).signal;
+    const signal = start.signal;
+    let closed = false;
+    const publishPreview = (publish: () => void): Promise<void> =>
+      this.serialize(runId, async () => {
+        if (closed || signal.aborted) return;
+        const run = await this.load(runId);
+        try {
+          this.guard(run, owner, start.fence);
+        } catch (error) {
+          if (error instanceof HarnessError && error.code === 'stale_lease') return;
+          throw error;
+        }
+        const step = run.steps.find((item) => item.intent.stepId === intent.stepId);
+        if (
+          closed ||
+          signal.aborted ||
+          run.state !== 'running' ||
+          step?.state !== 'running' ||
+          step.attempt !== start.attempt ||
+          step.leaseFence !== start.fence
+        )
+          return;
+        // Check and synchronous publication share the same ownership queue.
+        // Preview text never causes a run-store write or a durable event.
+        publish();
+      });
     let reportedOrigin: OriginSnapshot | undefined;
     const reportOrigin = (origin: OriginSnapshot) => {
       validateOrigin(origin);
@@ -667,9 +705,12 @@ export class RunService {
         input: copy(intent.input),
         idempotencyKey: start.key,
         attempt: start.attempt,
+        fence: start.fence,
         signal,
+        publishPreview,
         reportOrigin,
       });
+      closed = true;
       const encoded = canonical(output);
       await checkPolicy('result');
       await this.serialize(runId, async () => {
@@ -697,6 +738,15 @@ export class RunService {
       });
       return JSON.parse(encoded) as T;
     } catch (error) {
+      closed = true;
+      // Takeover is an unknown provider outcome, not a user cancellation.
+      // Preserve that distinction even if the transport reports AbortError.
+      if (
+        signal.aborted &&
+        signal.reason instanceof HarnessError &&
+        signal.reason.code === 'stale_lease'
+      )
+        throw signal.reason;
       // A replaced owner cannot record a failure either: recovery sees the last
       // durable running record and reconciles any unknown irreversible effect.
       try {

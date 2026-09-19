@@ -9,6 +9,7 @@ import { EngineService, TESTED_VERSIONS } from '../server/engines/service.js';
 import { EngineInstaller } from '../server/engines/install.js';
 import { loginCommand } from '../server/engines/login.js';
 import type { TextEngineAdapter } from '../server/engines/contract.js';
+import { routeContractFor } from '../server/harness/route-contract.js';
 import type { ExternalEngine, ProjectState } from '../shared/types.js';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -27,7 +28,10 @@ async function fixture(engine: ExternalEngine = 'claude-code') {
         : 'claude-code:claude.ai';
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-ai-api-'));
   const generate = vi.fn<TextEngineAdapter['generate']>(async (input) => ({
-    ...input,
+    projectId: input.projectId,
+    threadId: input.threadId,
+    requestId: input.requestId,
+    model: input.model,
     text: input.prompt.includes('STRICT JSON')
       ? JSON.stringify({
           summary: 'Proposed text',
@@ -58,6 +62,7 @@ async function fixture(engine: ExternalEngine = 'claude-code') {
     version: async () => version,
     adapter: () => ({
       id: engine,
+      contract: routeContractFor(engine),
       inspect: async () => ({
         authentication: 'signed-in',
         accountRoute,

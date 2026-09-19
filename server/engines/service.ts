@@ -11,7 +11,18 @@ import { CursorAdapter, cursorCommand, resolveCursorEntry } from './cursor.js';
 import { DevinAdapter } from './devin.js';
 import { managedBinary, verifyManagedBinary } from './install.js';
 import { capture, engineEnvironment, EngineError } from './process.js';
-import type { TextEngineAdapter, TextRequest } from './contract.js';
+import {
+  commandGate,
+  previewSink,
+  type PreviewRejection,
+} from '../../shared/adapter-contract.js';
+import type { TextEngineAdapter, TextRequest, TextResponse } from './contract.js';
+import { HarnessError } from '../harness/policy.js';
+import {
+  TEXT_DISPATCH_STEP,
+  textRunId,
+  type TextDispatch,
+} from '../harness/text-route.js';
 
 function recordShimError(error: unknown): boolean {
   return (
@@ -31,6 +42,11 @@ export interface EngineServiceDeps {
   discover(): Promise<IntegrationStatus[]>;
   version(file: string, signal?: AbortSignal): Promise<string>;
   adapter(engine: ExternalEngine, file: string, cwd: string): TextEngineAdapter;
+  /**
+   * The preview contract's redaction: any secret the caller knows is in scope
+   * for this engine's deltas. Applied before the frame is measured or emitted.
+   */
+  redactFor?(engine: ExternalEngine): (text: string) => string;
 }
 const blank = (engine: ExternalEngine): EngineConnection => ({
   engine,
@@ -50,6 +66,13 @@ export class EngineService {
   private checks = new Map<ExternalEngine, Promise<EngineConnection>>();
   private readonly nativeDiscovery: boolean;
   private running = new Map<string, AbortController>();
+  /**
+   * The host's runtime seam. External turns do not call an adapter here;
+   * they run through the harness RunService under a durable run, its lease
+   * fence and its egress authorization. The app attaches the host's
+   * `TextRouteRuntime.request` after the harness host exists.
+   */
+  dispatch?: TextDispatch;
   constructor(
     readonly root: string,
     deps: Partial<EngineServiceDeps> = {},
@@ -315,52 +338,234 @@ export class EngineService {
       ],
     };
   }
-  async generate(engine: ExternalEngine, input: TextRequest) {
+  /**
+   * One admitted external text turn. Admission runs inside the run's recorded
+   * `text:admission` step; the provider transport runs inside the fenced
+   * `text:dispatch` step. Preview frames are stamped with the run, step,
+   * attempt and fence of the attempt that produced them.
+   */
+  async generate(
+    engine: ExternalEngine,
+    input: TextRequest,
+  ): Promise<TextResponse & { runId: string }> {
     const key = `${input.projectId}:${input.threadId}`;
     if (this.running.has(key))
       throw new EngineError(
         'REQUEST_ACTIVE',
         'This thread already has a request in progress. Wait for it or cancel it.',
       );
+    const dispatch = this.dispatch;
+    if (!dispatch)
+      throw new EngineError(
+        'RUNTIME_UNAVAILABLE',
+        'The harness runtime seam is not attached to this service.',
+        true,
+      );
     const controller = new AbortController();
     this.running.set(key, controller);
     const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
     try {
-      await this.discover(true);
-      await this.check(engine, signal);
-      const selected = this.selection(engine, input.model);
-      if (selected.accountRoute !== input.accountRoute)
+      if (input.onDelta)
         throw new EngineError(
-          'ACCOUNT_CHANGED',
-          'The sign-in route changed. Select it again before sending.',
-        );
-      const value = this.connections.get(engine)!;
-      const result = await this.deps
-        .adapter(engine, value.location!, path.join(this.root, engine))
-        .generate({ ...input, signal });
-      if (signal.aborted)
-        throw new EngineError(
-          'CANCELLED',
-          'The request was stopped. No late response was saved.',
+          'PREVIEW_CONTRACT',
+          'Preview frames reach the caller through onPreview; the raw adapter sink is not caller-facing.',
           true,
         );
-      if (
-        result.projectId !== input.projectId ||
-        result.threadId !== input.threadId ||
-        result.requestId !== input.requestId ||
-        result.version !== TESTED_VERSIONS[engine]
-      )
-        throw new EngineError(
-          'IDENTITY_MISMATCH',
-          'The engine response did not match this request. No response was saved.',
-          true,
-        );
-      return result;
+      const runId = textRunId(input.projectId, input.requestId);
+      const previewFailures: PreviewRejection[] = [];
+      const outcome = await dispatch<TextAdmission, TextResponse>({
+        runId,
+        intent: {
+          engine,
+          projectId: input.projectId,
+          threadId: input.threadId,
+          requestId: input.requestId,
+          model: input.model,
+          accountRoute: input.accountRoute,
+          prompt: input.prompt,
+          instructions: input.instructions,
+          documents: input.documents,
+          effort: input.effort ?? null,
+        },
+        signal,
+        admit: async () => {
+          await this.discover(true);
+          await this.check(engine, signal);
+          const selected = this.selection(engine, input.model);
+          if (selected.accountRoute !== input.accountRoute)
+            throw new EngineError(
+              'ACCOUNT_CHANGED',
+              'The sign-in route changed. Select it again before sending.',
+            );
+          const value = this.connections.get(engine)!;
+          const adapter = this.deps.adapter(
+            engine,
+            value.location!,
+            path.join(this.root, engine),
+          );
+          // The descriptor the adapter carries is operative: dispatch only
+          // what the route declares, only for the proven build.
+          if (adapter.id !== engine)
+            throw new EngineError(
+              'CONTRACT_MISMATCH',
+              `The ${engine} route was handed an adapter identifying as ${adapter.id}.`,
+              true,
+            );
+          const gate = commandGate(adapter.contract, 'start');
+          if (!gate.admitted)
+            throw new EngineError(
+              gate.code === 'command_unsupported' ? 'COMMAND_UNSUPPORTED' : 'CONTRACT_INVALID',
+              gate.reason,
+              true,
+            );
+          if (
+            adapter.contract.routeId !== engine ||
+            adapter.contract.engine.version !== TESTED_VERSIONS[engine]
+          )
+            throw new EngineError(
+              'CONTRACT_MISMATCH',
+              'The adapter descriptor does not name this route and its proven build.',
+              true,
+            );
+          return {
+            engine,
+            location: value.location!,
+            model: selected.model,
+            accountRoute: selected.accountRoute,
+          } satisfies TextAdmission;
+        },
+        send: async (context, admission) => {
+          const adapter = this.deps.adapter(
+            engine,
+            admission.location,
+            path.join(this.root, engine),
+          );
+          // Stamp the attempt, then check its current durable ownership at
+          // publication. Transport cancellation alone cannot fence a preview.
+          const attemptSignal = AbortSignal.any([signal, context.signal]);
+          let accepting = true;
+          let pending = Promise.resolve();
+          let publicationFailure: { error: unknown } | undefined;
+          const onDelta = previewSink({
+            identity: {
+              projectId: input.projectId,
+              threadId: input.threadId,
+              requestId: input.requestId,
+              runId,
+              stepId: TEXT_DISPATCH_STEP,
+              attempt: context.attempt,
+              fence: context.fence,
+            },
+            redact: this.deps.redactFor?.(engine),
+            onPreview: (frame) => {
+              if (!accepting || publicationFailure) return;
+              pending = pending
+                .then(async () => {
+                  if (publicationFailure) return;
+                  await context.publishPreview(() => {
+                    if (!attemptSignal.aborted) input.onPreview?.(frame);
+                  });
+                })
+                .catch((error: unknown) => {
+                  publicationFailure = { error };
+                });
+            },
+            onInvalid: (failure) => previewFailures.push(failure),
+            signal: attemptSignal,
+          });
+          let result: TextResponse;
+          try {
+            result = await adapter.generate({ ...input, signal: attemptSignal, onDelta });
+          } finally {
+            accepting = false;
+            // Drain ordered publications before the step can commit or fail.
+            await pending;
+          }
+          if (publicationFailure) throw publicationFailure.error;
+          if (attemptSignal.aborted)
+            throw new EngineError(
+              'CANCELLED',
+              'The request was stopped. No late response was saved.',
+              true,
+            );
+          if (
+            result.projectId !== input.projectId ||
+            result.threadId !== input.threadId ||
+            result.requestId !== input.requestId ||
+            result.version !== TESTED_VERSIONS[engine]
+          )
+            throw new EngineError(
+              'IDENTITY_MISMATCH',
+              'The engine response did not match this request. No response was saved.',
+              true,
+            );
+          if (previewFailures.length)
+            throw new EngineError('OUTPUT_LIMIT', previewFailures[0].reason, true);
+          return result;
+        },
+      });
+      return { ...outcome.result, runId: outcome.run.id };
+    } catch (error) {
+      throw seamError(error);
     } finally {
+      // Invalidate callbacks retained by a transport after either outcome.
+      // A settled request must not publish previews into a later request.
+      controller.abort();
       this.running.delete(key);
     }
   }
   close() {
     for (const controller of this.running.values()) controller.abort();
   }
+}
+
+/** The durable admission record — what the admission step is allowed to persist. */
+interface TextAdmission {
+  engine: ExternalEngine;
+  location: string;
+  model: string;
+  accountRoute: string;
+}
+
+/**
+ * The runtime seam's errors surface in the service's own vocabulary. A
+ * cancelled or parked run is a request outcome, not a transport fault; an
+ * unattributed runtime failure is internal and never presented as provider
+ * behaviour.
+ */
+function seamError(error: unknown): unknown {
+  if (!(error instanceof HarnessError)) return error;
+  const { code, message } = error;
+  if (code === 'run_cancelled' || code === 'step_cancelled')
+    return new EngineError(
+      'CANCELLED',
+      'The request was stopped. No late response was saved.',
+      true,
+    );
+  if (
+    code === 'reconcile_required' ||
+    code === 'stale_lease' ||
+    code === 'stale_attempt'
+  )
+    // The dispatch may have reached the provider; the record stays uncertain.
+    return new EngineError(
+      'DISPATCH_UNCERTAIN',
+      `The dispatch outcome could not be confirmed. ${message}`,
+      true,
+    );
+  // A dispatch-phase denial is a refusal: the provider never saw the request.
+  // (A result-phase denial surfaces earlier as the parked reconcile_required.)
+  if (code === 'egress_denied')
+    return new EngineError('ROUTE_REFUSED', message, true);
+  if (code === 'lease_busy' || (code === 'blocked' && /in flight/.test(message)))
+    return new EngineError(
+      'REQUEST_ACTIVE',
+      'This request already has a dispatch in progress.',
+      true,
+    );
+  if (code === 'input_mismatch' || code === 'run_id_collision')
+    return new EngineError('IDENTITY_MISMATCH', message, true);
+  if (code === 'request_failed')
+    return new EngineError('PROVIDER_ERROR', message, true);
+  return new EngineError('RUNTIME_UNAVAILABLE', message, true);
 }

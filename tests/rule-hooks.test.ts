@@ -7,6 +7,7 @@ import type { HarnessPrincipal, ModelRequest } from '../shared/harness.js';
 import { FileRunStore, RunService, ToolRegistry } from '../server/harness/index.js';
 import { Suspended } from '../server/harness/run-service.js';
 import { NativeAgent, type ModelAdapter } from '../server/harness/native-agent.js';
+import { routeContractFor } from '../server/harness/route-contract.js';
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -62,6 +63,7 @@ function adapter(onRequest: (request: ModelRequest) => void = () => {}): ModelAd
   return {
     id: 'scripted',
     version: '1',
+    contract: routeContractFor('native-fixture'),
     capabilities: () => capabilities,
     prepare: async (request) => ({
       ...request,

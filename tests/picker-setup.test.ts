@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
 import { EngineService, TESTED_VERSIONS } from '../server/engines/service.js';
 import type { TextEngineAdapter } from '../server/engines/contract.js';
+import { routeContractFor } from '../server/harness/route-contract.js';
 import type { EngineModel, IntegrationStatus, Settings } from '../shared/types.js';
 import type { EngineConnection } from '../shared/engines.js';
 import { connectionState, signedIn } from '../client/console/Picker.js';
@@ -82,6 +83,7 @@ async function fixture() {
     version: async () => version,
     adapter: () => ({
       id: 'opencode',
+      contract: routeContractFor('opencode'),
       inspect,
       generate: async (input) => ({ ...input, text: 'unused', version }),
     }),

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { EngineModel } from '../../shared/types.js';
+import { routeContractFor } from '../harness/route-contract.js';
 import {
   contextMessage,
   type AdapterInspection,
@@ -96,6 +97,7 @@ function promptMessage(input: TextRequest): string {
 
 export class OmpAdapter implements TextEngineAdapter {
   readonly id = 'oh-my-pi' as const;
+  readonly contract = routeContractFor('oh-my-pi');
   private readonly launch: ProcessFactory;
 
   constructor(

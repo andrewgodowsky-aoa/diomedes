@@ -6,6 +6,7 @@ import type { Server } from 'node:http';
 import { createApp } from '../server/app';
 import { EngineService } from '../server/engines/service';
 import type { TextEngineAdapter, TextRequest, TextResponse } from '../server/engines/contract';
+import { routeContractFor } from '../server/harness/route-contract';
 import type {
   EngineModel,
   ExternalEngine,
@@ -76,6 +77,7 @@ async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T>
 function fixtureAdapter(engine: ExternalEngine): TextEngineAdapter {
   return {
     id: engine,
+    contract: routeContractFor(engine),
     inspect: async () => ({
       authentication: 'signed-in',
       accountRoute: `${engine}:fixture-account`,

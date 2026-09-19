@@ -5,6 +5,8 @@ import path from 'node:path';
 import { EngineService, TESTED_VERSIONS } from '../server/engines/service.js';
 import type { ExternalEngine, IntegrationStatus } from '../shared/types.js';
 import type { TextEngineAdapter } from '../server/engines/contract.js';
+import { routeContractFor } from '../server/harness/route-contract.js';
+import { fixtureTextDispatch, textResponse } from './h01-fixture.js';
 const installed: IntegrationStatus = {
   id: 'claude-code',
   name: 'Claude Code',
@@ -44,11 +46,9 @@ function fixture(
     models: [model],
     detail: 'Checked',
   }));
-  const generate = vi.fn<TextEngineAdapter['generate']>(async (input) => ({
-    ...input,
-    text: 'Answer',
-    version,
-  }));
+  const generate = vi.fn<TextEngineAdapter['generate']>(async (input) =>
+    textResponse(input, 'Answer', version),
+  );
   const discover = vi.fn<() => Promise<IntegrationStatus[]>>(async () => [
     { ...installed, id: engine, installedVersion: version },
   ]);
@@ -57,8 +57,11 @@ function fixture(
   const service = new EngineService(root, {
     discover,
     version: async () => version,
-    adapter: () => ({ id: engine, inspect, generate }),
+    adapter: () => ({ id: engine, contract: routeContractFor(engine), inspect, generate }),
   });
+  service.dispatch = fixtureTextDispatch(path.join(root, 'runs'), {
+    [`${engine}AccountRoute`]: accountRoute,
+  }).dispatch;
   return { service, inspect, generate, discover };
 }
 describe('AI setup readiness and dispatch', () => {
@@ -118,7 +121,11 @@ describe('AI setup readiness and dispatch', () => {
     });
     expect(service.integration('cursor', false).disclosure.join(' ')).toContain('denies tools');
     await expect(
-      service.generate('cursor', { ...input, accountRoute: 'cursor:api' }),
+      service.generate('cursor', {
+        ...input,
+        requestId: 'r2',
+        accountRoute: 'cursor:api',
+      }),
     ).rejects.toMatchObject({ code: 'ACCOUNT_CHANGED' });
     expect(generate).toHaveBeenCalledTimes(1);
   });
@@ -191,11 +198,11 @@ describe('AI setup readiness and dispatch', () => {
   it('rejects a response associated with a different logical request', async () => {
     const { service, generate } = fixture();
     generate.mockImplementation(async (input) => ({
-      ...input,
+      ...textResponse(input, 'Answer', '2.1.252'),
       requestId: 'wrong',
-      text: 'Answer',
-      version: '2.1.252',
     }));
+    // The provider answered under the wrong request id: nothing is committed,
+    // and the dispatched run parks as uncertain rather than resolving.
     await expect(
       service.generate('claude-code', {
         projectId: 'p',
@@ -207,7 +214,7 @@ describe('AI setup readiness and dispatch', () => {
         documents: [],
         instructions: 'x',
       }),
-    ).rejects.toMatchObject({ code: 'IDENTITY_MISMATCH' });
+    ).rejects.toMatchObject({ code: 'DISPATCH_UNCERTAIN' });
   });
   it('refuses duplicate dispatch and drops a late answer after cancellation', async () => {
     const { service, generate } = fixture();
@@ -217,7 +224,7 @@ describe('AI setup readiness and dispatch', () => {
       await new Promise<void>((resolve) => {
         release = resolve;
       });
-      return { ...input, text: 'Late', version: '2.1.252' };
+      return textResponse(input, 'Late', '2.1.252');
     });
     const input = {
       projectId: 'p',

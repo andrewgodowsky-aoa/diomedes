@@ -65,6 +65,8 @@ import { mountTeamRoutes } from './team/routes.js';
 import { createHarnessHost } from './harness/host.js';
 import { mountHarnessRoutes } from './harness/routes.js';
 import { localHarnessPrincipal } from './harness/bridge.js';
+import { textRunId } from './harness/text-route.js';
+import type { TransientPreview } from '../shared/adapter-contract.js';
 import { FIXTURE_ENGINE } from './harness/approval.js';
 import { CODEX_ENGINE, type ResolveHarnessAuthority } from './harness/codex-engine.js';
 import { roleInstructions } from './team/prompts.js';
@@ -81,6 +83,7 @@ import {
   ROUTES,
 } from '../shared/engines.js';
 import { EngineService } from './engines/service.js';
+import { baselineRedact } from './secrets.js';
 import { EngineError } from './engines/process.js';
 import { selectedEngine, selectedModel } from '../shared/ai-selection.js';
 import { AppUpdateService, mountAppUpdateRoutes, type UpdateTransport } from './app-updates.js';
@@ -102,6 +105,8 @@ interface AppOptions {
   reviewerAdapter?: ReviewerAdapter | null;
   engineService?: EngineService;
   harnessAuthority?: ResolveHarnessAuthority;
+  /** Lease TTL for external text-turn runs; tests shorten it to exercise takeover. */
+  harnessTextLeaseMs?: number;
   updateOverrides?: {
     platform?: string;
     packaged?: boolean;
@@ -438,7 +443,11 @@ export async function createApp(options: AppOptions) {
   const changeReview = new ChangeReviewService(store);
   await changeReview.init();
   const work = new WorkService(store, options.stepMs, changeReview);
-  const engines = options.engineService ?? new EngineService(path.join(store.dataDir, 'engines'));
+  const engines =
+    options.engineService ??
+    new EngineService(path.join(store.dataDir, 'engines'), {
+      redactFor: () => baselineRedact,
+    });
   const installer = new EngineInstaller(engines.root);
   const login = new NativeLogin(engines.root);
   const reviewerAdapter =
@@ -552,7 +561,11 @@ export async function createApp(options: AppOptions) {
     store,
     dataDir: store.dataDir,
     currentAuthority: options.harnessAuthority,
+    textLeaseMs: options.harnessTextLeaseMs,
   });
+  // External text turns run through the host's RunService: the adapter is only
+  // the provider transport inside the fenced dispatch step.
+  engines.dispatch = harness.textRoute.request;
   await harness.init();
   const connections = new DesktopConnections(store, harness);
   const app = express();
@@ -2411,13 +2424,22 @@ export async function createApp(options: AppOptions) {
         if (!requestedModel || typeof accountRoute !== 'string')
           throw new ApiError(409, 'Select this service and model in AI setup first.');
         const requestId = identifier('R');
-        const progress = (kind: 'started' | 'delta' | 'ended', text?: string) =>
+        const runId = textRunId(projectId, requestId);
+        const progress = (
+          kind: 'started' | 'delta' | 'ended',
+          text?: string,
+          frame?: TransientPreview,
+        ) =>
           store.emit('engine-text', {
             projectId,
             threadId: prepared.conversationId,
             requestId,
+            runId,
             kind,
-            ...(text ? { text } : {}),
+            ...(frame
+              ? { stepId: frame.stepId, attempt: frame.attempt, fence: frame.fence, seq: frame.seq }
+              : {}),
+            ...(text === undefined ? {} : { text }),
           });
         progress('started');
         try {
@@ -2431,7 +2453,7 @@ export async function createApp(options: AppOptions) {
             model: requestedModel,
             accountRoute,
             signal: connectionSignal(res),
-            onDelta: (delta) => progress('delta', delta),
+            onPreview: (frame) => progress('delta', frame.text, frame),
           });
           answer = result.text;
           helper = {
@@ -2667,6 +2689,7 @@ export async function createApp(options: AppOptions) {
             'NOT_INSTALLED',
             'UNSUPPORTED_VERSION',
             'ACCOUNT_CHANGED',
+            'ROUTE_REFUSED',
           ].includes(error.code)
             ? 409
             : 503,
