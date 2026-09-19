@@ -161,6 +161,8 @@ describe('a completed evaluation', () => {
     });
     expect(port.calls[0].state).toBe('the synthetic project');
     expect(Object.keys(port.calls[0].questions)).toHaveLength(3);
+    // "and nothing else" has to be asserted as a key set, or it is just a hope.
+    expect(Object.keys(port.calls[0]).sort()).toEqual(['questions', 'signal', 'state']);
   });
 
   test('refuses a malformed provider answer instead of consuming part of it', async () => {

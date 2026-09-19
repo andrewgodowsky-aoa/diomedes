@@ -19,7 +19,7 @@ different rungs and only some are climbed.
 | Declared dependency compatibility | Established | `ai@7.0.107` exports `evaluate as experimental_evaluate`; `@ai-sdk/provider@4.0.17` carries the typed contract; `@ai-sdk/gateway@4.0.87` types `GatewayEvaluationModelId` as `'typesafe-ai/jev' \| (string & {})`; peer `zod ^3.25.76 \|\| ^4.1.8` is met by this repo's `^4.5.4`; `engines: node >=22` is met. Read from the published tarballs. |
 | Clean install | **Not done** | `ai` is not in `package.json`. Nothing was installed, so no lockfile resolution was exercised. |
 | Typecheck | Established | `npx tsc --noEmit`, clean. |
-| Test suite | Established | 131 files, 2400 passed, 1 skipped. Every evaluation test runs against an injected port. |
+| Test suite | Established | 131 files, 2418 passed, 1 skipped. Every evaluation test runs against an injected port. |
 | Client build | Established | `npx vite build`, succeeds. **This does not exercise the adapter:** vite bundles the client, and the adapter is server code run through tsx. |
 | Missing-dependency runtime path | Established | The adapter loads the SDK dynamically and reports `transport_unavailable`. Asserted by "reports honestly when the SDK is not installed, rather than pretending to be offline". |
 | Packaged desktop runtime | **Not done** | `postbuild` was not run. No packaged artifact exists for this branch. |
@@ -52,9 +52,17 @@ Trust machinery is reusable; Jev integration is **not** complete. Nothing in thi
 the live host seam - `authorizeEgress` has two arms (`server/harness/host.ts:332-337`) and neither is
 the evaluation capability.
 
-Two things changed here. The outgoing payload is asserted to contain only approved data: the step
-pins project state by digest and a test plants a secret and asserts it never reaches the intent,
-while the adapter asserts the provider receives one shared state and the questions and nothing else.
+Two things changed here, and one claim has to be stated more narrowly than it is tempting to state
+it. The adapter is asserted to forward exactly the state it was given, the questions, and nothing
+else - that is a key-set assertion, not a summary. But **the state goes to the provider by value**.
+The digest pins it in the run record, which keeps project content out of telemetry (J27); it does
+not filter what is disclosed. A secret inside the state still reaches the provider, and the test
+that plants one proves only that it does not reach the intent.
+
+So the check Andrew asked for - that the outgoing payload contains only approved data - **does not
+exist**. Whether the candidate set was access-filtered before it got here is upstream and untested
+(J25), and the place to test it is the call site in change-set item 6, because that is where
+filtering would happen.
 
 The second is the correction that mattered most. **A result rejected after dispatch may still have
 incurred provider cost** - and it did. Validation ran after the call, so a malformed answer threw and
@@ -138,7 +146,7 @@ Ordered. Each line says who must decide it, and what it waits on.
 | # | Change | Owner | Waits on |
 |---|---|---|---|
 | 1 | Add `ai@7.0.107` to `package.json` | Integrator | Hot-file serialization (`scripts/coordination.ts:51-68`). Until then the adapter loads it dynamically and degrades honestly. |
-| 2 | A usage channel on a failed step, so `answer_rejected` can settle | Integrator | `StepContext` contract review. Today a rejected answer's cost is preserved on the error and settled nowhere. |
+| 2 | A usage channel on a failed step, so `answer_rejected` can settle | Integrator | `StepContext` contract review. Today a rejected answer's cost is preserved on the error and settled nowhere. **Migration:** if the review also adopts a distinct evaluation `StepKind`, `readableRun`'s validator must accept the new kind as forward-compatible, or every run saved before it becomes `invalid_run_record` on read. Which way that goes is the integrator's call, not this branch's. |
 | 3 | An `authorizeEgress` arm for the evaluation capability | Host owner | Nothing. This is the wiring that makes the step reachable. |
 | 4 | A `RouteMode` that fits an HTTP evaluation | Contract owner | A decision: the four modes in `shared/adapter-contract.ts:301` assume a process or a session, and conformance wants a `testedWith` equal to an engine version. An HTTP route has no binary version. |
 | 5 | A guarantee row for the route | Contract owner | #4. A route without one has no publishable guarantee. |
