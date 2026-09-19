@@ -170,12 +170,10 @@ describe('a charge smaller than the ledger can represent', () => {
 
   test('stays one micro-USD all the way up to the first whole one', () => {
     // 1,000,000 / 42,000 = 23.8 tokens, so 23 is still under a micro-USD and 24 is over.
-    expect(evaluationCost(card, usage(23)).known && evaluationCost(card, usage(23)).microUsd).toBe(
-      1,
-    );
-    expect(evaluationCost(card, usage(24)).known && evaluationCost(card, usage(24)).microUsd).toBe(
-      2,
-    );
+    const under = evaluationCost(card, usage(23));
+    const over = evaluationCost(card, usage(24));
+    expect(under.known && under.microUsd).toBe(1);
+    expect(over.known && over.microUsd).toBe(2);
   });
 
   test('over-states by less than one micro-USD, which is the price of the floor', () => {
@@ -190,9 +188,8 @@ describe('a charge smaller than the ledger can represent', () => {
 
   test('rounds up rather than to nearest, so the ledger is never short', () => {
     // 24 tokens is 1.008 micro-USD. To nearest would be 1; up is 2.
-    expect(evaluationCost(card, usage(24)).known && evaluationCost(card, usage(24)).microUsd).toBe(
-      2,
-    );
+    const charged = evaluationCost(card, usage(24));
+    expect(charged.known && charged.microUsd).toBe(2);
   });
 
   test('is still zero when the dimension is genuinely free, which is a different zero', () => {

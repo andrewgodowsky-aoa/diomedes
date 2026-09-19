@@ -114,7 +114,7 @@ for an evaluation is a GAP, however well the ledger's own contract is tested els
 | J45 | Two hosts claim the same preparation step | COVERED | `tests/harness.test.ts:514` — two services over the same run folder cannot dispatch the same step under one lease generation, and line 269 refuses a steal of a live lease |
 | J46 | Network timeout after an external business action | COVERED | `tests/harness.test.ts:126` — a non-idempotent step whose acknowledgement is lost parks for reconciliation, its retry is refused, and the handler is proved to have run exactly once |
 | J47 | A cloud call is hidden in pure prepare or inspect | COVERED | `tests/evaluation-step.test.ts:136` — an evaluation is recorded as a model step with a nonzero cost rather than a pure transform, and line 145 asserts it declares destination external and passes through the egress authorizer at dispatch and again at result |
-| J48 | Provider usage is absent or price is unconfigured | COVERED | `tests/evaluation-price.test.ts:81` — unreported input tokens cost an unknown amount rather than zero, and line 103 returns unknown when the model has no published price at all |
+| J48 | Provider usage is absent or price is unconfigured | COVERED | `tests/evaluation-price.test.ts:89` — unreported input tokens cost an unknown amount rather than zero, and line 111 returns unknown when the model has no published price at all |
 
 ## Advisor operation
 

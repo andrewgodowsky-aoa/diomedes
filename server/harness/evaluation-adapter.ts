@@ -63,6 +63,12 @@ export class EvaluationTransportError extends Error {
      * to read one from, and on every code except `answer_rejected`.
      */
     readonly usage: EvaluationUsage | null = null,
+    /**
+     * The contract failure underneath, when there is one. Wrapping must not
+     * cost the diagnosis: `answer_rejected` says money may be gone, and this
+     * says which of the validator's rules the answer broke.
+     */
+    readonly cause: unknown = undefined,
   ) {
     super(message);
     this.name = 'EvaluationTransportError';
@@ -329,6 +335,7 @@ export async function runEvaluation(input: {
         cause instanceof Error ? cause.message : String(cause)
       }`,
       reportedUsage(raw),
+      cause,
     );
   }
 }

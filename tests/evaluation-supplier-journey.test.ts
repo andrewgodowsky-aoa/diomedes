@@ -244,7 +244,12 @@ describe('a helper that answers badly', () => {
           'most-relevant': { type: 'choice', choice: 'payroll-export' },
         },
       }),
-    ).rejects.toMatchObject({ code: 'unknown_option' });
+      // Refused as an answer that arrived and could not be used, because by
+      // this point the call has happened. The rule it broke travels with it.
+    ).rejects.toMatchObject({
+      code: 'answer_rejected',
+      cause: { code: 'unknown_option' },
+    });
   });
 
   test('cannot make the task proceed by being confident about it', async () => {
