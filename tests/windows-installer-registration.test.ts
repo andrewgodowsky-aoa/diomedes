@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -187,7 +187,15 @@ $result | ConvertTo-Json -Compress
 
 describe.skipIf(!windows)('installer proof registration hand-back', () => {
   it('restores a registration exactly and refuses to overwrite what the proof did not write', () => {
-    const root = mkdtempSync(path.join(os.tmpdir(), 'installer-registration-'));
+    // Resolved, because os.tmpdir() is an 8.3 short path on the CI runner
+    // (C:\Users\RUNNER~1\...) and everything the fixture derives from this root
+    // inherits that spelling. The shell hands a shortcut's target back in long
+    // form, so a fixture comparing its own derived path against a target it read
+    // is comparing two spellings of one file and calling them different. Must be
+    // .native: the plain realpathSync resolves links but leaves 8.3 alone.
+    const root = realpathSync.native(
+      mkdtempSync(path.join(os.tmpdir(), 'installer-registration-')),
+    );
     const subKeyRoot = `Software\\Diomedes-installer-proof-test-${randomBytes(4).toString('hex')}`;
     try {
       const script = path.join(root, 'scenarios.ps1');
