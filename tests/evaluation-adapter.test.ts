@@ -169,7 +169,77 @@ describe('a completed evaluation', () => {
     });
     await expect(
       runEvaluation({ port, profile: profile(), state: 'x', signal: new AbortController().signal, observedAt: AT }),
-    ).rejects.toMatchObject({ name: 'EvaluationContractError' });
+    ).rejects.toMatchObject({ name: 'EvaluationTransportError', code: 'answer_rejected' });
+  });
+});
+
+/**
+ * A call that was made and then refused is the expensive case, because both
+ * halves are true at once: the answer is unusable and the money is gone. The
+ * temptation is to treat the refusal as the whole story, and the result of
+ * that is a charge nobody can see.
+ */
+describe('an answer that arrived and was rejected', () => {
+  const rejected = async (result: unknown) => {
+    const port = scriptedEvaluationPort({ result });
+    try {
+      await runEvaluation({
+        port,
+        profile: profile(),
+        state: 'x',
+        signal: new AbortController().signal,
+        observedAt: AT,
+      });
+    } catch (error) {
+      return error as EvaluationTransportError;
+    }
+    throw new Error('the evaluation was expected to fail');
+  };
+
+  test('is a different failure from one that never left, because only one cost money', async () => {
+    const answered = await rejected({ ...answer, answers: {} });
+    expect(answered.code).toBe('answer_rejected');
+
+    // Over the route limit: refused before dispatch, so nothing was spent.
+    const port = scriptedEvaluationPort({ result: answer });
+    const tooBig = await runEvaluation({
+      port,
+      profile: profile(),
+      state: 'x'.repeat(EVALUATION_ROUTE_LIMITS.maxStateTokens * 4),
+      signal: new AbortController().signal,
+      observedAt: AT,
+    }).then(
+      () => {
+        throw new Error('an oversized state was expected to be refused');
+      },
+      (error: EvaluationTransportError) => error,
+    );
+    expect(tooBig.code).toBe('state_too_large');
+    expect(tooBig.usage).toBeNull();
+    expect(port.calls).toHaveLength(0);
+  });
+
+  test('carries what the provider said it used, so the charge is not lost with the answer', async () => {
+    const error = await rejected({ ...answer, answers: {}, usage: { inputTokens: 900 } });
+    expect(error.usage).toEqual({ inputTokens: 900, outputTokens: null });
+  });
+
+  test('keeps output unknown rather than zero when the provider reported only input', async () => {
+    const error = await rejected({ ...answer, answers: {}, usage: { inputTokens: 40 } });
+    expect(error.usage?.outputTokens).toBeNull();
+  });
+
+  test('reports usage unknown, not zero, when the response was too broken to read one from', async () => {
+    expect((await rejected({ answers: {} })).usage).toBeNull();
+    expect((await rejected({ answers: {}, usage: 'not a record' })).usage).toBeNull();
+    expect((await rejected({ answers: {}, usage: { inputTokens: -5 } })).usage).toBeNull();
+    expect((await rejected({ answers: {}, usage: { inputTokens: 1.5 } })).usage).toBeNull();
+  });
+
+  test('names the underlying contract failure, so the reason is not swallowed by the wrapper', async () => {
+    const error = await rejected({ ...answer, answers: {} });
+    expect(error.message).toMatch(/could not be validated/);
+    expect(error.message.length).toBeGreaterThan(40);
   });
 
   test('propagates cancellation rather than finishing a call nobody is waiting for', async () => {

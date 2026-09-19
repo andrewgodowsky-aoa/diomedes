@@ -29,23 +29,63 @@
  *   documents a larger aggregate than a gateway accepts for shared state, so
  *   the smaller, route-specific bound is the one enforced, before any I/O.
  */
-import type { EvaluationObservation, EvaluationProfile } from '../../shared/evaluation.js';
+import type {
+  EvaluationObservation,
+  EvaluationProfile,
+  EvaluationUsage,
+} from '../../shared/evaluation.js';
 import { validateEvaluationResult } from '../../shared/evaluation.js';
 
 export type EvaluationTransportCode =
   | 'unsupported_question_type'
   | 'state_too_large'
   | 'transport_unavailable'
-  | 'invalid_transport';
+  | 'invalid_transport'
+  /**
+   * The provider answered and the answer was unusable. This is the only code
+   * that means money was already spent: the other four are refusals made
+   * before anything was sent.
+   */
+  | 'answer_rejected';
 
 export class EvaluationTransportError extends Error {
   constructor(
     readonly code: EvaluationTransportCode,
     message: string,
+    /**
+     * What the provider reported for a call that actually happened, carried on
+     * the failure so it is not lost with it. A rejected answer is still a
+     * charged answer, and a cost that never reaches the ledger is a cost the
+     * customer paid and nobody can see.
+     *
+     * Null means nobody knows, which is not the same as nothing. It stays null
+     * when the provider reported no usage, when the response was too malformed
+     * to read one from, and on every code except `answer_rejected`.
+     */
+    readonly usage: EvaluationUsage | null = null,
   ) {
     super(message);
     this.name = 'EvaluationTransportError';
   }
+}
+
+/**
+ * Usage read from a response that failed validation, which means reading it
+ * from something already known to be wrong. So every field is checked on its
+ * own and anything unreadable becomes null rather than zero: the point is to
+ * preserve what the provider said, not to manufacture a number that would
+ * settle cleanly.
+ */
+function reportedUsage(raw: unknown): EvaluationUsage | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const given = (raw as { usage?: unknown }).usage;
+  if (typeof given !== 'object' || given === null) return null;
+  const whole = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const inputTokens = whole((given as { inputTokens?: unknown }).inputTokens);
+  const outputTokens = whole((given as { outputTokens?: unknown }).outputTokens);
+  if (inputTokens === null && outputTokens === null) return null;
+  return { inputTokens, outputTokens };
 }
 
 /**
@@ -274,8 +314,21 @@ export async function runEvaluation(input: {
     );
 
   const raw = await port.evaluate({ state, questions: providerQuestions(profile), signal });
-  return validateEvaluationResult(profile, raw, {
-    requestedModel: port.requestedModel,
-    observedAt: input.observedAt,
-  });
+  try {
+    return validateEvaluationResult(profile, raw, {
+      requestedModel: port.requestedModel,
+      observedAt: input.observedAt,
+    });
+  } catch (cause) {
+    // Past this line the call has happened and may already be billed. Refusing
+    // the answer is right; refusing it silently would throw away the only
+    // record of what it cost, so the usage travels with the failure.
+    throw new EvaluationTransportError(
+      'answer_rejected',
+      `Route ${port.id} answered, but the answer could not be validated: ${
+        cause instanceof Error ? cause.message : String(cause)
+      }`,
+      reportedUsage(raw),
+    );
+  }
 }

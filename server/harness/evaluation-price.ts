@@ -74,8 +74,38 @@ export function priceFor(modelId: string | null): EvaluationPriceCard | null {
   return EVALUATION_PRICES.find((card) => card.modelId === modelId) ?? null;
 }
 
+/**
+ * The exact card a past amount was computed under.
+ *
+ * A charge settled last month was settled on last month's terms, and a price
+ * that changes must not silently restate it. Retiring a card means dropping it
+ * from `priceFor`, never from here, so an old settlement stays re-derivable
+ * from the tokens it kept.
+ */
+export function priceCardVersion(version: string): EvaluationPriceCard | null {
+  return EVALUATION_PRICES.find((card) => card.version === version) ?? null;
+}
+
 export type EvaluationCost =
-  | { readonly known: true; readonly microUsd: MicroUsd; readonly priceVersion: string }
+  | {
+      readonly known: true;
+      readonly microUsd: MicroUsd;
+      readonly priceVersion: string;
+      /**
+       * What the amount was computed from, kept beside it.
+       *
+       * Micro-USD is the ledger's smallest unit, so an amount below one of them
+       * cannot be represented and is rounded up to one. That is the right
+       * direction - reporting zero for a call that happened is the failure this
+       * whole module exists to avoid - but it is lossy, and a rounded figure
+       * cannot be re-derived. Keeping the tokens means a settlement can be
+       * recomputed later under a corrected card or a different rounding rule
+       * without asking the provider what it already told us once.
+       */
+      readonly tokens: { readonly input: number; readonly output: number };
+      /** Always up, at the end, once. Named so a stored amount says which rule made it. */
+      readonly rounding: 'up';
+    }
   | { readonly known: false; readonly reason: string };
 
 const unknown = (reason: string): EvaluationCost => ({ known: false, reason });
@@ -108,9 +138,17 @@ export function evaluationCost(
     return unknown('The provider did not report input tokens, so the cost is unknown.');
   if (usage.outputTokens === null && card.outputMicroUsdPerMillion !== 0)
     return unknown('The provider did not report output tokens, so the cost is unknown.');
-  const input = cost(usage.inputTokens ?? 0, card.inputMicroUsdPerMillion);
-  const output = cost(usage.outputTokens ?? 0, card.outputMicroUsdPerMillion);
-  return { known: true, microUsd: micro(input + output), priceVersion: card.version };
+  const inputTokens = usage.inputTokens ?? 0;
+  const outputTokens = usage.outputTokens ?? 0;
+  const input = cost(inputTokens, card.inputMicroUsdPerMillion);
+  const output = cost(outputTokens, card.outputMicroUsdPerMillion);
+  return {
+    known: true,
+    microUsd: micro(input + output),
+    priceVersion: card.version,
+    tokens: { input: inputTokens, output: outputTokens },
+    rounding: 'up',
+  };
 }
 
 /**
@@ -142,5 +180,7 @@ export function estimateEvaluationCost(
         cost(maxOutput, card.outputMicroUsdPerMillion),
     ),
     priceVersion: card.version,
+    tokens: { input: bound.maxInputTokens, output: maxOutput },
+    rounding: 'up',
   };
 }
