@@ -165,6 +165,36 @@ peer `zod ^3.25.76 || ^4.1.8` is satisfied by this repo's `^4.5.4`; `engines: no
 satisfied. Two traps handled in code: `maxRetries` defaults to 2, and `apiKey` defaults to the
 `AI_GATEWAY_API_KEY` environment variable.
 
+## The routes, and what is actually known about each
+
+The owner asked for the real implementation routes for Diomedes as the agent that uses a paid
+inference route with Jev for decisions and distribution. Two different questions hide in that
+sentence and they have different answers.
+
+**The evaluation route** is the one this branch builds. Four candidates exist. Only the first is
+implemented, and only its interface is verified:
+
+| Route | What this repo did | Evidence, and whose |
+|---|---|---|
+| Vercel AI SDK to Gateway to Jev | Implemented as `gatewayEvaluationPort`, untested against the provider | The package's S09-S10. The interface was independently checked here by unpacking the published tarballs; no request was ever sent |
+| TypeSafe SDK direct to Jev | Not implemented | The package's S11. Nothing checked here |
+| OpenRouter to Jev | Not implemented, and must not be enabled on a model listing | The package's S12-S13, which say the listing exists and the structured-request semantics are untested. J40 |
+| Jev billed natively through AWS or Azure | Not implemented | The package records this as unverified. Treat it as unknown, not as absent |
+
+A model appearing in a provider's catalogue is not a working evaluation route. The evaluation
+operation, its result shape and its billing path are separate facts from the listing, and each one
+has to be proven before a route carries traffic. That is why the port is an injected interface with
+one real implementation rather than a table of provider names: a name in a table invites someone to
+add a row, and a row is not a conformance proof.
+
+**The paid inference route for Diomedes itself** is not built here, and the reason is not effort.
+The desktop already refuses managed inference by literal type - `EntitlementView.managedInference`
+is `false`, not a flag set to false - so the client half of that route is deliberately inert. The
+missing half is a server that authenticates a principal, reads a grant and authorizes a payer.
+Until that exists, every managed route is a route to nothing, and a client-side entitlement
+assertion is exactly the thing J73 says the gateway must ignore. Designing that server is the next
+piece of work, not this one.
+
 ## Blocking gates
 
 None of these is granted by this work, and none may be worked around.
