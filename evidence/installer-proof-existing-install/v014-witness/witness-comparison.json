@@ -1,0 +1,33 @@
+{
+  "comparedAt": "2026-09-19T06:42:16.9737362Z",
+  "before": {
+    "takenAt": "2026-09-19T06:36:11.5827981Z",
+    "file": "witness-before.json"
+  },
+  "after": {
+    "takenAt": "2026-09-19T06:38:08.2127637Z",
+    "file": "witness-after.json"
+  },
+  "fieldsCompared": [
+    "productKey",
+    "uninstallKey",
+    "installDir",
+    "installPresent",
+    "installFileCount",
+    "installFiles",
+    "startMenuDir",
+    "startMenuFiles",
+    "taskbarPins",
+    "taskband"
+  ],
+  "excluded": [
+    "takenAt"
+  ],
+  "leafCount": {
+    "after": 304,
+    "before": 304
+  },
+  "differenceCount": 0,
+  "differences": [],
+  "identical": true
+}
