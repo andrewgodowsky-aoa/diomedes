@@ -4,7 +4,7 @@ JEV-2026-09-19.1 | Coverage as measured, not as intended.
 
 - **Date:** 2026-09-19
 - **Branch:** `feature/jev-evaluation-20260919`
-- **Commit:** `1bd3efa4ccca06546f19d0c13f54b20220341803`
+- **Commit:** `a2974810c2f1cead1b4a7a9d372a9aaf4315ea68`
 - **Source table:** the 80 scenarios J01-J80 in `08_FAILURE_MATRIX.md` of the handoff package
 - **Split: 30 COVERED, 44 GAP, 5 GATED, 1 OUT-OF-SCOPE.**
 
