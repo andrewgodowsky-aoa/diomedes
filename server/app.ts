@@ -10,6 +10,8 @@ import { CustomizationBenefitLedger } from './customization-benefit.js';
 import { mountCustomizationBenefitRoutes } from './customization-benefit-routes.js';
 import { ConfigurationService } from './configuration.js';
 import { mountConfigurationRoutes } from './configuration-routes.js';
+import { DiscoveryService } from './discovery/service.js';
+import { mountDiscoveryRoutes } from './discovery/routes.js';
 import { WeeklyBriefService } from './weekly-brief.js';
 import { browseImports, inspectImport, importExports } from './file-imports.js';
 import { isActiveMember } from '../shared/workspaces.js';
@@ -36,11 +38,7 @@ import type {
   Route,
 } from '../shared/types.js';
 import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
-import {
-  activatePack,
-  deactivatePack,
-  discoverInstructionFiles,
-} from './capability-packs.js';
+import { activatePack, deactivatePack, discoverInstructionFiles } from './capability-packs.js';
 import {
   CAPABILITY_PACK_IDS,
   CAPABILITY_PACKS,
@@ -74,6 +72,11 @@ import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
 import { parseTaskCommand } from './task-admission.js';
 import { WorkControl } from './work-control.js';
 import { DesktopConnections } from './connections/desktop.js';
+import { toastConnector } from './connections/fixture.js';
+import { compiledConnectionDemoConnectors } from './connections/compiler-demo.js';
+import { digest as evidenceDigest } from './harness/policy.js';
+import { mountReadinessRoutes } from './readiness/routes.js';
+import { loadShippedProductKnowledge } from './readiness/instructions.js';
 import packageInfo from '../package.json' with { type: 'json' };
 import {
   EXTERNAL_ENGINES,
@@ -83,6 +86,8 @@ import {
   ROUTES,
 } from '../shared/engines.js';
 import { EngineService } from './engines/service.js';
+import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
+import { claudeSessionRunId } from './harness/claude-session-run.js';
 import { baselineRedact } from './secrets.js';
 import { EngineError } from './engines/process.js';
 import { selectedEngine, selectedModel } from '../shared/ai-selection.js';
@@ -458,6 +463,36 @@ export async function createApp(options: AppOptions) {
   // creates is a labelled local fixture rather than a hosted organization.
   const workspaces = new WorkspaceService(store);
   await workspaces.init();
+  const discovery = new DiscoveryService(store, {
+    verifyObservedEvidence: async ({ operatorId, evidence }) => {
+      if (operatorId !== workspaces.currentPerson().id) return false;
+      let state: ReturnType<Store['state']>;
+      try {
+        state = store.state(evidence.projectId);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return false;
+        throw error;
+      }
+      const entry = state.history.find((item) => item.id === evidence.historyEntryId);
+      if (!entry) return false;
+      if (evidence.kind === 'approved-file') {
+        const name = relativeName(evidence.path);
+        return (
+          (entry.actor === 'you' || !!entry.approvalId || !!entry.authorization) &&
+          entry.files.some(
+            (file) => file.path === name && file.recorded && file.after === evidence.sha,
+          ) &&
+          hash(await store.current(evidence.projectId, name)) === evidence.sha
+        );
+      }
+      return (
+        entry.sessionId === evidence.executionId &&
+        state.sessions.some(
+          (session) => session.id === evidence.executionId && session.state === 'done',
+        )
+      );
+    },
+  });
   // Design Studio storage. It reads the *live* workspace rather than the stored
   // reference, so a revoked business member reads their Personal themes and not
   // the ones they can no longer see.
@@ -566,6 +601,7 @@ export async function createApp(options: AppOptions) {
   // External text turns run through the host's RunService: the adapter is only
   // the provider transport inside the fenced dispatch step.
   engines.dispatch = harness.textRoute.request;
+  engines.nativeSessions = harness.claudeSessions;
   await harness.init();
   const connections = new DesktopConnections(store, harness);
   const app = express();
@@ -701,7 +737,100 @@ export async function createApp(options: AppOptions) {
   mountCustomizationBenefitRoutes(app, store, workspaces, customization, customizationBenefit);
   mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces);
   mountConfigurationRoutes(app, store, workspaces, configuration, agents);
+  mountDiscoveryRoutes(app, discovery, {
+    operatorId: () => workspaces.currentPerson().id,
+    importDocument: async (_req, input) => {
+      const name = relativeName(input.path);
+      const state = store.state(input.projectId);
+      const imported =
+        name.startsWith('Imports/') &&
+        state.history.some(
+          (entry) =>
+            entry.actor === 'you' &&
+            entry.label === 'Imported exports' &&
+            entry.files.some(
+              (file) =>
+                file.path === name &&
+                file.op === 'created' &&
+                file.recorded &&
+                file.after === input.sha,
+            ),
+        );
+      if (!imported) throw new ApiError(403, 'Choose a research file imported through Files.');
+      const document = await store.readDocument(input.projectId, name);
+      if (document.sha !== input.sha || document.text === null)
+        throw new ApiError(409, 'The research file changed. Select its current version again.');
+      return { filename: name, content: document.text };
+    },
+    exportToProject: async (_req, artifact, projectId) => {
+      store.state(projectId);
+      const destination = `Discovery/${artifact.prospectId}/${identifier('record')}.md`;
+      const entry = await store.writeRecorded(
+        projectId,
+        [
+          {
+            path: destination,
+            text: artifact.text,
+            expected: null,
+          },
+        ],
+        {
+          actor: 'you',
+          kind: 'discovery-export',
+          merge: false,
+          label: 'Discovery record',
+          sentence: 'You exported the active discovery record.',
+        },
+      );
+      return { id: entry.id, path: destination, createdAt: entry.time };
+    },
+  });
   connections.mount(app);
+  mountReadinessRoutes(app, {
+    knowledge: () => loadShippedProductKnowledge({ buildVersion: packageInfo.version }),
+    snapshot: async (req) => {
+      const projectId = req.query.projectId;
+      if (projectId !== undefined && (typeof projectId !== 'string' || !projectId))
+        throw new ApiError(400, 'Choose one project for connection readiness.');
+      // Cached snapshots never arm a connector or probe an engine.
+      const saved = projectId ? connections.service.snapshot(projectId).connections : null;
+      return {
+        build: { version: packageInfo.version, source: 'package.json' },
+        settings: { services: { ...store.settings.services }, observedAt: now() },
+        engines: engines.status(),
+        connectors: {
+          manifests: [toastConnector, ...compiledConnectionDemoConnectors].map(({ manifest }) => ({
+            manifest,
+            digest: evidenceDigest(manifest),
+          })),
+          instances: saved?.instances ?? [],
+          // Bind only exact processed receipts; legacy observations lack generation.
+          observations: saved
+            ? saved.inbox
+                .filter(
+                  (event) =>
+                    event.state === 'processed' &&
+                    evidenceDigest(
+                      saved.observations[
+                        evidenceDigest([
+                          event.connectionId,
+                          event.observation.resourceId,
+                          event.observation.key,
+                        ])
+                      ] ?? null,
+                    ) === evidenceDigest(event.observation),
+                )
+                .map((event) => ({
+                  connectionId: event.connectionId,
+                  generation: event.generation,
+                  projectId: projectId as string,
+                  observation: event.observation,
+                }))
+            : [],
+        },
+      };
+    },
+  });
   // Accepted close-and-install latches before the desktop handoff; new
   // mutating work pauses after that point. Assigned once updates exist;
   // route handlers run later, so the late binding is safe.
@@ -840,7 +969,10 @@ export async function createApp(options: AppOptions) {
             etag: settingsTag(store.settings),
           },
         );
-      return withSettingsTag(res, await store.saveSettings(validateSettings(store.settings, req.body)));
+      return withSettingsTag(
+        res,
+        await store.saveSettings(validateSettings(store.settings, req.body)),
+      );
     }),
   );
   const externalEngine = (req: Request) =>
@@ -1162,7 +1294,8 @@ export async function createApp(options: AppOptions) {
       store.state(id(req));
       return browseImports(
         typeof req.query.path === 'string' && req.query.path.trim()
-          ? req.query.path : store.projectRoot,
+          ? req.query.path
+          : store.projectRoot,
       );
     }),
   );
@@ -2078,6 +2211,162 @@ export async function createApp(options: AppOptions) {
     // never disappear just because the connection is stale or unavailable.
     return { model };
   };
+  mountClaudeSessionRoutes(app, engines, {
+    authorize: async (req) => {
+      store.state(String(req.params.id));
+    },
+    prepare: async (req, command) => {
+      const projectId = String(req.params.id);
+      const input = await store.locked(async () => {
+        const state = store.state(projectId);
+        const thread = state.conversations.find((item) => item.id === command.threadId);
+        if (!thread) throw new ApiError(404, 'This thread was not found.');
+        if (selectedEngine(store.settings, state.project, thread) !== 'claude-code')
+          throw new ApiError(
+            409,
+            'Select Claude Code for this thread before opening its native conversation.',
+          );
+        if (store.settings.services?.['claude-code'] !== true)
+          throw new ApiError(409, 'Turn Claude Code on in Settings before sending.');
+        const accountRoute = store.settings.services?.['claude-codeAccountRoute'];
+        const selection = nativeChoice('claude-code', projectId, thread);
+        if (!selection.model || typeof accountRoute !== 'string')
+          throw new ApiError(409, 'Select the Claude account and model in Settings first.');
+        const paths = new Set<string>();
+        const documents = [];
+        for (const source of command.sources) {
+          const name = relativeName(source.path);
+          if (paths.has(name.toLowerCase()))
+            throw new ApiError(400, 'Choose each source file once.');
+          paths.add(name.toLowerCase());
+          const document = await store.readDocument(projectId, name);
+          if (document.sha !== source.sha)
+            throw new ApiError(409, `${name} changed. Choose its current version before sending.`);
+          documents.push({ path: name, text: document.text });
+        }
+        if (
+          documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0) >
+          128_000
+        )
+          throw new ApiError(413, 'Choose less than 128 KB of source text for this request.');
+        return {
+          projectId,
+          threadId: thread.id,
+          requestId: command.commandId,
+          prompt: command.text,
+          documents,
+          instructions: MODES[command.mode].instructions,
+          model: selection.model,
+          accountRoute,
+        };
+      });
+      const runId =
+        req.params.runId && !req.path.endsWith('/fork')
+          ? String(req.params.runId)
+          : claudeSessionRunId(projectId, command.commandId);
+      const progress = (kind: 'started' | 'delta' | 'ended', frame?: TransientPreview) =>
+        store.emit('engine-text', {
+          projectId,
+          threadId: input.threadId,
+          requestId: input.requestId,
+          runId,
+          kind,
+          ...(frame
+            ? {
+                stepId: frame.stepId,
+                attempt: frame.attempt,
+                fence: frame.fence,
+                seq: frame.seq,
+                text: frame.text,
+              }
+            : {}),
+        });
+      progress('started');
+      let ended = false;
+      const end = () => {
+        if (!ended) {
+          ended = true;
+          progress('ended');
+        }
+      };
+      req.res?.once('finish', end);
+      req.res?.once('close', end);
+      return {
+        ...input,
+        signal: req.res ? connectionSignal(req.res) : undefined,
+        onPreview: (frame) => progress('delta', frame),
+      };
+    },
+    recordResult: async (_req, command, result, input) => {
+      if (!result.response) return;
+      const response = result.response;
+      await store.locked(async () => {
+        // Project a committed runtime result into the ordinary thread. Clone first:
+        // a failed persist must remain repairable by replaying the same command.
+        const state = structuredClone(store.state(input.projectId));
+        const thread = state.conversations.find((item) => item.id === input.threadId);
+        if (!thread)
+          throw new ApiError(
+            404,
+            'The response is recorded in the runtime, but its thread is missing.',
+          );
+        const identity = hash(JSON.stringify([result.runId, input.requestId]))!;
+        const userId = `Uclaude-${identity.slice(0, 32)}`;
+        const assistantId = `Aclaude-${identity.slice(0, 32)}`;
+        const priorUser = thread.turns.find((turn) => turn.id === userId);
+        const priorAssistant = thread.turns.find((turn) => turn.id === assistantId);
+        if (priorUser || priorAssistant) {
+          if (priorUser?.text !== input.prompt || priorAssistant?.text !== response.text)
+            throw new ApiError(
+              409,
+              'The recorded conversation projection conflicts with this native response.',
+            );
+          return;
+        }
+        const at = now();
+        const sources = input.documents.map((document) => document.path);
+        const helper = {
+          engine: 'claude-code',
+          model: response.model,
+          version: response.version,
+          verified: true,
+        };
+        thread.turns.push(
+          {
+            id: userId,
+            role: 'you',
+            mode: command.mode,
+            text: input.prompt,
+            at,
+            sources,
+            route: 'claude-code',
+          },
+          {
+            id: assistantId,
+            role: 'assistant',
+            mode: command.mode,
+            text: response.text,
+            at,
+            sources,
+            route: 'claude-code',
+            helper,
+            origin: directOrigin({
+              engine: 'claude-code',
+              requestedModel: input.model,
+              reportedModel: response.model,
+              version: response.version,
+              accountRoute: input.accountRoute,
+              executorId: 'claude-code',
+            }),
+          },
+        );
+        thread.helper = { engine: 'claude-code', model: response.model };
+        thread.mode = command.mode;
+        touchThread(thread, at, state.tasks);
+        await store.persist(state);
+      });
+    },
+  });
   const codexHelper = (result: {
     model?: string;
     version?: string;
@@ -2720,6 +3009,7 @@ export async function createApp(options: AppOptions) {
   };
   app.use(errorHandler);
   app.locals.store = store;
+  app.locals.discovery = discovery;
   app.locals.work = work;
   app.locals.nativeWork = nativeWork;
   app.locals.changeReview = changeReview;

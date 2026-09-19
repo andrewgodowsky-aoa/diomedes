@@ -1,0 +1,18 @@
+{
+  "id": "carpentry",
+  "contractVersion": 1,
+  "engine": "weekly-brief",
+  "label": "Carpentry and cabinetry",
+  "industry": "carpentry",
+  "keywords": ["carpentry", "cabinetry", "millwork", "woodworking"],
+  "scopeLabel": "Project and shop exports",
+  "scopeSelection": ["project-and-shop-exports"],
+  "outputLabel": "Weekly project brief",
+  "destination": "Drafts/Weekly project brief.md",
+  "guidanceText": "Cite project and shop exports and leave missing milestones or unmatched records visible.",
+  "terminology": {
+    "location": "shop",
+    "labor": "craft hours",
+    "sales": "project value"
+  }
+}

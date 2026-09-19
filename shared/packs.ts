@@ -1,14 +1,11 @@
 /**
- * The weekly-brief pack: one approved-files workflow, two synthetic storefronts.
+ * The weekly-brief pack: one approved-files workflow with data-supplied variants.
  *
  * A Business answers a short questionnaire; this pack maps those answers onto
  * the governed configuration shape without adding anything the catalogues do
- * not already contain. The two variants — restaurant-operations and
- * professional-services — exist to prove a point about reuse: they share every
- * authority, evidence, model-policy and recovery decision, and differ only in
- * display labels, default selections, output destinations and the wording of
- * one guidance rule. A second feature was rejected on purpose; the pack is the
- * same primitives, worn twice.
+ * not already contain. Every admitted variant shares the same authority,
+ * evidence, model-policy and recovery decisions, and may differ only in display
+ * labels, default selections, output destinations and one guidance rule.
  *
  * Everything here is deterministic data handling: no clock, no randomness, no
  * network. Time and attribution arrive in `CompileInput`, and live Agent facts
@@ -31,12 +28,14 @@ import {
   type ApproverPolicy,
   type BudgetPolicy,
   type ConfigurationProposal,
+  type ConfigurationOwner,
   type ContextKind,
   type ContextScope,
   type ExpectedOutput,
   type KnownAgent,
   type ModelPolicy,
   type ProcessingPolicy,
+  type ProspectConfigurationPin,
   type ProposedAgent,
   type ProposedRule,
   type ProposedTeam,
@@ -47,18 +46,24 @@ import {
 } from './configuration.js';
 import type { PermissionChoiceId } from './permissions.js';
 
-export type PackVariantId = 'restaurant-operations' | 'professional-services';
+export type PackVariantId = string;
+const PACK_VARIANT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export const WEEKLY_BRIEF_PACK_ID = 'diomedes.weekly-brief';
 export const WEEKLY_BRIEF_PACK_VERSION = '1.0.0';
+export const DEFAULT_WEEKLY_BRIEF_VARIANT_ID: PackVariantId = 'professional-services';
 
 export interface CompileInput {
-  organizationId: string;
-  tenantId: string;
+  organizationId: string | null;
+  tenantId: string | null;
+  owner?: ConfigurationOwner;
+  prospect?: ProspectConfigurationPin | null;
   answers: AnswerMap;
   answersDigest: string;
   previousConfigurationDigest: string | null;
   variantId: PackVariantId;
+  /** Validated data-only variants supplied by the host for this compilation. */
+  variants: ReadonlyMap<PackVariantId, WeeklyBriefVariant>;
   /** Live Agent facts, keyed by agent id, from AgentRegistry. */
   agents: ReadonlyMap<string, KnownAgent>;
   teamExecutionAvailable: boolean;
@@ -70,7 +75,7 @@ export interface CompileInput {
 // --- the template and its two storefronts -------------------------------------
 
 /**
- * The only ways the two storefronts may differ. Authority, evidence, model
+ * The only ways storefronts may differ. Authority, evidence, model
  * policy and recovery live in the shared base below; this record cannot carry
  * them, which is what makes the variant equivalence structural rather than
  * promised.
@@ -85,53 +90,6 @@ export interface WeeklyBriefVariant {
   /** Lowercase keywords that select this variant from free-text answers. */
   readonly keywords: readonly string[];
 }
-
-const RESTAURANT_VARIANT: WeeklyBriefVariant = {
-  id: 'restaurant-operations',
-  scopeLabel: 'Weekly operations exports',
-  scopeSelection: ['weekly-operations-exports'],
-  outputLabel: 'Weekly operations brief',
-  destination: 'weekly-operations-brief.md',
-  // The prohibition is the product rule: a brief must never touch payroll or orders.
-  guidanceText:
-    'Build the brief from the approved exports only. Cover what changed this week and what is now due, without touching payroll or orders.',
-  keywords: [
-    'restaurant',
-    'cafe',
-    'café',
-    'bistro',
-    'diner',
-    'catering',
-    'bakery',
-    'pizzeria',
-    'pizza',
-    'brasserie',
-    'tavern',
-    'grill',
-    'eatery',
-    'food truck',
-    'coffeehouse',
-  ],
-};
-
-const PROFESSIONAL_VARIANT: WeeklyBriefVariant = {
-  id: 'professional-services',
-  scopeLabel: 'Weekly brief sources',
-  scopeSelection: ['weekly-brief-exports'],
-  outputLabel: 'Weekly brief',
-  destination: 'weekly-brief.md',
-  // Same shape as the restaurant rule: a brief must never sign off licensed work.
-  guidanceText:
-    'Build the brief from the approved exports only. Cover what changed this week and what is now due, without offering licensed or safety-critical sign-off.',
-  // The neutral variant is the default, so it claims no keywords of its own.
-  keywords: [],
-};
-
-export const WEEKLY_BRIEF_VARIANTS: Readonly<Record<PackVariantId, WeeklyBriefVariant>> =
-  Object.freeze({
-    'restaurant-operations': RESTAURANT_VARIANT,
-    'professional-services': PROFESSIONAL_VARIANT,
-  });
 
 export interface WeeklyBriefTemplate {
   readonly id: typeof WEEKLY_BRIEF_PACK_ID;
@@ -237,14 +195,23 @@ function moneyOf(answers: AnswerMap, id: string): number | null {
 }
 
 /** Choose the variant from free text. Nothing matches, so the neutral one wins. */
-export function variantFor(answers: AnswerMap): PackVariantId {
+export function variantFor(
+  answers: AnswerMap,
+  variants: ReadonlyMap<PackVariantId, WeeklyBriefVariant>,
+): PackVariantId {
+  if (!variants.has(DEFAULT_WEEKLY_BRIEF_VARIANT_ID))
+    throw new Error(`The variant registry is missing ${DEFAULT_WEEKLY_BRIEF_VARIANT_ID}.`);
   const haystack = `${textOf(answers, 'name') ?? ''} ${textOf(answers, 'industry') ?? ''}`
     .toLowerCase()
     .trim();
-  if (haystack === '') return 'professional-services';
-  return RESTAURANT_VARIANT.keywords.some((keyword) => haystack.includes(keyword))
-    ? 'restaurant-operations'
-    : 'professional-services';
+  if (haystack === '') return DEFAULT_WEEKLY_BRIEF_VARIANT_ID;
+  for (const [id, variant] of variants)
+    if (
+      id !== DEFAULT_WEEKLY_BRIEF_VARIANT_ID &&
+      variant.keywords.some((keyword) => haystack.includes(keyword.toLowerCase()))
+    )
+      return id;
+  return DEFAULT_WEEKLY_BRIEF_VARIANT_ID;
 }
 
 // --- the compiler ----------------------------------------------------------------
@@ -294,6 +261,7 @@ function compileAgents(input: CompileInput, unresolved: UnresolvedIssue[]): Prop
 }
 
 function compileTeam(input: CompileInput, agents: readonly ProposedAgent[]): ProposedTeam | null {
+  if (input.owner?.kind === 'prospect') return null;
   const members = agents.map((agent) => agent.agentId);
   if (members.length === 0) return null;
   const bothPresent = members.includes(ANALYST_ID) && members.includes(REVIEWER_ID);
@@ -324,7 +292,8 @@ function compileTeam(input: CompileInput, agents: readonly ProposedAgent[]): Pro
 
 function compileRules(input: CompileInput, variant: WeeklyBriefVariant): ProposedRule[] {
   // Rules stay inside this business: the scope names its tenant and nothing else.
-  const scope = Object.freeze({ tenantId: input.tenantId });
+  const scope: Readonly<Record<string, string>> =
+    input.tenantId === null ? Object.freeze({}) : Object.freeze({ tenantId: input.tenantId });
   return [
     {
       id: 'weekly-brief-guidance',
@@ -575,8 +544,27 @@ function compileOutput(
  * and nothing else.
  */
 export function compileProposal(input: CompileInput): ConfigurationProposal {
-  const variant = WEEKLY_BRIEF_VARIANTS[input.variantId];
+  if (!PACK_VARIANT_ID.test(input.variantId))
+    throw new Error(`Pack variant id ${JSON.stringify(input.variantId)} must be a lowercase slug.`);
+  const variant = input.variants.get(input.variantId);
+  if (!variant || variant.id !== input.variantId)
+    throw new Error(`The variant registry does not contain ${JSON.stringify(input.variantId)}.`);
   const answers = input.answers;
+  const owner =
+    input.owner ??
+    (input.organizationId !== null && input.tenantId !== null
+      ? {
+          kind: 'organization' as const,
+          organizationId: input.organizationId,
+          tenantId: input.tenantId,
+        }
+      : undefined);
+  if (!owner) throw new Error('A configuration owner is required.');
+  if (
+    owner.kind === 'prospect' &&
+    (input.organizationId !== null || input.tenantId !== null || !input.prospect)
+  )
+    throw new Error('A prospect configuration cannot carry Business or tenant identity.');
   const unresolved: UnresolvedIssue[] = [];
 
   const job = textOf(answers, 'job');
@@ -608,8 +596,10 @@ export function compileProposal(input: CompileInput): ConfigurationProposal {
 
   return {
     v: CONFIGURATION_CONTRACT_VERSION,
+    owner,
     organizationId: input.organizationId,
     tenantId: input.tenantId,
+    prospect: input.prospect ?? null,
     questionnaireRevision: BUSINESS_SETUP_SCHEMA_REVISION,
     answersDigest: input.answersDigest,
     previousConfigurationDigest: input.previousConfigurationDigest,

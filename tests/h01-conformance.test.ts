@@ -55,15 +55,44 @@ describe('route descriptors', () => {
     }
   });
 
-  it('every route starts and closes, and only harness routes fork', () => {
+  it('every route starts and closes; only Harness and the integrated Claude session route fork', () => {
     for (const [routeId, contract] of Object.entries(ROUTE_CONTRACTS)) {
       expect(contract.commands.start.support, routeId).toBe('native');
       expect(['native', 'host'], `${routeId} close`).toContain(contract.commands.close.support);
-      if (contract.mode === 'harness-agent')
+      if (contract.mode === 'harness-agent' || routeId === 'claude-code-session')
         expect(contract.commands.fork.support, routeId).toBe('native');
       else expect(contract.commands.fork.support, routeId).toBe('unsupported');
     }
   });
+
+  it('the explicit native profile retains every lifecycle and evidence boundary', () => {
+    const contract = ROUTE_CONTRACTS['claude-code-session'];
+    expect(contract).toMatchObject({
+      mode: 'external-session',
+      engine: { id: 'claude-code', version: '2.1.252', protocolVersion: 'stream-json' },
+      streaming: { transientPreview: 'text-delta', durableEvents: 'run-record' },
+      commands: { fork: { support: 'native' }, steer: { support: 'unsupported' }, reconcile: { support: 'unsupported' } },
+    });
+    expect(contractChecks(contract).find(check => check.id === 'native-session-run-backing')?.outcome).toBe('passed');
+  });
+
+  it.each(['route', 'engine', 'version', 'protocol', 'mode', 'steer', 'resume', 'stream', 'auth', 'model'] as const)(
+    'does not extend native session backing across %s drift', drift => {
+      const contract = structuredClone(ROUTE_CONTRACTS['claude-code-session']);
+      if (drift === 'route') contract.routeId = 'unproven-native-session';
+      if (drift === 'engine') contract.engine.id = 'other-engine';
+      if (drift === 'version') contract.engine.version = contract.testedWith = '2.1.253';
+      if (drift === 'protocol') contract.engine.protocolVersion = 'unknown';
+      if (drift === 'mode') contract.mode = 'single-turn-text';
+      if (drift === 'steer') contract.commands.steer.support = 'native';
+      if (drift === 'resume') contract.commands.resume.support = 'host';
+      if (drift === 'stream') contract.streaming.durableEvents = 'host-record';
+      if (drift === 'auth') contract.authentication = 'host-credential';
+      if (drift === 'model') contract.models.source = 'fixed';
+      const failed = contractChecks(contract).filter(check => check.outcome === 'failed');
+      expect(failed.map(check => check.id)).toContain(drift === 'route' ? 'streaming-matches-mode' : 'native-session-run-backing');
+    },
+  );
 });
 
 // --- the fake ACP child -----------------------------------------------------------

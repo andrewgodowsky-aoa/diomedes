@@ -88,7 +88,7 @@ export function Rail({
         ))}
       </ul>
       <div className="views">
-        {(['Thread', 'Board', 'Team', 'Connections'] as ShellView[]).map((v) => (
+        {(['Thread', 'Board', 'Team', 'Connections', 'Discovery', 'Readiness'] as ShellView[]).map((v) => (
           <button
             key={v}
             type="button"

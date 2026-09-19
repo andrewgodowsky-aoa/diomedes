@@ -114,6 +114,8 @@ export interface StepRecord {
   outputHash: string | null;
   /** Immutable per-step provenance from trustworthy adapter/runtime metadata. Absent on legacy records; unknown is never invented. Never part of the intent hash. */
   origin?: OriginSnapshot;
+  /** Provider-owned recovery metadata, never portable context or permission authority. */
+  nativeCheckpoint?: NativeCheckpoint;
   /** The run's lease fence when the current attempt started. */
   leaseFence: number;
   startedAt: string | null;
@@ -171,6 +173,12 @@ export interface PortableMessage {
   name?: string;
   input?: Json;
   output?: Json;
+}
+
+export interface NativeCheckpoint {
+  v: 1;
+  providerId: string;
+  payload: Json;
 }
 
 export interface HarnessRun {

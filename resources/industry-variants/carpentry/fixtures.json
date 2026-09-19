@@ -1,0 +1,13 @@
+[
+  {
+    "path": "weekly-summary.md",
+    "label": "Weekly project summary",
+    "default": true
+  },
+  {
+    "path": "location-{{location.index}}.csv",
+    "label": "Shop project export",
+    "default": true,
+    "slot": "location"
+  }
+]

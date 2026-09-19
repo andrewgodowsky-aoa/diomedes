@@ -38,6 +38,7 @@ import {
 import { containsSecretLikeText } from './business-setup.js';
 import type { RouteCapabilities } from './capabilities.js';
 import type { PermissionChoiceId } from './permissions.js';
+import type { ProspectOverlay } from './rehearsal.js';
 
 export const CONFIGURATION_CONTRACT_VERSION = 1 as const;
 
@@ -271,11 +272,29 @@ export interface UnresolvedIssue {
 
 export type CandidateOrigin = 'deterministic' | 'model-assisted';
 
+/** The namespace that owns one configuration history. Prospect scope is never a Business. */
+export type ConfigurationOwner =
+  | { readonly kind: 'organization'; readonly organizationId: string; readonly tenantId: string }
+  | { readonly kind: 'prospect'; readonly prospectId: string; readonly operatorId: string };
+
+export interface ProspectConfigurationPin {
+  readonly recordId: string;
+  readonly recordDigest: string;
+  readonly recordUpdatedAt: string;
+  readonly variantDigest: string;
+  readonly overlayDigest: string;
+  readonly overlay: ProspectOverlay;
+  readonly policy: 'drafts-only';
+}
+
 export interface ConfigurationProposal {
   readonly v: 1;
-  readonly organizationId: string;
+  /** Present on new records; legacy organization records are derived during load. */
+  readonly owner?: ConfigurationOwner;
+  readonly organizationId: string | null;
   /** The tenant these answers were recorded under. A proposal cannot cross tenants. */
-  readonly tenantId: string;
+  readonly tenantId: string | null;
+  readonly prospect?: ProspectConfigurationPin | null;
   readonly questionnaireRevision: number;
   /** The answers this was formed from, so activation cannot outrun them. */
   readonly answersDigest: string;
@@ -325,8 +344,9 @@ export interface ReadinessReport {
 
 export interface ConfigurationManifest {
   readonly v: 1;
-  readonly organizationId: string;
-  readonly tenantId: string;
+  readonly owner?: ConfigurationOwner;
+  readonly organizationId: string | null;
+  readonly tenantId: string | null;
   /** Monotonic per organization. The value activation compares against. */
   readonly revision: number;
   readonly digest: string;
@@ -385,8 +405,9 @@ export interface KnownAgent {
 }
 
 export interface ValidationContext {
-  readonly tenantId: string;
-  readonly organizationId: string;
+  readonly owner?: ConfigurationOwner;
+  readonly tenantId: string | null;
+  readonly organizationId: string | null;
   readonly knownAgents: ReadonlyMap<string, KnownAgent>;
   readonly knownRuleScopeKeys: ReadonlySet<string>;
   /** Route id to the requirements that route satisfies. */
@@ -475,7 +496,15 @@ export function validateProposal(
       problem('schema', 'blocking', 'v', 'This setup was written by a different build.'),
     );
 
-  if (proposal.tenantId !== context.tenantId || proposal.organizationId !== context.organizationId)
+  const ownerMismatch =
+    proposal.owner !== undefined &&
+    context.owner !== undefined &&
+    JSON.stringify(proposal.owner) !== JSON.stringify(context.owner);
+  if (
+    ownerMismatch ||
+    proposal.tenantId !== context.tenantId ||
+    proposal.organizationId !== context.organizationId
+  )
     problems.push(
       problem(
         'tenant-mismatch',
@@ -1031,6 +1060,17 @@ export interface ConfigurationView {
   readonly staged: ConfigurationManifest | null;
   readonly changes: readonly ProposalChange[];
   /** The revision an activation must send back. Null when nothing is active. */
+  readonly expectedActiveRevision: number | null;
+  readonly canActivate: boolean;
+  readonly whyNot: string | null;
+}
+
+export interface ProspectConfigurationView {
+  readonly owner: Extract<ConfigurationOwner, { kind: 'prospect' }>;
+  readonly prospect: { readonly id: string; readonly name: string };
+  readonly active: ConfigurationManifest | null;
+  readonly staged: ConfigurationManifest | null;
+  readonly changes: readonly ProposalChange[];
   readonly expectedActiveRevision: number | null;
   readonly canActivate: boolean;
   readonly whyNot: string | null;

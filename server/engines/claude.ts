@@ -4,6 +4,13 @@ import path from 'node:path';
 import type { EngineModel } from '../../shared/types.js';
 import { routeContractFor } from '../harness/route-contract.js';
 import {
+  ClaudeNativeSession,
+  claudeFailure,
+  prepareClaudeSession,
+  sameClaudeModel,
+  type ClaudeSessionOptions,
+} from './claude-session.js';
+import {
   contextMessage,
   type AdapterInspection,
   type TextEngineAdapter,
@@ -23,8 +30,8 @@ import {
 
 export const CLAUDE_VERSION = '2.1.252';
 const ACCOUNT_ROUTE = 'claude-code:claude.ai';
-export function claudeArguments(): string[] {
-  return [
+export function claudeArguments(persistent = false): string[] {
+  const args = [
     '--print',
     '--input-format',
     'stream-json',
@@ -41,12 +48,11 @@ export function claudeArguments(): string[] {
     '--mcp-config',
     '{"mcpServers":{}}',
     '--disable-slash-commands',
-    '--no-session-persistence',
-    '--max-turns',
-    '1',
     '--settings',
     '{"disableAllHooks":true,"autoUpdatesChannel":"stable","enabledPlugins":{}}',
   ];
+  if (!persistent) args.push('--no-session-persistence', '--max-turns', '1');
+  return args;
 }
 function environment() {
   return {
@@ -57,35 +63,10 @@ function environment() {
     CLAUDE_CODE_SAFE_MODE: '1',
   };
 }
-function failure(value: unknown): EngineError {
-  const text = JSON.stringify(value);
-  if (/rate.?limit|usage.?limit|quota|overloaded/i.test(text))
-    return new EngineError(
-      'USAGE_LIMIT',
-      'Claude Code reported a usage or service limit. No account or model was substituted.',
-      true,
-    );
-  if (/auth|login|sign.?in|unauthorized/i.test(text))
-    return new EngineError(
-      'AUTH_REQUIRED',
-      'Claude Code needs sign-in. Use its sign-in action, then recheck.',
-      true,
-    );
-  return new EngineError(
-    'PROVIDER_ERROR',
-    'Claude Code could not complete this request. No automatic retry was sent.',
-    true,
-  );
-}
-function sameModel(requested: string, reported: string) {
-  return (
-    requested === reported ||
-    (['sonnet', 'opus', 'haiku'].includes(requested) && reported.startsWith(`claude-${requested}-`))
-  );
-}
 export class ClaudeAdapter implements TextEngineAdapter {
   readonly id = 'claude-code' as const;
   readonly contract = routeContractFor('claude-code');
+  readonly sessionContract = routeContractFor('claude-code-session');
   private readonly launch: ProcessFactory;
   private readonly account: (signal?: AbortSignal) => Promise<Record<string, unknown>>;
   constructor(
@@ -123,16 +104,18 @@ export class ClaudeAdapter implements TextEngineAdapter {
         'AUTH_REQUIRED',
         'Sign in to Claude Code with your Claude account. This route does not use API billing.',
       );
+    return status;
   }
   private async start(
     signal?: AbortSignal,
     extra: string[] = [],
     timeoutMs = 120_000,
     instructions?: string,
+    persistent = false,
   ) {
     const directory = await fs.mkdtemp(path.join(this.cwd, '.claude-request-'));
     try {
-      const args = claudeArguments();
+      const args = claudeArguments(persistent);
       for (const flag of ['--mcp-config', '--settings']) {
         const index = args.indexOf(flag) + 1,
           file = path.join(directory, `${flag.slice(2)}.json`);
@@ -196,8 +179,42 @@ export class ClaudeAdapter implements TextEngineAdapter {
       if (frame.type !== 'control_response') continue;
       const response = record(frame.response);
       if (response.request_id !== id) continue;
-      if (response.subtype !== 'success') throw failure(response);
+      if (response.subtype !== 'success') throw claudeFailure(response);
       return record(response.response);
+    }
+  }
+  /** Opt-in transport leaf. The host must persist checkpoints in its existing run authority. */
+  async openSession(
+    input: TextRequest,
+    options: ClaudeSessionOptions,
+  ): Promise<ClaudeNativeSession> {
+    contextMessage(input);
+    const account = await this.requireAccount(input.signal);
+    const prepared = prepareClaudeSession(input, options, account, this.cwd, CLAUDE_VERSION);
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
+    const process = await this.start(signal, prepared.args, 30 * 60_000, input.instructions, true);
+    try {
+      await this.initialize(process.child);
+      return new ClaudeNativeSession(
+        process,
+        prepared.checkpoint,
+        options.onCheckpoint,
+        async (signal) => {
+          prepareClaudeSession(
+            input,
+            { ...options, restore: undefined, fork: false },
+            await this.requireAccount(signal),
+            this.cwd,
+            CLAUDE_VERSION,
+            prepared.checkpoint.accountDigest,
+          );
+        },
+        controller,
+      );
+    } catch (error) {
+      await process.close(error);
+      throw error;
     }
   }
   async inspect(signal?: AbortSignal): Promise<AdapterInspection> {
@@ -283,7 +300,7 @@ export class ClaudeAdapter implements TextEngineAdapter {
             !Array.isArray(frame.mcp_servers) ||
             frame.mcp_servers.length ||
             typeof frame.model !== 'string' ||
-            !sameModel(input.model, frame.model)
+            !sameClaudeModel(input.model, frame.model)
           )
             throw new EngineError(
               'POLICY_MISMATCH',
@@ -309,7 +326,7 @@ export class ClaudeAdapter implements TextEngineAdapter {
         }
         if (frame.type !== 'result') continue;
         if (frame.is_error === true || frame.subtype !== 'success')
-          throw failure(frame.errors ?? frame);
+          throw claudeFailure(frame.errors ?? frame);
         if (
           !model ||
           !nativeSession ||
@@ -323,7 +340,7 @@ export class ClaudeAdapter implements TextEngineAdapter {
             true,
           );
         const used = Object.keys(record(frame.modelUsage));
-        if (used.some((value) => !sameModel(input.model, value)))
+        if (used.some((value) => !sameClaudeModel(input.model, value)))
           throw new EngineError(
             'POLICY_MISMATCH',
             'Claude Code reported an unexpected model call.',

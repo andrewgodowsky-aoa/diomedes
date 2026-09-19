@@ -11,18 +11,17 @@ import { CursorAdapter, cursorCommand, resolveCursorEntry } from './cursor.js';
 import { DevinAdapter } from './devin.js';
 import { managedBinary, verifyManagedBinary } from './install.js';
 import { capture, engineEnvironment, EngineError } from './process.js';
-import {
-  commandGate,
-  previewSink,
-  type PreviewRejection,
-} from '../../shared/adapter-contract.js';
-import type { TextEngineAdapter, TextRequest, TextResponse } from './contract.js';
+import { commandGate, previewSink, type PreviewRejection } from '../../shared/adapter-contract.js';
+import type {
+  PersistentTextAdapter,
+  TextEngineAdapter,
+  TextRequest,
+  TextResponse,
+} from './contract.js';
+import type { ClaudeSessionCheckpoint } from './claude-session.js';
+import { ClaudeSessionRuns, type ClaudeSessionTurn } from '../harness/claude-session-run.js';
 import { HarnessError } from '../harness/policy.js';
-import {
-  TEXT_DISPATCH_STEP,
-  textRunId,
-  type TextDispatch,
-} from '../harness/text-route.js';
+import { TEXT_DISPATCH_STEP, textRunId, type TextDispatch } from '../harness/text-route.js';
 
 function recordShimError(error: unknown): boolean {
   return (
@@ -73,6 +72,8 @@ export class EngineService {
    * `TextRouteRuntime.request` after the harness host exists.
    */
   dispatch?: TextDispatch;
+  /** Explicit native-session route; attaching this does not change generate(). */
+  nativeSessions?: ClaudeSessionRuns;
   constructor(
     readonly root: string,
     deps: Partial<EngineServiceDeps> = {},
@@ -398,11 +399,7 @@ export class EngineService {
               'The sign-in route changed. Select it again before sending.',
             );
           const value = this.connections.get(engine)!;
-          const adapter = this.deps.adapter(
-            engine,
-            value.location!,
-            path.join(this.root, engine),
-          );
+          const adapter = this.deps.adapter(engine, value.location!, path.join(this.root, engine));
           // The descriptor the adapter carries is operative: dispatch only
           // what the route declares, only for the proven build.
           if (adapter.id !== engine)
@@ -514,6 +511,119 @@ export class EngineService {
       this.running.delete(key);
     }
   }
+  async claudeSession(
+    mode: ClaudeSessionTurn['mode'],
+    runId: string,
+    input: TextRequest,
+    sourceRunId?: string,
+  ) {
+    if (!this.nativeSessions)
+      throw new EngineError('RUNTIME_UNAVAILABLE', 'The native session runtime is not attached.');
+    if (input.onDelta)
+      throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview channel.');
+    const adapterAt = (location: string) => {
+      const adapter = this.deps.adapter(
+        'claude-code',
+        location,
+        path.join(this.root, 'claude-code'),
+      );
+      if (
+        !('openSession' in adapter) ||
+        typeof adapter.openSession !== 'function' ||
+        !('sessionContract' in adapter)
+      )
+        throw new EngineError(
+          'COMMAND_UNSUPPORTED',
+          'This adapter has no native session transport.',
+        );
+      const persistent = adapter as PersistentTextAdapter<ClaudeSessionCheckpoint>;
+      const gate = commandGate(persistent.sessionContract, mode);
+      if (
+        adapter.id !== 'claude-code' ||
+        persistent.sessionContract.routeId !== 'claude-code-session' ||
+        persistent.sessionContract.engine.version !== TESTED_VERSIONS['claude-code'] ||
+        !gate.admitted
+      )
+        throw new EngineError(
+          'CONTRACT_MISMATCH',
+          'The native session contract does not match this route and build.',
+        );
+      return persistent;
+    };
+    try {
+      return await this.nativeSessions.request({
+        mode,
+        runId,
+        sourceRunId,
+        input,
+        admit: async (signal) => {
+          await this.discover(true);
+          await this.check('claude-code', signal);
+          const selected = this.selection('claude-code', input.model);
+          if (selected.accountRoute !== input.accountRoute)
+            throw new EngineError(
+              'ACCOUNT_CHANGED',
+              'The Claude account route changed. Select it again.',
+            );
+          const value = this.connections.get('claude-code')!;
+          adapterAt(value.location!);
+          return {
+            location: value.location!,
+            version: value.version!,
+            model: selected.model,
+            accountRoute: selected.accountRoute,
+          };
+        },
+        open: (admission, request, options) =>
+          adapterAt(admission.location).openSession(request, options),
+        preview: (context, stepId) => {
+          let accepting = true;
+          let pending = Promise.resolve();
+          let failure: { error: unknown } | undefined;
+          const signal = AbortSignal.any([context.signal, ...(input.signal ? [input.signal] : [])]);
+          const onDelta = previewSink({
+            identity: {
+              projectId: input.projectId,
+              threadId: input.threadId,
+              requestId: input.requestId,
+              runId,
+              stepId,
+              attempt: context.attempt,
+              fence: context.fence,
+            },
+            signal,
+            redact: this.deps.redactFor?.('claude-code'),
+            onInvalid: (invalid) => {
+              failure = { error: new EngineError('OUTPUT_LIMIT', invalid.reason, true) };
+            },
+            onPreview: (frame) => {
+              if (!accepting || failure) return;
+              pending = pending
+                .then(async () => {
+                  if (failure) return;
+                  await context.publishPreview(() => {
+                    if (!signal.aborted) input.onPreview?.(frame);
+                  });
+                })
+                .catch((error: unknown) => {
+                  failure = { error };
+                });
+            },
+          });
+          return {
+            onDelta,
+            finish: async () => {
+              accepting = false;
+              await pending;
+              if (failure) throw failure.error;
+            },
+          };
+        },
+      });
+    } catch (error) {
+      throw seamError(error);
+    }
+  }
   close() {
     for (const controller of this.running.values()) controller.abort();
   }
@@ -542,11 +652,7 @@ function seamError(error: unknown): unknown {
       'The request was stopped. No late response was saved.',
       true,
     );
-  if (
-    code === 'reconcile_required' ||
-    code === 'stale_lease' ||
-    code === 'stale_attempt'
-  )
+  if (code === 'reconcile_required' || code === 'stale_lease' || code === 'stale_attempt')
     // The dispatch may have reached the provider; the record stays uncertain.
     return new EngineError(
       'DISPATCH_UNCERTAIN',
@@ -555,17 +661,15 @@ function seamError(error: unknown): unknown {
     );
   // A dispatch-phase denial is a refusal: the provider never saw the request.
   // (A result-phase denial surfaces earlier as the parked reconcile_required.)
-  if (code === 'egress_denied')
-    return new EngineError('ROUTE_REFUSED', message, true);
+  if (code === 'egress_denied') return new EngineError('ROUTE_REFUSED', message, true);
   if (code === 'lease_busy' || (code === 'blocked' && /in flight/.test(message)))
     return new EngineError(
       'REQUEST_ACTIVE',
       'This request already has a dispatch in progress.',
       true,
     );
-  if (code === 'input_mismatch' || code === 'run_id_collision')
+  if (code === 'input_mismatch' || code === 'intent_mismatch' || code === 'run_id_collision')
     return new EngineError('IDENTITY_MISMATCH', message, true);
-  if (code === 'request_failed')
-    return new EngineError('PROVIDER_ERROR', message, true);
+  if (code === 'request_failed') return new EngineError('PROVIDER_ERROR', message, true);
   return new EngineError('RUNTIME_UNAVAILABLE', message, true);
 }
