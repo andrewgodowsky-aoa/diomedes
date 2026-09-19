@@ -95,6 +95,7 @@ export default defineConfig({
     'workspace-ui.spec.ts',
     'configuration-ui.spec.ts',
     'file-imports-ui.spec.ts',
+    'files-pane-ux-20260917.spec.ts',
     'allowance-ui.spec.ts',
   ],
   fullyParallel: false,
