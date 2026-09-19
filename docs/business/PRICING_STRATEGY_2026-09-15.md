@@ -1,6 +1,6 @@
 # Diomedes pricing and service scope
 
-Version: 2026-09-19.1
+Version: 2026-09-19.2
 Date: September 19, 2026 (first issued September 15, 2026)
 Status: Approved commercial pricing direction. Supersedes the 2026-09-10.3 launch anchors where they conflict.
 Company direction: Diomedes Systems
@@ -193,7 +193,23 @@ Owner decisions of 2026-09-19.
 
 **Enforcement status.** `shared/managed-usage.ts` already meters micro-USD with pre-call reservations, and its candidate plan's $100 allowance matches the monthly bound. The per-request ceiling and the request counter are not implemented, no company-key provider route exists, and the plan stays `sellable: false`. The site marks this capability in progress beside the claim.
 
-**Models.** Included requests run on fast, efficient, capable models that hold context and decide well. Current candidates are Muse Spark 1.3 and Gemini 3.8 Flash and their peers; a model earns its place on measured cost per accepted result, not on list price. Stronger models are used where a task needs them and the ceiling allows, or with approval.
+**Models.** Included requests run on fast, efficient, capable models that hold context and decide well. Current candidates are GPT-5.6 Luna, Gemini 3.8 Flash and Muse Spark 1.3 and their peers; a model earns its place on measured cost per accepted result, not on list price. Stronger models are used where a task needs them and the ceiling allows, or with approval, and the request that needs one costs more to serve — that is what the per-request ceiling is for, and why an unusually large request stops and asks rather than quietly spending more. Owner direction of 2026-09-19 names these three as the primary agents. None of them is a promise: a candidate is a model we intend to measure.
+
+**A named model is not a usable route (verified 2026-09-19).** The same model reached two ways is two different commercial facts, and only one of them can serve a customer.
+
+| Route | Kind | Published rate, per million tokens in / out |
+|---|---|---|
+| GPT-5.6 Luna, OpenAI API | Metered API | $0.20 / $1.20 |
+| Gemini 3.8 Flash, Gemini API | Metered API | $0.75 / $3.75 promotional, $1.50 / $7.50 after |
+| Muse Spark 1.3, OpenCode Zen | Metered API | $1.25 / $4.25 |
+| Muse Spark 1.3, OpenCode Go CLI | Subscription seat | Not usable: one seat, one subscriber per workspace, dollar-capped per model |
+| GPT-5.6 Luna, Codex CLI | Subscription seat | Not usable: bills a ChatGPT subscription, not the API |
+
+Only the metered rows can carry customer work. The subscription rows are the founder's own tooling, and `shared/managed-usage.ts` already refuses them in code: `payerForRoute` returns `refused` for a personal subscription, because it "pays for one person, under that person's terms. It is not company inventory." Rates were read from the providers' own pricing pages on 2026-09-19 and will drift; they are recorded to make the comparison, not to be quoted.
+
+**The escalation ladder.** Measured against Luna as the unit, a stronger model costs roughly ten times as much (GPT-5.6 Terra, $2 / $12), twenty times (GPT-5.6 Sol, $4 / $20) or fifty times (GPT-6 Astra, $10 / $50); Anthropic's ladder runs from Haiku 4.5 at $1 / $5 to Fable 5.1 at $10 / $50. At Luna's rate the $0.10 per-request ceiling buys roughly half a million input tokens, so the ceiling is comfortable on the primary agents and is the binding constraint on the strong ones. That is the intended shape: the ladder is available, and it is the thing the ceiling stops.
+
+**Contributor is a data decision, not a usage tier (correction, 2026-09-19).** The owner's direction described the Muse Spark 1.3 Contributor tier as what a customer moves to for more usage. The effect is real — contributor tokens are roughly an order of magnitude cheaper, so from a dollar-capped seat they do buy far more work. The mechanism is not a plan upgrade: OpenCode documents the Contributor suffix as discounted pricing **in exchange for permission to train future models on your prompts and completions**, and limits availability by the model owner's geographic policy. That makes it a customer data decision under Pillar 09, which requires an explicit organization choice and excludes data the organization has no authority to contribute. It stays where the next paragraph already puts it: an opt-in that is not offered yet, never a default, and never applied to customer work without that choice.
 
 **Data-contributing routes (owner direction, not yet offered).** An organization may later be offered an explicit opt-in to a data-contributing route, such as the Muse Spark 1.3 Contributor tier, in exchange for roughly ten times the included requests. Private processing stays the default (Pillar 09), the opt-in never reaches data the organization has no authority to contribute, and nothing about it is published or sold until that tier's terms have been read and the choice exists in the product.
 
