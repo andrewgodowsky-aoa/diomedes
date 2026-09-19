@@ -576,9 +576,13 @@ test('F17, F20-F22: surface switches preserve data; visible pages meet copy and 
     if (frame === page.mainFrame()) reloads += 1;
   });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  // Detail is the person's own setting, and moving to the Console leaves it
+  // alone. It used to be forced to 'technical' here, which is exactly what made
+  // the setting unreachable for anybody who worked in the Console.
+  const detailBeforeConsole = (await page.locator('html').getAttribute('data-detail')) ?? '';
   await page.getByRole('radio', { name: /^The Console\b/ }).click();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
+  await expect(page.locator('html')).toHaveAttribute('data-detail', detailBeforeConsole);
   await page
     .getByRole('navigation', { name: 'Open projects' })
     .getByRole('button', { name: /Harbor Street/ })
@@ -748,9 +752,11 @@ test('Draft recovery: Settings, reload and same-named files in separate projects
   await editor.fill(draftA);
   await expect(page.getByText('Unsaved changes', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  // Same rule as above: the surface changes, the detail level does not.
+  const detailAcrossSurfaces = (await page.locator('html').getAttribute('data-detail')) ?? '';
   await page.getByRole('radio', { name: /^The Console\b/ }).click();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
+  await expect(page.locator('html')).toHaveAttribute('data-detail', detailAcrossSurfaces);
   await tabs.getByRole('button', { name: first.name, exact: true }).click();
   await expect(page.locator('.console')).toBeVisible();
   await page.getByRole('button', { name: 'Interface detail menu' }).click();

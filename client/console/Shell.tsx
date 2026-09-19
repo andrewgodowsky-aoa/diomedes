@@ -1407,8 +1407,20 @@ export function Shell({
               // Stopped by session, not by task. The session stop route reads
               // the session and takes the task from it, so a restore is never
               // blocked by a task id this view could not name.
+              //
+              // Not through `perform`: it reports a failure and swallows it, so
+              // a stop that did not happen would look like one that did, and
+              // History would go straight on to a restore that meets the same
+              // 409 with nothing said about why. This rejects, and the dialog
+              // says what went wrong. Busy is still held for the same window.
               onStopWork={async (work) => {
-                await stopSession(work.sessionId);
+                setBusy(true);
+                try {
+                  await api(`${base}/work/${work.sessionId}/stop`, 'POST', {});
+                  await load();
+                } finally {
+                  setBusy(false);
+                }
               }}
             />
           </section>
