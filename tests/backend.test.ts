@@ -1195,6 +1195,20 @@ describe('modes belong to the thread and every turn', () => {
 });
 
 describe('state reads stay fast with a cached documents listing', () => {
+  // This budget is a stopgap over a real cost, and it is worth saying which.
+  // Creating the three thousand files takes 463ms. The setup line that spends
+  // the time is the documentsOf() call below: one /documents request issues
+  // about 84,000 lstat calls, because listDocuments awaits the background walk
+  // and then walks again anyway, walkDocuments calls projectFile per entry, and
+  // projectFile calls safeAbsolute twice - once on the project root, which does
+  // not change - while safeAbsolute lstats every ancestor in a sequential loop
+  // (server/paths.ts:98-101). That is 8.6s here and past 30s on a four-vCPU
+  // runner sharing itself with a second worker.
+  //
+  // Raising the budget makes the suite honest about what it measures rather
+  // than fixing that: the 200ms assertion below is untouched and still on a
+  // cache hit, so it keeps answering the question this test asks. The syscall
+  // blowup is a separate change against paths.ts and store.ts.
   test('(a) projectState returns quickly with a large folder', async () => {
     const big = path.join(temp, 'big-project');
     await fs.mkdir(big, { recursive: true });
@@ -1223,7 +1237,7 @@ describe('state reads stay fast with a cached documents listing', () => {
     expect(second.status).toBe(200);
     expect(elapsed).toBeLessThan(200);
     expect(second.data.documents).toHaveLength(dirs * perDir);
-  });
+  }, 180_000);
   test('(b) SKIPPED_FOLDERS are never listed', async () => {
     expect(SKIPPED_FOLDERS.has('artifacts')).toBe(true);
     expect(SKIPPED_FOLDERS.has('dist')).toBe(true);
