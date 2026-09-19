@@ -1213,6 +1213,25 @@ export function Shell({
                 >
                   The Console
                 </button>
+                {/* The button opening this menu is labelled "Interface detail
+                    menu" and held no detail control at all, because Detail was
+                    gated on the Workbook. It is kept now, so the label is true. */}
+                <p className="caption">Detail</p>
+                {(['guided', 'standard', 'technical'] as const).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={settings.detail === d}
+                    className={settings.detail === d ? 'on' : ''}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void saveSettings({ ...settings, detail: d });
+                    }}
+                  >
+                    {titleCase(d)}
+                  </button>
+                ))}
               </div>
             )}
           </div>
