@@ -698,6 +698,11 @@ test('Settings names a corrupt installation and a broken binding, and switches t
   page,
 }) => {
   const binds: unknown[] = [];
+  // Opening the installations must not take the app down with it: the panel's
+  // own toggle used to read a cleared event inside a state updater, which threw
+  // during render and emptied the window.
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
   await page.route('**/api/ai/bind', (route) => {
     binds.push(route.request().postDataJSON());
     return route.fulfill({ json: wire() });
@@ -763,6 +768,8 @@ test('Settings names a corrupt installation and a broken binding, and switches t
     await expect(managed.getByRole('button', { name: 'Use this installation', exact: true })).toBeVisible();
     // Nothing moved on its own: a different executable is used only on request.
     expect(binds).toHaveLength(0);
+    // The screen survived opening that panel.
+    expect(errors).toEqual([]);
   } finally {
     await page.unrouteAll({ behavior: 'wait' });
   }
@@ -971,21 +978,235 @@ test('Settings reports the stage a test failed at, and warns when a retry may be
   }
 });
 
-test('Settings shows a not-implemented test as an ordinary failure', async ({ page }) => {
-  await api('/ai/discover', 'POST', { consent: true });
-  await api('/ai/check/opencode', 'POST', {});
-  await api('/settings', 'PUT', {
-    surface: 'console',
-    services: { opencode: true, defaultEngine: 'opencode', opencodeModel: 'opencode/fixture-model' },
+test('Settings reads the stage a failed test carried with it, without a status re-read', async ({
+  page,
+}) => {
+  // The failure answers with the stage it stopped at, and the status payload
+  // served here carries no diagnostic at all. Whatever the card says about
+  // where this stopped therefore came from the error itself.
+  const tests: unknown[] = [];
+  await serveStatus(page, [wire()]);
+  await page.route('**/api/ai/test/opencode', (route) => {
+    tests.push(route.request().postDataJSON());
+    return route.fulfill({
+      status: 503,
+      json: {
+        error: 'The provider did not answer this request.',
+        code: 'PROVIDER_ERROR',
+        ambiguous: false,
+        stage: 'dispatch',
+      },
+    });
   });
-  await openEngines(page);
-  const section = setupSection(page);
-  await section.getByRole('button', { name: /^(Test this connection|Retry the test)$/ }).click();
-  await section.getByRole('button', { name: 'Send the test request', exact: true }).click();
-  await expect(section.getByRole('alert')).toContainText('Testing a connection is not available yet.');
-  // No stage was recorded, so none is invented.
-  await expect(section.getByText(/The last attempt stopped while/)).toHaveCount(0);
-  await expect(stateChip(page, 'test')).toContainText('Not tested');
+  try {
+    await openEngines(page);
+    const section = setupSection(page);
+    await expect(stateChip(page, 'test')).toContainText('Not tested');
+    await section.getByRole('button', { name: 'Test this connection', exact: true }).click();
+    await section.getByRole('button', { name: 'Send the test request', exact: true }).click();
+    await expect.poll(() => tests.length).toBe(1);
+    await expect(section.getByRole('alert')).toContainText(
+      'The provider did not answer this request.',
+    );
+    await expect(
+      section.getByText(/The last attempt stopped while sending the request/),
+    ).toContainText('The request reached the provider and did not finish.');
+    await expect(section.getByText(/sign in again/i)).toHaveCount(0);
+    // Not ambiguous, so no billing warning is invented.
+    await expect(section.getByText(/A retry may be billed again/)).toHaveCount(0);
+    await expect(stateChip(page, 'test')).toContainText('Not tested');
+    await expect(section.getByRole('button', { name: 'Retry the test', exact: true })).toBeVisible();
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+/**
+ * A native sign-in window Diomedes opened, through its three host states: the
+ * window is running, the window has ended and the host's own check has not
+ * landed, and the check has answered.
+ *
+ * Timing note for whoever runs this: the screen waits up to four seconds from
+ * the first status answer that reports the window gone, and reads status once a
+ * second. The phase is therefore flipped immediately after the waiting state is
+ * asserted, and `checkedAt` is computed inside the route handler so the
+ * re-checked payload is genuinely newer than the moment the wait began.
+ */
+test('Settings waits for the host check when a sign-in window ends, and never calls it signed in', async ({
+  page,
+}) => {
+  let phase: 'open' | 'ended' | 'rechecked' = 'open';
+  const stale = new Date(Date.now() - 600_000).toISOString();
+  await page.route('**/api/ai/status', (route) =>
+    route.fulfill({
+      json: {
+        connections: [
+          phase === 'rechecked'
+            ? wire({
+                signInWindow: 'idle',
+                checkedAt: new Date().toISOString(),
+                nextAction: 'enable',
+                detail: 'Native OpenCode Go account connected.',
+              })
+            : wire({
+                signInWindow: phase === 'open' ? 'running' : 'idle',
+                authentication: 'signed-out',
+                models: [],
+                checkedAt: stale,
+                nextAction: 'sign-in',
+                detail: 'Sign in to the native OpenCode Go account before using this route.',
+              }),
+        ],
+      },
+    }),
+  );
+  try {
+    await openEngines(page);
+    const section = setupSection(page);
+    // The window is open. The card says so and offers only to close it: no
+    // check to press, and no test to send through an account that is not there.
+    await expect(
+      section.getByText('A OpenCode sign-in window is open on this computer. Finish it there, or close it.'),
+    ).toBeVisible();
+    await expect(
+      section.getByRole('button', { name: 'Close sign-in window', exact: true }),
+    ).toBeVisible();
+    await expect(
+      section.getByRole('button', { name: 'Check sign-in and models', exact: true }),
+    ).toHaveCount(0);
+    await expect(section.getByRole('button', { name: /Sign in with/ })).toHaveCount(0);
+    await expect(section.getByRole('button', { name: /Test this connection/ })).toHaveCount(0);
+
+    // The window ended. That is not a sign-in: the host's own check has not
+    // answered yet, so the card is still waiting and the account still reads
+    // as it did before the window opened.
+    phase = 'ended';
+    await expect(
+      section.getByText('The OpenCode sign-in window closed. Diomedes is checking this service again.'),
+    ).toBeVisible();
+    await expect(stateChip(page, 'account')).toContainText('Not detected');
+    await expect(stateChip(page, 'account')).not.toContainText('Detected', { ignoreCase: false });
+    await expect(
+      section.getByRole('button', { name: 'Check sign-in and models', exact: true }),
+    ).toHaveCount(0);
+
+    // The check answered. What it said is what the card now shows, and the
+    // waiting line is gone.
+    phase = 'rechecked';
+    await expect(stateChip(page, 'account')).toContainText('Detected');
+    await expect(stateChip(page, 'models')).toContainText('1 listed');
+    await expect(section.getByText(/sign-in window/)).toHaveCount(0);
+    await expect(
+      section.getByRole('button', { name: 'Turn on for Diomedes', exact: true }),
+    ).toBeVisible();
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+test('Settings raises no alarm when a manual check collides with the host own check', async ({
+  page,
+}) => {
+  // REQUEST_ACTIVE means a check for this route is already running — which is
+  // exactly what the host starts for itself when a sign-in window ends. Nothing
+  // failed, so nothing is reported.
+  const checks: string[] = [];
+  await serveStatus(page, [
+    wire({ authentication: 'unknown', models: [], nextAction: 'check-connection' }),
+  ]);
+  await page.route('**/api/ai/check/opencode', (route) => {
+    checks.push(route.request().method());
+    return route.fulfill({
+      status: 503,
+      json: {
+        error: 'This service is already being checked. Wait for that check before starting another request.',
+        code: 'REQUEST_ACTIVE',
+        ambiguous: false,
+      },
+    });
+  });
+  try {
+    await openEngines(page);
+    const section = setupSection(page);
+    const check = section.getByRole('button', { name: 'Check sign-in and models', exact: true });
+    await check.click();
+    await expect.poll(() => checks.length).toBe(1);
+    await expect(check).toBeEnabled();
+    await expect(section.getByRole('alert')).toHaveCount(0);
+    await expect(section.getByText(/already being checked/)).toHaveCount(0);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+test('Settings sends a changed binding to the installations, not to a sign-in', async ({ page }) => {
+  let broken = false;
+  await page.route('**/api/ai/status', (route) =>
+    route.fulfill({
+      json: {
+        connections: [
+          broken
+            ? wire({
+                nextAction: 'repair',
+                repair: 'selected-changed',
+                binding: {
+                  id: systemCandidate.id,
+                  engine: 'opencode',
+                  path: systemCandidate.path,
+                  version: versions.opencode,
+                  sha256: 'd'.repeat(64),
+                  source: 'system',
+                  boundAt: new Date().toISOString(),
+                  origin: 'explicit',
+                },
+                candidates: [systemCandidate, managedCandidate],
+                recommendedCandidateId: managedCandidate.id,
+                detail: 'The installation you chose is no longer the one you chose.',
+              })
+            : wire(),
+        ],
+      },
+    }),
+  );
+  await page.route('**/api/ai/test/opencode', (route) => {
+    broken = true;
+    return route.fulfill({
+      status: 409,
+      json: {
+        error: 'The installation you chose has changed since you chose it.',
+        code: 'BINDING_CHANGED',
+        ambiguous: false,
+        stage: 'runtime-verification',
+      },
+    });
+  });
+  try {
+    await openEngines(page);
+    const section = setupSection(page);
+    await section.getByRole('button', { name: 'Test this connection', exact: true }).click();
+    await section.getByRole('button', { name: 'Send the test request', exact: true }).click();
+    await expect(section.getByRole('alert')).toContainText(
+      'The installation you chose has changed since you chose it.',
+    );
+    // The stage names the installation check, and the installations are open.
+    await expect(
+      section.getByText(/checking the version and integrity of the installation/),
+    ).toContainText('Check the installation, or install the compatible copy.');
+    await expect(section.getByText(/sign in/i)).toHaveCount(0);
+    // The installations opened themselves, both rows in the order sent.
+    await expect(section.locator('li.ai-candidate')).toHaveCount(2);
+    await expect(candidateRow(section, 1, managedCandidate.path)).toContainText(
+      "Diomedes's private copy",
+    );
+    await expect(
+      section.getByRole('button', {
+        name: 'Repair with a compatible copy for Diomedes',
+        exact: true,
+      }),
+    ).toBeVisible();
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
 });
 
 test('Settings separates how old a check is from what the route can do now', async ({ page }) => {
@@ -1064,10 +1285,33 @@ test('Settings renders a status payload that carries none of the optional fields
   }
 });
 
-test('Onboarding says the path it continues on is the local sample', async ({ page }) => {
+/**
+ * What continuing from the AI step is, in the three states a person can be in.
+ * Setup completion is not proof that a route works, so none of the three reads
+ * like another, and the scripted sample is never offered as a provider result.
+ */
+test('Onboarding says which of the three things continuing actually does', async ({ page }) => {
   const saved = await api<{ services?: Record<string, unknown> }>('/settings');
+  const verifiedAt = new Date().toISOString();
+  const receipt = {
+    engine: 'opencode',
+    revision: 1,
+    candidateId: managedCandidate.id,
+    version: versions.opencode,
+    accountRoute: 'opencode:opencode-go',
+    model: 'opencode/fixture-model',
+    runId: 'run-fixture',
+    buildId: 'build-fixture',
+    verifiedAt,
+  };
+  let tested = false;
+  await page.route('**/api/ai/status', (route) =>
+    route.fulfill({
+      json: { connections: [wire(tested ? { verification: receipt } : { nextAction: 'enable' })] },
+    }),
+  );
   try {
-    await serveStatus(page, [wire({ nextAction: 'enable' })]);
+    // Nothing usable: the local sample, said as the sample it is.
     await api('/settings', 'PUT', {
       services: {},
       onboarding: { resumeAt: 'ai', completedAt: null },
@@ -1076,13 +1320,18 @@ test('Onboarding says the path it continues on is the local sample', async ({ pa
     await expect(
       page.getByRole('heading', { name: 'Connect an AI service', exact: true }),
     ).toBeVisible();
+    const actions = page.locator('.setup-actions');
     await expect(
-      page.getByRole('button', { name: 'Continue with the local sample', exact: true }),
+      actions.getByRole('button', { name: 'Continue with the local sample', exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByText('Sample work is scripted on this computer. It is not proof that a provider answered.'),
+      page.getByText(
+        'Sample work is scripted on this computer. It is not proof that a provider answered.',
+      ),
     ).toBeVisible();
-    // A selected, switched-on route is what the app actually continues on.
+
+    // Selected and switched on, and nothing has been sent through it. The
+    // control says so, and the test is offered beside it.
     await api('/settings', 'PUT', {
       services: {
         opencode: true,
@@ -1090,16 +1339,96 @@ test('Onboarding says the path it continues on is the local sample', async ({ pa
         opencodeModel: 'opencode/fixture-model',
       },
     });
-    await page.reload();
-    await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
+    await page.goto(baseURL);
     await expect(
-      page.getByRole('button', { name: 'Continue with the local sample', exact: true }),
+      actions.getByRole('button', { name: 'Continue without testing', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('This connection has not answered a real request yet.'),
+    ).toBeVisible();
+    await expect(
+      actions.getByRole('button', { name: 'Continue with the local sample', exact: true }),
     ).toHaveCount(0);
+    // That control reveals the one consent the card owns; it sends nothing.
+    await actions.getByRole('button', { name: 'Test this connection', exact: true }).click();
+    await expect(setupSection(page).getByText(/one small synthetic request/)).toBeVisible();
+
+    // A result through this binding: plain Continue, and no sample sentence.
+    tested = true;
+    await page.goto(baseURL);
+    await expect(actions.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
+    await expect(
+      actions.getByRole('button', { name: /Continue without testing|local sample/ }),
+    ).toHaveCount(0);
+    await expect(page.getByText('Diomedes will use the service you tested.')).toBeVisible();
+    await expect(page.getByText(/Sample work is scripted/)).toHaveCount(0);
   } finally {
     await page.unrouteAll({ behavior: 'wait' });
     await api('/settings', 'PUT', {
       services: (saved.services ?? {}) as Record<string, unknown>,
       onboarding: { resumeAt: 'done', completedAt: new Date().toISOString() },
+    });
+  }
+});
+
+/**
+ * The thread menu and the setup screen answer the same question the same way.
+ * This account is real, signed in and lists models, and it is on an account
+ * route this adapter does not use — the one case where "OpenCode is connected"
+ * and "this route can run" come apart.
+ */
+test('The thread picker refuses a route whose account is on another route', async ({ page }) => {
+  const saved = await api<{ services?: Record<string, unknown> }>('/settings');
+  let issue = true;
+  await page.route('**/api/ai/status', (route) =>
+    route.fulfill({
+      json: {
+        connections: [
+          wire(
+            issue
+              ? {
+                  nextAction: 'explain-account-route',
+                  routeIssue: { required: 'opencode-go', connected: ['zen'] },
+                }
+              : {},
+          ),
+        ],
+      },
+    }),
+  );
+  try {
+    await api('/settings', 'PUT', {
+      surface: 'console',
+      openProjects: [project.id],
+      services: {
+        opencode: true,
+        defaultEngine: 'opencode',
+        opencodeModel: 'opencode/fixture-model',
+      },
+      onboarding: { resumeAt: 'done', completedAt: new Date().toISOString() },
+    });
+    await page.goto(baseURL);
+    await expect(page.locator('.console')).toBeVisible();
+    const picker = page.locator('.model-picker > button');
+    await picker.click();
+    const menu = page.getByRole('menu');
+    // Not offered, and the menu says which of the reasons it is.
+    await expect(menu.getByRole('menuitemradio')).toHaveCount(0);
+    await expect(
+      menu.getByText(/the account it reported is not the one this route uses/),
+    ).toBeVisible();
+
+    // The same account on the route this adapter does use is offered.
+    issue = false;
+    await page.keyboard.press('Escape');
+    await picker.click();
+    await expect(
+      menu.getByRole('menuitemradio').filter({ hasText: 'opencode/fixture-model' }),
+    ).toBeVisible();
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+    await api('/settings', 'PUT', {
+      services: (saved.services ?? {}) as Record<string, unknown>,
     });
   }
 });

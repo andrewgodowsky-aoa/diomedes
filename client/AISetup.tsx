@@ -711,7 +711,13 @@ export function AIConnections({ settings, busy, onConnections, openTest }: AICon
                     aria-label={`${name} model`}
                     value={chosen}
                     disabled={selecting[engine] || busy}
-                    onChange={(e) => setChoices((prev) => ({ ...prev, [engine]: e.target.value }))}
+                    onChange={(e) => {
+                      // Read now, not inside the updater: the updater can run
+                      // after this handler has returned and the event has been
+                      // cleared, and a render that throws takes the app down.
+                      const slug = e.target.value;
+                      setChoices((prev) => ({ ...prev, [engine]: slug }));
+                    }}
                   >
                     {c.models.map((m) => (
                       <option key={m.slug} value={m.slug} title={m.description}>
@@ -797,9 +803,14 @@ export function AIConnections({ settings, busy, onConnections, openTest }: AICon
                 <details
                   className="ai-candidates"
                   open={installsOpen[engine] === true}
-                  onToggle={(e) =>
-                    setInstallsOpen((prev) => ({ ...prev, [engine]: e.currentTarget.open }))
-                  }
+                  onToggle={(e) => {
+                    // React clears the event's currentTarget once this handler
+                    // returns, and the updater below can run later than that.
+                    // Reading it in there threw during render and, with no
+                    // boundary above this screen, emptied the window.
+                    const open = e.currentTarget.open;
+                    setInstallsOpen((prev) => ({ ...prev, [engine]: open }));
+                  }}
                 >
                   <summary>{`Installations on this computer (${candidates.length})`}</summary>
                   {candidates.length === 0 ? (
