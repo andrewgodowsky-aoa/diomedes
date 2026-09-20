@@ -204,10 +204,17 @@ export function AIConnections({
   // While a window is open, or its check has not landed, read status on a
   // timer. The timer exists only for as long as something is waiting on it, and
   // the unmount above stops the reads it starts.
-  const waiting = Object.keys(watches).length > 0;
+  //
+  // A route that gave up waiting stays in the map so the same window cannot
+  // start it over, so what keeps this timer alive is a live wait, not an entry.
+  const waiting = Object.values(watches).some(signingIn);
   useEffect(() => {
     if (!waiting) return;
     const timer = setInterval(() => {
+      // The clock first, and on its own rows. The budget is time, so a
+      // `GET /ai/status` that keeps failing — and never reaches the fold on its
+      // success path — must not be what decides how long the card waits.
+      setWatches((prev) => advanceWatches(prev, [], Date.now()));
       void refreshStatus();
     }, SIGN_IN_POLL_MS);
     return () => clearInterval(timer);
@@ -217,7 +224,9 @@ export function AIConnections({
   // closed. A route that never opened one — the separate OMP profile — keeps
   // the instructions it was given.
   useEffect(() => {
-    const open = Object.keys(watches);
+    const open = Object.entries(watches)
+      .filter(([, watch]) => signingIn(watch))
+      .map(([engine]) => engine);
     const settled = watched.current.filter((engine) => !open.includes(engine));
     watched.current = open;
     if (settled.length === 0) return;
@@ -485,6 +494,15 @@ export function AIConnections({
 
   async function login(engine: ExternalEngine): Promise<void> {
     const controller = new AbortController();
+    // The person asking again is what begins a new wait. A route whose last
+    // wait was given up on keeps that state until this click or until a check
+    // answers, so nothing else can arm the gate on their behalf.
+    setWatches((prev) => {
+      if (!(engine in prev)) return prev;
+      const next = { ...prev };
+      delete next[engine];
+      return next;
+    });
     inFlight.current.add(controller);
     setLoginBusy((prev) => ({ ...prev, [engine]: true }));
     setOpError((prev) => ({ ...prev, [engine]: null }));

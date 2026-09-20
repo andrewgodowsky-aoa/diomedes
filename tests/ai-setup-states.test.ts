@@ -4,6 +4,7 @@ import type { EngineCandidate, EngineConnection, SetupDiagnostic } from '../shar
 import {
   NOT_SIGNING_IN,
   SIGN_IN_SETTLE_MS,
+  SIGN_IN_WINDOW_MS,
   advanceSignIn,
   advanceWatches,
   attemptFailure,
@@ -421,9 +422,44 @@ describe('waiting on a native sign-in window', () => {
     expect(advanceSignIn(settling, stale, opened + 1_000 + SIGN_IN_SETTLE_MS - 1).state).toBe(
       'checking',
     );
-    expect(advanceSignIn(settling, stale, opened + 1_000 + SIGN_IN_SETTLE_MS)).toEqual(
-      NOT_SIGNING_IN,
+    // The budget is spent and no check ever answered. The card takes its
+    // controls back, and the person is told that rather than left with a
+    // silently settled card.
+    const spent = advanceSignIn(settling, stale, opened + 1_000 + SIGN_IN_SETTLE_MS);
+    expect(signingIn(spent)).toBe(false);
+    expect(signInSentence(spent, 'OpenCode')).toBe(
+      'Diomedes could not confirm the OpenCode sign-in. Check it again.',
     );
+  });
+
+  it('ends a window that is never reported closed, and does not begin it again', () => {
+    const watching = advanceSignIn(undefined, open, opened);
+    // Still open one tick before the bound, over at it.
+    expect(signingIn(advanceSignIn(watching, open, opened + SIGN_IN_WINDOW_MS - 1))).toBe(true);
+    const spent = advanceSignIn(watching, open, opened + SIGN_IN_WINDOW_MS);
+    expect(signingIn(spent)).toBe(false);
+    // The same window is still open, and it must not arm a second wait on the
+    // next poll: that would hide the card's controls again for another budget,
+    // for ever, without the person asking for anything.
+    expect(signingIn(advanceSignIn(spent, open, opened + SIGN_IN_WINDOW_MS + 1_000))).toBe(false);
+  });
+
+  it('ends a wait the host answers, even after that wait was given up on', () => {
+    const watching = advanceSignIn(undefined, open, opened);
+    const stale = { ...ended, checkedAt: CHECKED };
+    // The window closed, and then nothing answered for a minute.
+    const settling = advanceSignIn(watching, stale, opened + 1_000);
+    const spent = advanceSignIn(settling, stale, opened + 60_000);
+    expect(signingIn(spent)).toBe(false);
+    // A check that answered after this wait began clears it altogether, so the
+    // line about an unconfirmed sign-in goes when the record moves on.
+    const answered = advanceSignIn(
+      spent,
+      { ...ended, checkedAt: new Date(opened + 61_000).toISOString() },
+      opened + 61_100,
+    );
+    expect(answered).toEqual(NOT_SIGNING_IN);
+    expect(signInSentence(answered, 'OpenCode')).toBe('');
   });
 
   it('gives a second window its own wait, so the first check cannot answer for it', () => {

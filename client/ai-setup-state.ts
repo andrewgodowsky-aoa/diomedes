@@ -367,8 +367,15 @@ export function routeIssueSentences(c: EngineConnection, name: string): string[]
  * an account: `'checking'` lasts until the host's check has written a newer
  * `checkedAt` than the moment this wait began, or until the wait times out, and
  * only then does the card go back to saying what the record says.
+ *
+ * `'unconfirmed'` is a wait that spent its budget without an answer. It is not
+ * `'idle'`: the card takes its controls back, and it also says so, because a
+ * wait that simply vanished would leave the person to guess whether the
+ * sign-in worked. It is kept per route so the same window that is still open
+ * cannot start the wait over on the next poll; the person's own next sign-in
+ * clears it, and so does any check that answers after the wait began.
  */
-export type SignInState = 'idle' | 'open' | 'checking';
+export type SignInState = 'idle' | 'open' | 'checking' | 'unconfirmed';
 
 export interface SignInWatch {
   readonly state: SignInState;
@@ -385,8 +392,33 @@ export const SIGN_IN_POLL_MS = 1_000;
  * not a tick count, so an unrelated status read cannot spend the budget.
  */
 export const SIGN_IN_SETTLE_MS = 4_000;
+/**
+ * How long a window the host reports open is waited on before the card takes
+ * its controls back. A sign-in the person walked away from, a window they left
+ * sitting behind another, a host that stopped answering: none of them may hide
+ * this route's next action for the rest of the session.
+ */
+export const SIGN_IN_WINDOW_MS = 10 * 60_000;
 
 export const NOT_SIGNING_IN: SignInWatch = { state: 'idle', startedAtMs: 0, endedAtMs: null };
+
+/**
+ * The clock's own answer, owing nothing to a payload. Every wait here is
+ * bounded by time, so a status read that never succeeds — the host busy, the
+ * loopback port taken, the machine asleep — spends the same budget a successful
+ * one would. This is what the card folds on its timer as well as on an answer.
+ */
+function timedOut(watch: SignInWatch, nowMs: number): SignInWatch {
+  if (watch.state === 'open')
+    return nowMs - watch.startedAtMs >= SIGN_IN_WINDOW_MS
+      ? { state: 'unconfirmed', startedAtMs: watch.startedAtMs, endedAtMs: watch.endedAtMs }
+      : watch;
+  if (watch.state !== 'checking') return watch;
+  const endedAtMs = watch.endedAtMs ?? watch.startedAtMs;
+  return nowMs - endedAtMs >= SIGN_IN_SETTLE_MS
+    ? { state: 'unconfirmed', startedAtMs: watch.startedAtMs, endedAtMs }
+    : watch;
+}
 
 /** One status answer, folded into what this route is waiting on. */
 export function advanceSignIn(
@@ -396,28 +428,40 @@ export function advanceSignIn(
 ): SignInWatch {
   const current = watch ?? NOT_SIGNING_IN;
   // A payload from before sign-in windows were reported says nothing about one,
-  // so it neither starts nor ends a wait.
-  if (c.signInWindow === undefined) return current;
-  if (c.signInWindow === 'running')
-    return {
-      state: 'open',
-      // One start while one window stays open. A second window opened before
-      // the first one's check landed begins its own wait, so that check cannot
-      // settle this one and answer for a sign-in it never saw.
-      startedAtMs: current.state === 'open' ? current.startedAtMs : nowMs,
-      endedAtMs: null,
-    };
+  // so it neither starts nor ends a wait. It cannot hold one open either: the
+  // budget is time, and the time passed whether or not this row described it.
+  if (c.signInWindow === undefined) return timedOut(current, nowMs);
+  if (c.signInWindow === 'running') {
+    // A wait already given up on is not begun again by the same window still
+    // being open. Starting over here would hide this card's next action for
+    // another whole budget without the person asking for anything.
+    if (current.state === 'unconfirmed') return current;
+    // One start while one window stays open. A second window opened before
+    // the first one's check landed begins its own wait, so that check cannot
+    // settle this one and answer for a sign-in it never saw.
+    const startedAtMs = current.state === 'open' ? current.startedAtMs : nowMs;
+    return timedOut({ state: 'open', startedAtMs, endedAtMs: null }, nowMs);
+  }
   if (current.state === 'idle') return NOT_SIGNING_IN;
   const endedAtMs = current.endedAtMs ?? nowMs;
   const observed = c.checkedAt === null ? Number.NaN : Date.parse(c.checkedAt);
   // The host's check answered after this wait began: whatever it says is now
-  // what the card shows, signed in or not.
+  // what the card shows, signed in or not. This is also the one thing that
+  // clears a wait that was given up on, so the line about it goes when the
+  // record moves on.
   if (Number.isFinite(observed) && observed > current.startedAtMs) return NOT_SIGNING_IN;
-  if (nowMs - endedAtMs >= SIGN_IN_SETTLE_MS) return NOT_SIGNING_IN;
-  return { state: 'checking', startedAtMs: current.startedAtMs, endedAtMs };
+  if (current.state === 'unconfirmed') return current;
+  return timedOut({ state: 'checking', startedAtMs: current.startedAtMs, endedAtMs }, nowMs);
 }
 
-/** The same fold across a whole status payload. Settled routes leave the map. */
+/**
+ * The same fold across a whole status payload. Settled routes leave the map.
+ *
+ * A route the payload does not mention — and every route, when the payload is
+ * the empty one a failed read leaves behind — still has the clock applied to
+ * it. That is what makes this safe to run on the card's own timer: the wait
+ * ends on time whether or not `GET /ai/status` ever answers again.
+ */
 export function advanceWatches(
   previous: Readonly<Record<string, SignInWatch>>,
   connections: readonly EngineConnection[],
@@ -425,7 +469,7 @@ export function advanceWatches(
 ): Record<string, SignInWatch> {
   const next: Record<string, SignInWatch> = {};
   for (const [engine, watch] of Object.entries(previous))
-    if (watch.state !== 'idle') next[engine] = watch;
+    if (watch.state !== 'idle') next[engine] = timedOut(watch, nowMs);
   for (const c of connections) {
     const value = advanceSignIn(next[c.engine], c, nowMs);
     if (value.state === 'idle') delete next[c.engine];
@@ -434,14 +478,19 @@ export function advanceWatches(
   return next;
 }
 
-/** A window in play suspends this card's own next action. */
+/**
+ * A window in play suspends this card's own next action. A wait that spent its
+ * budget does not: the controls come back, and the sentence below says why.
+ */
 export function signingIn(watch: SignInWatch | undefined): boolean {
-  return watch !== undefined && watch.state !== 'idle';
+  return watch !== undefined && (watch.state === 'open' || watch.state === 'checking');
 }
 
-/** What the card says while a window is open, and while its check lands. */
+/** What the card says while a window is open, while its check lands, and after. */
 export function signInSentence(watch: SignInWatch | undefined, name: string): string {
   if (!watch || watch.state === 'idle') return '';
+  if (watch.state === 'unconfirmed')
+    return `Diomedes could not confirm the ${name} sign-in. Check it again.`;
   return watch.state === 'open'
     ? `The ${name} sign-in window is open on this computer. Finish it there, or close it.`
     : `The ${name} sign-in window closed. Diomedes is checking this service again.`;
