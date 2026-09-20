@@ -305,6 +305,15 @@ describe('OpenCode 1.18.4 authenticated text route', () => {
     expect(connected.every((value) => /^[a-z0-9][a-z0-9._-]{0,63}$/i.test(value))).toBe(true);
     expect(connected.join(' ')).not.toContain('@');
   });
+  it.each(['ok', 'none', 'zero-models', 'zen'])(
+    'answers the account-route field for %s so a resolved issue cannot survive a recheck',
+    async (mode) => {
+      const { adapter } = await fixture(mode);
+      // A caller that merges one inspection over the last needs the key to be
+      // present, or a route issue the person has since fixed stays on screen.
+      expect('routeIssue' in (await adapter.inspect())).toBe(true);
+    },
+  );
   it('names an unsigned Go account rather than a missing model before dispatch', async () => {
     const { adapter } = await fixture('none');
     await expect(adapter.generate(request)).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });

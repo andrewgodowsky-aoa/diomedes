@@ -514,17 +514,22 @@ export class OpenCodeAdapter implements TextEngineAdapter {
           routeIssue: { required: OPENCODE_ACCOUNT_ROUTE, connected: list.reported },
           detail: `This route runs on the native OpenCode Go account (${OPENCODE_ACCOUNT_ROUTE}). OpenCode reported other connected providers, which this route does not use.`,
         };
+      // The field is answered either way. A caller that merges this over the
+      // last answer would otherwise keep reporting a route issue the person
+      // has since resolved, because an absent key overwrites nothing.
       if (!list.connected)
         return {
           authentication: 'signed-out',
           accountRoute: null,
           models: [],
+          routeIssue: undefined,
           detail: 'Sign in to the native OpenCode Go account before using this route.',
         };
       return {
         authentication: 'signed-in',
         accountRoute: OPENCODE_ACCOUNT_ROUTE,
         models: list.models,
+        routeIssue: undefined,
         detail: list.models.length
           ? 'Native OpenCode Go account connected. Choose an explicit provider/model.'
           : 'OpenCode Go reported no usable models.',
