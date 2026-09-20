@@ -51,3 +51,35 @@ html[data-motion='reduced'] .console .crow.arrived {
     animation-duration: 120ms;
   }
 }
+
+/* ---- a view arriving --------------------------------------------------------
+   One entrance for the whole Console: the screen the rail just opened, and the
+   Projects page, rise 6 px into place as they fade in. It runs on the arriving
+   element alone (nothing is animated out, so nothing waits on it), it is
+   opacity and transform only, and it leaves no transform behind: a lingering
+   transform would make the screen the containing block for every fixed
+   popover inside it. The keyframes are styles.css's `dm-view-in`. */
+.console .screen.on,
+.console.home .home-col {
+  animation: dm-view-in var(--dm-t-extend) cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* A menu opens from the control that owns it. */
+.console .pmenu.open {
+  animation: dm-menu-in var(--dm-t-quick) cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top right;
+}
+.console .everything .pmenu.open {
+  transform-origin: bottom left;
+}
+@keyframes dm-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+/* Reduced motion keeps the fade and drops the movement, as above. */
+html[data-motion='reduced'] .console .screen.on,
+html[data-motion='reduced'] .console.home .home-col,
+html[data-motion='reduced'] .console .pmenu.open {
+  animation: dm-fade-in 120ms linear;
+}

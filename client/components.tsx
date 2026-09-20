@@ -621,9 +621,9 @@ export function HelperLine({
   return (
     <p className="caption helper-line">
       {switchedOn ? (
-        <span>
-          {switchedOn.name} is on. {switchedOn.disclosure[0]}
-        </span>
+        // The disclosure names the service and the account itself; "X is on" in
+        // front of it said the same thing twice (standing decision 4).
+        <span>{switchedOn.disclosure[0]}</span>
       ) : signedIn ? (
         <>
           <span>{signedIn.name} is signed in but turned off.</span>

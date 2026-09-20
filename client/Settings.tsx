@@ -24,7 +24,6 @@ import {
   tightestWindow,
   detailDescriptions,
   meterLine,
-  surfaceDescriptions,
   surfaceOf,
   titleCase,
 } from './components';
@@ -233,34 +232,8 @@ export function SettingsPage({
             {section === 'Interface detail' && (
               <>
                 <p className="prose">
-                  Choose how Diomedes lays out your work and how much detail it shows you about
-                  each change.
+                  Choose how much detail Diomedes shows you about each change.
                 </p>
-                <h2>Surface</h2>
-                <div className="radio-list">
-                  {(['workbook', 'console'] as const).map((s) => (
-                    <label key={s} className={`radio-row ${surface === s ? 'selected' : ''}`}>
-                      <input
-                        type="radio"
-                        name="settings-surface"
-                        checked={surface === s}
-                        onChange={() =>
-                          void save({
-                            ...settings,
-                            surface: s,
-                            ...(s === 'workbook' && settings.detail === 'technical'
-                              ? { detail: 'standard' }
-                              : {}),
-                          })
-                        }
-                      />
-                      <span>
-                        <strong>The {titleCase(s)}</strong>
-                        <span className="caption">{surfaceDescriptions[s]}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
                 {/* Detail stands on its own. It was gated on the Workbook, and
                     choosing a level also wrote `surface: 'workbook'`, so picking
                     one from the Console moved you out of it. Both are gone: this
@@ -282,13 +255,6 @@ export function SettingsPage({
                     </label>
                   ))}
                 </div>
-                <section className="block">
-                  <h3>Same work, two surfaces</h3>
-                  <p className="prose">
-                    Documents, tasks, approvals and History stay in place when you switch. Every
-                    decision is still yours.
-                  </p>
-                </section>
               </>
             )}
             {(section === 'Helpers on this computer' || section === 'Engines') && (

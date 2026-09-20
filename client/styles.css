@@ -1396,10 +1396,8 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   padding: 10px 16px;
   background: var(--dm-well);
   border: 1px solid var(--dm-rule);
-  border-left: 4px solid var(--dm-fault);
 }
 .feedback {
-  border-left-color: var(--dm-done);
   z-index: 18;
 }
 .feedback > span:nth-child(2),
@@ -1409,7 +1407,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 /* A fallback is not a fault, and it sits above the error bar rather than under it. */
 .error-bar.appearance-notice {
   bottom: 76px;
-  border-left-color: var(--dm-signal);
 }
 .error-bar .button,
 .feedback .button {
@@ -3101,5 +3098,150 @@ select {
   .document-row > .caption {
     white-space: normal;
     flex-shrink: 1;
+  }
+}
+
+/* ===========================================================================
+   One design language (docs/implementation/2026-09-20-console-design-language.md)
+
+   The shared controls below are drawn outside the Console too: in Settings, in
+   every dialog, in first-run setup. They take the Console's shape so a person
+   never crosses from a rounded screen into a square one.
+
+   Shape: --r (6 px) for containers, --rb (5 px) for controls. Nothing square,
+   nothing pill; the 8 px point is the only circle.
+   Lines: a hairline separates regions. Inside a region a group is made by space
+   and a hover fill. No accent stripe on a box: the point carries the state.
+   Motion: --dm-t-quick for a control answering the pointer, --dm-t-extend for a
+   view arriving. Opacity and transform only. Reduced motion zeroes the tokens.
+   =========================================================================== */
+input,
+textarea,
+select {
+  border-radius: var(--rb);
+  transition: border-color var(--dm-t-quick) var(--dm-ease);
+}
+input:hover:not(:disabled),
+textarea:hover:not(:disabled),
+select:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--dm-text-3) 70%, transparent);
+}
+input[type='radio'] {
+  border-radius: 50%;
+}
+input[type='range'] {
+  transition: none;
+}
+.button {
+  border-radius: var(--rb);
+  transition:
+    background var(--dm-t-quick) var(--dm-ease),
+    border-color var(--dm-t-quick) var(--dm-ease),
+    color var(--dm-t-quick) var(--dm-ease);
+}
+.text-button,
+.rail-link,
+.folder-browser > button,
+.search-results > button {
+  border-radius: var(--rb);
+}
+.rail-link {
+  transition:
+    background var(--dm-t-quick) var(--dm-ease),
+    color var(--dm-t-quick) var(--dm-ease);
+}
+.radio-row,
+.folder-browser,
+.account-menu {
+  border-radius: var(--r);
+}
+.radio-row {
+  transition:
+    background var(--dm-t-quick) var(--dm-ease),
+    border-color var(--dm-t-quick) var(--dm-ease);
+}
+/* A dialog is the Console's menu box at a larger size: one hairline all round,
+   the container radius, and the menu's own shadow. The accent stripe across
+   its top is gone; nothing about a dialog is a state. */
+.dialog {
+  border: 1px solid var(--dm-rule);
+  border-radius: var(--r);
+  box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.9);
+}
+.dialog[open] {
+  animation: dm-dialog-in var(--dm-t-extend) cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dialog[open]::backdrop {
+  animation: dm-fade-in var(--dm-t-extend) var(--dm-ease);
+}
+/* The notice carries its state in its point, which it already has; the 4 px
+   stripe down its left edge said the same thing a second time and is gone. */
+.error-bar,
+.feedback {
+  border-radius: var(--r);
+  box-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.85);
+  animation: dm-notice-in var(--dm-t-extend) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Settings: the rail's spine and the reading column's margin rule were two
+   more verticals beside the two that already divide the regions. */
+.settings-layout .rail::before,
+.settings-layout .reading::before {
+  display: none;
+}
+.settings-layout .rail {
+  padding-inline: 8px;
+}
+/* The current section reads the way the Console rail's current view does: a
+   filled row, not a point on a spine that is no longer there. */
+.settings-layout .rail-link {
+  padding-left: 12px;
+}
+.settings-layout .rail-link.active {
+  background: var(--dm-raised);
+}
+.settings-layout .rail-link.active::before {
+  display: none;
+}
+
+/* The strip lives inside the frame on the Projects page and Settings, exactly
+   where the Shell draws its own, so the frame becomes a column under it. */
+.page-frame.with-strip {
+  display: flex;
+  flex-direction: column;
+}
+.page-frame.with-strip > .settings-layout,
+.page-frame.with-strip > .console.home {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+}
+/* A view arriving: Settings changing section, or Settings itself opening. */
+.page-frame.with-strip > .settings-layout .reading,
+.page-frame.with-strip > .settings-layout .margin {
+  animation: dm-view-in var(--dm-t-extend) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dm-view-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes dm-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dm-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+@keyframes dm-notice-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
   }
 }

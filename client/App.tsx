@@ -13,19 +13,19 @@ import {
   Brand,
   Button,
   Empty,
-  HelperLine,
   Icon,
   Mark,
   Modal,
   UsageChip,
   askDraftKey,
-  date,
   pages,
   surfaceOf,
   tightestWindow,
   titleCase,
 } from './components';
 import { Shell } from './console/Shell';
+import { Home } from './console/Home';
+import { TopStrip } from './console/TopStrip';
 import { DesignCenter } from './console/DesignCenter';
 import { MarkGlyph } from './console/Mark';
 import { Setup } from './Setup';
@@ -505,6 +505,22 @@ export function App() {
           ? ''
           : 'Ready when you are.';
 
+  // The frozen Workbook keeps its own frozen bar, and nobody reaches it from the
+  // interface any more. Everything a person sees wears the Console's strip:
+  // Shell draws its own inside a project, and TopStrip draws the same one over
+  // the Projects page and Settings.
+  const legacyChrome = surface === 'workbook';
+  const stripShown = !consoleActive && !legacyChrome;
+  // The strip speaks only when there is news. "Ready when you are." narrated a
+  // state the empty strip already shows (standing decision 4).
+  const stripStatus = !online
+    ? { state: 'fault' as const, text: status }
+    : needs
+      ? { state: 'waiting' as const, text: status }
+      : running
+        ? { state: 'working' as const, text: status }
+        : null;
+
   const loaded = settings !== null && initialLoaded;
   const reduced =
     settings?.appearance.motion === 'reduced' ||
@@ -556,7 +572,7 @@ export function App() {
           <Setup settings={settings} save={saveSettings} busy={busy} />
         ) : (
           <>
-            {!consoleActive && (
+            {!consoleActive && legacyChrome && (
               <header className="top-bar">
                 <button
                   className="brand-button"
@@ -633,26 +649,6 @@ export function App() {
                     </Button>
                     {account && (
                       <div className="account-menu">
-                        <p className="caption">Surface</p>
-                        {(['workbook', 'console'] as const).map((s) => (
-                          <button
-                            key={s}
-                            onClick={() => {
-                              void saveSettings({
-                                ...settings,
-                                surface: s,
-                                detail:
-                                  s === 'workbook' && settings.detail === 'technical'
-                                    ? 'standard'
-                                    : settings.detail,
-                              });
-                              setAccount(false);
-                            }}
-                          >
-                            <Mark state={s === surface ? 'working' : 'todo'} />
-                            {s === 'workbook' ? 'The Workbook' : 'The Console'}
-                          </button>
-                        ))}
                         {/* Not gated on a surface. Detail decides how much a change
                             card spells out, which is the same question wherever the
                             card is shown, so all three levels are offered here. */}
@@ -676,8 +672,36 @@ export function App() {
               </header>
             )}
             <div
-              className={`page-frame ${needs && current?.status?.needsYou ? 'needs-attention' : ''} ${!online ? 'disconnected' : ''}`}
+              className={`page-frame ${stripShown ? 'with-strip' : ''} ${needs && current?.status?.needsYou ? 'needs-attention' : ''} ${!online ? 'disconnected' : ''}`}
             >
+              {stripShown && (
+                <TopStrip
+                  projects={shownProjects}
+                  onProjects={!selected && !showSettings}
+                  settingsOpen={showSettings}
+                  settings={settings}
+                  saveSettings={saveSettings}
+                  onShowProjects={() => {
+                    setSelected(null);
+                    setShowSettings(false);
+                  }}
+                  onOpenProject={openProject}
+                  onToggleSettings={() => setShowSettings(!showSettings)}
+                  status={stripStatus}
+                  chip={
+                    chipVisible && activeIntegration && activeUsage ? (
+                      <UsageChip
+                        snapshot={activeUsage}
+                        name={activeIntegration.name}
+                        onOpen={() => {
+                          setShowSettings(true);
+                          setHelpersRequest((n) => n + 1);
+                        }}
+                      />
+                    ) : null
+                  }
+                />
+              )}
               {showSettings ? (
                 <SettingsPage
                   settings={settings}
@@ -740,194 +764,22 @@ export function App() {
                   online={online}
                 />
               ) : (
-                <main className="main projects-page">
-                  <header className="page-header">
-                    <h1>Projects</h1>
-                    <div className="actions push-right">
-                      <Button onClick={() => setProjectDialog('open')}>
-                        Open a folder as a project
-                      </Button>
-                      <Button tone="primary" onClick={() => setProjectDialog('new')}>
-                        <Icon name="plus" />
-                        New project
-                      </Button>
-                    </div>
-                  </header>
-                  <div className="workbook-layout home">
-                    <div className="reading">
-                      {projects.length ? (
-                        <>
-                          <section className="intents landing-ask" aria-label="Start here">
-                            <h2>What do you want to do?</h2>
-                            <textarea
-                              rows={2}
-                              aria-label="Ask, plan, or say what to do"
-                              placeholder={
-                                {
-                                  business:
-                                    'Ask about a supplier, plan a schedule, or say what to do',
-                                  school: 'Ask about a reading, plan the week, or say what to do',
-                                  software: 'Ask about the code, plan a change, or say what to do',
-                                  personal: 'Ask a question, plan something, or say what to do',
-                                  mix: 'Ask, plan, or say what to do',
-                                }[settings.onboarding.work ?? 'mix']
-                              }
-                              value={landingText}
-                              onChange={(e) => setLandingText(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (
-                                  e.key === 'Enter' &&
-                                  !e.shiftKey &&
-                                  !e.nativeEvent.isComposing
-                                ) {
-                                  e.preventDefault();
-                                  const target =
-                                    byRecency.find((p) => p.id === landingProjectId) ?? byRecency[0];
-                                  if (target) sendLandingAsk(landingText, target);
-                                }
-                              }}
-                            />
-                            <div className="landing-row">
-                              <label className="landing-project">
-                                <span className="caption">In project</span>
-                                <select
-                                  aria-label="In project"
-                                  value={landingProjectId ?? byRecency[0]?.id ?? ''}
-                                  onChange={(e) => setLandingProjectId(e.target.value)}
-                                >
-                                  {byRecency.map((p) => (
-                                      <option key={p.id} value={p.id}>
-                                        {p.name}
-                                      </option>
-                                    ))}
-                                </select>
-                              </label>
-                              <Button
-                                tone="primary"
-                                disabled={!landingText.trim()}
-                                onClick={() => {
-                                  const target =
-                                    byRecency.find((p) => p.id === landingProjectId) ?? byRecency[0];
-                                  if (target) sendLandingAsk(landingText, target);
-                                }}
-                              >
-                                Send
-                              </Button>
-                            </div>
-                          </section>
-                          <HelperLine
-                            integrations={integrations}
-                            settings={settings}
-                            saveSettings={saveSettings}
-                          />
-                          <div className="project-list">
-                            {[...projects]
-                              .sort(
-                                (a, b) =>
-                                  (b.status?.needsYou ? 1 : 0) - (a.status?.needsYou ? 1 : 0) ||
-                                  (b.lastOpenedAt || b.createdAt).localeCompare(
-                                    a.lastOpenedAt || a.createdAt,
-                                  ),
-                              )
-                              .map((p) => (
-                                <button
-                                  key={p.id}
-                                  className="project-row"
-                                  onClick={() => openProject(p)}
-                                >
-                                  <div>
-                                    <strong>{p.name}</strong>
-                                    {settings.detail === 'technical' && (
-                                      <span className="code caption">{p.folder}</span>
-                                    )}
-                                  </div>
-                                  <span className="dotted-leader" />
-                                  <span className="project-row-status">
-                                    {p.status?.needsYou ? (
-                                      <>
-                                        <Mark state="waiting" />
-                                        Needs your OK
-                                      </>
-                                    ) : p.status?.working ? (
-                                      <>
-                                        <Mark state="working" />
-                                        Working on {p.status.working} task
-                                      </>
-                                    ) : p.status?.tasksTotal ? (
-                                      `${p.status.tasksDone} of ${p.status.tasksTotal} tasks done`
-                                    ) : (
-                                      'Ready to begin'
-                                    )}
-                                  </span>
-                                  <span className="caption">
-                                    {date(p.lastOpenedAt || p.createdAt)}
-                                  </span>
-                                </button>
-                              ))}
-                          </div>
-                          <p className="caption">
-                            Projects are ordinary folders on this computer.
-                            {!projects.some((p) =>
-                              p.name.toLowerCase().includes('harbor street'),
-                            ) && (
-                              <>
-                                {' '}
-                                <button
-                                  className="text-button"
-                                  onClick={() => void sampleProject()}
-                                >
-                                  Try the sample project.
-                                </button>
-                              </>
-                            )}
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <div className="intent-rail">
-                            <button className="intent" onClick={() => setProjectDialog('new')}>
-                              <span className="pt" aria-hidden="true" />
-                              <span>
-                                <strong>New project</strong>
-                                <span>Start from an empty folder.</span>
-                              </span>
-                            </button>
-                            <button className="intent" onClick={() => setProjectDialog('open')}>
-                              <span className="pt" aria-hidden="true" />
-                              <span>
-                                <strong>Open a folder as a project</strong>
-                                <span>Use documents you already have.</span>
-                              </span>
-                            </button>
-                            <button className="intent" onClick={() => void sampleProject()}>
-                              <span className="pt" aria-hidden="true" />
-                              <span>
-                                <strong>Try the sample project</strong>
-                                <span>Three example documents to explore on this computer.</span>
-                              </span>
-                            </button>
-                          </div>
-                          <p className="prose">
-                            {
-                              {
-                                business:
-                                  "For example: a project for a restaurant's menus, suppliers and schedules.",
-                                school:
-                                  "For example: a project for this semester's courses, readings and deadlines.",
-                                software:
-                                  'For example: a project for a codebase, its plans and its history.',
-                                personal:
-                                  "For example: a project for a renovation, a trip, or a game you're building.",
-                                mix: "For example: one project per thing you're working on.",
-                              }[settings.onboarding.work ?? 'mix']
-                            }
-                          </p>
-                          <p className="caption">Projects are ordinary folders on this computer.</p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </main>
+                <Home
+                  projects={projects}
+                  byRecency={byRecency}
+                  settings={settings}
+                  integrations={integrations}
+                  saveSettings={saveSettings}
+                  text={landingText}
+                  onText={setLandingText}
+                  targetId={landingProjectId}
+                  onTarget={setLandingProjectId}
+                  onSend={sendLandingAsk}
+                  onOpenProject={openProject}
+                  onNewProject={() => setProjectDialog('new')}
+                  onOpenFolder={() => setProjectDialog('open')}
+                  onSample={() => void sampleProject()}
+                />
               )}
             </div>
           </>

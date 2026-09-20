@@ -528,7 +528,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
   async function codexStatus(): Promise<IntegrationStatus> {
     const status: IntegrationStatus = {
       id: 'codex',
-      name: 'Codex with ChatGPT',
+      name: 'ChatGPT',
       kind: 'online',
       found: true,
       available: false,
@@ -673,7 +673,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     const core =
       coreCache?.result ??
       Promise.resolve([
-        pending('codex', 'Codex with ChatGPT'),
+        pending('codex', 'ChatGPT'),
         pending('localai', 'LocalAI supervisor'),
       ]);
     const found = discoveryCache?.result ?? Promise.resolve(pendingDiscovery());

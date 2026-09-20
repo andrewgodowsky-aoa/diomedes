@@ -66,6 +66,8 @@
   background: var(--surface);
 }
 .console .everything .ev-row .ev-open {
+  /* The menu's 10 px gap is a column gap; stacked, it opened each row out. */
+  row-gap: 2px;
   flex: 1 1 auto;
   width: auto;
   min-width: 0;

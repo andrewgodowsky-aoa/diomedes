@@ -1198,29 +1198,6 @@ export function Shell({
             </button>
             {menuOpen && (
               <div className="pmenu open" role="menu">
-                <p className="caption">Surface</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void saveSettings({
-                      ...settings,
-                      surface: 'workbook',
-                      detail: settings.detail === 'technical' ? 'standard' : settings.detail,
-                    });
-                  }}
-                >
-                  The Workbook
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void saveSettings({ ...settings, surface: 'console' });
-                  }}
-                >
-                  The Console
-                </button>
                 {/* The button opening this menu is labelled "Interface detail
                     menu" and held no detail control at all, because Detail was
                     gated on the Workbook. It is kept now, so the label is true. */}

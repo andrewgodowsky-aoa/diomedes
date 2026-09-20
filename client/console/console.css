@@ -317,7 +317,7 @@ html[data-surface='console'] body {
   height: 1px;
   background: var(--hair-2);
 }
-.console .rail .foot button,
+.console .rail .foot > button,
 .console .rail .foot .ev-trigger {
   display: flex;
   width: 100%;
@@ -328,15 +328,15 @@ html[data-surface='console'] body {
   gap: 10px;
   align-items: baseline;
 }
-.console .rail .foot button:hover {
+.console .rail .foot > button:hover {
   background: var(--raised);
   color: var(--t1);
 }
-.console .rail .foot button.on {
+.console .rail .foot > button.on {
   color: var(--t1);
   background: var(--surface);
 }
-.console .rail .foot button .mono {
+.console .rail .foot > button .mono {
   margin-left: auto;
 }
 .console .rail .foot {
@@ -1455,7 +1455,7 @@ html[data-motion='reduced'] .console .modes .ind b {
     border-top: 0;
     border-left: 1px solid var(--hair);
   }
-  .console .rail .foot button,
+  .console .rail .foot > button,
   .console .rail .foot .ev-trigger {
     white-space: nowrap;
     min-height: 28px;
@@ -1710,4 +1710,72 @@ html[data-motion='reduced'] .console .modes .ind b {
   color: var(--t3);
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* ---- the strip outside a project (TopStrip.tsx) ----
+   The Projects page and Settings wear the same strip the Shell draws. This root
+   holds the strip and nothing else, so it takes the strip's height rather than
+   the stage's, and lets the detail menu fall outside it. */
+.console.strip-only {
+  height: auto;
+  flex: none;
+  display: block;
+  overflow: visible;
+  z-index: 6;
+}
+.console .strip-brand {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  border-radius: var(--rb);
+}
+.console .strip-brand:hover .dm-mark-word {
+  color: var(--t1);
+}
+.console .crumb button .mark {
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+.console .strip-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+}
+.console .strip-status > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.console .strip-status:empty {
+  display: none;
+}
+.console .top-right > button {
+  color: var(--t2);
+  padding: 3px 6px;
+  border-radius: var(--rb);
+  transition:
+    background var(--quick),
+    color var(--quick);
+}
+.console .top-right > button:hover {
+  color: var(--t1);
+  background: var(--raised);
+}
+.console .top-right > button.on {
+  color: var(--t1);
+  background: var(--surface);
+}
+/* The usage chip is the app's own control (styles.css); inside the strip it
+   keeps its meter and takes the strip's box. */
+.console .top-right .usage-chip {
+  min-height: 0;
+  padding: 3px 6px;
+  border-radius: var(--rb);
+  transition: background var(--quick);
+}
+.console .top-right .usage-chip:not(.static):hover {
+  background: var(--raised);
 }

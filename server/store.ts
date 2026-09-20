@@ -124,10 +124,13 @@ export function migrateConversation(
  * Settings written by an earlier build. The two surfaces were renamed - the
  * Book became the Workbook and the Desk the Console - and 'technical' detail
  * had already been retired into the second surface before that. Old values are
- * read forever and only the current ones are written, so a person who has been
- * running Diomedes does not land on a surface they did not choose.
+ * read forever. Since the Workbook left a person's reach they all resolve to
+ * the one surface there is, so nobody is stranded on one they cannot leave.
  */
-export function migrateSettings(settings: Settings): void {
+export function migrateSettings(
+  settings: Settings,
+  { atLaunch = true }: { atLaunch?: boolean } = {},
+): void {
   // Settings written before workspaces existed mean Personal, which is also
   // what a malformed value means: a stored reference is honoured only when the
   // membership behind it is still active, and this is not where that is decided.
@@ -145,11 +148,20 @@ export function migrateSettings(settings: Settings): void {
   settings.onboarding.setupVersion = 2;
   settings.onboarding.discoveryConsentAt ??= null;
   settings.onboarding.aiSkipped ??= false;
-  const stored = settings.surface as string | undefined;
-  if (stored === 'book') settings.surface = 'workbook';
-  else if (stored === 'desk' || stored === 'technical') settings.surface = 'console';
-  if (settings.surface === undefined)
-    settings.surface = settings.detail === 'technical' ? 'console' : 'workbook';
+  // The Workbook is retired from a person's reach (Andrew, 2026-09-19 and
+  // 2026-09-20): no control switches into it any more, so a stored choice of it
+  // would strand the person on a surface with no way out. Every stored value,
+  // old spelling or new, opens on the Console. The key itself is still accepted
+  // by the API for one more release, which is what keeps the legacy acceptance
+  // specs runnable until they are ported; nothing a person can click writes it.
+  //
+  // At launch only. The recovery reload further down re-reads this file in the
+  // middle of a session, and a running session's surface is not something a
+  // recovered transaction should move; there, only a missing value is filled.
+  if (atLaunch || settings.surface === undefined) settings.surface = 'console';
+  else if ((settings.surface as string) === 'book') settings.surface = 'workbook';
+  else if ((settings.surface as string) === 'desk' || (settings.surface as string) === 'technical')
+    settings.surface = 'console';
 }
 
 export const emptyTeam = (): TeamState => ({ members: [], messages: [], runs: [] });
@@ -424,7 +436,7 @@ export class Store extends EventEmitter {
     }
     await this.interruptUnpreparedApprovals();
     this.settings = await readJson(path.join(this.dataDir, 'settings.json'), defaults);
-    migrateSettings(this.settings);
+    migrateSettings(this.settings, { atLaunch: false });
     this.recoveryRequired = false;
   }
   async locked<T>(action: () => Promise<T>): Promise<T> {

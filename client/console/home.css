@@ -1,0 +1,226 @@
+/* The Projects page, in the Console's language. Every rule is prefixed with
+   `.console`; tokens only. The composer box, its bar and Send are console.css's
+   own rules, reused by class. What is here is the page's layout and its list.
+
+   Shape and line rules (docs/implementation/2026-09-20-console-design-language.md):
+   containers take --r, controls and rows take --rb, and inside a region a group
+   is made by space and a hover fill, never by a rule between rows. */
+
+/* This root holds a page and no strip: the strip is TopStrip's, above it. */
+.console.home {
+  grid-template-rows: minmax(0, 1fr);
+  background: var(--surface);
+}
+.console .home-scroll {
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-gutter: stable both-edges;
+}
+.console .home-col {
+  padding: 34px 0 56px;
+}
+
+.console .home-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+.console .home-head h1 {
+  margin: 0;
+  font: 500 var(--dm-type-title) / 1.25 var(--ui);
+  letter-spacing: -0.01em;
+}
+.console .home-actions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* The Console's bordered control: the box "Import files" uses in the Files pane. */
+.console .home-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t1);
+  font-weight: 500;
+  transition:
+    background var(--quick),
+    border-color var(--quick),
+    color var(--quick);
+}
+.console .home-btn:hover {
+  background: var(--raised);
+}
+/* One go-ahead per screen: --light text on a --light hairline, never a fill. */
+.console .home-btn.go {
+  color: var(--light);
+  border-color: color-mix(in srgb, var(--light) 55%, transparent);
+}
+.console .home-btn.go:hover {
+  background: color-mix(in srgb, var(--light) 8%, transparent);
+  border-color: var(--light);
+}
+
+.console .home-ask,
+.console .home-first {
+  margin-top: 30px;
+}
+.console .home-projects {
+  margin-top: 40px;
+}
+.console.home h2 {
+  margin: 0 0 12px;
+  font: 500 var(--dm-type-section) / 1.3 var(--ui);
+  letter-spacing: -0.005em;
+}
+.console .home-projects h2 {
+  font: 500 var(--dm-type-ui) / 1.4 var(--ui);
+  color: var(--t2);
+  letter-spacing: 0;
+  margin-bottom: 6px;
+}
+
+.console.home .composer textarea {
+  min-height: 72px;
+}
+.console.home .bar {
+  padding: 4px 8px 4px 14px;
+  min-height: 40px;
+}
+.console .home-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  white-space: nowrap;
+}
+/* A project name is a machine string in a fixed-width bar (decision 5). */
+.console .home-target select {
+  min-width: 0;
+  max-width: 32ch;
+  padding: 3px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  background: var(--surface);
+  color: var(--t1);
+  font: inherit;
+  text-overflow: ellipsis;
+  transition: border-color var(--quick);
+}
+.console .home-target select:hover {
+  border-color: color-mix(in srgb, var(--t3) 70%, transparent);
+}
+.console.home .helper-line {
+  margin: 10px 0 0;
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+}
+.console.home .helper-line .text-button {
+  color: var(--t1);
+  text-decoration: underline;
+  text-decoration-color: var(--hair-2);
+  text-underline-offset: 3px;
+}
+
+.console .home-list {
+  list-style: none;
+  /* The row's text sits on the column edge with the heading above it; the
+     hover box is what reaches 12 px into the gutter. */
+  margin: 0 -12px;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.console .home-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  align-items: baseline;
+  gap: 4px 20px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--rb);
+  text-align: left;
+  color: var(--t2);
+  transition:
+    background var(--quick),
+    color var(--quick);
+}
+.console .home-row:hover {
+  background: var(--raised);
+  color: var(--t1);
+}
+.console .home-row.first {
+  grid-template-columns: minmax(0, 1fr);
+}
+.console .home-name {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.console .home-name strong {
+  font-weight: 500;
+  color: var(--t1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A folder path never wraps a row open: one line, cut at the end, whole in the title. */
+.console .home-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .home-sub {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .home-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--dm-type-caption);
+  white-space: nowrap;
+}
+.console .home-status.attn {
+  color: var(--attn);
+}
+.console .home-when {
+  min-width: 6ch;
+  text-align: right;
+}
+.console .home-note {
+  margin: 14px 0 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .home-first .home-note:first-of-type {
+  margin: 0 0 14px;
+}
+.console .home-link {
+  color: var(--t1);
+  text-decoration: underline;
+  text-decoration-color: var(--hair-2);
+  text-underline-offset: 3px;
+  transition: text-decoration-color var(--quick);
+}
+.console .home-link:hover {
+  text-decoration-color: var(--t2);
+}
+
+@media (max-width: 640px) {
+  .console .home-col {
+    padding-top: 22px;
+  }
+  .console .home-row {
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
+  .console .home-when {
+    display: none;
+  }
+  .console.home .bar {
+    flex-wrap: wrap;
+  }
+}
