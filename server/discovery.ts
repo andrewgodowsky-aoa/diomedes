@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { AdapterState, IntegrationStatus, SignInState } from '../shared/types.js';
+import type { InstallationContext } from '../shared/engines.js';
 
 // Engine discovery: report what is installed on this computer and whether it
 // answers on loopback. Discovery never starts a service, never sends a model
@@ -38,6 +39,20 @@ export interface DiscoveryDeps {
 export interface DiscoveryResult {
   engines: IntegrationStatus[];
   codexInstalledVersion?: string;
+}
+
+/**
+ * One installation this computer offers for an engine. Enumeration reports
+ * every place a tool was found, not the first; `EngineService` resolves each
+ * one's real path, identity and version before anything may be selected.
+ */
+export interface DiscoveredInstallation {
+  engine: string;
+  path: string;
+  context: InstallationContext;
+}
+export interface EnumerationScope {
+  engine?: string;
 }
 
 interface SpawnCapture {
@@ -195,6 +210,14 @@ function knownFolders(deps: DiscoveryDeps): string[] {
   return folders;
 }
 
+/** `where` lists an extension-less shim before its .cmd twin; prefer what Node can run. */
+function rankHits(lines: string[]): string[] {
+  const hits = lines.map((line) => line.trim()).filter((line) => line.length > 0);
+  const rank = (candidate: string) =>
+    /\.exe$/i.test(candidate) ? 0 : /\.(cmd|bat)$/i.test(candidate) ? 1 : 2;
+  return [...hits].sort((a, b) => rank(a) - rank(b));
+}
+
 async function resolveBinary(name: string, deps: DiscoveryDeps): Promise<string | undefined> {
   let candidates: string[] = [];
   try {
@@ -202,11 +225,7 @@ async function resolveBinary(name: string, deps: DiscoveryDeps): Promise<string 
   } catch {
     candidates = [];
   }
-  const hits = candidates.map((line) => line.trim()).filter((line) => line.length > 0);
-  // `where` lists an extension-less shim before its .cmd twin; prefer what Node can run.
-  const rank = (candidate: string) =>
-    /\.exe$/i.test(candidate) ? 0 : /\.(cmd|bat)$/i.test(candidate) ? 1 : 2;
-  const hit = [...hits].sort((a, b) => rank(a) - rank(b))[0];
+  const hit = rankHits(candidates)[0];
   if (hit) return hit;
   for (const folder of knownFolders(deps)) {
     for (const suffix of ['.exe', '.cmd', '']) {
@@ -219,6 +238,93 @@ async function resolveBinary(name: string, deps: DiscoveryDeps): Promise<string 
     }
   }
   return undefined;
+}
+
+/**
+ * A Windows GUI process inherits the PATH its launcher had. A tool installed
+ * afterwards is invisible to `where` until the app restarts, so read the
+ * current user's own PATH from the registry as well. Read-only, through a
+ * native argument array, and the value is treated as data: it only ever names
+ * directories to look in.
+ */
+const userPaths = new WeakMap<DiscoveryDeps, Promise<string[]>>();
+async function userPathFolders(deps: DiscoveryDeps): Promise<string[]> {
+  if (deps.platform !== 'win32') return [];
+  let pending = userPaths.get(deps);
+  if (!pending) {
+    pending = (async () => {
+      const reg = path.join(
+        deps.env.SystemRoot ?? 'C:\\Windows',
+        'System32',
+        'reg.exe',
+      );
+      let result: RunResult;
+      try {
+        result = await deps.run(reg, ['query', 'HKCU\\Environment', '/v', 'Path']);
+      } catch {
+        return [];
+      }
+      if (result.timedOut || result.code !== 0) return [];
+      const line = result.stdout
+        .split(/\r?\n/)
+        .find((row) => /^\s*Path\s+REG_(EXPAND_)?SZ\s+/i.test(row));
+      if (!line) return [];
+      const value = line.replace(/^\s*Path\s+REG_(EXPAND_)?SZ\s+/i, '');
+      return value
+        .split(';')
+        .map((entry) =>
+          entry
+            .trim()
+            .replace(/%([^%]+)%/g, (whole, name: string) => deps.env[name] ?? whole),
+        )
+        .filter((entry) => entry.length > 0 && !/%/.test(entry))
+        .slice(0, 64);
+    })();
+    userPaths.set(deps, pending);
+  }
+  return pending;
+}
+
+/** Where an installation lives, from its path alone. Never a guess about an account. */
+export function installationContext(file: string, platform: NodeJS.Platform): InstallationContext {
+  if (/^\\\\wsl(\$|\.localhost)\\/i.test(file)) return 'wsl';
+  if (/[\\/](resources[\\/]app|Contents[\\/]Resources)[\\/]/i.test(file)) return 'desktop-app';
+  return platform === 'win32' ? 'windows-native' : 'posix-native';
+}
+
+/**
+ * Every installation of one tool this computer offers: PATH hits first, then
+ * the supported install locations, then the current user's registry PATH.
+ * A path a Windows shim could not carry without a shell is left out.
+ */
+async function enumerateBinary(name: string, deps: DiscoveryDeps): Promise<string[]> {
+  const found: string[] = [];
+  const seen = new Set<string>();
+  const add = (candidate: string) => {
+    if (deps.platform === 'win32' && /["&|<>^%!\r\n\0]/.test(candidate)) return;
+    const key = deps.platform === 'win32' ? candidate.toLowerCase() : candidate;
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push(candidate);
+  };
+  let hits: string[] = [];
+  try {
+    hits = await deps.which(name);
+  } catch {
+    hits = [];
+  }
+  for (const hit of rankHits(hits)) add(hit);
+  const folders = [...knownFolders(deps), ...(await userPathFolders(deps))];
+  for (const folder of folders)
+    for (const suffix of ['.exe', '.cmd', '']) {
+      const candidate = path.join(folder, `${name}${suffix}`);
+      try {
+        if (await deps.exists(candidate)) add(candidate);
+      } catch {
+        // A failed existence check is not evidence; keep looking.
+      }
+    }
+  return found;
 }
 
 function parseVersion(stdout: string, stderr: string): string | undefined {
@@ -561,8 +667,28 @@ export function emptyDiscovery(): DiscoveryResult {
 
 export function createDiscovery(overrides: Partial<DiscoveryDeps> = {}): {
   discover: () => Promise<DiscoveryResult>;
+  installations: (scope?: EnumerationScope) => Promise<DiscoveredInstallation[]>;
 } {
   const deps: DiscoveryDeps = { ...defaultDiscoveryDeps(), ...overrides };
+
+  /**
+   * Enumerate installations without running anything. Discovery reports what
+   * exists; only `EngineService` decides which copy a route may use, after it
+   * has resolved each one's real path, recorded its bytes and probed it.
+   */
+  async function installations(scope: EnumerationScope = {}) {
+    const rows: DiscoveredInstallation[] = [];
+    for (const spec of BINARY_SPECS) {
+      if (scope.engine && spec.id !== scope.engine) continue;
+      for (const file of await enumerateBinary(spec.binary, deps).catch(() => []))
+        rows.push({
+          engine: spec.id,
+          path: file,
+          context: installationContext(file, deps.platform),
+        });
+    }
+    return rows;
+  }
 
   // One probe at a time: never a burst of child processes, and one hanging
   // probe delays the rest instead of piling up beside them.
@@ -580,5 +706,5 @@ export function createDiscovery(overrides: Partial<DiscoveryDeps> = {}): {
     }
   }
 
-  return { discover };
+  return { discover, installations };
 }

@@ -573,3 +573,107 @@ describe('Windows launcher shims', () => {
     expect(commandFor('C:\\x\\agent.cmd', ['--version', '& calc'])).toBeUndefined();
   });
 });
+
+describe('installation enumeration for candidate binding', () => {
+  it('reports every PATH hit and every known-folder hit for one engine, deduplicated', async () => {
+    const folder = path.join(TEST_ENV.USERPROFILE, '.local', 'bin', 'opencode.exe');
+    const discovery = createDiscovery(
+      fakeDeps({
+        which: async (name) =>
+          name === 'opencode'
+            ? [
+                'C:\\first\\opencode.exe',
+                'C:\\FIRST\\OpenCode.exe',
+                'D:\\second\\opencode.exe',
+              ]
+            : [],
+        exists: async (candidate) => candidate === folder,
+      }),
+    );
+    const found = await discovery.installations({ engine: 'opencode' });
+    expect(found.map((row) => row.path)).toEqual([
+      'C:\\first\\opencode.exe',
+      'D:\\second\\opencode.exe',
+      folder,
+    ]);
+    expect(found.every((row) => row.engine === 'opencode')).toBe(true);
+    expect(found.every((row) => row.context === 'windows-native')).toBe(true);
+  });
+
+  it('scopes enumeration to one engine and leaves the others unprobed', async () => {
+    const asked: string[] = [];
+    const discovery = createDiscovery(
+      fakeDeps({
+        which: async (name) => {
+          asked.push(name);
+          return [];
+        },
+      }),
+    );
+    await discovery.installations({ engine: 'cursor' });
+    expect(asked).toEqual(['agent']);
+    asked.length = 0;
+    await discovery.installations();
+    expect(asked).toEqual(['claude', 'opencode', 'omp', 'agent', 'devin']);
+  });
+
+  it('reads the current user PATH from the registry so a tool installed after launch is found', async () => {
+    const installed = path.join(
+      TEST_ENV.LOCALAPPDATA,
+      'Programs',
+      'newly',
+      'claude.exe',
+    );
+    const queried: { file: string; args: string[] }[] = [];
+    const discovery = createDiscovery(
+      fakeDeps({
+        which: async () => [],
+        run: async (file, args) => {
+          queried.push({ file, args });
+          if (/reg\.exe$/i.test(file))
+            return okRun(
+              '\r\nHKEY_CURRENT_USER\\Environment\r\n' +
+                '    Path    REG_EXPAND_SZ    %LOCALAPPDATA%\\Programs\\newly;D:\\other\r\n\r\n',
+            );
+          return okRun('');
+        },
+        exists: async (candidate) => candidate === installed,
+      }),
+    );
+    const found = await discovery.installations({ engine: 'claude-code' });
+    expect(found.map((row) => row.path)).toEqual([installed]);
+    // Read through a native argument array: no shell, and no user text in a command line.
+    expect(queried[0].args).toEqual(['query', 'HKCU\\Environment', '/v', 'Path']);
+  });
+
+  it('names a WSL or desktop-application installation as what it is', async () => {
+    const discovery = createDiscovery(
+      fakeDeps({
+        which: async (name) =>
+          name === 'devin'
+            ? [
+                '\\\\wsl.localhost\\Ubuntu\\home\\a\\.local\\bin\\devin',
+                'C:\\Users\\test\\AppData\\Local\\Programs\\Devin\\resources\\app\\bin\\devin.exe',
+              ]
+            : [],
+      }),
+    );
+    const found = await discovery.installations({ engine: 'devin' });
+    // A runnable executable ranks first; neither is presented as a native Windows CLI.
+    expect(found.map((row) => row.context)).toEqual(['desktop-app', 'wsl']);
+  });
+
+  it('never enumerates a path a shell would have to interpret', async () => {
+    const discovery = createDiscovery(
+      fakeDeps({
+        which: async (name) =>
+          name === 'omp'
+            ? ['C:\\bad\\o&calc\\omp.exe', 'C:\\Program Files\\ünï\\omp.exe']
+            : [],
+      }),
+    );
+    const found = await discovery.installations({ engine: 'oh-my-pi' });
+    // Spaces and non-ASCII are ordinary; a metacharacter a shim would expand is not.
+    expect(found.map((row) => row.path)).toEqual(['C:\\Program Files\\ünï\\omp.exe']);
+  });
+});
