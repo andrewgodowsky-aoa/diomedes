@@ -382,22 +382,35 @@ export class EngineService {
     // observed — sign-in, models, when it was last checked — does not. A
     // decision this build cannot read survives as the repair it is, so nothing
     // downstream mistakes it for a route nobody has chosen yet.
-    for (const engine of EXTERNAL_ENGINES) {
-      if (this.bindings.unreadable(engine)) {
-        this.connections.set(engine, {
-          ...blank(engine),
-          repair: 'record-unreadable',
-          detail: repairDetail(engine, 'record-unreadable', 'found'),
-        });
-        continue;
-      }
-      const stored = this.bindings.get(engine);
-      if (!stored) continue;
-      this.connections.set(engine, {
+    for (const engine of EXTERNAL_ENGINES) this.connections.set(engine, this.recorded(engine));
+  }
+  /** What a route is before anything on this computer has been observed about it. */
+  private recorded(engine: ExternalEngine): EngineConnection {
+    if (this.bindings.unreadable(engine))
+      return {
         ...blank(engine),
-        binding: stored.binding,
-        revision: stored.revision,
-      });
+        repair: 'record-unreadable',
+        detail: repairDetail(engine, 'record-unreadable', 'found'),
+      };
+    const stored = this.bindings.get(engine);
+    if (!stored) return blank(engine);
+    return { ...blank(engine), binding: stored.binding, revision: stored.revision };
+  }
+  /**
+   * Read a record an earlier fault denied, before anything reads what it says.
+   * A reader that held the file for a moment must not cost the person every
+   * route until they restart, so the refusal it left behind is re-derived here
+   * — from this pass's inventory where there is one, and from the record alone
+   * otherwise, because a route nobody has looked for yet is not a route that
+   * is missing.
+   */
+  private reread() {
+    if (!this.bindings.refresh()) return;
+    for (const engine of EXTERNAL_ENGINES) {
+      if (this.connections.get(engine)!.repair !== 'record-unreadable') continue;
+      if (this.bindings.unreadable(engine)) continue;
+      if (this.scanned.has(engine)) this.apply(engine, { discovered: false });
+      else this.save(this.recorded(engine));
     }
   }
   status(): EngineConnection[] {
@@ -598,6 +611,7 @@ export class EngineService {
         'CONSENT_REQUIRED',
         'Confirm the local discovery disclosure before checking this computer.',
       );
+    this.reread();
     const key = scope.engine ?? '*';
     const active = this.scans.get(key);
     if (active) return active;
@@ -825,6 +839,7 @@ export class EngineService {
     return sameSubject && !succeeded.includes(old.diagnostic.stage) ? old.diagnostic : null;
   }
   async check(engine: ExternalEngine, signal?: AbortSignal): Promise<EngineConnection> {
+    this.reread();
     if (this.checks.has(engine))
       throw new EngineError(
         'REQUEST_ACTIVE',

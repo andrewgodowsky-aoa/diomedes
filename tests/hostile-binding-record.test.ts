@@ -266,6 +266,53 @@ describe('a damaged binding record', () => {
       );
   });
 
+  it('stops refusing the route once the record can be read again, without a restart', async () => {
+    // A scan or a backup holding the record open while Diomedes starts is a
+    // fact about that moment and about nothing else. It used to wedge all five
+    // routes until the application was restarted, because the record was never
+    // read again; now the next look at this computer reads it.
+    const serviceRoot = root();
+    const theirs = place(path.join(root(), 'chosen', 'opencode.exe'), 'the copy they picked');
+    const first = host({ system: [{ file: theirs }], service: serviceRoot });
+    await first.service.discover(true);
+    const chosen = connection(first.service).recommendedCandidateId!;
+    await first.service.bind('opencode', chosen);
+    first.service.close();
+
+    const file = bindingsFile(serviceRoot);
+    const real = fs.readFileSync;
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((target: unknown, ...rest: unknown[]) => {
+      if (String(target) === file)
+        throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+      return (real as (...args: unknown[]) => unknown)(target, ...rest);
+    }) as typeof fs.readFileSync);
+    const second = host({ system: [{ file: theirs }], service: serviceRoot });
+    for (const engine of ['opencode', 'claude-code'] as const)
+      expect(second.service.status().find((row) => row.engine === engine)!.repair).toBe(
+        'record-unreadable',
+      );
+    vi.restoreAllMocks();
+
+    await second.service.discover(true);
+    const value = connection(second.service);
+    expect(value.repair ?? null).toBeNull();
+    expect(value.binding).toMatchObject({ id: chosen, origin: 'explicit' });
+    // The other four routes stop claiming a record nobody can read too. What
+    // they report instead is whatever this computer actually holds for them.
+    expect(
+      second.service.status().find((row) => row.engine === 'claude-code')!.repair ?? null,
+    ).not.toBe('record-unreadable');
+    // And the route runs on the choice that was there all along.
+    await second.service.check('opencode');
+    await expect(
+      second.service.generate('opencode', ask(second.accountRoute)),
+    ).resolves.toMatchObject({ text: 'Answer' });
+    // The record was never moved aside: nothing about it was ever damaged.
+    expect(fs.readdirSync(serviceRoot).filter((name) => name.startsWith('bindings.json.'))).toEqual(
+      [],
+    );
+  });
+
   it('reads a route with no row of its own in an intact document as never chosen', async () => {
     const h = await damaged(() => {});
     await h.service.discover(true);

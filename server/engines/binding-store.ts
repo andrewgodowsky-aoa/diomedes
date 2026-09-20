@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { ExternalEngine } from '../../shared/types.js';
 import { EXTERNAL_ENGINES, type EngineBinding } from '../../shared/engines.js';
+import { EngineError } from './process.js';
 
 /**
  * The installation a person chose for a route, and the semantic revision that
@@ -80,6 +81,13 @@ export class BindingStore {
   private readonly damaged = new Set<ExternalEngine>();
   /** Whether the file on disk is one this build could not fully read. */
   private damagedFile = false;
+  /**
+   * Whether the file could not be read at all. A document that was read and
+   * not understood and a file that was never read are different facts: the
+   * first is evidence about its contents, the second is evidence about
+   * nothing, so no part of it may be moved aside or written over.
+   */
+  private unread = false;
   constructor(readonly root: string) {
     this.file = path.join(root, FILE);
     this.load();
@@ -88,17 +96,42 @@ export class BindingStore {
     this.damaged.add(engine);
     this.damagedFile = true;
   }
+  /**
+   * Read the record, waiting out a reader that denies it for the same bounded
+   * clock the write spends. On Windows a scan or a backup holds a file open
+   * for a moment, and one such moment used to cost every route its choice for
+   * the rest of the session.
+   */
+  private text(): { bytes: string } | { absent: true } | { denied: true } {
+    const deadline = Date.now() + RENAME_RETRY_BUDGET_MS;
+    for (;;) {
+      try {
+        return { bytes: fs.readFileSync(this.file, 'utf8') };
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        // Nothing to read and something that cannot be read are different facts.
+        if (code === 'ENOENT' || code === 'ENOTDIR') return { absent: true };
+        if (!code || !RENAME_RETRY_CODES.has(code) || Date.now() + RENAME_RETRY_PAUSE_MS > deadline)
+          return { denied: true };
+        pause(RENAME_RETRY_PAUSE_MS);
+      }
+    }
+  }
   private load() {
-    let text: string;
-    try {
-      text = fs.readFileSync(this.file, 'utf8');
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      // Nothing to read and something that cannot be read are different facts.
-      if (code === 'ENOENT' || code === 'ENOTDIR') return;
-      for (const engine of EXTERNAL_ENGINES) this.damage(engine);
+    this.rows.clear();
+    this.damaged.clear();
+    this.damagedFile = false;
+    this.unread = false;
+    const read = this.text();
+    if ('absent' in read) return;
+    if ('denied' in read) {
+      // Every route waits, because what each one chose is unknown — but
+      // nothing here is damaged, and nothing may be set aside on its strength.
+      this.unread = true;
+      for (const engine of EXTERNAL_ENGINES) this.damaged.add(engine);
       return;
     }
+    const text = read.bytes;
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
@@ -157,6 +190,34 @@ export class BindingStore {
   unreadable(engine: ExternalEngine): boolean {
     return this.damaged.has(engine);
   }
+  /**
+   * Whether every part of the record is one this build read as written. A
+   * revision a check merely observed is held rather than written while this is
+   * false, so no observation ever moves an unreadable record aside.
+   */
+  intact(): boolean {
+    return !this.unread && this.damaged.size === 0;
+  }
+  /**
+   * Try the read again for a record an earlier fault denied, and answer
+   * whether that changed anything. A transient denial must not need a restart
+   * to clear, so the routes that read it call this before they read it.
+   */
+  refresh(): boolean {
+    if (!this.unread) return false;
+    this.load();
+    return !this.unread;
+  }
+  /**
+   * Move a row in memory without touching the record on disk, for a revision
+   * that was observed rather than chosen. The next explicit choice writes it
+   * along with that choice. Only reachable while some row is unreadable, and
+   * never while the file itself is unread, because then there is no row to
+   * move.
+   */
+  hold(engine: ExternalEngine, value: StoredBinding) {
+    this.rows.set(engine, structuredClone(value));
+  }
   save(engine: ExternalEngine, value: StoredBinding) {
     this.change(engine, () => {
       this.rows.set(engine, structuredClone(value));
@@ -177,6 +238,7 @@ export class BindingStore {
    * would find.
    */
   private change(engine: ExternalEngine, apply: () => void) {
+    this.recover();
     const previous = this.rows.get(engine);
     const wasDamaged = this.damaged.has(engine);
     apply();
@@ -188,6 +250,24 @@ export class BindingStore {
       if (wasDamaged) this.damaged.add(engine);
       throw error;
     }
+  }
+  /**
+   * A record this build has not read is not a record it may replace. The read
+   * is tried again first, because the reader that denied it is usually gone a
+   * moment later; a read that still fails refuses the save, rather than
+   * setting aside, or writing over, a file whose contents nobody has seen —
+   * which would take every other route's choice with it.
+   */
+  private recover() {
+    if (!this.unread) return;
+    this.load();
+    if (this.unread)
+      throw new EngineError(
+        'RECORD_UNREADABLE',
+        'Diomedes could not read the record of the installations you chose, so it did not replace it. Close anything scanning this folder, then choose again.',
+        false,
+        'runtime-verification',
+      );
   }
   /**
    * Put the replacement on disk, in the one order that never leaves a person
