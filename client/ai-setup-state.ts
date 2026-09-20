@@ -61,8 +61,12 @@ export function connected(c: EngineConnection): boolean {
 
 /** The four states the audit asks for, each said in its own words. */
 export function setupStates(c: EngineConnection): SetupState[] {
+  // Found is not usable. A wrong-version, changed or corrupt copy is present
+  // and still cannot run, and the strip says which of those it is.
+  const usableInstallation =
+    c.installation === 'found' && c.compatibility !== 'unsupported' && !c.repair;
   const installation: StateValue =
-    c.installation === 'not-checked' ? 'unknown' : c.installation === 'found' ? 'yes' : 'no';
+    c.installation === 'not-checked' ? 'unknown' : usableInstallation ? 'yes' : 'no';
   const account: StateValue =
     c.authentication === 'signed-in' ? 'yes' : c.authentication === 'signed-out' ? 'no' : 'unknown';
   const models: StateValue = c.models.length > 0 ? 'yes' : c.checkedAt === null ? 'unknown' : 'no';
@@ -72,13 +76,17 @@ export function setupStates(c: EngineConnection): SetupState[] {
       label: 'Installation',
       value: installation,
       text:
-        c.installation === 'found'
-          ? 'Found'
-          : c.installation === 'corrupt'
-            ? 'Found, failed its integrity check'
-            : c.installation === 'missing'
-              ? 'Not found'
-              : 'Not checked',
+        c.installation === 'corrupt'
+          ? 'Found, failed its integrity check'
+          : c.installation === 'missing'
+            ? 'Not found'
+            : c.installation === 'not-checked'
+              ? 'Not checked'
+              : c.compatibility === 'unsupported'
+                ? 'Found, unsupported version'
+                : c.repair
+                  ? 'Found, needs repair'
+                  : 'Found',
     },
     {
       key: 'account',

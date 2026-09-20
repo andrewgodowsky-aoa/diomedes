@@ -485,7 +485,7 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
               <p className="caption ai-route">{routeCaption(engine)}</p>
               <ul className="ai-states" aria-label={`${name} setup state`}>
                 {states.map((state) => (
-                  <li className={`ai-state is-${state.value}`} key={state.key}>
+                  <li className={`ai-state is-${state.value}`} data-state={state.key} key={state.key}>
                     <span className="ai-state-label">{state.label}</span>
                     <span className="ai-state-value">{state.text}</span>
                   </li>
@@ -540,7 +540,9 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
                       ? 'Checking…'
                       : primary.intent === 'install' && offerLoading[engine]
                         ? 'Reading…'
-                        : primary.label}
+                        : primary.intent === 'test' && failure
+                          ? 'Retry the test'
+                          : primary.label}
                   </Button>
                 )}
                 {primary.intent !== 'check' && (

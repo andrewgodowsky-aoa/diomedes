@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import express from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -539,6 +539,548 @@ test('Console keeps the Codex sending preference and sample route separate from 
     expect(sent.at(-1)).toMatchObject({ route: scenario.route, mode: scenario.mode, consent: true });
   }
   await page.unrouteAll({ behavior: 'wait' });
+});
+
+/**
+ * First-run setup, one route at a time.
+ *
+ * These cases pin what the screen does with the host's own record: the one next
+ * action it renders, the four states it shows, how it explains a broken
+ * binding, a different account route and a failed stage, and that one real
+ * request is only ever sent by an explicit second click. The connection payload
+ * is served from `page.route` so a host state the fixture service cannot reach
+ * — a wrong-version installation, a corrupt one, two candidates — is still
+ * rendered by the real Console.
+ */
+const setupSection = (page: Page) => page.locator('section.service[aria-label="OpenCode"]');
+/** One of the four states, by the key it is derived from. */
+const stateChip = (page: Page, key: string) =>
+  setupSection(page).locator(`li.ai-state[data-state="${key}"]`);
+
+function wire(patch: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    engine: 'opencode',
+    installation: 'found',
+    compatibility: 'supported',
+    authentication: 'signed-in',
+    accountRoute: 'opencode:opencode-go',
+    models: [modelOf('opencode')],
+    checkedAt: new Date().toISOString(),
+    detail: 'Native OpenCode Go account connected.',
+    usage: { state: 'unknown', checkedAt: null },
+    version: versions.opencode,
+    location: 'C:\\Tools\\opencode.exe',
+    revision: 1,
+    nextAction: 'test-connection',
+    ...patch,
+  };
+}
+
+const systemCandidate = {
+  id: 'system:opencode:C:\\Tools\\opencode.exe',
+  engine: 'opencode',
+  source: 'system',
+  present: true,
+  path: 'C:\\Tools\\opencode.exe',
+  version: '1.19.0',
+  sha256: 'b'.repeat(64),
+  integrity: 'verified',
+  protocol: 'passed',
+  provenance: 'unverified',
+  context: 'windows-native',
+  compatibility: 'unsupported',
+};
+const managedCandidate = {
+  id: 'managed:opencode:C:\\Diomedes\\engines\\opencode\\opencode.exe',
+  engine: 'opencode',
+  source: 'managed',
+  present: true,
+  path: 'C:\\Diomedes\\engines\\opencode\\opencode.exe',
+  version: versions.opencode,
+  sha256: 'c'.repeat(64),
+  integrity: 'verified',
+  protocol: 'passed',
+  provenance: 'reviewed-release',
+  context: 'windows-native',
+  compatibility: 'supported',
+};
+
+async function serveStatus(page: Page, connections: Record<string, unknown>[]): Promise<void> {
+  await page.route('**/api/ai/status', (route) => route.fulfill({ json: { connections } }));
+}
+
+async function openEngines(page: Page): Promise<void> {
+  await page.goto(baseURL);
+  await expect(page.locator('.console')).toBeVisible();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Engines', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Engines', exact: true, level: 1 })).toBeVisible();
+}
+
+test('Settings offers the private compatible copy for a found but incompatible installation', async ({
+  page,
+}) => {
+  const installs: unknown[] = [];
+  await serveStatus(page, [
+    wire({
+      compatibility: 'unsupported',
+      authentication: 'unknown',
+      models: [],
+      version: '1.19.0',
+      nextAction: 'repair',
+      detail: 'The installed version is not the one this adapter was tested against.',
+    }),
+  ]);
+  await page.route('**/api/ai/install/opencode', (route) => {
+    if (route.request().method() === 'GET')
+      return route.fulfill({
+        json: {
+          engine: 'opencode',
+          publisher: 'Diomedes',
+          source: 'https://example.invalid/opencode-1.18.4.zip',
+          version: versions.opencode,
+          destination: 'C:\\Users\\fixture\\AppData\\Local\\Diomedes\\engines\\opencode',
+          dependencies: [],
+          privileges: 'No administrator rights are required.',
+          account: 'No account is needed to install this copy.',
+          available: true,
+          detail: 'A copy Diomedes installs for itself.',
+        },
+      });
+    installs.push(route.request().postDataJSON());
+    return route.fulfill({ json: { detail: 'Installed the private copy.' } });
+  });
+  try {
+    await openEngines(page);
+    const section = setupSection(page);
+    // Found is not usable, and the strip says which of the two it is.
+    await expect(stateChip(page, 'installation')).toContainText('Found, unsupported version');
+    // The defect this repairs: Install used to appear only when nothing was found.
+    const primary = section.getByRole('button', {
+      name: 'Repair with a compatible copy for Diomedes',
+      exact: true,
+    });
+    await expect(primary).toBeVisible();
+    expect(installs).toHaveLength(0);
+    await primary.click();
+    await expect(section.getByText('C:\\Users\\fixture\\AppData\\Local\\Diomedes\\engines\\opencode')).toBeVisible();
+    await expect(section.getByText(versions.opencode, { exact: true }).first()).toBeVisible();
+    await expect(
+      section.getByText(
+        'This copy belongs to Diomedes alone. It does not change, downgrade or remove your own installation, and it does not change PATH.',
+      ),
+    ).toBeVisible();
+    // Reading the offer sends nothing; only the confirmation does.
+    expect(installs).toHaveLength(0);
+    await section.getByRole('button', { name: 'Repair this installation', exact: true }).click();
+    await expect.poll(() => installs.length).toBe(1);
+    expect(installs[0]).toEqual({ consent: true });
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+test('Settings names a corrupt installation and a broken binding, and switches to neither', async ({
+  page,
+}) => {
+  const binds: unknown[] = [];
+  await page.route('**/api/ai/bind', (route) => {
+    binds.push(route.request().postDataJSON());
+    return route.fulfill({ json: wire() });
+  });
+  try {
+    await serveStatus(page, [
+      wire({
+        installation: 'corrupt',
+        authentication: 'unknown',
+        models: [],
+        nextAction: 'repair',
+        detail: 'The installation failed its integrity check.',
+      }),
+    ]);
+    await openEngines(page);
+    const section = setupSection(page);
+    await expect(stateChip(page, 'installation')).toContainText('Found, failed its integrity check');
+    await expect(
+      section.getByRole('button', {
+        name: 'Repair with a compatible copy for Diomedes',
+        exact: true,
+      }),
+    ).toBeVisible();
+
+    // A binding whose executable changed: named, repairable, never replaced.
+    await page.unroute('**/api/ai/status');
+    await serveStatus(page, [
+      wire({
+        authentication: 'unknown',
+        models: [],
+        nextAction: 'repair',
+        repair: 'selected-changed',
+        binding: {
+          id: systemCandidate.id,
+          engine: 'opencode',
+          path: systemCandidate.path,
+          version: versions.opencode,
+          sha256: 'd'.repeat(64),
+          source: 'system',
+          boundAt: new Date().toISOString(),
+          origin: 'explicit',
+        },
+        candidates: [systemCandidate, managedCandidate],
+        recommendedCandidateId: managedCandidate.id,
+        detail: 'The installation you chose is no longer the one you chose.',
+      }),
+    ]);
+    await page.reload();
+    await expect(stateChip(page, 'installation')).toContainText('Found, needs repair');
+    await expect(section.getByText(/has changed since you chose it/)).toContainText(
+      'C:\\Tools\\opencode.exe',
+    );
+    await section.locator('details.ai-candidates > summary').click();
+    // Both installations are shown; the bound one is still the bound one.
+    const own = section.locator('li.ai-candidate').filter({ hasText: systemCandidate.path });
+    const managed = section.locator('li.ai-candidate').filter({ hasText: managedCandidate.path });
+    await expect(own).toContainText('Your own installation');
+    await expect(own).toContainText('Your own copy; Diomedes did not verify its publisher.');
+    await expect(own).toContainText('Unsupported version');
+    await expect(own).toContainText('In use');
+    await expect(managed).toContainText("Diomedes's private copy");
+    await expect(managed.getByRole('button', { name: 'Use this installation', exact: true })).toBeVisible();
+    // Nothing moved on its own: a different executable is used only on request.
+    expect(binds).toHaveLength(0);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+test('Settings binds the installation a person chooses, and sends only its candidate id', async ({
+  page,
+}) => {
+  const binds: unknown[] = [];
+  await serveStatus(page, [
+    wire({
+      authentication: 'unknown',
+      models: [],
+      nextAction: 'choose-installation',
+      candidates: [systemCandidate, managedCandidate],
+      recommendedCandidateId: managedCandidate.id,
+      detail: 'Two installations were found. Choose the one this route uses.',
+    }),
+  ]);
+  await page.route('**/api/ai/bind', (route) => {
+    binds.push(route.request().postDataJSON());
+    return route.fulfill({
+      json: wire({
+        binding: {
+          id: managedCandidate.id,
+          engine: 'opencode',
+          path: managedCandidate.path,
+          version: versions.opencode,
+          sha256: managedCandidate.sha256,
+          source: 'managed',
+          boundAt: new Date().toISOString(),
+          origin: 'explicit',
+        },
+        candidates: [systemCandidate, managedCandidate],
+        nextAction: 'check-connection',
+        detail: 'Using the copy Diomedes installed for itself.',
+      }),
+    });
+  });
+  try {
+    await openEngines(page);
+    const section = setupSection(page);
+    await section.getByRole('button', { name: 'Choose an installation', exact: true }).click();
+    const managed = section.locator('li.ai-candidate').filter({ hasText: managedCandidate.path });
+    await expect(managed).toContainText('Recommended');
+    await expect(managed).toContainText('Diomedes verified these bytes against the release it pinned.');
+    expect(binds).toHaveLength(0);
+    await managed.getByRole('button', { name: 'Use this installation', exact: true }).click();
+    await expect.poll(() => binds.length).toBe(1);
+    expect(binds[0]).toEqual({ engine: 'opencode', candidateId: managedCandidate.id });
+    // The chosen installation is the one the card now reports.
+    await expect(section.getByText('Using the copy Diomedes installed for itself.')).toBeVisible();
+    await expect(
+      section.locator('li.ai-candidate').filter({ hasText: managedCandidate.path }),
+    ).toContainText('In use');
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+test('Settings explains a different account route without calling the person signed out', async ({
+  page,
+}) => {
+  await serveStatus(page, [
+    wire({
+      nextAction: 'explain-account-route',
+      routeIssue: { required: 'opencode-go', connected: ['zen', 'anthropic'] },
+      detail: 'The account this tool reported is not the one this route accepts.',
+    }),
+  ]);
+  try {
+    await openEngines(page);
+    const section = setupSection(page);
+    await expect(section.getByText('OpenCode reported zen, anthropic.')).toBeVisible();
+    await expect(section.getByText(/This route uses opencode-go only/)).toContainText(
+      'not used here',
+    );
+    // The route keeps its own name, and carries the caption where it is chosen.
+    await expect(section.getByRole('heading', { name: 'OpenCode', exact: true })).toBeVisible();
+    await expect(section.getByText('OpenCode Go · Text and reviewed proposals')).toBeVisible();
+    // Not signed out, and nothing to buy.
+    await expect(section.getByRole('button', { name: /Sign in/ })).toHaveCount(0);
+    await expect(section.getByText(/signed out|subscribe|upgrade|buy/i)).toHaveCount(0);
+    await expect(
+      section.getByRole('button', { name: 'Check sign-in and models', exact: true }),
+    ).toBeVisible();
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+test('Settings sends one test request only on an explicit second click, and shows its receipt', async ({
+  page,
+}) => {
+  const tests: unknown[] = [];
+  const verifiedAt = new Date().toISOString();
+  await serveStatus(page, [wire()]);
+  await page.route('**/api/ai/test/opencode', (route) => {
+    tests.push(route.request().postDataJSON());
+    return route.fulfill({
+      json: {
+        receipt: {
+          engine: 'opencode',
+          revision: 1,
+          candidateId: managedCandidate.id,
+          version: versions.opencode,
+          accountRoute: 'opencode:opencode-go',
+          model: 'opencode/fixture-model',
+          runId: 'run-fixture',
+          buildId: 'build-fixture',
+          verifiedAt,
+        },
+        connection: wire({
+          nextAction: 'ready',
+          verification: {
+            engine: 'opencode',
+            revision: 1,
+            candidateId: managedCandidate.id,
+            version: versions.opencode,
+            accountRoute: 'opencode:opencode-go',
+            model: 'opencode/fixture-model',
+            runId: 'run-fixture',
+            buildId: 'build-fixture',
+            verifiedAt,
+          },
+        }),
+      },
+    });
+  });
+  try {
+    await openEngines(page);
+    const section = setupSection(page);
+    await expect(stateChip(page, 'test')).toContainText('Not tested');
+    await section.getByRole('button', { name: 'Test this connection', exact: true }).click();
+    await expect(section.getByText(/one small synthetic request/)).toContainText(
+      "allowance or add provider charges",
+    );
+    // Opening the consent sends nothing.
+    expect(tests).toHaveLength(0);
+    await section.getByRole('button', { name: 'Send the test request', exact: true }).click();
+    await expect.poll(() => tests.length).toBe(1);
+    expect(tests[0]).toEqual({ consent: true, model: 'opencode/fixture-model' });
+    await expect(section.getByText(/^Test succeeded /)).toContainText('opencode/fixture-model');
+    await expect(stateChip(page, 'test')).toContainText('Succeeded');
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+test('Settings reports the stage a test failed at, and warns when a retry may be billed again', async ({
+  page,
+}) => {
+  let failed = false;
+  const diagnostic = {
+    buildId: 'build-fixture',
+    engine: 'opencode',
+    candidateSource: 'managed',
+    installedVersion: versions.opencode,
+    accountRoute: 'opencode:opencode-go',
+    selectedModel: 'opencode/fixture-model',
+    stage: 'provider-auth',
+    code: 'PROVIDER_DENIED',
+    correlationId: 'correlation-fixture',
+    lastVerifiedAt: null,
+    at: new Date().toISOString(),
+  };
+  await page.route('**/api/ai/status', (route) =>
+    route.fulfill({ json: { connections: [wire(failed ? { diagnostic } : {})] } }),
+  );
+  await page.route('**/api/ai/test/opencode', (route) => {
+    failed = true;
+    return route.fulfill({
+      status: 503,
+      json: {
+        error: 'The provider refused this request.',
+        code: 'PROVIDER_DENIED',
+        ambiguous: true,
+      },
+    });
+  });
+  try {
+    await openEngines(page);
+    const section = setupSection(page);
+    await section.getByRole('button', { name: 'Test this connection', exact: true }).click();
+    await section.getByRole('button', { name: 'Send the test request', exact: true }).click();
+    await expect(section.getByRole('alert')).toContainText('The provider refused this request.');
+    // The stage comes from the host record, and names the provider check rather
+    // than telling the person to sign in again.
+    await expect(section.getByText(/the provider checking the account/)).toContainText(
+      'Check the account this route uses',
+    );
+    await expect(section.getByText(/sign in again/i)).toHaveCount(0);
+    await expect(section.getByText(/A retry may be billed again/)).toBeVisible();
+    // The route is kept, and a retry is another explicit click.
+    await expect(section.getByRole('combobox', { name: 'OpenCode model', exact: true })).toHaveValue(
+      'opencode/fixture-model',
+    );
+    await expect(section.getByRole('button', { name: 'Retry the test', exact: true })).toBeVisible();
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+test('Settings shows a not-implemented test as an ordinary failure', async ({ page }) => {
+  await api('/ai/discover', 'POST', { consent: true });
+  await api('/ai/check/opencode', 'POST', {});
+  await api('/settings', 'PUT', {
+    surface: 'console',
+    services: { opencode: true, defaultEngine: 'opencode', opencodeModel: 'opencode/fixture-model' },
+  });
+  await openEngines(page);
+  const section = setupSection(page);
+  await section.getByRole('button', { name: /^(Test this connection|Retry the test)$/ }).click();
+  await section.getByRole('button', { name: 'Send the test request', exact: true }).click();
+  await expect(section.getByRole('alert')).toContainText('Testing a connection is not available yet.');
+  // No stage was recorded, so none is invented.
+  await expect(section.getByText(/The last attempt stopped while/)).toHaveCount(0);
+  await expect(stateChip(page, 'test')).toContainText('Not tested');
+});
+
+test('Settings separates how old a check is from what the route can do now', async ({ page }) => {
+  const verifiedAt = new Date(Date.now() - 86_400_000).toISOString();
+  await serveStatus(page, [
+    wire({
+      checkedAt: new Date(Date.now() - 600_000).toISOString(),
+      nextAction: 'check-connection',
+      verification: {
+        engine: 'opencode',
+        revision: 1,
+        candidateId: managedCandidate.id,
+        version: versions.opencode,
+        accountRoute: 'opencode:opencode-go',
+        model: 'opencode/fixture-model',
+        runId: 'run-fixture',
+        buildId: 'build-fixture',
+        verifiedAt,
+      },
+    }),
+  ]);
+  try {
+    await openEngines(page);
+    const section = setupSection(page);
+    await expect(section.getByText(/That check is no longer current/)).toBeVisible();
+    await expect(section.getByText(/^Last verified /)).toContainText('opencode/fixture-model');
+    await page.unroute('**/api/ai/status');
+    // A future timestamp is not fresh; it needs a fresh check.
+    await serveStatus(page, [
+      wire({ checkedAt: new Date(Date.now() + 3_600_000).toISOString() }),
+    ]);
+    await page.reload();
+    await expect(
+      section.getByText('The last check carries no usable time. Check again.'),
+    ).toBeVisible();
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+test('Settings renders a status payload that carries none of the optional fields', async ({
+  page,
+}) => {
+  // Exactly what a build before candidate binding sends: no candidates, no
+  // binding, no revision, no verification, no diagnostic and no next action.
+  await serveStatus(page, [
+    {
+      engine: 'opencode',
+      installation: 'found',
+      compatibility: 'supported',
+      authentication: 'unknown',
+      accountRoute: null,
+      models: [],
+      checkedAt: null,
+      detail: 'Found on this computer.',
+      usage: { state: 'unknown', checkedAt: null },
+    },
+  ]);
+  try {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await openEngines(page);
+    const section = setupSection(page);
+    await expect(stateChip(page, 'installation')).toContainText('Found');
+    await expect(stateChip(page, 'account')).toContainText('Not checked');
+    await expect(stateChip(page, 'test')).toContainText('Not tested');
+    // With no next action on the wire, the screen asks the host what is true.
+    await expect(
+      section.getByRole('button', { name: 'Check sign-in and models', exact: true }),
+    ).toHaveCount(1);
+    await expect(section.getByText(/Last verified/)).toHaveCount(0);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+test('Onboarding says the path it continues on is the local sample', async ({ page }) => {
+  const saved = await api<{ services?: Record<string, unknown> }>('/settings');
+  try {
+    await serveStatus(page, [wire({ nextAction: 'enable' })]);
+    await api('/settings', 'PUT', {
+      services: {},
+      onboarding: { resumeAt: 'ai', completedAt: null },
+    });
+    await page.goto(baseURL);
+    await expect(
+      page.getByRole('heading', { name: 'Connect an AI service', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Continue with the local sample', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Sample work is scripted on this computer. It is not proof that a provider answered.'),
+    ).toBeVisible();
+    // A selected, switched-on route is what the app actually continues on.
+    await api('/settings', 'PUT', {
+      services: {
+        opencode: true,
+        defaultEngine: 'opencode',
+        opencodeModel: 'opencode/fixture-model',
+      },
+    });
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Continue with the local sample', exact: true }),
+    ).toHaveCount(0);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+    await api('/settings', 'PUT', {
+      services: (saved.services ?? {}) as Record<string, unknown>,
+      onboarding: { resumeAt: 'done', completedAt: new Date().toISOString() },
+    });
+  }
 });
 
 test('Console drops a late source listing when the person changes threads', async ({ page }) => {

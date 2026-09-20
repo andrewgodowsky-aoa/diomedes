@@ -92,11 +92,22 @@ describe('the four states one route shows', () => {
     ]);
   });
 
-  it('separates a found installation that failed its integrity check', () => {
-    const corrupt = setupStates({ ...base, installation: 'corrupt' })[0];
-    expect(corrupt.value).toBe('no');
-    expect(corrupt.text).toBe('Found, failed its integrity check');
-    expect(setupStates({ ...base, installation: 'missing' })[0].text).toBe('Not found');
+  it('says found is not usable when the copy is the wrong version, changed or corrupt', () => {
+    const state = (patch: Partial<EngineConnection>) => setupStates({ ...base, ...patch })[0];
+    expect(state({ installation: 'corrupt' })).toMatchObject({
+      value: 'no',
+      text: 'Found, failed its integrity check',
+    });
+    expect(state({ compatibility: 'unsupported' })).toMatchObject({
+      value: 'no',
+      text: 'Found, unsupported version',
+    });
+    expect(state({ repair: 'selected-changed' })).toMatchObject({
+      value: 'no',
+      text: 'Found, needs repair',
+    });
+    expect(state({ installation: 'missing' }).text).toBe('Not found');
+    expect(state({}).text).toBe('Found');
   });
 
   it('reports an empty model list as none listed once a check has run', () => {
