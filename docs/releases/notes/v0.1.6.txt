@@ -26,13 +26,6 @@ WHAT IS NEW
   the evidence behind each answer and how fresh it is. Neither screen needs a
   Business account.
 
-  Claude Code can hold a session open. Until this build every text request
-  started a new process, so a follow-up was a new request and nothing could be
-  resumed. There is now a separate route that keeps one process across turns,
-  where a follow-up reuses it and a turn can be resumed or forked from a
-  recorded point. Steering a turn while it runs and asking the provider to
-  reconcile an unknown outcome are refused rather than approximated.
-
   The app ships what it knows about itself. A set of statements about the
   product and about each route is installed beside the app and read locally, so
   an answer about how Diomedes works comes from the build you are running. The
@@ -48,6 +41,13 @@ UPDATES
 
 LIMITS
   Unsigned, experimental, one machine tested.
+  Claude Code can hold a session open, but nothing in the app opens one. Every
+  text request still starts a fresh process, so a follow-up is a new request and
+  nothing is resumed, exactly as in 0.1.5. What this build adds is a second
+  route behind the local service that keeps one process across turns and can
+  resume or fork a turn from a recorded point; no screen reaches it yet. When it
+  is reachable, steering a turn while it runs and asking the provider to
+  reconcile an unknown outcome will still be refused rather than approximated.
   Organisation access is in this build as server code with no screen. Accounts,
   roles and per-member limits answer over the local service, and nothing in the
   app asks them, so there is no multi-user behaviour to see. Treat it as
