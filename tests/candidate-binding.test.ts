@@ -247,6 +247,66 @@ describe('the binding a person chose, remembered across restarts', () => {
     );
     expect(new BindingStore(service).get('opencode')).toBeUndefined();
   });
+
+  it('separates a route nobody chose from one whose row it cannot read', () => {
+    const service = root();
+    fs.writeFileSync(
+      path.join(service, 'bindings.json'),
+      JSON.stringify({
+        version: 1,
+        engines: {
+          // A source a newer build knows and this one does not.
+          opencode: {
+            binding: { ...binding(), source: 'imported' },
+            revision: 9,
+            key: 'k',
+            model: null,
+          },
+          cursor: { binding: binding({ engine: 'cursor' }), revision: 'later', key: 'k', model: null },
+        },
+      }),
+    );
+    const store = new BindingStore(service);
+    expect(store.unreadable('opencode')).toBe(true);
+    expect(store.unreadable('cursor')).toBe(true);
+    // No row is silence, and silence is readable.
+    expect(store.unreadable('claude-code')).toBe(false);
+    expect(store.get('claude-code')).toBeUndefined();
+  });
+
+  it('keeps the record it could not read, and remembers which routes still wait', () => {
+    const service = root();
+    const file = path.join(service, 'bindings.json');
+    const damaged = '{ "engines": { "opencode": ';
+    fs.writeFileSync(file, damaged);
+    const store = new BindingStore(service);
+    for (const engine of ['opencode', 'claude-code'] as const)
+      expect(store.unreadable(engine)).toBe(true);
+
+    store.save('opencode', { binding: binding(), revision: 1, key: 'k1', model: null });
+    const kept = fs.readdirSync(service).filter((name) => name !== 'bindings.json');
+    expect(kept.length).toBe(1);
+    expect(kept[0].startsWith('bindings.json.unreadable-')).toBe(true);
+    expect(fs.readFileSync(path.join(service, kept[0]), 'utf8')).toBe(damaged);
+
+    // The route that was chosen again is settled; the rest are still waiting,
+    // and a restart reads that rather than inventing a fresh start for them.
+    const reopened = new BindingStore(service);
+    expect(reopened.unreadable('opencode')).toBe(false);
+    expect(reopened.get('opencode')?.revision).toBe(1);
+    expect(reopened.unreadable('claude-code')).toBe(true);
+    expect(reopened.unreadable('cursor')).toBe(true);
+  });
+
+  it('sets nothing aside, and carries nothing forward, for an ordinary record', () => {
+    const service = root();
+    const store = new BindingStore(service);
+    store.save('opencode', { binding: binding(), revision: 1, key: 'k1', model: null });
+    expect(fs.readdirSync(service)).toEqual(['bindings.json']);
+    expect(JSON.parse(fs.readFileSync(path.join(service, 'bindings.json'), 'utf8')).unreadable)
+      .toBeUndefined();
+    expect(new BindingStore(service).unreadable('claude-code')).toBe(false);
+  });
 });
 
 describe('every installation is a candidate, and one failure hides nothing', () => {

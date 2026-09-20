@@ -205,11 +205,34 @@ function sanitise(error: unknown): string {
   return 'This installation could not be examined. Check this computer again.';
 }
 
+/**
+ * What this computer holds for a route, from the inventory alone. A failed
+ * digest on the chosen copy — or on the only copy there is — is corruption;
+ * nothing to examine is a missing installation; anything else was found and is
+ * not one this route can use as it stands.
+ */
+function installationState(
+  inventory: EngineCandidate[],
+  binding: EngineBinding | null,
+): {
+  installation: 'corrupt' | 'missing' | 'found';
+  compatibility: 'unknown' | 'unsupported';
+} {
+  const corrupt = binding
+    ? inventory.some((row) => row.id === binding.id && row.integrity === 'failed')
+    : inventory.length === 1 && inventory[0].integrity === 'failed';
+  if (corrupt) return { installation: 'corrupt', compatibility: 'unknown' };
+  if (inventory.length === 0) return { installation: 'missing', compatibility: 'unknown' };
+  return { installation: 'found', compatibility: 'unsupported' };
+}
+
 function repairDetail(
   engine: ExternalEngine,
   reason: string,
   installation: 'missing' | 'corrupt' | 'found',
 ): string {
+  if (reason === 'record-unreadable')
+    return 'Diomedes cannot read which installation you chose for this service. Choose one again to continue; the record it could not read is kept.';
   if (reason === 'selected-missing')
     return 'The installation you chose is no longer on this computer. Choose another or install a compatible copy.';
   if (reason === 'selected-changed')
@@ -356,8 +379,18 @@ export class EngineService {
     this.bindings = new BindingStore(root);
     this.receipts = new VerificationStore(root);
     // A binding is a decision, so it survives a restart. What was merely
-    // observed — sign-in, models, when it was last checked — does not.
+    // observed — sign-in, models, when it was last checked — does not. A
+    // decision this build cannot read survives as the repair it is, so nothing
+    // downstream mistakes it for a route nobody has chosen yet.
     for (const engine of EXTERNAL_ENGINES) {
+      if (this.bindings.unreadable(engine)) {
+        this.connections.set(engine, {
+          ...blank(engine),
+          repair: 'record-unreadable',
+          detail: repairDetail(engine, 'record-unreadable', 'found'),
+        });
+        continue;
+      }
       const stored = this.bindings.get(engine);
       if (!stored) continue;
       this.connections.set(engine, {
@@ -635,6 +668,18 @@ export class EngineService {
       revision: stored?.revision ?? 0,
       checkedAt: new Date().toISOString(),
     };
+    // What this route runs is a decision, and the record of that decision
+    // cannot be read here. Nothing may stand in for it: not a recommendation,
+    // not the private copy, not the roster. The installations are still
+    // reported, because choosing one again is the way out.
+    if (this.bindings.unreadable(engine))
+      return this.merge(engine, {
+        ...blank(engine),
+        ...shared,
+        ...installationState(inventory, null),
+        repair: 'record-unreadable',
+        detail: repairDetail(engine, 'record-unreadable', 'found'),
+      });
     // Nothing on this computer could be identified and nothing is bound: report
     // what discovery saw without claiming a verified identity for it.
     //
@@ -685,14 +730,8 @@ export class EngineService {
           : 'Using the installation you chose. Check sign-in and models next.',
       });
     }
-    const corrupt = binding
-      ? inventory.some((row) => row.id === binding.id && row.integrity === 'failed')
-      : inventory.length === 1 && inventory[0].integrity === 'failed';
-    const state = corrupt
-      ? { installation: 'corrupt' as const, compatibility: 'unknown' as const }
-      : inventory.length === 0
-        ? { installation: 'missing' as const, compatibility: 'unknown' as const }
-        : { installation: 'found' as const, compatibility: 'unsupported' as const };
+    const state = installationState(inventory, binding);
+    const corrupt = state.installation === 'corrupt';
     const failure = inventory.find((row) => row.issue);
     return this.merge(engine, {
       ...blank(engine),
@@ -765,7 +804,9 @@ export class EngineService {
     const saved = this.connections.get(engine)!;
     // A binding that no longer names a usable installation is broken, and a
     // broken binding is never quietly replaced by whatever PATH offers now.
-    if (saved.binding && saved.repair)
+    // A record that cannot be read is the same refusal: what was chosen is
+    // unknown, so nothing may be checked, and nothing may run, in its name.
+    if ((saved.binding || saved.repair === 'record-unreadable') && saved.repair)
       throw new EngineError(
         'BINDING_CHANGED',
         repairDetail(engine, saved.repair, saved.installation === 'corrupt' ? 'corrupt' : 'found'),
@@ -939,6 +980,9 @@ export class EngineService {
    */
   private adopt(engine: ExternalEngine) {
     const value = this.connections.get(engine)!;
+    // Carrying a selection forward needs a record that says there was none.
+    // One that cannot be read says nothing of the sort.
+    if (this.bindings.unreadable(engine)) return;
     if (this.bindings.get(engine) || !value.recommendedCandidateId) return;
     const candidate = this.effective(value);
     if (candidate) this.bindCandidate(engine, candidate, 'adopted');
@@ -976,6 +1020,21 @@ export class EngineService {
   }
   selection(engine: ExternalEngine, model: string) {
     const state = this.connections.get(engine)!;
+    // Choosing a route and a model binds the recommended installation when
+    // nothing is recorded yet. That is only honest while the record is one this
+    // build can read and nothing recorded in it is broken: otherwise settling a
+    // selection would turn a recommendation into a choice nobody made.
+    if (state.repair)
+      throw new EngineError(
+        'BINDING_CHANGED',
+        repairDetail(
+          engine,
+          state.repair,
+          state.installation === 'corrupt' ? 'corrupt' : 'found',
+        ),
+        false,
+        'runtime-verification',
+      );
     // Checked before sign-in, because a reported route mismatch is not one.
     // That person did sign in; the kind of account they hold is what this
     // route cannot use, and signing in again would not change it.
@@ -1018,10 +1077,11 @@ export class EngineService {
   ): SetupAction {
     const value = this.connections.get(engine)!;
     if (value.installation === 'not-checked') return 'check-connection';
-    // A binding broke and this computer still offers a usable installation:
-    // the honest next step is choosing one, not installing another copy.
+    // A route needs repair and this computer still offers a usable
+    // installation: the honest next step is choosing one, not installing
+    // another copy. `no-reviewed-candidate` and a corrupt private copy cannot
+    // reach this, because neither leaves a usable candidate behind.
     if (
-      value.binding &&
       value.repair &&
       selectCandidate(value.candidates ?? [], {
         engine,

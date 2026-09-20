@@ -180,46 +180,98 @@ describe('a damaged binding record', () => {
   ];
 
   for (const [name, write] of damage)
-    it(`is read as "never chose one" when ${name}, and the next request binds a different executable`, async () => {
+    it(`is a repair state when ${name}, and nothing binds another executable in its place`, async () => {
       const h = await damaged(write);
       await h.service.discover(true);
       const before = connection(h.service);
-      // Nothing says a choice was lost: no binding, no repair, no warning.
+      // A record this build cannot read is not "they never chose one". The
+      // route says a choice exists and cannot be read, and offers the one way
+      // out: choosing an installation again.
       expect(before.binding ?? null).toBeNull();
-      expect(before.repair ?? null).toBeNull();
+      expect(before.repair).toBe('record-unreadable');
       expect(h.service.nextAction('opencode', { enabled: true, installSupported: true })).toBe(
-        'check-connection',
+        'choose-installation',
       );
 
-      await h.service.check('opencode');
-      await expect(h.service.generate('opencode', ask(h.accountRoute))).resolves.toMatchObject({
-        text: 'Answer',
+      await expect(h.service.check('opencode')).rejects.toMatchObject({
+        code: 'BINDING_CHANGED',
+        stage: 'runtime-verification',
       });
+      await expect(h.service.generate('opencode', ask(h.accountRoute))).rejects.toMatchObject({
+        code: 'BINDING_CHANGED',
+      });
+      await expect(
+        h.service.testConnection('opencode', { consent: true, model: 'm' }),
+      ).rejects.toMatchObject({ code: 'BINDING_CHANGED' });
 
       const after = connection(h.service);
-      // The route silently adopted Diomedes's own copy in place of the
-      // installation the person chose, and nothing was ever offered to repair.
-      expect(after.binding).toMatchObject({ origin: 'adopted', source: 'managed' });
-      expect(after.binding!.id).not.toBe(h.chosen);
-      expect(after.binding!.path).toBe(fs.realpathSync.native(h.managed!));
-      expect(h.launched).toContain(path.resolve(fs.realpathSync.native(h.managed!)));
-      expect(h.launched).not.toContain(path.resolve(h.theirs));
+      expect(after.binding ?? null).toBeNull();
+      expect(h.launched).toEqual([]);
+      expect(h.generate).not.toHaveBeenCalled();
+      // The record a newer build may have written is still on disk, untouched.
+      expect(fs.existsSync(bindingsFile(h.serviceRoot))).toBe(true);
     });
 
-  it('is repaired by a connection test into a choice the person never made', async () => {
+  it('is settled only by a person choosing again, which sets the unreadable record aside', async () => {
+    const damage = '{ not json';
+    const h = await damaged((file) => fs.writeFileSync(file, damage));
+    await h.service.discover(true);
+    const candidate = connection(h.service).candidates!.find((row) => row.source === 'system')!;
+    await h.service.bind('opencode', candidate.id);
+
+    const after = connection(h.service);
+    expect(after.repair ?? null).toBeNull();
+    expect(after.binding).toMatchObject({ id: candidate.id, origin: 'explicit' });
+    // The unreadable bytes are kept beside the new record rather than deleted,
+    // so a record a newer build wrote is never destroyed to make room.
+    const kept = fs
+      .readdirSync(h.serviceRoot)
+      .filter((name) => name.startsWith('bindings.json.unreadable-'));
+    expect(kept.length).toBe(1);
+    expect(fs.readFileSync(path.join(h.serviceRoot, kept[0]), 'utf8')).toBe(damage);
+    expect(JSON.parse(fs.readFileSync(bindingsFile(h.serviceRoot), 'utf8'))).toMatchObject({
+      engines: { opencode: { binding: { id: candidate.id } } },
+    });
+
+    // And the route works from there: checked, tested, and the receipt names
+    // the installation the person actually chose.
+    await h.service.check('opencode');
+    const receipt = await h.service.testConnection('opencode', { consent: true, model: 'm' });
+    expect(receipt.candidateId).toBe(candidate.id);
+  });
+
+  it('refuses a connection test rather than binding the recommendation for them', async () => {
     const h = await damaged((file) => fs.writeFileSync(file, '{ not json'));
     await h.service.discover(true);
-    await h.service.check('opencode');
-    // Pressing Test connection settles the selection first, and settling it
-    // binds the recommended installation as an explicit choice.
+    // Pressing Test connection settles the selection first. Settling it must
+    // not turn a recommendation into a choice the person never made.
     await expect(
       h.service.testConnection('opencode', { consent: true, model: 'm' }),
-    ).resolves.toMatchObject({ engine: 'opencode' });
+    ).rejects.toMatchObject({ code: 'BINDING_CHANGED', stage: 'runtime-verification' });
     const after = connection(h.service);
-    expect(after.binding).toMatchObject({ origin: 'explicit', source: 'managed' });
-    expect(after.binding!.id).not.toBe(h.chosen);
-    // And the receipt now reads as proof of a route the person did not pick.
-    expect(after.verification).toMatchObject({ candidateId: after.binding!.id });
+    expect(after.binding ?? null).toBeNull();
+    expect(after.verification ?? null).toBeNull();
+    expect(h.generate).not.toHaveBeenCalled();
+  });
+
+  it('leaves the routes whose rows were in the same damaged document in repair too', async () => {
+    // The document could not be parsed, so which routes it named is unknown.
+    // Reading "no row for claude-code" out of bytes this build cannot read
+    // would be the same guess by another name.
+    const h = await damaged((file) => fs.writeFileSync(file, '{ not json'));
+    await h.service.discover(true);
+    for (const engine of ['opencode', 'claude-code', 'cursor'] as const)
+      expect(h.service.status().find((row) => row.engine === engine)!.repair).toBe(
+        'record-unreadable',
+      );
+  });
+
+  it('reads a route with no row of its own in an intact document as never chosen', async () => {
+    const h = await damaged(() => {});
+    await h.service.discover(true);
+    const other = h.service.status().find((row) => row.engine === 'claude-code')!;
+    expect(other.binding ?? null).toBeNull();
+    expect(other.repair ?? null).not.toBe('record-unreadable');
   });
 
   it('still reloads an intact record, so the damage above is the only difference', async () => {

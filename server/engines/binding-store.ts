@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import type { ExternalEngine } from '../../shared/types.js';
 import { EXTERNAL_ENGINES, type EngineBinding } from '../../shared/engines.js';
 
@@ -56,34 +57,73 @@ function pause(ms: number) {
 export class BindingStore {
   private readonly file: string;
   private readonly rows = new Map<ExternalEngine, StoredBinding>();
+  /**
+   * Routes whose stored choice exists on disk and could not be read here: a
+   * damaged file, a shape this build does not know, or a row written by a newer
+   * build. It is a different fact from "this person never chose one", and it is
+   * settled only by a new explicit choice.
+   */
+  private readonly damaged = new Set<ExternalEngine>();
+  /** Whether the file on disk is one this build could not fully read. */
+  private damagedFile = false;
   constructor(readonly root: string) {
     this.file = path.join(root, FILE);
     this.load();
+  }
+  private damage(engine: ExternalEngine) {
+    this.damaged.add(engine);
+    this.damagedFile = true;
   }
   private load() {
     let text: string;
     try {
       text = fs.readFileSync(this.file, 'utf8');
-    } catch {
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      // Nothing to read and something that cannot be read are different facts.
+      if (code === 'ENOENT' || code === 'ENOTDIR') return;
+      for (const engine of EXTERNAL_ENGINES) this.damage(engine);
       return;
     }
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
     } catch {
-      // A damaged file is not authority. Start with no binding rather than
-      // guessing at one; the next deliberate choice replaces the file.
+      // A damaged file is not authority, and it is not silence either. Which
+      // routes it named cannot be known, so every route waits for a choice.
+      for (const engine of EXTERNAL_ENGINES) this.damage(engine);
       return;
     }
-    const document = parsed as { engines?: Record<string, unknown> } | null;
+    const document = parsed as
+      | { engines?: Record<string, unknown>; unreadable?: unknown }
+      | null;
     const engines = document?.engines;
-    if (!engines || typeof engines !== 'object') return;
+    if (!engines || typeof engines !== 'object') {
+      for (const engine of EXTERNAL_ENGINES) this.damage(engine);
+      return;
+    }
+    // Routes an earlier repair set aside without a new choice, carried forward
+    // so a restart does not quietly turn them back into "never chose one".
+    const carried = document?.unreadable;
+    if (Array.isArray(carried))
+      for (const engine of EXTERNAL_ENGINES) if (carried.includes(engine)) this.damage(engine);
     for (const engine of EXTERNAL_ENGINES) {
       const row = engines[engine] as Record<string, unknown> | undefined;
-      if (!row || typeof row !== 'object') continue;
+      // No row at all is the ordinary "not chosen yet".
+      if (row === undefined) continue;
+      if (!row || typeof row !== 'object') {
+        this.damage(engine);
+        continue;
+      }
       const binding = readBinding(row.binding, engine);
-      if (!binding) continue;
-      if (!Number.isSafeInteger(row.revision) || (row.revision as number) < 0) continue;
+      if (!binding) {
+        this.damage(engine);
+        continue;
+      }
+      if (!Number.isSafeInteger(row.revision) || (row.revision as number) < 0) {
+        this.damage(engine);
+        continue;
+      }
       this.rows.set(engine, {
         binding,
         revision: row.revision as number,
@@ -96,11 +136,22 @@ export class BindingStore {
     const row = this.rows.get(engine);
     return row ? structuredClone(row) : undefined;
   }
+  /** Whether a stored choice for this route exists and cannot be read here. */
+  unreadable(engine: ExternalEngine): boolean {
+    return this.damaged.has(engine);
+  }
   save(engine: ExternalEngine, value: StoredBinding) {
-    this.change(engine, () => this.rows.set(engine, structuredClone(value)));
+    this.change(engine, () => {
+      this.rows.set(engine, structuredClone(value));
+      this.damaged.delete(engine);
+    });
   }
   clear(engine: ExternalEngine) {
-    if (this.rows.has(engine)) this.change(engine, () => this.rows.delete(engine));
+    if (this.rows.has(engine) || this.damaged.has(engine))
+      this.change(engine, () => {
+        this.rows.delete(engine);
+        this.damaged.delete(engine);
+      });
   }
   /**
    * A choice Diomedes could not record is a choice it does not claim. If the
@@ -110,19 +161,42 @@ export class BindingStore {
    */
   private change(engine: ExternalEngine, apply: () => void) {
     const previous = this.rows.get(engine);
+    const wasDamaged = this.damaged.has(engine);
     apply();
     try {
+      this.preserve();
       this.write();
     } catch (error) {
       if (previous) this.rows.set(engine, previous);
       else this.rows.delete(engine);
+      if (wasDamaged) this.damaged.add(engine);
       throw error;
     }
+  }
+  /**
+   * Move an unreadable record aside before the first record this build writes
+   * in its place. A record a newer build wrote is evidence of somebody's
+   * choice; it is never deleted to make room for one taken later.
+   */
+  private preserve() {
+    if (!this.damagedFile) return;
+    const stamp = `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}-${randomBytes(4).toString('hex')}`;
+    try {
+      fs.renameSync(this.file, `${this.file}.unreadable-${stamp}`);
+    } catch (error) {
+      // Already gone is the outcome this wanted. Anything else means the record
+      // is still there, so the new choice is not written over it.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    this.damagedFile = false;
   }
   private write() {
     const document = {
       version: 1,
       engines: Object.fromEntries([...this.rows].map(([engine, row]) => [engine, row])),
+      // Written only while some route is still waiting for a choice, so an
+      // ordinary record stays exactly the shape an older build reads.
+      ...(this.damaged.size > 0 ? { unreadable: [...this.damaged] } : {}),
     };
     fs.mkdirSync(this.root, { recursive: true });
     const temporary = `${this.file}.${process.pid}.tmp`;

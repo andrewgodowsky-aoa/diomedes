@@ -39,7 +39,13 @@ export type RepairReason =
   | 'selected-missing'
   | 'selected-changed'
   | 'selected-unverified'
-  | 'no-reviewed-candidate';
+  | 'no-reviewed-candidate'
+  /**
+   * The record of what was chosen exists and this build cannot read it, so
+   * whether a choice was made is unknown. Produced by the host from its own
+   * store, never by `selectCandidate`, and settled only by choosing again.
+   */
+  | 'record-unreadable';
 export type CandidateDecision =
   | { readonly kind: 'candidate'; readonly candidate: Candidate; readonly requiresSelection: boolean }
   | { readonly kind: 'repair'; readonly reason: RepairReason };

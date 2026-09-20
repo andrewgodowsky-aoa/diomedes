@@ -217,6 +217,8 @@ export function repairText(c: EngineConnection): string {
       return `The installation you chose${at} no longer passes its version and integrity checks.`;
     case 'no-reviewed-candidate':
       return 'No installation on this computer matches the version Diomedes supports.';
+    case 'record-unreadable':
+      return 'Diomedes cannot read which installation you chose for this service, so it will not use one. Choose an installation again. The record it could not read is kept.';
     default:
       return c.installation === 'corrupt'
         ? `The installation${at} failed its integrity check. Diomedes will not run it.`
