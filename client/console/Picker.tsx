@@ -11,20 +11,12 @@ import type {
 } from '../../shared/types';
 import type { EngineConnection } from '../../shared/engines';
 import { EXTERNAL_ENGINES, isExternalEngine } from '../../shared/engines';
+import { freshness } from '../../shared/connection-policy';
 import { routeCaption } from '../../shared/engine-routes';
 import { MODE_CEILING, effortFor } from '../../shared/effort';
 import { api, engineConnections } from '../api';
 
 const ENGINE_IDS = ['codex', 'claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin'] as const;
-
-/**
- * How long a connection check stays fresh, matching
- * `EngineService.integration()`. Past it the account is still signed in and its
- * model list is still the one the engine reported; only the check is old, and
- * `EngineService.generate()` rechecks before anything is sent. So the menu says
- * when it last looked instead of hiding the account.
- */
-const FRESH_MS = 300_000;
 
 interface PickerProps {
   thread: Conversation;
@@ -56,11 +48,14 @@ function available(id: string, integrations: IntegrationStatus[], settings: Sett
 }
 
 /**
- * The same four facts AI setup shows for an external engine: found, a supported
- * version, signed in, and a model list the engine itself reported. An engine
- * the person has turned on and signed into belongs on the thread whether or not
- * its last check is inside the freshness window — the window governs how the
- * status line reads, never whether the account exists.
+ * The same facts the AI setup screen calls connected: found, a supported
+ * version, signed in, a model list the engine itself reported, no broken
+ * binding and no account on another route. An engine the person has turned on
+ * and signed into belongs on the thread whether or not its last check is inside
+ * the freshness window — the window governs how the status line reads, never
+ * whether the account exists. What it must never do is offer a route the setup
+ * screen refuses: a changed installation is not run, and an account on another
+ * route is not this route's account.
  */
 export function signedIn(connection: EngineConnection | undefined): connection is EngineConnection {
   return (
@@ -68,16 +63,23 @@ export function signedIn(connection: EngineConnection | undefined): connection i
     connection.installation === 'found' &&
     connection.compatibility === 'supported' &&
     connection.authentication === 'signed-in' &&
-    connection.models.length > 0
+    connection.models.length > 0 &&
+    !connection.repair &&
+    !connection.routeIssue
   );
 }
 
-/** One sentence for the engine heading: what Diomedes last saw, and when. */
-export function connectionState(connection: EngineConnection): string {
-  const at = connection.checkedAt ? Date.parse(connection.checkedAt) : Number.NaN;
-  if (Number.isFinite(at) && Date.now() - at < FRESH_MS) return 'Signed in · Ready';
-  return Number.isFinite(at)
-    ? `Signed in · checked ${new Date(at).toLocaleTimeString()}, rechecked before sending`
+/**
+ * One sentence for the engine heading: what Diomedes last saw, and when. The
+ * expiry rule is the shared one, so this menu and the setup screen cannot
+ * disagree at the boundary; an unreadable or future timestamp is not current
+ * and is never shown as Ready.
+ */
+export function connectionState(connection: EngineConnection, nowMs = Date.now()): string {
+  const state = freshness(connection.checkedAt, nowMs);
+  if (state === 'fresh') return 'Signed in · Ready';
+  return state === 'stale'
+    ? `Signed in · checked ${new Date(Date.parse(connection.checkedAt!)).toLocaleTimeString()}, rechecked before sending`
     : 'Signed in · rechecked before sending';
 }
 
@@ -279,12 +281,23 @@ export function Picker({
                   </div>
                 );
               })}
-              {waiting.map((id) => (
-                <p className="note" key={id}>
-                  {integrations.find((i) => i.id === id)?.name ?? id} is on but has not passed a
-                  sign-in and model check. Check it in Settings &gt; Engines.
-                </p>
-              ))}
+              {waiting.map((id) => {
+                // Why this engine is on and still not offered. A changed
+                // installation and an account on another route are not the same
+                // thing as an account that has never been checked.
+                const connection = connections[id];
+                const why = connection?.repair
+                  ? 'is on and the installation it uses needs attention'
+                  : connection?.routeIssue
+                    ? 'is on and the account it reported is not the one this route uses'
+                    : 'is on but has not passed a sign-in and model check';
+                return (
+                  <p className="note" key={id}>
+                    {integrations.find((i) => i.id === id)?.name ?? id} {why}. Check it in Settings
+                    &gt; Engines.
+                  </p>
+                );
+              })}
               {offeredIds.length === 0 && waiting.length === 0 && (
                 <p className="note">Connect an engine in Settings.</p>
               )}

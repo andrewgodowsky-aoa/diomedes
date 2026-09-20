@@ -11,6 +11,7 @@ import { routeContractFor } from '../server/harness/route-contract.js';
 import type { EngineModel, ExternalEngine, IntegrationStatus, Settings } from '../shared/types.js';
 import type { EngineConnection } from '../shared/engines.js';
 import { ENGINE_NAMES, EXTERNAL_ENGINES } from '../shared/engines.js';
+import { CONNECTION_TTL_MS } from '../shared/connection-policy.js';
 import { ENGINE_ROUTE_PROFILES, routeCaption } from '../shared/engine-routes.js';
 import { connectionState, signedIn } from '../client/console/Picker.js';
 
@@ -368,6 +369,30 @@ describe('what the thread picker treats as a usable account', () => {
     expect(connectionState(base)).toBe('Signed in · Ready');
     expect(connectionState(stale)).toContain('rechecked before sending');
   });
+
+  /**
+   * The same expiry rule as the setup screen, from the same helper. The two
+   * surfaces used to compare differently at the exact boundary, so this pins
+   * the boundary itself rather than a round number near it.
+   */
+  it('reads the freshness boundary exactly as the setup screen does', () => {
+    const checkedAt = '2026-09-20T10:00:00.000Z';
+    const observed = Date.parse(checkedAt);
+    const row = { ...base, checkedAt };
+    expect(connectionState(row, observed + CONNECTION_TTL_MS - 1)).toBe('Signed in · Ready');
+    // Exactly the TTL old is no longer current, and says so instead of Ready.
+    const expired = connectionState(row, observed + CONNECTION_TTL_MS);
+    expect(expired).toContain('rechecked before sending');
+    expect(expired).not.toContain('Ready');
+  });
+
+  it('never shows an unreadable or future check as Ready', () => {
+    const now = Date.parse('2026-09-20T10:00:00.000Z');
+    for (const checkedAt of ['not a date', new Date(now + 3_600_000).toISOString(), null]) {
+      const line = connectionState({ ...base, checkedAt }, now);
+      expect(line, String(checkedAt)).toBe('Signed in · rechecked before sending');
+    }
+  });
   /**
    * The picker now shows the account route beside the engine, because "I have
    * OpenCode" and "I hold the one account route this adapter accepts" are
@@ -392,5 +417,21 @@ describe('what the thread picker treats as a usable account', () => {
     expect(signedIn({ ...base, authentication: 'signed-out' })).toBe(false);
     expect(signedIn({ ...base, authentication: 'unknown' })).toBe(false);
     expect(signedIn({ ...base, models: [] })).toBe(false);
+  });
+
+  /**
+   * The menu must not offer a route the setup screen refuses. Both of these
+   * report a signed-in account with models, and neither can run: one is bound
+   * to an installation that is no longer the one it was bound to, and the other
+   * holds an account on a route this adapter does not use.
+   */
+  it('refuses a route the setup screen refuses: a broken binding or another account route', () => {
+    expect(signedIn({ ...base, repair: 'selected-changed' })).toBe(false);
+    expect(signedIn({ ...base, repair: 'selected-missing' })).toBe(false);
+    expect(
+      signedIn({ ...base, routeIssue: { required: 'opencode-go', connected: ['zen'] } }),
+    ).toBe(false);
+    // The same facts the setup screen calls connected are still offered.
+    expect(signedIn({ ...base, repair: null, routeIssue: null })).toBe(true);
   });
 });
