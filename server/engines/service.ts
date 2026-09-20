@@ -1,14 +1,28 @@
 import fs from 'node:fs/promises';
+import { createReadStream, realpath as realpathCallback } from 'node:fs';
+import { promisify } from 'node:util';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { ExternalEngine, IntegrationStatus } from '../../shared/types.js';
 import {
   ENGINE_NAMES,
   EXTERNAL_ENGINES,
   type ConnectionReceipt,
+  type EngineBinding,
+  type EngineCandidate,
   type EngineConnection,
+  type InstallationContext,
+  type SetupDiagnostic,
+  type SetupStage,
 } from '../../shared/engines.js';
-import { nextSetupAction, type SetupAction } from '../../shared/connection-policy.js';
-import { createDiscovery } from '../discovery.js';
+import {
+  freshness,
+  nextSetupAction,
+  selectCandidate,
+  type SetupAction,
+} from '../../shared/connection-policy.js';
+import { createDiscovery, installationContext, type DiscoveredInstallation } from '../discovery.js';
+import { BindingStore } from './binding-store.js';
 import { recordEngineCatalog } from '../models.js';
 import { ClaudeAdapter, CLAUDE_VERSION } from './claude.js';
 import { OpenCodeAdapter } from './opencode.js';
@@ -44,8 +58,25 @@ export const TESTED_VERSIONS: Record<ExternalEngine, string> = {
   cursor: '2026.08.11',
   devin: '3000.10.23',
 };
+/** Which routes a scan covers. A request refreshes its own route, not all five. */
+export interface DiscoveryScope {
+  engine?: ExternalEngine;
+}
+/** What this computer says one file is. Identity, never provenance. */
+export interface FileIdentity {
+  path: string;
+  size: number;
+  mtimeMs: number;
+  sha256: string;
+}
 export interface EngineServiceDeps {
-  discover(): Promise<IntegrationStatus[]>;
+  discover(scope?: DiscoveryScope): Promise<IntegrationStatus[]>;
+  /**
+   * Every installation this computer offers, not the first one per engine. A
+   * caller that supplies its own `discover` supplies the inventory too; the
+   * service then takes the locations that caller reported and looks no further.
+   */
+  enumerate?(scope?: DiscoveryScope): Promise<DiscoveredInstallation[]>;
   version(file: string, signal?: AbortSignal): Promise<string>;
   adapter(engine: ExternalEngine, file: string, cwd: string): TextEngineAdapter;
   /**
@@ -53,6 +84,12 @@ export interface EngineServiceDeps {
    * for this engine's deltas. Applied before the frame is measured or emitted.
    */
   redactFor?(engine: ExternalEngine): (text: string) => string;
+  /** This computer's answer for one file: its real path, size and bytes. */
+  identify?(file: string): Promise<FileIdentity | null>;
+  /** The reviewed-release digest check for Diomedes's own private copy. */
+  verifyManaged?(engine: ExternalEngine): Promise<void>;
+  /** The packaged build this diagnostic came from. The integrator wires it. */
+  buildId?(): string;
 }
 const blank = (engine: ExternalEngine): EngineConnection => ({
   engine,
@@ -64,14 +101,153 @@ const blank = (engine: ExternalEngine): EngineConnection => ({
   checkedAt: null,
   detail: 'Check this computer to find installed tools.',
   usage: { state: 'unknown', checkedAt: null },
+  candidates: [],
+  binding: null,
+  recommendedCandidateId: null,
+  repair: null,
+  revision: 0,
+  verification: null,
+  routeIssue: null,
+  diagnostic: null,
 });
+
+const realpathNative = promisify(realpathCallback.native);
+/** The largest file this will read to record an identity. */
+const DIGEST_LIMIT_BYTES = 350_000_000;
+
+/**
+ * The identity tuple a semantic revision is moved for. A status poll, a
+ * re-scan that finds the same bytes, or a re-check never changes it.
+ */
+const revisionKey = (
+  binding: EngineBinding,
+  accountRoute: string | null,
+  model: string | null,
+) => [binding.id, binding.path, binding.version, binding.sha256, accountRoute ?? '', model ?? ''].join('|');
+
+async function exists(file: string) {
+  try {
+    await fs.access(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function digestFile(file: string): Promise<string> {
+  const digest = createHash('sha256');
+  let bytes = 0;
+  for await (const chunk of createReadStream(file)) {
+    bytes += (chunk as Buffer).length;
+    if (bytes > DIGEST_LIMIT_BYTES)
+      throw new EngineError(
+        'INSTALL_SIZE',
+        'This file is larger than Diomedes will read. It was not run.',
+        false,
+        'runtime-verification',
+      );
+    digest.update(chunk);
+  }
+  return digest.digest('hex');
+}
+
+/**
+ * This computer's own answer for a file. `realpath.native` is used because the
+ * plain call leaves a Windows 8.3 alias in place, and two spellings of one file
+ * must not become two candidates.
+ */
+async function readIdentity(file: string): Promise<FileIdentity | null> {
+  let real: string;
+  try {
+    real = await realpathNative(file);
+  } catch {
+    return null;
+  }
+  let stat;
+  try {
+    stat = await fs.stat(real);
+  } catch {
+    return null;
+  }
+  if (!stat.isFile()) return null;
+  return { path: real, size: stat.size, mtimeMs: stat.mtimeMs, sha256: '' };
+}
+
+/** A candidate Diomedes will not use, named honestly and never launched. */
+function unusable(
+  engine: ExternalEngine,
+  item: { file: string; source: 'managed' | 'system'; context: InstallationContext },
+  integrity: 'unknown' | 'failed',
+  issue: string,
+): EngineCandidate {
+  return {
+    id: `${item.source}:${engine}:${item.file}`,
+    engine,
+    source: item.source,
+    present: false,
+    path: item.file,
+    version: '',
+    sha256: '',
+    integrity,
+    protocol: 'unknown',
+    provenance: 'unverified',
+    context: item.context,
+    compatibility: 'unknown',
+    issue,
+  };
+}
+
+/** A message a person can act on. Never provider output, a path or a token. */
+function sanitise(error: unknown): string {
+  if (error instanceof EngineError) return error.message;
+  return 'This installation could not be examined. Check this computer again.';
+}
+
+function repairDetail(
+  engine: ExternalEngine,
+  reason: string,
+  installation: 'missing' | 'corrupt' | 'found',
+): string {
+  if (reason === 'selected-missing')
+    return 'The installation you chose is no longer on this computer. Choose another or install a compatible copy.';
+  if (reason === 'selected-changed')
+    return 'The installation you chose has changed since you selected it. Check it before using this service again.';
+  if (reason === 'selected-unverified')
+    return 'The installation you chose could not be verified. It was not run.';
+  if (installation === 'corrupt')
+    return 'The private copy Diomedes installed no longer matches its reviewed release. It was not run. Repair it to continue.';
+  if (installation === 'missing') return 'Install this tool to connect it.';
+  return `This adapter was checked with ${TESTED_VERSIONS[engine]}. Install a compatible copy for Diomedes, or choose another installation.`;
+}
+
+/** Where a failure happened, from the thrower when it knows and the code otherwise. */
+function stageOf(error: unknown): SetupStage {
+  if (error instanceof EngineError && error.stage) return error.stage;
+  const code = error instanceof EngineError ? error.code : '';
+  if (code === 'AUTH_REQUIRED') return 'provider-auth';
+  if (code === 'MODEL_UNAVAILABLE' || code === 'ACCOUNT_ROUTE') return 'model-list';
+  if (code === 'LAUNCH_FAILED' || code === 'START_FAILED' || code === 'UNSUPPORTED_SHIM')
+    return 'launch';
+  if (code === 'PROTOCOL_ERROR' || code === 'PROCESS_EXITED') return 'local-handshake';
+  if (code === 'CLEANUP_FAILED') return 'cleanup';
+  if (code === 'NOT_INSTALLED' || code === 'CONSENT_REQUIRED') return 'discovery';
+  return 'runtime-verification';
+}
 export class EngineService {
   private readonly connections = new Map(EXTERNAL_ENGINES.map((id) => [id, blank(id)]));
   private readonly deps: EngineServiceDeps;
-  private discovering?: Promise<EngineConnection[]>;
+  /** One run per scope: two simultaneous scans of the same routes share it. */
+  private scans = new Map<string, Promise<EngineConnection[]>>();
   private checks = new Map<ExternalEngine, Promise<EngineConnection>>();
   private readonly nativeDiscovery: boolean;
   private running = new Map<string, AbortController>();
+  private readonly bindings: BindingStore;
+  /** The last scan's facts, so a binding can be applied without rescanning. */
+  private scanned = new Map<
+    ExternalEngine,
+    { inventory: EngineCandidate[]; observed?: { location?: string; version?: string } }
+  >();
+  private digests = new Map<string, FileIdentity>();
   /**
    * The host's runtime seam. External turns do not call an adapter here;
    * they run through the harness RunService under a durable run, its lease
@@ -116,8 +292,26 @@ export class EngineService {
         if (engine === 'devin') return new DevinAdapter(file, cwd);
         return new OmpAdapter(file, cwd);
       },
+      // The host's own enumeration runs only when the host is this computer.
+      ...(this.nativeDiscovery
+        ? { enumerate: (scope?: DiscoveryScope) => createDiscovery().installations(scope) }
+        : {}),
+      verifyManaged: (engine) => verifyManagedBinary(root, engine),
+      identify: (file) => readIdentity(file),
       ...deps,
     };
+    this.bindings = new BindingStore(root);
+    // A binding is a decision, so it survives a restart. What was merely
+    // observed — sign-in, models, when it was last checked — does not.
+    for (const engine of EXTERNAL_ENGINES) {
+      const stored = this.bindings.get(engine);
+      if (!stored) continue;
+      this.connections.set(engine, {
+        ...blank(engine),
+        binding: stored.binding,
+        revision: stored.revision,
+      });
+    }
   }
   status(): EngineConnection[] {
     return EXTERNAL_ENGINES.map((id) => structuredClone(this.connections.get(id)!));
@@ -131,95 +325,323 @@ export class EngineService {
     });
     return structuredClone(value);
   }
-  async discover(consent: boolean): Promise<EngineConnection[]> {
+  /** One file's identity, re-read only when its size or modification time moved. */
+  private async identify(file: string): Promise<FileIdentity | null> {
+    const cached = this.digests.get(path.resolve(file));
+    const identity = await this.deps.identify!(file);
+    if (!identity) return null;
+    if (
+      cached &&
+      cached.path === identity.path &&
+      cached.size === identity.size &&
+      cached.mtimeMs === identity.mtimeMs &&
+      cached.sha256
+    )
+      return cached;
+    const complete = identity.sha256 ? identity : { ...identity, sha256: await digestFile(identity.path) };
+    this.digests.set(path.resolve(file), complete);
+    return complete;
+  }
+
+  /**
+   * Every installation this computer offers for one route, examined one at a
+   * time. A candidate that cannot be resolved, whose bytes fail their reviewed
+   * digest, or whose version probe does not answer becomes that candidate's
+   * own issue. It never throws out of the loop and never hides another route.
+   */
+  private async inventory(
+    engine: ExternalEngine,
+    enumerated: DiscoveredInstallation[],
+  ): Promise<EngineCandidate[]> {
+    const wanted: { file: string; source: 'managed' | 'system'; context: InstallationContext }[] =
+      enumerated
+        .filter((row) => row.engine === engine)
+        .map((row) => ({ file: row.path, source: 'system' as const, context: row.context }));
+    // The private copy is always examined, not only when nothing else was found.
+    try {
+      const file = managedBinary(this.root, engine);
+      await fs.access(file);
+      wanted.push({
+        file,
+        source: 'managed',
+        context: installationContext(file, process.platform),
+      });
+    } catch {
+      // No private copy, or this engine has none. Neither hides the rest.
+    }
+    const rows: EngineCandidate[] = [];
+    const seen = new Set<string>();
+    for (const item of wanted) {
+      const candidate = await this.examine(engine, item).catch((error: unknown) =>
+        unusable(engine, item, 'unknown', sanitise(error)),
+      );
+      const key = process.platform === 'win32' ? candidate.id.toLowerCase() : candidate.id;
+      // A shim and its target resolve to one file; report that file once.
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push(candidate);
+    }
+    return rows;
+  }
+
+  private async examine(
+    engine: ExternalEngine,
+    item: { file: string; source: 'managed' | 'system'; context: InstallationContext },
+  ): Promise<EngineCandidate> {
+    let file = item.file;
+    // A Windows shim is not the executable. Resolve it before anything else,
+    // so identity and version describe what would actually run.
+    if (engine === 'opencode' && /\.cmd$/i.test(file)) {
+      const native = path.join(
+        path.dirname(file),
+        'node_modules',
+        'opencode-ai',
+        'bin',
+        'opencode.exe',
+      );
+      if (await exists(native)) file = native;
+    }
+    if (engine === 'cursor' && /\.(cmd|bat)$/i.test(file)) {
+      try {
+        file = await resolveCursorEntry(file);
+      } catch (error) {
+        if (!recordShimError(error)) throw error;
+        return unusable(engine, item, 'unknown', 'This launcher does not name a runnable Cursor CLI.');
+      }
+    }
+    const identity = await this.identify(file);
+    if (!identity)
+      return unusable(
+        engine,
+        { ...item, file },
+        'unknown',
+        'This file could not be read on this computer. It was not run.',
+      );
+    const base = {
+      id: `${item.source}:${engine}:${identity.path}`,
+      engine,
+      source: item.source,
+      present: true,
+      path: identity.path,
+      sha256: identity.sha256,
+      context: item.context,
+    };
+    if (item.source === 'managed') {
+      // The reviewed digest decides before anything launches. A private copy
+      // whose bytes changed is never asked for its version.
+      try {
+        await this.deps.verifyManaged!(engine);
+      } catch (error) {
+        return {
+          ...base,
+          version: '',
+          integrity: 'failed',
+          protocol: 'unknown',
+          provenance: 'unverified',
+          compatibility: 'unknown',
+          issue: sanitise(error),
+        };
+      }
+    }
+    let version: string;
+    try {
+      version = await this.deps.version(identity.path);
+    } catch (error) {
+      return {
+        ...base,
+        version: '',
+        integrity: item.source === 'managed' ? 'verified' : 'unknown',
+        protocol: 'failed',
+        provenance: item.source === 'managed' ? 'reviewed-release' : 'unverified',
+        compatibility: 'unknown',
+        issue: sanitise(error),
+      };
+    }
+    const compatibility = version === TESTED_VERSIONS[engine] ? 'supported' : 'unsupported';
+    return {
+      ...base,
+      version,
+      // A managed copy's bytes matched the release Diomedes reviewed. Their own
+      // copy has a recorded identity, so a later change is detected; that is
+      // not a claim about who published it.
+      integrity: 'verified',
+      protocol: 'passed',
+      provenance: item.source === 'managed' ? 'reviewed-release' : 'unverified',
+      compatibility,
+      ...(compatibility === 'unsupported'
+        ? {
+            issue: `This adapter was checked with ${TESTED_VERSIONS[engine]}. Version ${version} needs compatibility review.`,
+          }
+        : {}),
+    };
+  }
+
+  async discover(consent: boolean, scope: DiscoveryScope = {}): Promise<EngineConnection[]> {
     if (!consent)
       throw new EngineError(
         'CONSENT_REQUIRED',
         'Confirm the local discovery disclosure before checking this computer.',
       );
-    if (this.discovering) return this.discovering;
-    this.discovering = (async () => {
-      await fs.mkdir(this.root, { recursive: true });
-      const found = await this.deps.discover();
-      for (const id of EXTERNAL_ENGINES) {
-        let hit = found.find((row) => row.id === id && row.found);
-        if (!hit && this.nativeDiscovery && id !== 'cursor' && id !== 'devin') {
-          const file = managedBinary(this.root, id);
-          try {
-            await fs.access(file);
-            await verifyManagedBinary(this.root, id);
-            const version = await this.deps.version(file);
-            hit = {
-              ...this.integration(id, false),
-              id,
-              found: true,
-              location: file,
-              installedVersion: version,
-            };
-          } catch (error) {
-            if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT'))
-              throw error;
-          }
-        }
-        if (hit?.location && id === 'opencode' && /\.cmd$/i.test(hit.location)) {
-          const native = path.join(
-            path.dirname(hit.location),
-            'node_modules',
-            'opencode-ai',
-            'bin',
-            'opencode.exe',
-          );
-          try {
-            await fs.access(native);
-            hit = { ...hit, location: native };
-          } catch (error) {
-            if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT'))
-              throw error;
-          }
-        }
-        if (hit?.location && id === 'cursor' && /\.(cmd|bat)$/i.test(hit.location)) {
-          try {
-            hit = { ...hit, location: await resolveCursorEntry(hit.location) };
-          } catch (error) {
-            if (recordShimError(error)) hit = { ...hit, installedVersion: undefined };
-            else throw error;
-          }
-        }
-        const old = this.connections.get(id)!;
-        // A fresh inventory cannot retain readiness across changed binaries.
-        if (
-          hit &&
-          hit.location === old.location &&
-          hit.installedVersion === old.version &&
-          old.authentication === 'signed-in'
-        )
-          continue;
-        this.save({
-          ...blank(id),
-          installation: hit ? 'found' : 'missing',
-          compatibility:
-            hit?.installedVersion === TESTED_VERSIONS[id]
-              ? 'supported'
-              : hit
-                ? 'unsupported'
-                : 'unknown',
-          ...(hit?.location ? { location: hit.location } : {}),
-          ...(hit?.installedVersion ? { version: hit.installedVersion } : {}),
-          checkedAt: new Date().toISOString(),
-          detail: !hit
-            ? 'Install this tool to connect it.'
-            : hit.installedVersion !== TESTED_VERSIONS[id]
-              ? `This adapter was checked with ${TESTED_VERSIONS[id]}. The installed version needs compatibility review.`
-              : 'Found a compatible installation. Check sign-in and models next.',
-        });
-      }
-      return this.status();
-    })();
+    const key = scope.engine ?? '*';
+    const active = this.scans.get(key);
+    if (active) return active;
+    const job = this.scan(scope);
+    this.scans.set(key, job);
     try {
-      return await this.discovering;
+      return await job;
     } finally {
-      this.discovering = undefined;
+      this.scans.delete(key);
     }
+  }
+
+  private async scan(scope: DiscoveryScope): Promise<EngineConnection[]> {
+    await fs.mkdir(this.root, { recursive: true });
+    const engines = scope.engine ? [scope.engine] : [...EXTERNAL_ENGINES];
+    let found: IntegrationStatus[] = [];
+    try {
+      found = await this.deps.discover(scope);
+    } catch (error) {
+      this.record(engines[0], error, 'discovery');
+    }
+    let enumerated: DiscoveredInstallation[] = [];
+    try {
+      enumerated = this.deps.enumerate
+        ? await this.deps.enumerate(scope)
+        : // A caller that supplied the inventory is the host: take what it named.
+          found
+            .filter((row) => row.found && row.location)
+            .map((row) => ({
+              engine: row.id,
+              path: row.location!,
+              context: installationContext(row.location!, process.platform),
+            }));
+    } catch (error) {
+      this.record(engines[0], error, 'discovery');
+    }
+    for (const engine of engines) {
+      try {
+        const inventory = await this.inventory(engine, enumerated);
+        const hit = found.find((row) => row.id === engine && row.found);
+        this.scanned.set(engine, {
+          inventory,
+          observed: hit
+            ? { location: hit.location, version: hit.installedVersion }
+            : undefined,
+        });
+        this.apply(engine);
+      } catch (error) {
+        // One route's failure is one route's diagnostic, never a blank roster.
+        this.record(engine, error, 'discovery');
+      }
+    }
+    return this.status();
+  }
+
+  /**
+   * Turn this route's observed installations into the one effective state,
+   * through the shared policy. Discovery recommends; only a person binds.
+   */
+  private apply(engine: ExternalEngine): EngineConnection {
+    const scanned = this.scanned.get(engine) ?? { inventory: [] };
+    const inventory = scanned.inventory;
+    const stored = this.bindings.get(engine);
+    const binding = stored?.binding ?? null;
+    const old = this.connections.get(engine)!;
+    const shared = {
+      candidates: inventory.map((row) => structuredClone(row)),
+      binding,
+      revision: stored?.revision ?? 0,
+      verification: old.verification ?? null,
+      checkedAt: new Date().toISOString(),
+    };
+    // Nothing on this computer could be identified and nothing is bound: report
+    // what discovery saw without claiming a verified identity for it.
+    if (!binding && inventory.every((row) => row.integrity === 'unknown') && scanned.observed) {
+      const { location, version } = scanned.observed;
+      return this.merge(engine, {
+        ...blank(engine),
+        ...shared,
+        installation: 'found',
+        compatibility: version === TESTED_VERSIONS[engine] ? 'supported' : 'unsupported',
+        ...(location ? { location } : {}),
+        ...(version ? { version } : {}),
+        detail:
+          version === TESTED_VERSIONS[engine]
+            ? 'Found a compatible installation. Check sign-in and models next.'
+            : `This adapter was checked with ${TESTED_VERSIONS[engine]}. The installed version needs compatibility review.`,
+      });
+    }
+    const decision = selectCandidate(
+      inventory,
+      { engine, version: TESTED_VERSIONS[engine] },
+      binding ?? undefined,
+    );
+    if (decision.kind === 'candidate') {
+      const chosen = decision.candidate as EngineCandidate;
+      return this.merge(engine, {
+        ...blank(engine),
+        ...shared,
+        installation: 'found',
+        compatibility: 'supported',
+        location: chosen.path,
+        version: chosen.version,
+        recommendedCandidateId: decision.requiresSelection ? chosen.id : null,
+        detail: decision.requiresSelection
+          ? 'Found a compatible installation. Check sign-in and models next.'
+          : 'Using the installation you chose. Check sign-in and models next.',
+      });
+    }
+    const corrupt = binding
+      ? inventory.some((row) => row.id === binding.id && row.integrity === 'failed')
+      : inventory.length === 1 && inventory[0].integrity === 'failed';
+    const state = corrupt
+      ? { installation: 'corrupt' as const, compatibility: 'unknown' as const }
+      : inventory.length === 0
+        ? { installation: 'missing' as const, compatibility: 'unknown' as const }
+        : { installation: 'found' as const, compatibility: 'unsupported' as const };
+    const failure = inventory.find((row) => row.issue);
+    return this.merge(engine, {
+      ...blank(engine),
+      ...shared,
+      ...state,
+      repair: decision.reason,
+      detail: repairDetail(engine, decision.reason, state.installation),
+      ...(corrupt && failure
+        ? {
+            diagnostic: this.diagnostic(engine, {
+              stage: 'runtime-verification',
+              code: 'INSTALL_CHECKSUM',
+              candidateSource: 'managed',
+            }),
+          }
+        : {}),
+    });
+  }
+
+  /**
+   * Replace the inventory every time; keep a readiness observation only while
+   * the very same executable is still the effective one.
+   */
+  private merge(engine: ExternalEngine, next: EngineConnection): EngineConnection {
+    const old = this.connections.get(engine)!;
+    const same =
+      !!next.location &&
+      next.location === old.location &&
+      next.version === old.version &&
+      old.authentication === 'signed-in';
+    return this.save(
+      same
+        ? {
+            ...next,
+            authentication: old.authentication,
+            accountRoute: old.accountRoute,
+            models: old.models,
+            routeIssue: old.routeIssue ?? null,
+            checkedAt: old.checkedAt,
+            detail: old.detail,
+          }
+        : next,
+    );
   }
   async check(engine: ExternalEngine, signal?: AbortSignal): Promise<EngineConnection> {
     if (this.checks.has(engine))
@@ -237,6 +659,22 @@ export class EngineService {
   }
   private async inspect(engine: ExternalEngine, signal?: AbortSignal) {
     const saved = this.connections.get(engine)!;
+    // A binding that no longer names a usable installation is broken, and a
+    // broken binding is never quietly replaced by whatever PATH offers now.
+    if (saved.binding && saved.repair)
+      throw new EngineError(
+        'BINDING_CHANGED',
+        repairDetail(engine, saved.repair, saved.installation === 'corrupt' ? 'corrupt' : 'found'),
+        false,
+        'runtime-verification',
+      );
+    if (saved.installation === 'corrupt')
+      throw new EngineError(
+        'INSTALL_CHECKSUM',
+        repairDetail(engine, saved.repair ?? '', 'corrupt'),
+        false,
+        'runtime-verification',
+      );
     if (saved.installation !== 'found' || !saved.location)
       throw new EngineError('NOT_INSTALLED', 'The tool was not found. Check this computer again.');
     if (saved.compatibility !== 'supported')
@@ -245,12 +683,7 @@ export class EngineService {
         `Use the reviewed ${TESTED_VERSIONS[engine]} version before connecting this route.`,
       );
     try {
-      if (
-        engine !== 'cursor' &&
-        engine !== 'devin' &&
-        path.resolve(saved.location) === path.resolve(managedBinary(this.root, engine))
-      )
-        await verifyManagedBinary(this.root, engine);
+      if (await this.isManaged(engine, saved)) await this.deps.verifyManaged!(engine);
       const version = await this.deps.version(saved.location, signal);
       if (version !== TESTED_VERSIONS[engine])
         throw new EngineError(
@@ -260,7 +693,16 @@ export class EngineService {
       const cwd = path.join(this.root, engine);
       await fs.mkdir(cwd, { recursive: true });
       const result = await this.deps.adapter(engine, saved.location, cwd).inspect(signal);
-      return this.save({ ...saved, ...result, checkedAt: new Date().toISOString() });
+      const value = this.save({
+        ...saved,
+        ...result,
+        routeIssue: result.routeIssue ?? null,
+        diagnostic: null,
+        checkedAt: new Date().toISOString(),
+      });
+      // The account route is part of what a receipt is written against.
+      this.syncRevision(engine, value.accountRoute);
+      return this.connections.get(engine)!;
     } catch (error) {
       this.save({
         ...saved,
@@ -273,6 +715,11 @@ export class EngineService {
             ? 'unsupported'
             : saved.compatibility,
         checkedAt: new Date().toISOString(),
+        diagnostic: this.diagnostic(engine, {
+          stage: stageOf(error),
+          code: error instanceof EngineError ? error.code : 'CHECK_FAILED',
+          candidateSource: this.effective(saved)?.source ?? null,
+        }),
         detail:
           error instanceof EngineError
             ? error.message
@@ -280,6 +727,120 @@ export class EngineService {
       });
       throw error;
     }
+  }
+  /** The installation this route would actually run. */
+  private effective(value: EngineConnection): EngineCandidate | undefined {
+    const id = value.binding?.id ?? value.recommendedCandidateId;
+    return value.candidates?.find((row) => row.id === id);
+  }
+  /**
+   * Whether the effective installation is Diomedes's own private copy. Decided
+   * by the candidate's source, never by comparing two path spellings: a
+   * Windows 8.3 alias and its long name are the same file.
+   */
+  private async isManaged(engine: ExternalEngine, value: EngineConnection) {
+    const chosen = this.effective(value);
+    if (chosen) return chosen.source === 'managed';
+    if (engine === 'cursor' || engine === 'devin' || !value.location) return false;
+    try {
+      const [a, b] = await Promise.all([
+        realpathNative(value.location),
+        realpathNative(managedBinary(this.root, engine)),
+      ]);
+      return a === b;
+    } catch {
+      return false;
+    }
+  }
+  private diagnostic(
+    engine: ExternalEngine,
+    facts: { stage: SetupStage; code: string; candidateSource: EngineCandidate['source'] | null },
+  ): SetupDiagnostic {
+    const value = this.connections.get(engine)!;
+    const stored = this.bindings.get(engine);
+    return {
+      buildId: this.deps.buildId?.() ?? 'unknown',
+      engine,
+      candidateSource: facts.candidateSource,
+      installedVersion: value.version ?? null,
+      accountRoute: value.accountRoute,
+      selectedModel: stored?.model ?? null,
+      stage: facts.stage,
+      code: facts.code,
+      correlationId: randomUUID(),
+      lastVerifiedAt: value.verification?.verifiedAt ?? null,
+      at: new Date().toISOString(),
+    };
+  }
+  private record(engine: ExternalEngine, error: unknown, stage: SetupStage) {
+    const saved = this.connections.get(engine)!;
+    this.save({
+      ...saved,
+      checkedAt: new Date().toISOString(),
+      detail: sanitise(error),
+      diagnostic: this.diagnostic(engine, {
+        stage: error instanceof EngineError && error.stage ? error.stage : stage,
+        code: error instanceof EngineError ? error.code : 'SCAN_FAILED',
+        candidateSource: null,
+      }),
+    });
+  }
+  /**
+   * Move the semantic revision only when the binding identity, the account
+   * route or the selected model differs from what is recorded.
+   */
+  private syncRevision(engine: ExternalEngine, accountRoute: string | null, model?: string | null) {
+    const stored = this.bindings.get(engine);
+    if (!stored) return;
+    const selected = model === undefined ? stored.model : model;
+    const key = revisionKey(stored.binding, accountRoute, selected);
+    if (key === stored.key) return;
+    this.bindings.save(engine, {
+      binding: stored.binding,
+      revision: stored.revision + 1,
+      key,
+      model: selected,
+    });
+    const value = this.connections.get(engine)!;
+    this.save({ ...value, revision: stored.revision + 1 });
+  }
+  /**
+   * A person who chose this route before bindings existed keeps their choice:
+   * the recommended installation is bound once, marked as carried rather than
+   * picked. Nothing else ever binds on a person's behalf.
+   */
+  private adopt(engine: ExternalEngine) {
+    const value = this.connections.get(engine)!;
+    if (this.bindings.get(engine) || !value.recommendedCandidateId) return;
+    const candidate = this.effective(value);
+    if (candidate) this.bindCandidate(engine, candidate, 'adopted');
+  }
+  /** Bind one observed candidate to this route and re-derive its state. */
+  private bindCandidate(
+    engine: ExternalEngine,
+    candidate: EngineCandidate,
+    origin: EngineBinding['origin'],
+  ) {
+    const stored = this.bindings.get(engine);
+    const binding: EngineBinding = {
+      id: candidate.id,
+      engine,
+      source: candidate.source,
+      path: candidate.path,
+      version: candidate.version,
+      sha256: candidate.sha256,
+      boundAt: new Date().toISOString(),
+      origin,
+    };
+    const value = this.connections.get(engine)!;
+    const key = revisionKey(binding, value.accountRoute, stored?.model ?? null);
+    this.bindings.save(engine, {
+      binding,
+      revision: stored && stored.key === key ? stored.revision : (stored?.revision ?? 0) + 1,
+      key,
+      model: stored?.model ?? null,
+    });
+    return this.apply(engine);
   }
   selection(engine: ExternalEngine, model: string) {
     const state = this.connections.get(engine)!;
@@ -289,13 +850,19 @@ export class EngineService {
       !state.accountRoute
     )
       throw new EngineError('AUTH_REQUIRED', 'Check sign-in before selecting this service.');
-    if (!state.checkedAt || Date.now() - Date.parse(state.checkedAt) > 300_000)
+    if (freshness(state.checkedAt, Date.now()) !== 'fresh')
       throw new EngineError('STALE_STATUS', 'Recheck this connection before selecting it.');
     if (!state.models.some((row) => row.slug === model))
       throw new EngineError(
         'MODEL_UNAVAILABLE',
         'The selected model is no longer offered. Choose a model after rechecking.',
       );
+    // Choosing this route is the moment a binding becomes explicit. It is kept
+    // synchronous because the route that calls this saves settings in the same
+    // breath, and because a choice must survive a crash one line later.
+    const chosen = this.effective(state);
+    if (!this.bindings.get(engine) && chosen) this.bindCandidate(engine, chosen, 'explicit');
+    this.syncRevision(engine, state.accountRoute, model);
     return { engine, model, accountRoute: state.accountRoute };
   }
   /**
@@ -338,8 +905,29 @@ export class EngineService {
    * here (or the one-time adoption of a pre-binding selection) ever sets a
    * binding; discovery recommends and never binds.
    */
-  async bind(_engine: ExternalEngine, _candidateId: string): Promise<EngineConnection> {
-    throw new EngineError('NOT_IMPLEMENTED', 'Choosing an installation is not available yet.');
+  async bind(engine: ExternalEngine, candidateId: string): Promise<EngineConnection> {
+    // The id must name something this computer offers right now. A path from a
+    // screen is never bound, and a stale id never resurrects a removed file.
+    await this.discover(true, { engine });
+    const value = this.connections.get(engine)!;
+    const candidate = value.candidates?.find((row) => row.id === candidateId);
+    if (!candidate)
+      throw new EngineError(
+        'CANDIDATE_UNKNOWN',
+        'That installation is not one this computer currently offers. Check this computer again, then choose.',
+        false,
+        'discovery',
+      );
+    const decision = selectCandidate([candidate], { engine, version: TESTED_VERSIONS[engine] });
+    if (decision.kind !== 'candidate')
+      throw new EngineError(
+        'CANDIDATE_UNUSABLE',
+        candidate.issue ??
+          `This adapter was checked with ${TESTED_VERSIONS[engine]}. That installation cannot be used yet.`,
+        false,
+        'runtime-verification',
+      );
+    return this.bindCandidate(engine, candidate, 'explicit');
   }
   /**
    * One consented, bounded, synthetic request through the ordinary admitted
@@ -353,10 +941,11 @@ export class EngineService {
   }
   integration(engine: ExternalEngine, enabled: boolean): IntegrationStatus {
     const value = this.connections.get(engine)!;
-    const fresh = !!value.checkedAt && Date.now() - Date.parse(value.checkedAt) < 300_000;
+    const fresh = freshness(value.checkedAt, Date.now()) === 'fresh';
     const ready =
       value.installation === 'found' &&
       value.compatibility === 'supported' &&
+      !value.repair &&
       value.authentication === 'signed-in' &&
       value.models.length > 0 &&
       fresh;
@@ -448,7 +1037,9 @@ export class EngineService {
         },
         signal,
         admit: async () => {
-          await this.discover(true);
+          // Refresh this route, not all five: admission is on the hot path.
+          await this.discover(true, { engine });
+          this.adopt(engine);
           await this.check(engine, signal);
           const selected = this.selection(engine, input.model);
           if (selected.accountRoute !== input.accountRoute)
