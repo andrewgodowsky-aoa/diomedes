@@ -368,7 +368,7 @@ describe('the connection facts in the bundle', () => {
     expect(rendered).not.toContain('a description');
   });
 
-  test('the last failure names its stage, code and correlation id and nothing else', () => {
+  test('the last failure names its stage, code, correlation id and the facts it recorded', () => {
     const [row] = bundleWith([
       connection({
         revision: 4,
@@ -401,17 +401,93 @@ describe('the connection facts in the bundle', () => {
     expect(row.revision).toBe(4);
     expect(row.verifiedRevision).toBe(3);
     expect(row.lastVerifiedAt).toBe('2026-09-10T00:00:00.000Z');
+    // A diagnostic is a record of a past failure, so it carries the facts as
+    // they were then. The row's own fields say what is true now.
     expect(row.diagnostic).toEqual({
       stage: 'provider-auth',
       code: 'ACCOUNT_ROUTE_UNSUPPORTED',
       correlationId: 'c-9f2a',
       at: NOW,
+      buildId: '0.1.4+efa83acd021c',
+      candidateSource: 'system',
+      installedVersion: '1.19.0',
+      accountRoute: 'opencode:opencode-zen',
+      selectedModel: 'zen/deep',
+      lastVerifiedAt: null,
     });
     expect(renderSupportBundle(bundleWith([connection({ diagnostic: {
       buildId: 'x', engine: 'opencode', candidateSource: null, installedVersion: null,
       accountRoute: null, selectedModel: null, stage: 'local-handshake', code: 'HANDSHAKE_TIMEOUT',
       correlationId: 'c-1', lastVerifiedAt: null, at: NOW,
     } })]))).toContain('diagnostic opencode: stage=local-handshake code=HANDSHAKE_TIMEOUT');
+  });
+
+  test('the recorded facts of a failure are rendered as recorded, beside the stage', () => {
+    const rendered = renderSupportBundle(
+      bundleWith([
+        connection({
+          accountRoute: 'opencode:opencode-go',
+          diagnostic: {
+            buildId: '0.1.3+ffffffffffff',
+            engine: 'opencode',
+            candidateSource: 'system',
+            installedVersion: '1.19.0',
+            accountRoute: 'opencode:opencode-zen',
+            selectedModel: 'zen/deep',
+            stage: 'provider-auth',
+            code: 'ACCOUNT_ROUTE_UNSUPPORTED',
+            correlationId: 'c-9f2a',
+            lastVerifiedAt: '2026-09-10T00:00:00.000Z',
+            at: NOW,
+          },
+        }),
+      ]),
+    );
+    const line = rendered.split('\n').find((row) => row.startsWith('diagnostic opencode:'))!;
+    expect(line).toContain('stage=provider-auth code=ACCOUNT_ROUTE_UNSUPPORTED');
+    // The reader must not read a past fact as a current one.
+    expect(line).toContain('recorded then:');
+    expect(line).toContain('build=0.1.3+ffffffffffff');
+    expect(line).toContain('version=1.19.0');
+    expect(line).toContain('account route=opencode:opencode-zen');
+    expect(line).toContain('model=zen/deep');
+  });
+
+  test('a corrupt installation reports no version, because the failure refused to state one', () => {
+    // server/engines/service.ts sets `installedVersion: null` on the diagnostic
+    // of a candidate that failed its digest: no version is trusted there. The
+    // remembered binding still holds the version from before, and printing that
+    // would state what the diagnostic refused to.
+    const [row] = bundleWith([
+      connection({
+        installation: 'corrupt',
+        repair: 'selected-unverified',
+        binding: {
+          id: 'managed:opencode:private',
+          engine: 'opencode',
+          path: `${HOME}\\tools\\opencode.exe`,
+          version: '1.18.4',
+          sha256: 'a'.repeat(64),
+          source: 'managed',
+          boundAt: NOW,
+          origin: 'explicit',
+        },
+        diagnostic: {
+          buildId: '0.1.4+efa83acd021c',
+          engine: 'opencode',
+          candidateSource: 'managed',
+          installedVersion: null,
+          accountRoute: null,
+          selectedModel: null,
+          stage: 'runtime-verification',
+          code: 'INSTALL_CHECKSUM',
+          correlationId: 'c-1',
+          lastVerifiedAt: null,
+          at: NOW,
+        },
+      }),
+    ]).connections;
+    expect(row.installedVersion).toBeNull();
   });
 
   test('a hostile connection cannot smuggle a field, a path or a secret into the bundle', () => {
@@ -537,7 +613,7 @@ describe('the support bundle route', () => {
       const { bundle, text } = (await response.json()) as { bundle: SupportBundle; text: string };
       expect(bundle.project).toBeNull();
       expect(text).toContain(`Diomedes ${bundle.app.version}`);
-      expect(text).toContain('not included: Environment variables are not included.');
+      expect(text).toContain('not included: Environment variables are not collected');
       // The preview a person reads and the text they paste are one string.
       expect(text).toBe(renderSupportBundle(bundle));
       expect(text).toContain('launch target: ');

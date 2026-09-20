@@ -58,19 +58,37 @@ export interface SupportBundleConnection {
   /** The revision a real result last proved, which is not always the current one. */
   readonly verifiedRevision: number | null;
   readonly lastVerifiedAt: string | null;
+  /**
+   * The last failure, as it was recorded. Every field here is a fact from that
+   * moment, not a current one: the row above says what is true now, and the two
+   * disagree exactly when something changed after the failure.
+   */
   readonly diagnostic: {
     stage: SetupStage | null;
     code: string | null;
     correlationId: string | null;
     at: string | null;
+    buildId: string | null;
+    candidateSource: CandidateSource | null;
+    installedVersion: string | null;
+    accountRoute: string | null;
+    selectedModel: string | null;
+    lastVerifiedAt: string | null;
   } | null;
 }
 
 // Each sentence names one thing the bundle refuses to carry, so a reader can
-// trust what is missing as well as what is present.
+// trust what is missing as well as what is present. Every sentence here is a
+// claim about this file's own code, so each one has to survive the worst string
+// an adapter or an error could hand it — see `clean()` and `field()` below.
 const EXCLUDED = [
-  'Environment variables are not included.',
-  'Credential files are not included.',
+  // Nothing here is read from the environment. A tool that printed one of its
+  // own variables into an error message is the case this cannot promise away,
+  // which is why the text is previewed before it is shared.
+  'Environment variables are not collected, though one a tool printed into an error can appear there.',
+  'Credential files are not opened and no credential file content is collected.',
+  // Held to known secret shapes: the scrubber removes every shape it knows
+  // before a string is written. A shape it does not know would pass.
   'Tokens are not included.',
   'API keys are not included.',
   'Document contents are not included.',
@@ -83,6 +101,7 @@ const EXCLUDED = [
   // in exactly the failure a person exports this bundle to explain.
   'Connection rows carry no executable path.',
   'Connection rows carry account route identifiers, not account names.',
+  'Read this text before sending it: what a tool wrote into an error is quoted here.',
 ];
 // Paths and a project name can still name a person, so the bundle is not
 // anonymous and does not say it is. The name is the part a person chooses.
@@ -113,6 +132,59 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * The bundle is a list of lines, and a reader trusts a line because of where it
+ * sits. Runtime text carries whatever a tool wrote into it, so a newline inside
+ * one field could forge a `not included:` promise or a second `build:` line, and
+ * a bidi override could reorder what a person sees without changing the bytes.
+ *
+ * A newline becomes the two characters a reader can see, because the fact that
+ * the text contained one is itself worth reporting. Everything else in the
+ * control and override ranges is dropped. This runs before any length cap, so a
+ * cap can never cut a sequence in half and leave the remainder.
+ */
+const NEWLINE = new RegExp('\\r\\n|[\\r\\n\\u2028\\u2029]', 'g');
+const CONTROL = new RegExp(
+  '[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]',
+  'g',
+);
+const oneLine = (text: string) => text.replace(NEWLINE, '\\n').replace(CONTROL, '');
+
+/**
+ * The floor for text whose secret inventory nobody holds, over and above
+ * `baselineRedact`: the same profile paths spelled in any case (Windows paths
+ * are case-insensitive, and an 8.3 alias is a different spelling of the same
+ * folder), and the secret shapes a tool is most likely to echo. A shape not
+ * listed here is not removed, which is why the promises above say what they say.
+ */
+const FLOOR: readonly (readonly [RegExp, string])[] = [
+  [/[A-Za-z]:[\\/]+Users[\\/]+[^\\/:*?"<>|\s'"()]+/gi, '[home]'],
+  [/\/Users\/[^/:'"()\s]+/gi, '[home]'],
+  [/\/home\/[^/:'"()\s]+/gi, '[home]'],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g, '[redacted]'],
+  [/\bgh[pousr]_[A-Za-z0-9]{16,}\b/g, '[redacted]'],
+  [/\bxox[abprs]-[A-Za-z0-9-]{8,}\b/g, '[redacted]'],
+  [/\bAKIA[0-9A-Z]{16}\b/g, '[redacted]'],
+  [
+    /\b(api[-_ ]?keys?|tokens?|secrets?|passwords?|passphrases?)(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|\S+)/gi,
+    '$1$2[redacted]',
+  ],
+];
+
+/** Any spelling of one absolute path, in either separator and any case. */
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function homeExpression(home: string): RegExp | null {
+  // Too short to be a profile directory, and short enough to match everything.
+  if (home.length < 4) return null;
+  return new RegExp(home.split(/[\\/]+/).map(escapeRegExp).join('[\\\\/]+'), 'gi');
+}
+
+/**
+ * A connection row promises it carries no executable path, so that promise is
+ * enforced where the row is built rather than trusted of the fields it reads.
+ */
+const EXECUTABLE = /\S*[\\/][^\\/\s"']*\.(?:exe|cmd|bat|com|ps1|psm1|msi|dll|sh|appx)\b/gi;
+
 export function buildSupportBundle(input: {
   version: string; dataDir: string; projectRoot: string; port: number;
   engines: IntegrationStatus[]; state: ProjectState | null;
@@ -132,37 +204,57 @@ export function buildSupportBundle(input: {
 }): SupportBundle {
   const scrub = secretScrubber(input.secrets);
   const home = process.env.USERPROFILE ?? process.env.HOME ?? '';
-  // Tilde keeps a path useful for diagnosis without naming the account behind it.
+  const profile = homeExpression(home);
+  /**
+   * Every string that reaches the bundle goes through here, whoever wrote it.
+   * In order: the literal inventory the caller holds, the line and override
+   * normalisation, this account's own directory in any spelling, then the
+   * pattern floor for the secrets and other people's paths nobody inventoried.
+   *
+   * Tilde keeps a path useful for diagnosis without naming the account behind
+   * it; another profile becomes `[home]`, because naming it helps no one.
+   */
   const clean = (text: string) => {
-    const scrubbed = scrub(text);
-    return home ? scrubbed.split(home).join('~') : scrubbed;
+    let value = oneLine(scrub(text));
+    if (profile) value = value.replace(profile, '~');
+    value = baselineRedact(value);
+    for (const [pattern, replacement] of FLOOR) value = value.replace(pattern, replacement);
+    return value;
   };
   /**
-   * One string from a connection. Adapters report strings Diomedes did not
-   * write and whose secret inventory it does not hold, so the pattern floor runs
-   * first, then the literal scrub, then the length cap.
+   * One string from a connection: an identifier, a code or a version. These are
+   * the fields a row is made of, so a value that spans lines is not one of them:
+   * it is cut at the first break and the cut is said, rather than escaped and
+   * carried. Free-running text — an error, an adapter's own detail — keeps its
+   * content through `clean()`, where an escaped break can forge no line.
    */
-  const field = (value: unknown, max = MAX_FIELD_CHARS): string | null =>
-    typeof value === 'string' && value.trim() !== ''
-      ? clean(baselineRedact(value)).slice(0, max)
-      : null;
+  const field = (value: unknown, max = MAX_FIELD_CHARS): string | null => {
+    if (typeof value !== 'string' || value.trim() === '') return null;
+    const cut = NEWLINE.exec(value);
+    NEWLINE.lastIndex = 0;
+    const head = cut ? `${value.slice(0, cut.index)} [cut at a line break]` : value;
+    return clean(head).replace(EXECUTABLE, '[path]').slice(0, max);
+  };
   const oneOf = <T extends string>(value: unknown, allowed: Record<T, true>): T | null =>
     typeof value === 'string' && Object.prototype.hasOwnProperty.call(allowed, value)
       ? (value as T)
       : null;
   const integer = (value: unknown): number | null =>
     typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
-  const timestamp = (value: unknown): string | null =>
-    typeof value === 'string' && value.length <= 40 && Number.isFinite(Date.parse(value))
-      ? clean(value)
-      : null;
+  // Cleaned before it is judged: a timestamp that needed scrubbing to become
+  // one line is not a timestamp, and must not be read as one.
+  const timestamp = (value: unknown): string | null => {
+    if (typeof value !== 'string' || value.length > 40) return null;
+    const text = clean(value);
+    return text.length <= 40 && Number.isFinite(Date.parse(text)) ? text : null;
+  };
   const resolved = Intl.DateTimeFormat().resolvedOptions();
   const identity = input.build === undefined ? currentBuildIdentity(input.version) : input.build;
   const build: SupportBundleBuild | null = identity
     ? {
         version: clean(identity.version),
         commit: identity.commit,
-        builtAt: identity.builtAt,
+        builtAt: identity.builtAt === null ? null : clean(identity.builtAt),
         channel: clean(identity.channel),
         signing: identity.signing === null ? null : clean(identity.signing),
         sourceStatus: identity.sourceStatus,
@@ -190,14 +282,18 @@ export function buildSupportBundle(input: {
     },
     paths: { dataDir: clean(input.dataDir), projectRoot: clean(input.projectRoot), port: input.port },
     engines: input.engines.slice(0, MAX_ENGINES).map((engine) => {
-      const status = clean(engine.status);
-      const detail = clean(engine.detail);
+      // An adapter writes both of these, so both are capped as well as cleaned:
+      // a long tail would otherwise carry bulk into a pasted bundle.
+      const status = clean(engine.status).slice(0, MAX_ERROR_CHARS);
+      const detail = clean(engine.detail).slice(0, MAX_ERROR_CHARS);
       return {
         id: engine.id,
         found: engine.found,
         available: engine.available,
         // The diagnostic sentence rides along in status so it is scrubbed too.
-        ...(engine.installedVersion ? { installedVersion: clean(engine.installedVersion) } : {}),
+        ...(engine.installedVersion
+          ? { installedVersion: clean(engine.installedVersion).slice(0, MAX_FIELD_CHARS) }
+          : {}),
         status: detail && detail !== status ? `${status} — ${detail}` : status,
       };
     }),
@@ -229,9 +325,16 @@ export function buildSupportBundle(input: {
         services && Object.prototype.hasOwnProperty.call(services, `${engine}Model`)
           ? services[`${engine}Model`]
           : null;
+      const installation = field(row.installation, 40) ?? 'unknown';
+      // An installation that failed its integrity check, or that needs repair,
+      // has no version Diomedes trusts. `EngineService` says so by recording the
+      // failure with no installed version, and the binding still remembers the
+      // version it had before: printing that would state what the host refused
+      // to. The version recorded with the failure is carried in `diagnostic`.
+      const untrusted = installation === 'corrupt' || typeof row.repair === 'string';
       return {
         engine,
-        installation: field(row.installation, 40) ?? 'unknown',
+        installation,
         compatibility: field(row.compatibility, 40) ?? 'unknown',
         authentication: field(row.authentication, 40) ?? 'unknown',
         candidateSource:
@@ -240,10 +343,11 @@ export function buildSupportBundle(input: {
         candidates: candidates.length,
         bound: binding !== null,
         bindingOrigin: binding ? oneOf(binding.origin, ORIGINS) : null,
-        installedVersion:
-          (chosen ? field(chosen.version, 40) : null) ??
-          (binding ? field(binding.version, 40) : null) ??
-          field(row.version, 40),
+        installedVersion: untrusted
+          ? null
+          : ((chosen ? field(chosen.version, 40) : null) ??
+            (binding ? field(binding.version, 40) : null) ??
+            field(row.version, 40)),
         provenance: chosen ? oneOf(chosen.provenance, PROVENANCES) : null,
         context: chosen ? oneOf(chosen.context, CONTEXTS) : null,
         accountRoute: field(row.accountRoute),
@@ -262,12 +366,21 @@ export function buildSupportBundle(input: {
         revision: integer(row.revision),
         verifiedRevision: receipt ? integer(receipt.revision) : null,
         lastVerifiedAt: receipt ? timestamp(receipt.verifiedAt) : null,
+        // The facts as the failure recorded them. A diagnostic answers "what was
+        // true when this broke", and substituting today's values for its own
+        // would answer a question nobody asked.
         diagnostic: diagnostic
           ? {
               stage,
               code: field(diagnostic.code, MAX_CODE_CHARS),
               correlationId: field(diagnostic.correlationId, MAX_CODE_CHARS),
               at: timestamp(diagnostic.at),
+              buildId: field(diagnostic.buildId, MAX_CODE_CHARS),
+              candidateSource: oneOf(diagnostic.candidateSource, CANDIDATE_SOURCES),
+              installedVersion: field(diagnostic.installedVersion, 40),
+              accountRoute: field(diagnostic.accountRoute),
+              selectedModel: field(diagnostic.selectedModel),
+              lastVerifiedAt: timestamp(diagnostic.lastVerifiedAt),
             }
           : null,
       };
@@ -332,11 +445,19 @@ export function renderSupportBundle(bundle: SupportBundle): string {
         }`,
       ];
       const rows = [`connection ${connection.engine}: ${facts.join(' ')}`];
-      if (connection.diagnostic)
+      const failure = connection.diagnostic;
+      if (failure)
         rows.push(
-          `diagnostic ${connection.engine}: stage=${connection.diagnostic.stage ?? 'unknown'} code=${
-            connection.diagnostic.code ?? 'unknown'
-          } correlation=${connection.diagnostic.correlationId ?? 'none'} at=${connection.diagnostic.at ?? 'unknown'}`,
+          `diagnostic ${connection.engine}: stage=${failure.stage ?? 'unknown'} code=${
+            failure.code ?? 'unknown'
+          } correlation=${failure.correlationId ?? 'none'} at=${failure.at ?? 'unknown'}` +
+            // Labelled, because every value after this marker is what was true
+            // when the failure happened and not what is true now.
+            ` recorded then: build=${failure.buildId ?? 'unknown'} source=${
+              failure.candidateSource ?? 'unknown'
+            } version=${failure.installedVersion ?? 'not stated'} account route=${
+              failure.accountRoute ?? 'none'
+            } model=${failure.selectedModel ?? 'none'} last verified=${failure.lastVerifiedAt ?? 'never'}`,
         );
       return rows;
     }),
