@@ -140,6 +140,46 @@ describe('what the README may say was verified', () => {
   });
 });
 
+describe('the two facts the README used to state as literals', () => {
+  it('names the Windows version the record carries, and none when it carries none', () => {
+    const bare = readme();
+    expect(bare).not.toContain('Windows 11 build 26200');
+    expect(bare).toMatch(/Windows version[^\n]*NOT VERIFIED/i);
+    const recorded = readme({
+      record: { ...candidate(), host: { tested: 'Windows 11 build 26200' } },
+    });
+    expect(recorded).toContain('Tested on Windows 11 build 26200 only.');
+  });
+
+  it('reads the signing question from the record that answers it', () => {
+    // The same field main() copies into the public manifest.
+    const unsigned = readme({
+      record: { ...candidate(), signing: { application: 'NotSigned', installer: 'NotSigned', publisher: null } },
+    });
+    expect(unsigned).toContain('NOT code signed');
+    const signed = readme({
+      record: {
+        ...candidate(),
+        signing: { application: 'Authenticode', installer: 'Authenticode', publisher: 'Diomedes Ltd' },
+      },
+    });
+    expect(signed).not.toContain('NOT code signed');
+    expect(signed).toContain('Diomedes Ltd');
+    // A build whose record says nothing about signing decides nothing for it.
+    const silent = readme();
+    expect(silent).not.toContain('NOT code signed');
+    expect(silent).toMatch(/signing[^\n]*NOT VERIFIED/i);
+  });
+
+  it('does not tell a reader of a signed build that unsigned programs are flagged', () => {
+    const signed = readme({
+      record: { ...candidate(), signing: { application: 'Authenticode', installer: 'Authenticode', publisher: 'Diomedes Ltd' } },
+    });
+    expect(signed).not.toContain('new unsigned programs');
+    expect(signed).not.toContain('A signed build is being prepared');
+  });
+});
+
 describe('what the README must not leave behind in the repository', () => {
   it('carries every sentence the capability record says is not proven', () => {
     const text = readme();

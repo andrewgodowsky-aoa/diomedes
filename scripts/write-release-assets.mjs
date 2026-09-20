@@ -84,6 +84,66 @@ function outcome(value) {
 
 const claimed = (value) => outcome(value) ?? NOT_VERIFIED;
 
+/**
+ * The Windows this build's recorded verification ran on, read from the record's
+ * own `host`: `host.tested` as the writer states it, or `host.name` and
+ * `host.release` composed when it records the raw facts instead. A record that
+ * carries none is a build nobody can show was tested on any Windows, and the
+ * README says that rather than naming the version its author was sitting at.
+ */
+function testedOn(record) {
+  const host = record.host;
+  if (!host || typeof host !== 'object') return null;
+  if (typeof host.tested === 'string' && host.tested.trim()) return host.tested.trim();
+  const parts = ['name', 'release']
+    .map((key) => (typeof host[key] === 'string' ? host[key].trim() : ''))
+    .filter(Boolean);
+  return parts.length ? parts.join(' ') : null;
+}
+
+/** Whether a recorded signing state is a signature or the absence of one. */
+const unsignedState = (state) => /^(un|not\s*)signed/i.test(state);
+
+/**
+ * What the record says about signing, as a fact rather than a sentence: the
+ * state as it is recorded, and whether that state is a signature. A string is
+ * taken as written; this repository's own records carry an object with the
+ * application's state, the installer's and the publisher. A record that says
+ * nothing decides nothing, and the README prints the question as unanswered.
+ */
+export function signingFact(value) {
+  if (typeof value === 'string' && value.trim()) {
+    const stated = value.trim();
+    return { stated, signed: !unsignedState(stated) };
+  }
+  if (!value || typeof value !== 'object') return null;
+  const states = ['application', 'installer']
+    .map((key) => [key, typeof value[key] === 'string' ? value[key].trim() : ''])
+    .filter(([, state]) => state !== '');
+  const publisher =
+    typeof value.publisher === 'string' && value.publisher.trim() ? value.publisher.trim() : null;
+  if (states.length === 0 && !publisher) return null;
+  const parts = states.map(([key, state]) => `${key} ${state}`);
+  if (publisher) parts.push(`publisher ${publisher}`);
+  return {
+    stated: parts.join(', '),
+    signed: states.length > 0 && states.every(([, state]) => !unsignedState(state)),
+  };
+}
+
+/** What a public manifest field says when the record answers nothing for it. */
+const NOT_RECORDED = 'not recorded';
+
+/** One asset's signing state, from the record's field for that kind of file. */
+function assetSigning(value, key) {
+  if (typeof value === 'string' && value.trim()) return { signing: value.trim(), publisher: null };
+  if (!value || typeof value !== 'object') return { signing: NOT_RECORDED, publisher: null };
+  const state = typeof value[key] === 'string' && value[key].trim() ? value[key].trim() : NOT_RECORDED;
+  const publisher =
+    typeof value.publisher === 'string' && value.publisher.trim() ? value.publisher.trim() : null;
+  return { signing: state, publisher };
+}
+
 /** `a`, `a and b`, `a, b and c` — the routes as a person would say them. */
 function list(names) {
   if (names.length === 0) return 'none';
@@ -125,6 +185,36 @@ export function releaseReadme({
       ? ` ${list(elsewhere.map((r) => r.displayName))}: in the source repository, not recorded in this build.`
       : ''
   }`;
+  // The two claims this text used to state as literals. Both are read here, and
+  // a record that answers neither prints the question rather than an answer.
+  const tested = testedOn(record);
+  const testedLine = tested
+    ? `Tested on ${tested} only. Other Windows versions are unverified.`
+    : `Which Windows version this build was tested on: ${NOT_VERIFIED}. Treat every Windows version as unverified.`;
+  const signing = signingFact(record.signing);
+  const signingLine =
+    signing === null
+      ? `It does not prove who built it: this build's signing is ${NOT_VERIFIED}.`
+      : signing.signed
+        ? `It does not prove who built it. The record states this build's signing as ${signing.stated}; check that publisher in the file's own properties.`
+        : `It does not prove who built it: the record states this build's signing as ${signing.stated}, so it is NOT code signed.`;
+  // An unsigned build and a signed one meet Windows differently, and the
+  // paragraph that told every reader a signed build was still being prepared
+  // was the same literal in both.
+  const antivirus = signing?.signed
+    ? `  Windows and some antivirus products apply a reputation heuristic to a
+  program they have not seen before, whatever it carries a signature from. That
+  is a heuristic about an unfamiliar file, not a finding about this code. Do not
+  switch off your protection to run it. If a file was quarantined, restore it
+  only if its SHA-256 matches SHA256SUMS.txt exactly; otherwise delete it and
+  download again.`
+    : `  Windows may warn about an unknown publisher, and some antivirus products flag
+  new unsigned programs with a generic reputation detection (Norton calls it
+  IDP.Generic). That is a heuristic about an unknown file, not a finding about
+  this code. Do not switch off your protection to run it. If a file was
+  quarantined, restore it only if its SHA-256 matches SHA256SUMS.txt exactly;
+  otherwise delete it and download again. A signed build is being prepared; see
+  docs/releases/CODE_SIGNING.md in the source repository.`;
   const verification = record.verification ?? {};
   const unit = verification.unit;
   const browser = verification.browser;
@@ -139,7 +229,7 @@ export function releaseReadme({
   return `Diomedes ${version} - Windows x64 experimental build (${tag})
 Release ID: ${record.releaseId}
 Built from commit ${record.build.baseCommit} on ${record.build.builtAt}.
-Tested on Windows 11 build 26200 only. Other Windows versions are unverified.
+${testedLine}
 
 WHICH FILE
   ${installerName}
@@ -155,16 +245,10 @@ WHICH FILE
 CHECK THE FILE FIRST
   In PowerShell:  Get-FileHash .\\${installerName} -Algorithm SHA256
   Compare the result with SHA256SUMS.txt. A match proves the file arrived whole.
-  It does not prove who built it: this build is NOT code signed.
+  ${signingLine}
 
 ANTIVIRUS AND SMARTSCREEN
-  Windows may warn about an unknown publisher, and some antivirus products flag
-  new unsigned programs with a generic reputation detection (Norton calls it
-  IDP.Generic). That is a heuristic about an unknown file, not a finding about
-  this code. Do not switch off your protection to run it. If a file was
-  quarantined, restore it only if its SHA-256 matches SHA256SUMS.txt exactly;
-  otherwise delete it and download again. A signed build is being prepared; see
-  docs/releases/CODE_SIGNING.md in the source repository.
+${antivirus}
 
 FIRST RUN
   Open Diomedes from the Start menu (installer) or from the extracted folder.
@@ -286,13 +370,25 @@ async function main() {
   });
   await fs.writeFile(path.join(outDir, 'README.txt'), readme.replaceAll('\n', '\r\n'));
 
-  const asset = async (filename, kind) => {
+  // Each asset reports the record's state for the kind of file it is, rather
+  // than the word "unsigned" every asset used to carry whatever was signed.
+  const asset = async (filename, kind, signingKey) => {
     const file = path.join(outDir, filename);
     const stat = await fs.stat(file);
-    return { kind, filename, bytes: stat.size, sha256: await sha256(file), signing: 'unsigned', publisher: null };
+    return {
+      kind,
+      filename,
+      bytes: stat.size,
+      sha256: await sha256(file),
+      ...assetSigning(record.signing, signingKey),
+    };
   };
-  const artifacts = [await asset(zipName, 'portable-zip'), await asset(installerName, 'per-user-installer')];
-  const support = await asset(launcherName, 'optional-isolated-launcher');
+  const artifacts = [
+    await asset(zipName, 'portable-zip', 'application'),
+    await asset(installerName, 'per-user-installer', 'installer'),
+  ];
+  // A script this repository copies in; the record states nothing about it.
+  const support = await asset(launcherName, 'optional-isolated-launcher', 'launcher');
   const manifest = {
     schemaVersion: 2,
     product: record.product,
@@ -307,7 +403,14 @@ async function main() {
       builtAt: record.build.builtAt,
       identityEmbeddedIn: record.build.identityEmbeddedIn,
     },
-    platform: { os: 'Windows', architecture: 'x64', tested: 'Windows 11 build 26200', otherVersions: 'unverified' },
+    // Read from the record, like the README's own line. A build whose record
+    // names no tested Windows states that here too.
+    platform: {
+      os: 'Windows',
+      architecture: 'x64',
+      tested: testedOn(record) ?? NOT_RECORDED,
+      otherVersions: 'unverified',
+    },
     runtime: { electron: record.package.electron, nativeRuntime: record.nativeRuntime?.version ?? null },
     protocols: record.protocols,
     artifacts,
