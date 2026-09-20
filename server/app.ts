@@ -948,9 +948,14 @@ export async function createApp(options: AppOptions) {
           409,
           'Confirm that this test sends one small request through your selected service first.',
         );
+      const model = asString(b.model, 'a model', 120);
+      // A receipt verifies the route a run would take, so the model tested is
+      // the model selected — never one the screen names on its own.
+      if (model !== store.settings.services?.[`${engine}Model`])
+        throw new ApiError(409, 'Select this model in AI setup before testing it.');
       const receipt = await engines.testConnection(engine, {
         consent: true,
-        model: asString(b.model, 'a model', 120),
+        model,
         signal: connectionSignal(res),
       });
       const connection = engines.status().find((c) => c.engine === engine)!;
