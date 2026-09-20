@@ -4,8 +4,8 @@ import { askDraftKey } from '../components';
 import { reducedMotion, spring } from './motion';
 import { SendConfirmation } from './SendConfirmation';
 
-const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
-const CAPS: Record<Mode, string> = {
+export const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
+export const CAPS: Record<Mode, string> = {
   ask: 'Nothing in the project changes.',
   plan: 'A plan you read before work begins.',
   build: 'Applied only on your go-ahead.',

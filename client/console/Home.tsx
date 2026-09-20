@@ -1,6 +1,20 @@
 import { useState } from 'react';
-import type { IntegrationStatus, Project, Settings, UsageSnapshot } from '../../shared/types';
-import { HelperLine, UsageBar, date, leftPercent, tightestWindow } from '../components';
+import type {
+  IntegrationStatus,
+  Mode,
+  Project,
+  Settings,
+  UsageSnapshot,
+} from '../../shared/types';
+import {
+  HelperLine,
+  UsageBar,
+  date,
+  leftPercent,
+  tightestWindow,
+  titleCase,
+} from '../components';
+import { CAPS, MODE_ORDER } from './Composer';
 import type { EverythingItem } from './Everything';
 import { Rail, type RailItem } from './Rail';
 import './console.css';
@@ -67,7 +81,7 @@ interface HomeProps {
   onText: (value: string) => void;
   targetId: string | null;
   onTarget: (id: string) => void;
-  onSend: (text: string, project: Project) => void;
+  onSend: (text: string, project: Project, mode: Mode) => void;
   onOpenProject: (p: Project) => void;
   onGo: (destination: HomeDestination) => void;
 }
@@ -126,8 +140,10 @@ export function Home({
   };
   const work = settings.onboarding.work ?? 'mix';
   const target = byRecency.find((p) => p.id === targetId) ?? byRecency[0];
+  // The mode travels with the ask and lands on the thread it opens in.
+  const [mode, setMode] = useState<Mode>('ask');
   const send = () => {
-    if (target) onSend(text, target);
+    if (target) onSend(text, target, mode);
   };
   // What needs the person comes first; after that, the order they last worked in.
   const listed = [...projects].sort(
@@ -275,6 +291,20 @@ export function Home({
                       />
                       <div className="bar">
                         <label className="home-target">
+                          <span>Mode</span>
+                          <select
+                            aria-label="Mode"
+                            value={mode}
+                            onChange={(e) => setMode(e.target.value as Mode)}
+                          >
+                            {MODE_ORDER.map((m) => (
+                              <option key={m} value={m}>
+                                {titleCase(m)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="home-target">
                           <span>In project</span>
                           <select
                             aria-label="In project"
@@ -301,6 +331,11 @@ export function Home({
                         </span>
                       </div>
                     </div>
+                    <p className="home-cap" aria-live="polite">
+                      {mode === 'fix'
+                        ? `${CAPS.fix} You pick the failing document in the project.`
+                        : CAPS[mode]}
+                    </p>
                     <HelperLine
                       integrations={integrations}
                       settings={settings}

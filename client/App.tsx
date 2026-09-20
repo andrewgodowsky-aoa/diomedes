@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   IntegrationStatus,
+  Mode,
   Page,
   Project,
   Settings,
@@ -18,6 +19,7 @@ import {
   Modal,
   UsageChip,
   askDraftKey,
+  askModeKey,
   pages,
   surfaceOf,
   tightestWindow,
@@ -466,11 +468,12 @@ export function App() {
     }
   }
   // Landing ask box handler for the projects-page block below (kept out of the scale effect above).
-  const sendLandingAsk = (text: string, project: Project) => {
+  const sendLandingAsk = (text: string, project: Project, mode: Mode) => {
     const value = text.trim();
     if (!value) return;
     try {
       localStorage.setItem(askDraftKey(project.id), value);
+      localStorage.setItem(askModeKey(project.id), mode);
     } catch {
       // Storage is unavailable; continue without a carried draft.
     }

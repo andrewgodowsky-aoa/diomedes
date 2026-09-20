@@ -41,6 +41,8 @@ import {
   Modal,
   time,
   titleCase,
+  askDraftKey,
+  askModeKey,
 } from '../components';
 import { Mark } from './Mark';
 import { Rail, type RailItem } from './Rail';
@@ -510,6 +512,27 @@ export function Shell({
   useEffect(() => {
     if (selected) setMode(selected.mode ?? 'ask');
   }, [selected?.id, selected?.mode]);
+  // A mode chosen on the Projects page arrives with the carried ask and lands on
+  // the thread the draft opens in. Declared after the effect above, which would
+  // otherwise put the thread's stored mode back in the same commit.
+  useEffect(() => {
+    if (!selected) return;
+    let carried: string | null = null;
+    try {
+      carried = localStorage.getItem(askModeKey(projectId));
+      if (carried !== null) localStorage.removeItem(askModeKey(projectId));
+    } catch {
+      // Storage is unavailable; the thread keeps its own mode.
+    }
+    if (carried !== 'ask' && carried !== 'plan' && carried !== 'build' && carried !== 'fix') return;
+    if (carried === (selected.mode ?? 'ask')) return;
+    const next: Mode = carried;
+    setMode(next);
+    void api(`${base}/threads/${selected.id}`, 'PUT', { mode: next }).catch((e: unknown) => {
+      report(e);
+      setMode(selected.mode ?? 'ask');
+    });
+  }, [selected?.id]);
   useEffect(() => {
     setRoute(selectedEngine(settings, state?.project, selected));
   }, [selected?.id, selected?.engine, state?.project.ai, settings.services?.defaultEngine]);
@@ -567,6 +590,24 @@ export function Shell({
       state?.project,
       state?.conversations.find((thread) => thread.taskId === task.id),
     );
+
+  // An ask carried from the Projects page needs a thread to land in. A project
+  // with none would show "No threads yet" over a draft nobody can see, so the
+  // thread is opened for it, once per project.
+  const openedForAsk = useRef('');
+  useEffect(() => {
+    if (!state || state.project.id !== projectId || threads.length > 0) return;
+    if (openedForAsk.current === projectId) return;
+    let carried = '';
+    try {
+      carried = localStorage.getItem(askDraftKey(projectId)) ?? '';
+    } catch {
+      // Storage is unavailable; nothing was carried.
+    }
+    if (!carried) return;
+    openedForAsk.current = projectId;
+    void newThread();
+  }, [state, projectId, threads.length]);
 
   async function newThread(taskId?: string) {
     await perform(async () => {

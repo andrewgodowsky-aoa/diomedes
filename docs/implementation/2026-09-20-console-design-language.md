@@ -186,3 +186,67 @@ Changed: `client/App.tsx`, `client/Settings.tsx`, `client/components.tsx`, `clie
 `client/console/{Shell,Composer,ThreadView}.tsx`, `client/console/{console,motion,everything}.css`,
 `server/store.ts`, `server/integrations.ts`, `tests/ui.spec.ts`, `tests/surface.test.ts`,
 `tests/backend.test.ts`.
+
+## Third pass: the mode on the Projects page, one dropdown, a texture a person can see
+
+Andrew, same day: the Projects page gave no way to choose Ask, Plan, Build or Fix; "make an in
+theme dropdown list of options", "fix other dropdown boxes too", keep every surface consistent,
+and "ensure our customizability options are real".
+
+### 12. The mode is chosen where the ask is written
+
+The Projects page's ask bar carries **Mode** beside **In project**, both the same control. The
+line under the box says what the chosen mode promises, in the words the thread's composer uses
+(`CAPS`, exported from `Composer.tsx`, not copied). The mode travels in a key of its own
+(`askModeKey`), because `Workspace.tsx` still reads the draft key as plain text. `Shell` applies it
+to the thread the draft opens in, in an effect declared after the one that restores a thread's
+stored mode, and compares against the thread's stored mode rather than the render's state.
+
+A defect found on the way: sending from the Projects page into a project with no thread landed on
+"No threads yet" over a draft nobody could see. `Shell` now opens a thread for a carried ask, once
+per project.
+
+Fix is offered. The failing document is picked in the project, where the documents are; the
+caption says so, and the composer's own gate holds Send until it is given.
+
+### 13. One dropdown, and it is still a native select
+
+Every `<select>` in the app is drawn by one block at the end of `client/styles.css`.
+`appearance: base-select` hands both the closed control and its open list to the stylesheet, so
+the list is the Console's menu (`--raised`, `--hair-2`, `--r`, rows at `--rb`, the chosen row
+marked with the point in `--dm-charge-lead`) in all eleven schemes, in the Console, Settings, AI
+setup and the Design Center alike. The element stays a `<select>`: keyboard, screen reader and
+the eleven `selectOption` calls in the specs keep what they had. No component was written and no
+call site changed.
+
+Electron 44 and the Edge the suite runs on both support it. Where it is not supported the closed
+control still takes `appearance: none` and a chevron drawn from two gradients in `--t3`, since a
+token cannot be written into a data URI. `.ws-select`'s data-URI chevron, which carried a literal
+colour, is gone. Select rules that used the `background` shorthand now set `background-color`, so
+they cannot erase a drawn chevron. The menu's shadow uses `light-dark()` so Paper does not get a
+dark smudge.
+
+### 14. A theme's texture is the chrome's ground
+
+`.dm-texture-layer` sits at the bottom of `.app`, and `.console` and `.page-frame` painted opaque
+over it: a texture was a setting that changed nothing in the Console. With a texture on, `.app`
+holds `--chrome` (the layer's blend mode needs a ground beneath it) and the strip, the rail and
+the ledger are transparent. The work column keeps its opaque `--surface`, so a texture never runs
+under reading text. Opacity is still `--dm-texture-opacity`; the person's preference and the
+accessibility layer still switch it off.
+
+Verified end to end through the Design Center on the paid fixture profile: upload, Apply, layer
+present in `.app`, rail/ledger/root computed transparent, work column opaque.
+
+**Found and not changed.** The Design Center's contrast ceiling allowed this scheme's texture 4%
+opacity ("These theme colours allow the texture up to 4%"). At 4% a dark texture on a dark ground
+is close to invisible. That ceiling is a safety rule about labels over a texture and it is the
+owner's to move; the reach picture in the session's captures forces 50% by injected style for the
+picture only. The Mythic Synthwave fixture still has no texture entry and a 16x16 placeholder for
+its bust and hero. In the Design Center at 1440x900 the "Your themes" block overlaps the end of
+the left list.
+
+### Not done in this pass
+
+Settings is still the `.reading` page grammar inside `.page-frame`, not a Console screen. The
+dropdown and shape rules reach it through CSS; rebuilding it as a Console screen is its own patch.

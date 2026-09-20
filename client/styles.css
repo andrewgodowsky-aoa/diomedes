@@ -3254,3 +3254,169 @@ input[type='range'] {
     transform: translateX(-50%) translateY(8px);
   }
 }
+
+/* ---------------------------------------------------------------------------
+   One dropdown. A native <select> stays a native <select>: the keyboard, the
+   screen reader and every `selectOption` in the specs keep what they had. What
+   changes is who draws it. `appearance: base-select` hands the closed control
+   and its open list to this stylesheet, so the list is the Console's menu
+   (--raised ground, --hair-2 edge, --r corners, --rb rows) on every surface and
+   in every scheme, instead of a platform rectangle over a themed app. A list
+   box (`multiple`, `size`) is a different control and keeps its own drawing.
+   --------------------------------------------------------------------------- */
+select:not([multiple]):not([size]) {
+  appearance: none;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@supports not (appearance: base-select) {
+  /* The closed control only: a chevron in --t3 from two gradients, because a
+     token cannot be written into a data URI and a select takes no ::after. */
+  select:not([multiple]):not([size]) {
+    padding-inline-end: 26px;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--t3) 50%),
+      linear-gradient(135deg, var(--t3) 50%, transparent 50%);
+    background-size: 5px 5px;
+    background-position:
+      right 13px center,
+      right 8px center;
+    background-repeat: no-repeat;
+  }
+  select option {
+    background: var(--raised);
+    color: var(--t1);
+  }
+}
+@supports (appearance: base-select) {
+  select:not([multiple]):not([size]),
+  select:not([multiple]):not([size])::picker(select) {
+    appearance: base-select;
+  }
+  select:not([multiple]):not([size]) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    overflow: hidden;
+  }
+  select:disabled {
+    cursor: default;
+    color: var(--t3);
+  }
+  /* A drawn chevron in the text's own weight; it turns over while the list is open. */
+  select::picker-icon {
+    content: '';
+    flex: none;
+    width: 6px;
+    height: 6px;
+    margin: -3px 2px 0 0;
+    border: solid var(--t3);
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+    transition:
+      transform var(--dm-t-quick) var(--dm-ease),
+      border-color var(--dm-t-quick) var(--dm-ease);
+  }
+  select:hover:not(:disabled)::picker-icon,
+  select:open::picker-icon {
+    border-color: var(--t1);
+  }
+  select:open::picker-icon {
+    margin-top: 3px;
+    transform: rotate(225deg);
+  }
+  select:open {
+    border-color: color-mix(in oklab, var(--dm-charge-lead) 60%, var(--hair-2));
+  }
+
+  /* The open list: the Console's .pmenu, anchored to its control. */
+  select::picker(select) {
+    box-sizing: border-box;
+    min-width: max(anchor-size(width), 168px);
+    max-width: min(420px, calc(100vw - 32px));
+    max-height: min(60vh, 420px);
+    margin-block: 6px;
+    padding: 5px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--hair-2) transparent;
+    background: var(--raised);
+    color: var(--t1);
+    border: 1px solid var(--hair-2);
+    border-radius: var(--r);
+    /* The menu's own shadow on a dark ground; on Paper the same weight reads as a smudge. */
+    box-shadow: 0 24px 60px -30px light-dark(rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0.9));
+    font: 400 var(--dm-type-caption) / 1.4 var(--dm-font-ui);
+    opacity: 0;
+    transform: scale(0.98);
+    transform-origin: top left;
+    transition:
+      opacity var(--dm-t-quick) cubic-bezier(0.16, 1, 0.3, 1),
+      transform var(--dm-t-quick) cubic-bezier(0.16, 1, 0.3, 1),
+      overlay var(--dm-t-quick) allow-discrete,
+      display var(--dm-t-quick) allow-discrete;
+  }
+  select::picker(select):popover-open {
+    opacity: 1;
+    transform: none;
+  }
+  @starting-style {
+    select::picker(select):popover-open {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+  select option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 0;
+    padding: 6px 8px;
+    border-radius: var(--rb);
+    color: var(--t2);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition:
+      background var(--dm-t-quick) var(--dm-ease),
+      color var(--dm-t-quick) var(--dm-ease);
+  }
+  select option:hover,
+  select option:focus-visible {
+    background: var(--surface);
+    color: var(--t1);
+    outline: none;
+  }
+  select option:checked {
+    color: var(--t1);
+    font-weight: 500;
+  }
+  select option:disabled {
+    color: var(--t3);
+    cursor: default;
+  }
+  /* The chosen row carries the Console's point, not a tick glyph. */
+  select option::checkmark {
+    content: '';
+    order: 2;
+    flex: none;
+    width: 6px;
+    height: 6px;
+    margin-left: auto;
+    border-radius: 50%;
+    background: var(--dm-charge-lead);
+  }
+  select optgroup {
+    padding: 0;
+    font: 500 var(--dm-type-meta) / 1.4 var(--dm-font-ui);
+    color: var(--t3);
+  }
+  select optgroup legend,
+  select optgroup::before {
+    padding: 8px 8px 4px;
+  }
+}

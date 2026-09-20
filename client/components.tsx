@@ -527,6 +527,10 @@ export function SessionStatus({
 export function askDraftKey(projectId: string) {
   return `diomedes.ask-draft.${projectId}`;
 }
+/** The mode chosen beside a carried ask. A key of its own: the draft key stays plain text. */
+export function askModeKey(projectId: string) {
+  return `diomedes.ask-mode.${projectId}`;
+}
 
 /** The window closest to empty: the highest percent used. */
 export function tightestWindow(snapshot: UsageSnapshot): UsageWindow | null {

@@ -758,7 +758,7 @@ html[data-surface='console'] body {
   white-space: nowrap;
 }
 .console .aux select {
-  background: var(--surface);
+  background-color: var(--surface);
   color: var(--t1);
   border: 1px solid var(--hair-2);
   border-radius: var(--rb);
@@ -1828,4 +1828,23 @@ html[data-motion='reduced'] .console .modes .ind b {
   .console.strip-only .top-right > .mono.link {
     display: none;
   }
+}
+
+/* ---- the theme's texture is the chrome's ground ----
+   The texture layer sits at the bottom of `.app` and every Console root used to
+   paint an opaque --chrome over it, so a theme's texture was a setting that
+   changed nothing a person could see. With a texture on, `.app` holds the
+   --chrome ground (which the layer's blend mode needs beneath it) and the
+   strip, the rail and the ledger let it through. The work column keeps its
+   opaque --surface: a texture never runs under something a person reads.
+   Opacity stays with --dm-texture-opacity, so the person's preference and the
+   accessibility layer still switch it off. */
+.app:has(> .dm-texture-layer) {
+  background: var(--chrome);
+}
+.app:has(> .dm-texture-layer) .console,
+.app:has(> .dm-texture-layer) .console .rail,
+.app:has(> .dm-texture-layer) .console .ledger,
+.app:has(> .dm-texture-layer) .page-frame:has(> .console.home) {
+  background: transparent;
 }

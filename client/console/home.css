@@ -89,6 +89,7 @@
 .console.home .bar {
   padding: 4px 8px 4px 14px;
   min-height: 40px;
+  gap: 6px 16px;
 }
 .console .home-target {
   display: flex;
@@ -106,7 +107,7 @@
   padding: 3px 8px;
   border: 1px solid var(--hair-2);
   border-radius: var(--rb);
-  background: var(--surface);
+  background-color: var(--surface);
   color: var(--t1);
   font: inherit;
   text-overflow: ellipsis;
@@ -115,8 +116,14 @@
 .console .home-target select:hover {
   border-color: color-mix(in srgb, var(--t3) 70%, transparent);
 }
-.console.home .helper-line {
+/* What the chosen mode promises, in the words the thread's composer uses. */
+.console .home-cap {
   margin: 10px 0 0;
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+}
+.console.home .helper-line {
+  margin: 4px 0 0;
   font-size: var(--dm-type-caption);
   color: var(--t3);
 }
