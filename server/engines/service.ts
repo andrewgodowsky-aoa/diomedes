@@ -637,7 +637,20 @@ export class EngineService {
     };
     // Nothing on this computer could be identified and nothing is bound: report
     // what discovery saw without claiming a verified identity for it.
-    if (!binding && inventory.every((row) => row.integrity === 'unknown') && scanned.observed) {
+    //
+    // "Could not be identified" is narrower than it once was. An empty
+    // inventory is not evidence of an installation at all — the roster alone
+    // never stands in for one — and a candidate that was examined and failed
+    // (`protocol: 'failed'`: a WSL binary, a launcher that does not answer) has
+    // already told this computer it cannot run. Only a candidate this computer
+    // could not resolve far enough to examine leaves the roster as the last
+    // honest word about it.
+    if (
+      !binding &&
+      inventory.length > 0 &&
+      inventory.every((row) => row.integrity === 'unknown' && row.protocol === 'unknown') &&
+      scanned.observed
+    ) {
       const { location, version } = scanned.observed;
       return this.merge(engine, {
         ...blank(engine),
@@ -766,7 +779,19 @@ export class EngineService {
         false,
         'runtime-verification',
       );
-    if (saved.installation !== 'found' || !saved.location)
+    if (saved.installation !== 'found')
+      throw new EngineError('NOT_INSTALLED', 'The tool was not found. Check this computer again.');
+    // An installation this computer found and cannot use is not "not found".
+    // It is named as what it is, at the stage that decided it, so the person is
+    // not sent looking for a tool that is sitting right there.
+    if (saved.repair)
+      throw new EngineError(
+        'UNSUPPORTED_VERSION',
+        repairDetail(engine, saved.repair, 'found'),
+        false,
+        'runtime-verification',
+      );
+    if (!saved.location)
       throw new EngineError('NOT_INSTALLED', 'The tool was not found. Check this computer again.');
     if (saved.compatibility !== 'supported')
       throw new EngineError(

@@ -663,17 +663,54 @@ describe('installation enumeration for candidate binding', () => {
     expect(found.map((row) => row.context)).toEqual(['desktop-app', 'wsl']);
   });
 
-  it('never enumerates a path a shell would have to interpret', async () => {
-    const discovery = createDiscovery(
-      fakeDeps({
-        which: async (name) =>
-          name === 'omp'
-            ? ['C:\\bad\\o&calc\\omp.exe', 'C:\\Program Files\\ünï\\omp.exe']
-            : [],
-      }),
-    );
-    const found = await discovery.installations({ engine: 'oh-my-pi' });
-    // Spaces and non-ASCII are ordinary; a metacharacter a shim would expand is not.
-    expect(found.map((row) => row.path)).toEqual(['C:\\Program Files\\ünï\\omp.exe']);
+  it('enumerates a native executable whose folder carries a legal odd character', async () => {
+    // `& % ^ !` are legal in Windows folder names, and a native executable is
+    // launched through an argument array with no shell, so none of them can
+    // reach a command line. Dropping these hid real installations.
+    for (const file of [
+      'C:\\bad\\o&calc\\omp.exe',
+      'C:\\Tools\\50%off\\omp.exe',
+      'C:\\Tools\\up^one\\omp.exe',
+      'C:\\Tools\\hey!\\omp.exe',
+    ]) {
+      const discovery = createDiscovery(
+        fakeDeps({
+          which: async (name) => (name === 'omp' ? [file, 'C:\\Program Files\\ünï\\omp.exe'] : []),
+        }),
+      );
+      const found = await discovery.installations({ engine: 'oh-my-pi' });
+      expect(found.map((row) => row.path)).toEqual([file, 'C:\\Program Files\\ünï\\omp.exe']);
+    }
+  });
+
+  it('never enumerates a shim a shell would have to interpret', async () => {
+    // A .cmd runs through cmd.exe, so a metacharacter in its path could carry a
+    // second command. `launchCommand` refuses those too; this keeps them out of
+    // the inventory so nothing offers an installation that cannot be started.
+    for (const file of [
+      'C:\\bad\\o&calc\\omp.cmd',
+      'C:\\Tools\\50%off\\omp.cmd',
+      'C:\\Tools\\up^one\\omp.bat',
+      'C:\\Tools\\hey!\\omp.cmd',
+    ]) {
+      const discovery = createDiscovery(
+        fakeDeps({ which: async (name) => (name === 'omp' ? [file] : []) }),
+      );
+      expect(await discovery.installations({ engine: 'oh-my-pi' })).toEqual([]);
+    }
+  });
+
+  it('never enumerates a quote, newline or NUL in a path, whatever the file is', async () => {
+    for (const file of [
+      'C:\\bad\\o"calc\\omp.exe',
+      'C:\\bad\\two\nlines\\omp.exe',
+      'C:\\bad\\nul\0byte\\omp.exe',
+      'C:\\bad\\o"calc\\omp.cmd',
+    ]) {
+      const discovery = createDiscovery(
+        fakeDeps({ which: async (name) => (name === 'omp' ? [file] : []) }),
+      );
+      expect(await discovery.installations({ engine: 'oh-my-pi' })).toEqual([]);
+    }
   });
 });

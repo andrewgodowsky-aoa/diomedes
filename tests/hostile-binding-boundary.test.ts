@@ -132,18 +132,25 @@ describe('a tool that only exists inside WSL or a desktop application', () => {
       );
     });
 
-  it('does not become bindable just because the roster read a version from it', async () => {
+  it('is not called compatible just because the roster read a version from it', async () => {
     const file = '\\\\wsl$\\Ubuntu\\home\\a\\.local\\bin\\opencode';
     const h = unrunnable(file, [rosterRow(file, TESTED_VERSIONS.opencode)]);
     await h.service.discover(true);
     const value = connection(h.service);
-    // The roster's own version reading takes the route to "found and
-    // compatible" even though the candidate itself failed to run, so the
-    // remaining check is the version probe inside `check`.
+    // The candidate itself was examined and could not be started here. The
+    // roster's own version reading does not overrule that: an installation is
+    // found, and it is not one this route can use.
     expect(value.installation).toBe('found');
-    await expect(h.service.check('opencode')).rejects.toMatchObject({ code: 'LAUNCH_FAILED' });
+    expect(value.compatibility).not.toBe('supported');
+    expect(value.repair).toBe('no-reviewed-candidate');
+    expect(value.detail).not.toMatch(/Found a compatible installation/);
+    // Checking it refuses before anything is launched, and says which stage.
+    await expect(h.service.check('opencode')).rejects.toMatchObject({
+      code: 'UNSUPPORTED_VERSION',
+      stage: 'runtime-verification',
+    });
+    expect(h.inspect).not.toHaveBeenCalled();
     expect(connection(h.service).authentication).toBe('unknown');
-    expect(connection(h.service).diagnostic).toMatchObject({ stage: 'launch' });
     await expect(
       h.service.bind('opencode', `system:opencode:${file}`),
     ).rejects.toMatchObject({ code: 'CANDIDATE_UNUSABLE' });

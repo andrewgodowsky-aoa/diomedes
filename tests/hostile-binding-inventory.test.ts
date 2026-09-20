@@ -57,7 +57,7 @@ function windows(options: {
 }
 
 describe('a Windows path with shell-sensitive characters', () => {
-  it('is reported as found by the roster and dropped from the candidate inventory', async () => {
+  it('is reported by the roster and enumerated for binding, naming the same file', async () => {
     for (const file of [
       'C:\\Tools\\A&B\\opencode.exe',
       'C:\\Tools\\50%off\\opencode.exe',
@@ -69,9 +69,17 @@ describe('a Windows path with shell-sensitive characters', () => {
       const entry = roster.engines.find((row) => row.id === 'opencode')!;
       // The roster path resolves it, runs it and reads its version.
       expect(entry).toMatchObject({ found: true, location: file, installedVersion: '1.18.4' });
-      // The enumeration the binding repair depends on never reports it.
-      expect(await discovery.installations({ engine: 'opencode' })).toEqual([]);
+      // The enumeration the binding repair depends on reports it as well, so
+      // the installation can be identified, digested and chosen.
+      expect(await discovery.installations({ engine: 'opencode' })).toEqual([
+        { engine: 'opencode', path: file, context: 'windows-native' },
+      ]);
     }
+  });
+
+  it('is still refused for a Windows shim, which a shell would have to interpret', async () => {
+    const { discovery } = windows({ hits: { opencode: ['C:\\Tools\\A&B\\opencode.cmd'] } });
+    expect(await discovery.installations({ engine: 'opencode' })).toEqual([]);
   });
 
   it('leaves a native .exe enumerated when its path carries only spaces and non-ASCII', async () => {
@@ -84,14 +92,14 @@ describe('a Windows path with shell-sensitive characters', () => {
 });
 
 /**
- * The same computer, wired into the service: the roster sees the installation
- * and the inventory does not. `EngineService.apply()` reads an empty inventory
- * as "nothing could be identified" — `[].every()` is true — and falls back to
- * the roster's own location.
+ * The same computer, wired into the service. `identify` answers for the files
+ * this computer is said to hold, the way the production path answers for a real
+ * one: a real path, a size and a digest of its bytes.
  */
 function serviceOver(
   discovery: ReturnType<typeof createDiscovery>,
   serviceRoot: string,
+  known: Record<string, string> = {},
   engine: ExternalEngine = 'opencode',
 ) {
   const accountRoute = `${engine}:account`;
@@ -112,7 +120,15 @@ function serviceOver(
     },
     enumerate: (scope) => discovery.installations(scope),
     version: async () => TESTED_VERSIONS[engine],
-    identify: async () => null,
+    identify: async (file) =>
+      known[file] === undefined
+        ? null
+        : {
+            path: file,
+            size: known[file].length,
+            mtimeMs: 1,
+            sha256: createHash('sha256').update(known[file]).digest('hex'),
+          },
     verifyManaged: async () => {
       throw new Error('no private copy in this test');
     },
@@ -128,31 +144,34 @@ function serviceOver(
   return { service, launched, generate, accountRoute };
 }
 
-describe('an installation the inventory dropped', () => {
-  it('is still launched, cannot be bound, and never records the bytes it ran', async () => {
+describe('an installation whose folder carries a legal odd character', () => {
+  it('is digested, offered for binding, and runs as the installation that was chosen', async () => {
     const file = 'C:\\Tools\\A&B\\opencode.exe';
     const { discovery } = windows({ hits: { opencode: [file] } });
-    const h = serviceOver(discovery, root());
+    const h = serviceOver(discovery, root(), { [file]: 'the copy on this computer' });
     await h.service.discover(true);
     const value = h.service.status().find((row) => row.engine === 'opencode')!;
 
-    // The route presents as a ready, compatible installation.
     expect(value.installation).toBe('found');
     expect(value.compatibility).toBe('supported');
     expect(value.location).toBe(file);
-    // With no candidate there is nothing to choose, nothing to digest, and no
-    // binding a later change could be compared against.
-    expect(value.candidates).toEqual([]);
-    expect(value.recommendedCandidateId ?? null).toBeNull();
+    // It is one identified candidate, with its bytes recorded, and it is what
+    // the route recommends until a person chooses.
+    expect(value.candidates?.length).toBe(1);
+    expect(value.candidates![0]).toMatchObject({
+      path: file,
+      present: true,
+      integrity: 'verified',
+      protocol: 'passed',
+      compatibility: 'supported',
+    });
+    expect(value.candidates![0].sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(value.recommendedCandidateId).toBe(`system:opencode:${file}`);
     expect(value.binding ?? null).toBeNull();
-    expect(value.repair ?? null).toBeNull();
-    expect(h.service.nextAction('opencode', { enabled: true, installSupported: true })).toBe(
-      'check-connection',
-    );
-    // No id can ever name it, so the explicit binding route is unreachable.
-    await expect(
-      h.service.bind('opencode', `system:opencode:${file}`),
-    ).rejects.toMatchObject({ code: 'CANDIDATE_UNKNOWN' });
+
+    // The explicit binding route reaches it by the id the host itself produced.
+    const bound = await h.service.bind('opencode', `system:opencode:${file}`);
+    expect(bound.binding).toMatchObject({ id: `system:opencode:${file}`, origin: 'explicit' });
 
     await h.service.check('opencode');
     await expect(
@@ -167,25 +186,24 @@ describe('an installation the inventory dropped', () => {
         documents: [],
       }),
     ).resolves.toMatchObject({ text: 'Answer' });
-    // It ran from the roster's path, with no binding and no recorded digest.
     expect(h.launched).toContain(file);
-    expect(h.service.status().find((row) => row.engine === 'opencode')!.binding ?? null).toBeNull();
 
-    // The one action that would prove the route asks for something this state
-    // cannot provide: there is no installation to choose, and no id to choose it by.
-    await expect(
-      h.service.testConnection('opencode', { consent: true, model: 'm' }),
-    ).rejects.toMatchObject({ code: 'BINDING_REQUIRED' });
-    expect(h.service.status().find((row) => row.engine === 'opencode')!.candidates).toEqual([]);
+    // And the action that proves the route now has something to name.
+    const receipt = await h.service.testConnection('opencode', { consent: true, model: 'm' });
+    expect(receipt.candidateId).toBe(`system:opencode:${file}`);
   });
 
-  it('switches to whatever the roster finds next, with no repair signal', async () => {
+  it('marks the binding broken when PATH later resolves a different file of the same name', async () => {
     const first = 'C:\\Tools\\A&B\\opencode.exe';
     const second = 'C:\\Other\\A&B\\opencode.exe';
     const hits: Record<string, string[]> = { opencode: [first] };
     const { discovery } = windows({ hits });
-    const h = serviceOver(discovery, root());
+    const h = serviceOver(discovery, root(), {
+      [first]: 'the first copy',
+      [second]: 'a different copy',
+    });
     await h.service.discover(true);
+    await h.service.bind('opencode', `system:opencode:${first}`);
     await h.service.check('opencode');
     expect(h.service.status().find((row) => row.engine === 'opencode')!.location).toBe(first);
 
@@ -193,11 +211,71 @@ describe('an installation the inventory dropped', () => {
     hits.opencode = [second];
     await h.service.discover(true);
     const value = h.service.status().find((row) => row.engine === 'opencode')!;
-    expect(value.location).toBe(second);
-    expect(value.repair ?? null).toBeNull();
-    expect(h.service.nextAction('opencode', { enabled: true, installSupported: true })).not.toBe(
+    // The chosen installation is gone, so the route says so instead of moving.
+    expect(value.repair).toBe('selected-missing');
+    expect(value.binding?.path).toBe(first);
+    expect(h.service.nextAction('opencode', { enabled: true, installSupported: true })).toBe(
       'choose-installation',
     );
+    await expect(h.service.check('opencode')).rejects.toMatchObject({ code: 'BINDING_CHANGED' });
+    expect(h.launched).not.toContain(second);
+  });
+});
+
+describe('a roster hit with nothing the host could identify', () => {
+  it('is never presented as a found, compatible installation', async () => {
+    // The roster ran something and read a version from it; the enumeration
+    // reported no installation at all. A roster row is not evidence that an
+    // installation exists, can be digested, or can be chosen.
+    const serviceRoot = root();
+    const service = new EngineService(serviceRoot, {
+      discover: async () => [
+        {
+          id: 'opencode',
+          name: 'OpenCode',
+          kind: 'online',
+          found: true,
+          available: false,
+          enabled: false,
+          status: 'Installed',
+          detail: 'Found',
+          capabilities: [],
+          signIn: 'unknown',
+          adapter: 'planned',
+          installedVersion: TESTED_VERSIONS.opencode,
+          location: 'C:\\Tools\\opencode.exe',
+          disclosure: [],
+        },
+      ],
+      enumerate: async () => [],
+      version: async () => TESTED_VERSIONS.opencode,
+      identify: async () => null,
+      verifyManaged: async () => {
+        throw new Error('no private copy in this test');
+      },
+      buildId: () => 'test-build',
+      adapter: (id) => ({
+        id,
+        contract: routeContractFor(id),
+        inspect: async () => ({
+          authentication: 'signed-in' as const,
+          accountRoute: 'opencode:account',
+          models: [],
+          detail: 'Checked',
+        }),
+        generate: async (input) => textResponse(input, 'Answer', TESTED_VERSIONS.opencode),
+      }),
+    });
+    await service.discover(true);
+    const value = service.status().find((row) => row.engine === 'opencode')!;
+    expect(value.candidates).toEqual([]);
+    expect(value.compatibility).not.toBe('supported');
+    expect(value.detail).not.toMatch(/Found a compatible installation/);
+    expect(value.repair).toBe('no-reviewed-candidate');
+    expect(service.nextAction('opencode', { enabled: true, installSupported: true })).not.toBe(
+      'check-connection',
+    );
+    await expect(service.check('opencode')).rejects.toMatchObject({ code: 'NOT_INSTALLED' });
   });
 });
 

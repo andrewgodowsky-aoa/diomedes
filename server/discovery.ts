@@ -293,15 +293,35 @@ export function installationContext(file: string, platform: NodeJS.Platform): In
 }
 
 /**
+ * A quote, a newline or a NUL in a path is refused for every kind of file: none
+ * of them can appear in a path this computer would hand back, and each one ends
+ * an argument wherever it is read.
+ */
+const UNQUOTABLE = /["\r\n\0]/;
+/**
+ * `& | < > ^ % !` are ordinary characters in a Windows folder name
+ * (`C:\Tools\A&B\`). They matter only for a `.cmd` or `.bat`, which has to run
+ * through cmd.exe: `launchCommand` refuses such a shim, so leaving it out of
+ * the inventory keeps Diomedes from offering an installation it cannot start.
+ * A native executable is spawned with an argument array and no shell, so it is
+ * enumerated, digested and bindable like any other.
+ */
+const SHELL_SENSITIVE = /[&|<>^%!]/;
+const isShim = (file: string) => /\.(cmd|bat)$/i.test(file);
+
+/**
  * Every installation of one tool this computer offers: PATH hits first, then
  * the supported install locations, then the current user's registry PATH.
- * A path a Windows shim could not carry without a shell is left out.
+ * A Windows shim whose path a shell would have to interpret is left out.
  */
 async function enumerateBinary(name: string, deps: DiscoveryDeps): Promise<string[]> {
   const found: string[] = [];
   const seen = new Set<string>();
   const add = (candidate: string) => {
-    if (deps.platform === 'win32' && /["&|<>^%!\r\n\0]/.test(candidate)) return;
+    if (deps.platform === 'win32') {
+      if (UNQUOTABLE.test(candidate)) return;
+      if (isShim(candidate) && SHELL_SENSITIVE.test(candidate)) return;
+    }
     const key = deps.platform === 'win32' ? candidate.toLowerCase() : candidate;
     if (seen.has(key)) return;
     seen.add(key);
