@@ -95,6 +95,65 @@ describe('selected official installation and native login', () => {
     );
   });
 
+  it('keeps a private copy that could not be read, rather than setting it aside', async () => {
+    // Antivirus holds the file open for a moment and the digest read fails.
+    // Nothing about its content has been proven, so a repair that quarantined
+    // it would set aside a healthy copy for being momentarily busy.
+    const root = await setup(),
+      file = managedBinary(root, 'oh-my-pi');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, 'fixture healthy managed binary');
+    const fetcher = vi.fn<typeof fetch>();
+    const busy = Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+    const installer = new EngineInstaller(root, {
+      fetch: fetcher,
+      platform: 'win32',
+      arch: 'x64',
+      verify: vi.fn(async () => {
+        throw busy;
+      }),
+    });
+    await expect(
+      installer.install('oh-my-pi', true, undefined, { repair: true }),
+    ).rejects.toMatchObject({ code: 'INSTALL_UNREADABLE' });
+    // Nothing was downloaded, nothing was set aside, and the copy is untouched.
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(await fs.readdir(path.dirname(file))).toEqual([path.basename(file)]);
+    expect(await fs.readFile(file, 'utf8')).toBe('fixture healthy managed binary');
+  });
+
+  it('never writes over a copy it set aside earlier, within the same millisecond', async () => {
+    const root = await setup(),
+      file = managedBinary(root, 'oh-my-pi');
+    const fetcher = vi.fn<typeof fetch>(async () => new Response('not the pinned release'));
+    const installer = new EngineInstaller(root, { fetch: fetcher, platform: 'win32', arch: 'x64' });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-09-20T12:00:00.000Z'));
+      for (const bytes of ['first tampered copy', 'second tampered copy']) {
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.writeFile(file, bytes);
+        await expect(
+          installer.install('oh-my-pi', true, undefined, { repair: true }),
+        ).rejects.toMatchObject({ code: 'INSTALL_CHECKSUM' });
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+    const kept = (await fs.readdir(path.dirname(file))).filter((name) =>
+      /\.quarantined-/.test(name),
+    );
+    expect(kept.length).toBe(2);
+    const bytes = await Promise.all(
+      kept.map((name) => fs.readFile(path.join(path.dirname(file), name), 'utf8')),
+    );
+    expect(bytes.sort()).toEqual(['first tampered copy', 'second tampered copy']);
+    for (const name of kept) {
+      expect(name.startsWith(`${path.basename(file)}.quarantined-`)).toBe(true);
+      expect(name).not.toMatch(/[\\/:]/);
+    }
+  });
+
   it('refuses a changed managed copy without repair, and leaves it exactly where it was', async () => {
     const root = await setup(),
       fetcher = vi.fn<typeof fetch>(),
