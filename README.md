@@ -15,7 +15,7 @@ without it, without signing in and without network access
 (`docs/implementation/2026-09-20-native-workspace-sign-in.md`). What a task sends leaves
 through the AI tool you signed in to.
 
-Diomedes Systems (LLC formation pending). This source tree is Diomedes 0.1.4;
+Diomedes Systems (LLC formation pending). This source tree is Diomedes 0.1.5;
 `package.json` holds that number and `tests/engine-routes.test.ts` fails if this file
 disagrees with it.
 
