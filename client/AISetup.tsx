@@ -1,10 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Settings } from '../shared/types';
 import type { ExternalEngine } from '../shared/types';
-import type { EngineConnection, InstallOffer } from '../shared/engines';
+import type { ConnectionReceipt, EngineConnection, InstallOffer } from '../shared/engines';
 import { ENGINE_NAMES, EXTERNAL_ENGINES, TEXT_ROUTE_CONTROLS } from '../shared/engines';
-import { advanceSetup } from '../shared/onboarding';
-import { api, selectEngineModel, setEngineEnabled } from './api';
+import { ENGINE_ROUTE_PROFILES, routeCaption } from '../shared/engine-routes';
+import { advanceSetup, hasUsableService } from '../shared/onboarding';
+import {
+  checkedSentence,
+  compatibilityText,
+  connected,
+  contextText,
+  placeholderConnection,
+  primaryControl,
+  provenanceText,
+  repairText,
+  routeIssueSentences,
+  setupStates,
+  showsCandidates,
+  sourceText,
+  stageAction,
+  stageText,
+  verified,
+  verifiedSentence,
+} from './ai-setup-state';
+import { ApiError, api, selectEngineModel, setEngineEnabled } from './api';
 import { Button } from './components';
 import './ai-setup.css';
 
@@ -12,52 +31,26 @@ const DISCLOSURE =
   'Diomedes checks installed tools, versions, sign-in status, and model lists on this computer. ' +
   'Short-lived checks do not send model prompts, install tools, or open sign-in pages.';
 
+/**
+ * The private compatible copy, said once, wherever it is offered. It is an
+ * addition, never a change to what the person already installed.
+ */
+const PRIVATE_COPY =
+  'This copy belongs to Diomedes alone. It does not change, downgrade or remove your own ' +
+  'installation, and it does not change PATH.';
+
 function messageOf(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   return 'The request could not be completed.';
 }
 
-function placeholder(engine: ExternalEngine): EngineConnection {
-  return {
-    engine,
-    installation: 'not-checked',
-    compatibility: 'unknown',
-    authentication: 'unknown',
-    accountRoute: null,
-    models: [],
-    checkedAt: null,
-    detail: 'Not checked yet.',
-    usage: { state: 'unknown', checkedAt: null },
-  };
+/** True when the host said this failure may already have reached the provider. */
+function ambiguousFailure(error: unknown): boolean {
+  return error instanceof ApiError && error.data?.ambiguous === true;
 }
 
-function installationText(value: EngineConnection['installation']): string {
-  if (value === 'missing') return 'Not installed';
-  if (value === 'found') return 'Found';
-  return 'Not checked';
-}
-
-function compatibilityText(value: EngineConnection['compatibility']): string {
-  if (value === 'supported') return 'Supported';
-  if (value === 'unsupported') return 'Not supported';
-  return 'Unknown';
-}
-
-function authenticationText(value: EngineConnection['authentication']): string {
-  if (value === 'signed-in') return 'Signed in';
-  if (value === 'signed-out') return 'Signed out';
-  return 'Unknown';
-}
-
-function isUsable(connection: EngineConnection): boolean {
-  return (
-    connection.compatibility === 'supported' &&
-    connection.authentication === 'signed-in' &&
-    connection.checkedAt !== null &&
-    Date.now() - Date.parse(connection.checkedAt) < 300_000 &&
-    connection.models.length > 0
-  );
-}
+const timeOf = (value: string) => new Date(value).toLocaleTimeString();
+const dateTimeOf = (value: string) => new Date(value).toLocaleString();
 
 export interface AIConnectionProps {
   settings: Settings;
@@ -81,6 +74,14 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
   const [offers, setOffers] = useState<Record<string, InstallOffer | undefined>>({});
   const [offerLoading, setOfferLoading] = useState<Record<string, boolean>>({});
   const [installing, setInstalling] = useState<Record<string, boolean>>({});
+  const [installsOpen, setInstallsOpen] = useState<Record<string, boolean>>({});
+  const [binding, setBinding] = useState<Record<string, boolean>>({});
+  const [testOpen, setTestOpen] = useState<Record<string, boolean>>({});
+  const [testing, setTesting] = useState<Record<string, boolean>>({});
+  const [receipts, setReceipts] = useState<Record<string, ConnectionReceipt | undefined>>({});
+  const [testFailure, setTestFailure] = useState<
+    Record<string, { message: string; ambiguous: boolean } | undefined>
+  >({});
   const [loginBusy, setLoginBusy] = useState<Record<string, boolean>>({});
   const [loginDetail, setLoginDetail] = useState<Record<string, string>>({});
   const [opError, setOpError] = useState<Record<string, string | null>>({});
@@ -91,6 +92,13 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
 
   function fail(engine: string, error: unknown): void {
     if (mounted.current) setOpError((prev) => ({ ...prev, [engine]: messageOf(error) }));
+  }
+
+  /** Replace one row from a route that answered with the whole connection. */
+  function apply(updated: EngineConnection): void {
+    setConnections((prev) =>
+      prev === null ? [updated] : prev.map((c) => (c.engine === updated.engine ? updated : c)),
+    );
   }
 
   const refreshStatus = useCallback(async (signal?: AbortSignal) => {
@@ -110,7 +118,8 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
     }
   }, []);
 
-  // Initial mount reports status only. Discovery is never started here.
+  // Initial mount reports status only. Discovery is never started here, and
+  // neither is a provider test.
   useEffect(() => {
     mounted.current = true;
     const controller = new AbortController();
@@ -180,9 +189,7 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
         controller.signal,
       );
       if (!mounted.current) return;
-      setConnections((prev) =>
-        prev === null ? [updated] : prev.map((c) => (c.engine === engine ? updated : c)),
-      );
+      apply(updated);
       await refreshStatus(controller.signal);
     } catch (error) {
       if (controller.signal.aborted || !mounted.current) return;
@@ -212,6 +219,9 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
     setOpError((prev) => ({ ...prev, [engine]: null }));
     try {
       await setEngineEnabled(engine, on);
+      // The switch is one of the facts the host's next action rests on, so the
+      // record is read again rather than guessed at here.
+      await refreshStatus();
     } catch (error) {
       fail(engine, error);
     }
@@ -270,7 +280,7 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
     inFlight.current.add(controller);
     setInstalling((prev) => ({ ...prev, [engine]: true }));
     setOpError((prev) => ({ ...prev, [engine]: null }));
-    setProgress(`Installing ${ENGINE_NAMES[engine]}…`);
+    setProgress(`Installing the compatible copy of ${ENGINE_NAMES[engine]}…`);
     try {
       await api(`/ai/install/${engine}`, 'POST', { consent: true }, controller.signal);
       if (!mounted.current) return;
@@ -296,6 +306,80 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
     installControllers.current.get(engine)?.abort();
   }
 
+  /**
+   * Bind one installation the host itself observed. A candidate id is the only
+   * thing sent; a path from this screen is never bound.
+   */
+  async function bind(engine: ExternalEngine, candidateId: string): Promise<void> {
+    if (binding[engine]) return;
+    const controller = new AbortController();
+    inFlight.current.add(controller);
+    setBinding((prev) => ({ ...prev, [engine]: true }));
+    setOpError((prev) => ({ ...prev, [engine]: null }));
+    setProgress(`Selecting an installation for ${ENGINE_NAMES[engine]}…`);
+    try {
+      const updated = await api<EngineConnection>(
+        '/ai/bind',
+        'POST',
+        { engine, candidateId },
+        controller.signal,
+      );
+      if (!mounted.current) return;
+      apply(updated);
+    } catch (error) {
+      if (controller.signal.aborted || !mounted.current) return;
+      fail(engine, error);
+    } finally {
+      inFlight.current.delete(controller);
+      if (mounted.current) {
+        setBinding((prev) => ({ ...prev, [engine]: false }));
+        setProgress(null);
+      }
+    }
+  }
+
+  /**
+   * One real request, and only on an explicit second click. Nothing here runs
+   * on a scan, on a finished sign-in, or on reopening Settings.
+   */
+  async function test(engine: ExternalEngine, model: string): Promise<void> {
+    if (testing[engine] || !model) return;
+    const controller = new AbortController();
+    inFlight.current.add(controller);
+    setTesting((prev) => ({ ...prev, [engine]: true }));
+    setOpError((prev) => ({ ...prev, [engine]: null }));
+    setTestFailure((prev) => ({ ...prev, [engine]: undefined }));
+    setProgress(`Sending one test request through ${ENGINE_NAMES[engine]}…`);
+    try {
+      const result = await api<{ receipt: ConnectionReceipt; connection: EngineConnection }>(
+        `/ai/test/${engine}`,
+        'POST',
+        { consent: true, model },
+        controller.signal,
+      );
+      if (!mounted.current) return;
+      setReceipts((prev) => ({ ...prev, [engine]: result.receipt }));
+      apply(result.connection);
+      setTestOpen((prev) => ({ ...prev, [engine]: false }));
+    } catch (error) {
+      if (controller.signal.aborted || !mounted.current) return;
+      setTestFailure((prev) => ({
+        ...prev,
+        [engine]: { message: messageOf(error), ambiguous: ambiguousFailure(error) },
+      }));
+      setTestOpen((prev) => ({ ...prev, [engine]: false }));
+      // The stage belongs to the host record, not to this error, so read the
+      // connection back before saying where it failed.
+      await refreshStatus(controller.signal);
+    } finally {
+      inFlight.current.delete(controller);
+      if (mounted.current) {
+        setTesting((prev) => ({ ...prev, [engine]: false }));
+        setProgress(null);
+      }
+    }
+  }
+
   async function login(engine: ExternalEngine): Promise<void> {
     const controller = new AbortController();
     inFlight.current.add(controller);
@@ -311,6 +395,9 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
       );
       if (!mounted.current) return;
       setLoginDetail((prev) => ({ ...prev, [engine]: result.detail }));
+      // A finished sign-in process is not proof of the right account, so the
+      // record is read again rather than assumed.
+      await refreshStatus(controller.signal);
     } catch (error) {
       if (controller.signal.aborted || !mounted.current) return;
       fail(engine, error);
@@ -323,8 +410,9 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
     }
   }
 
+  const nowMs = Date.now();
   const byEngine = new Map((connections ?? []).map((c) => [c.engine, c]));
-  const rows = EXTERNAL_ENGINES.map((engine) => byEngine.get(engine) ?? placeholder(engine));
+  const rows = EXTERNAL_ENGINES.map((engine) => byEngine.get(engine) ?? placeholderConnection(engine));
   const services = settings.services ?? {};
   const defaultEngine =
     typeof services['defaultEngine'] === 'string' ? services['defaultEngine'] : '';
@@ -365,7 +453,10 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
         {rows.map((c) => {
           const engine = c.engine;
           const name = ENGINE_NAMES[engine];
-          const usable = isUsable(c);
+          const profile = ENGINE_ROUTE_PROFILES[engine];
+          const primary = primaryControl(c, name);
+          const states = setupStates(c);
+          const usable = connected(c);
           const raw = services[engine];
           const on = raw === true;
           const savedModel = services[`${engine}Model`];
@@ -376,55 +467,91 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
           const chosen = choices[engine] ?? (storedModel || c.models[0]?.slug || '');
           const offer = offers[engine];
           const error = opError[engine];
+          const repair = repairText(c);
+          const issue = routeIssueSentences(c, name);
+          const candidates = c.candidates ?? [];
+          const showInstalls = showsCandidates(c) || primary.intent === 'choose';
+          const offering = primary.intent === 'install';
+          const receipt = receipts[engine];
+          const failure = testFailure[engine];
+          const diagnostic = c.diagnostic;
+          const busyRow = busy || discovering || statusLoading;
           return (
             <section className="service" key={engine} aria-label={name}>
               <div className="row">
                 <h3>{name}</h3>
                 {defaultEngine === engine && <span className="caption push-right">Default</span>}
               </div>
-              <details className="ai-connection-details">
-                <summary>
-                  Installation: {installationText(c.installation)} · Compatibility:{' '}
-                  {compatibilityText(c.compatibility)} · Sign-in:{' '}
-                  {authenticationText(c.authentication)}
-                </summary>
-                <div className="setting-rows">
-                  <div className="setting-row">
-                    <span>Installation</span>
-                    <span>{installationText(c.installation)}</span>
-                  </div>
-                  <div className="setting-row">
-                    <span>Compatibility</span>
-                    <span>{compatibilityText(c.compatibility)}</span>
-                  </div>
-                  <div className="setting-row">
-                    <span>Sign-in</span>
-                    <span>{authenticationText(c.authentication)}</span>
-                  </div>
-                  <div className="setting-row">
-                    <span>Version</span>
-                    <span>{c.version ?? 'Version not reported'}</span>
-                  </div>
-                  {c.location ? (
-                    <div className="setting-row">
-                      <span>Location</span>
-                      <span>{c.location}</span>
-                    </div>
-                  ) : null}
-                  <div className="setting-row">
-                    <span>Usage</span>
-                    <span>Unknown</span>
-                  </div>
-                  <div className="setting-row">
-                    <span>Last checked</span>
-                    <span>
-                      {c.checkedAt ? new Date(c.checkedAt).toLocaleString() : 'Not checked'}
-                    </span>
-                  </div>
-                </div>
-              </details>
+              <p className="caption ai-route">{routeCaption(engine)}</p>
+              <ul className="ai-states" aria-label={`${name} setup state`}>
+                {states.map((state) => (
+                  <li className={`ai-state is-${state.value}`} key={state.key}>
+                    <span className="ai-state-label">{state.label}</span>
+                    <span className="ai-state-value">{state.text}</span>
+                  </li>
+                ))}
+              </ul>
+              {c.checkedAt !== null && (
+                <p className="caption ai-checked">{checkedSentence(c, nowMs, timeOf)}</p>
+              )}
+              {c.verification && (
+                <p className="caption ai-verified">{verifiedSentence(c, dateTimeOf)}</p>
+              )}
               <p>{c.detail}</p>
+              {repair !== '' && <p className="ai-note">{repair}</p>}
+              {issue.length > 0 && (
+                <div className="ai-note ai-route-issue">
+                  {issue.map((sentence) => (
+                    <p key={sentence}>{sentence}</p>
+                  ))}
+                </div>
+              )}
+              {diagnostic && (
+                <p className="ai-note">
+                  The last attempt stopped while {stageText(diagnostic.stage)} (
+                  {diagnostic.code}). {stageAction(diagnostic.stage)}
+                </p>
+              )}
               <div className="actions">
+                {primary.intent !== 'none' && (
+                  <Button
+                    tone="primary"
+                    disabled={
+                      busyRow ||
+                      checking[engine] ||
+                      installing[engine] ||
+                      binding[engine] ||
+                      testing[engine] ||
+                      loginBusy[engine]
+                    }
+                    onClick={() => {
+                      if (primary.intent === 'check') void check(engine);
+                      else if (primary.intent === 'sign-in') void login(engine);
+                      else if (primary.intent === 'enable') void toggle(engine, true);
+                      else if (primary.intent === 'choose')
+                        setInstallsOpen((prev) => ({ ...prev, [engine]: true }));
+                      else if (primary.intent === 'install') {
+                        if (offer === undefined) void loadOffer(engine);
+                      } else if (primary.intent === 'test')
+                        setTestOpen((prev) => ({ ...prev, [engine]: true }));
+                    }}
+                  >
+                    {primary.intent === 'check' && checking[engine]
+                      ? 'Checking…'
+                      : primary.intent === 'install' && offerLoading[engine]
+                        ? 'Reading…'
+                        : primary.label}
+                  </Button>
+                )}
+                {primary.intent !== 'check' && (
+                  <Button
+                    tone="quiet"
+                    disabled={busyRow || checking[engine]}
+                    onClick={() => void check(engine)}
+                  >
+                    {checking[engine] ? 'Checking…' : 'Check sign-in and models'}
+                  </Button>
+                )}
                 <label className="switch">
                   <input
                     type="checkbox"
@@ -434,19 +561,6 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
                   />
                   {on ? 'On' : 'Off'}
                 </label>
-                <Button
-                  tone="quiet"
-                  disabled={
-                    checking[engine] ||
-                    discovering ||
-                    statusLoading ||
-                    busy ||
-                    c.compatibility !== 'supported'
-                  }
-                  onClick={() => void check(engine)}
-                >
-                  {checking[engine] ? 'Checking…' : 'Check sign-in and models'}
-                </Button>
               </div>
               {usable && (
                 <div className="actions">
@@ -470,66 +584,63 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
                   </Button>
                 </div>
               )}
-              {c.installation === 'missing' && !installing[engine] && (
+              {offering && offer !== undefined && !installing[engine] && (
                 <div className="ai-offer">
-                  {offer === undefined ? (
-                    <div className="actions">
-                      <Button
-                        tone="quiet"
-                        disabled={offerLoading[engine] || busy}
-                        onClick={() => void loadOffer(engine)}
-                      >
-                        {offerLoading[engine] ? 'Reading…' : `Install ${name}`}
-                      </Button>
+                  <div className="setting-rows">
+                    <div className="setting-row">
+                      <span>Publisher</span>
+                      <span>{offer.publisher}</span>
                     </div>
-                  ) : (
-                    <>
-                      <div className="setting-rows">
-                        <div className="setting-row">
-                          <span>Publisher</span>
-                          <span>{offer.publisher}</span>
-                        </div>
-                        <div className="setting-row">
-                          <span>Source</span>
-                          {offer.source.startsWith('http') ? (
-                            <a href={offer.source}>{offer.source}</a>
-                          ) : (
-                            <span>{offer.source}</span>
-                          )}
-                        </div>
-                        <div className="setting-row">
-                          <span>Version</span>
-                          <span>{offer.version}</span>
-                        </div>
-                        <div className="setting-row">
-                          <span>Destination</span>
-                          <span>{offer.destination}</span>
-                        </div>
-                        <div className="setting-row">
-                          <span>Dependencies</span>
-                          <span>
-                            {offer.dependencies.length > 0
-                              ? offer.dependencies.join(', ')
-                              : 'None listed'}
-                          </span>
-                        </div>
-                        <div className="setting-row">
-                          <span>Privileges</span>
-                          <span>{offer.privileges}</span>
-                        </div>
-                        <div className="setting-row">
-                          <span>Account</span>
-                          <span>{offer.account}</span>
-                        </div>
-                      </div>
-                      <p>{offer.detail}</p>
-                      <div className="actions">
-                        <Button disabled={busy || !offer.available} onClick={() => void install(engine)}>
-                          Install selected tool
-                        </Button>
-                      </div>
-                    </>
-                  )}
+                    <div className="setting-row">
+                      <span>Source</span>
+                      {offer.source.startsWith('http') ? (
+                        <a href={offer.source}>{offer.source}</a>
+                      ) : (
+                        <span>{offer.source}</span>
+                      )}
+                    </div>
+                    <div className="setting-row">
+                      <span>Version</span>
+                      <span>{offer.version}</span>
+                    </div>
+                    <div className="setting-row">
+                      <span>Destination</span>
+                      <span>{offer.destination}</span>
+                    </div>
+                    <div className="setting-row">
+                      <span>Dependencies</span>
+                      <span>
+                        {offer.dependencies.length > 0
+                          ? offer.dependencies.join(', ')
+                          : 'None listed'}
+                      </span>
+                    </div>
+                    <div className="setting-row">
+                      <span>Privileges</span>
+                      <span>{offer.privileges}</span>
+                    </div>
+                    <div className="setting-row">
+                      <span>Account</span>
+                      <span>{offer.account}</span>
+                    </div>
+                  </div>
+                  <p>{offer.detail}</p>
+                  <p className="ai-note">{PRIVATE_COPY}</p>
+                  <div className="actions">
+                    <Button
+                      tone="primary"
+                      disabled={busy || !offer.available}
+                      onClick={() => void install(engine)}
+                    >
+                      {primary.action === 'repair' ? 'Repair this installation' : 'Install this copy'}
+                    </Button>
+                    <Button
+                      tone="quiet"
+                      onClick={() => setOffers((prev) => ({ ...prev, [engine]: undefined }))}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
               )}
               {installing[engine] && (
@@ -539,73 +650,235 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
                   </Button>
                 </div>
               )}
-              {c.compatibility === 'supported' && c.authentication !== 'signed-in' && (
-                <>
-                  <div className="actions">
-                    <Button
-                      tone="quiet"
-                      disabled={loginBusy[engine] || busy || c.compatibility !== 'supported'}
-                      onClick={() => void login(engine)}
-                    >
-                      {loginBusy[engine]
-                        ? 'Opening…'
-                        : engine === 'oh-my-pi'
-                          ? 'Configure OpenAI API access'
-                          : `Sign in with ${name}`}
-                    </Button>
-                  </div>
-                  {engine === 'oh-my-pi' ? (
+              {showInstalls && (
+                <details
+                  className="ai-candidates"
+                  open={installsOpen[engine] === true}
+                  onToggle={(e) =>
+                    setInstallsOpen((prev) => ({ ...prev, [engine]: e.currentTarget.open }))
+                  }
+                >
+                  <summary>{`Installations on this computer (${candidates.length})`}</summary>
+                  {candidates.length === 0 ? (
                     <p className="caption">
-                      Open the separate native profile and edit models.yml with a literal API key
-                      using the{' '}
-                      <a
-                        target="_blank"
-                        rel="noreferrer"
-                        href="https://github.com/can1357/oh-my-pi/blob/v18.0.6/docs/models.md#auth-and-api-key-resolution-order"
-                      >
-                        OMP instructions
-                      </a>
-                      .{' '}
-                      <a
-                        target="_blank"
-                        rel="noreferrer"
-                        href="https://platform.openai.com/api-keys"
-                      >
-                        OpenAI API billing
-                      </a>{' '}
-                      is separate from ChatGPT. Diomedes creates an empty template only if missing
-                      and never reads your key. Rechecking verifies local configuration; provider
-                      access remains untested until you send a request.
+                      Diomedes has no guided installer for this route on this computer. Install{' '}
+                      {name} yourself, then check again.
                     </p>
                   ) : (
-                    <p className="caption">
-                      {engine === 'devin'
-                        ? 'Sign-in opens the Devin browser flow.'
-                        : "Sign-in runs in the provider's own tool in your terminal."}{' '}
-                      Diomedes never asks for provider secrets.
-                    </p>
+                    <ul className="ai-candidate-list">
+                      {candidates.map((candidate) => {
+                        const bound = c.binding?.id === candidate.id;
+                        return (
+                          <li className="ai-candidate" key={candidate.id}>
+                            <div className="row ai-candidate-head">
+                              <span className="ai-candidate-source">
+                                {sourceText(candidate.source)}
+                              </span>
+                              <span className="caption">{candidate.version}</span>
+                              <span className="caption">
+                                {compatibilityText(candidate.compatibility)}
+                              </span>
+                              <span className="caption">{contextText(candidate.context)}</span>
+                              {bound && <span className="caption">In use</span>}
+                              {!bound && c.recommendedCandidateId === candidate.id && (
+                                <span className="caption">Recommended</span>
+                              )}
+                            </div>
+                            <p className="caption">{provenanceText(candidate.provenance)}</p>
+                            <p className="code caption ai-path" title={candidate.path}>
+                              {candidate.path}
+                            </p>
+                            {candidate.issue && <p className="caption">{candidate.issue}</p>}
+                            {!bound && (
+                              <div className="actions">
+                                <Button
+                                  tone="quiet"
+                                  disabled={busyRow || binding[engine] || !candidate.present}
+                                  onClick={() => void bind(engine, candidate.id)}
+                                >
+                                  Use this installation
+                                </Button>
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
                   )}
-                  {loginDetail[engine] !== undefined && (
+                </details>
+              )}
+              {usable && (
+                <div className="ai-test">
+                  {testOpen[engine] === true ? (
                     <>
-                      <p>{loginDetail[engine]}</p>
-                      {engine !== 'oh-my-pi' && (
+                      <p>
+                        This sends one small synthetic request through {profile.routeLabel} using{' '}
+                        {chosen || 'the selected model'}. It may use that service&apos;s allowance
+                        or add provider charges.
+                      </p>
+                      <div className="actions">
+                        <Button
+                          tone="primary"
+                          disabled={busy || testing[engine] || !chosen}
+                          onClick={() => void test(engine, chosen)}
+                        >
+                          {testing[engine] ? 'Testing…' : 'Send the test request'}
+                        </Button>
                         <Button
                           tone="quiet"
-                          onClick={() => {
-                            void api<{ detail: string }>(`/ai/login/${engine}/cancel`, 'POST', {})
-                              .then((result) =>
-                                setLoginDetail((prev) => ({ ...prev, [engine]: result.detail })),
-                              )
-                              .catch((error) => fail(engine, error));
-                          }}
+                          disabled={testing[engine]}
+                          onClick={() => setTestOpen((prev) => ({ ...prev, [engine]: false }))}
                         >
-                          Close sign-in window
+                          Cancel
                         </Button>
-                      )}
+                      </div>
                     </>
+                  ) : (
+                    primary.intent !== 'test' && (
+                      <div className="actions">
+                        <Button
+                          tone="quiet"
+                          disabled={busy || testing[engine]}
+                          onClick={() => setTestOpen((prev) => ({ ...prev, [engine]: true }))}
+                        >
+                          {failure ? 'Retry the test' : 'Test this connection'}
+                        </Button>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+              {receipt && verified(c) && (
+                <p className="ai-note" role="status">
+                  Test succeeded {dateTimeOf(receipt.verifiedAt)} on {receipt.model}.
+                </p>
+              )}
+              {failure && (
+                <div className="ai-test-failure">
+                  <p className="ai-alert" role="alert">
+                    {failure.message}
+                  </p>
+                  {failure.ambiguous && (
+                    <p className="caption">
+                      This request may already have reached the provider. A retry may be billed
+                      again.
+                    </p>
+                  )}
+                </div>
+              )}
+              {loginDetail[engine] !== undefined && (
+                <>
+                  <p>{loginDetail[engine]}</p>
+                  {engine !== 'oh-my-pi' && (
+                    <Button
+                      tone="quiet"
+                      onClick={() => {
+                        void api<{ detail: string }>(`/ai/login/${engine}/cancel`, 'POST', {})
+                          .then((result) =>
+                            setLoginDetail((prev) => ({ ...prev, [engine]: result.detail })),
+                          )
+                          .catch((error) => fail(engine, error));
+                      }}
+                    >
+                      Close sign-in window
+                    </Button>
                   )}
                 </>
               )}
+              {primary.intent === 'sign-in' &&
+                (engine === 'oh-my-pi' ? (
+                  <p className="caption">
+                    Open the separate native profile and edit models.yml with a literal API key
+                    using the{' '}
+                    <a
+                      target="_blank"
+                      rel="noreferrer"
+                      href="https://github.com/can1357/oh-my-pi/blob/v18.0.6/docs/models.md#auth-and-api-key-resolution-order"
+                    >
+                      OMP instructions
+                    </a>
+                    .{' '}
+                    <a target="_blank" rel="noreferrer" href="https://platform.openai.com/api-keys">
+                      OpenAI API billing
+                    </a>{' '}
+                    is separate from ChatGPT. Diomedes creates an empty template only if missing and
+                    never reads your key.
+                  </p>
+                ) : (
+                  <p className="caption">
+                    {engine === 'devin'
+                      ? 'Sign-in opens the Devin browser flow.'
+                      : "Sign-in runs in the provider's own tool in your terminal."}{' '}
+                    Diomedes never asks for provider secrets.
+                  </p>
+                ))}
+              <details className="ai-connection-details">
+                <summary>Details</summary>
+                <div className="setting-rows">
+                  <div className="setting-row">
+                    <span>Installation</span>
+                    <span>
+                      {c.binding
+                        ? sourceText(c.binding.source)
+                        : c.location
+                          ? 'Found on this computer'
+                          : 'Not selected'}
+                    </span>
+                  </div>
+                  {(c.binding?.path ?? c.location) && (
+                    <div className="setting-row">
+                      <span>Path</span>
+                      <span className="ai-path">{c.binding?.path ?? c.location}</span>
+                    </div>
+                  )}
+                  <div className="setting-row">
+                    <span>Version</span>
+                    <span>{c.binding?.version ?? c.version ?? 'Not reported'}</span>
+                  </div>
+                  <div className="setting-row">
+                    <span>Account route</span>
+                    <span>{c.accountRoute ?? 'Not detected'}</span>
+                  </div>
+                  <div className="setting-row">
+                    <span>Selected model</span>
+                    <span>{storedModel || 'None saved'}</span>
+                  </div>
+                  <div className="setting-row">
+                    <span>Task scope</span>
+                    <span>{profile.taskScope}</span>
+                  </div>
+                  <div className="setting-row">
+                    <span>Permission scope</span>
+                    <span>
+                      {TEXT_ROUTE_CONTROLS.filter((row) => row.level === 'enforced')
+                        .map((row) => row.control)
+                        .join(', ')}
+                    </span>
+                  </div>
+                  {profile.billing !== '' && (
+                    <div className="setting-row">
+                      <span>Billing</span>
+                      <span>{profile.billing}</span>
+                    </div>
+                  )}
+                  {profile.reuses.length > 0 && (
+                    <div className="setting-row">
+                      <span>Reused from your setup</span>
+                      <span>{profile.reuses.join(', ')}</span>
+                    </div>
+                  )}
+                  {profile.doesNotReuse.length > 0 && (
+                    <div className="setting-row">
+                      <span>Not carried over</span>
+                      <span>{profile.doesNotReuse.join(', ')}</span>
+                    </div>
+                  )}
+                  <div className="setting-row">
+                    <span>Usage</span>
+                    <span>Unknown</span>
+                  </div>
+                </div>
+              </details>
               {error !== null && error !== undefined && (
                 <p className="ai-alert" role="alert">
                   {error}
@@ -643,6 +916,10 @@ export default function AISetup({ settings, save, busy, onContinue, onBack }: AI
   }
 
   const locked = busy === true || skipBusy;
+  // What continuing actually does: with no engine selected and switched on, the
+  // app runs the local sample, so the control says so rather than implying a
+  // provider is connected.
+  const service = hasUsableService(settings);
   return (
     <div className="ai-setup">
       <h1>Connect an AI service</h1>
@@ -650,6 +927,11 @@ export default function AISetup({ settings, save, busy, onContinue, onBack }: AI
       {skipError !== null && (
         <p className="ai-alert" role="alert">
           {skipError}
+        </p>
+      )}
+      {!service && (
+        <p className="caption">
+          Sample work is scripted on this computer. It is not proof that a provider answered.
         </p>
       )}
       <div className="setup-actions">
@@ -660,7 +942,7 @@ export default function AISetup({ settings, save, busy, onContinue, onBack }: AI
           {skipBusy ? 'Skipping…' : 'Skip AI setup'}
         </Button>
         <Button tone="primary" disabled={locked} onClick={onContinue}>
-          Continue
+          {service ? 'Continue' : 'Continue with the local sample'}
         </Button>
       </div>
     </div>

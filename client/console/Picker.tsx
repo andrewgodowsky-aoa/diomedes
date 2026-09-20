@@ -11,6 +11,7 @@ import type {
 } from '../../shared/types';
 import type { EngineConnection } from '../../shared/engines';
 import { EXTERNAL_ENGINES, isExternalEngine } from '../../shared/engines';
+import { routeCaption } from '../../shared/engine-routes';
 import { MODE_CEILING, effortFor } from '../../shared/effort';
 import { api, engineConnections } from '../api';
 
@@ -246,6 +247,9 @@ export function Picker({
                         {shortLocation(location || integration?.status || '')}
                       </span>
                     </h4>
+                    {/* The account route this adapter accepts, and what a task
+                        sent through it can do. The engine keeps its own name. */}
+                    {isExternalEngine(id) && <p className="note">{routeCaption(id)}</p>}
                     {connection && <p className="note">{connectionState(connection)}</p>}
                     <button
                       type="button"

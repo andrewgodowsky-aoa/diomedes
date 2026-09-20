@@ -60,6 +60,139 @@
   overflow-wrap: anywhere;
 }
 
+/* The route line under the engine name: which account route, what it does. */
+.ai-route {
+  margin: -4px 0 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Four states, said in words. Colour is never the only carrier of a state. */
+.ai-states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.ai-state {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 120px;
+  border: 1px solid var(--dm-rule-2);
+  border-left: 3px solid var(--dm-rule);
+  border-radius: var(--rb);
+  background: var(--dm-well);
+  padding: 6px 10px;
+}
+
+.ai-state.is-yes {
+  border-left-color: var(--dm-done);
+}
+
+.ai-state.is-no {
+  border-left-color: var(--dm-fault);
+}
+
+.ai-state-label {
+  font: 400 var(--dm-type-caption) / 1.4 var(--dm-font-ui);
+  color: var(--dm-text-3);
+}
+
+.ai-state-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--dm-text-1);
+}
+
+.ai-checked,
+.ai-verified {
+  margin: 0 0 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* One explanation the record carries and the status line does not: a broken
+   binding, a different account route, a failed stage, or a private copy. */
+.ai-note {
+  border-left: 3px solid var(--dm-rule);
+  background: var(--dm-well);
+  border-radius: var(--rb);
+  padding: 8px 10px;
+  margin: 10px 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-route-issue p {
+  margin: 0 0 6px;
+}
+
+.ai-route-issue p:last-child {
+  margin-bottom: 0;
+}
+
+.ai-candidates {
+  margin: 10px 0;
+  min-width: 0;
+}
+
+.ai-candidate-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.ai-candidate {
+  border-top: 1px solid var(--dm-rule-2);
+  padding: 10px 0;
+  min-width: 0;
+}
+
+.ai-candidate p {
+  margin: 4px 0;
+}
+
+.ai-candidate-head {
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.ai-candidate-source {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--dm-text-1);
+}
+
+/* A path is a machine string: it wraps where it is written, and the whole
+   value stays available through the element's own title. */
+.ai-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ai-test {
+  min-width: 0;
+  margin: 10px 0;
+}
+
+.ai-test p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-test-failure {
+  min-width: 0;
+  margin: 10px 0;
+}
+
 .ai-alert {
   border: 1px solid var(--dm-rule);
   border-left: 4px solid var(--dm-fault);

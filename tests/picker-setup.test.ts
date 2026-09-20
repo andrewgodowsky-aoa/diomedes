@@ -8,8 +8,10 @@ import { createApp } from '../server/app.js';
 import { EngineService, TESTED_VERSIONS } from '../server/engines/service.js';
 import type { TextEngineAdapter } from '../server/engines/contract.js';
 import { routeContractFor } from '../server/harness/route-contract.js';
-import type { EngineModel, IntegrationStatus, Settings } from '../shared/types.js';
+import type { EngineModel, ExternalEngine, IntegrationStatus, Settings } from '../shared/types.js';
 import type { EngineConnection } from '../shared/engines.js';
+import { ENGINE_NAMES, EXTERNAL_ENGINES } from '../shared/engines.js';
+import { ENGINE_ROUTE_PROFILES, routeCaption } from '../shared/engine-routes.js';
 import { connectionState, signedIn } from '../client/console/Picker.js';
 
 /**
@@ -366,6 +368,22 @@ describe('what the thread picker treats as a usable account', () => {
     expect(connectionState(base)).toBe('Signed in · Ready');
     expect(connectionState(stale)).toContain('rechecked before sending');
   });
+  /**
+   * The picker now shows the account route beside the engine, because "I have
+   * OpenCode" and "I hold the one account route this adapter accepts" are
+   * different statements. The engine keeps its own display name: the caption is
+   * a second line, never a rename.
+   */
+  it('captions a route with the account it accepts, without renaming the engine', () => {
+    expect(routeCaption('opencode')).toBe('OpenCode Go · Text and reviewed proposals');
+    expect(ENGINE_NAMES.opencode).toBe('OpenCode');
+    for (const engine of EXTERNAL_ENGINES as readonly ExternalEngine[]) {
+      const profile = ENGINE_ROUTE_PROFILES[engine];
+      expect(routeCaption(engine)).toBe(`${profile.routeLabel} · ${profile.taskScope}`);
+      expect(routeCaption(engine)).not.toBe(ENGINE_NAMES[engine]);
+    }
+  });
+
   it('offers nothing for an account that is missing, unsupported, signed out or empty', () => {
     expect(signedIn(undefined)).toBe(false);
     expect(signedIn({ ...base, installation: 'missing' })).toBe(false);
