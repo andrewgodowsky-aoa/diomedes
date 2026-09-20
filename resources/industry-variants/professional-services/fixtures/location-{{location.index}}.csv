@@ -1,0 +1,3 @@
+business,location,week,billings,service_hours
+{{business.name}},{{location.name}},synthetic-week-1,21800,164
+{{business.name}},{{location.name}},synthetic-week-2,22650,171

@@ -261,7 +261,11 @@ export function canBindOutputProject(membership: Membership | undefined | null):
   return canConfigureOrganization(membership);
 }
 
-export type BriefTargetRefusal = 'not-a-member' | 'no-output-project' | 'output-project-missing';
+export type BriefTargetRefusal =
+  | 'not-a-member'
+  | 'no-output-project'
+  | 'output-project-missing'
+  | 'output-project-ownership-unresolved';
 
 /**
  * Where this organization's brief goes, or why it goes nowhere.
@@ -286,7 +290,7 @@ export function resolveBriefTarget(input: {
   organization: Organization;
   membership: Membership | undefined | null;
   binding: OutputBinding | null;
-  projects: readonly { id: string; name: string }[];
+  projects: readonly { id: string; name: string; organizationId?: string | null }[];
 }): BriefTarget {
   const { organization, membership, binding, projects } = input;
   if (!isActiveMember(membership))
@@ -310,6 +314,12 @@ export function resolveBriefTarget(input: {
       ready: false,
       code: 'output-project-missing',
       message: `${organization.name} writes into “${binding.projectName}”, and that project is not here any more. Choose where it writes now.`,
+    };
+  if (project.organizationId !== organization.id)
+    return {
+      ready: false,
+      code: 'output-project-ownership-unresolved',
+      message: `${organization.name} no longer has exclusive ownership of “${binding.projectName}”. Choose a project that belongs only to this business.`,
     };
   return {
     ready: true,

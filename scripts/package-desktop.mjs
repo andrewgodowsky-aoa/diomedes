@@ -20,7 +20,7 @@ async function sourceSnapshot() {
       else throw new Error(`Unexpected source link: ${child}`);
     }
   }
-  for (const directory of ['client', 'server', 'shared', 'desktop', 'fixtures', 'licenses', 'dist']) await visit(directory);
+  for (const directory of ['client', 'server', 'shared', 'desktop', 'fixtures', 'licenses', 'resources', 'dist']) await visit(directory);
   for (const name of ['package.json', 'package-lock.json', 'LICENSE', 'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs'])
     files.push({ path: name, sha256: sha256(await fs.readFile(path.join(root, name))) });
   return files.sort((a, b) => a.path.localeCompare(b.path));
@@ -33,7 +33,7 @@ const baseCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encod
 // reproduced from one. Ask git instead, over the tracked inputs only -- `dist` and
 // `fixtures/projects` are gitignored build/test output and can never be committed, so
 // including them would pin the answer to 'local-uncommitted' forever.
-const trackedInputs = ['client', 'server', 'shared', 'desktop', 'licenses',
+const trackedInputs = ['client', 'server', 'shared', 'desktop', 'licenses', 'resources',
   'package.json', 'package-lock.json', 'LICENSE', 'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs'];
 const dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=all', '--', ...trackedInputs],
   { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
@@ -53,6 +53,7 @@ try {
     await fs.copyFile(path.join(root, 'desktop', helper), path.join(stage, helper));
   await fs.cp(path.join(root, 'dist'), path.join(stage, 'dist'), { recursive: true });
   await fs.cp(path.join(root, 'licenses'), path.join(stage, 'licenses'), { recursive: true });
+  await fs.cp(path.join(root, 'resources'), path.join(stage, 'resources'), { recursive: true });
   await fs.copyFile(path.join(root, 'LICENSE'), path.join(stage, 'LICENSE'));
   await fs.writeFile(
     path.join(stage, 'package.json'),

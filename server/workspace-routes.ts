@@ -124,6 +124,108 @@ export function mountWorkspaceRoutes(
     ),
   );
 
+  // Access profiles are organization-owned configuration. The administration
+  // ledger is Owner-only; ordinary members use resource discovery, which
+  // returns only resources their pinned profile assignments cover.
+  app.get(
+    '/api/workspace/organizations/:organizationId/access',
+    route(async (req) => workspaces.accessView(organizationId(req)), false),
+  );
+
+  app.get(
+    '/api/workspace/organizations/:organizationId/access/resources',
+    route(
+      async (req) =>
+        workspaces.discoverAccessResources(organizationId(req), String(req.query.permission ?? '')),
+      false,
+    ),
+  );
+
+  app.post(
+    '/api/workspace/organizations/:organizationId/access/resources',
+    route(async (req) => {
+      const value = body(req);
+      return workspaces.createAccessResource(organizationId(req), {
+        type: value.type,
+        parentId: value.parentId,
+        label: value.label,
+        externalId: value.externalId,
+      });
+    }),
+  );
+
+  app.post(
+    '/api/workspace/organizations/:organizationId/access/profiles',
+    route(async (req) => {
+      const value = body(req);
+      return workspaces.createAccessProfile(organizationId(req), {
+        name: value.name,
+        description: value.description,
+        permissions: value.permissions,
+      });
+    }),
+  );
+
+  app.post(
+    '/api/workspace/organizations/:organizationId/access/profiles/:profileId/revisions',
+    route(async (req) => {
+      const value = body(req);
+      return workspaces.reviseAccessProfile(
+        organizationId(req),
+        String(req.params.profileId ?? ''),
+        {
+          expectedRevision: value.expectedRevision,
+          name: value.name,
+          description: value.description,
+          permissions: value.permissions,
+        },
+      );
+    }),
+  );
+
+  app.post(
+    '/api/workspace/organizations/:organizationId/access/assignments',
+    route(async (req) => {
+      const value = body(req);
+      return workspaces.assignAccessProfile(organizationId(req), {
+        personId: value.personId,
+        profileId: value.profileId,
+        profileRevision: value.profileRevision,
+        scopes: value.scopes,
+      });
+    }),
+  );
+
+  app.post(
+    '/api/workspace/organizations/:organizationId/access/assignments/:assignmentId/revoke',
+    route(async (req) =>
+      workspaces.revokeAccessAssignment(
+        organizationId(req),
+        String(req.params.assignmentId ?? ''),
+        body(req).expectedRevision,
+      ),
+    ),
+  );
+
+  app.post(
+    '/api/workspace/organizations/:organizationId/access/worker-profiles',
+    route(async (req) => {
+      const value = body(req);
+      return workspaces.createWorkerProfile(organizationId(req), {
+        name: value.name,
+        purpose: value.purpose,
+        executionMode: value.executionMode,
+        agent: value.agent,
+        permissionCeilings: value.permissionCeilings,
+        resourceCeilings: value.resourceCeilings,
+        contextCeilings: value.contextCeilings,
+        toolCeilings: value.toolCeilings,
+        ruleScopes: value.ruleScopes,
+        routeCeilings: value.routeCeilings,
+      });
+    }),
+  );
+
   app.get(
     '/api/workspace/organizations/:organizationId/setup',
     route(async (req) => workspaces.setupView(organizationId(req)), false),
@@ -193,7 +295,10 @@ export function mountWorkspaceRoutes(
       // still run the legacy configured sources, but cannot widen them here.
       if (body(req).sources !== undefined) configuration.assertMayConfigure(id);
       if (body(req).sources !== undefined && body(req).projectId !== target.projectId)
-        throw new ApiError(409, 'The output project changed. Reopen the workspace and choose its files again.');
+        throw new ApiError(
+          409,
+          'The output project changed. Reopen the workspace and choose its files again.',
+        );
       const manifest = configuration.active(id);
       if (!manifest)
         throw new ApiError(

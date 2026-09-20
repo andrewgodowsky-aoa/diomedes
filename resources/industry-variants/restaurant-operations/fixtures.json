@@ -1,0 +1,13 @@
+[
+  {
+    "path": "weekly-summary.md",
+    "label": "Weekly operating summary",
+    "default": true
+  },
+  {
+    "path": "location-{{location.index}}.csv",
+    "label": "Location export",
+    "default": true,
+    "slot": "location"
+  }
+]

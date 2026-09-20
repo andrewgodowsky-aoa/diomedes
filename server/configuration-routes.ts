@@ -21,17 +21,15 @@
  * its sender claims to be.
  */
 import type { Express, Request, Response } from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readyForProposal } from '../shared/business-setup.js';
 import type { KnownAgent } from '../shared/configuration.js';
-import {
-  WEEKLY_BRIEF_VARIANTS,
-  compileProposal,
-  variantFor,
-  type PackVariantId,
-} from '../shared/packs.js';
+import { compileProposal, variantFor } from '../shared/packs.js';
 import type { AgentRegistry } from './agents.js';
 import type { ConfigurationService } from './configuration.js';
 import { ApiError } from './paths.js';
+import { loadIndustryVariantRegistry } from './rehearsal/industry-registry.js';
 import type { Store } from './store.js';
 import type { WorkspaceService } from './workspaces.js';
 
@@ -42,8 +40,7 @@ const body = (req: Request): Record<string, unknown> =>
 
 const organizationId = (req: Request) => String(req.params.organizationId ?? '');
 
-/** The variants this build offers, read from the pack rather than repeated here. */
-const VARIANT_IDS: readonly string[] = Object.keys(WEEKLY_BRIEF_VARIANTS);
+const BUNDLED_VARIANTS = fileURLToPath(new URL('../resources/industry-variants/', import.meta.url));
 
 const invalidActivation = () =>
   new ApiError(
@@ -126,17 +123,22 @@ export function mountConfigurationRoutes(
           'This business has not finished its questionnaire yet. Answer the remaining questions, then compile the setup again.',
           { code: 'setup_incomplete' },
         );
-      // The answers pick a variant by default. The caller may only choose
-      // between the variants this build offers, never name a new one.
-      let variantId = variantFor(setup.answers);
+      // Reload both roots for each compile so an operator can add a data folder
+      // without restarting the service. Refused folders stay isolated and
+      // never become executable configuration input.
+      const registry = await loadIndustryVariantRegistry({
+        bundledRoot: BUNDLED_VARIANTS,
+        operatorRoot: path.join(store.dataDir, 'industry-variants'),
+      });
+      let variantId: string;
       if (value.variantId !== undefined) {
         const requested = String(value.variantId);
-        if (!VARIANT_IDS.includes(requested))
+        if (!registry.variants.has(requested))
           throw new ApiError(400, 'Choose one of the setup variants this build offers.', {
             code: 'invalid_variant',
           });
-        variantId = requested as PackVariantId;
-      }
+        variantId = requested;
+      } else variantId = variantFor(setup.answers, registry.variants);
       // Connected connections and team execution come from the same live
       // context the validator will read, so the compiler and the validator
       // cannot hold different beliefs about what this machine can do.
@@ -164,6 +166,7 @@ export function mountConfigurationRoutes(
         answersDigest: setup.digest,
         previousConfigurationDigest: configuration.active(id)?.digest ?? null,
         variantId,
+        variants: registry.variants,
         agents: knownAgents,
         teamExecutionAvailable: context.teamExecutionAvailable,
         connectedConnections: context.connectedConnections,

@@ -457,7 +457,7 @@ describe('independent packaging provenance', () => {
     const body = source.slice(source.indexOf('const sha256 ='), source.indexOf('const source = await sourceSnapshot();'));
     expect(body).toContain('async function sourceSnapshot()');
     const stage = await fs.mkdtemp(path.join(repo, '.desktop-stage-native-auth-review-fingerprint-'));
-    for (const dir of ['client', 'server', 'shared', 'desktop', 'fixtures', 'licenses', 'dist', 'scripts'])
+    for (const dir of ['client', 'server', 'shared', 'desktop', 'fixtures', 'licenses', 'resources', 'dist', 'scripts'])
       await fs.mkdir(path.join(stage, dir));
     const inputs = ['desktop/native-auth.ts', 'desktop/native-auth-storage.ts', 'desktop/native-auth-preload.ts',
       'shared/native-auth.ts', 'client/console/NativeAccount.tsx', 'scripts/build-desktop-auth.mjs',

@@ -1,0 +1,280 @@
+.console .disc-view {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+  color: var(--t1);
+}
+
+.console .discovery-page,
+.console .discovery-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.console .discovery-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.console .discovery-actions h1 {
+  margin: 0;
+  font-size: var(--dm-type-title);
+  font-weight: 500;
+}
+
+.console .discovery-form {
+  padding: 14px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  background: var(--raised);
+}
+
+.console details.discovery-form > summary,
+.console .discovery-form details > summary {
+  color: var(--t2);
+  cursor: pointer;
+}
+
+.console .discovery-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+
+.console .discovery-form input,
+.console .discovery-form textarea,
+.console .discovery-form select {
+  width: 100%;
+  min-width: 0;
+  color: var(--t1);
+  background: var(--chrome);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  padding: 7px 8px;
+  font: 400 var(--dm-type-body) / var(--dm-line-body) var(--ui);
+}
+
+.console .discovery-form textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.console .discovery-form input:focus-visible,
+.console .discovery-form textarea:focus-visible,
+.console .discovery-form select:focus-visible {
+  outline: 1px solid var(--light);
+  outline-offset: 1px;
+}
+
+.console .disc-empty {
+  min-height: 240px;
+  justify-content: center;
+}
+
+.console .disc-view h2,
+.console .disc-view h3,
+.console .disc-view h4,
+.console .disc-view p {
+  margin: 0;
+}
+
+.console .disc-view h2 {
+  font-size: var(--dm-type-title);
+  font-weight: 500;
+}
+
+.console .disc-view h3 {
+  font-size: var(--dm-type-section);
+  font-weight: 500;
+}
+
+.console .disc-view h4 {
+  font: 500 var(--dm-type-body) / var(--dm-line-body) var(--ui);
+  overflow-wrap: anywhere;
+}
+
+.console .disc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 0;
+}
+
+.console .disc-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.console .disc-route,
+.console .disc-muted {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+
+.console .disc-classification {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 0;
+  border-block: 1px solid var(--hair);
+}
+
+.console .disc-classification label,
+.console .disc-hypothesis label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.console .disc-classification label > span,
+.console .disc-hypothesis label > span {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+
+.console .disc-classification select,
+.console .disc-hypothesis select {
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 26px 6px 8px;
+  color: var(--t1);
+  background: var(--chrome);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  font: inherit;
+}
+
+.console .disc-classification select:focus-visible,
+.console .disc-hypothesis select:focus-visible {
+  outline: 1px solid var(--light);
+  outline-offset: 1px;
+}
+
+.console .disc-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.console :where(.disc-facts, .disc-process, .disc-exports) {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.console .disc-facts,
+.console .disc-process {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.console .disc-step {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 13px 14px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  min-width: 0;
+}
+
+.console .disc-fact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(112px, 0.55fr);
+  gap: 10px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.console .disc-fact.has-label {
+  grid-template-columns: minmax(84px, 0.35fr) minmax(0, 1fr) minmax(112px, 0.55fr);
+}
+
+.console .disc-fact-label {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+
+.console .disc-fact-value,
+.console .disc-provenance,
+.console .disc-exports span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.console .disc-provenance {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+
+.console .disc-provenance.is-unknown {
+  color: var(--attn);
+}
+
+.console .disc-hypothesis {
+  padding: 14px;
+  border-left: 2px solid var(--hair-2);
+  background: var(--raised);
+}
+
+.console .disc-hypothesis label {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+.console .disc-exports {
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+
+.console .disc-exports li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.console .disc-exports li + li {
+  border-top: 1px solid var(--hair);
+}
+
+.console .disc-exports .mono {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  flex: none;
+}
+
+@media (max-width: 720px) {
+  .console .disc-head {
+    flex-direction: column;
+  }
+
+  .console .disc-fact,
+  .console .disc-fact.has-label {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+
+  .console .disc-exports li {
+    flex-direction: column;
+    gap: 3px;
+  }
+}

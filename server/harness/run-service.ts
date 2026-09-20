@@ -23,6 +23,7 @@ import type {
   HarnessPrincipal,
   HarnessRun,
   Json,
+  NativeCheckpoint,
   ProviderTranscriptRef,
   StepIntent,
   StepKind,
@@ -90,6 +91,8 @@ export interface StepContext {
    * so replays never relabel an existing step.
    */
   reportOrigin?: (origin: OriginSnapshot) => void;
+  /** Atomically saves bounded provider metadata under this exact running attempt. */
+  saveNativeCheckpoint?: (checkpoint: NativeCheckpoint, signal?: AbortSignal) => Promise<void>;
 }
 export type StepHandler<T> = (context: StepContext) => Promise<T> | T;
 export type HarnessHook = (context: {
@@ -185,6 +188,7 @@ export class RunService {
   private readonly clock: () => number;
   private readonly policyVersion: string;
   private readonly redact: (text: string) => string;
+  private readonly checkpointValidator?: (checkpoint: NativeCheckpoint) => NativeCheckpoint;
   private readonly authorizeEgress?: (
     runId: string,
     intent: StepIntent,
@@ -199,6 +203,7 @@ export class RunService {
       policyVersion?: string;
       /** Applied to every error message before it is persisted. The host passes its secret scrubber. */
       redact?: (text: string) => string;
+      validateNativeCheckpoint?: (checkpoint: NativeCheckpoint) => NativeCheckpoint;
       /** Mandatory host grant check for external steps. Never exposed as a client capability. */
       authorizeEgress?: (
         runId: string,
@@ -211,6 +216,7 @@ export class RunService {
     this.clock = options.clock ?? Date.now;
     this.policyVersion = options.policyVersion ?? 'diomedes-policy-v1';
     this.redact = options.redact ?? ((text) => text);
+    this.checkpointValidator = options.validateNativeCheckpoint;
     this.authorizeEgress = options.authorizeEgress;
   }
 
@@ -249,7 +255,28 @@ export class RunService {
   private async load(runId: string): Promise<HarnessRun> {
     const run = await this.store.read(validateRunId(runId));
     if (!run) throw new HarnessError('unknown_run', `Unknown run: ${runId}.`);
+    for (const step of run.steps)
+      if (step.nativeCheckpoint !== undefined) this.validateCheckpoint(step.nativeCheckpoint);
     return run;
+  }
+
+  private validateCheckpoint(value: NativeCheckpoint): NativeCheckpoint {
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      value.v !== 1 ||
+      typeof value.providerId !== 'string' ||
+      !/^[a-z0-9-]{1,80}$/.test(value.providerId) ||
+      Object.keys(value).sort().join(',') !== 'payload,providerId,v' ||
+      Buffer.byteLength(canonical(value), 'utf8') > 128 * 1024 ||
+      !this.checkpointValidator
+    )
+      throw new HarnessError(
+        'invalid_checkpoint',
+        'Native checkpoint metadata is invalid or unsupported.',
+      );
+    return copy(this.checkpointValidator(copy(value)));
   }
 
   private note(
@@ -498,9 +525,7 @@ export class RunService {
           : 'queued';
       this.note(run, 'run.recovered', { fence: run.fence });
       await this.commit(run);
-      this.controllers
-        .get(runId)
-        ?.abort(new HarnessError('stale_lease', 'stale lease'));
+      this.controllers.get(runId)?.abort(new HarnessError('stale_lease', 'stale lease'));
       this.controllers.delete(runId);
     });
   }
@@ -698,6 +723,39 @@ export class RunService {
       // First report wins within one attempt; replays never reach the handler.
       reportedOrigin ??= copy(origin);
     };
+    const saveNativeCheckpoint = (
+      checkpoint: NativeCheckpoint,
+      writeSignal?: AbortSignal,
+    ): Promise<void> =>
+      this.serialize(runId, async () => {
+        const run = await this.load(runId);
+        this.guard(run, owner, start.fence);
+        const step = run.steps.find((item) => item.intent.stepId === intent.stepId);
+        if (
+          closed ||
+          signal.aborted ||
+          run.state !== 'running' ||
+          step?.state !== 'running' ||
+          step.attempt !== start.attempt ||
+          step.leaseFence !== start.fence
+        )
+          throw new HarnessError(
+            'stale_attempt',
+            'A settled or replaced attempt cannot save checkpoint metadata.',
+          );
+        if (writeSignal?.aborted)
+          throw new HarnessError('stale_attempt', 'This checkpoint callback expired.');
+        const validated = this.validateCheckpoint(checkpoint);
+        step.nativeCheckpoint = validated;
+        this.note(
+          run,
+          'step.checkpointed',
+          { providerId: validated.providerId, checkpointHash: digest(validated) },
+          step.intent.stepId,
+          step.attempt,
+        );
+        await this.commit(run);
+      });
     try {
       signal.throwIfAborted();
       await checkPolicy();
@@ -709,6 +767,7 @@ export class RunService {
         signal,
         publishPreview,
         reportOrigin,
+        saveNativeCheckpoint,
       });
       closed = true;
       const encoded = canonical(output);
@@ -755,7 +814,17 @@ export class RunService {
           this.guard(run, owner, start.fence);
           const s = run.steps.find((item) => item.intent.stepId === intent.stepId)!;
           if (s.state !== 'running' || s.attempt !== start.attempt) return;
-          const state = needsReconciliation(intent) ? 'reconcile_required' : 'retry_wait';
+          const waiting =
+            error instanceof Suspended &&
+            error.reason === 'event' &&
+            intent.kind === 'wait' &&
+            intent.effect === 'pure' &&
+            intent.destination === 'local';
+          const state = waiting
+            ? 'waiting_event'
+            : needsReconciliation(intent)
+              ? 'reconcile_required'
+              : 'retry_wait';
           s.state = state;
           s.endedAt = this.now();
           s.error = this.describeError(error);
@@ -766,6 +835,7 @@ export class RunService {
             s.origin = copy(definition.origin);
           }
           if (state === 'reconcile_required') run.state = 'reconcile_required';
+          if (state === 'waiting_event') run.state = 'waiting';
           this.note(run, `step.${state}`, { errorType: s.error.name }, s.intent.stepId, s.attempt);
           await this.commit(run);
         });
@@ -993,7 +1063,7 @@ export class RunService {
       cancelReason: null,
       createdAt: at,
       updatedAt: at,
-      steps: copy(prefix),
+      steps: copy(prefix).map(({ nativeCheckpoint: _checkpoint, ...step }) => step),
       approvals: [],
       events: [],
       lastSeq: 0,

@@ -65,6 +65,8 @@ import { TeamView } from './TeamView';
 import { HistoryView } from './HistoryView';
 import { DocumentEditor, UNSAVED_WARNING } from './DocumentEditor';
 import type { EverythingItem } from './Everything';
+import { DiscoveryPage } from './DiscoveryPage';
+import { ReadinessPage } from './ReadinessPage';
 import { Palette } from './Palette';
 import { WorkspaceMark, WorkspacePanel, useWorkspace } from './Workspaces';
 import { applyQuery, buildEntries, type PaletteContext } from './paletteEntries';
@@ -1201,6 +1203,16 @@ export function Shell({
       hint: "Read and write in this project's documents.",
     },
     {
+      id: 'discovery',
+      label: 'Discovery',
+      hint: 'What this business does, gathered from public sources you can check.',
+    },
+    {
+      id: 'readiness',
+      label: 'Readiness',
+      hint: 'What is in place before work starts, and what is still missing.',
+    },
+    {
       id: 'automations',
       label: 'Automations',
       hint: 'Work that runs on its own, on a schedule or when something happens.',
@@ -1261,6 +1273,8 @@ export function Shell({
     else if (id === 'board') setView('Board');
     else if (id === 'team') setView('Team');
     else if (id === 'history') setView('History');
+    else if (id === 'discovery') setView('Discovery');
+    else if (id === 'readiness') setView('Readiness');
     else if (id === 'files') setFilesOpen(!filesOpen);
     else if (id === 'engines') openEngineSettings();
     else if (id === 'settings') onOpenSettings();
@@ -1501,6 +1515,16 @@ export function Shell({
                 void load().catch(report);
               }}
             />
+          </section>
+        )}
+        {!editing && view === 'Discovery' && (
+          <section className="screen on" aria-label="Discovery">
+            <DiscoveryPage projectId={projectId} />
+          </section>
+        )}
+        {!editing && view === 'Readiness' && (
+          <section className="screen on" aria-label="Readiness">
+            <ReadinessPage projectId={projectId} />
           </section>
         )}
         {!editing && view === 'Thread' && selected && (

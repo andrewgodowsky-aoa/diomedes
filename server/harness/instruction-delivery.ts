@@ -33,6 +33,7 @@
  *    `screenForInstructionText` at discovery and shown to the person there.
  */
 import type { ProjectState } from '../../shared/types.js';
+import packageInfo from '../../package.json' with { type: 'json' };
 import {
   activeInstructionFiles,
   INSTRUCTION_FILE_VIEW_BUDGET_BYTES,
@@ -41,11 +42,16 @@ import {
   type InstructionDelivery,
   type InstructionFileRecord,
 } from '../../shared/capability-packs.js';
+import type { ProductKnowledgeBundle, ProductKnowledgeReceipt } from '../../shared/readiness.js';
 import type { GoverningRecord } from '../../shared/rule-authority.js';
 import { instructionRules } from '../capability-packs.js';
 import { projectFile, readTextOrNull } from '../paths.js';
 import { assembleContext } from '../rules.js';
 import { hash, now } from '../store.js';
+import {
+  assembleProductKnowledgeInstructions,
+  loadShippedProductKnowledge,
+} from '../readiness/instructions.js';
 
 /**
  * What the whole request may weigh, on every text route.
@@ -84,9 +90,9 @@ export interface AssembledInstructions {
   readonly delivery: InstructionDelivery | null;
   /** One record per governing rule: identity, authority and where it bit. */
   readonly governing: readonly GoverningRecord[];
+  /** Prepared/omitted only. A caller may mark sent after a provider response. */
+  readonly productKnowledge: ProductKnowledgeReceipt;
 }
-
-const EMPTY: AssembledInstructions = { section: null, delivery: null, governing: [] };
 
 /**
  * Read one applied file and say whether its bytes can go.
@@ -181,9 +187,30 @@ export async function assembleInstructions(input: {
   agentRole: string;
   budgetBytes: number;
   at?: string;
+  /** Deterministic fixture seam; production loads the shipped indexed files. */
+  productKnowledge?: ProductKnowledgeBundle;
 }): Promise<AssembledInstructions> {
+  const at = input.at ?? now();
+  const knowledge = input.productKnowledge ?? await loadShippedProductKnowledge({
+    buildVersion: packageInfo.version,
+    now: at,
+  });
+  const product = assembleProductKnowledgeInstructions({
+    knowledge,
+    routeId: input.routeId,
+    budgetBytes: input.budgetBytes,
+    at,
+  });
+  const remaining = Math.max(0, input.budgetBytes - product.receipt.bytes);
+  const combine = (
+    project: Omit<AssembledInstructions, 'productKnowledge'>,
+  ): AssembledInstructions => ({
+    ...project,
+    section: [product.section, project.section].filter((value): value is string => Boolean(value)).join('\n') || null,
+    productKnowledge: product.receipt,
+  });
   const rules = instructionRules(input.state);
-  if (!rules.length) return EMPTY;
+  if (!rules.length) return combine({ section: null, delivery: null, governing: [] });
   const context = assembleContext({
     rules,
     scope: { projectId: input.state.project.id },
@@ -198,7 +225,7 @@ export async function assembleInstructions(input: {
       .map((record) => [record.ruleId!, record]),
   );
   const applied = context.resolution.applied.filter((rule) => records.has(rule.id));
-  if (!applied.length) return EMPTY;
+  if (!applied.length) return combine({ section: null, delivery: null, governing: [] });
 
   const files: DeliveredInstructionFile[] = [];
   const bodies: string[] = [];
@@ -208,7 +235,7 @@ export async function assembleInstructions(input: {
     const { file, text } = await readForDelivery(
       record,
       input.state.project.folder,
-      Math.max(0, input.budgetBytes - used),
+      Math.max(0, remaining - used),
     );
     files.push(file);
     if (text === undefined) continue;
@@ -226,7 +253,7 @@ export async function assembleInstructions(input: {
   const delivery: InstructionDelivery = {
     revision: context.view.revision,
     routeId: input.routeId,
-    at: input.at ?? now(),
+    at,
     files,
     truncated: omitted.length > 0,
     bytes: used,
@@ -241,11 +268,11 @@ export async function assembleInstructions(input: {
   // the person reading the thread afterwards, from a project that never had
   // any. The record alone cannot carry that, because the model never sees it.
   if (!bodies.length)
-    return {
+    return combine({
       section: `This project has instructions the person loaded, and none of them fit this request. Nothing from them was summarised or paraphrased here.\n${left}`,
       delivery,
       governing: context.governing,
-    };
+    });
 
   const section = [
     PREAMBLE,
@@ -255,7 +282,7 @@ export async function assembleInstructions(input: {
     ...bodies,
     ...(left ? [left] : []),
   ].join('\n');
-  return { section, delivery, governing: context.governing };
+  return combine({ section, delivery, governing: context.governing });
 }
 
 /** The History sentence for one delivery. Names files and shas, never bodies. */

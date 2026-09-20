@@ -1,0 +1,3 @@
+business,location,week,completed_orders,service_sales,technician_hours
+{{business.name}},{{location.name}},synthetic-week-1,138,46210,744
+{{business.name}},{{location.name}},synthetic-week-2,144,47980,761

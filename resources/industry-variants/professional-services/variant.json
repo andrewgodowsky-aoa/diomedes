@@ -1,0 +1,18 @@
+{
+  "id": "professional-services",
+  "contractVersion": 1,
+  "engine": "weekly-brief",
+  "label": "Professional services",
+  "industry": "professional services",
+  "keywords": [],
+  "scopeLabel": "Weekly brief sources",
+  "scopeSelection": ["weekly-brief-exports"],
+  "outputLabel": "Weekly brief",
+  "destination": "weekly-brief.md",
+  "guidanceText": "Build the brief from the approved exports only. Cover what changed this week and what is now due, without offering licensed or safety-critical sign-off.",
+  "terminology": {
+    "location": "office",
+    "labor": "service hours",
+    "sales": "billings"
+  }
+}
