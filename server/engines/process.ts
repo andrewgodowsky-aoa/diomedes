@@ -66,16 +66,39 @@ export function abortedByDeadline(reason: unknown): boolean {
   );
 }
 /**
+ * Whether an abort came from the host withdrawing the run rather than from a
+ * person or a deadline. The harness invalidates a dead process's lease by
+ * aborting that run's controller with its own error (`server/harness/
+ * run-service.ts`), and the reason travels to the adapters through the merged
+ * signal. An error-shaped reason is the host's; a person's stop carries no
+ * reason at all, or an `AbortError`, and an adapter's own marker is a string.
+ */
+function abortedByHost(reason: unknown): boolean {
+  return (
+    typeof reason === 'object' &&
+    reason !== null &&
+    typeof (reason as { name?: unknown }).name === 'string' &&
+    (reason as { name: string }).name !== 'AbortError'
+  );
+}
+/** What the person is told when the run's own permission to continue was taken away. */
+const WITHDRAWN_DETAIL =
+  'Diomedes stopped this request because its permission to run changed. A dispatched request may still consume usage.';
+/**
  * The failure an external abort deserves, shared so every route answers the
- * same way. A host deadline is a TIMEOUT carrying the caller's own timeout
- * sentence; anything else stays the person's own cancellation. Neither moves
- * the `ambiguous` truth — after dispatch a request may still consume usage —
- * and neither changes what is delivered to the child: the abort still is.
+ * same way, and three different things rather than one. A host deadline is a
+ * TIMEOUT carrying the caller's own timeout sentence. A person pressing stop
+ * is their own cancellation. The host withdrawing the run is neither: nobody
+ * pressed anything, so it keeps the outcome the runtime seam already uses for
+ * a lease it invalidated rather than claiming the person stopped their own
+ * work. None of the three moves the `ambiguous` truth — after dispatch a
+ * request may still consume usage — and none changes what is delivered to the
+ * child: the abort still is.
  */
 export function abortFailure(reason: unknown, timeoutDetail: string): EngineError {
-  return abortedByDeadline(reason)
-    ? new EngineError('TIMEOUT', timeoutDetail, true)
-    : stopped();
+  if (abortedByDeadline(reason)) return new EngineError('TIMEOUT', timeoutDetail, true);
+  if (!abortedByHost(reason)) return stopped();
+  return new EngineError('DISPATCH_UNCERTAIN', WITHDRAWN_DETAIL, true);
 }
 /** The sentence an owned process uses whenever a time limit, not a person, ended it. */
 export const PROCESS_TIMEOUT_DETAIL =
