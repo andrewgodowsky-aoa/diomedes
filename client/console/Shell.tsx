@@ -675,17 +675,26 @@ export function Shell({
     // A write of the Console's own is in flight. Nothing is claimed and nothing
     // is read: this runs again when that write finishes.
     if (busy) return;
+    // This project has threads and none of them is selected yet, so the Console
+    // is still settling. Deciding now would open a thread nobody needed; the
+    // dependencies below bring this back when one is selected. A carried ask is
+    // already opening one for the same reason.
+    if (!selected && (threads.length > 0 || openedForAsk.current === projectId)) return;
     // Claimed before the reads below, so a re-render while they are in flight
     // cannot start a second pass at the same handover.
     takenStart.current = firstTask.n;
     const handover = firstTask;
     let cancelled = false;
-    const release = () => {
+    /**
+     * Give the handover back unsettled. `again` is for a pass that acted on
+     * something — it asks for one more pass, because the dependency it is
+     * waiting on may already have changed while this one was in flight. A pass
+     * that acted on nothing takes the quiet form and waits for a real change,
+     * which is what keeps two of these from chasing each other.
+     */
+    const release = (again = true) => {
       takenStart.current = 0;
-      // A dependency may have changed while this pass was in flight and found
-      // the handover claimed. Ask for one more pass rather than waiting on a
-      // change that has already happened.
-      setStartPass((n) => n + 1);
+      if (again) setStartPass((n) => n + 1);
     };
     void (async () => {
       let connection: EngineConnection | null = null;
@@ -727,9 +736,12 @@ export function Shell({
       }
       if (decision.kind === 'new-thread') {
         const key = `${projectId}:${handover.n}`;
-        // A carried ask may already be opening one; waiting for it is what
-        // keeps a project from being given two empty threads in one pass.
-        if (openedForStart.current === key || openedForAsk.current === projectId) return;
+        // One thread per handover. This one already has its own and is waiting
+        // for it to arrive, so nothing is opened and nothing is chased.
+        if (openedForStart.current === key) {
+          release(false);
+          return;
+        }
         openedForStart.current = key;
         await newThread();
         if (cancelled) return;
