@@ -211,6 +211,32 @@ function errorForResponse(status: number, body: string, stage: SetupStage): Engi
   );
 }
 
+/**
+ * A refusal that arrived over the stream can still have come back from the
+ * account rather than from the server Diomedes started. The payload belongs to
+ * the tool, so this reads conservatively: only wording that plainly means the
+ * account would not authorise the work counts, and anything else stays the
+ * ordinary stream failure it was. Nothing here has been confirmed against a
+ * live account, so a shape that does not match is reported exactly as before.
+ */
+const UPSTREAM_DENIAL = /unauthori[sz]ed|forbidden|authenticat|credential|api.?key|\b40[13]\b/i;
+function deniedByAccount(value: unknown, fallback: string): EngineError {
+  let serialized = '';
+  try {
+    serialized = (JSON.stringify(value) ?? '').slice(0, 4096);
+  } catch {
+    /* A payload that cannot be serialised is not evidence of a refusal. */
+  }
+  if (UPSTREAM_DENIAL.test(serialized))
+    return new EngineError(
+      'AUTH_REQUIRED',
+      'OpenCode Go refused this request for the connected account. Check that account in OpenCode, then recheck.',
+      true,
+      'provider-auth',
+    );
+  return new EngineError('PROVIDER_ERROR', fallback, true, 'stream');
+}
+
 function modelFrom(value: unknown, providerId: string): EngineModel | undefined {
   const item = object(value);
   const id = text(item.id) || text(item.modelID);
@@ -729,14 +755,10 @@ export class OpenCodeAdapter implements TextEngineAdapter {
               const time = object(info.time);
               assistantTerminal = Number.isFinite(time.completed) && text(info.finish).length > 0;
               if (info.error)
-                throw new EngineError(
-                  'PROVIDER_ERROR',
-                  'OpenCode reported an assistant error.',
-                  true,
-                );
+                throw deniedByAccount(info.error, 'OpenCode reported an assistant error.');
             }
             if (kind === 'session.error')
-              throw new EngineError('PROVIDER_ERROR', 'OpenCode reported a session error.', true);
+              throw deniedByAccount(props.error, 'OpenCode reported a session error.');
             if (
               kind === 'message.part.updated' &&
               assistantMessageId &&

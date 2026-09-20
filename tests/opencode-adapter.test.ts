@@ -73,7 +73,7 @@ const server=http.createServer(async(req,res)=>{
  if(req.url==='/provider'){if(mode==='local-401'){res.writeHead(401);return res.end('the local server rejected this password');} if(mode==='start-hang')return; res.setHeader('content-type','application/json');return res.end(JSON.stringify(catalogue));}
  if(req.url==='/event'){res.writeHead(200,{'content-type':'text/event-stream'});stream=res;send(res,{type:'server.connected',properties:{}});return;}
  if(req.url==='/session'&&req.method==='POST'){let b='';for await(const c of req)b+=c; if(mode==='upstream-401'){res.writeHead(401);return res.end('this account is not authorized for that model');} res.setHeader('content-type','application/json');return res.end(JSON.stringify({id:'session-1'}));}
- if(req.url==='/session/session-1/prompt_async'){if(mode==='dispatch-hang')return; if(mode==='dispatch-500'){res.writeHead(500);return res.end('the server failed');} if(mode==='usage-429'){res.writeHead(429);return res.end('rate limit exceeded for this account');} res.writeHead(204);res.end(); if(mode==='hang')return; setTimeout(()=>{if(!stream)return; if(mode==='malformed'){stream.write('data: {bad\\n\\n');return;} if(mode==='retry'){send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'retry',attempt:1,message:'retry',next:1}}});return;} if(mode==='tools'){send(stream,{type:'message.part.updated',properties:{part:{sessionID:'session-1',messageID:'assistant-1',type:'tool',text:''}}});return;} if(mode==='stall'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}}); return;} if(mode==='stream-drop'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); stream.write('data: '+JSON.stringify({type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}})+'\\n\\n',()=>{if(stream.socket)stream.socket.destroy();}); return;} if(mode==='noise'){send(stream,{type:'message.updated',properties:{info:{id:'noise',sessionID:'other-session',role:'assistant',providerID:'other',modelID:'other'}}});} const provider=mode==='mismatch'?'other':'opencode-go'; send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Answer'}}); if(mode==='truncated'){stream.write('data: {"type":"session.status","properties":{"sessionID":"session-1"',()=>{if(stream.socket)stream.socket.destroy();});return;} send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1,completed:2},finish:'stop'}}}); send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'idle'}}});},5);return;}
+ if(req.url==='/session/session-1/prompt_async'){if(mode==='dispatch-hang')return; if(mode==='dispatch-500'){res.writeHead(500);return res.end('the server failed');} if(mode==='usage-429'){res.writeHead(429);return res.end('rate limit exceeded for this account');} res.writeHead(204);res.end(); if(mode==='hang')return; setTimeout(()=>{if(!stream)return; if(mode==='malformed'){stream.write('data: {bad\\n\\n');return;} if(mode==='retry'){send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'retry',attempt:1,message:'retry',next:1}}});return;} if(mode==='flood'){stream.write('data: '+'x'.repeat(1_500_000));return;} if(mode==='session-denied'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'ProviderAuthError',data:{message:'unauthorized for this account'}}}});return;} if(mode==='session-failed'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'UnknownError',data:{message:'the model stopped responding'}}}});return;} if(mode==='assistant-denied'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1},error:{name:'AuthError',data:{message:'authentication failed for this account'}}}}});return;} if(mode==='tools'){send(stream,{type:'message.part.updated',properties:{part:{sessionID:'session-1',messageID:'assistant-1',type:'tool',text:''}}});return;} if(mode==='stall'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}}); return;} if(mode==='stream-drop'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); stream.write('data: '+JSON.stringify({type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}})+'\\n\\n',()=>{if(stream.socket)stream.socket.destroy();}); return;} if(mode==='noise'){send(stream,{type:'message.updated',properties:{info:{id:'noise',sessionID:'other-session',role:'assistant',providerID:'other',modelID:'other'}}});} const provider=mode==='mismatch'?'other':'opencode-go'; send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Answer'}}); if(mode==='truncated'){stream.write('data: {"type":"session.status","properties":{"sessionID":"session-1"',()=>{if(stream.socket)stream.socket.destroy();});return;} send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1,completed:2},finish:'stop'}}}); send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'idle'}}});},5);return;}
  if(req.url==='/session/session-1/abort'||req.url==='/session/session-1'){fs.appendFileSync('drop-seen.log',req.url+'\\n');res.writeHead(200);return res.end('true');}
  res.writeHead(404);res.end();
 }); server.listen(Number(process.argv[2]),'127.0.0.1');`,
@@ -426,6 +426,41 @@ describe('OpenCode failure stages', () => {
     const job = adapter.generate({ ...request, signal: controller.signal });
     setTimeout(() => controller.abort(), 10);
     await expect(job).rejects.toMatchObject({ code: 'CANCELLED', stage: 'launch' });
+  });
+  it.each(['session-denied', 'assistant-denied'])(
+    'reads %s as the account refusing the work, at the provider-auth stage',
+    async (mode) => {
+      // The refusal arrived over the stream, but it came back from the account
+      // rather than from the server Diomedes started, so it is not a stream
+      // fault and the person is not told their local setup is broken.
+      const { adapter } = await fixture(mode);
+      await expect(adapter.generate(request)).rejects.toMatchObject({
+        code: 'AUTH_REQUIRED',
+        stage: 'provider-auth',
+      });
+    },
+  );
+  it('leaves a session error that is not a refusal at the stream stage', async () => {
+    const { adapter } = await fixture('session-failed');
+    await expect(adapter.generate(request)).rejects.toMatchObject({
+      code: 'PROVIDER_ERROR',
+      stage: 'stream',
+    });
+  });
+  it('refuses a single event that grows past the parser bound, at the stream stage', async () => {
+    const { adapter } = await fixture('flood');
+    await expect(adapter.generate(request)).rejects.toMatchObject({
+      code: 'OUTPUT_LIMIT',
+      stage: 'stream',
+    });
+  });
+  it('reports a cleanup that cannot confirm the process stopped at the cleanup stage', async () => {
+    const { adapter } = await fixture();
+    cleanup.fail = true;
+    await expect(adapter.inspect()).rejects.toMatchObject({
+      code: 'CLEANUP_FAILED',
+      stage: 'cleanup',
+    });
   });
   it('keeps the failing stage when the process cannot be confirmed stopped', async () => {
     const { adapter } = await fixture('malformed');
