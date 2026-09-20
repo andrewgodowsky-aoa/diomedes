@@ -46,6 +46,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { EngineModel } from '../../shared/types.js';
+import type { SetupStage } from '../../shared/engines.js';
 import { routeContractFor } from '../harness/route-contract.js';
 import {
   AcpClient,
@@ -65,6 +66,7 @@ import {
   type TextResponse,
 } from './contract.js';
 import {
+  atStage,
   capture,
   engineEnvironment,
   EngineError,
@@ -94,7 +96,26 @@ export interface DevinAdapterDeps {
   requestTimeoutMs?: number;
 }
 const protocolError = (detail: string) =>
-  new EngineError('PROTOCOL_ERROR', `Devin ${detail}`, true);
+  new EngineError('PROTOCOL_ERROR', `Devin ${detail}`, true, 'local-handshake');
+/** A tool that never started reports that from whichever read first notices. */
+const STARTUP_CODES = ['LAUNCH_FAILED', 'PROCESS_EXITED', 'TIMEOUT'];
+/**
+ * The stage an untagged failure belongs to. The child fails asynchronously, so
+ * these codes name where they happened wherever they surface; a cleanup fault
+ * carries the failure it is reported with, or stands alone.
+ */
+function staged<T>(error: T, phase: SetupStage, primary?: unknown): T {
+  if (!(error instanceof EngineError) || error.stage) return error;
+  if (primary instanceof EngineError && primary.stage) return atStage(error, primary.stage);
+  if (error.code === 'CLEANUP_FAILED') return atStage(error, 'cleanup');
+  if (error.code === 'AUTH_REQUIRED') return atStage(error, 'provider-auth');
+  const starting = phase === 'launch' || phase === 'local-handshake';
+  return atStage(error, starting && STARTUP_CODES.includes(error.code) ? 'launch' : phase);
+}
+/** Where the attempt has reached, so an untagged failure can name its stage. */
+type Phase = { at: SetupStage };
+/** A frame that answers the running turn: the response has begun. */
+const CONTENT_UPDATES = ['agent_message_chunk', 'tool_call', 'tool_call_update', 'plan'];
 
 /** Per-session mode policy state — adapter state, not transport state. */
 type DevinSession = {
@@ -107,22 +128,26 @@ type DevinSession = {
 /** Resolve only the installed layout, never execute or interpret launcher text. */
 export async function resolveDevinEntry(file: string): Promise<string> {
   if (!/\.(cmd|bat|ps1)$/i.test(file)) return file;
-  if (!/^devin\.(cmd|bat|ps1)$/i.test(path.basename(file)))
-    throw new EngineError('UNSUPPORTED_SHIM', 'Select the installed Devin CLI executable.');
+  if (!/^devin\.(cmd|bat|ps1)$/i.test(path.basename(file))) throw unsupportedShim();
   const entry = path.join(path.dirname(file), 'devin.exe');
   try {
     await fs.access(entry);
     return entry;
   } catch (error) {
-    if (record(error).code === 'ENOENT')
-      throw new EngineError('UNSUPPORTED_SHIM', 'Select the installed Devin CLI executable.');
+    if (record(error).code === 'ENOENT') throw unsupportedShim();
     throw error;
   }
 }
+const unsupportedShim = () =>
+  new EngineError(
+    'UNSUPPORTED_SHIM',
+    'Select the installed Devin CLI executable.',
+    false,
+    'discovery',
+  );
 
 export function devinCommand(file: string, args: string[]): { file: string; args: string[] } {
-  if (!/\.exe$/i.test(file))
-    throw new EngineError('UNSUPPORTED_SHIM', 'Select the installed Devin CLI executable.');
+  if (!/\.exe$/i.test(file)) throw unsupportedShim();
   return { file, args };
 }
 
@@ -174,10 +199,12 @@ export class DevinAdapter implements TextEngineAdapter {
   }
   private async withSession<T>(
     signal: AbortSignal | undefined,
+    phase: Phase,
     run: (rpc: AcpClient, created: Json, version: string) => Promise<T>,
     turn?: AcpTurn,
     model?: string,
   ): Promise<T> {
+    phase.at = 'launch';
     if (signal?.aborted) throw stopped();
     const entry = await resolveDevinEntry(this.file);
     const versionResult = await this.capture({
@@ -193,7 +220,10 @@ export class DevinAdapter implements TextEngineAdapter {
       throw new EngineError(
         'UNSUPPORTED_VERSION',
         'Devin changed version. Review compatibility before sending.',
+        false,
+        'runtime-verification',
       );
+    phase.at = 'local-handshake';
     const session: DevinSession = { askConfirmed: false };
     return acpSession(
       {
@@ -237,7 +267,11 @@ export class DevinAdapter implements TextEngineAdapter {
             command: devinCommand(entry, model ? ['acp', '--model', model] : ['acp']),
           };
         },
-        onUpdate: (params, rpc) =>
+        onUpdate: (params, rpc) => {
+          // A frame answering the running turn means the response has begun,
+          // even when that same frame is the one that stops the request.
+          if (turn?.prompting && CONTENT_UPDATES.includes(text(record(params.update).sessionUpdate)))
+            phase.at = 'stream';
           // The ask-mode echo can land before or after the set_mode reply, and
           // a startup mode echo can lag behind it — only a different mode once
           // ask is confirmed (or a non-startup mode before) is a real change.
@@ -253,6 +287,7 @@ export class DevinAdapter implements TextEngineAdapter {
                   'POLICY_MISMATCH',
                   `Devin reported ${modeId || 'an unknown'} mode on the text route; the request was stopped.`,
                   true,
+                  phase.at,
                 );
             },
             onConfigUpdate: (options) => {
@@ -261,16 +296,20 @@ export class DevinAdapter implements TextEngineAdapter {
               );
               if (mode && text(mode.currentValue) === 'ask') session.askConfirmed = true;
             },
-          }),
+          });
+        },
         authenticate: async (rpc) => {
           // ACP never reuses the native CLI credential, so every process
           // authenticates its own host before a session can be opened. The
           // browser flow may wait on a person; it gets a wider window than start-up.
+          phase.at = 'provider-auth';
           rpc.arm(
             this.authTimeout,
             'Devin browser sign-in did not complete. Close this attempt and try signing in again.',
           );
           await rpc.request('authenticate', { methodId: 'devin-browser' });
+          // The account answered; opening the session is this process again.
+          phase.at = 'local-handshake';
         },
         ready: async (rpc, created) => {
           session.initialMode ??= text(record(created.modes).currentModeId) || undefined;
@@ -284,6 +323,7 @@ export class DevinAdapter implements TextEngineAdapter {
               'POLICY_MISMATCH',
               'Devin did not offer the required ask mode.',
               true,
+              'local-handshake',
             );
           await rpc.request('session/set_mode', { sessionId: rpc.sessionId, modeId: 'ask' });
           const confirmBy = Date.now() + MODE_CONFIRM_MS;
@@ -294,6 +334,7 @@ export class DevinAdapter implements TextEngineAdapter {
                 'POLICY_MISMATCH',
                 'Devin did not confirm the required ask mode.',
                 true,
+                'local-handshake',
               );
             await new Promise<void>((resolve) => setTimeout(resolve, 50));
           }
@@ -304,8 +345,10 @@ export class DevinAdapter implements TextEngineAdapter {
   }
   private generating = false;
   async inspect(signal?: AbortSignal): Promise<AdapterInspection> {
+    const phase: Phase = { at: 'launch' };
     try {
-      return await this.withSession(signal, async (_rpc, created) => {
+      return await this.withSession(signal, phase, async (_rpc, created) => {
+        phase.at = 'model-list';
         const models = modelsFrom(created);
         return {
           authentication: 'signed-in' as const,
@@ -324,7 +367,7 @@ export class DevinAdapter implements TextEngineAdapter {
           models: [],
           detail: 'Sign in through the Devin browser flow, then recheck.',
         };
-      throw error;
+      throw staged(error, phase.at);
     }
   }
   async generate(input: TextRequest): Promise<TextResponse> {
@@ -332,13 +375,26 @@ export class DevinAdapter implements TextEngineAdapter {
       throw new EngineError(
         'ACCOUNT_CHANGED',
         'Select the Devin account route before sending.',
+        false,
+        'provider-auth',
       );
     if (!explicitModel(input.model))
-      throw new EngineError('MODEL_UNAVAILABLE', 'Choose an explicit Devin model.');
+      throw new EngineError(
+        'MODEL_UNAVAILABLE',
+        'Choose an explicit Devin model.',
+        false,
+        'model-list',
+      );
     const prompt = contextMessage(input);
     if (this.generating)
-      throw new EngineError('REQUEST_ACTIVE', 'Devin already has a request in progress.');
+      throw new EngineError(
+        'REQUEST_ACTIVE',
+        'Devin already has a request in progress.',
+        false,
+        'dispatch',
+      );
     this.generating = true;
+    const phase: Phase = { at: 'launch' };
     const turn: AcpTurn = {
       text: '',
       model: input.model,
@@ -348,11 +404,15 @@ export class DevinAdapter implements TextEngineAdapter {
     try {
       return await this.withSession(
         input.signal,
+        phase,
         async (rpc, created, version) => {
+          phase.at = 'model-list';
           if (!modelsFrom(created).some((model) => model.slug === input.model))
             throw new EngineError(
               'MODEL_UNAVAILABLE',
               'Devin no longer offers the requested model. No substitute was selected.',
+              false,
+              'model-list',
             );
           // --model pins the session at launch; the reported selection is the
           // attribution, and drift is never silently accepted.
@@ -362,8 +422,10 @@ export class DevinAdapter implements TextEngineAdapter {
               'POLICY_MISMATCH',
               'Devin selected a different model than requested; the request was stopped before any prompt was sent.',
               true,
+              'model-list',
             );
           if (selected) turn.model = selected;
+          phase.at = 'dispatch';
           await acpPromptTurn(
             DEVIN_ACP_PROFILE,
             rpc,
@@ -377,6 +439,8 @@ export class DevinAdapter implements TextEngineAdapter {
         turn,
         input.model,
       );
+    } catch (error) {
+      throw staged(error, phase.at);
     } finally {
       this.generating = false;
     }
@@ -417,7 +481,11 @@ export function startDevinLogin(
       AUTH_TIMEOUT_MS,
       'Devin browser sign-in did not complete. Close this attempt and try signing in again.',
     );
-    await rpc.request('authenticate', { methodId: 'devin-browser' });
+    try {
+      await rpc.request('authenticate', { methodId: 'devin-browser' });
+    } catch (error) {
+      throw staged(error, 'provider-auth');
+    }
   })();
   return { child: rpc.child, done };
 }

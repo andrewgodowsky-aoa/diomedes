@@ -654,6 +654,100 @@ describe('Devin ACP text route', () => {
   });
 });
 
+describe('Devin failure stages', () => {
+  it.each([
+    ['version', 'UNSUPPORTED_VERSION', 'runtime-verification'],
+    ['protocol-version', 'PROTOCOL_ERROR', 'local-handshake'],
+    ['auth-fails', 'AUTH_REQUIRED', 'provider-auth'],
+    ['no-ask-mode', 'POLICY_MISMATCH', 'local-handshake'],
+    ['wrong-mode', 'POLICY_MISMATCH', 'local-handshake'],
+    ['model-drift', 'POLICY_MISMATCH', 'model-list'],
+    ['missing-model', 'MODEL_UNAVAILABLE', 'model-list'],
+    ['quota', 'USAGE_LIMIT', 'dispatch'],
+    ['malformed', 'PROTOCOL_ERROR', 'dispatch'],
+    ['exit', 'PROTOCOL_ERROR', 'dispatch'],
+    ['permission', 'UNEXPECTED_TOOL', 'dispatch'],
+    ['unknown-notification', 'UNEXPECTED_TOOL', 'dispatch'],
+    ['late-mode', 'POLICY_MISMATCH', 'dispatch'],
+    ['tool', 'UNEXPECTED_TOOL', 'stream'],
+    ['plan', 'UNEXPECTED_TOOL', 'stream'],
+    ['wrong-session', 'PROTOCOL_ERROR', 'stream'],
+    ['incomplete', 'PROTOCOL_ERROR', 'stream'],
+  ])('reports %s as %s at the %s stage', async (mode, code, stage) => {
+    const { adapter } = await fixture(mode);
+    await expect(adapter.generate(request)).rejects.toMatchObject({ code, stage });
+  });
+  it.each([
+    ['startup-hang', 'launch'],
+    ['auth-hang', 'provider-auth'],
+    ['hang', 'dispatch'],
+  ])('bounds %s at the %s stage', async (mode, stage) => {
+    const { adapter } = await fixture(mode, {
+      startupTimeoutMs: 100,
+      authTimeoutMs: 100,
+      requestTimeoutMs: 20,
+    });
+    await expect(adapter.generate(request)).rejects.toMatchObject({ code: 'TIMEOUT', stage });
+  });
+  it('stops before prompting when ask is never confirmed, at the handshake', async () => {
+    const { adapter } = await fixture('silent-mode', {
+      startupTimeoutMs: 30_000,
+      authTimeoutMs: 30_000,
+    });
+    await expect(adapter.generate(request)).rejects.toMatchObject({
+      code: 'POLICY_MISMATCH',
+      stage: 'local-handshake',
+    });
+  });
+  it('does not present a tool that cannot start as a sign-in problem', async () => {
+    const { adapter } = await fixture('ok', {
+      spawn: () => {
+        throw new Error('native secret diagnostic');
+      },
+    });
+    await expect(adapter.generate(request)).rejects.toMatchObject({
+      code: 'LAUNCH_FAILED',
+      stage: 'launch',
+    });
+  });
+  it('names the stage of every refusal it makes before launching', async () => {
+    const { adapter } = await fixture();
+    await expect(
+      adapter.generate({ ...request, accountRoute: 'devin:api' }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_CHANGED', stage: 'provider-auth' });
+    await expect(adapter.generate({ ...request, model: 'auto' })).rejects.toMatchObject({
+      code: 'MODEL_UNAVAILABLE',
+      stage: 'model-list',
+    });
+    await expect(resolveDevinEntry(path.join(os.tmpdir(), 'other.cmd'))).rejects.toMatchObject({
+      code: 'UNSUPPORTED_SHIM',
+      stage: 'discovery',
+    });
+  });
+  it('separates a cleanup that could not be confirmed from the failure it followed', async () => {
+    const { adapter } = await fixture('malformed');
+    cleanup.fail = true;
+    await expect(adapter.generate(request)).rejects.toMatchObject({
+      code: 'PROTOCOL_ERROR',
+      stage: 'dispatch',
+    });
+    cleanup.fail = false;
+    const { adapter: clean } = await fixture();
+    cleanup.fail = true;
+    await expect(clean.generate(request)).rejects.toMatchObject({
+      code: 'CLEANUP_FAILED',
+      stage: 'cleanup',
+    });
+  });
+  it('cancels mid-turn at the stream it had reached', async () => {
+    const { adapter } = await fixture('abort');
+    const controller = new AbortController();
+    await expect(
+      adapter.generate({ ...request, signal: controller.signal, onDelta: () => controller.abort() }),
+    ).rejects.toMatchObject({ code: 'CANCELLED', stage: 'stream', ambiguous: true });
+  });
+});
+
 describe('Devin Windows launcher resolution', () => {
   it('passes a native executable through and rejects wrappers', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devin shim & spaces '));
