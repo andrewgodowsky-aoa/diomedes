@@ -184,6 +184,55 @@ describe('a refusal is read from what the payload says, not from a number inside
   });
 });
 
+describe('the same reading of a payload appears in a second adapter', () => {
+  /**
+   * `failure()` in server/engines/claude.ts:92 tests `/auth|login|sign.?in|
+   * unauthorized/i` against the serialised result frame. `auth` is a substring
+   * of `authority`, so the enterprise-CA and proxy case the audit names among
+   * its hostile machines is answered with "Claude Code needs sign-in" — the
+   * blanket sign-in advice the repair exists to remove.
+   */
+  it('does not read a certificate authority failure as a missing sign-in', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'hostile-claude-'));
+    roots.push(root);
+    const { ClaudeAdapter } = await import('../server/engines/claude.js');
+    let initialized = '';
+    const child = {
+      send(frame: { type?: string; request_id?: string }) {
+        if (frame.type === 'control_request') initialized = frame.request_id ?? '';
+      },
+      async next() {
+        if (initialized) {
+          const id = initialized;
+          initialized = '';
+          return {
+            type: 'control_response',
+            response: { request_id: id, subtype: 'success', response: { models: [] } },
+          };
+        }
+        return {
+          type: 'result',
+          is_error: true,
+          subtype: 'error_during_execution',
+          errors: {
+            message: 'unable to verify the certificate authority for the configured proxy',
+          },
+        };
+      },
+      async close() {},
+    };
+    const adapter = new ClaudeAdapter(path.join(root, 'claude.exe'), root, {
+      launch: () => child as never,
+      account: async () => ({ loggedIn: true, authMethod: 'claude.ai' }),
+    });
+    const failure = await failureOf(
+      adapter.generate({ ...request(), model: 'sonnet', accountRoute: 'claude-code:claude.ai' }),
+    );
+    expect(failure?.code).toBe('PROVIDER_ERROR');
+    expect(failure?.message).not.toMatch(/sign.?in/i);
+  });
+});
+
 describe('the identifiers that ride in a route issue are provider ids and nothing else', () => {
   /**
    * `PROVIDER_ID` (server/engines/opencode.ts:258) bounds shape and length only.
