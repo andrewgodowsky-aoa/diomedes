@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import { MAX_BUILD_RECORD_BYTES, buildIdentity } from '../server/build-identity.js';
+import packageInfo from '../package.json' with { type: 'json' };
 
 // The record a real packaged build stamps. It is committed here, and
 // scripts/write-candidate-record.ts proves the byte-identical copy ships inside
@@ -9,6 +10,17 @@ const SHIPPED = fs.readFileSync(
   new URL('../evidence/windows-release/build-info.json', import.meta.url),
   'utf8',
 );
+/**
+ * The record's own fields. The expectations below are read from it rather than
+ * pinned to the build that was current when they were written: the point is
+ * that the identity is composed from the record, and a literal here only means
+ * the test is rewritten at every release.
+ */
+const RECORD = JSON.parse(SHIPPED) as {
+  version: string;
+  baseCommit: string;
+  builtAt: string;
+};
 const HOME = 'C:\\Users\\BuildTest';
 const EXE = `${HOME}\\AppData\\Local\\Diomedes\\Diomedes.exe`;
 
@@ -26,14 +38,22 @@ describe('build identity', () => {
   test('the shipped build record names the version, commit and build time', () => {
     const build = identity(() => SHIPPED, { packaged: true });
     expect(build.source).toBe('build-record');
-    expect(build.version).toBe('0.1.4');
-    expect(build.commit).toBe('efa83acd021c5c14fc32a4760e7f7af1d0f53cd6');
-    expect(build.buildId).toBe('0.1.4+efa83acd021c');
-    expect(build.builtAt).toBe('2026-09-19T06:07:40.484Z');
+    expect(build.version).toBe(RECORD.version);
+    expect(build.commit).toBe(RECORD.baseCommit);
+    expect(build.buildId).toBe(`${RECORD.version}+${RECORD.baseCommit.slice(0, 12)}`);
+    expect(build.builtAt).toBe(RECORD.builtAt);
     expect(build.sourceStatus).toBe('committed');
     expect(build.signing).toBe('unsigned-experimental');
     expect(build.channel).toBe('experimental');
     expect(build.packaged).toBe(true);
+  });
+
+  test('the committed record describes the version being built', () => {
+    // A record left behind by an earlier release still parses, so no other test
+    // here notices it is stale. The packaging step stamps this file and the
+    // release commits it, so the two versions agreeing is what makes the record
+    // this build's rather than the last one's.
+    expect(RECORD.version).toBe(packageInfo.version);
   });
 
   test('the file list inside the record never travels with the identity', () => {
@@ -137,7 +157,7 @@ describe('build identity', () => {
 
   test('the record version wins, because it is the one the packaging step stamped', () => {
     const build = identity(() => SHIPPED, { version: '9.9.9' });
-    expect(build.version).toBe('0.1.4');
-    expect(build.buildId).toBe('0.1.4+efa83acd021c');
+    expect(build.version).toBe(RECORD.version);
+    expect(build.buildId).toBe(`${RECORD.version}+${RECORD.baseCommit.slice(0, 12)}`);
   });
 });
