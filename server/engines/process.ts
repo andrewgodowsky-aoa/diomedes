@@ -95,6 +95,13 @@ const IDENTITY_KEYS = new Set(['name', 'code', 'type', 'kind', 'subtype', 'error
 const STATUS_KEYS = new Set(['status', 'statuscode', 'httpstatus']);
 /** Keys whose value is free text somebody wrote for a person to read. */
 const TEXT_KEYS = new Set(['message', 'detail', 'description', 'errormessage', 'error', 'reason']);
+/**
+ * Keys whose value is the failure itself, so the failure's own message is one
+ * step inside them. Nothing else carries free text that describes the failure:
+ * a tool's input, a denial record, message content and answer text are all
+ * somebody else's words, and a refusal was never theirs to decide.
+ */
+const ERROR_KEYS = new Set(['error', 'errors']);
 /** An identity compared without punctuation: `ProviderAuthError` and `provider_auth_error` are one word. */
 const asIdentity = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 /**
@@ -121,22 +128,33 @@ export interface FailureFacts {
  * or merely enormous payload cannot cost more than a glance. A bare string —
  * `errors: ['rate_limit_error']`, `error: 'unauthorized'` — counts as both an
  * identity and text, because tools use it as both.
+ *
+ * Free text is read only from the failure's own message: the value handed in,
+ * and one step inside an `error` or `errors` value (a list of errors is not a
+ * step: its items are the failure). Machine identities and statuses are read
+ * deeper, because they name what a payload is rather than describe it.
+ *
+ * The distinction is not pedantry. Callers hand whole frames — `claude.ts`
+ * passes `frame.errors ?? frame` — and a Claude Code frame carries the model's
+ * own tool input inside `permission_denials`. A tool named "rotate the api key
+ * for the deploy" is not the account refusing the work, and telling somebody to
+ * sign in again for it repairs nothing.
  */
 export function failureFacts(value: unknown): FailureFacts {
   const facts: FailureFacts = { identities: [], statuses: [], texts: [] };
   let budget = 96;
-  const bare = (item: string) => {
+  const bare = (item: string, own: boolean) => {
     if (IDENTIFIER_SHAPE.test(item)) facts.identities.push(asIdentity(item));
-    facts.texts.push(item.slice(0, 512));
+    if (own) facts.texts.push(item.slice(0, 512));
   };
-  const visit = (node: unknown, depth: number) => {
+  const visit = (node: unknown, depth: number, own: boolean) => {
     if (budget <= 0 || depth > 4) return;
-    if (typeof node === 'string') return bare(node);
+    if (typeof node === 'string') return bare(node, own);
     if (Array.isArray(node)) {
       for (const item of node.slice(0, 16)) {
         if (budget-- <= 0) return;
-        if (typeof item === 'string') bare(item);
-        else visit(item, depth + 1);
+        if (typeof item === 'string') bare(item, own);
+        else visit(item, depth + 1, own);
       }
       return;
     }
@@ -150,11 +168,11 @@ export function failureFacts(value: unknown): FailureFacts {
         if (STATUS_KEYS.has(key) && /^\d{3}$/.test(item)) facts.statuses.push(Number(item));
         if ((IDENTITY_KEYS.has(key) || key === 'error') && IDENTIFIER_SHAPE.test(item))
           facts.identities.push(asIdentity(item));
-        if (TEXT_KEYS.has(key)) facts.texts.push(item.slice(0, 512));
-      } else visit(item, depth + 1);
+        if (own && TEXT_KEYS.has(key)) facts.texts.push(item.slice(0, 512));
+      } else visit(item, depth + 1, own && depth === 0 && ERROR_KEYS.has(key));
     }
   };
-  visit(value, 0);
+  visit(value, 0, true);
   return facts;
 }
 
