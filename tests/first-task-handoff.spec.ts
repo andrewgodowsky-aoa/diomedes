@@ -310,3 +310,129 @@ test('A verified route carries the person to a composer, chooses itself for the 
     await page.unrouteAll({ behavior: 'wait' });
   }
 });
+
+/** One project of this case's own, with one thread nobody has chosen for. */
+async function scratchProject(name: string, open: boolean): Promise<Project> {
+  const made = await api<Project>('/projects', 'POST', { name });
+  await api(`/projects/${made.id}/threads`, 'POST', { name: `${name} thread`, mode: 'ask' });
+  await api('/settings', 'PUT', {
+    surface: 'console',
+    detail: 'technical',
+    openProjects: open ? [made.id] : [],
+    onboarding: {
+      work: 'software',
+      detail: 'technical',
+      familiarity: 'comfortable',
+      resumeAt: 'done',
+      completedAt: new Date().toISOString(),
+    },
+  });
+  return made;
+}
+
+/** What that project's one thread has been chosen to run on, if anything. */
+async function threadChoice(
+  id: string,
+  name: string,
+): Promise<{ engine?: string; model?: string | null }> {
+  const state = await api<ProjectState>(`/projects/${id}/state`);
+  const thread = state.conversations.find((c) => c.name === name);
+  return { engine: thread?.engine, model: thread?.requested?.model ?? null };
+}
+
+test('Dismissing the project search abandons the handover, so opening a project later chooses nothing', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  // No project is open, so pressing Start has nowhere to land and the existing
+  // project search is what opens. Dismissing that search is leaving the flow.
+  const scratch = await scratchProject('Dismissed search fixture', false);
+  await page.route('**/api/ai/status', (route) =>
+    route.fulfill({ json: { connections: [wire({ nextAction: 'ready', verification: receipt })] } }),
+  );
+  try {
+    await page.goto(baseURL);
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Engines', exact: true }).click();
+    const section = setupSection(page);
+    await section.getByRole('button', { name: 'Start a first task', exact: true }).click();
+
+    // The search opened because there was no project to carry the choice into.
+    const search = page.getByRole('dialog', { name: 'Open a project' });
+    await expect(search).toBeVisible();
+    await search.getByRole('button', { name: 'Close dialog', exact: true }).click();
+    await expect(search).toHaveCount(0);
+
+    // Later, the person opens a project of their own accord.
+    await page.keyboard.press('Control+k');
+    await expect(page.getByRole('dialog', { name: 'Open a project' })).toBeVisible();
+    await page.locator('.search-results button', { hasText: scratch.name }).click();
+    await expect(page.locator('.console')).toBeVisible();
+
+    // Nothing was chosen for its thread, and nothing was said about a route.
+    const composer = page.getByRole('textbox', { name: 'Message this thread', exact: true });
+    await expect(composer).toBeVisible();
+    await expect(composer).not.toBeFocused();
+    await expect(page.locator('.toast')).toHaveCount(0);
+    await expect
+      .poll(() => threadChoice(scratch.id, `${scratch.name} thread`))
+      .toEqual({ engine: undefined, model: null });
+    expect(errors).toEqual([]);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+test('A route whose saved model moved between the offer and the Console chooses nothing, and says so', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const scratch = await scratchProject('Changed model fixture', true);
+  await page.route('**/api/ai/status', (route) =>
+    route.fulfill({ json: { connections: [wire({ nextAction: 'ready', verification: receipt })] } }),
+  );
+  try {
+    await page.goto(baseURL);
+    await expect(page.locator('.console')).toBeVisible();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Engines', exact: true }).click();
+    const section = setupSection(page);
+    const start = section.getByRole('button', { name: 'Start a first task', exact: true });
+    await expect(start).toBeVisible();
+
+    // From here on, this route is set to a different model than the one the
+    // receipt names — the state the offer was gated on, changed underneath it.
+    // Installed after the offer is drawn, which is exactly when it can happen.
+    await page.route('**/api/settings', async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const response = await route.fetch();
+      const settings = (await response.json()) as {
+        services?: Record<string, unknown>;
+      };
+      return route.fulfill({
+        response,
+        json: {
+          ...settings,
+          services: { ...settings.services, opencodeModel: 'opencode/another-model' },
+        },
+      });
+    });
+
+    await start.click();
+    await expect(page.locator('.console')).toBeVisible();
+    // The Console says what happened rather than selecting something the person
+    // was never shown. The line is brief: this is read while it is up.
+    await expect(page.locator('.toast')).toContainText('nothing was selected', { timeout: 4_000 });
+
+    const composer = page.getByRole('textbox', { name: 'Message this thread', exact: true });
+    await expect(composer).not.toBeFocused();
+    await expect
+      .poll(() => threadChoice(scratch.id, `${scratch.name} thread`))
+      .toEqual({ engine: undefined, model: null });
+    expect(errors).toEqual([]);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  ExternalEngine,
   IntegrationStatus,
   Mode,
   Page,
   Project,
-  Route,
   Settings,
   Surface,
   UsageSnapshot,
@@ -81,11 +81,18 @@ export function App() {
    * The route and model a connection test just verified, on its way to the
    * Console. It is a choice for one thread and never a send, and it waits here
    * until a Console with a project to carry it into is showing.
+   *
+   * It carries the moment it was made, because the facts behind it are the
+   * host's and they go out of date. Waiting here is only ever for as long as
+   * the person is still doing the thing they pressed it for: dismissing the
+   * project search, or going back into Settings, abandons it, and the Console
+   * lets go of one that has been waiting too long.
    */
   const [startTask, setStartTask] = useState<{
-    route: Route;
+    route: ExternalEngine;
     model: string;
     effort: string | null;
+    madeAtMs: number;
     n: number;
   } | null>(null);
   const [query, setQuery] = useState('');
@@ -413,6 +420,11 @@ export function App() {
     },
     [report, selected],
   );
+  // Going back into Settings abandons the handover too: the person is back at
+  // the screen that made the offer, where they can make it again.
+  useEffect(() => {
+    if (showSettings) setStartTask(null);
+  }, [showSettings]);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key.toLowerCase() === 'k') {
@@ -776,6 +788,7 @@ export function App() {
                       route,
                       model,
                       effort,
+                      madeAtMs: Date.now(),
                       n: (last?.n ?? 0) + 1,
                     }));
                     if (!selected) setSearch(true);
@@ -947,7 +960,16 @@ export function App() {
         </Modal>
       )}
       {search && (
-        <Modal title="Open a project" onClose={() => setSearch(false)}>
+        <Modal
+          title="Open a project"
+          onClose={() => {
+            setSearch(false);
+            // Closing this is leaving the flow the offer belongs to. The choice
+            // a connection test made was for the task the person was about to
+            // write, not for whatever project they open next.
+            setStartTask(null);
+          }}
+        >
           <label className="field">
             Find by name
             <input
