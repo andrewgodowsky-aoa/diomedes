@@ -1,6 +1,6 @@
 {
   "name": "diomedes",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "scripts": {
@@ -30,7 +30,11 @@
     "@fontsource/ibm-plex-serif": "^5.2.7",
     "@fontsource/schibsted-grotesk": "^5.2.8",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@workos-inc/node": "10.13.0",
+    "@workos/authkit-electron": "0.1.2",
+    "@workos/authkit-session": "0.6.0",
     "diff": "^8.0.2",
+    "electron-store": "11.0.2",
     "express": "^5.1.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

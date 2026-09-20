@@ -5,6 +5,7 @@ import { build } from 'esbuild';
 import { packager } from '@electron/packager';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { buildDesktopAuth } from './build-desktop-auth.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
@@ -20,7 +21,7 @@ async function sourceSnapshot() {
     }
   }
   for (const directory of ['client', 'server', 'shared', 'desktop', 'fixtures', 'licenses', 'dist']) await visit(directory);
-  for (const name of ['package.json', 'package-lock.json', 'LICENSE', 'scripts/package-desktop.mjs'])
+  for (const name of ['package.json', 'package-lock.json', 'LICENSE', 'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs'])
     files.push({ path: name, sha256: sha256(await fs.readFile(path.join(root, name))) });
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
@@ -33,7 +34,7 @@ const baseCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encod
 // `fixtures/projects` are gitignored build/test output and can never be committed, so
 // including them would pin the answer to 'local-uncommitted' forever.
 const trackedInputs = ['client', 'server', 'shared', 'desktop', 'licenses',
-  'package.json', 'package-lock.json', 'LICENSE', 'scripts/package-desktop.mjs'];
+  'package.json', 'package-lock.json', 'LICENSE', 'scripts/package-desktop.mjs', 'scripts/build-desktop-auth.mjs'];
 const dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=all', '--', ...trackedInputs],
   { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
 const sourceStatus = dirty ? 'local-uncommitted' : 'committed';
@@ -47,6 +48,7 @@ try {
     path.join(stage, 'fixtures/harness/report-lines.txt'),
   );
   await fs.copyFile(path.join(root, 'desktop/main.mjs'), path.join(stage, 'main.mjs'));
+  await buildDesktopAuth(root, stage);
   for (const helper of ['app-updates.mjs', 'update-helper.mjs'])
     await fs.copyFile(path.join(root, 'desktop', helper), path.join(stage, helper));
   await fs.cp(path.join(root, 'dist'), path.join(stage, 'dist'), { recursive: true });

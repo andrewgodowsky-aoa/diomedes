@@ -116,13 +116,24 @@ describe('cursor replay over the durable stream', () => {
     const { service, dir } = await setup();
     // A non-idempotent step whose handler never resolves stays 'running' in
     // the persisted record; the first service is abandoned without finishing.
+    let handlerEntered!: () => void;
+    let startFailed!: (reason: unknown) => void;
+    const ready = new Promise<void>((resolve, reject) => {
+      handlerEntered = resolve;
+      startFailed = reject;
+    });
     const started = execute(
       service,
       def({ effect: 'non-idempotent', name: 'egress.send' }),
-      () => new Promise(() => {}),
+      () => {
+        handlerEntered();
+        return new Promise(() => {});
+      },
     );
-    started.catch(() => {});
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    started.catch(startFailed);
+    // RunService persists the running step before invoking its handler.
+    // Observe that boundary instead of assuming disk I/O finishes in 50 ms.
+    await ready;
     const restarted = new RunService(new FileRunStore(dir), { clock: () => 2000 });
     await restarted.recover('r', principal);
     const run = await restarted.get('r');

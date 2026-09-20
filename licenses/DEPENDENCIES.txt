@@ -1,13 +1,27 @@
 DIOMEDES BUNDLED PRODUCTION DEPENDENCIES
 ========================================
 
-Application version: 0.1.1
-package-lock.json SHA-256: 5291fbfd4a9e68c2d7ebad705226b7cc9c2c1de4403bbb7e46f52e8acfbc0e1d
-Reachable installed production package paths: 102
+Application version: 0.1.5
+package-lock.json SHA-256: 81706f074f425ee3f63a555cb563482cba2eed36c0d9e9c641b7c36ff8e59f46
+Reachable installed production package paths: 132
 
 Scope: every installed package reachable through dependencies, optional dependencies,
 and required installed peer dependencies from the package-lock root. This conservative
 inventory can include code removed by Vite or esbuild tree shaking.
+
+@electron-internal/extract-zip@1.0.5
+  lock path: node_modules/@electron-internal/extract-zip
+  declared license: BSD-2-Clause
+  source: https://registry.npmjs.org/@electron-internal/extract-zip/-/extract-zip-1.0.5.tgz
+  package-lock integrity: sha512-+bqFCP98pLI0Tt0XQo1TmlXtwjWchISndDOxCkEcIuUgXWpBnLyRI+2DU+mesvnMMX6L1XDqYNA0lXNDHd/yiA==
+  notice files: MISSING
+
+@electron/get@5.1.0
+  lock path: node_modules/@electron/get
+  declared license: MIT
+  source: https://registry.npmjs.org/@electron/get/-/get-5.1.0.tgz
+  package-lock integrity: sha512-3kSBtG8ObcTVfXanm5vVJ6UnBLEVmVsRk1M+vGqCuMBV+XLCbJYuWQful+yIy0GQDsSlK0kHEriEHn7SPk4EnA==
+  notice files: LICENSE:edab8abb78d9c5b36944c3e00aebf6a90eb32378993f49ac8a3904007029c629
 
 @fontsource/big-shoulders-display@5.3.0
   lock path: node_modules/@fontsource/big-shoulders-display
@@ -55,6 +69,34 @@ inventory can include code removed by Vite or esbuild tree shaking.
   package-lock integrity: sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==
   notice files: LICENSE:5e13dbbc1d120fc2a03cecde7c91424ae2d7de11b63d58ded2f4431e261ee50d
 
+@types/node@24.13.3
+  lock path: node_modules/electron/node_modules/@types/node
+  declared license: MIT
+  source: https://registry.npmjs.org/@types/node/-/node-24.13.3.tgz
+  package-lock integrity: sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==
+  notice files: LICENSE:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+
+@workos-inc/node@10.13.0
+  lock path: node_modules/@workos-inc/node
+  declared license: MIT
+  source: https://registry.npmjs.org/@workos-inc/node/-/node-10.13.0.tgz
+  package-lock integrity: sha512-xPtcziTjN1irPiZ4niTaulYvRMs6D+Fz5E54GGHVOxNi0PV2/Ws1g/cx3q9oMvMhnINkva5iZ2T5aS6yLzdCWA==
+  notice files: LICENSE:440126930e01613ce003165bcf3c3f0c3525a4f820d36bbeffdaad11f70038ec
+
+@workos/authkit-electron@0.1.2
+  lock path: node_modules/@workos/authkit-electron
+  declared license: MIT
+  source: https://registry.npmjs.org/@workos/authkit-electron/-/authkit-electron-0.1.2.tgz
+  package-lock integrity: sha512-OtIYcSo6ebWGMc1pbohB3hypw52BPthKRjkZfQIZ6i5Zc+7EieRrV7zoEURrJLjJA4EFF9vdNXuNMfkte5J1Mg==
+  notice files: LICENSE:c33f799eb6e0a36c1d683f2814daf0a107a505830f107a0f8dfd20a9870c2f51
+
+@workos/authkit-session@0.6.0
+  lock path: node_modules/@workos/authkit-session
+  declared license: MIT
+  source: https://registry.npmjs.org/@workos/authkit-session/-/authkit-session-0.6.0.tgz
+  package-lock integrity: sha512-AaDt34h4XF5BTF5ShN+W+8OOHxj+n0KmkX+e89OVNaeZJKwqao0b/S3m3BiAylNHdZGM95tsvRUKeoEXp5qERQ==
+  notice files: LICENSE:df4091ba8a324025b67e7b015a8010f845c41f789ecfded9f4ddac6ba7bc32dc
+
 accepts@2.0.0
   lock path: node_modules/accepts
   declared license: MIT
@@ -75,6 +117,13 @@ ajv-formats@3.0.1
   source: https://registry.npmjs.org/ajv-formats/-/ajv-formats-3.0.1.tgz
   package-lock integrity: sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==
   notice files: LICENSE:9df3bb69929a3b650ed73b3bfa1756725aaff0ac296461605753547004eafeaf
+
+atomically@2.1.1
+  lock path: node_modules/atomically
+  declared license: MIT
+  source: https://registry.npmjs.org/atomically/-/atomically-2.1.1.tgz
+  package-lock integrity: sha512-P4w9o2dqARji6P7MHprklbfiArZAWvo07yW7qs3pdljb3BWr12FIB7W+p0zJiuiVsUpRO0iZn1kFFcpPegg0tQ==
+  notice files: license:716bd9213ef82d9017ed813688703837aaa99fc56de205a7b97475d40056a500
 
 body-parser@2.3.0
   lock path: node_modules/body-parser
@@ -103,6 +152,13 @@ call-bound@1.0.4
   source: https://registry.npmjs.org/call-bound/-/call-bound-1.0.4.tgz
   package-lock integrity: sha512-+ys997U96po4Kx/ABpBCqhA9EuxJaQWDQg7295H4hBphv3IZg0boBKuwYpt4YXp6MZ5AmZQnU/tyMTlRpaSejg==
   notice files: LICENSE:5e325595b4ea8cfec3802f545b1def5d7b73e4a5b8e9ba63e32a320f67732292
+
+conf@15.1.0
+  lock path: node_modules/conf
+  declared license: MIT
+  source: https://registry.npmjs.org/conf/-/conf-15.1.0.tgz
+  package-lock integrity: sha512-Uy5YN9KEu0WWDaZAVJ5FAmZoaJt9rdK6kH+utItPyGsCqCgaTKkrmZx3zoE0/3q6S3bcp3Ihkk+ZqPxWxFK5og==
+  notice files: license:5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3
 
 content-disposition@1.1.0
   lock path: node_modules/content-disposition
@@ -167,6 +223,13 @@ cross-spawn@7.0.6
   package-lock integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==
   notice files: LICENSE:aaa78451b6fecd1b9c4594c796c133c0e90cad100372ff8bc6de615e9ef9adf1
 
+debounce-fn@6.0.0
+  lock path: node_modules/debounce-fn
+  declared license: MIT
+  source: https://registry.npmjs.org/debounce-fn/-/debounce-fn-6.0.0.tgz
+  package-lock integrity: sha512-rBMW+F2TXryBwB54Q0d8drNEI+TfoS9JpNTAoVpukbWEhjXQq4rySFYLaqXMFXwdv61Zb2OHtj5bviSoimqxRQ==
+  notice files: license:5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3
+
 debug@4.4.3
   lock path: node_modules/debug
   declared license: MIT
@@ -188,6 +251,13 @@ diff@8.0.4
   package-lock integrity: sha512-DPi0FmjiSU5EvQV0++GFDOJ9ASQUVFh5kD+OzOnYdi7n3Wpm9hWWGfB/O2blfHcMVTL5WkQXSnRiK9makhrcnw==
   notice files: LICENSE:eda81a415869e67809f6a9f3fd6056062cb83a462118e07eec5e92b2e0c40ce9
 
+dot-prop@10.2.0
+  lock path: node_modules/dot-prop
+  declared license: MIT
+  source: https://registry.npmjs.org/dot-prop/-/dot-prop-10.2.0.tgz
+  package-lock integrity: sha512-BTJ9aZYL3vCfZlZOBLy9v8TUqWGQ0pzFnygKwFZt5udj6viBoFIBviKPUoZLDCPn1FoXffv6McQFDenrm5Krfw==
+  notice files: license:5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3
+
 dunder-proto@1.0.1
   lock path: node_modules/dunder-proto
   declared license: MIT
@@ -202,12 +272,33 @@ ee-first@1.1.1
   package-lock integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==
   notice files: LICENSE:965ef284f7f4c176842ec2e87fa13e79feed777d56d7a21a5a3b38f1bb6dc288
 
+electron@44.2.0
+  lock path: node_modules/electron
+  declared license: MIT
+  source: https://registry.npmjs.org/electron/-/electron-44.2.0.tgz
+  package-lock integrity: sha512-oK1icjhapp3xsUZycO9WZaLmd3hJnA7ieobC4mpdtO1pEN+PPGWpA3m1Mgzzuc1wzSD2Wai4zcH4yfpGJqxFMA==
+  notice files: LICENSE:5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d
+
+electron-store@11.0.2
+  lock path: node_modules/electron-store
+  declared license: MIT
+  source: https://registry.npmjs.org/electron-store/-/electron-store-11.0.2.tgz
+  package-lock integrity: sha512-4VkNRdN+BImL2KcCi41WvAYbh6zLX5AUTi4so68yPqiItjbgTjqpEnGAqasgnG+lB6GuAyUltKwVopp6Uv+gwQ==
+  notice files: license:5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3
+
 encodeurl@2.0.0
   lock path: node_modules/encodeurl
   declared license: MIT
   source: https://registry.npmjs.org/encodeurl/-/encodeurl-2.0.0.tgz
   package-lock integrity: sha512-Q0n9HRi4m6JuGIV1eFlmvJB7ZEVxu93IrMyiMsGC0lrMJMWzRgx6WGquyfQgZVb31vhGgXnfmPNNXmxnOkRBrg==
   notice files: LICENSE:7585ea7bba616ccbbe43cb54ecb67956688c3c5641bb84f3099a652a73193afe
+
+env-paths@3.0.0
+  lock path: node_modules/env-paths
+  declared license: MIT
+  source: https://registry.npmjs.org/env-paths/-/env-paths-3.0.0.tgz
+  package-lock integrity: sha512-dtJUTepzMW3Lm/NPxRf3wP4642UWhjL2sQxc+ym2YMj1m/H2zDNQOlezafzkHwn6sMstjHTwG6iQQsctDW/b1A==
+  notice files: license:5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3
 
 es-define-property@1.0.1
   lock path: node_modules/es-define-property
@@ -335,6 +426,13 @@ gopd@1.2.0
   package-lock integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==
   notice files: LICENSE:d90bf0a089da4cf43d644ed240a0b3825dcdb705e64e38371d56995a4cc9e4c5
 
+graceful-fs@4.2.11
+  lock path: node_modules/graceful-fs
+  declared license: ISC
+  source: https://registry.npmjs.org/graceful-fs/-/graceful-fs-4.2.11.tgz
+  package-lock integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==
+  notice files: LICENSE:f65c5d9f22a317b2a10803bd1868461ce6499c2ed7217bc80c0cc772a748789c
+
 has-symbols@1.1.0
   lock path: node_modules/has-symbols
   declared license: MIT
@@ -390,6 +488,13 @@ ipaddr.js@1.9.1
   source: https://registry.npmjs.org/ipaddr.js/-/ipaddr.js-1.9.1.tgz
   package-lock integrity: sha512-0KI/607xoxSToH7GjN1FfSbLoU0+btTicjsQSWQlh/hZykN8KpmMf7uYwPW3R+akZ6R/w18ZlXSHBYXiYUPO3g==
   notice files: LICENSE:62568a2d1337b77171ecca9db10579163446de1ba6151678e81f06cdc199971b
+
+iron-webcrypto@2.0.0
+  lock path: node_modules/iron-webcrypto
+  declared license: MIT
+  source: https://registry.npmjs.org/iron-webcrypto/-/iron-webcrypto-2.0.0.tgz
+  package-lock integrity: sha512-rtffZKDUHciZElM8mjFCufBC7nVhCxHYyWHESqs89OioEDz4parOofd8/uhrejh/INhQFfYQfByS22LlezR9sQ==
+  notice files: LICENSE.md:1be8be009cebbb9f3022b91b32fcbf809d3f2dea03106a72001c4c8037adc6a5
 
 is-promise@4.0.0
   lock path: node_modules/is-promise
@@ -461,6 +566,13 @@ mime-types@3.0.2
   package-lock integrity: sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A==
   notice files: LICENSE:71f83c4c0621102a56d9853812777b85751bce7e9726f686f5b056c1f8a4b0e6
 
+mimic-function@5.0.1
+  lock path: node_modules/mimic-function
+  declared license: MIT
+  source: https://registry.npmjs.org/mimic-function/-/mimic-function-5.0.1.tgz
+  package-lock integrity: sha512-VP79XUPxV2CigYP3jWwAUFSku2aKqBH7uTAapFWCBqutsbmDo96KY5o8uh6U+/YSIn5OxJnXp73beVkpqMIGhA==
+  notice files: license:5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3
+
 ms@2.1.3
   lock path: node_modules/ms
   declared license: MIT
@@ -530,6 +642,13 @@ pkce-challenge@5.0.1
   source: https://registry.npmjs.org/pkce-challenge/-/pkce-challenge-5.0.1.tgz
   package-lock integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==
   notice files: LICENSE:feb87a2e0c305de3464cc44077da5393c52d8ca6362d37427157d04ec6f4510d
+
+progress@2.0.3
+  lock path: node_modules/progress
+  declared license: MIT
+  source: https://registry.npmjs.org/progress/-/progress-2.0.3.tgz
+  package-lock integrity: sha512-7PiHtLll5LdnKIMw100I+8xJXR5gW2QwWYkT6iJva0bXitZKa/XMrSbdmg3r2Xnaidz9Qumd0VPaMrZlF9V9sA==
+  notice files: LICENSE:d7d2a7786de7c7cfd96f920c6f12927d74e1d2a861ca4498bf465c3bc3f4c21c
 
 proxy-addr@2.0.7
   lock path: node_modules/proxy-addr
@@ -601,6 +720,20 @@ scheduler@0.27.0
   package-lock integrity: sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==
   notice files: LICENSE:da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93
 
+semver@7.8.5
+  lock path: node_modules/@electron/get/node_modules/semver
+  declared license: ISC
+  source: https://registry.npmjs.org/semver/-/semver-7.8.5.tgz
+  package-lock integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==
+  notice files: LICENSE:4ec3d4c66cd87f5c8d8ad911b10f99bf27cb00cdfcff82621956e379186b016b
+
+semver@7.8.5
+  lock path: node_modules/conf/node_modules/semver
+  declared license: ISC
+  source: https://registry.npmjs.org/semver/-/semver-7.8.5.tgz
+  package-lock integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==
+  notice files: LICENSE:4ec3d4c66cd87f5c8d8ad911b10f99bf27cb00cdfcff82621956e379186b016b
+
 send@1.2.1
   lock path: node_modules/send
   declared license: MIT
@@ -671,12 +804,47 @@ statuses@2.0.2
   package-lock integrity: sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==
   notice files: LICENSE:512cfa4d5e7a7569c7ae4dd95241cb6ae2aaf648ef9ebd080c01bd24868d26e9
 
+stubborn-fs@2.0.0
+  lock path: node_modules/stubborn-fs
+  declared license: MIT
+  source: https://registry.npmjs.org/stubborn-fs/-/stubborn-fs-2.0.0.tgz
+  package-lock integrity: sha512-Y0AvSwDw8y+nlSNFXMm2g6L51rBGdAQT20J3YSOqxC53Lo3bjWRtr2BKcfYoAf352WYpsZSTURrA0tqhfgudPA==
+  notice files: license:d98bee8913f421380c0771121d2a58deaa806e4513581d02887c3f65b9ee558f
+
+stubborn-utils@1.0.2
+  lock path: node_modules/stubborn-utils
+  declared license: MIT
+  source: https://registry.npmjs.org/stubborn-utils/-/stubborn-utils-1.0.2.tgz
+  package-lock integrity: sha512-zOh9jPYI+xrNOyisSelgym4tolKTJCQd5GBhK0+0xJvcYDcwlOoxF/rnFKQ2KRZknXSG9jWAp66fwP6AxN9STg==
+  notice files: license:0cb826ec0d67e9918daeb89ac839aba3b85cfd7579ee96208b1d81bef46593fd
+
+sumchecker@3.0.1
+  lock path: node_modules/sumchecker
+  declared license: Apache-2.0
+  source: https://registry.npmjs.org/sumchecker/-/sumchecker-3.0.1.tgz
+  package-lock integrity: sha512-MvjXzkz/BOfyVDkG0oFOtBxHX2u3gKbMHIF/dXblZsgD3BWOFLmHovIpZY7BykJdAjcqRCBi1WYBNdEC9yI7vg==
+  notice files: LICENSE:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30
+
+tagged-tag@1.0.0
+  lock path: node_modules/tagged-tag
+  declared license: MIT
+  source: https://registry.npmjs.org/tagged-tag/-/tagged-tag-1.0.0.tgz
+  package-lock integrity: sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng==
+  notice files: license:5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3
+
 toidentifier@1.0.1
   lock path: node_modules/toidentifier
   declared license: MIT
   source: https://registry.npmjs.org/toidentifier/-/toidentifier-1.0.1.tgz
   package-lock integrity: sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA==
   notice files: LICENSE:a832d679750e49ab433626ab196350b89964b60eb0d3edd3341887c7d5f4c128
+
+type-fest@5.10.0
+  lock path: node_modules/type-fest
+  declared license: (MIT OR CC0-1.0)
+  source: https://registry.npmjs.org/type-fest/-/type-fest-5.10.0.tgz
+  package-lock integrity: sha512-NoSdpq/WEiAg5sjmBkmV/hfxv6HJH4NqPNrqjtSO5CwRmpsDfaf4begxW34KdJykH/l1yHtwBWQkCRdoXO8mPA==
+  notice files: license-cc0:a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499, license-mit:5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3
 
 type-is@2.1.0
   lock path: node_modules/type-is
@@ -685,6 +853,34 @@ type-is@2.1.0
   package-lock integrity: sha512-faYHw0anBbc/kWF3zFTEnxSFOAGUX9GFbOBthvDdLsIlEoWOFOtS0zgCiQYwIskL9iGXZL3kAXD8OoZ4GmMATA==
   notice files: LICENSE:23d466b1b134b415b66fa50c6526b4cf3e7b9258554da88d3abb371721e7ce68
 
+typescript@5.9.3
+  lock path: node_modules/typescript
+  declared license: Apache-2.0
+  source: https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz
+  package-lock integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==
+  notice files: LICENSE.txt:a7d00bfd54525bc694b6e32f64c7ebcf5e6b7ae3657be5cc12767bce74654a47
+
+uint8array-extras@1.5.0
+  lock path: node_modules/uint8array-extras
+  declared license: MIT
+  source: https://registry.npmjs.org/uint8array-extras/-/uint8array-extras-1.5.0.tgz
+  package-lock integrity: sha512-rvKSBiC5zqCCiDZ9kAOszZcDvdAHwwIKJG33Ykj43OKcWsnmcBRL09YTU4nOeHZ8Y2a7l1MgTd08SBe9A8Qj6A==
+  notice files: license:5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3
+
+undici@7.29.1
+  lock path: node_modules/undici
+  declared license: MIT
+  source: https://registry.npmjs.org/undici/-/undici-7.29.1.tgz
+  package-lock integrity: sha512-RYONW2MeafgYlkVOKYKkA/Ag7BmXqgIWCa8t1m0JcxrQg9pI9lEqRhAOruOBCbAohOa/gkCF+iPi9hrgvTzu6Q==
+  notice files: LICENSE:a6db8096b2707bc0102d256917d4d33f298ba36d8c3f25de067a2b5bb379db27
+
+undici-types@7.18.2
+  lock path: node_modules/electron/node_modules/undici-types
+  declared license: MIT
+  source: https://registry.npmjs.org/undici-types/-/undici-types-7.18.2.tgz
+  package-lock integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==
+  notice files: LICENSE:a6db8096b2707bc0102d256917d4d33f298ba36d8c3f25de067a2b5bb379db27
+
 unpipe@1.0.0
   lock path: node_modules/unpipe
   declared license: MIT
@@ -692,12 +888,26 @@ unpipe@1.0.0
   package-lock integrity: sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==
   notice files: LICENSE:1a526fbe8d8577f5a4b1c2821842b55b7c0e18862531c62ae4ce69c9b19b74b6
 
+valibot@1.5.0
+  lock path: node_modules/valibot
+  declared license: MIT
+  source: https://registry.npmjs.org/valibot/-/valibot-1.5.0.tgz
+  package-lock integrity: sha512-nil6AkP2TChWL43Z5uJ6GTxX01CUA+g8LWUM+N/rB9NBbkUMaUsi9PUNzlUPgoKASgmx9f7eGOYpJ04/fSa6FQ==
+  notice files: LICENSE.md:1ca6c9ca372cffe26c313464b9d9f0aef2417b27b2bad20396f4769005122d4d
+
 vary@1.1.2
   lock path: node_modules/vary
   declared license: MIT
   source: https://registry.npmjs.org/vary/-/vary-1.1.2.tgz
   package-lock integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==
   notice files: LICENSE:bd47ce7b88c7759630d1e2b9fcfa170a0f1fde522be09e13fb1581a79d090400
+
+when-exit@2.1.5
+  lock path: node_modules/when-exit
+  declared license: MIT
+  source: https://registry.npmjs.org/when-exit/-/when-exit-2.1.5.tgz
+  package-lock integrity: sha512-VGkKJ564kzt6Ms1dbgPP/yuIoQCrsFAnRbptpC5wOEsDaNsbCB2bnfnaA8i/vRs5tjUSEOtIuvl9/MyVsvQZCg==
+  notice files: license:d98bee8913f421380c0771121d2a58deaa806e4513581d02887c3f65b9ee558f
 
 which@2.0.2
   lock path: node_modules/which

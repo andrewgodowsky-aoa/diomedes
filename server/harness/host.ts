@@ -360,7 +360,15 @@ export function createHarnessHost({
     leaseMs: textLeaseMs,
   });
   const bridge = new HarnessBridge(store, runs, tools, adapter, redact, codex);
-  files.saved = (run) => bridge.enqueue(run);
+  const observers = new Set<{ runId: string; changed: () => void; closed: () => void }>();
+  let closed = false;
+  files.saved = (run) => {
+    bridge.enqueue(run);
+    // A wake-up carries no event data or authority. Readers obtain a fresh,
+    // authorized snapshot after the atomic write, using the same durable log.
+    for (const observer of observers)
+      if (observer.runId === run.id) observer.changed();
+  };
   runs.afterStep = () => bridge.flush();
   runs.use((context) => bridge.beforeStep(context));
   const refreshSecrets = async () => {
@@ -470,6 +478,12 @@ export function createHarnessHost({
     scrub,
     get,
     list,
+    subscribe(runId: string, changed: () => void, onClose: () => void) {
+      if (closed) throw new ApiError(503, 'The local service is closing.');
+      const observer = { runId, changed, closed: onClose };
+      observers.add(observer);
+      return () => { observers.delete(observer); };
+    },
     refreshSecrets,
     // Future leased secrets use the same live scrubber; no secret is leased by this fixture.
     rememberSecret(secret: string) {
@@ -487,7 +501,12 @@ export function createHarnessHost({
       }
       await bridge.flush();
     },
-    close: () => bridge.close(),
+    close: () => {
+      closed = true;
+      for (const observer of observers) observer.closed();
+      observers.clear();
+      return bridge.close();
+    },
   };
 }
 
