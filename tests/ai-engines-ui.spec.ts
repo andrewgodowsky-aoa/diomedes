@@ -1238,6 +1238,81 @@ test('Settings sends a changed binding to the installations, not to a sign-in', 
   }
 });
 
+/**
+ * The same code, from the action beside it. The host throws BINDING_CHANGED
+ * from the connection check and from the model selection as well as from the
+ * test, and only the test used to answer it: the other two showed a red banner
+ * with the one panel that resolves a changed binding shut.
+ */
+test('Settings sends a changed binding to the installations when the check is what found it', async ({
+  page,
+}) => {
+  let broken = false;
+  await page.route('**/api/ai/status', (route) =>
+    route.fulfill({
+      json: {
+        connections: [
+          broken
+            ? wire({
+                nextAction: 'repair',
+                repair: 'selected-changed',
+                binding: {
+                  id: systemCandidate.id,
+                  engine: 'opencode',
+                  path: systemCandidate.path,
+                  version: versions.opencode,
+                  sha256: 'd'.repeat(64),
+                  source: 'system',
+                  boundAt: new Date().toISOString(),
+                  origin: 'explicit',
+                },
+                candidates: [systemCandidate, managedCandidate],
+                recommendedCandidateId: managedCandidate.id,
+                detail: 'The installation you chose is no longer the one you chose.',
+              })
+            : wire(),
+        ],
+      },
+    }),
+  );
+  await page.route('**/api/ai/check/opencode', (route) => {
+    broken = true;
+    return route.fulfill({
+      status: 409,
+      json: {
+        error: 'The installation you chose has changed since you chose it.',
+        code: 'BINDING_CHANGED',
+        ambiguous: false,
+        stage: 'runtime-verification',
+      },
+    });
+  });
+  try {
+    await selectOpenCode();
+    await openEngines(page);
+    const section = setupSection(page);
+    await section
+      .getByRole('button', { name: 'Check sign-in and models', exact: true })
+      .first()
+      .click();
+    await expect(section.getByRole('alert')).toContainText(
+      'The installation you chose has changed since you chose it.',
+    );
+    // Answered among the installations, which opened themselves, and never by
+    // signing in again.
+    await expect(section.locator('li.ai-candidate')).toHaveCount(2);
+    await expect(section.getByRole('button', { name: /Sign in/ })).toHaveCount(0);
+    await expect(
+      section.getByRole('button', {
+        name: 'Repair with a compatible copy for Diomedes',
+        exact: true,
+      }),
+    ).toBeVisible();
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
 test('Settings separates how old a check is from what the route can do now', async ({ page }) => {
   const verifiedAt = new Date(Date.now() - 86_400_000).toISOString();
   await serveStatus(page, [

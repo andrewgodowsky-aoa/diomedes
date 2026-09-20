@@ -149,9 +149,11 @@ export function AIConnections({
     // The bound installation is not the one that was bound. That is answered
     // among the installations, never by signing in again, so open them.
     if (installationConflict(failure)) setInstallsOpen((prev) => ({ ...prev, [engine]: true }));
-    // The account this route reached is not the one this route uses. The host
-    // records that on the connection, and the card has the words for it.
-    if (failure.code === 'ACCOUNT_ROUTE') void refreshStatus();
+    // Both of these say the record this card is drawn from is out of date: one
+    // about the installation, one about the account this route reached. So it
+    // is read again, which is also what fills the installations the line above
+    // just opened and the account-route explanation the card already owns.
+    if (installationConflict(failure) || failure.code === 'ACCOUNT_ROUTE') void refreshStatus();
   }
 
   function fail(engine: string, error: unknown): void {
