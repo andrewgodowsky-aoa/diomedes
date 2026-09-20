@@ -409,7 +409,7 @@ export function signingIn(watch: SignInWatch | undefined): boolean {
 export function signInSentence(watch: SignInWatch | undefined, name: string): string {
   if (!watch || watch.state === 'idle') return '';
   return watch.state === 'open'
-    ? `A ${name} sign-in window is open on this computer. Finish it there, or close it.`
+    ? `The ${name} sign-in window is open on this computer. Finish it there, or close it.`
     : `The ${name} sign-in window closed. Diomedes is checking this service again.`;
 }
 

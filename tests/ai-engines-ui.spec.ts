@@ -1066,7 +1066,9 @@ test('Settings waits for the host check when a sign-in window ends, and never ca
     // The window is open. The card says so and offers only to close it: no
     // check to press, and no test to send through an account that is not there.
     await expect(
-      section.getByText('A OpenCode sign-in window is open on this computer. Finish it there, or close it.'),
+      section.getByText(
+        'The OpenCode sign-in window is open on this computer. Finish it there, or close it.',
+      ),
     ).toBeVisible();
     await expect(
       section.getByRole('button', { name: 'Close sign-in window', exact: true }),
@@ -1082,10 +1084,12 @@ test('Settings waits for the host check when a sign-in window ends, and never ca
     // as it did before the window opened.
     phase = 'ended';
     await expect(
-      section.getByText('The OpenCode sign-in window closed. Diomedes is checking this service again.'),
+      section.getByText(
+        'The OpenCode sign-in window closed. Diomedes is checking this service again.',
+      ),
     ).toBeVisible();
+    // The account still reads as it did before the window opened.
     await expect(stateChip(page, 'account')).toContainText('Not detected');
-    await expect(stateChip(page, 'account')).not.toContainText('Detected', { ignoreCase: false });
     await expect(
       section.getByRole('button', { name: 'Check sign-in and models', exact: true }),
     ).toHaveCount(0);

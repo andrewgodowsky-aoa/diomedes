@@ -449,7 +449,7 @@ describe('waiting on a native sign-in window', () => {
   it('says a window is open, then that its check is running, and never that it worked', () => {
     const watching = advanceSignIn(undefined, open, opened);
     expect(signInSentence(watching, 'OpenCode')).toBe(
-      'A OpenCode sign-in window is open on this computer. Finish it there, or close it.',
+      'The OpenCode sign-in window is open on this computer. Finish it there, or close it.',
     );
     const settling = advanceSignIn(watching, { ...ended, checkedAt: CHECKED }, opened + 1_000);
     expect(signInSentence(settling, 'OpenCode')).toBe(
