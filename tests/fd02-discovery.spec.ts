@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import express from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -9,6 +9,19 @@ import type { Project } from '../shared/types';
 import type { ProspectDiscoveryRecord } from '../shared/discovery';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
+
+/**
+ * Open a Console destination. These tests were written against the fixed rail
+ * foot, which Everything replaced, so a view is reached through that menu and
+ * not through a button inside a navigation landmark. A row names its
+ * destination and then explains it, so the accessible name is matched from the
+ * front rather than exactly.
+ */
+const openDestination = async (page: Page, label: string) => {
+  await page.getByRole('button', { name: 'Everything', exact: true }).click();
+  await page.getByRole('menuitem', { name: new RegExp(`^${label}\\b`) }).click();
+};
+
 let app: Awaited<ReturnType<typeof createApp>>;
 let server: Server;
 let base: string;
@@ -85,10 +98,7 @@ test('a facilitator creates, corrects, classifies and exports a prospect without
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(base);
   await expect(page.locator('.console')).toBeVisible();
-  await page
-    .getByRole('navigation')
-    .getByRole('button', { name: 'Discovery', exact: true })
-    .click();
+  await openDestination(page, 'Discovery');
   await page.getByLabel('Business name', { exact: true }).fill('Harbor Workshop');
   await page.getByLabel('Goals, one per line').fill('Reduce repeated copying');
   await page
@@ -126,10 +136,7 @@ test('a facilitator creates, corrects, classifies and exports a prospect without
   expect(exported.text).toContain('The owner already has a quick review');
   expect(exported.text).toMatch(/not.a.weak.point/i);
   await page.reload();
-  await page
-    .getByRole('navigation')
-    .getByRole('button', { name: 'Discovery', exact: true })
-    .click();
+  await openDestination(page, 'Discovery');
   await expect(page.getByRole('heading', { name: 'Harbor Workshop', exact: true })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Meeting outcome', exact: true })).toHaveValue('not-a-weak-point');
   await page.setViewportSize({ width: 1024, height: 768 });

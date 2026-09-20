@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import packageInfo from '../package.json' with { type: 'json' };
 import express from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -8,6 +9,18 @@ import { createApp } from '../server/app';
 import type { Project } from '../shared/types';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
+
+/**
+ * Open a Console destination. These tests were written against the fixed rail
+ * foot, which Everything replaced, so a view is reached through that menu and
+ * not through a button inside a navigation landmark. A row names its
+ * destination and then explains it, so the accessible name is matched from the
+ * front rather than exactly.
+ */
+const openDestination = async (page: Page, label: string) => {
+  await page.getByRole('button', { name: 'Everything', exact: true }).click();
+  await page.getByRole('menuitem', { name: new RegExp(`^${label}\\b`) }).click();
+};
 let app: Awaited<ReturnType<typeof createApp>>;
 let server: Server;
 let base: string;
@@ -104,18 +117,12 @@ test('readiness shows independent unknown proof and refreshes saved status with 
   });
 
   await page.goto(base);
-  await page
-    .getByRole('navigation')
-    .getByRole('button', { name: 'Readiness', exact: true })
-    .click();
+  await openDestination(page, 'Readiness');
   await page
     .getByRole('navigation', { name: 'Open projects' })
     .getByRole('button', { name: 'North shop' })
     .click();
-  await page
-    .getByRole('navigation')
-    .getByRole('button', { name: 'Readiness', exact: true })
-    .click();
+  await openDestination(page, 'Readiness');
   await expect(page.getByText('Build current response', { exact: true })).toBeVisible();
   releaseStale();
   await expect(page.getByText('Build stale response', { exact: true })).toHaveCount(0);
@@ -156,7 +163,9 @@ test('readiness shows independent unknown proof and refreshes saved status with 
   });
   await page.getByRole('button', { name: 'Refresh status', exact: true }).click();
   await realResponse;
-  await expect(page.getByText('Build 0.1.4', { exact: true })).toBeVisible();
+  // The screen prints the running build, so the assertion reads it from the
+  // same place the app does rather than pinning the version it was written on.
+  await expect(page.getByText(`Build ${packageInfo.version}`, { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 1024, height: 768 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
