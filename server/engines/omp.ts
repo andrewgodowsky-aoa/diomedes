@@ -12,11 +12,11 @@ import {
   type TextResponse,
 } from './contract.js';
 import {
-  atStage,
   engineEnvironment,
   EngineError,
   openProcess,
   record,
+  staged,
   type EngineProcess,
   type ProcessFactory,
 } from './process.js';
@@ -30,21 +30,6 @@ const MODEL_PART = /^[A-Za-z0-9._:-]{1,120}$/;
 const SESSION_PART = /^[A-Za-z0-9_.-]{1,128}$/;
 /** A provider name is an identifier: short and printable, never an account or a key. */
 const PROVIDER_PART = /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/;
-/** A tool that never started reports that from whichever read first notices. */
-const STARTUP_CODES = ['LAUNCH_FAILED', 'PROCESS_EXITED', 'TIMEOUT'];
-/**
- * The stage an untagged failure belongs to. The child fails asynchronously, so
- * these codes name where they happened wherever they surface; a cleanup fault
- * carries the failure it is reported with, or stands alone.
- */
-function staged<T>(error: T, phase: SetupStage, primary?: unknown): T {
-  if (!(error instanceof EngineError) || error.stage) return error;
-  if (primary instanceof EngineError && primary.stage) return atStage(error, primary.stage);
-  if (error.code === 'CLEANUP_FAILED') return atStage(error, 'cleanup');
-  if (error.code === 'AUTH_REQUIRED') return atStage(error, 'provider-auth');
-  const starting = phase === 'launch' || phase === 'local-handshake';
-  return atStage(error, starting && STARTUP_CODES.includes(error.code) ? 'launch' : phase);
-}
 const TOOL_EVENT = /^tool_execution_/;
 const PROFILE_CONFIG = '# Diomedes-isolated oh-my-pi profile.\n{}\n';
 const OVERLAY_CONFIG =

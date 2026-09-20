@@ -66,11 +66,11 @@ import {
   type TextResponse,
 } from './contract.js';
 import {
-  atStage,
   capture,
   engineEnvironment,
   EngineError,
   record,
+  staged,
   stopped,
   text,
 } from './process.js';
@@ -97,21 +97,6 @@ export interface DevinAdapterDeps {
 }
 const protocolError = (detail: string) =>
   new EngineError('PROTOCOL_ERROR', `Devin ${detail}`, true, 'local-handshake');
-/** A tool that never started reports that from whichever read first notices. */
-const STARTUP_CODES = ['LAUNCH_FAILED', 'PROCESS_EXITED', 'TIMEOUT'];
-/**
- * The stage an untagged failure belongs to. The child fails asynchronously, so
- * these codes name where they happened wherever they surface; a cleanup fault
- * carries the failure it is reported with, or stands alone.
- */
-function staged<T>(error: T, phase: SetupStage, primary?: unknown): T {
-  if (!(error instanceof EngineError) || error.stage) return error;
-  if (primary instanceof EngineError && primary.stage) return atStage(error, primary.stage);
-  if (error.code === 'CLEANUP_FAILED') return atStage(error, 'cleanup');
-  if (error.code === 'AUTH_REQUIRED') return atStage(error, 'provider-auth');
-  const starting = phase === 'launch' || phase === 'local-handshake';
-  return atStage(error, starting && STARTUP_CODES.includes(error.code) ? 'launch' : phase);
-}
 /** Where the attempt has reached, so an untagged failure can name its stage. */
 type Phase = { at: SetupStage };
 /** A frame that answers the running turn: the response has begun. */

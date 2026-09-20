@@ -12,13 +12,13 @@ import {
   type TextResponse,
 } from './contract.js';
 import {
-  atStage,
   capture,
   cleanupFailed,
   engineEnvironment,
   EngineError,
   openProcess,
   record,
+  staged,
   type EngineProcess,
   type ProcessFactory,
 } from './process.js';
@@ -27,21 +27,6 @@ export const CLAUDE_VERSION = '2.1.252';
 const ACCOUNT_ROUTE = 'claude-code:claude.ai';
 /** A sign-in method is an identifier: short and printable, never an account or a token. */
 const AUTH_METHOD = /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/;
-/** A tool that never started reports that from whichever read first notices. */
-const STARTUP_CODES = ['LAUNCH_FAILED', 'PROCESS_EXITED', 'TIMEOUT'];
-/**
- * The stage an untagged failure belongs to. The child fails asynchronously, so
- * these codes name where they happened wherever they surface; a cleanup fault
- * carries the failure it is reported with, or stands alone.
- */
-function staged<T>(error: T, phase: SetupStage, primary?: unknown): T {
-  if (!(error instanceof EngineError) || error.stage) return error;
-  if (primary instanceof EngineError && primary.stage) return atStage(error, primary.stage);
-  if (error.code === 'CLEANUP_FAILED') return atStage(error, 'cleanup');
-  if (error.code === 'AUTH_REQUIRED') return atStage(error, 'provider-auth');
-  const starting = phase === 'launch' || phase === 'local-handshake';
-  return atStage(error, starting && STARTUP_CODES.includes(error.code) ? 'launch' : phase);
-}
 export function claudeArguments(): string[] {
   return [
     '--print',
