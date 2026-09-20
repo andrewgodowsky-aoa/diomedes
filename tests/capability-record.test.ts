@@ -9,7 +9,13 @@ import {
   type CapabilityRecord,
   type CapabilityRecordInput,
 } from '../shared/capability-record.js';
-import { gatherCapabilityRecordInput, render } from '../scripts/write-capability-record.js';
+import {
+  commitPresent,
+  engineAdapters,
+  gatherCapabilityRecordInput,
+  newestReleaseFrom,
+  render,
+} from '../scripts/write-capability-record.js';
 
 const read = (name: string) => readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
 const lf = (text: string) => text.replace(/\r\n/g, '\n');
@@ -100,11 +106,14 @@ describe('capability record builder', () => {
     expect(routeOf(record, 'devin').states.packaged).toBeNull();
   });
 
-  it('says the release evidence is release-level and names the commit it was built from', () => {
+  it('says the candidate evidence is build-level and names the commit it was built from', () => {
     const record = buildCapabilityRecord(
       input({ release: release({ opencode: TESTED_VERSIONS.opencode }) }),
     );
-    expect(record.release?.note).toMatch(/release-level/i);
+    expect(record.release?.note).toMatch(/build-level/i);
+    // The record is written when a build is packaged here. Whether it was then
+    // published is a fact no candidate record carries.
+    expect(record.release?.note).toMatch(/does not record whether this build was published/i);
     expect(routeOf(record, 'opencode').states.packaged?.note).toContain('b'.repeat(40));
   });
 
@@ -200,6 +209,91 @@ describe('committed capability record', () => {
         /Diomedes (ships|includes|provides|bundles|runs) (an? )?(engine|model)\b/i,
       );
     }
+  });
+});
+
+describe('what the record derives instead of typing by hand', () => {
+  const registry = (lines: string[]) =>
+    ['      adapter: (engine, file, cwd) => {', ...lines, '      },'].join('\n');
+
+  it('reads each route from the adapter registry the service constructs', () => {
+    const source = registry([
+      "        if (engine === 'claude-code') return new ClaudeAdapter(file, cwd);",
+      "        if (engine === 'opencode') return new OpenCodeAdapter(file, cwd);",
+      '        return new OmpAdapter(file, cwd);',
+    ]);
+    expect(engineAdapters(source, ['claude-code', 'opencode', 'oh-my-pi'])).toEqual({
+      'claude-code': 'ClaudeAdapter',
+      opencode: 'OpenCodeAdapter',
+      // The engine the registry does not name is the one its last line returns.
+      'oh-my-pi': 'OmpAdapter',
+    });
+  });
+
+  it('names no adapter for an engine no registry line constructs', () => {
+    const source = registry([
+      "        if (engine === 'claude-code') return new ClaudeAdapter(file, cwd);",
+      "        if (engine === 'opencode') return new OpenCodeAdapter(file, cwd);",
+    ]);
+    expect(engineAdapters(source, ['claude-code', 'opencode', 'devin'])).toEqual({
+      'claude-code': 'ClaudeAdapter',
+      opencode: 'OpenCodeAdapter',
+      devin: null,
+    });
+  });
+
+  it('reports every route in this tree as implemented, from that registry', async () => {
+    const gathered = await gatherCapabilityRecordInput(committed.generatedFrom.commit);
+    for (const route of gathered.routes) expect(route.source, route.engine).toBe('implemented');
+  });
+});
+
+describe('the commit a check run may trust', () => {
+  it('finds the commit the committed record names in this repository', async () => {
+    expect(await commitPresent(committed.generatedFrom.commit)).toBe(true);
+  });
+
+  it('does not find a commit this repository never held', async () => {
+    expect(await commitPresent('a'.repeat(40))).toBe(false);
+  });
+});
+
+describe('which recorded build the record may cite', () => {
+  const candidate = (overrides: Record<string, unknown>) => ({
+    schemaVersion: 1,
+    named: true,
+    releaseId: 'diomedes-0.1.4-named',
+    appVersion: '0.1.4',
+    channel: 'experimental',
+    recordedAt: '2026-09-01T00:00:00.000Z',
+    build: { baseCommit: 'b'.repeat(40) },
+    protocols: { engines: { testedVersions: { opencode: '1.18.4' } } },
+    ...overrides,
+  });
+
+  it('ignores a newer candidate that was never named', () => {
+    // scripts/write-candidate-record.ts names a candidate only when its source
+    // was committed, and scripts/write-release-assets.mjs refuses an unnamed
+    // one. A local build of uncommitted source must not move this record.
+    const chosen = newestReleaseFrom([
+      { file: 'evidence/release-candidates/named.json', value: candidate({}) },
+      {
+        file: 'evidence/release-candidates/local.json',
+        value: candidate({
+          named: false,
+          releaseId: 'diomedes-0.1.5-local',
+          recordedAt: '2026-09-20T00:00:00.000Z',
+        }),
+      },
+    ]);
+    expect(chosen?.releaseId).toBe('diomedes-0.1.4-named');
+  });
+
+  it('says packaged means packaged and recorded here, never published', () => {
+    // Nothing in a candidate record states that the build left this computer,
+    // so the state this record defines may not claim it did.
+    expect(committed.states.packaged).toMatch(/packaged and recorded/i);
+    expect(committed.states.packaged).not.toMatch(/publish/i);
   });
 });
 

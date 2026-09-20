@@ -11,7 +11,9 @@ import type { ExternalEngine } from './types.js';
  * one, and which keeps three states apart that prose kept collapsing:
  *
  * - `source` — the adapter is in this tree.
- * - `packaged` — a release evidence record names it.
+ * - `packaged` — a named candidate record names it, so it is inside a build
+ *   that was packaged here. Whether that build was published is a fact no file
+ *   in this tree holds, so this state does not claim it.
  * - `cleanMachine` — it was installed and used on a machine other than the one
  *   that built it.
  *
@@ -131,8 +133,11 @@ export interface CapabilityRecord {
 
 const STATE_MEANINGS = {
   source: 'The code is in this source tree and its tests pass there.',
+  // A candidate record is written when a build is packaged here. Nothing in it
+  // says the build then left this computer, so this state may not say so
+  // either: publication is a separate fact, and no file in this tree holds it.
   packaged:
-    'A release evidence record names this, so the code is inside a build someone can install.',
+    'A named candidate record names this, so the code is inside a build that was packaged and recorded here.',
   cleanMachine:
     'That exact build was installed and used on a machine other than the one that built it.',
 } as const;
@@ -151,7 +156,7 @@ export function buildCapabilityRecord(input: CapabilityRecordInput): CapabilityR
       release && named === route.reviewedVersion
         ? {
             release: release.releaseId,
-            note: `The release record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit ${release.baseCommit}.`,
+            note: `The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit ${release.baseCommit}.`,
           }
         : null;
     return {
@@ -188,7 +193,7 @@ export function buildCapabilityRecord(input: CapabilityRecordInput): CapabilityR
           signing: { application: release.applicationSigning, installer: release.installerSigning },
           evidence: release.evidencePath,
           appVersionMatchesSource: release.appVersion === input.appVersion,
-          note: 'This evidence is release-level, not route-level. It records build identity, installer bytes, reviewed tool versions and test counts. It records no request through any adapter route.',
+          note: 'This evidence is build-level, not route-level. It records build identity, installer bytes, reviewed tool versions and test counts. It records no request through any adapter route, and it does not record whether this build was published.',
         }
       : null,
     routes,
@@ -218,7 +223,7 @@ function notProven(
     );
   if (release && (release.installerSigning ?? '').toLowerCase() !== 'signed')
     sentences.push(
-      'The published installer is unsigned, so a matching checksum proves the bytes and not the publisher.',
+      'The recorded installer is unsigned, so a matching checksum proves the bytes and not the publisher.',
     );
   return sentences;
 }
