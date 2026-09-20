@@ -1502,3 +1502,62 @@ test('Console drops a late source listing when the person changes threads', asyn
     await page.unrouteAll({ behavior: 'wait' });
   }
 });
+
+/**
+ * The support preview is the payload, read before it is shared. The person sees
+ * the exact characters the host sent, nothing reaches the clipboard until Copy
+ * is pressed, and what Copy writes is the string that was on screen.
+ *
+ * The served text carries its own `generated:` timestamp, so it is captured
+ * from the response this page received rather than read again afterwards.
+ */
+test('Settings shows the support information before it is shared, and copies exactly that', async ({
+  page,
+}) => {
+  const writes = () =>
+    page.evaluate(() => (window as unknown as { __clipboardWrites: string[] }).__clipboardWrites);
+  await page.addInitScript(() => {
+    const recorded: string[] = [];
+    (window as unknown as { __clipboardWrites: string[] }).__clipboardWrites = recorded;
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: (value: string) => {
+          recorded.push(value);
+          return Promise.resolve();
+        },
+      },
+    });
+  });
+  await page.goto(baseURL);
+  await expect(page.locator('.console')).toBeVisible();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'About', exact: true }).click();
+
+  const served = page.waitForResponse((response) =>
+    response.url().includes('/api/support/bundle'),
+  );
+  await page.getByRole('button', { name: 'Review support information', exact: true }).click();
+  const sent = ((await (await served).json()) as { text: string }).text;
+
+  const dialog = page.getByRole('dialog', { name: 'Support information' });
+  await expect(dialog).toBeVisible();
+  const shown = (await dialog.locator('pre.code').textContent()) ?? '';
+  // What is on screen is what the host sent, character for character, and it
+  // names the build this app is actually running.
+  expect(shown).toBe(sent);
+  expect(shown).toMatch(/^build: .+$/m);
+
+  // Reading it copies nothing.
+  expect(await writes()).toEqual([]);
+
+  await dialog.getByRole('button', { name: 'Copy', exact: true }).click();
+  await expect.poll(writes).toEqual([shown]);
+  // The note belongs to the dialog while the dialog is open, and is said once.
+  await expect(page.getByText('Copied.', { exact: true })).toHaveCount(1);
+  await expect(dialog.getByText('Copied.', { exact: true })).toHaveCount(1);
+
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText('Copied.', { exact: true })).toHaveCount(0);
+});

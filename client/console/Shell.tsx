@@ -632,6 +632,9 @@ export function Shell({
     if (!state || state.project.id !== projectId) return;
     if (!selected) {
       if (threads.length > 0 || openedForStart.current === projectId) return;
+      // A carried ask is already opening one above; waiting for it is what keeps
+      // a project from being given two empty threads in the same pass.
+      if (openedForAsk.current === projectId) return;
       openedForStart.current = projectId;
       void newThread();
       return;
