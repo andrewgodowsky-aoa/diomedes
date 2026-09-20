@@ -60,6 +60,8 @@ export interface CapabilityRouteInput {
   displayName: string;
   routeLabel: string;
   taskScope: string;
+  /** What the native tool would do on its own and does not do through here. */
+  limits: string;
   reviewedVersion: string;
   /** Whether Diomedes offers a guided install of a pinned private copy. */
   guidedInstall: boolean;
@@ -92,6 +94,7 @@ export interface CapabilityRouteRecord {
   displayName: string;
   routeLabel: string;
   taskScope: string;
+  limits: string;
   reviewedVersion: string;
   guidedInstall: boolean;
   states: {
@@ -156,6 +159,7 @@ export function buildCapabilityRecord(input: CapabilityRecordInput): CapabilityR
       displayName: route.displayName,
       routeLabel: route.routeLabel,
       taskScope: route.taskScope,
+      limits: route.limits,
       reviewedVersion: route.reviewedVersion,
       guidedInstall: route.guidedInstall,
       states: {

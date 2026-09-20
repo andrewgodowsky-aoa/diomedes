@@ -33,6 +33,7 @@ const input = (overrides: Partial<CapabilityRecordInput> = {}): CapabilityRecord
     displayName: ENGINE_NAMES[engine],
     routeLabel: ENGINE_ROUTE_PROFILES[engine].routeLabel,
     taskScope: ENGINE_ROUTE_PROFILES[engine].taskScope,
+    limits: ENGINE_ROUTE_PROFILES[engine].limits,
     reviewedVersion: TESTED_VERSIONS[engine],
     guidedInstall: false,
     source: 'implemented' as const,
@@ -75,6 +76,7 @@ describe('capability record builder', () => {
       expect(route.displayName, engine).toBe(ENGINE_NAMES[engine]);
       expect(route.routeLabel, engine).toBe(ENGINE_ROUTE_PROFILES[engine].routeLabel);
       expect(route.taskScope, engine).toBe(ENGINE_ROUTE_PROFILES[engine].taskScope);
+      expect(route.limits, engine).toBe(ENGINE_ROUTE_PROFILES[engine].limits);
       expect(route.reviewedVersion, engine).toBe(TESTED_VERSIONS[engine]);
     }
   });
@@ -219,7 +221,9 @@ describe('README adapter table', () => {
       const row = rows.find((cells) => cells[0] === route.displayName);
       expect(row, route.engine).toBeDefined();
       expect(row?.[1], route.engine).toBe(route.routeLabel);
-      expect(row?.[2], route.engine).toBe(route.taskScope);
+      // The table writes the scope and its limits as one cell; the record keeps
+      // them apart so a caption can use the scope on its own.
+      expect(row?.[2], route.engine).toBe(`${route.taskScope}. ${route.limits}`);
       expect(row?.[3], route.engine).toBe(route.reviewedVersion);
     }
   });

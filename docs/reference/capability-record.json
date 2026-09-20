@@ -3,7 +3,7 @@
   "kind": "diomedes-capability-record",
   "appVersion": "0.1.4",
   "generatedFrom": {
-    "commit": "95c324f33a97d6796c9da60d5b1081eeaf1d46f8",
+    "commit": "a26b25e68d702e328897d31c9eb0f78f4179278a",
     "note": "The commit checked out when this file was written. The commit that carries the file is its child."
   },
   "states": {
@@ -32,7 +32,8 @@
       "engine": "claude-code",
       "displayName": "Claude Code",
       "routeLabel": "Claude subscription, signed in to Claude Code",
-      "taskScope": "Text answers and reviewed proposals. Tools, MCP and slash commands are off.",
+      "taskScope": "Text and reviewed proposals",
+      "limits": "Tools, MCP and slash commands are off.",
       "reviewedVersion": "2.1.252",
       "guidedInstall": true,
       "states": {
@@ -48,7 +49,8 @@
       "engine": "opencode",
       "displayName": "OpenCode",
       "routeLabel": "OpenCode Go",
-      "taskScope": "Text answers and reviewed proposals. Tools, plugins and MCP are off.",
+      "taskScope": "Text and reviewed proposals",
+      "limits": "Tools, plugins and MCP are off.",
       "reviewedVersion": "1.18.4",
       "guidedInstall": true,
       "states": {
@@ -64,7 +66,8 @@
       "engine": "oh-my-pi",
       "displayName": "oh-my-pi",
       "routeLabel": "OpenAI API key, in a separate oh-my-pi profile",
-      "taskScope": "Text answers and reviewed proposals. Tools, extensions and skills are off.",
+      "taskScope": "Text and reviewed proposals",
+      "limits": "Tools, extensions and skills are off.",
       "reviewedVersion": "18.0.6",
       "guidedInstall": true,
       "states": {
@@ -80,7 +83,8 @@
       "engine": "cursor",
       "displayName": "Cursor",
       "routeLabel": "Cursor account, signed in through the Cursor CLI",
-      "taskScope": "Text answers and reviewed proposals in ask mode. A tool event stops the request.",
+      "taskScope": "Text and reviewed proposals",
+      "limits": "Ask mode. A tool event stops the request.",
       "reviewedVersion": "2026.08.11",
       "guidedInstall": false,
       "states": {
@@ -96,7 +100,8 @@
       "engine": "devin",
       "displayName": "Devin",
       "routeLabel": "Devin account, signed in through its browser flow",
-      "taskScope": "Text answers and reviewed proposals in ask mode. A tool event stops the request.",
+      "taskScope": "Text and reviewed proposals",
+      "limits": "Ask mode. A tool event stops the request.",
       "reviewedVersion": "3000.10.23",
       "guidedInstall": false,
       "states": {

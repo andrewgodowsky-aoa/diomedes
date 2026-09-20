@@ -9,7 +9,8 @@
  * Sources, one per fact:
  *   appVersion        package.json
  *   route label,
- *   task scope        shared/engine-routes.ts
+ *   task scope,
+ *   limits            shared/engine-routes.ts
  *   display name      shared/engines.ts
  *   reviewed version  server/engines/service.ts (TESTED_VERSIONS)
  *   guided install    server/engines/install.ts (the installer's own offer)
@@ -126,6 +127,7 @@ export async function gatherCapabilityRecordInput(
       displayName: ENGINE_NAMES[engine],
       routeLabel: ENGINE_ROUTE_PROFILES[engine].routeLabel,
       taskScope: ENGINE_ROUTE_PROFILES[engine].taskScope,
+      limits: ENGINE_ROUTE_PROFILES[engine].limits,
       reviewedVersion: TESTED_VERSIONS[engine],
       guidedInstall: guided[engine] ?? false,
       // The adapter is in this tree, which is the only thing this state claims.
