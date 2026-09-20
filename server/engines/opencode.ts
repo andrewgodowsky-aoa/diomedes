@@ -20,12 +20,17 @@ import {
   stopped,
   text,
 } from './process.js';
+import { SseLimitError, SseParser, type SseEvent } from './sse.js';
 import { killOwnedProcess } from '../integrations.js';
 
 export const OPENCODE_VERSION = '1.18.4';
 export const OPENCODE_ACCOUNT_ROUTE = 'opencode:opencode-go';
 const MAX_JSON_BYTES = 512 * 1024;
 const MAX_EVENT_BYTES = 4 * 1024 * 1024;
+// One event, before the blank line that ends it. The whole-stream budget above
+// still applies; this is the tighter bound, so a single hostile event is
+// refused long before four megabytes of legitimate stream would be.
+const MAX_SSE_EVENT_BYTES = 1024 * 1024;
 // A cold `opencode serve` answers in about two seconds here, but the setup
 // screen checks four engines at once and a first start on a slow disk or a
 // busy machine has been seen past fifteen; the budget is generous because the
@@ -519,8 +524,10 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       if (!eventResponse.body)
         throw new EngineError('PROTOCOL_ERROR', 'OpenCode did not provide an event stream.', true);
       const reader = eventResponse.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+      // Framing follows the specification, so LF, CRLF and CR streams, joined
+      // data fields and comments all read the same. Nothing below relaxes:
+      // an event that never reached its blank line is never dispatched.
+      const parser = new SseParser({ maxBufferBytes: MAX_SSE_EVENT_BYTES });
       let answer = '';
       let bytes = 0;
       let assistantMessageId: string | undefined;
@@ -533,16 +540,17 @@ export class OpenCodeAdapter implements TextEngineAdapter {
           bytes += part.value.byteLength;
           if (bytes > MAX_EVENT_BYTES)
             throw new EngineError('OUTPUT_LIMIT', 'OpenCode exceeded the response limit.', true);
-          buffer += decoder.decode(part.value, { stream: true });
-          let end: number;
-          while ((end = buffer.indexOf('\n\n')) >= 0) {
-            const frame = buffer.slice(0, end);
-            buffer = buffer.slice(end + 2);
-            const line = frame.split(/\r?\n/).find((row) => row.startsWith('data:'));
-            if (!line) continue;
+          let frames: SseEvent[];
+          try {
+            frames = parser.push(part.value);
+          } catch (error) {
+            if (!(error instanceof SseLimitError)) throw error;
+            throw new EngineError('OUTPUT_LIMIT', 'OpenCode exceeded the response limit.', true);
+          }
+          for (const frame of frames) {
             let event: Json;
             try {
-              event = object(JSON.parse(line.slice(5).trim()));
+              event = object(JSON.parse(frame.data));
             } catch {
               throw new EngineError(
                 'PROTOCOL_ERROR',

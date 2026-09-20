@@ -39,7 +39,7 @@ const request: TextRequest = {
   documents: [],
 };
 
-async function fixture(mode = 'ok', startupTimeoutMs = 5_000) {
+async function fixture(mode = 'ok', startupTimeoutMs = 5_000, framing = 'lf') {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes opencode '));
   roots.push(root);
   const file = path.join(root, 'fixture.mjs');
@@ -47,14 +47,33 @@ async function fixture(mode = 'ok', startupTimeoutMs = 5_000) {
     file,
     `import http from 'node:http';
 import fs from 'node:fs';
-const mode=${JSON.stringify(mode)}; let stream;
-const send=(res,value)=>{res.write('data: '+JSON.stringify(value)+'\\n\\n')};
+const mode=${JSON.stringify(mode)}; const framing=${JSON.stringify(framing)}; let stream;
+const catalogues={
+ zen:{connected:['opencode'],all:[{id:'opencode',models:{'zen-model':{id:'zen-model',name:'Zen model'}}}]},
+ none:{connected:[],all:[]},
+ 'zero-models':{connected:['opencode-go'],all:[{id:'opencode-go',models:{}}]},
+ 'wrong-model':{connected:['opencode-go'],all:[{id:'opencode-go',models:{'other-model':{id:'other-model',name:'Other model'}}}]},
+ 'dirty-route':{connected:['opencode','someone@example.com','a'.repeat(200),'',...Array.from({length:40},(v,i)=>'provider-'+i)],all:[]}};
+const catalogue=catalogues[mode]||{connected:['opencode-go'],all:[{id:'opencode-go',models:{'go-model':{id:'go-model',name:'Go model',description:'fixture'}}}]};
+// The same events, framed the way a conforming stream is allowed to frame them.
+const frame=payload=>{
+ if(framing==='crlf')return 'data: '+payload+'\\r\\n\\r\\n';
+ if(framing==='cr')return 'data: '+payload+'\\r\\r';
+ if(framing==='multiline')return 'data: '+payload.slice(0,1)+'\\ndata: '+payload.slice(1)+'\\n\\n';
+ if(framing==='comments')return ': heartbeat\\nx-vendor: 1\\nid: 7\\ndata: '+payload+'\\n\\n';
+ return 'data: '+payload+'\\n\\n';};
+// 'split' puts the carriage return at the end of one write and its line feed at
+// the start of the next, so the writes are chained to keep their order.
+let tail=Promise.resolve();
+const send=(res,value)=>{const payload=JSON.stringify(value);
+ if(framing!=='split'){res.write(frame(payload));return;}
+ tail=tail.then(()=>new Promise(done=>{res.write('data: '+payload+'\\r',()=>{res.write('\\n\\r\\n');done();});}));};
 const server=http.createServer(async(req,res)=>{
  const auth=req.headers.authorization||''; if(!auth.startsWith('Basic ')){res.writeHead(401);return res.end();}
- if(req.url==='/provider'){if(mode==='start-hang')return; res.setHeader('content-type','application/json');return res.end(JSON.stringify(mode==='zen'?{connected:['opencode'],all:[{id:'opencode',models:{'zen-model':{id:'zen-model',name:'Zen model'}}}]}:{connected:['opencode-go'],all:[{id:'opencode-go',models:{'go-model':{id:'go-model',name:'Go model',description:'fixture'}}}]}));}
+ if(req.url==='/provider'){if(mode==='local-401'){res.writeHead(401);return res.end('the local server rejected this password');} if(mode==='start-hang')return; res.setHeader('content-type','application/json');return res.end(JSON.stringify(catalogue));}
  if(req.url==='/event'){res.writeHead(200,{'content-type':'text/event-stream'});stream=res;send(res,{type:'server.connected',properties:{}});return;}
- if(req.url==='/session'&&req.method==='POST'){let b='';for await(const c of req)b+=c;res.setHeader('content-type','application/json');return res.end(JSON.stringify({id:'session-1'}));}
- if(req.url==='/session/session-1/prompt_async'){res.writeHead(204);res.end(); if(mode==='hang')return; setTimeout(()=>{if(!stream)return; if(mode==='malformed'){stream.write('data: {bad\\n\\n');return;} if(mode==='retry'){send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'retry',attempt:1,message:'retry',next:1}}});return;} if(mode==='tools'){send(stream,{type:'message.part.updated',properties:{part:{sessionID:'session-1',messageID:'assistant-1',type:'tool',text:''}}});return;} if(mode==='stream-drop'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); stream.write('data: '+JSON.stringify({type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}})+'\\n\\n',()=>{if(stream.socket)stream.socket.destroy();}); return;} if(mode==='noise'){send(stream,{type:'message.updated',properties:{info:{id:'noise',sessionID:'other-session',role:'assistant',providerID:'other',modelID:'other'}}});} const provider=mode==='mismatch'?'other':'opencode-go'; send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Answer'}}); send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1,completed:2},finish:'stop'}}}); send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'idle'}}});},5);return;}
+ if(req.url==='/session'&&req.method==='POST'){let b='';for await(const c of req)b+=c; if(mode==='upstream-401'){res.writeHead(401);return res.end('this account is not authorized for that model');} res.setHeader('content-type','application/json');return res.end(JSON.stringify({id:'session-1'}));}
+ if(req.url==='/session/session-1/prompt_async'){if(mode==='dispatch-500'){res.writeHead(500);return res.end('the server failed');} if(mode==='usage-429'){res.writeHead(429);return res.end('rate limit exceeded for this account');} res.writeHead(204);res.end(); if(mode==='hang')return; setTimeout(()=>{if(!stream)return; if(mode==='malformed'){stream.write('data: {bad\\n\\n');return;} if(mode==='retry'){send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'retry',attempt:1,message:'retry',next:1}}});return;} if(mode==='tools'){send(stream,{type:'message.part.updated',properties:{part:{sessionID:'session-1',messageID:'assistant-1',type:'tool',text:''}}});return;} if(mode==='stream-drop'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); stream.write('data: '+JSON.stringify({type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}})+'\\n\\n',()=>{if(stream.socket)stream.socket.destroy();}); return;} if(mode==='noise'){send(stream,{type:'message.updated',properties:{info:{id:'noise',sessionID:'other-session',role:'assistant',providerID:'other',modelID:'other'}}});} const provider=mode==='mismatch'?'other':'opencode-go'; send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Answer'}}); if(mode==='truncated'){stream.write('data: {"type":"session.status","properties":{"sessionID":"session-1"',()=>{if(stream.socket)stream.socket.destroy();});return;} send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1,completed:2},finish:'stop'}}}); send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'idle'}}});},5);return;}
  if(req.url==='/session/session-1/abort'||req.url==='/session/session-1'){fs.appendFileSync('drop-seen.log',req.url+'\\n');res.writeHead(200);return res.end('true');}
  res.writeHead(404);res.end();
 }); server.listen(Number(process.argv[2]),'127.0.0.1');`,
@@ -120,6 +139,45 @@ describe('OpenCode 1.18.4 authenticated text route', () => {
   it('ignores events belonging to another session', async () => {
     const { adapter } = await fixture('noise');
     await expect(adapter.generate(request)).resolves.toMatchObject({ text: 'Answer' });
+  });
+  it.each([
+    ['line feeds', 'lf'],
+    ['carriage return line feeds', 'crlf'],
+    ['carriage returns', 'cr'],
+    ['a line ending split across two chunks', 'split'],
+    ['one event spread over several data fields', 'multiline'],
+    ['comments and fields this route does not read', 'comments'],
+  ])('reads a stream framed with %s', async (_description, framing) => {
+    const { adapter } = await fixture('ok', 5_000, framing);
+    const deltas: string[] = [];
+    await expect(
+      adapter.generate({ ...request, onDelta: (value) => deltas.push(value) }),
+    ).resolves.toMatchObject({ text: 'Answer' });
+    expect(deltas).toEqual(['Answer']);
+  });
+  it('still refuses a different provider or model under carriage return line feeds', async () => {
+    const { adapter } = await fixture('mismatch', 5_000, 'crlf');
+    await expect(adapter.generate(request)).rejects.toMatchObject({ code: 'POLICY_MISMATCH' });
+  });
+  it('still ignores another session under carriage return line feeds', async () => {
+    const { adapter } = await fixture('noise', 5_000, 'crlf');
+    await expect(adapter.generate(request)).resolves.toMatchObject({ text: 'Answer' });
+  });
+  it('never completes on a stream truncated inside an event', async () => {
+    const { adapter, root } = await fixture('truncated');
+    const deltas: string[] = [];
+    const outcome = await adapter
+      .generate({ ...request, onDelta: (value) => deltas.push(value) })
+      .then(
+        () => ({ resolved: true as const }),
+        (error: unknown) => ({ error }),
+      );
+    // The last frame never reached its blank line, so it is not an event and
+    // the half-read status can never be read as a finished answer.
+    expect(outcome).toHaveProperty('error');
+    expect(deltas).toEqual(['Answer']);
+    const seen = await fs.readFile(path.join(root, 'drop-seen.log'), 'utf8');
+    expect(seen).toContain('/session/session-1/abort');
   });
   it.each(['retry', 'tools', 'mismatch', 'malformed'])(
     'rejects %s without accepting output',
