@@ -202,7 +202,7 @@ export class EngineInstaller {
     engine: ExternalEngine,
     consent: boolean,
     signal?: AbortSignal,
-    _options: { repair?: boolean } = {},
+    options: { repair?: boolean } = {},
   ) {
     if (!consent)
       throw new EngineError(
@@ -225,7 +225,20 @@ export class EngineInstaller {
         await verifyManagedBinary(this.root, engine);
         return { detail: 'This managed version is already installed. Recheck its connection.' };
       } catch (error) {
-        if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+        const missing = error instanceof Error && 'code' in error && error.code === 'ENOENT';
+        if (!missing) {
+          // A private copy that no longer matches its reviewed release has no
+          // way back without this. Without consent to repair it, the refusal
+          // stands rather than silently replacing a file someone may be using.
+          if (!options.repair) throw error;
+          // Set it aside inside Diomedes's own installed/ tree, still never
+          // launched, so the destination is either empty or verified — never
+          // half-written — if the replacement is interrupted.
+          await fs.rename(
+            destination,
+            `${destination}.quarantined-${new Date().toISOString().replace(/[:.]/g, '-')}`,
+          );
+        }
       }
       const installRoot = path.join(this.root, 'installed');
       await fs.mkdir(installRoot, { recursive: true });

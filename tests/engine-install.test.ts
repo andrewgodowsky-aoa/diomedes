@@ -71,6 +71,68 @@ describe('selected official installation and native login', () => {
     expect(fetcher).not.toHaveBeenCalled();
     expect(await fs.readFile(file, 'utf8')).toBe('fixture existing binary');
   });
+  it('repairs a changed managed copy by setting it aside, never by launching it', async () => {
+    const root = await setup(),
+      file = managedBinary(root, 'oh-my-pi');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, 'fixture tampered managed binary');
+    const fetcher = vi.fn<typeof fetch>(async () => new Response('not the pinned release'));
+    const installer = new EngineInstaller(root, { fetch: fetcher, platform: 'win32', arch: 'x64' });
+    // Repair takes the normal pinned path: the download must still match the
+    // reviewed digest, so a wrong payload activates nothing.
+    await expect(
+      installer.install('oh-my-pi', true, undefined, { repair: true }),
+    ).rejects.toMatchObject({ code: 'INSTALL_CHECKSUM' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    // The bad copy is set aside inside Diomedes's own tree, not deleted and
+    // not left where anything could run it.
+    const kept = await fs.readdir(path.dirname(file));
+    expect(kept.some((name) => /\.quarantined-/.test(name))).toBe(true);
+    expect(kept).not.toContain(path.basename(file));
+    const quarantined = kept.find((name) => /\.quarantined-/.test(name))!;
+    expect(await fs.readFile(path.join(path.dirname(file), quarantined), 'utf8')).toBe(
+      'fixture tampered managed binary',
+    );
+  });
+
+  it('refuses a changed managed copy without repair, and leaves it exactly where it was', async () => {
+    const root = await setup(),
+      fetcher = vi.fn<typeof fetch>(),
+      file = managedBinary(root, 'oh-my-pi');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, 'fixture existing binary');
+    const installer = new EngineInstaller(root, { fetch: fetcher, platform: 'win32', arch: 'x64' });
+    await expect(installer.install('oh-my-pi', true)).rejects.toMatchObject({
+      code: 'INSTALL_CHECKSUM',
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(await fs.readFile(file, 'utf8')).toBe('fixture existing binary');
+    expect(await fs.readdir(path.dirname(file))).toEqual([path.basename(file)]);
+  });
+
+  it('leaves no partial destination when a repair is interrupted mid-download', async () => {
+    const root = await setup(),
+      controller = new AbortController(),
+      file = managedBinary(root, 'claude-code');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, 'fixture tampered claude');
+    const fetcher: typeof fetch = async (_url, options) =>
+      new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new Error('aborted')), {
+          once: true,
+        });
+        controller.abort();
+      });
+    const installer = new EngineInstaller(root, { fetch: fetcher, platform: 'win32', arch: 'x64' });
+    await expect(
+      installer.install('claude-code', true, controller.signal, { repair: true }),
+    ).rejects.toMatchObject({ code: 'CANCELLED' });
+    // Either nothing at the destination or a verified file: never a half one.
+    await expect(fs.access(file)).rejects.toMatchObject({ code: 'ENOENT' });
+    const left = await fs.readdir(path.dirname(file));
+    expect(left.every((name) => /\.quarantined-/.test(name))).toBe(true);
+  });
+
   it('cancels a waiting download and leaves no activated or partial installation', async () => {
     const root = await setup(),
       controller = new AbortController();
