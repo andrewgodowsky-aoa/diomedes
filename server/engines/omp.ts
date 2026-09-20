@@ -14,6 +14,7 @@ import {
 import {
   engineEnvironment,
   EngineError,
+  failureKind,
   openProcess,
   record,
   staged,
@@ -59,15 +60,18 @@ export function ompArguments(overlayPath: string): string[] {
  * fault keep the stage they were seen at, so neither is read as a sign-in.
  */
 function failure(value: unknown, stage: SetupStage): EngineError {
-  const text = JSON.stringify(value);
-  if (/rate.?limit|usage.?limit|quota|overloaded|insufficient/i.test(text))
+  // Read from the frame's own fields rather than from the serialised frame,
+  // where `auth` inside `authority` turned a certificate or proxy fault into
+  // sign-in advice, and a stray number or word decided the rest.
+  const kind = failureKind(value);
+  if (kind === 'limited')
     return new EngineError(
       'USAGE_LIMIT',
       'oh-my-pi reported a usage or service limit. No account or model was substituted.',
       true,
       stage,
     );
-  if (/auth|login|sign.?in|unauthorized|unauthenticated|api.?key/i.test(text))
+  if (kind === 'denied')
     return new EngineError(
       'AUTH_REQUIRED',
       'oh-my-pi needs native provider authentication. Recheck the isolated profile before sending.',

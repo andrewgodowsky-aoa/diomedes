@@ -80,6 +80,108 @@ export function abortFailure(reason: unknown, timeoutDetail: string): EngineErro
 /** The sentence an owned process uses whenever a time limit, not a person, ended it. */
 export const PROCESS_TIMEOUT_DETAIL =
   'The tool did not finish within the time limit. Recheck before starting another request.';
+
+// --- what a failure payload says it is ---------------------------------------------------------
+//
+// A refusal is read from the fields a payload actually uses to say what went
+// wrong, never from the payload serialised and searched for a word. Serialising
+// let an elapsed time of 403, a token count, a line number or a stack trace
+// decide what a person was told, and `auth` inside `authority` sent someone with
+// an enterprise certificate problem to sign in again.
+
+/** Keys whose value is a machine-readable identity for the failure. */
+const IDENTITY_KEYS = new Set(['name', 'code', 'type', 'kind', 'subtype', 'errortype', 'errorcode']);
+/** Keys whose value is an HTTP status. */
+const STATUS_KEYS = new Set(['status', 'statuscode', 'httpstatus']);
+/** Keys whose value is free text somebody wrote for a person to read. */
+const TEXT_KEYS = new Set(['message', 'detail', 'description', 'errormessage', 'error', 'reason']);
+/** An identity compared without punctuation: `ProviderAuthError` and `provider_auth_error` are one word. */
+const asIdentity = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+/** What a failure payload said about itself, gathered from its named fields only. */
+export interface FailureFacts {
+  /** Machine-readable identities, punctuation removed. */
+  identities: string[];
+  /** HTTP statuses the payload named as such. */
+  statuses: number[];
+  /** Free text, matched only with whole words. */
+  texts: string[];
+}
+
+/**
+ * Read a payload's named fields, to a bounded depth and node count so a hostile
+ * or merely enormous payload cannot cost more than a glance. A bare string —
+ * `errors: ['rate_limit_error']`, `error: 'unauthorized'` — counts as both an
+ * identity and text, because tools use it as both.
+ */
+export function failureFacts(value: unknown): FailureFacts {
+  const facts: FailureFacts = { identities: [], statuses: [], texts: [] };
+  let budget = 96;
+  const bare = (item: string) => {
+    facts.identities.push(asIdentity(item));
+    facts.texts.push(item.slice(0, 512));
+  };
+  const visit = (node: unknown, depth: number) => {
+    if (budget <= 0 || depth > 4) return;
+    if (typeof node === 'string') return bare(node);
+    if (Array.isArray(node)) {
+      for (const item of node.slice(0, 16)) {
+        if (budget-- <= 0) return;
+        if (typeof item === 'string') bare(item);
+        else visit(item, depth + 1);
+      }
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    for (const [rawKey, item] of Object.entries(node as Record<string, unknown>)) {
+      if (budget-- <= 0) return;
+      const key = rawKey.toLowerCase();
+      if (typeof item === 'number') {
+        if (STATUS_KEYS.has(key)) facts.statuses.push(item);
+      } else if (typeof item === 'string') {
+        if (STATUS_KEYS.has(key) && /^\d{3}$/.test(item)) facts.statuses.push(Number(item));
+        if (IDENTITY_KEYS.has(key) || key === 'error') facts.identities.push(asIdentity(item));
+        if (TEXT_KEYS.has(key)) facts.texts.push(item.slice(0, 512));
+      } else visit(item, depth + 1);
+    }
+  };
+  visit(value, 0);
+  return facts;
+}
+
+/** An identity that denotes the account refusing the work. Never matched against free text. */
+const DENIAL_IDENTITY =
+  /unauthori[sz]ed|unauthenticated|notauthenticated|forbidden|autherror|authrequired|authfailed|authenticat|invalidapikey|missingapikey|invalidcredential|missingcredential|permissiondenied|loginrequired|signinrequired/;
+/** Free text that plainly says the account would not authorise the work. */
+const DENIAL_TEXT =
+  /\bunauthori[sz]ed\b|\bunauthenticated\b|\bforbidden\b|\bauthenticat(e|es|ed|ing|ion)\b|\b(sign|log)[- ]?in (is )?required\b|\bapi key\b|\binvalid credentials?\b|\bpermission denied\b/i;
+/** An identity that denotes a service or allowance limit. */
+const LIMIT_IDENTITY = /ratelimit|usagelimit|quota|toomanyrequests|overloaded|insufficient/;
+/** Free text that plainly says a limit, not merely a word that appears near one. */
+const LIMIT_TEXT =
+  /\brate.?limit(ed|s|ing)?\b|\bquota (exceeded|reached|limit)\b|\busage limit\b|\btoo many requests\b|\boverloaded\b|\bout of (credits?|quota)\b|\binsufficient (quota|credit|balance|funds)\b/i;
+
+/** Denied by the account, limited by the service, or neither — never a guess. */
+export type FailureKind = 'denied' | 'limited' | 'unknown';
+
+/**
+ * What a failure says it is. A status the payload named, or the caller already
+ * holds, is the strongest evidence; then an identity; then whole words in text
+ * a person wrote. A payload that says neither is `unknown`, which every adapter
+ * reports as its own plain provider fault rather than a guessed instruction.
+ */
+export function failureKind(value: unknown, status?: number): FailureKind {
+  const facts = failureFacts(value);
+  const statuses = status === undefined ? facts.statuses : [status, ...facts.statuses];
+  if (statuses.some((code) => code === 401 || code === 403)) return 'denied';
+  if (statuses.some((code) => code === 429)) return 'limited';
+  const hit = (identity: RegExp, free: RegExp) =>
+    facts.identities.some((value) => identity.test(value)) ||
+    facts.texts.some((value) => free.test(value));
+  if (hit(LIMIT_IDENTITY, LIMIT_TEXT)) return 'limited';
+  if (hit(DENIAL_IDENTITY, DENIAL_TEXT)) return 'denied';
+  return 'unknown';
+}
 const cleanupDetail =
   'The native process could not be confirmed stopped. Wait before trying this route again.';
 export function cleanupFailed(primary?: unknown): EngineError {

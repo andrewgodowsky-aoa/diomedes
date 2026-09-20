@@ -37,6 +37,7 @@ type Mode =
   | 'chunk'
   | 'quota'
   | 'auth'
+  | 'proxy-ca'
   | 'post-ack-error'
   | 'session-mismatch'
   | 'hang';
@@ -71,7 +72,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.pa
   // An account the route does not accept, plus a provider name that is not an identifier.
   return ok(m.id,'get_available_models',{models:mode==='other-provider'?[{provider:'anthropic',id:'claude-x',name:'X'},{provider:'open router!',id:'y',name:'Y'}]:mode==='empty-models'?[]:[{provider:'openai',id:'gpt-test',name:'GPT test'}]});
  }
- if(m.type==='prompt') { if(!m.message.includes('"instructions":"Project rule"')||!m.message.includes('"request":"Question"')) return emit({type:'response',id:m.id,command:'prompt',success:false,error:'missing explicit envelope'}); if(mode==='hang') return; if(mode==='quota'||mode==='auth') return emit({type:'response',id:m.id,command:'prompt',success:false,error:mode==='quota'?'quota reached':'unauthorized'});
+ if(m.type==='prompt') { if(!m.message.includes('"instructions":"Project rule"')||!m.message.includes('"request":"Question"')) return emit({type:'response',id:m.id,command:'prompt',success:false,error:'missing explicit envelope'}); if(mode==='hang') return; if(mode==='quota'||mode==='auth'||mode==='proxy-ca') return emit({type:'response',id:m.id,command:'prompt',success:false,error:mode==='quota'?'quota reached':mode==='auth'?'unauthorized':'unable to verify the certificate authority for the configured proxy'});
   if(mode==='tool') return emit({type:'tool_execution_start',toolCallId:'t1',toolName:'bash',args:{}});
   if(mode==='tool-message') return emit({type:'message_update',message:{...message,content:[{type:'toolCall',id:'t1',name:'bash',arguments:{}}]},assistantMessageEvent:{type:'toolcall_end',toolCall:{id:'t1'}}});
   if(mode==='chunk') return emit({type:'rpc_chunk',chunkId:'c',index:0,count:1,byteLength:3,data:'e30='});
@@ -173,6 +174,19 @@ describe('oh-my-pi 18.0.6 text-only RPC route', () => {
     const { adapter, seen } = await fixture(mode);
     await expect(adapter.generate(request)).rejects.toMatchObject({ code });
     expect(seen.args).toHaveLength(1);
+  });
+
+  it('does not read a certificate authority failure as missing provider authentication', async () => {
+    // `auth` is a substring of `authority`, so searching the serialised frame
+    // sent a person with an enterprise CA or proxy problem to authenticate
+    // something that was never the fault.
+    const { adapter } = await fixture('proxy-ca');
+    const failure = await adapter.generate(request).then(
+      () => undefined,
+      (error: { code: string; message: string }) => error,
+    );
+    expect(failure?.code).toBe('PROVIDER_ERROR');
+    expect(failure?.message).not.toMatch(/authenticat/i);
   });
 
   it('rejects a changed route before launching', async () => {

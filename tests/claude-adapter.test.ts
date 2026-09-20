@@ -45,6 +45,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(mode==='hang') return;
   if(mode==='streamed') return emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text:'Answer'}}});
   if(mode==='early-limit') return emit({type:'result',subtype:'error_during_execution',is_error:true,result:'',errors:['rate_limit_error'],session_id:'native1',modelUsage:{}});
+  if(mode==='disk-quota') return emit({type:'result',subtype:'error_during_execution',is_error:true,result:'',errors:{message:'the temporary directory is over its disk quota'},session_id:'native1',modelUsage:{}});
   emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text:'Answer'}}});
   emit({type:'result',subtype:mode==='limit'?'error_during_execution':'success',is_error:mode==='limit',result:'Answer',errors:mode==='limit'?['rate_limit_error']:[],session_id:'native1',modelUsage:{'claude-test':{}}});
  }
@@ -104,6 +105,17 @@ describe('Claude Code structured text route', () => {
     const { adapter, launches } = await fixture('limit');
     await expect(adapter.generate(request)).rejects.toMatchObject({ code: 'USAGE_LIMIT' });
     expect(launches).toHaveLength(1);
+  });
+  it('does not read a local disk quota as the account running out of allowance', async () => {
+    // "quota" matched anywhere in the serialised frame, so a machine fault that
+    // has nothing to do with the account was reported as a service limit.
+    const { adapter } = await fixture('disk-quota');
+    const failure = await adapter.generate(request).then(
+      () => undefined,
+      (error: { code: string; message: string }) => error,
+    );
+    expect(failure?.code).toBe('PROVIDER_ERROR');
+    expect(failure?.message).not.toMatch(/limit/i);
   });
   it('does not substitute an API account for the chosen subscription', async () => {
     const adapter = new ClaudeAdapter('unused', '.', {

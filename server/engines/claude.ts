@@ -16,6 +16,7 @@ import {
   cleanupFailed,
   engineEnvironment,
   EngineError,
+  failureKind,
   openProcess,
   record,
   staged,
@@ -66,15 +67,19 @@ function environment() {
  * fault keep the stage they were seen at, so neither is read as a sign-in.
  */
 function failure(value: unknown, stage: SetupStage): EngineError {
-  const text = JSON.stringify(value);
-  if (/rate.?limit|usage.?limit|quota|overloaded/i.test(text))
+  // Read from the frame's own fields. Searching the serialised frame made
+  // `auth` inside `authority` a missing sign-in, so an enterprise certificate
+  // or proxy fault — on the audit's own list of hostile machines — was
+  // answered with sign-in advice that repairs nothing.
+  const kind = failureKind(value);
+  if (kind === 'limited')
     return new EngineError(
       'USAGE_LIMIT',
       'Claude Code reported a usage or service limit. No account or model was substituted.',
       true,
       stage,
     );
-  if (/auth|login|sign.?in|unauthorized/i.test(text))
+  if (kind === 'denied')
     return new EngineError(
       'AUTH_REQUIRED',
       'Claude Code needs sign-in. Use its sign-in action, then recheck.',
