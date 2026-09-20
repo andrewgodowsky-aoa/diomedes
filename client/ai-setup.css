@@ -60,8 +60,10 @@
   overflow-wrap: anywhere;
 }
 
-/* The route line under the engine name: which account route, what it does. */
-.ai-route {
+/* The route line under the engine name: which account route, what it does.
+   `.service p` in the shared sheet sets its own margin, so every paragraph
+   rule here is written past it rather than left to source order. */
+.ai-connections .service p.ai-route {
   margin: -4px 0 10px;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -110,8 +112,8 @@
   color: var(--dm-text-1);
 }
 
-.ai-checked,
-.ai-verified {
+.ai-connections .service p.ai-checked,
+.ai-connections .service p.ai-verified {
   margin: 0 0 2px;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -119,7 +121,7 @@
 
 /* One explanation the record carries and the status line does not: a broken
    binding, a different account route, a failed stage, or a private copy. */
-.ai-note {
+.ai-connections .service .ai-note {
   border-left: 3px solid var(--dm-rule);
   background: var(--dm-well);
   border-radius: var(--rb);
@@ -129,11 +131,11 @@
   overflow-wrap: anywhere;
 }
 
-.ai-route-issue p {
+.ai-connections .service .ai-route-issue p {
   margin: 0 0 6px;
 }
 
-.ai-route-issue p:last-child {
+.ai-connections .service .ai-route-issue p:last-child {
   margin-bottom: 0;
 }
 
@@ -155,7 +157,7 @@
   min-width: 0;
 }
 
-.ai-candidate p {
+.ai-connections .service .ai-candidate p {
   margin: 4px 0;
 }
 
@@ -183,7 +185,8 @@
   margin: 10px 0;
 }
 
-.ai-test p {
+.ai-connections .service .ai-test p {
+  margin: 8px 0;
   min-width: 0;
   overflow-wrap: anywhere;
 }

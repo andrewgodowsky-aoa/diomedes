@@ -359,6 +359,10 @@ describe('what the screen treats as a connected route', () => {
     expect(connected({ ...base, authentication: 'signed-out' })).toBe(false);
     expect(connected({ ...base, models: [] })).toBe(false);
     expect(connected({ ...base, repair: 'selected-changed' })).toBe(false);
+    // An account on another route is a real account, and not this one.
+    expect(
+      connected({ ...base, routeIssue: { required: 'opencode-go', connected: ['zen'] } }),
+    ).toBe(false);
   });
 
   it('renders a record that carries none of the optional fields', () => {

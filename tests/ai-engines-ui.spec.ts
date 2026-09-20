@@ -831,6 +831,11 @@ test('Settings explains a different account route without calling the person sig
     // Not signed out, and nothing to buy.
     await expect(section.getByRole('button', { name: /Sign in/ })).toHaveCount(0);
     await expect(section.getByText(/signed out|subscribe|upgrade|buy/i)).toHaveCount(0);
+    // An account on another route is not offered a default model or a paid test.
+    await expect(
+      section.getByRole('button', { name: /Use as default|Test this connection/ }),
+    ).toHaveCount(0);
+    await expect(section.getByRole('combobox')).toHaveCount(0);
     await expect(
       section.getByRole('button', { name: 'Check sign-in and models', exact: true }),
     ).toBeVisible();

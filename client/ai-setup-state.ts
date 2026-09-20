@@ -45,9 +45,14 @@ export function verified(c: EngineConnection): boolean {
 }
 
 /**
- * Found, compatible, signed in and carrying models the engine itself listed.
- * No time enters this: how old the check is governs what the screen says, not
- * whether the account exists, and `EngineService.generate()` rechecks anyway.
+ * Found, compatible, signed in, holding the one account route this adapter
+ * accepts, and carrying models the engine itself listed. No time enters this:
+ * how old the check is governs what the screen says, not whether the account
+ * exists, and `EngineService.generate()` rechecks anyway.
+ *
+ * A reported route issue fails this. An account on another route is a real
+ * account, and offering it a default model and a paid test would be the
+ * ambiguous ready presentation this screen exists to remove.
  */
 export function connected(c: EngineConnection): boolean {
   return (
@@ -55,7 +60,8 @@ export function connected(c: EngineConnection): boolean {
     c.compatibility === 'supported' &&
     c.authentication === 'signed-in' &&
     c.models.length > 0 &&
-    !c.repair
+    !c.repair &&
+    !c.routeIssue
   );
 }
 
