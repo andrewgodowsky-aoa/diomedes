@@ -26,6 +26,20 @@ WHAT IS NEW
   the evidence behind each answer and how fresh it is. Neither screen needs a
   Business account.
 
+  Setup can repair an installation it cannot use. Before this build, a tool that
+  was present but the wrong version was reported as needing a compatibility check
+  and left there, which is a dead end for the person most likely to hit it. A
+  wrong-version, changed or corrupt installation now offers to repair itself with
+  a compatible copy, and a missing one offers to install that copy. Claude Code,
+  OpenCode and oh-my-pi have such a copy; Cursor and Devin do not, so on those two
+  a version that differs is still yours to sort out.
+
+  Setup also offers a connection test you press yourself. It says what it will do
+  before it does it: one small synthetic request through the route you chose,
+  which may use that service's allowance or add provider charges. It is sent once
+  rather than retried, because a request whose outcome is uncertain may already
+  have been billed.
+
   The app ships what it knows about itself. A set of statements about the
   product and about each route is installed beside the app and read locally, so
   an answer about how Diomedes works comes from the build you are running. The
@@ -67,6 +81,13 @@ LIMITS
   our own design team: we build and install your first look after a design
   consultation, and up to two revisions a year are included. There is nothing
   extra to buy.
+  The OpenCode route runs on the native OpenCode Go account. A sign-in to
+  OpenCode Zen, or to any other provider inside your own OpenCode, is a different
+  account and is invisible to this route by construction. The app reports that no
+  Go account is connected and names the route, rather than implying you never
+  signed in.
+  No real provider request was made in testing, and nothing here has been run on
+  a machine that did not build it.
   The local service listens on 127.0.0.1 only.
   There is no delete for a theme, and removing a picture from a theme leaves its
   bytes on disk.
