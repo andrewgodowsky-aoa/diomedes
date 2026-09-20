@@ -48,6 +48,7 @@ import {
 } from '../shared/capability-packs.js';
 import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText } from './store.js';
 import { buildSupportBundle, renderSupportBundle } from './support-bundle.js';
+import { currentBuildIdentity } from './build-identity.js';
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
 import { ChangeReviewService } from './change-review/service.js';
@@ -448,6 +449,9 @@ export async function createApp(options: AppOptions) {
     options.engineService ??
     new EngineService(path.join(store.dataDir, 'engines'), {
       redactFor: () => baselineRedact,
+      // A staged failure names the build it happened in, so a stale shortcut or
+      // an older installed copy shows up in the first support report.
+      buildId: () => currentBuildIdentity(packageInfo.version).buildId,
     });
   const installer = new EngineInstaller(engines.root);
   const login = new NativeLogin(engines.root);
@@ -999,8 +1003,12 @@ export async function createApp(options: AppOptions) {
           detail:
             'An installation already exists. Diomedes will reuse it. Check compatibility and sign-in.',
         };
+      // A private copy that failed its digest needs the repair path even when
+      // another installation sits beside it and the route reads as unsupported.
       const result = await installer.install(engine, true, connectionSignal(res), {
-        repair: found.installation === 'corrupt',
+        repair:
+          found.installation === 'corrupt' ||
+          (found.candidates ?? []).some((c) => c.source === 'managed' && c.integrity === 'failed'),
       });
       await engines.discover(true);
       return result;
