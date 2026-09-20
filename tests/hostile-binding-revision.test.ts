@@ -21,7 +21,9 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 function root() {
-  const made = fs.mkdtempSync(path.join(os.tmpdir(), 'diomedes-hostile-'));
+  // The real name: a temp folder spelled as an 8.3 short path (`RUNNER~1`) is
+  // not the spelling the service resolves a file to before it asks about it.
+  const made = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'diomedes-hostile-')));
   roots.push(made);
   return made;
 }

@@ -18,7 +18,12 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 function root() {
-  const made = fs.mkdtempSync(path.join(os.tmpdir(), 'diomedes-binding-'));
+  // The real name, not the one the environment spelled. A Windows temp folder
+  // is often an 8.3 short path (`RUNNER~1` on a CI runner), and the service
+  // resolves every file to its long real name before it asks anything about
+  // it, so a fixture keyed by the short spelling answers for a path nobody asks
+  // about.
+  const made = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'diomedes-binding-')));
   roots.push(made);
   return made;
 }

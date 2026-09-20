@@ -1,4 +1,6 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { EXTERNAL_ENGINES, ENGINE_NAMES } from '../shared/engines.js';
 import { ENGINE_ROUTE_PROFILES } from '../shared/engine-routes.js';
@@ -249,12 +251,27 @@ describe('what the record derives instead of typing by hand', () => {
 });
 
 describe('the commit a check run may trust', () => {
-  it('finds the commit the committed record names in this repository', async () => {
-    expect(await commitPresent(committed.generatedFrom.commit)).toBe(true);
+  // Git's own answer about this checkout, asked independently of the function
+  // under test. A CI checkout is shallow by default, and a shallow clone is one
+  // of the cases `commitPresent` must answer "cannot tell" for rather than
+  // guess: it holds a fraction of the history, so neither "here" nor "absent"
+  // would be a fact.
+  const shallow =
+    execFileSync('git', ['rev-parse', '--is-shallow-repository'], {
+      cwd: fileURLToPath(new URL('../', import.meta.url)),
+      encoding: 'utf8',
+    }).trim() === 'true';
+
+  it('finds the commit the committed record names, or says it cannot tell', async () => {
+    expect(await commitPresent(committed.generatedFrom.commit)).toBe(shallow ? null : true);
   });
 
-  it('does not find a commit this repository never held', async () => {
-    expect(await commitPresent('a'.repeat(40))).toBe(false);
+  it('does not find a commit this repository never held, or says it cannot tell', async () => {
+    expect(await commitPresent('a'.repeat(40))).toBe(shallow ? null : false);
+  });
+
+  it('calls a malformed commit absent without looking anywhere', async () => {
+    expect(await commitPresent('not-a-commit')).toBe(false);
   });
 });
 

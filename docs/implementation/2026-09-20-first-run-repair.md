@@ -181,13 +181,13 @@ redaction floor reads a Windows home path in any case and leaves a web route who
 `cd43aa4` the sequence the host runs when a sign-in finishes during a check; `0ff41a9`
 the OpenCode route gives the same answer as the other four when the host withdraws a run;
 `40dd16e` a candidate record states the Windows it was written on. This record and the
-regenerated capability record are the last two commits.
+regenerated capability record followed, and then the repairs the pull request's first CI
+run asked for, below.
 
-**Gates.** The full gates are taken on the branch tip, the commit that carries the
-regenerated capability record, and are reported in the pull request. This record cannot
-cite a run on a commit that did not exist when it was written, and one of the suite's own
-tests reads this file, so only the tip run proves the filled record passes. The runs the
-integrator took on the way there, on the named commits:
+**Gates.** The full gates are taken on the branch tip and are reported in the pull
+request. This record cannot cite a run on a commit that did not exist when it was written,
+and one of the suite's own tests reads this file, so only the tip run proves the filled
+record passes. The runs the integrator took on the way there, on the named commits:
 
 - `cd43aa4`, all four gates: `npx tsc --noEmit` 0 errors; `npx vitest run` 172 files,
   3,584 passed, 4 failed, 1 skipped; `npx vite build` succeeded; the six browser specs
@@ -199,8 +199,28 @@ integrator took on the way there, on the named commits:
 - `9412d8b`: `npx tsc --noEmit` 0 errors, `npx vite build` succeeded, and
   `first-task-handoff.spec.ts` with `ai-engines-ui.spec.ts`, 24 of 24.
 
+- `11cc2e6`, all four gates again: `npx tsc --noEmit` 0 errors; `npx vitest run` 180
+  files, 3,642 passed, 1 skipped, 0 failed; `npx vite build` succeeded; `npx playwright
+  test` 124 passed. A first unit run on that commit had 3 failures, the same
+  `scoped-work` pair and an `EBUSY` removing a temporary folder in
+  `tests/engine-process.test.ts`; both files passed alone, 43 of 43, and the second full
+  run is the clean one.
+
 Where a fix was written before the test that covers it, the fix was taken out again to
 see the test fail, then put back.
+
+**What CI found that this machine could not.** The pull request's first run on a GitHub
+Windows runner failed 35 tests in four files, all green here. Two causes, both in the
+tests and neither in the application. The runner's temporary folder is an 8.3 short path
+(`RUNNER~1`); three binding test files keyed their fixture answers by that spelling while
+the service resolves every file to its long real name before it asks about it, so 33
+lookups missed. Reproduced here by pointing `TEMP` at a short path: 33 failed, the same
+count. All six binding test files now build their folders from the real name and pass in
+both spellings, 106 of 106. The other two failures were `commitPresent` answering
+"cannot tell" in CI's shallow checkout, which is the answer it is meant to give; the
+tests demanded yes or no. They now ask git whether the checkout is shallow and hold the
+function to the matching answer. Reproduced in a real depth-1 clone: the old tests fail 2,
+the new pass 23.
 
 ## Where the route sentences come from
 
