@@ -380,6 +380,35 @@ describe('a reported account-route mismatch', () => {
     expect(service.nextAction('claude-code', READY)).toBe('check-connection');
   });
 
+  it('does not carry a route issue across a change of version', async () => {
+    const version = TESTED_VERSIONS['claude-code'];
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'diomedes-route-'));
+    roots.push(root);
+    let reported = version;
+    const service = new EngineService(root, {
+      discover: async () => [{ ...installed, installedVersion: reported }],
+      version: async () => reported,
+      adapter: () => ({
+        id: 'claude-code',
+        contract: routeContractFor('claude-code'),
+        inspect: vi.fn(async () => wrongAccount()),
+        generate: vi.fn<TextEngineAdapter['generate']>(async (input) =>
+          textResponse(input, 'Answer', version),
+        ),
+      }),
+    });
+    const connection = () => service.status().find((row) => row.engine === 'claude-code')!;
+    await service.discover(true);
+    await service.check('claude-code');
+    expect(connection().routeIssue).toEqual(ROUTE_ISSUE);
+    // The same file, updated. What its previous version reported about the
+    // account is not a fact about the one that would run now.
+    reported = '1.0.0';
+    await service.discover(true);
+    expect(connection().routeIssue).toBeNull();
+    expect(connection().compatibility).toBe('unsupported');
+  });
+
   it('refuses a selection without telling a signed-in person to sign in', async () => {
     const { service, connection } = scripted();
     await service.discover(true);
