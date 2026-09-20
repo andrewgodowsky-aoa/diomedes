@@ -42,6 +42,16 @@ function readReceipt(value: unknown, engine: ExternalEngine): ConnectionReceipt 
   };
 }
 
+/**
+ * The longest the calling thread may be held while a reader denies the rename,
+ * bounded by the clock rather than by a count of attempts. A receipt is written
+ * synchronously for the same reason a binding is: one that is returned to a
+ * person must already be on disk.
+ */
+const RENAME_RETRY_BUDGET_MS = 200;
+const RENAME_RETRY_PAUSE_MS = 20;
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+
 /** A synchronous pause, for the bounded rename retry below. */
 function pause(ms: number) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -107,15 +117,17 @@ export class VerificationStore {
     const temporary = `${this.file}.${process.pid}.tmp`;
     fs.writeFileSync(temporary, `${JSON.stringify(document, null, 2)}\n`, 'utf8');
     // On Windows a reader holding the destination open denies the rename for a
-    // moment. Retry within a bounded window; the destination keeps its previous
-    // complete content until the replacement lands, so it is never partial.
-    for (let attempt = 0; ; attempt++) {
+    // moment. Retry until the budget above is spent; the destination keeps its
+    // previous complete content until the replacement lands, so it is never
+    // partial, and the process is never held past that budget.
+    const deadline = Date.now() + RENAME_RETRY_BUDGET_MS;
+    for (;;) {
       try {
         fs.renameSync(temporary, this.file);
         return;
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
-        if (attempt >= 9 || (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY')) {
+        if (!code || !RENAME_RETRY_CODES.has(code) || Date.now() + RENAME_RETRY_PAUSE_MS > deadline) {
           try {
             fs.rmSync(temporary, { force: true });
           } catch {
@@ -123,7 +135,7 @@ export class VerificationStore {
           }
           throw error;
         }
-        pause(20);
+        pause(RENAME_RETRY_PAUSE_MS);
       }
     }
   }

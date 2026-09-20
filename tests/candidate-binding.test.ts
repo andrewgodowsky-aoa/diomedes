@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { BindingStore } from '../server/engines/binding-store.js';
+import { BindingStore, RENAME_RETRY_BUDGET_MS } from '../server/engines/binding-store.js';
 import { EngineService, TESTED_VERSIONS } from '../server/engines/service.js';
 import { managedBinary } from '../server/engines/install.js';
 import { EngineError } from '../server/engines/process.js';
@@ -246,6 +246,30 @@ describe('the binding a person chose, remembered across restarts', () => {
       }),
     );
     expect(new BindingStore(service).get('opencode')).toBeUndefined();
+  });
+
+  it('retries a denied replacement inside a bounded wait, and gives up inside it', () => {
+    // The record is written synchronously, because `/api/ai/select` saves
+    // settings in the same breath and a choice must survive the crash one line
+    // later. A reader holding the destination denies the rename on Windows, so
+    // the write retries — and the wait it spends doing so is the whole time the
+    // process is blocked, so it is bounded and small.
+    const service = root();
+    const store = new BindingStore(service);
+    store.save('opencode', { binding: binding(), revision: 1, key: 'k1', model: null });
+    const handle = fs.openSync(path.join(service, 'bindings.json'), 'r');
+    const started = Date.now();
+    try {
+      expect(() =>
+        store.save('opencode', { binding: binding(), revision: 2, key: 'k2', model: null }),
+      ).toThrow(/EPERM|EACCES|EBUSY/);
+    } finally {
+      fs.closeSync(handle);
+    }
+    const waited = Date.now() - started;
+    expect(waited).toBeGreaterThanOrEqual(RENAME_RETRY_BUDGET_MS / 2);
+    expect(waited).toBeLessThan(RENAME_RETRY_BUDGET_MS * 10);
+    expect(RENAME_RETRY_BUDGET_MS).toBeLessThanOrEqual(250);
   });
 
   it('separates a route nobody chose from one whose row it cannot read', () => {
