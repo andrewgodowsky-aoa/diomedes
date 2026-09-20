@@ -1195,21 +1195,8 @@ describe('modes belong to the thread and every turn', () => {
 });
 
 describe('state reads stay fast with a cached documents listing', () => {
-  // This budget is a stopgap over a real cost, and it is worth saying which.
-  // Creating the three thousand files takes 463ms. The setup line that spends
-  // the time is the documentsOf() call below: one /documents request issues
-  // about 84,000 lstat calls, because listDocuments awaits the background walk
-  // and then walks again anyway, walkDocuments calls projectFile per entry, and
-  // projectFile calls safeAbsolute twice - once on the project root, which does
-  // not change - while safeAbsolute lstats every ancestor in a sequential loop
-  // (server/paths.ts:98-101). That is 8.6s here and past 30s on a four-vCPU
-  // runner sharing itself with a second worker.
-  //
-  // Raising the budget makes the suite honest about what it measures rather
-  // than fixing that: the 200ms assertion below is untouched and still on a
-  // cache hit, so it keeps answering the question this test asks. The syscall
-  // blowup is a separate change against paths.ts and store.ts.
   test('(a) projectState returns quickly with a large folder', async () => {
+    const fixtureStarted = performance.now();
     const big = path.join(temp, 'big-project');
     await fs.mkdir(big, { recursive: true });
     const dirs = 30,
@@ -1223,13 +1210,24 @@ describe('state reads stay fast with a cached documents listing', () => {
         ),
       );
     }
+    console.info(
+      `state-speed: created 3000 fixture files in ${Math.round(performance.now() - fixtureStarted)} ms`,
+    );
+    const projectStarted = performance.now();
     const created = await request('/projects', 'POST', { name: 'big', folder: big });
     expect(created.status).toBe(200);
+    console.info(
+      `state-speed: project creation took ${Math.round(performance.now() - projectStarted)} ms`,
+    );
     const id = created.data.id as string;
     // First call starts the background walk; force it via the explicit list.
     await request(`/projects/${id}/state`);
+    const walkStarted = performance.now();
     const listed = await documentsOf(id);
     expect(listed.length).toBe(dirs * perDir);
+    console.info(
+      `state-speed: explicit document walk took ${Math.round(performance.now() - walkStarted)} ms`,
+    );
     const started = Date.now();
     const second = await request(`/projects/${id}/state`);
     const elapsed = Date.now() - started;
@@ -1237,7 +1235,9 @@ describe('state reads stay fast with a cached documents listing', () => {
     expect(second.status).toBe(200);
     expect(elapsed).toBeLessThan(200);
     expect(second.data.documents).toHaveLength(dirs * perDir);
-  }, 180_000);
+    // Seeding and walking 3000 real files can exceed the ordinary test deadline
+    // on hosted Windows disks. The actual cached-read requirement stays 200 ms.
+  }, 120_000);
   test('(b) SKIPPED_FOLDERS are never listed', async () => {
     expect(SKIPPED_FOLDERS.has('artifacts')).toBe(true);
     expect(SKIPPED_FOLDERS.has('dist')).toBe(true);

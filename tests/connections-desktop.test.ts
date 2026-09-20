@@ -8,12 +8,14 @@ import { disablePrototypeAuthority } from '../server/trust/index.js';
 import { evaluateRules, withinServiceWindow } from '../server/rules.js';
 import { ruleSchema } from '../shared/connection-rules.js';
 import { digest, HarnessError } from '../server/harness/policy.js';
+import { Store } from '../server/store.js';
 
 let root: string;
 let app: Awaited<ReturnType<typeof createApp>>;
 let server: Server;
 let origin: string;
 let projectId: string;
+const pendingReleases = new Set<() => void>();
 const window = { start: '00:00', end: '23:59', timeZone: 'UTC', days: [0, 1, 2, 3, 4, 5, 6] };
 async function launch() {
   app = await createApp({ dataDir: path.join(root, 'data'), projectRoot: path.join(root, 'projects') });
@@ -30,7 +32,9 @@ beforeEach(async () => {
   await launch(); projectId = (await app.locals.store.createProject('Synthetic group')).id;
 });
 afterEach(async () => {
-  await close(); disablePrototypeAuthority(); delete process.env.DIOMEDES_TEST_MODE;
+  for (const release of pendingReleases) release();
+  pendingReleases.clear();
+  await close(); vi.restoreAllMocks(); disablePrototypeAuthority(); delete process.env.DIOMEDES_TEST_MODE;
   await fs.rm(root, { recursive: true, force: true });
 });
 async function call(action = '', body?: unknown, expected = 200) {
@@ -90,8 +94,17 @@ test('ordinary app dispatch preserves raw bad output, freezes context, then adop
 test('durable signed ingress coalesces replay, rejects conflicts, and registered write never dispatches', async () => {
   await enable();
   const event = { id: crypto.randomUUID(), quantity: 3, at: new Date().toISOString() };
-  await call('event', event, 202); await call('event', event, 202);
-  await expect.poll(async () => (await call()).tasks.length).toBe(1);
+  const drain = vi.spyOn(app.locals.connections.service, 'drain');
+  try {
+    await call('event', event, 202); await call('event', event, 202);
+    expect(drain).toHaveBeenCalledTimes(2);
+    // Observe the processing the real HTTP ingress started; never dispatch it here.
+    await Promise.all(drain.mock.results.map((result) => {
+      expect(result.type).toBe('return');
+      return result.value;
+    }));
+    expect((await call()).tasks).toHaveLength(1);
+  } finally { drain.mockRestore(); }
   await call('event', { ...event, quantity: 4 }, 409);
   const before = await call(); expect(before.inbox).toHaveLength(1);
   expect(before.tasks[0].description).toContain('Rule low-stock v1');
@@ -103,6 +116,43 @@ test('durable signed ingress coalesces replay, rejects conflicts, and registered
   const bad = await fetch(`${origin}/vendor/connections/${projectId}/${before.connections[0].connection.id}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'Toast-Signature': 'bad' }, body: '{}' });
   expect(bad.status).toBe(409);
+});
+
+test('HTTP acknowledgement can precede the actual durable task completion', async () => {
+  await enable();
+  const store: Store = app.locals.store;
+  const persist = store.persist.bind(store);
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const writing = new Promise<void>((resolve) => { entered = resolve; });
+  pendingReleases.add(release);
+  const delayedWrite = vi.spyOn(store, 'persist').mockImplementation(async (next) => {
+    if (next.project.id === projectId && next.tasks.some((task) => task.description.includes('Rule low-stock v1'))) {
+      entered();
+      await held;
+    }
+    await persist(next);
+  });
+  const drain = vi.spyOn(app.locals.connections.service, 'drain');
+  try {
+    await call('event', { id: crypto.randomUUID(), quantity: 3, at: new Date().toISOString() }, 202);
+    expect(drain).toHaveBeenCalledTimes(1);
+    const work: Promise<void> = drain.mock.results[0].value;
+    let completed = false;
+    const observed = work.then(() => { completed = true; });
+    await writing;
+    expect(completed).toBe(false);
+    expect((await call()).tasks).toHaveLength(0);
+    release();
+    await observed;
+    expect(completed).toBe(true);
+    expect((await call()).tasks).toHaveLength(1);
+  } finally {
+    release();
+    pendingReleases.delete(release);
+    await Promise.all(drain.mock.results.map((result) => result.value));
+    delayedWrite.mockRestore(); drain.mockRestore();
+  }
 });
 test('service window AND numeric threshold is deterministic across days, overnight and missing source time', () => {
   const rule = ruleSchema.parse({ id: 'low', version: 1, enabled: true, scope: {}, type: 'workflow', action: 'create-issue',

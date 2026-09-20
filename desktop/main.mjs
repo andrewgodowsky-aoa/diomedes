@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import { watch } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { captureNativeAuthCallbacks, createNativeAuth } from './native-auth.mjs';
 import {
   createInstallAccepted,
   isUpdateReleaseReference,
@@ -45,6 +46,7 @@ let server;
 let service;
 let shuttingDown = false;
 let releaseLock;
+let nativeAuth;
 
 // Field colour schemes as [chrome, t1] pairs for the titlebar overlay.
 // `cobalt` is retired and reads as `harbor` for saved settings.
@@ -129,7 +131,7 @@ async function customTitleBar(settings) {
 
 // The service persists settings at settings.json in the data dir
 // (see server/store.ts). Read the saved appearance once, then re-apply
-// when it changes. No IPC or preload: this stays in the shell.
+// when it changes. Titlebar appearance stays in the shell.
 async function applyTitleBarOverlay() {
   if (!window || window.isDestroyed()) return;
   try {
@@ -164,6 +166,9 @@ function watchSettingsForTitleBar() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  // Capture callbacks before ready; main retains single-instance ownership.
+  const nativeCallbacks = captureNativeAuthCallbacks(app, process.argv);
+  app.on('will-quit', () => { nativeCallbacks.dispose(); nativeAuth?.dispose(); });
   app.on('second-instance', () => {
     if (window?.isMinimized()) window.restore();
     window?.show();
@@ -235,6 +240,13 @@ if (!app.requestSingleInstanceLock()) {
       serveClient(service, path.join(root, 'dist'));
       server.on('request', service);
       const url = `http://127.0.0.1:${port}`;
+      nativeAuth = createNativeAuth({
+        clientId: process.env.DIOMEDES_WORKOS_CLIENT_ID,
+        tokenIssuer: process.env.DIOMEDES_WORKOS_TOKEN_ISSUER,
+        origin: url,
+        getWindow: () => window,
+      });
+      nativeCallbacks.connect((callback) => nativeAuth.handleCallback(callback));
       window = new BrowserWindow({
         width: 1440,
         height: 960,
@@ -246,7 +258,10 @@ if (!app.requestSingleInstanceLock()) {
         titleBarStyle: 'hidden',
         titleBarOverlay: { color: '#121417', symbolColor: '#e6e9ed', height: 40 },
         autoHideMenuBar: true,
-        webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
+        webPreferences: {
+          nodeIntegration: false, contextIsolation: true, sandbox: true,
+          preload: path.join(root, 'native-auth-preload.cjs'),
+        },
       });
       // The persisted interface preference is the only app zoom authority. Native
       // Chromium zoom would multiply it and drift from the visible Settings value.

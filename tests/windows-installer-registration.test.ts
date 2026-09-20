@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,8 +16,13 @@ const modulePath = fileURLToPath(
 
 // PowerShell source: no backticks and no dollar-brace sequences, so String.raw carries it verbatim.
 const scenarios = String.raw`
-param([string]$Module, [string]$SubKeyRoot, [string]$Root)
+param([string]$Module, [string]$SubKeyRoot, [string]$Root, [switch]$UseShortRoot)
 $ErrorActionPreference = 'Stop'
+if ($UseShortRoot) {
+  $shortRoot = (New-Object -ComObject Scripting.FileSystemObject).GetFolder($Root).ShortPath
+  if ($shortRoot -eq $Root) { '{"aliasAvailable":false}' ; exit 0 }
+  $Root = $shortRoot
+}
 Import-Module $Module -Force
 $hkcu = [Microsoft.Win32.Registry]::CurrentUser
 $shell = New-Object -ComObject WScript.Shell
@@ -111,6 +116,14 @@ try {
   $result.valuesIdenticalWhileInstalled = ((Read-Values $product) -eq $values) -and ((Read-Values $uninstall) -eq 'absent')
 
   Reset-Fixture $true
+  $snapshot = New-Snapshot
+  Save-RegistrationSnapshot $snapshot $copies | Out-Null
+  Invoke-Install
+  Remove-Item -LiteralPath $proofExe
+  $result.restoredAfterExecutableRemoval = Restore-RegistrationSnapshot $snapshot $copies
+  New-Item -ItemType File -Path $proofExe | Out-Null
+
+  Reset-Fixture $true
   $values = Read-Values $product
   $linkTimes = Get-Times $link
   $menuTimes = Get-Times $menu
@@ -138,8 +151,13 @@ try {
   Save-RegistrationSnapshot $snapshot $copies | Out-Null
   Invoke-Install
   New-Shortcut $link $otherExe
+  $foreignShortcutHash = (Get-FileHash -LiteralPath $link).Hash
   $result.foreignShortcutRefusal = Get-Message { Restore-RegistrationSnapshot $snapshot $copies }
-  $result.nothingWrittenOnRefusal = ((Get-ItemProperty -LiteralPath ('HKCU:\' + $product)).InstallDir -eq $target) -and ((Get-ShortcutTarget $link) -eq $otherExe)
+  $result.nothingWrittenOnRefusal = ((Get-ItemProperty -LiteralPath ('HKCU:\' + $product)).InstallDir -eq $target) -and ((Get-FileHash -LiteralPath $link).Hash -eq $foreignShortcutHash)
+  Remove-Item -LiteralPath $otherExe
+  $result.missingForeignShortcutRefusal = Get-Message { Restore-RegistrationSnapshot $snapshot $copies }
+  $result.missingForeignShortcutKept = (Get-FileHash -LiteralPath $link).Hash -eq $foreignShortcutHash
+  New-Item -ItemType File -Path $otherExe | Out-Null
 
   Reset-Fixture $false
   $snapshot = New-Snapshot
@@ -186,80 +204,88 @@ $result | ConvertTo-Json -Compress
 `;
 
 describe.skipIf(!windows)('installer proof registration hand-back', () => {
-  it('restores a registration exactly and refuses to overwrite what the proof did not write', () => {
-    // Resolved, because os.tmpdir() is an 8.3 short path on the CI runner
-    // (C:\Users\RUNNER~1\...) and everything the fixture derives from this root
-    // inherits that spelling. The shell hands a shortcut's target back in long
-    // form, so a fixture comparing its own derived path against a target it read
-    // is comparing two spellings of one file and calling them different. Must be
-    // .native: the plain realpathSync resolves links but leaves 8.3 alone.
-    const root = realpathSync.native(
-      mkdtempSync(path.join(os.tmpdir(), 'installer-registration-')),
-    );
-    const subKeyRoot = `Software\\Diomedes-installer-proof-test-${randomBytes(4).toString('hex')}`;
-    try {
-      const script = path.join(root, 'scenarios.ps1');
-      writeFileSync(script, scenarios);
-      const run = spawnSync(
-        'pwsh',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          script,
-          '-Module',
-          modulePath,
-          '-SubKeyRoot',
-          subKeyRoot,
-          '-Root',
-          root,
-        ],
-        { encoding: 'utf8', windowsHide: true, timeout: 110_000 },
-      );
-      expect(run.status, `${run.stdout}\n${run.stderr}`).toBe(0);
-      const result = JSON.parse(run.stdout.trim().split(/\r?\n/).at(-1) ?? '{}');
-      expect(result).toMatchObject({
-        present: true,
-        restoredFromFile: 'restored',
-        valuesIdentical: true,
-        valueOrderIdentical: true,
-        linkIdentical: true,
-        linkTimesIdentical: true,
-        menuTimesIdentical: true,
-        uninstallKeyAbsent: true,
-        differencesAfterRestore: 0,
-        restoredAgain: 'unchanged',
-        restoredWhileInstalled: 'restored',
-        valuesIdenticalWhileInstalled: true,
-        resumedRestore: 'restored',
-        resumedIdentical: true,
-        foreignKeyKept: true,
-        nothingWrittenOnRefusal: true,
-        absentPresent: false,
-        restoredToAbsent: 'restored',
-        allAbsent: true,
-        foreignFileKept: true,
-        emptyKeyValues: 0,
-        emptyKeyRestored: 'restored',
-        emptyKeyBackWithoutValues: true,
-        pendingSnapshot: 'F:\\first\\snapshot.json',
-        pendingKeptForOtherSnapshot: true,
-        pendingCleared: true,
-      });
-      expect(result.differencesAfterUninstall).toBeGreaterThan(0);
-      expect(result.foreignKeyRefusal).toContain('changed by something other than this proof');
-      expect(result.foreignShortcutRefusal).toContain(
-        'Diomedes Experimental.lnk was changed by something other than this proof',
-      );
-      expect(result.foreignFileRefusal).toContain(
-        'someone-else.txt was changed by something other than this proof',
-      );
-      expect(result.subkeyRefusal).toContain('has subkeys');
-      expect(result.secondPendingRefusal).not.toBe('no error');
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  }, 120_000);
+  for (const variant of ['ordinary', 'short-path'] as const) {
+    it(`restores the ${variant} registration exactly and refuses foreign writes`, (context) => {
+      // The ordinary temp volume may disable 8.3 names. The Windows profile volume
+      // is where CI's RUNNER~1 alias lives; exercise the same OS expansion there.
+      const fixtureParent =
+        variant === 'short-path' && process.env.LOCALAPPDATA
+          ? path.join(process.env.LOCALAPPDATA, 'Temp')
+          : os.tmpdir();
+      const root = mkdtempSync(path.join(fixtureParent, 'installer-registration-'));
+      const subKeyRoot = `Software\\Diomedes-installer-proof-test-${randomBytes(4).toString('hex')}`;
+      try {
+        const script = path.join(root, 'scenarios.ps1');
+        writeFileSync(script, scenarios);
+        const run = spawnSync(
+          'pwsh',
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-File',
+            script,
+            '-Module',
+            modulePath,
+            '-SubKeyRoot',
+            subKeyRoot,
+            '-Root',
+            root,
+            ...(variant === 'short-path' ? ['-UseShortRoot'] : []),
+          ],
+          { encoding: 'utf8', windowsHide: true, timeout: 110_000 },
+        );
+        expect(run.status, `${run.stdout}\n${run.stderr}`).toBe(0);
+        const result = JSON.parse(run.stdout.trim().split(/\r?\n/).at(-1) ?? '{}');
+        if (result.aliasAvailable === false)
+          return context.skip('The Windows profile volume has 8.3 aliases disabled.');
+        expect(result).toMatchObject({
+          present: true,
+          restoredFromFile: 'restored',
+          valuesIdentical: true,
+          valueOrderIdentical: true,
+          linkIdentical: true,
+          linkTimesIdentical: true,
+          menuTimesIdentical: true,
+          uninstallKeyAbsent: true,
+          differencesAfterRestore: 0,
+          restoredAgain: 'unchanged',
+          restoredWhileInstalled: 'restored',
+          valuesIdenticalWhileInstalled: true,
+          restoredAfterExecutableRemoval: 'restored',
+          resumedRestore: 'restored',
+          resumedIdentical: true,
+          foreignKeyKept: true,
+          nothingWrittenOnRefusal: true,
+          missingForeignShortcutKept: true,
+          absentPresent: false,
+          restoredToAbsent: 'restored',
+          allAbsent: true,
+          foreignFileKept: true,
+          emptyKeyValues: 0,
+          emptyKeyRestored: 'restored',
+          emptyKeyBackWithoutValues: true,
+          pendingSnapshot: 'F:\\first\\snapshot.json',
+          pendingKeptForOtherSnapshot: true,
+          pendingCleared: true,
+        });
+        expect(result.differencesAfterUninstall).toBeGreaterThan(0);
+        expect(result.foreignKeyRefusal).toContain('changed by something other than this proof');
+        expect(result.foreignShortcutRefusal).toContain(
+          'Diomedes Experimental.lnk was changed by something other than this proof',
+        );
+        expect(result.missingForeignShortcutRefusal).toContain(
+          'changed by something other than this proof',
+        );
+        expect(result.foreignFileRefusal).toContain(
+          'someone-else.txt was changed by something other than this proof',
+        );
+        expect(result.subkeyRefusal).toContain('has subkeys');
+        expect(result.secondPendingRefusal).not.toBe('no error');
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }, 120_000);
+  }
 });

@@ -1,0 +1,30 @@
+{
+  "name": "@diomedes/control-plane",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.18.0" },
+  "scripts": {
+    "test": "vitest run --maxWorkers=1 --minWorkers=1",
+    "test:postgres": "vitest run tests/postgres.integration.test.ts --maxWorkers=1 --minWorkers=1",
+    "typecheck": "tsc --noEmit",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "dev": "wrangler dev --local --ip 127.0.0.1 --port 8791",
+    "types": "wrangler types worker-configuration.d.ts --include-runtime=false --strict-vars=false && node scripts/scope-binding-types.mjs",
+    "migrate": "tsx scripts/migrate.ts",
+    "test:runtime": "node scripts/runtime-smoke.mjs"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "1.1.0",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "@types/pg": "8.15.5",
+    "pg": "8.16.3",
+    "typescript": "5.9.3",
+    "tsx": "4.20.6",
+    "vitest": "3.2.7",
+    "wrangler": "4.135.0"
+  }
+}

@@ -11,6 +11,7 @@ import { Button, Modal } from '../components';
 import { BusinessSetup } from './BusinessSetup';
 import { Configuration } from './Configuration';
 import { BriefFiles } from './BriefFiles';
+import { NativeAccount } from './NativeAccount';
 import './workspace.css';
 
 /**
@@ -155,6 +156,7 @@ export function WorkspacePanel({ view, busy, onClose, onChanged, report }: Panel
   return (
     <Modal title="Workspaces" onClose={onClose} wide>
       <div className="ws-panel">
+        <NativeAccount />
         <p className="caption">
           {view.person.name} ·{' '}
           {view.person.assurance === 'hosted'
