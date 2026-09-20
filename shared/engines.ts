@@ -8,6 +8,14 @@ import type {
 } from './connection-policy.js';
 
 export const EXTERNAL_ENGINES = ['claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin'] as const;
+/**
+ * The reserved identity a host-initiated test runs under. A test is the host's
+ * own evidence, not a person's work, so it names no project of theirs and
+ * writes into no thread, task or document. It is never a project a person can
+ * make or open: every project id is generated, and the store refuses a saved
+ * registry row that names this one.
+ */
+export const HOST_TEST_PROJECT = 'diomedes-host-tests';
 export const ROUTES = ['sample', 'codex', ...EXTERNAL_ENGINES] as const;
 export function isExternalEngine(value: unknown): value is ExternalEngine {
   return EXTERNAL_ENGINES.some((id) => id === value);

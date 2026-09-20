@@ -7,6 +7,7 @@ import type { ExternalEngine, IntegrationStatus } from '../../shared/types.js';
 import {
   ENGINE_NAMES,
   EXTERNAL_ENGINES,
+  HOST_TEST_PROJECT,
   type ConnectionReceipt,
   type EngineBinding,
   type EngineCandidate,
@@ -234,12 +235,11 @@ const TEST_PROMPT = 'Reply with the single word: ok';
  */
 const TEST_TIMEOUT_MS = 60_000;
 /**
- * The reserved identity a host-initiated test runs under. A test is the host's
- * own evidence, not a person's work, so it names no project of theirs and
- * writes into no thread, task or document. Real project ids are twelve hex
- * characters, so this name cannot collide with one.
+ * The reserved identity a host-initiated test runs under. It is declared with
+ * the shared engine types so the store can refuse it without importing this
+ * service, which would close an import cycle through the harness.
  */
-export const HOST_TEST_PROJECT = 'diomedes-host-tests';
+export { HOST_TEST_PROJECT };
 /** One reserved thread per route, so testing one route never blocks another. */
 export const hostTestThread = (engine: ExternalEngine) => `connection-test:${engine}`;
 
