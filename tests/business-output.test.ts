@@ -57,8 +57,8 @@ const binding = (projectId: string, projectName: string): OutputBinding => ({
 
 const ACME = organization('org-acme', 'Fernbrook Joinery');
 const PROJECTS = [
-  { id: 'proj-books', name: 'Company books' },
-  { id: 'proj-other', name: 'Something else' },
+  { id: 'proj-books', name: 'Company books', organizationId: 'org-acme' },
+  { id: 'proj-other', name: 'Something else', organizationId: 'org-other' },
 ];
 
 describe('who may choose where a business writes', () => {
@@ -126,6 +126,19 @@ describe('resolving where this brief goes', () => {
     // The failure that matters: it must not quietly resolve to a project that
     // does exist. A brief in the wrong place is worse than no brief.
     expect(target.message).not.toContain('Something else');
+  });
+
+  test('a stale binding cannot resolve a project owned by another organization', () => {
+    const target = resolveBriefTarget({
+      organization: ACME,
+      membership: membership('org-acme', 'owner'),
+      binding: binding('proj-other', 'Something else'),
+      projects: PROJECTS,
+    });
+    expect(target.ready).toBe(false);
+    if (target.ready) throw new Error('unreachable');
+    expect(target.code).toBe('output-project-ownership-unresolved');
+    expect(target.message).toContain('Fernbrook Joinery');
   });
 
   test('a revoked member resolves nothing, whatever is still bound', () => {
