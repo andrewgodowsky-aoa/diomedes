@@ -22,6 +22,15 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      # Root tsc includes services; install the separately pinned service graph.
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: services/control-plane
+      - run: npm run typecheck
+        working-directory: services/control-plane
+      - run: npm test
+        working-directory: services/control-plane
+      - run: npm run build
+        working-directory: services/control-plane
       - run: npm run check
       # The runner context is only available inside a step, never in a job-level env
       # block, so this pair has to sit here. These gates use synthetic data and mocked
