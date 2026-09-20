@@ -304,6 +304,30 @@ describe('every installation is a candidate, and one failure hides nothing', () 
     });
   });
 
+  it('reports a failed private copy beside a wrong-version installation as a repairable pair', async () => {
+    const theirs = place(path.join(root(), 'tools', 'opencode.exe'), 'their own copy');
+    const h = host({
+      system: [{ file: theirs, version: '1.20.0' }],
+      managed: { bytes: 'tampered bytes', verifies: false },
+    });
+    await h.service.discover(true);
+    const value = connection(h.service, 'opencode');
+    // Two installations exist, so neither is "the only one": the contract's
+    // `corrupt` does not apply and the route is found-but-unsupported. The
+    // failed private copy is still the thing that needs repairing, and it is
+    // named on the candidate rather than only in the installation state.
+    expect(value.installation).toBe('found');
+    expect(value.compatibility).toBe('unsupported');
+    expect(value.repair).toBe('no-reviewed-candidate');
+    expect(value.candidates?.find((row) => row.source === 'managed')).toMatchObject({
+      integrity: 'failed',
+    });
+    expect(value.candidates?.find((row) => row.source === 'system')).toMatchObject({
+      integrity: 'verified',
+      compatibility: 'unsupported',
+    });
+  });
+
   it('keeps a candidate whose file cannot be read out of the usable set without hiding it', async () => {
     const h = host({ system: [{ file: path.join(root(), 'gone', 'opencode.exe') }] });
     await h.service.discover(true);
@@ -411,6 +435,15 @@ describe('an explicit binding, and what breaks it', () => {
         stage: 'runtime-verification',
       });
     }
+  });
+
+  it('breaks the connection when the bound copy keeps its bytes but changes version', async () => {
+    const h = await bound();
+    h.version.mockResolvedValue('1.0.0');
+    await h.service.discover(true);
+    const value = connection(h.service, 'opencode');
+    expect(value.repair).toBe('selected-changed');
+    await expect(h.service.check('opencode')).rejects.toMatchObject({ code: 'BINDING_CHANGED' });
   });
 
   it('refuses a request rather than running a different executable in its place', async () => {

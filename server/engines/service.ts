@@ -612,6 +612,9 @@ export class EngineService {
               stage: 'runtime-verification',
               code: 'INSTALL_CHECKSUM',
               candidateSource: 'managed',
+              // A copy that failed its digest has no version Diomedes trusts,
+              // and the previous scan's version is not this failure's fact.
+              installedVersion: null,
             }),
           }
         : {}),
@@ -754,7 +757,13 @@ export class EngineService {
   }
   private diagnostic(
     engine: ExternalEngine,
-    facts: { stage: SetupStage; code: string; candidateSource: EngineCandidate['source'] | null },
+    facts: {
+      stage: SetupStage;
+      code: string;
+      candidateSource: EngineCandidate['source'] | null;
+      /** The version of the installation this failure is about, when it differs. */
+      installedVersion?: string | null;
+    },
   ): SetupDiagnostic {
     const value = this.connections.get(engine)!;
     const stored = this.bindings.get(engine);
@@ -762,7 +771,8 @@ export class EngineService {
       buildId: this.deps.buildId?.() ?? 'unknown',
       engine,
       candidateSource: facts.candidateSource,
-      installedVersion: value.version ?? null,
+      installedVersion:
+        facts.installedVersion === undefined ? (value.version ?? null) : facts.installedVersion,
       accountRoute: value.accountRoute,
       selectedModel: stored?.model ?? null,
       stage: facts.stage,
