@@ -77,8 +77,12 @@ const EXCLUDED = [
   'Prompts are not included.',
   'Model output is not included.',
   'History file bodies are not included.',
-  'Engine executable paths are not included.',
-  'Account names and sign-in details are not included.',
+  // Scoped to the connection rows on purpose. A recorded error message is a
+  // runtime string this file does not compose, and a failed launch can put an
+  // executable path inside one, so a flat "no paths" sentence would be false
+  // in exactly the failure a person exports this bundle to explain.
+  'Connection rows carry no executable path.',
+  'Connection rows carry account route identifiers, not account names.',
 ];
 // Paths and a project name can still name a person, so the bundle is not
 // anonymous and does not say it is. The name is the part a person chooses.
