@@ -178,6 +178,14 @@ node scripts/dev-server-guard.mjs                                               
 
 One heavy command at a time on the Air. Keep Vitest at two workers.
 
+`package-lock.json` was generated on Windows and does carry the Apple Silicon
+optional binaries (`@esbuild/darwin-arm64`, `@rollup/rollup-darwin-arm64`,
+`fsevents`), so `npm ci` should not hit the missing-optional-dependency failure
+that Windows-made lockfiles are known for. Newer npm blocks install scripts by
+default and will warn about `esbuild`; on Windows the build still works without
+it. If esbuild cannot find its binary on the Mac, that warning is the first place
+to look. Do not run `npm install` to "fix" the lock; report it instead.
+
 What to expect and report from that session:
 
 - Some unit tests will probably fail on macOS the first time. The suite was
@@ -208,9 +216,13 @@ What to expect and report from that session:
 `npm run package:mac` refuses for two reasons that are easy to confuse:
 
 1. **Missing offline Electron archive.** The packager never downloads a platform
-   archive silently. This matters when cross-packaging from Windows. On a real
-   Mac, `npm ci` has already fetched Electron for that Mac; the archive still has
-   to be supplied to the packager deliberately.
+   archive silently, from Windows or from a Mac. `npm ci` does not supply one
+   either: Electron 44 has no install script and fetches its binary the first
+   time it is launched, so after `npm ci` there is no `node_modules/electron/dist`
+   on any platform (checked on Windows with npm 12). Source development, the
+   tests and `npm run build` do not need the binary. Packaging needs
+   `electron-v44.2.0-darwin-arm64.zip` placed in a folder named by
+   `DIOMEDES_ELECTRON_ZIP_DIR`; obtaining it is a deliberate, recorded download.
 2. **Ad-hoc signing policy.** For Electron 41 and later on macOS, the packager
    re-signs the Framework ad hoc to keep ASAR integrity valid. FD01 authorizes no
    signing, so a Mac-host package run refuses. Apple Silicon will not execute
