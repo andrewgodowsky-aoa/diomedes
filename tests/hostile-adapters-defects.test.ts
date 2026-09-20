@@ -15,10 +15,10 @@ import type { ExternalEngine, IntegrationStatus } from '../shared/types.js';
 /**
  * Hostile verification of the first-run repair, adapters area (F02, F04, F07).
  *
- * EVERY TEST IN THIS FILE IS EXPECTED TO FAIL against the code as written. Each
- * one asserts the behaviour the repair's own brief and design record promise,
- * and its failure is the evidence that the promise is not kept. Nothing here is
- * a fix; product code is untouched.
+ * EVERY TEST IN THIS FILE, BUT THE ONE NAMED "control", IS EXPECTED TO FAIL
+ * against the code as written. Each one asserts the behaviour the repair's own
+ * brief and design record promise, and its failure is the evidence that the
+ * promise is not kept. Nothing here is a fix; product code is untouched.
  */
 
 const roots: string[] = [];
@@ -323,10 +323,19 @@ describe('a sign-in that finishes while a check is running is still re-checked',
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
+    let reached = () => {};
+    const entered = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
     let slow = true;
     const inspect = vi.fn(async () => {
+      // What the tool answered when this check started. A check that began
+      // before the sign-in finished cannot have seen the account that finished
+      // after it, so the snapshot is taken here and not after the wait.
+      const answered = structuredClone(inspection);
+      reached();
       if (slow) await held;
-      return structuredClone(inspection);
+      return answered;
     });
     const rows: IntegrationStatus[] = [
       {
@@ -363,6 +372,7 @@ describe('a sign-in that finishes while a check is running is still re-checked',
     });
     return {
       service,
+      entered,
       signIn: () => {
         inspection = {
           authentication: 'signed-in',
@@ -382,6 +392,7 @@ describe('a sign-in that finishes while a check is running is still re-checked',
     await h.service.discover(true);
     // A person presses Check, and the route is slow to answer.
     const first = h.service.check(ENGINE);
+    await h.entered;
     // While it runs they finish the native sign-in and the window closes.
     h.signIn();
     // This is the re-check the host promised. The host swallows REQUEST_ACTIVE.
@@ -391,9 +402,10 @@ describe('a sign-in that finishes while a check is running is still re-checked',
     );
     h.release();
     await first;
+    // What the person sees after finishing sign-in and closing the window.
+    expect(h.service.status().find((row) => row.engine === ENGINE)?.authentication).toBe(
+      'signed-in',
+    );
     expect(recheck).not.toBe('REQUEST_ACTIVE');
-    expect(
-      h.service.status().find((row) => row.engine === ENGINE)?.authentication,
-    ).toBe('signed-in');
   }, 20_000);
 });
