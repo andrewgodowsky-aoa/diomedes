@@ -7,7 +7,8 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
 // Export the same entry point for offline packaging-boundary tests. Invoking
-// this script still runs it once, with the existing Windows defaults.
+// this script runs it once for the host target, unless `--platform`/`--arch`
+// or DIOMEDES_DESKTOP_PLATFORM/ARCH name another supported one.
 export async function packageDesktop(options = {}, dependencies = {}) {
   const root = options.root ?? fileURLToPath(new URL('../', import.meta.url));
   const bundle = dependencies.build ?? build;
@@ -283,5 +284,20 @@ export async function packageDesktop(options = {}, dependencies = {}) {
   }
 }
 
+// `--platform` and `--arch` name the target from an npm script, where setting
+// an environment variable is not portable between cmd.exe and a Unix shell.
+// An explicit argument outranks the environment, which outranks the host.
+export function targetFromArgs(args) {
+  const target = {};
+  for (let i = 0; i < args.length; i += 2) {
+    const flag = args[i];
+    if (flag !== '--platform' && flag !== '--arch') throw new Error(`Unknown argument: ${flag}`);
+    const value = args[i + 1];
+    if (value === undefined || value.startsWith('--')) throw new Error(`${flag} needs a value.`);
+    target[flag.slice(2)] = value;
+  }
+  return target;
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-  await packageDesktop();
+  await packageDesktop(targetFromArgs(process.argv.slice(2)));
