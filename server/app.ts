@@ -2780,11 +2780,18 @@ export async function createApp(options: AppOptions) {
             'UNSUPPORTED_VERSION',
             'ACCOUNT_CHANGED',
             'ROUTE_REFUSED',
+            'BINDING_CHANGED',
           ].includes(error.code)
             ? 409
             : 503,
         )
-        .json({ error: error.message, code: error.code, ambiguous: error.ambiguous });
+        .json({
+          error: error.message,
+          code: error.code,
+          ambiguous: error.ambiguous,
+          // Where it failed decides the recovery, so the stage travels with the code.
+          ...(error.stage ? { stage: error.stage } : {}),
+        });
       return;
     }
     if (error instanceof ApiError) {
