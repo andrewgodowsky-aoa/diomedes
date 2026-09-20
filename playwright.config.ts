@@ -87,6 +87,7 @@ export default defineConfig({
     'field.spec.ts',
     'design-studio-ui.spec.ts',
     'ai-engines-ui.spec.ts',
+    'first-task-handoff.spec.ts',
     'autonomy-ui.spec.ts',
     'change-review-ui.spec.ts',
     'reviewer-ui.spec.ts',
