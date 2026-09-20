@@ -2,17 +2,31 @@ import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 import { killOwnedProcess } from '../integrations.js';
+import type { SetupStage } from '../../shared/engines.js';
 
 export class EngineError extends Error {
   readonly status = 503;
+  /**
+   * Where in the connection attempt this failed, when the thrower knows. A 401
+   * from the owned loopback server and a 401 from the upstream account carry the
+   * same code and different stages, and only the stage picks the right recovery.
+   */
+  stage?: SetupStage;
   constructor(
     readonly code: string,
     message: string,
     readonly ambiguous = false,
+    stage?: SetupStage,
   ) {
     super(message);
     this.name = 'EngineError';
+    if (stage) this.stage = stage;
   }
+}
+/** Tag a failure with the stage it crossed, keeping the innermost stage already set. */
+export function atStage<T>(error: T, stage: SetupStage): T {
+  if (error instanceof EngineError && !error.stage) error.stage = stage;
+  return error;
 }
 export const stopped = () =>
   new EngineError(

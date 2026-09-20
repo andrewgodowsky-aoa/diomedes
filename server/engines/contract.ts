@@ -1,5 +1,6 @@
 import type { AdapterRouteContract, TransientPreview } from '../../shared/adapter-contract.js';
 import type { EngineModel, ExternalEngine } from '../../shared/types.js';
+import type { AccountRouteIssue } from '../../shared/engines.js';
 export interface TextRequest {
   projectId: string;
   threadId: string;
@@ -39,6 +40,12 @@ export interface AdapterInspection {
   accountRoute: string | null;
   models: EngineModel[];
   detail: string;
+  /**
+   * Set when the native tool answered and its connected account is not the
+   * route this adapter accepts. That is neither signed-out nor a failure to
+   * reach the tool, and the screen explains it rather than asking for sign-in.
+   */
+  routeIssue?: AccountRouteIssue;
 }
 export interface TextEngineAdapter {
   id: ExternalEngine;

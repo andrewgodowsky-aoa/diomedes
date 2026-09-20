@@ -1,7 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ExternalEngine, IntegrationStatus } from '../../shared/types.js';
-import { ENGINE_NAMES, EXTERNAL_ENGINES, type EngineConnection } from '../../shared/engines.js';
+import {
+  ENGINE_NAMES,
+  EXTERNAL_ENGINES,
+  type ConnectionReceipt,
+  type EngineConnection,
+} from '../../shared/engines.js';
+import { nextSetupAction, type SetupAction } from '../../shared/connection-policy.js';
 import { createDiscovery } from '../discovery.js';
 import { recordEngineCatalog } from '../models.js';
 import { ClaudeAdapter, CLAUDE_VERSION } from './claude.js';
@@ -291,6 +297,59 @@ export class EngineService {
         'The selected model is no longer offered. Choose a model after rechecking.',
       );
     return { engine, model, accountRoute: state.accountRoute };
+  }
+  /**
+   * The one next action a screen offers for this route, derived here so no
+   * screen computes its own. A reported account-route mismatch outranks the
+   * sign-in state: that person is not signed out, they hold a different route.
+   */
+  nextAction(
+    engine: ExternalEngine,
+    facts: { enabled: boolean; installSupported: boolean },
+  ): SetupAction {
+    const value = this.connections.get(engine)!;
+    if (value.installation === 'not-checked') return 'check-connection';
+    const installation =
+      value.installation === 'corrupt'
+        ? 'corrupt'
+        : value.installation !== 'found'
+          ? 'missing'
+          : value.compatibility === 'supported' && !value.repair
+            ? 'ready'
+            : 'unsupported';
+    if (installation === 'ready' && value.routeIssue) return 'explain-account-route';
+    return nextSetupAction(
+      {
+        installation,
+        installSupported: facts.installSupported,
+        authentication: value.authentication,
+        accountRouteAllowed: !value.routeIssue,
+        modelCount: value.models.length,
+        enabled: facts.enabled,
+        checkedAt: value.checkedAt,
+        revision: value.revision ?? 0,
+        verifiedRevision: value.verification?.revision ?? null,
+      },
+      Date.now(),
+    );
+  }
+  /**
+   * Bind the installation a person chose for this route. Only an explicit call
+   * here (or the one-time adoption of a pre-binding selection) ever sets a
+   * binding; discovery recommends and never binds.
+   */
+  async bind(_engine: ExternalEngine, _candidateId: string): Promise<EngineConnection> {
+    throw new EngineError('NOT_IMPLEMENTED', 'Choosing an installation is not available yet.');
+  }
+  /**
+   * One consented, bounded, synthetic request through the ordinary admitted
+   * dispatch path. Never called by a scan, a sign-in or a settings reopen.
+   */
+  async testConnection(
+    _engine: ExternalEngine,
+    _input: { consent: boolean; model: string; signal?: AbortSignal },
+  ): Promise<ConnectionReceipt> {
+    throw new EngineError('NOT_IMPLEMENTED', 'Testing a connection is not available yet.');
   }
   integration(engine: ExternalEngine, enabled: boolean): IntegrationStatus {
     const value = this.connections.get(engine)!;

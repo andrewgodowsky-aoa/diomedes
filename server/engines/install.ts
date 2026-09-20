@@ -193,7 +193,17 @@ export class EngineInstaller {
         : 'Guided installation supports Windows x64. Install the native tool for your platform and recheck.',
     };
   }
-  async install(engine: ExternalEngine, consent: boolean, signal?: AbortSignal) {
+  /**
+   * `repair` replaces a private copy that failed its digest. It only ever acts
+   * inside Diomedes's own `installed/` directory; a person's own installation is
+   * never overwritten, downgraded or removed.
+   */
+  async install(
+    engine: ExternalEngine,
+    consent: boolean,
+    signal?: AbortSignal,
+    _options: { repair?: boolean } = {},
+  ) {
     if (!consent)
       throw new EngineError(
         'CONSENT_REQUIRED',

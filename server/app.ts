@@ -81,6 +81,7 @@ import {
   isExternalEngine,
   isRoute,
   ROUTES,
+  type EngineConnection,
 } from '../shared/engines.js';
 import { EngineService } from './engines/service.js';
 import { baselineRedact } from './secrets.js';
@@ -852,9 +853,19 @@ export async function createApp(options: AppOptions) {
     });
     return controller.signal;
   };
+  // The next action is derived on the host, beside the facts it rests on: the
+  // On switch lives in settings and the guided installer knows its platforms.
+  const withNextAction = (connections: EngineConnection[]): EngineConnection[] =>
+    connections.map((connection) => ({
+      ...connection,
+      nextAction: engines.nextAction(connection.engine, {
+        enabled: store.settings.services?.[connection.engine] === true,
+        installSupported: installer.offer(connection.engine).available,
+      }),
+    }));
   app.get(
     '/api/ai/status',
-    route(async () => ({ connections: engines.status() }), false),
+    route(async () => ({ connections: withNextAction(engines.status()) }), false),
   );
   app.post(
     '/api/ai/discover',
@@ -870,12 +881,52 @@ export async function createApp(options: AppOptions) {
           },
         }),
       );
-      return { connections: await engines.discover(true) };
+      return { connections: withNextAction(await engines.discover(true)) };
     }, false),
   );
   app.post(
     '/api/ai/check/:engine',
-    route(async (req, res) => engines.check(externalEngine(req), connectionSignal(res)), false),
+    route(async (req, res) => {
+      const checked = await engines.check(externalEngine(req), connectionSignal(res));
+      return withNextAction([checked])[0];
+    }, false),
+  );
+  /**
+   * Choose which observed installation a route uses. A candidate id names
+   * something the host itself observed; a path from the screen is never bound.
+   */
+  app.post(
+    '/api/ai/bind',
+    route(async (req) => {
+      const b = body(req),
+        engine = choice(b.engine, EXTERNAL_ENGINES, 'engine');
+      const bound = await engines.bind(engine, asString(b.candidateId, 'an installation', 600));
+      return withNextAction([bound])[0];
+    }, false),
+  );
+  /**
+   * One real request, on the person's say-so. It may use their allowance or
+   * incur provider charges, so nothing calls it for them: not a scan, not a
+   * finished sign-in, not reopening Settings.
+   */
+  app.post(
+    '/api/ai/test/:engine',
+    route(async (req, res) => {
+      const engine = externalEngine(req),
+        b = body(req);
+      if (b.consent !== true)
+        throw new ApiError(
+          409,
+          'Confirm that this test sends one small request through your selected service first.',
+        );
+      const receipt = await engines.testConnection(engine, {
+        consent: true,
+        model: asString(b.model, 'a model', 120),
+        signal: connectionSignal(res),
+      });
+      const connection = engines.status().find((c) => c.engine === engine)!;
+      return { receipt, connection: withNextAction([connection])[0] };
+    }, false),
   );
   app.post(
     '/api/ai/select',
@@ -934,12 +985,18 @@ export async function createApp(options: AppOptions) {
       if (body(req).consent !== true)
         throw new ApiError(409, 'Review and confirm this installation first.');
       const found = (await engines.discover(true)).find((c) => c.engine === engine)!;
-      if (found.installation === 'found')
+      // Found is not usable. A wrong-version, changed or corrupt installation
+      // still needs the private compatible copy; only a usable one is reused.
+      const usable =
+        found.installation === 'found' && found.compatibility === 'supported' && !found.repair;
+      if (usable)
         return {
           detail:
             'An installation already exists. Diomedes will reuse it. Check compatibility and sign-in.',
         };
-      const result = await installer.install(engine, true, connectionSignal(res));
+      const result = await installer.install(engine, true, connectionSignal(res), {
+        repair: found.installation === 'corrupt',
+      });
       await engines.discover(true);
       return result;
     }, false),
