@@ -78,6 +78,24 @@ describe('AI setup readiness and dispatch', () => {
     expect(discover).not.toHaveBeenCalled();
     expect(inspect).not.toHaveBeenCalled();
   });
+  it('sends nothing while finding, checking or selecting a connection', async () => {
+    const { service, generate } = fixture();
+    // Every path a screen reaches on its own: none of them may spend a
+    // person's allowance. Only an explicit test or request dispatches.
+    let dispatched = 0;
+    const seam = service.dispatch!;
+    service.dispatch = ((request) => {
+      dispatched += 1;
+      return seam(request);
+    }) as typeof service.dispatch;
+    await service.discover(true);
+    await service.check('claude-code');
+    service.selection('claude-code', 'sonnet');
+    service.nextAction('claude-code', { enabled: true, installSupported: true });
+    service.integration('claude-code', true);
+    expect(dispatched).toBe(0);
+    expect(generate).not.toHaveBeenCalled();
+  });
   it('requires disclosure consent and only reports installation on discovery', async () => {
     const { service, inspect } = fixture();
     await expect(service.discover(false)).rejects.toMatchObject({
