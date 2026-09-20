@@ -313,10 +313,15 @@ Windows, `npm run package:desktop` and `npm run package:windows` both write
 `npm run package:windows` and `npm run test:desktop` so the release on disk is
 current and verified.
 
-`npm run package:mac` is experimental and has not produced a Mac app. It refuses
-until an offline Electron archive is supplied, and on a Mac host it refuses
-pending a decision about the packager's automatic ad-hoc signing. Neither
-refusal affects `npm run build`, `npm run dev` or the tests. See
+`npm run package:mac` is experimental and has not produced a Mac app. On any
+host it refuses until an offline Electron archive is supplied. On a **Mac** host
+it then refuses pending a decision about the packager's automatic ad-hoc
+signing. On a **Windows** host that second refusal does not apply: with the
+archive supplied and permission to create symbolic links (Developer Mode or an
+elevated shell) it will build a `.app` that nobody has launched, with Electron's
+default icon, no ASAR integrity digest and only the ad-hoc signature Electron
+ships with. Without symbolic-link permission it fails and says so. None of this
+affects `npm run build`, `npm run dev` or the tests. See
 [`docs/reference/MACOS_EXPERIMENTAL_EVIDENCE.md`](docs/reference/MACOS_EXPERIMENTAL_EVIDENCE.md)
 and [`docs/MAC_DEVELOPMENT_HANDOFF.md`](docs/MAC_DEVELOPMENT_HANDOFF.md).
 

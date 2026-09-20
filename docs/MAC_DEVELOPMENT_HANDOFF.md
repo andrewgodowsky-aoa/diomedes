@@ -20,7 +20,7 @@ or **[?]** not yet verified anywhere. There is no **[M]** in this document yet.
 | MAC DEVELOPMENT (M1) | Prepared, not run. Known blockers removed in source. First Mac session must verify. |
 | MAC DESKTOP (M2) | Not started on a Mac. Packaging refuses by design until two decisions are made. |
 | PUBLIC RELEASE (M3) | Not started. No signing identity, no artifact, no release record. |
-| WEBSITE DEPLOYMENT | Nothing deployed. A Mac availability section is being prepared on a local site branch. |
+| WEBSITE DEPLOYMENT | Nothing deployed. `diomedes-site` `feature/mac-availability` (`fad607a`, pushed, not merged) adds a Mac platform target and a `/download#mac` section. It shows no Mac button: the button renders only for a Mac target in state `released` with a complete artifact, and the build refuses any other shape. |
 
 ## Repositories and starting points
 
@@ -42,8 +42,9 @@ Store, Console and capability packs. The rules that keep it that way:
 - In the Windows clone the `upstream` push URL is deliberately disabled, so Mac
   work-in-progress cannot be pushed to the public repository by accident.
 
-GitHub does not let an account fork its own repository, so `diomedes-mac` was
-created empty and seeded from a fresh clone of `diomedes` `main`. It therefore
+GitHub does not let a personal account fork its own repository into the same
+account (organizations can), so `diomedes-mac` was created empty and seeded from
+a fresh clone of `diomedes` `main`. It therefore
 shows no "forked from" link, and pull requests to `diomedes` are opened from a
 branch pushed to `diomedes`, not across repositories.
 
@@ -57,7 +58,7 @@ branch pushed to `diomedes`, not across repositories.
 
 ## What is on the Mac work branch
 
-In order, on top of `8026320`:
+`git log 8026320..` is the authority; this list explains it. On top of `8026320`:
 
 1. **FD01.I reviewed candidate (v2).** The eight-file macOS packaging and
    discovery candidate that FD01.R v2 accepted as
@@ -73,7 +74,26 @@ In order, on top of `8026320`:
    Before this, `npm run build` on a Mac would exit non-zero after a successful
    compile, because packaging ran as `postbuild` and the Mac target refuses.
 4. **An Apple Silicon CI job** on the named `macos-15` image that asserts the
-   architecture before it does anything. It has never run.
+   architecture before it does anything. It has never run. It runs only when
+   dispatched by hand or on a pull request from a `feature/apple-silicon*` or
+   `feature/macos*` branch, so that its first, probably red, runs cannot fail
+   other people's pull requests.
+5. **The desktop shell branches on platform.** On macOS, closing the last window
+   keeps the app in the Dock, a Dock click reopens the window, and Quit runs the
+   same single graceful service shutdown as before. Native traffic lights replace
+   the Windows title-bar overlay. The menu gains the Mac app, Edit and Window
+   menus so Cmd shortcuts reach text fields. The pinned Windows engine installers
+   are never offered on a Mac, and no Mac download address was invented. Windows
+   and Linux behaviour is unchanged. Source and injected-platform tests only.
+6. **Fixes from an independent review of items 2 to 4.** `installedRootFrom` read
+   a Windows install path with the host's path rules, which returns null for every
+   input on macOS and would have failed the Mac CI job. The guard now asks `ps`
+   about one pid at a time so no process can forge a row for another, matches
+   ownership with exact case off Windows, re-proves ownership immediately before
+   each signal, and escalates to SIGKILL after three seconds for a pid that is
+   still provably ours. The packager fails when it builds nothing instead of
+   printing an empty release. The desktop smoke drivers say so when nothing has
+   been packaged.
 
 When comparing file hashes across machines, use Git blob hashes
 (`git hash-object`), not raw SHA256. The freeze manifest records raw bytes from a
@@ -170,7 +190,7 @@ git switch feature/apple-silicon-development                                    
 uname -m && node -p "process.version + ' ' + process.arch"                            # [?] expect arm64 twice
 npm ci                                                                                # [W] from the committed lock
 npm run check                                                                         # [W] tsc --noEmit, exit 0
-node node_modules/vitest/vitest.mjs run --maxWorkers=2                                # [W] 2324 passed, 3 skipped, 0 failed
+node node_modules/vitest/vitest.mjs run --maxWorkers=2                                # [W] 2360 tests; see the note below
 npm run build                                                                         # [?] must compile and create no release/ folder
 npm run dev                                                                           # [?] then open http://127.0.0.1:5173, Ctrl+C stops both
 node scripts/dev-server-guard.mjs                                                     # [W] exit 0 when ports are free
@@ -178,13 +198,27 @@ node scripts/dev-server-guard.mjs                                               
 
 One heavy command at a time on the Air. Keep Vitest at two workers.
 
+The unit suite on the final tree, Windows, 2026-09-20: two full runs, each
+2,356 passed, 1 failed, 3 skipped, and a different test failed each time. One was
+a 30-second timeout in `tests/scoped-work.test.ts`; the other was an `EPERM` when
+`tests/native-work.test.ts` renamed its own temporary folder. This branch touches
+neither file, other sessions were working on the machine during both runs, and
+the two files pass alone, 92 of 92. They are recorded as Windows flakes under
+load, not as a clean run. Before the review fixes and the desktop shell, the same
+suite ran 2,324 passed, 3 skipped, 0 failed. `tsc --noEmit` exits 0.
+
 `package-lock.json` was generated on Windows and does carry the Apple Silicon
 optional binaries (`@esbuild/darwin-arm64`, `@rollup/rollup-darwin-arm64`,
 `fsevents`), so `npm ci` should not hit the missing-optional-dependency failure
-that Windows-made lockfiles are known for. Newer npm blocks install scripts by
-default and will warn about `esbuild`; on Windows the build still works without
-it. If esbuild cannot find its binary on the Mac, that warning is the first place
-to look. Do not run `npm install` to "fix" the lock; report it instead.
+that Windows-made lockfiles are known for. npm 12 holds back install scripts that
+are not listed under `allowScripts`. This is not the older `ignore-scripts`
+setting, which is `false` here and will mislead anyone who checks it. On Windows,
+`npm ci` printed `1 package had install scripts blocked because they are not
+covered by allowScripts: esbuild@0.28.2`, and the build worked anyway because
+esbuild's binary arrives through the `@esbuild/<platform>` optional dependency.
+If esbuild cannot find its binary on the Mac, check that
+`node_modules/@esbuild/darwin-arm64` exists before anything else. Do not run
+`npm install` to "fix" the lock; report it instead.
 
 What to expect and report from that session:
 
@@ -192,8 +226,21 @@ What to expect and report from that session:
   written on Windows and has never run anywhere else. Record each failure with
   its reason. Fix the platform assumption or mark the test OS-exclusive with a
   stated reason. Do not skip failures to get a green run.
+- Look here first. An independent review read the suite for Windows assumptions
+  without being able to run it on a Mac. Likely to need attention:
+  `tests/capability-packs.test.ts` and `tests/app-updates.test.ts` create
+  `'junction'` links, which Node turns into plain symlinks off Windows;
+  `tests/c00-independent.test.ts` asserts against `git worktree list`;
+  `tests/coordination.test.ts` has a test that runs only on Windows and Linux, so
+  it silently does not run on a Mac and a green Mac run covers less than a green
+  Windows run. Read and cleared: `tests/paths.test.ts`, `tests/hardware.test.ts`,
+  `tests/support-bundle.test.ts`, `tests/discovery.test.ts`.
 - `tests/dev-server-guard-platform.test.ts` has two tests that are skipped on
-  Windows and run on a Mac. They are the first real check of the `ps` reader.
+  Windows and run on a Mac. On macOS they are the first real check of the `ps`
+  reader. The guard's kill path has only ever run on Windows: before this branch
+  it could not read a command line on macOS at all, so it could never signal
+  anything there. It now can. Exercise it deliberately, as below, before relying
+  on it.
 - Start `npm run dev`, kill the terminal without Ctrl+C, run `npm run dev`
   again. The guard should reclaim the orphaned pair. Then hold port 5173 with an
   unrelated process and confirm the guard refuses and kills nothing.
@@ -207,7 +254,9 @@ What to expect and report from that session:
 | `npm run build` packaging on a Mac host | Fixed in source, not Mac-verified. |
 | Dev-server guard on macOS | Fixed in source, not Mac-verified. |
 | `npm run package:mac` | Refuses by design. Two separate reasons, below. |
-| Desktop shell on macOS | `desktop/main.mjs` quits when the last window closes, has no Dock reopen, uses a Windows title-bar overlay, and offers Windows engine installers. Being addressed on `feature/macos-desktop-shell`, not merged. |
+| Desktop shell on macOS | Platform branching is in source (item 5 above). Never launched on a Mac. Unverified: Finder launch, Dock reopen, traffic-light geometry, Cmd shortcuts, quit and reopen, sleep and wake, whether the service is really gone after Quit. |
+| Renderer on macOS | Two follow-ups in `client/`, not done. The title region was built for a 40px Windows overlay and needs about 76px of left inset and a drag strip under the traffic lights; the renderer already receives `platform` through `/updates/status`, so no new IPC is needed. `client/AISetup.tsx` renders an installer link even when the offer is unavailable, which the shell now refuses, so on a Mac it dead-clicks; render it as text when `!offer.available`. |
+| Mac app icon | None. The packager embeds an icon for Windows only, so a Mac package ships Electron's default icon. |
 | Native Codex route on macOS | Refused before any account call. A Mac Codex install is reported as observed and unsupported. No Codex executable is bundled for Mac. |
 | Engine discovery on macOS | Implemented against fixtures. Never run on a Mac. Discovery is not readiness. |
 | Credentials | macOS uses Keychain through Electron's protected storage. Untested. No plaintext fallback is acceptable. |
@@ -223,12 +272,24 @@ What to expect and report from that session:
    tests and `npm run build` do not need the binary. Packaging needs
    `electron-v44.2.0-darwin-arm64.zip` placed in a folder named by
    `DIOMEDES_ELECTRON_ZIP_DIR`; obtaining it is a deliberate, recorded download.
-2. **Ad-hoc signing policy.** For Electron 41 and later on macOS, the packager
-   re-signs the Framework ad hoc to keep ASAR integrity valid. FD01 authorizes no
-   signing, so a Mac-host package run refuses. Apple Silicon will not execute
-   unsigned native code at all, so an ad-hoc signature is the minimum for a local
-   test build to launch. Until this is decided there is no `.app`, signed or not.
-   It does not affect `build`, `dev` or the tests.
+2. **Ad-hoc signing policy, on a Mac host only.** For Electron 41 and later, the
+   packager on macOS writes an ASAR integrity digest into the Framework, which
+   invalidates the ad-hoc signature Electron ships with, and then re-signs it ad
+   hoc with `codesign`. FD01 authorizes no signing, so a Mac-host package run
+   refuses. Apple Silicon will not execute native code with a missing or invalid
+   signature, so an ad-hoc signature is the minimum for a local build to launch.
+   This does not affect `build`, `dev` or the tests.
+
+From a **Windows** host the second refusal does not apply, and this is easy to
+misread as "it always refuses". The packager has no `codesign` there, so it skips
+the digest and leaves Electron's own ad-hoc signature untouched; its source says
+this is deliberate, to keep cross-packaged apps launchable. Such a package would
+have no integrity digest, Electron's default icon, and no execute permissions
+recorded by Windows, and nobody has launched one. It also needs permission to
+create symbolic links. The Windows machine does not have it (checked: `EPERM`,
+Developer Mode off, shell not elevated), and the packager's answer to that is to
+skip the macOS target without an error, so our script now fails loudly instead.
+Building the `.app` on an Apple Silicon runner or on the Mac avoids all of this.
 
 ## Who works where
 
@@ -267,8 +328,11 @@ customer data or provider spend is authorized by this handoff.
    what happens to the uncommitted stacked work.
 4. **Repository name and visibility.** `diomedes-mac`, private, chosen as
    defaults.
-5. **Upstream pull request** for the four commits on the Mac branch. Commits 2
-   and 3 are platform-neutral fixes that help Windows too and could go first.
+5. **Upstream pull request** for the Mac branch. The guard fix, the build and
+   packaging split and the `installedRootFrom` fix are platform-neutral, help
+   Windows too, and could go first as a smaller pull request.
+6. **Windows Developer Mode**, only if a Mac package is ever to be built from the
+   Windows machine. It is a system setting and was left alone.
 
 ## Not done, and not claimed
 

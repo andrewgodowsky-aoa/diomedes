@@ -136,6 +136,20 @@ describe('FD01 same desktop packaging entry point', () => {
     );
   });
 
+  it('fails when the packager builds nothing, instead of reporting an empty release', async () => {
+    // On a Windows host that cannot create symlinks, Electron Packager logs that
+    // it is skipping the macOS target and resolves with no outputs.
+    const { root, deps, options } = await fixture();
+    deps.packager.mockResolvedValueOnce([]);
+    await expect(packageDesktop(options, deps)).rejects.toThrow(
+      /produced no darwin\/arm64 output.*symbolic links/s,
+    );
+    await expect(fs.stat(path.join(root, 'evidence/macos-release/build-info.json'))).rejects.toThrow();
+    expect((await fs.readdir(root)).filter((entry) => entry.startsWith('.desktop-stage-'))).toEqual(
+      [],
+    );
+  });
+
   it('keeps the default Windows runtime hash gate before bundling or packaging', async () => {
     const { root, deps } = await fixture();
     await fs.writeFile(path.join(root, '.data/native-runtime/codex.exe'), 'unverified executable');

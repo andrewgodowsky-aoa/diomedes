@@ -226,6 +226,13 @@ export async function packageDesktop(options = {}, dependencies = {}) {
           }
         : {}),
     });
+    // Electron Packager resolves with nothing, and only logs, when it skips a
+    // target. It skips macOS on a Windows host that cannot create symbolic
+    // links. Reporting "Desktop release:" with no path would read as success.
+    if (!outputs?.length)
+      throw new Error(
+        `The packager produced no ${platform}/${arch} output. Packaging macOS from Windows needs permission to create symbolic links (Windows Developer Mode, or an elevated shell); without it the packager skips the target. Nothing was built.`,
+      );
     const evidenceDirectory = path.join(
       root,
       'evidence',
@@ -289,12 +296,14 @@ export async function packageDesktop(options = {}, dependencies = {}) {
 // An explicit argument outranks the environment, which outranks the host.
 export function targetFromArgs(args) {
   const target = {};
-  for (let i = 0; i < args.length; i += 2) {
-    const flag = args[i];
+  for (let i = 0; i < args.length; i++) {
+    const [flag, inline] = args[i].split(/=(.*)/s, 2);
     if (flag !== '--platform' && flag !== '--arch') throw new Error(`Unknown argument: ${flag}`);
-    const value = args[i + 1];
-    if (value === undefined || value.startsWith('--')) throw new Error(`${flag} needs a value.`);
-    target[flag.slice(2)] = value;
+    const value = inline ?? args[++i];
+    if (!value || value.startsWith('--')) throw new Error(`${flag} needs a value.`);
+    const key = flag.slice(2);
+    if (key in target) throw new Error(`${flag} was given more than once.`);
+    target[key] = value;
   }
   return target;
 }

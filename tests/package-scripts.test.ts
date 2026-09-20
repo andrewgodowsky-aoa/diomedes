@@ -75,5 +75,26 @@ describe('targetFromArgs', () => {
   it('refuses a flag with no value', () => {
     expect(() => targetFromArgs(['--platform'])).toThrow(/--platform needs a value/);
     expect(() => targetFromArgs(['--platform', '--arch', 'x64'])).toThrow(/--platform needs a value/);
+    expect(() => targetFromArgs(['--platform='])).toThrow(/--platform needs a value/);
+  });
+
+  it('reads the --flag=value form, which is the one people type', () => {
+    expect(targetFromArgs(['--platform=darwin', '--arch=arm64'])).toEqual({
+      platform: 'darwin',
+      arch: 'arm64',
+    });
+    expect(targetFromArgs(['--platform=win32', '--arch', 'x64'])).toEqual({
+      platform: 'win32',
+      arch: 'x64',
+    });
+  });
+
+  it('refuses a repeated flag rather than letting the last one win quietly', () => {
+    expect(() => targetFromArgs(['--platform', 'darwin', '--platform', 'win32'])).toThrow(
+      /--platform was given more than once/,
+    );
+    expect(() => targetFromArgs(['--arch=arm64', '--arch', 'x64'])).toThrow(
+      /--arch was given more than once/,
+    );
   });
 });

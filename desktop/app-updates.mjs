@@ -75,10 +75,14 @@ export async function sha256File(filePath) {
  */
 export function installedRootFrom(execPath) {
   if (typeof execPath !== 'string' || !execPath) return null;
-  if (path.basename(execPath).toLowerCase() !== UPDATE_EXECUTABLE_NAME.toLowerCase()) return null;
-  const appDir = path.dirname(execPath);
-  if (path.basename(appDir).toLowerCase() !== 'app') return null;
-  return path.dirname(appDir);
+  // INSTALLDIR/app/Diomedes.exe is the Windows installer's layout, so the path
+  // is read with Windows rules whatever host runs this. The host's own rules
+  // see no separator in `C:\...` on macOS and return null for every input.
+  const win = path.win32;
+  if (win.basename(execPath).toLowerCase() !== UPDATE_EXECUTABLE_NAME.toLowerCase()) return null;
+  const appDir = win.dirname(execPath);
+  if (win.basename(appDir).toLowerCase() !== 'app') return null;
+  return win.dirname(appDir);
 }
 
 /** True only when INSTALLDIR carries this product's exact ownership marker. */
