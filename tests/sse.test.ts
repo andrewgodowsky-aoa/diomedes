@@ -5,9 +5,7 @@ const encoder = new TextEncoder();
 const bytes = (value: string) => encoder.encode(value);
 /** Push each piece as its own chunk, the way a socket delivers them. */
 function parse(parser: SseParser, ...pieces: (string | Uint8Array)[]) {
-  return pieces.flatMap((piece) =>
-    parser.push(typeof piece === 'string' ? bytes(piece) : piece),
-  );
+  return pieces.flatMap((piece) => parser.push(typeof piece === 'string' ? bytes(piece) : piece));
 }
 
 describe('server-sent event framing', () => {
@@ -15,7 +13,9 @@ describe('server-sent event framing', () => {
     expect(parse(new SseParser(), 'data: one\n\n')).toEqual([{ event: 'message', data: 'one' }]);
   });
   it('reads a carriage-return line-feed stream', () => {
-    expect(parse(new SseParser(), 'data: one\r\n\r\n')).toEqual([{ event: 'message', data: 'one' }]);
+    expect(parse(new SseParser(), 'data: one\r\n\r\n')).toEqual([
+      { event: 'message', data: 'one' },
+    ]);
   });
   it('reads a carriage-return stream', () => {
     expect(parse(new SseParser(), 'data: one\r\r')).toEqual([{ event: 'message', data: 'one' }]);
@@ -44,10 +44,14 @@ describe('server-sent event framing', () => {
     expect(parse(new SseParser(), ': heartbeat\n\n')).toEqual([]);
   });
   it('strips one leading byte order mark and keeps a second as content', () => {
-    expect(parse(new SseParser(), '﻿data: one\n\n')).toEqual([
+    // Written by code point: a literal mark in this file would be invisible.
+    const mark = String.fromCharCode(0xfeff);
+    expect(parse(new SseParser(), `${mark}data: one\n\n`)).toEqual([
       { event: 'message', data: 'one' },
     ]);
-    expect(parse(new SseParser(), '﻿﻿data: one\n\n')).toEqual([]);
+    // Only one mark is removed, so the second stays in front of the field
+    // name and the line is no longer a `data` field at all.
+    expect(parse(new SseParser(), `${mark}${mark}data: one\n\n`)).toEqual([]);
   });
   it('keeps a UTF-8 character that arrives across three chunks', () => {
     const parser = new SseParser();

@@ -123,7 +123,12 @@ async function ephemeralPort(): Promise<number> {
   const address = server.address();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   if (!address || typeof address === 'string')
-    throw new EngineError('START_FAILED', 'OpenCode did not provide a loopback port.', false, 'launch');
+    throw new EngineError(
+      'START_FAILED',
+      'OpenCode did not provide a loopback port.',
+      false,
+      'launch',
+    );
   return address.port;
 }
 
