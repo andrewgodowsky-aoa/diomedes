@@ -28,6 +28,17 @@ GET /account/session, POST /account/organizations, POST
 /account/organizations/:id/invitations/accept, PATCH
 /account/organizations/:id/members/:personId, and POST /account/session/revoke.
 
+The cloud GET /account/session returns at most 25 active workspaces plus
+nextCursor (an organization ID or null). Continue with ?after=<nextCursor> until
+null; every page re-verifies the session and current membership. The cursor is
+not an authority token. Pages reflect current state rather than a cross-request
+snapshot; a membership revoked before a later page is excluded. Other query
+parameters are rejected. Each cloud page joins its membership and organization
+records in one bounded database read. Browser preflight for the same GET page
+accepts the validated continuation under the configured origin/header rules.
+The local Store listWorkspaces method keeps its
+existing complete response and shape using the same portable page traversal.
+
 Every route requires an already issued bearer token. The verifier checks RS256,
 pinned WorkOS JWKS, exact issuer/client/resource audience, bounded token times,
 verified user and fresh active provider session. Provider organization, email,
@@ -59,8 +70,14 @@ session transaction locks serialize identity mapping. An organization row lock
 serializes invitation redemption, generation changes and last-owner edits.
 Identity HTTP completes before SQL begins; expired queued proofs are refused.
 No provider/model calls may run inside a transaction. No uncertain COMMIT is
-automatically retried. The API bounds member/workspace reads to 1000/100 and
-fails rather than silently truncating larger accounts.
+automatically retried. Admission is limited to 100 active workspaces per person
+and 1000 active members per organization; retained revoked rows do not count.
+Checks run under the existing subject/organization locks before writes commit.
+Point membership and last-owner reads allow over-limit accounts to recover;
+listing is explicitly paginated rather than silently truncated. Client error
+events remain owned through closure. Errors before confirmed closure fail the
+transaction; late duplicate notifications after end() resolves cannot escape
+as uncaught errors or be reused by another request.
 
 Migrations 001 and 002 create only cloud account and commercial-domain tables.
 Cross-tenant commercial references use composite foreign keys. Later funding

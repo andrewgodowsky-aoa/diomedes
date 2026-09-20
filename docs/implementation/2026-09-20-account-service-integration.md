@@ -44,6 +44,45 @@ Evidence: F:/Diomedes/deliverables/continuation-20260920/account-control-plane/i
 The first branch request explicitly setting the suspension interval was
 refused by the Free plan. The successful request used the account default.
 
+## Capacity and connection-lifetime repair acceptance
+
+Independent review first reproduced a capacity lockout: accepting more active
+memberships than bounded readers could return prevented later management.
+Admission now enforces the active 100-workspace/1000-member limits under the
+existing transaction locks. Revoked history does not consume capacity, rejected
+rejoins remain reusable, and point queries preserve member/last-owner recovery.
+The cloud session response uses bounded 25-row joined pages; the desktop wrapper
+retains its full legacy response. Authority freshness remains five seconds.
+
+An actual local Worker connected to Neon also exposed duplicate errors emitted
+after an explicitly closed connection. The transaction owns its error listener
+for the client's lifetime, rejects active/closing errors, and contains only late
+notifications after successful close. It never retries uncertain commits.
+
+The accepted repair tree is 843d5cd78b2a7af02a9a170bee945402a1d0b024 over
+b52e9dd248e806831aec5f03f2702a9a9d221243. Its independent ACCEPT_SCOPED review
+passed the unchanged original 30 cases, 28 new offline cases and three new
+real-Neon cases, plus package TypeScript. The original rejected report and tests
+remain preserved. The twelve repair files and added independent test were
+imported only after exact frozen SHA256 verification.
+
+Producer runtime checks returned 100 distinct workspaces in four pages taking
+1.02-1.06 seconds each, with one joined query and no per-organization lookup.
+Four preflights issued no SQL. Terminating its own backend during an uncommitted
+insert produced 503 and rollback; subsequent traffic succeeded without uncaught
+connection errors. These are local observations, not hosted CPU qualification.
+
+Evidence: F:/Diomedes/deliverables/continuation-20260920/account-service-review-v2/
+and account-control-plane/repaired-integration-gates-1/. The integrated service
+suite passes 144 offline cases; 25 live-only cases are deliberately skipped in
+that offline command. Separate real-database executions are recorded above and
+in the repair review rather than counted as offline passes.
+
+Final repaired desktop composition passes root TypeScript, 2306 unit cases,
+Vite build and all 35 browser cases. One existing 8.3 platform-dependent unit
+case is explicitly skipped locally. The separate service type check and dry-run
+Worker build also pass. Hosted checks must bind the resulting published commit.
+
 ## Remaining acceptance boundaries
 
 Local workerd verified real RS256 validation and signature refusal against

@@ -6,6 +6,9 @@ import type {
 } from '../contract/contract.js';
 
 export const ACCOUNT_FOUNDATION_VERSION = 1 as const;
+export const ACCOUNT_WORKSPACE_LIMIT = 100;
+export const ORGANIZATION_MEMBER_LIMIT = 1000;
+export const CLOUD_WORKSPACE_PAGE_SIZE = 25;
 export const accountId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
 const time = z.iso.datetime();
 const epoch = z
@@ -233,6 +236,7 @@ export type OrganizationRow = AccountState['organizations'][number];
 export type MembershipRow = AccountState['memberships'][number];
 export type InvitationRecord = AccountState['invitations'][number];
 export type AccountEvent = AccountState['events'][number];
+export interface WorkspaceRow { organization: OrganizationRow; membership: MembershipRow }
 export const recordSchemas = { person, subject, organization, membership, session, invitation, event };
 
 /** Methods are database/local-state operations only, never provider calls. */
@@ -244,8 +248,14 @@ export interface AccountTransaction {
   savePerson(person: AccountState['persons'][number], mapping: SubjectMapping): Promise<void>;
   saveSession(record: SessionRecord): Promise<void>;
   organization(id: string, lock?: boolean): Promise<OrganizationRow | undefined>;
+  member(organizationId: string, personId: string): Promise<MembershipRow | undefined>;
+  hasOtherActiveOwner(organizationId: string, personId: string): Promise<boolean>;
+  /** Active-only, bounded admission window; never used to authorize a member. */
   members(organizationId: string): Promise<MembershipRow[]>;
-  memberships(personId: string): Promise<MembershipRow[]>;
+  /** Active-only keyset page, including one extra row to detect continuation. */
+  memberships(personId: string, after?: string): Promise<MembershipRow[]>;
+  /** Membership and organization from one bounded read, with an extra row. */
+  workspaceRows(personId: string, after?: string): Promise<WorkspaceRow[]>;
   saveOrganization(row: OrganizationRow): Promise<void>;
   saveMembership(row: MembershipRow): Promise<void>;
   invitation(hash: string): Promise<InvitationRecord | undefined>;

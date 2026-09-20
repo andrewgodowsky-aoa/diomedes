@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { activeOwners, canAdministerMembers, entitlementFor } from '../../../shared/workspaces.js';
+import { canAdministerMembers, entitlementFor } from '../../../shared/workspaces.js';
 import { assertMembership, verifySubject } from '../contract/contract.js';
 import { AccountError } from './errors.js';
 import { base64url, digest } from './crypto.js';
-import { accountId, verifiedIdentitySchema, type AccountTransaction, type AccountRepository,
+import { ACCOUNT_WORKSPACE_LIMIT, ORGANIZATION_MEMBER_LIMIT, CLOUD_WORKSPACE_PAGE_SIZE, accountId, verifiedIdentitySchema, type AccountTransaction, type AccountRepository,
   type AccountSession, type AccountMembershipSnapshot, type IdentityVerifier, type VerifiedIdentity,
   type MembershipRow, type OrganizationRow, type AccountEvent } from './domain.js';
 
@@ -75,11 +75,10 @@ export class AccountService {
   }
   private async member(tx: AccountTransaction, personId: string, organizationId: string) {
     const org = await tx.organization(organizationId, true);
-    const members = org ? await tx.members(organizationId) : [];
-    const member = members.find((row) => row.record.personId === personId);
+    const member = org ? await tx.member(organizationId, personId) : undefined;
     if (!org || !member || member.record.state !== 'active')
       throw new AccountError(403, 'This Business workspace is unavailable to this person.');
-    return { org, member, members };
+    return { org, member };
   }
   private async owner(tx: AccountTransaction, personId: string, organizationId: string) {
     const found = await this.member(tx, personId, organizationId);
@@ -90,11 +89,18 @@ export class AccountService {
   private async event(tx: AccountTransaction, actorPersonId: string, organizationId: string | null, kind: AccountEvent['kind'], targetId: string) {
     await tx.event({ id: id('account_event'), at: this.at(), actorPersonId, organizationId, kind, targetId });
   }
+  private async requireWorkspaceCapacity(tx: AccountTransaction, personId: string) {
+    // act() holds the verified subject lock for all additions by this person.
+    // Revocations only reduce the active count; history remains stored.
+    if ((await tx.memberships(personId)).length >= ACCOUNT_WORKSPACE_LIMIT)
+      throw new AccountError(409, 'The account has reached its active workspace limit.');
+  }
   signIn(token: string) { return this.act(token, async (_tx, actor) => actor); }
   async createOrganization(token: string, displayName: string) {
     const parsed = organizationInput.safeParse({ name: displayName });
     if (!parsed.success) throw new AccountError(422, 'A bounded organization name is required.');
     return this.act(token, async (tx, actor) => {
+      await this.requireWorkspaceCapacity(tx, actor.person.id);
       const at = this.at();
       const org: OrganizationRow = { generation: 0, record: { v: 1, id: id('org'), name: parsed.data.name,
         industry: null, tenantId: id('tenant'), identitySource: 'hosted', createdAt: at, createdBy: actor.person.id } };
@@ -105,16 +111,45 @@ export class AccountService {
       return org.record;
     });
   }
+  private async workspacePageFor(tx: AccountTransaction, actor: AccountSession, after?: string) {
+    const organizations = [];
+    const rows = await tx.memberships(actor.person.id, after);
+    const page = rows.slice(0, ACCOUNT_WORKSPACE_LIMIT);
+    for (const row of page) {
+      const org = await tx.organization(row.record.organizationId);
+      if (!org) throw new AccountError(503, 'Account storage is inconsistent.');
+      organizations.push({ organization: org.record, membership: row.record, entitlement: entitlementFor(org.record.id) });
+    }
+    return { person: actor.person, organizations,
+      nextCursor: rows.length > ACCOUNT_WORKSPACE_LIMIT ? page.at(-1)!.record.organizationId : null };
+  }
+  /** Existing local Store consumers retain the complete response and shape.
+   * The cloud HTTP handler uses workspacePage() for bounded network responses. */
   listWorkspaces(token: string) {
     return this.act(token, async (tx, actor) => {
-      const organizations = [];
-      for (const row of await tx.memberships(actor.person.id)) {
-        if (row.record.state !== 'active') continue;
-        const org = await tx.organization(row.record.organizationId);
-        if (!org) throw new AccountError(503, 'Account storage is inconsistent.');
-        organizations.push({ organization: org.record, membership: row.record, entitlement: entitlementFor(org.record.id) });
+      let page = await this.workspacePageFor(tx, actor);
+      const organizations = [...page.organizations];
+      while (page.nextCursor !== null) {
+        const after = page.nextCursor;
+        page = await this.workspacePageFor(tx, actor, after);
+        if (page.nextCursor !== null && page.nextCursor <= after)
+          throw new AccountError(503, 'Account storage returned an invalid continuation.');
+        organizations.push(...page.organizations);
       }
       return { person: actor.person, organizations };
+    });
+  }
+  workspacePage(token: string, after?: string) {
+    if (after !== undefined && !accountId.safeParse(after).success)
+      throw new AccountError(422, 'A valid workspace continuation is required.');
+    return this.act(token, async (tx, actor) => {
+      // The cloud projection joins both records in one SQL round trip. No
+      // per-workspace network query can consume the current proof's lifetime.
+      const rows = await tx.workspaceRows(actor.person.id, after);
+      const page = rows.slice(0, CLOUD_WORKSPACE_PAGE_SIZE);
+      return { person: actor.person, organizations: page.map(row => ({ organization: row.organization.record,
+        membership: row.membership.record, entitlement: entitlementFor(row.organization.record.id) })),
+        nextCursor: rows.length > CLOUD_WORKSPACE_PAGE_SIZE ? page.at(-1)!.organization.record.id : null };
     });
   }
   async invite(token: string, organizationId: string, input: z.infer<typeof invitationInput>) {
@@ -143,10 +178,13 @@ export class AccountService {
         throw new AccountError(403, 'The invitation is unavailable to this recipient or workspace.');
       if (invitation.redeemedAt !== null) throw new AccountError(409, 'This invitation has already been used.');
       if (Date.parse(invitation.expiresAt) <= this.now()) throw new AccountError(410, 'This invitation expired.');
-      const { member: inviter, members } = await this.owner(tx, invitation.invitedBy, organizationId);
+      const { member: inviter } = await this.owner(tx, invitation.invitedBy, organizationId);
       if (inviter.generation !== invitation.inviterGeneration) throw new AccountError(403, 'The invitation authority changed.');
-      const previous = members.find((row) => row.record.personId === actor.person.id);
+      const previous = await tx.member(organizationId, actor.person.id);
       if (previous?.record.state === 'active') throw new AccountError(409, 'This person is already a member.');
+      if ((await tx.members(organizationId)).length >= ORGANIZATION_MEMBER_LIMIT)
+        throw new AccountError(409, 'The workspace has reached its active member limit.');
+      await this.requireWorkspaceCapacity(tx, actor.person.id);
       const row: MembershipRow = { generation: previous ? previous.generation + 1 : 0, record: { v: 1,
         organizationId, personId: actor.person.id, role: invitation.role, state: 'active', invitedAt: invitation.createdAt,
         joinedAt: this.at(), revokedAt: null, revokedReason: null } };
@@ -161,11 +199,11 @@ export class AccountService {
     const parsed = changeInput.safeParse(input);
     if (!parsed.success) throw new AccountError(422, 'A valid membership change is required.');
     return this.act(token, async (tx, actor) => {
-      const { org, members } = await this.owner(tx, actor.person.id, organizationId);
-      const target = members.find((row) => row.record.personId === personId);
+      const { org } = await this.owner(tx, actor.person.id, organizationId);
+      const target = await tx.member(organizationId, personId);
       if (!target) throw new AccountError(403, 'The membership is unavailable.');
       if (target.record.role === 'owner' && target.record.state === 'active' &&
-          (parsed.data.role !== 'owner' || parsed.data.state !== 'active') && activeOwners(members.map((row) => row.record), organizationId).length <= 1)
+          (parsed.data.role !== 'owner' || parsed.data.state !== 'active') && !(await tx.hasOtherActiveOwner(organizationId, personId)))
         throw new AccountError(409, 'Transfer ownership before removing the final owner.');
       if (target.record.state !== 'active' && parsed.data.state === 'active')
         throw new AccountError(409, 'Invite this person again; a role edit cannot restore revoked membership.');

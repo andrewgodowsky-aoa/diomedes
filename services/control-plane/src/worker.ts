@@ -6,6 +6,7 @@ import { readBytes } from './crypto.js';
 import { WorkOSIdentityVerifier } from './identity-workos.js';
 import { PostgresRepository, neonClientFactory } from './postgres.js';
 import type { WorkerEnv } from '../worker-configuration.js';
+import { accountId } from './domain.js';
 
 async function body<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
   if (request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json')
@@ -42,7 +43,11 @@ export function createHandler(create: (config: Configuration) => AccountService 
         throw new AccountError(403, 'This browser request needs an allowed origin.');
       if (origin !== null) headers.set('Access-Control-Allow-Origin', origin);
       const url = new URL(request.url);
-      if (url.search) throw new AccountError(422, 'Account requests do not accept query parameters.');
+      const after = url.searchParams.get('after');
+      const queryMethod = request.method === 'OPTIONS' ? request.headers.get('access-control-request-method') : request.method;
+      if (url.search && !(url.pathname === '/account/session' && queryMethod === 'GET' &&
+        [...url.searchParams.keys()].every(key => key === 'after') && url.searchParams.getAll('after').length === 1 && accountId.safeParse(after).success))
+        throw new AccountError(422, 'The account query contains invalid or unexpected fields.');
       if (request.method === 'OPTIONS') {
         const requested = (request.headers.get('access-control-request-headers') ?? '').toLowerCase().split(',').map((value) => value.trim()).filter(Boolean);
         if (!origin || !['GET','POST','PATCH'].includes(request.headers.get('access-control-request-method') ?? '') ||
@@ -56,7 +61,7 @@ export function createHandler(create: (config: Configuration) => AccountService 
         throw new AccountError(401, 'A verified bearer session is required.');
       const token = authorization.slice(7);
       const accounts = create(config);
-      if (url.pathname === '/account/session' && request.method === 'GET') return json(await accounts.listWorkspaces(token));
+      if (url.pathname === '/account/session' && request.method === 'GET') return json(await accounts.workspacePage(token, after ?? undefined));
       if (url.pathname === '/account/session/revoke' && request.method === 'POST') {
         await accounts.revokeLocalSession(token); return new Response(null, { status: 204, headers });
       }

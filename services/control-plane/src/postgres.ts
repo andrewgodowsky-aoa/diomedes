@@ -1,7 +1,7 @@
 import { Client } from '@neondatabase/serverless';
 import { z } from 'zod';
 import { AccountError } from './errors.js';
-import { recordSchemas, type AccountRepository, type AccountTransaction, type VerifiedIdentity,
+import { ACCOUNT_WORKSPACE_LIMIT, ORGANIZATION_MEMBER_LIMIT, CLOUD_WORKSPACE_PAGE_SIZE, recordSchemas, type AccountRepository, type AccountTransaction, type VerifiedIdentity,
   type AccountState, type SubjectMapping, type SessionRecord, type OrganizationRow,
   type MembershipRow, type InvitationRecord, type AccountEvent } from './domain.js';
 
@@ -9,6 +9,7 @@ export interface SqlClient {
   connect(): Promise<void>;
   query(text: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>;
   end(): Promise<void>;
+  on?(event: 'error', listener: (error: unknown) => void): unknown;
 }
 export type ClientFactory = () => SqlClient;
 
@@ -27,22 +28,41 @@ export async function inTransaction<T>(factory: ClientFactory, action: (client: 
   let began = false;
   let result: T | undefined;
   const failures: unknown[] = [];
+  let closed = false;
+  let eventFailed = false;
+  let eventFailure: unknown;
+  // Neon can emit a second socket error after its close event and end promise.
+  // Keep ownership for this client's full lifetime. Only a confirmed, explicitly
+  // closed client can ignore late notifications; active/closing errors fail.
+  client.on?.('error', error => {
+    if (!closed && !eventFailed) { eventFailed = true; eventFailure = error; }
+  });
+  const checkEvent = () => { if (eventFailed) throw eventFailure; };
+  const recordFailure = (error: unknown) => { if (!failures.includes(error)) failures.push(error); };
   try {
     await client.connect();
+    checkEvent();
     await client.query('BEGIN'); began = true;
+    checkEvent();
     await client.query("SET LOCAL statement_timeout = '5s'");
+    checkEvent();
     await client.query("SET LOCAL lock_timeout = '3s'");
+    checkEvent();
     await client.query("SET LOCAL idle_in_transaction_session_timeout = '6s'");
+    checkEvent();
     result = await action(client);
+    checkEvent();
     await client.query('COMMIT'); began = false;
+    checkEvent();
   } catch (error) {
-    failures.push(error);
+    recordFailure(error);
     if (began) {
-      try { await client.query('ROLLBACK'); } catch (rollback) { failures.push(rollback); }
+      try { await client.query('ROLLBACK'); } catch (rollback) { recordFailure(rollback); }
     }
   } finally {
-    try { await client.end(); } catch (close) { failures.push(close); }
+    try { await client.end(); closed = true; } catch (close) { recordFailure(close); }
   }
+  if (eventFailed) recordFailure(eventFailure);
   // Never replay an operation after a transport or COMMIT failure.
   if (failures.length > 1) throw new TransactionCleanupError(failures);
   if (failures.length === 1) throw failures[0];
@@ -89,14 +109,27 @@ class PostgresTransaction implements AccountTransaction {
     return result.rows.length ? orgRow.parse(result.rows[0]) : undefined;
   }
   async members(organizationId: string) {
-    const result = await this.client.query('SELECT record,generation FROM control_plane.memberships WHERE organization_id=$1 ORDER BY person_id LIMIT 1001', [organizationId]);
-    if (result.rows.length > 1000) throw new AccountError(503, 'The workspace exceeds the current account service limit.');
+    const result = await this.client.query(`SELECT record,generation FROM control_plane.memberships WHERE organization_id=$1 AND record->>'state'='active' ORDER BY person_id LIMIT ${ORGANIZATION_MEMBER_LIMIT + 1}`, [organizationId]);
     return result.rows.map((row) => memberRow.parse(row));
   }
-  async memberships(personId: string) {
-    const result = await this.client.query('SELECT record,generation FROM control_plane.memberships WHERE person_id=$1 ORDER BY organization_id LIMIT 101', [personId]);
-    if (result.rows.length > 100) throw new AccountError(503, 'The account exceeds the current workspace limit.');
+  async memberships(personId: string, after?: string) {
+    const result = await this.client.query(`SELECT record,generation FROM control_plane.memberships WHERE person_id=$1 AND record->>'state'='active' AND ($2::text IS NULL OR organization_id>$2) ORDER BY organization_id LIMIT ${ACCOUNT_WORKSPACE_LIMIT + 1}`, [personId, after ?? null]);
     return result.rows.map((row) => memberRow.parse(row));
+  }
+  async member(organizationId: string, personId: string) {
+    const result = await this.client.query('SELECT record,generation FROM control_plane.memberships WHERE organization_id=$1 AND person_id=$2', [organizationId, personId]);
+    return result.rows.map(row => memberRow.parse(row)).find(row => row.record.organizationId === organizationId && row.record.personId === personId);
+  }
+  async workspaceRows(personId: string, after?: string) {
+    const result = await this.client.query(`SELECT m.record AS member_record,m.generation AS member_generation,o.record AS organization_record,o.generation AS organization_generation FROM control_plane.memberships m LEFT JOIN control_plane.organizations o ON o.id=m.organization_id WHERE m.person_id=$1 AND m.record->>'state'='active' AND ($2::text IS NULL OR m.organization_id>$2) ORDER BY m.organization_id LIMIT ${CLOUD_WORKSPACE_PAGE_SIZE + 1}`, [personId, after ?? null]);
+    return result.rows.map(row => ({
+      membership: memberRow.parse({ record: row.member_record, generation: row.member_generation }),
+      organization: orgRow.parse({ record: row.organization_record, generation: row.organization_generation }),
+    }));
+  }
+  async hasOtherActiveOwner(organizationId: string, personId: string) {
+    const result = await this.client.query("SELECT record,generation FROM control_plane.memberships WHERE organization_id=$1 AND person_id<>$2 AND record->>'state'='active' AND record->>'role'='owner' LIMIT 1", [organizationId, personId]);
+    return result.rows.some(row => { const { record } = memberRow.parse(row); return record.organizationId === organizationId && record.personId !== personId && record.state === 'active' && record.role === 'owner'; });
   }
   async saveOrganization(row: OrganizationRow) {
     await this.client.query('INSERT INTO control_plane.organizations(id,tenant_id,created_by,record,generation) VALUES ($1,$2,$3,$4::jsonb,$5) ON CONFLICT (id) DO UPDATE SET record=EXCLUDED.record,generation=EXCLUDED.generation',
