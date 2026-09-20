@@ -86,18 +86,26 @@ export function buildIdentity(input: BuildIdentityInput): BuildIdentity {
   const launchTarget = homeless(input.execPath, input.home).slice(0, 300);
   const packaged = input.packaged ?? false;
   const fallback = VERSION.test(input.version) ? input.version : 'unknown';
-  const blank = (source: BuildRecordSource): BuildIdentity => ({
-    version: fallback,
-    commit: null,
-    builtAt: null,
-    channel: source === 'development' ? 'development' : 'unknown',
-    signing: null,
-    sourceStatus: null,
-    packaged,
-    source,
-    launchTarget,
-    buildId: `${fallback}+${source === 'development' ? 'dev' : 'unknown'}`,
-  });
+  // A checkout with no record is a development build, and says so. A packaged
+  // build with no record is not: it was built by something, and nothing here
+  // knows what. `source` still reports that no record was found; the channel and
+  // the build id are claims about where the build came from, so they stay
+  // unknown rather than borrowing a checkout's answer.
+  const blank = (source: BuildRecordSource): BuildIdentity => {
+    const checkout = source === 'development' && !packaged;
+    return {
+      version: fallback,
+      commit: null,
+      builtAt: null,
+      channel: checkout ? 'development' : 'unknown',
+      signing: null,
+      sourceStatus: null,
+      packaged,
+      source,
+      launchTarget,
+      buildId: `${fallback}+${checkout ? 'dev' : 'unknown'}`,
+    };
+  };
 
   let text: string | null;
   try {
@@ -174,16 +182,26 @@ export function readPackagedBuildRecord(): string | null {
   return fs.readFileSync(file, 'utf8');
 }
 
-let current: BuildIdentity | undefined;
+let current: { version: string; identity: BuildIdentity } | undefined;
 
-/** The running build. Read once: the record cannot change under a live process. */
+/**
+ * The running build. The record cannot change under a live process, so it is
+ * read once for a given version — and the version is part of the question: with
+ * no record to read, the answer is about the version it was asked about, and
+ * handing a second caller the first caller's answer would report a version this
+ * build never claimed.
+ */
 export function currentBuildIdentity(version: string): BuildIdentity {
-  current ??= buildIdentity({
-    version,
-    read: readPackagedBuildRecord,
-    execPath: process.execPath,
-    home: process.env.USERPROFILE ?? process.env.HOME ?? '',
-    packaged: typeof DIOMEDES_BUNDLED !== 'undefined' && DIOMEDES_BUNDLED,
-  });
-  return current;
+  if (current?.version !== version)
+    current = {
+      version,
+      identity: buildIdentity({
+        version,
+        read: readPackagedBuildRecord,
+        execPath: process.execPath,
+        home: process.env.USERPROFILE ?? process.env.HOME ?? '',
+        packaged: typeof DIOMEDES_BUNDLED !== 'undefined' && DIOMEDES_BUNDLED,
+      }),
+    };
+  return current.identity;
 }

@@ -161,12 +161,17 @@ describe('a record that disagrees with the running package', () => {
 });
 
 describe('the one remembered answer', () => {
-  it('answers the first version it was ever asked about, for the life of the process', () => {
+  it('remembers the answer for a version, not the first answer it ever gave', () => {
+    // The record cannot change under a live process, so asking twice about one
+    // version reads it once. A second caller asking about a different version
+    // is asking a different question, and used to be handed the first caller's
+    // answer (server/build-identity.ts:177-189).
     const first = currentBuildIdentity('7.7.7');
+    expect(currentBuildIdentity('7.7.7')).toBe(first);
     const second = currentBuildIdentity('8.8.8');
-    expect(second).toBe(first);
-    // A second caller passing a different version is silently given the first
-    // caller's answer (server/build-identity.ts:177-189).
-    expect(second.version).not.toBe('8.8.8');
+    expect(second).not.toBe(first);
+    // This checkout ships no build record, so the version it was asked about is
+    // the only version it can report.
+    expect(second.version).toBe('8.8.8');
   });
 });
