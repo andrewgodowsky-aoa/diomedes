@@ -463,11 +463,15 @@ export async function createApp(options: AppOptions) {
   const login = new NativeLogin(engines.root, options.nativeLoginLaunch, {
     onFinished: async (engine) => {
       if (closing) return;
+      // A check that began before the sign-in finished cannot know about it, so
+      // it is never allowed to be the last word: wait for it, then look again.
+      await engines.settled(engine);
+      if (closing) return;
       try {
         await engines.check(engine);
       } catch (error) {
         // A failed check has already written its own detail onto the connection,
-        // and REQUEST_ACTIVE only means a check for this route is already running.
+        // and REQUEST_ACTIVE only means a newer check for this route is running.
         if (!(error instanceof EngineError && error.code === 'REQUEST_ACTIVE')) noteError(error);
       }
     },
@@ -929,7 +933,10 @@ export async function createApp(options: AppOptions) {
     route(async (req) => {
       const b = body(req),
         engine = choice(b.engine, EXTERNAL_ENGINES, 'engine');
-      const bound = await engines.bind(engine, asString(b.candidateId, 'an installation', 600));
+      // `<source>:<engine>:<canonical path>`: at most 20 characters of prefix and
+      // a Windows path of up to 32,767 units, which a long-path install can have.
+      // The id is only ever compared with ids the host itself produced.
+      const bound = await engines.bind(engine, asString(b.candidateId, 'an installation', 32_787));
       return withNextAction([bound])[0];
     }, false),
   );
@@ -1018,7 +1025,8 @@ export async function createApp(options: AppOptions) {
       const engine = externalEngine(req);
       if (body(req).consent !== true)
         throw new ApiError(409, 'Review and confirm this installation first.');
-      const found = (await engines.discover(true)).find((c) => c.engine === engine)!;
+      // Installing one route is a question about one route, so only it is scanned.
+      const found = (await engines.discover(true, { engine })).find((c) => c.engine === engine)!;
       // Found is not usable. A wrong-version, changed or corrupt installation
       // still needs the private compatible copy; only a usable one is reused.
       const usable =
@@ -1035,7 +1043,7 @@ export async function createApp(options: AppOptions) {
           found.installation === 'corrupt' ||
           (found.candidates ?? []).some((c) => c.source === 'managed' && c.integrity === 'failed'),
       });
-      await engines.discover(true);
+      await engines.discover(true, { engine });
       return result;
     }, false),
   );

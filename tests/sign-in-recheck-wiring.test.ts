@@ -112,4 +112,45 @@ describe('a finished native sign-in asks the host for one fresh inspection', () 
     expect(after.authentication).toBe('signed-out');
     expect(after.nextAction).toBe('sign-in');
   });
+
+  it('does not let a check that began before the sign-in finished be the last word', async () => {
+    // The first inspection starts while the person is still signing in, so it
+    // can only ever answer signed-out. It is held open until the window closes.
+    let releaseFirst: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const inspect = vi
+      .fn<() => Promise<AdapterInspection>>()
+      .mockImplementationOnce(async () => {
+        await held;
+        return {
+          authentication: 'signed-out',
+          accountRoute: null,
+          models: [],
+          detail: 'Claude Code is not signed in.',
+        };
+      })
+      .mockImplementation(async () => ({
+        authentication: 'signed-in',
+        accountRoute: 'claude-code:claude.ai',
+        models: [
+          { slug: 'sonnet', name: 'Sonnet', description: '', efforts: [], defaultEffort: null },
+        ],
+        detail: 'Signed in.',
+      }));
+    const { post, status, windows } = await fixture(inspect);
+    expect((await post('/ai/discover', { consent: true })).status).toBe(200);
+    expect((await post('/ai/login/claude-code', { consent: true })).status).toBe(200);
+    // The person presses Check while the window is still open.
+    const early = post('/ai/check/claude-code', { consent: true });
+    await vi.waitFor(() => expect(inspect).toHaveBeenCalledTimes(1));
+
+    windows[0].emit('exit', 0, null);
+    // The host is now waiting on the early check rather than colliding with it.
+    releaseFirst!();
+    await early;
+    await vi.waitFor(() => expect(inspect).toHaveBeenCalledTimes(2));
+    await vi.waitFor(async () => expect((await status()).authentication).toBe('signed-in'));
+  });
 });
