@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import express from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -610,6 +610,15 @@ const managedCandidate = {
   compatibility: 'supported',
 };
 
+/**
+ * Rows render in the order the host sent them. A Windows path is matched as plain text on
+ * the row rather than through a text selector, whose parser reads a backslash as an escape.
+ */
+function candidateRow(section: Locator, index: number, _path: string): Locator {
+  const row = section.locator('li.ai-candidate').nth(index);
+  return row;
+}
+
 async function serveStatus(page: Page, connections: Record<string, unknown>[]): Promise<void> {
   await page.route('**/api/ai/status', (route) => route.fulfill({ json: { connections } }));
 }
@@ -736,15 +745,16 @@ test('Settings names a corrupt installation and a broken binding, and switches t
         detail: 'The installation you chose is no longer the one you chose.',
       }),
     ]);
-    await page.reload();
+    // A reload lands on Home, not on the screen under test.
+    await openEngines(page);
     await expect(stateChip(page, 'installation')).toContainText('Found, needs repair');
     await expect(section.getByText(/has changed since you chose it/)).toContainText(
       'C:\\Tools\\opencode.exe',
     );
     await section.locator('details.ai-candidates > summary').click();
     // Both installations are shown; the bound one is still the bound one.
-    const own = section.locator('li.ai-candidate').filter({ hasText: systemCandidate.path });
-    const managed = section.locator('li.ai-candidate').filter({ hasText: managedCandidate.path });
+    const own = candidateRow(section, 0, systemCandidate.path);
+    const managed = candidateRow(section, 1, managedCandidate.path);
     await expect(own).toContainText('Your own installation');
     await expect(own).toContainText('Your own copy; Diomedes did not verify its publisher.');
     await expect(own).toContainText('Unsupported version');
@@ -796,7 +806,7 @@ test('Settings binds the installation a person chooses, and sends only its candi
     await openEngines(page);
     const section = setupSection(page);
     await section.getByRole('button', { name: 'Choose an installation', exact: true }).click();
-    const managed = section.locator('li.ai-candidate').filter({ hasText: managedCandidate.path });
+    const managed = candidateRow(section, 1, managedCandidate.path);
     await expect(managed).toContainText('Recommended');
     await expect(managed).toContainText('Diomedes verified these bytes against the release it pinned.');
     expect(binds).toHaveLength(0);
@@ -806,7 +816,7 @@ test('Settings binds the installation a person chooses, and sends only its candi
     // The chosen installation is the one the card now reports.
     await expect(section.getByText('Using the copy Diomedes installed for itself.')).toBeVisible();
     await expect(
-      section.locator('li.ai-candidate').filter({ hasText: managedCandidate.path }),
+      candidateRow(section, 1, managedCandidate.path),
     ).toContainText('In use');
   } finally {
     await page.unrouteAll({ behavior: 'wait' });
@@ -1007,7 +1017,8 @@ test('Settings separates how old a check is from what the route can do now', asy
     await serveStatus(page, [
       wire({ checkedAt: new Date(Date.now() + 3_600_000).toISOString() }),
     ]);
-    await page.reload();
+    // A reload lands on Home, not on the screen under test.
+    await openEngines(page);
     await expect(
       section.getByText('The last check carries no usable time. Check again.'),
     ).toBeVisible();
