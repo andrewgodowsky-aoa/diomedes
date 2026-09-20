@@ -16,6 +16,8 @@ interface TopStripProps {
   onShowProjects: () => void;
   onOpenProject: (p: Project) => void;
   onToggleSettings: () => void;
+  /** Opens the project search, which Ctrl K also opens outside a project. */
+  onFind: () => void;
   /** Only said when it is news: offline, something waiting, or work running. */
   status: { state: 'fault' | 'waiting' | 'working'; text: string } | null;
   chip: ReactNode;
@@ -37,6 +39,7 @@ export function TopStrip({
   onShowProjects,
   onOpenProject,
   onToggleSettings,
+  onFind,
   status,
   chip,
 }: TopStripProps) {
@@ -99,6 +102,18 @@ export function TopStrip({
             )}
           </div>
           {chip}
+          <span
+            className="mono link"
+            role="button"
+            tabIndex={0}
+            title="Find a project by name"
+            onClick={onFind}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onFind();
+            }}
+          >
+            Ctrl K
+          </span>
           <button
             type="button"
             className={settingsOpen ? 'on' : ''}

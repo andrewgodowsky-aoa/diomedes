@@ -77,6 +77,60 @@ These extend standing decision 2 (the Console visual system). They are written t
   what a returning person wants from a work tool. Open question for Andrew, not decided here.
 - **The 20 px page frame stays.** It is part of the screen Andrew called solid.
 
+## Second pass, 2026-09-20: less clean, more Diomedes
+
+Andrew on the first pass: "a little too clean, and near harness designs we see online. We are
+supposed to have a more unique looking product… a little busier in terms of our mythic synthwave
+feel, and easy access to everything is explicitly needed too."
+
+He was right about the cause. The first Projects page was a centred column with a box and a list:
+the pattern every assistant product opens on. It used the Console's tokens and none of the Console's
+own devices.
+
+**The tension, stated.** Standing decision 3 says the website is not a design source for the app,
+and decision 2 asks for restrained accent. Andrew's instruction outranks both. They are reconciled
+the way decision 3 itself allows: *share tokens and semantics, never implementations.* Nothing from
+diomedes.net was copied, and no synthwave furniture (grid horizons, banded suns) was added, because
+that would make the app look more like things seen online, not less.
+
+8. **The Projects page is the Console's three regions**, not a page of its own kind. The rail is
+   the thread rail (`Rail.tsx`, now taking a `title`): projects on the spine, the spine's point on
+   the project the ask box will send to, the same foot of pinned destinations and the same
+   Everything flyout. The work column carries an instrument line (`.instr`: projects, need you,
+   running, changes today) and a **register**: one row a project, one mono column a readout
+   (tasks done over total, waiting, running, changed today, opened). The ledger reads *across*
+   projects the way a project's ledger reads across its threads: Needs you, Working, Engines with
+   their usage. Every figure is `project.status`, `project.counts`, the integrations list or a
+   usage snapshot; the page keeps no state of its own about any of them.
+9. **Everything is one step away from anywhere.** The Projects page and Settings had no rail, so
+   the destinations foot and the Everything flyout existed only inside a project, and so did
+   `Ctrl K`. The Projects page now has both (pins under `home.rail.pins`, in localStorage for the
+   reason Shell's are), its Everything lists every Settings section by name and opens it directly
+   (`sectionRequest` on `SettingsPage`), and `TopStrip` carries `Ctrl K`, which outside a project
+   opens the project search.
+10. **The charge.** `--dm-charge-lead / -trail / -body` on `:root`: the run of colour the Diomedes
+    signal carries. It is the semantic diomedes.net draws its signal with (cyan, violet, coral
+    there) and the one the `mythic-synthwave` theme pack already encodes. Here it is *derived from
+    the scheme in use* (`--light`, `--attn`, and `--attn` mixed toward `--fail`), so all eleven
+    schemes, Paper and any custom theme have one without a colour being named in a stylesheet:
+    Field runs cyan to amber to ember, the Mythic Synthwave pack runs cyan to violet to coral. A
+    theme may set the three directly.
+11. **The signal.** The mark is a spear-line with a guiding point ahead of it. The strip's rule
+    and the rail's spine are that same line, so they carry the charge where they begin and settle
+    into the plain hairline as they run on. One pixel, drawn once, never animated. The composer a
+    person is writing in takes the lead colour on its edge and a little of the trail beneath it.
+    This is app-wide: it is on the thread screen too.
+
+**Found and not fixed:** `.console` and `.page-frame` paint an opaque ground over `.app`'s
+`.dm-texture-layer`, so a theme's texture cannot be seen anywhere inside the Console. The channel
+the theme system built for exactly this kind of richness is dead on the main surface. The
+`mythic-synthwave` fixture also ships a 16x16 placeholder for its artwork. Making the app carry real
+Mythic Synthwave art is a theme-pack and asset job, and it needs the real art.
+
+**Not verified:** the Mythic Synthwave pack applied. The theme API refused the save in the design
+preview (`Customization requires an active plan`), so the charge under that pack is reasoned from
+its tokens, not seen.
+
 ## The Workbook
 
 `bd5e829` removed every route *into* the Workbook. It kept the Workbook, the `surface` key and
@@ -127,6 +181,7 @@ Workbook page rule was edited.
 ## Files
 
 New: `client/console/TopStrip.tsx`, `client/console/Home.tsx`, `client/console/home.css`.
+Second pass also changed `client/console/Rail.tsx`.
 Changed: `client/App.tsx`, `client/Settings.tsx`, `client/components.tsx`, `client/styles.css`,
 `client/console/{Shell,Composer,ThreadView}.tsx`, `client/console/{console,motion,everything}.css`,
 `server/store.ts`, `server/integrations.ts`, `tests/ui.spec.ts`, `tests/surface.test.ts`,

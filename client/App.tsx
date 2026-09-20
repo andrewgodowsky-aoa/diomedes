@@ -24,7 +24,7 @@ import {
   titleCase,
 } from './components';
 import { Shell } from './console/Shell';
-import { Home } from './console/Home';
+import { Home, type HomeDestination } from './console/Home';
 import { TopStrip } from './console/TopStrip';
 import { DesignCenter } from './console/DesignCenter';
 import { MarkGlyph } from './console/Mark';
@@ -73,6 +73,7 @@ export function App() {
     folders: { name: string; path: string }[];
   } | null>(null);
   const [search, setSearch] = useState(false);
+  const [sectionRequest, setSectionRequest] = useState<{ section: string; n: number } | null>(null);
   const [query, setQuery] = useState('');
   const [landingText, setLandingText] = useState('');
   const [landingProjectId, setLandingProjectId] = useState<string | null>(null);
@@ -521,6 +522,28 @@ export function App() {
         ? { state: 'working' as const, text: status }
         : null;
 
+  // Everything the Projects page's rail and flyout can open. Settings sections
+  // are asked for by name, the way the usage chip asks for the engines section.
+  const goFromHome = (destination: HomeDestination) => {
+    const section: Partial<Record<HomeDestination, string>> = {
+      engines: 'Engines',
+      appearance: 'Appearance',
+      'design-center': 'Design Center',
+      permissions: 'Permissions',
+      detail: 'Interface detail',
+      updates: 'App updates',
+      about: 'About',
+    };
+    if (destination === 'new-project') setProjectDialog('new');
+    else if (destination === 'open-folder') setProjectDialog('open');
+    else if (destination === 'sample') void sampleProject();
+    else if (destination === 'find') setSearch(true);
+    else if (section[destination]) {
+      setSectionRequest((last) => ({ section: section[destination]!, n: (last?.n ?? 0) + 1 }));
+      setShowSettings(true);
+    }
+  };
+
   const loaded = settings !== null && initialLoaded;
   const reduced =
     settings?.appearance.motion === 'reduced' ||
@@ -687,6 +710,7 @@ export function App() {
                   }}
                   onOpenProject={openProject}
                   onToggleSettings={() => setShowSettings(!showSettings)}
+                  onFind={() => setSearch(true)}
                   status={stripStatus}
                   chip={
                     chipVisible && activeIntegration && activeUsage ? (
@@ -710,6 +734,7 @@ export function App() {
                   integrations={integrations}
                   usage={usage}
                   openHelpersSignal={helpersRequest}
+                  sectionRequest={sectionRequest}
                   refresh={() => void refreshIntegrations(true)}
                   // What is actually painted, not what the pointer names: the
                   // pointer is global and theme storage is per workspace.
@@ -769,6 +794,7 @@ export function App() {
                   byRecency={byRecency}
                   settings={settings}
                   integrations={integrations}
+                  usage={usage}
                   saveSettings={saveSettings}
                   text={landingText}
                   onText={setLandingText}
@@ -776,9 +802,7 @@ export function App() {
                   onTarget={setLandingProjectId}
                   onSend={sendLandingAsk}
                   onOpenProject={openProject}
-                  onNewProject={() => setProjectDialog('new')}
-                  onOpenFolder={() => setProjectDialog('open')}
-                  onSample={() => void sampleProject()}
+                  onGo={goFromHome}
                 />
               )}
             </div>

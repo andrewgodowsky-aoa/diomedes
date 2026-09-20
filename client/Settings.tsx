@@ -53,6 +53,7 @@ export function SettingsPage({
   integrations,
   usage,
   openHelpersSignal,
+  sectionRequest,
   refresh,
   onOpenDesignCenter,
   appliedTheme = null,
@@ -75,6 +76,8 @@ export function SettingsPage({
   integrations: IntegrationStatus[];
   usage: UsageSnapshot[];
   openHelpersSignal?: number;
+  /** A section asked for by name from outside, e.g. the Projects page's rail. */
+  sectionRequest?: { section: string; n: number } | null;
   refresh: () => void;
   /** Opens the full Design Center workspace. Console only. */
   onOpenDesignCenter?: () => void;
@@ -200,6 +203,16 @@ export function SettingsPage({
   useEffect(() => {
     if (openHelpersSignal) setSection(helpersSection);
   }, [openHelpersSignal, helpersSection]);
+  // Only a section this build offers is opened; an unknown name leaves the page
+  // where it was rather than on an empty pane.
+  const requested = sectionRequest?.section;
+  const requestCount = sectionRequest?.n;
+  useEffect(() => {
+    if (!requested) return;
+    const known = requested === 'Engines' ? helpersSection : requested;
+    if (!isDesk && ['Design Center', 'App updates', 'Rules', 'Developer'].includes(known)) return;
+    setSection(known);
+  }, [requested, requestCount, helpersSection, isDesk]);
   const sections = [
     'Interface detail',
     'Helpers on this computer',

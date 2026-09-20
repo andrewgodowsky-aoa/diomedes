@@ -1779,3 +1779,53 @@ html[data-motion='reduced'] .console .modes .ind b {
 .console .top-right .usage-chip:not(.static):hover {
   background: var(--raised);
 }
+
+/* ---- the signal ----------------------------------------------------------------
+   The mark is a spear-line with a guiding point ahead of it. The strip's rule
+   and the rail's spine are that same line, so they carry the charge where they
+   begin and settle into the plain hairline as they run on: from the mark
+   rightwards along the strip, from the top of the spine downwards. One pixel
+   wide, drawn once, never animated. The channels are styles.css's
+   `--dm-charge-*`, so the line follows whatever scheme or theme is applied. */
+.console .top {
+  /* The rule is the gradient itself, drawn over the border's own pixel, so the
+     strip has one line and not a charged line above a plain one. */
+  border-bottom-color: transparent;
+  background:
+    linear-gradient(
+        90deg,
+        color-mix(in oklab, var(--dm-charge-lead) 85%, var(--hair)) 0,
+        color-mix(in oklab, var(--dm-charge-trail) 75%, var(--hair)) 20%,
+        color-mix(in oklab, var(--dm-charge-body) 60%, var(--hair)) 42%,
+        var(--hair) 68%
+      )
+      left bottom / 100% 1px no-repeat border-box;
+}
+.console .spine::before {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--dm-charge-lead) 70%, var(--hair-2)) 0,
+    color-mix(in oklab, var(--dm-charge-trail) 55%, var(--hair-2)) 72px,
+    color-mix(in oklab, var(--dm-charge-body) 35%, var(--hair-2)) 150px,
+    var(--hair-2) 240px
+  );
+}
+/* The box a person is writing in takes the lead colour on its edge and lets a
+   little of the trail fall under it. */
+.console .composer:focus-within {
+  border-color: color-mix(in oklab, var(--dm-charge-lead) 42%, var(--hair-2));
+  box-shadow: 0 14px 34px -22px color-mix(in oklab, var(--dm-charge-trail) 70%, transparent);
+}
+.console .composer {
+  transition:
+    border-color var(--quick),
+    box-shadow var(--move);
+}
+
+/* Below the phone width the strip keeps the ways in and drops the key hint:
+   there is no Ctrl key to hint at. */
+@media (max-width: 640px) {
+  .console.strip-only .top-right > .mono.link {
+    display: none;
+  }
+}

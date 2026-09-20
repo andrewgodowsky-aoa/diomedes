@@ -6,6 +6,8 @@ export interface RailItem {
   name: string;
   time: string;
   sub: string;
+  /** Colours the sub line when it carries a state: waiting on the person, or running. */
+  tone?: 'attn' | 'live';
 }
 
 interface RailProps {
@@ -25,6 +27,9 @@ interface RailProps {
   onTogglePin(id: string): void;
   /** Headings for the flyout. Without them it groups unavailable rows last. */
   groups?: { heading: string; ids: string[] }[];
+  /** What the spine lists. The Projects page lists projects on the same spine. */
+  title?: string;
+  navLabel?: string;
 }
 
 /**
@@ -50,6 +55,8 @@ export function Rail({
   onDestination,
   onTogglePin,
   groups,
+  title = 'Threads',
+  navLabel,
 }: RailProps) {
   const buttons = useRef(new Map<string, HTMLButtonElement>());
   const [pointTop, setPointTop] = useState<number | null>(null);
@@ -62,10 +69,10 @@ export function Rail({
   // outlive the build that wrote them, and a destination can be withdrawn.
   const shown = pinned.map((id) => byId.get(id)).filter((item): item is EverythingItem => !!item);
   return (
-    <nav className="rail" aria-label="Threads and views">
+    <nav className="rail" aria-label={navLabel ?? 'Threads and views'}>
       {top}
       <div className="rail-head">
-        <h2>Threads</h2>
+        <h2>{title}</h2>
         <button type="button" onClick={onNew}>
           New
         </button>
@@ -88,7 +95,7 @@ export function Rail({
                 <span className="nm">{item.name}</span>
                 <span className="mono lc when">{item.time}</span>
               </span>
-              <small>{item.sub}</small>
+              <small className={item.tone}>{item.sub}</small>
             </button>
           </li>
         ))}

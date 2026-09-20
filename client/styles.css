@@ -74,6 +74,15 @@
   --dm-texture-opacity: 1;
   --dm-focus-width: 1px;
   --dm-focus-color: var(--dm-glacier);
+  /* The charge: the run of colour the Diomedes signal carries, lead to trail to
+     body. It is the same semantic diomedes.net draws its signal with (cyan,
+     violet, coral there); here it is derived from the scheme in use, so every
+     built-in scheme, Paper and any custom theme has one without naming a
+     colour: Field runs cyan to amber to ember, the Mythic Synthwave pack runs
+     cyan to violet to coral. A theme may set the three directly. */
+  --dm-charge-lead: var(--light);
+  --dm-charge-trail: var(--attn);
+  --dm-charge-body: color-mix(in oklab, var(--attn) 45%, var(--fail));
 }
 html {
   font-size: 100%;
