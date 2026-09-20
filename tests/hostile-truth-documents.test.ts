@@ -67,7 +67,11 @@ describe('the implementation record against its own lanes', () => {
   });
 
   it('does not describe a lane as landed while its cell is empty', () => {
-    const table = record.slice(record.indexOf('| Lane |'), record.indexOf('This lane\'s counts'));
+    // The sentence that closes the table. Without it `indexOf` answers -1 and
+    // the slice quietly runs to the end of the file instead of the table.
+    const end = record.indexOf('Each row names what git holds');
+    expect(end).toBeGreaterThan(0);
+    const table = record.slice(record.indexOf('| Lane |'), end);
     const lanes = table
       .split('\n')
       .filter((line) => line.startsWith('| `'))
@@ -76,6 +80,7 @@ describe('the implementation record against its own lanes', () => {
       .split('\n')
       .filter((line) => line.includes('TO BE FILLED'))
       .map((line) => line.split('|')[1].trim());
+    expect(lanes.length).toBeGreaterThan(0);
     expect({ lanes: lanes.length, unfilled: unfilled.length }).toMatchObject({ unfilled: 0 });
   });
 });
