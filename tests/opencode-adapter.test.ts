@@ -427,6 +427,29 @@ describe('OpenCode failure stages', () => {
     setTimeout(() => controller.abort(), 10);
     await expect(job).rejects.toMatchObject({ code: 'CANCELLED', stage: 'launch' });
   });
+  it('names a host deadline that expires before the server is ready a timeout, not a cancellation', async () => {
+    // The 60-second budget `EngineService.test()` merges into the signal is the
+    // host's, not the person's. It reaches the adapter as an abort whose reason
+    // is a TimeoutError, and a support bundle must not record it as a stop.
+    const { adapter } = await fixture('start-hang', 5_000);
+    const failure = await adapter
+      .generate({ ...request, signal: AbortSignal.timeout(120) })
+      .then(
+        () => undefined,
+        (error: { code: string; stage?: string; message: string }) => error,
+      );
+    expect(failure).toMatchObject({ code: 'TIMEOUT', stage: 'launch' });
+    expect(failure?.message).not.toMatch(/was stopped/i);
+  });
+  it('refuses a request whose host deadline has already passed as a timeout', async () => {
+    const { adapter } = await fixture('ok');
+    const expired = AbortSignal.timeout(1);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await expect(adapter.generate({ ...request, signal: expired })).rejects.toMatchObject({
+      code: 'TIMEOUT',
+      stage: 'launch',
+    });
+  });
   it.each(['session-denied', 'assistant-denied'])(
     'reads %s as the account refusing the work, at the provider-auth stage',
     async (mode) => {

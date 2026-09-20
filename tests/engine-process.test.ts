@@ -153,6 +153,48 @@ describe('owned engine processes', () => {
       await expect.poll(() => child.exitCode, { timeout: 5000 }).toBe(0);
     }
   });
+  it('refuses to start under a host deadline that has already passed, as a timeout', async () => {
+    const { root, file } = await script('process.stdin.resume();');
+    // What `EngineService.test()` hands an adapter is a merged signal whose
+    // reason names which half fired. A budget the host imposed is not a person
+    // pressing stop, and must never be reported to them as their own.
+    const expired = AbortSignal.timeout(1);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    let thrown: { code?: string; message?: string } = {};
+    try {
+      openProcess({
+        file: process.execPath,
+        args: [file],
+        cwd: root,
+        env: engineEnvironment(),
+        signal: expired,
+      });
+    } catch (error) {
+      thrown = error as typeof thrown;
+    }
+    expect(thrown.code).toBe('TIMEOUT');
+    expect(thrown.message).not.toMatch(/was stopped/i);
+  });
+  it('still reads the person pressing stop as a cancellation while a host budget rides along', async () => {
+    const { root, file } = await script('process.stdin.resume();');
+    const caller = new AbortController();
+    const child = openProcess({
+      file: process.execPath,
+      args: [file],
+      cwd: root,
+      env: engineEnvironment(),
+      signal: AbortSignal.any([AbortSignal.timeout(30_000), caller.signal]),
+      timeoutMs: 30_000,
+    });
+    caller.abort();
+    try {
+      await expect(child.next()).rejects.toMatchObject({ code: 'CANCELLED', ambiguous: true });
+    } finally {
+      await child.close().catch(() => {
+        /* Cleanup is not what this test is about. */
+      });
+    }
+  });
   it('rejects malformed output and never returns a partial success', async () => {
     const { root, file } = await script("console.log('not json'); process.stdin.resume();");
     const child = openProcess({

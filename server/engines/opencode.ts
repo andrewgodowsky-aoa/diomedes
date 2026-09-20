@@ -14,6 +14,8 @@ import {
   type TextResponse,
 } from './contract.js';
 import {
+  abortedByDeadline,
+  abortFailure,
   atStage,
   cleanupFailed,
   engineEnvironment,
@@ -132,15 +134,22 @@ async function ephemeralPort(): Promise<number> {
   return address.port;
 }
 
+/** This adapter's own budget expiring, told apart from any reason the caller carries. */
+const OWN_BUDGET = 'timeout';
+/**
+ * The caller's reason is forwarded rather than flattened to one word, because
+ * an external abort says which of two different things happened: a deadline the
+ * host imposed, or a person pressing stop. `abortError` below reads it.
+ */
 function deadline(
   signal: AbortSignal | undefined,
   timeout: number,
 ): { signal: AbortSignal; dispose: () => void } {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort('timeout'), timeout);
-  const onAbort = () => controller.abort('cancelled');
+  const timer = setTimeout(() => controller.abort(OWN_BUDGET), timeout);
+  const onAbort = () => controller.abort(signal?.reason);
   signal?.addEventListener('abort', onAbort, { once: true });
-  if (signal?.aborted) controller.abort('cancelled');
+  if (signal?.aborted) controller.abort(signal.reason);
   return {
     signal: controller.signal,
     dispose: () => {
@@ -150,13 +159,21 @@ function deadline(
   };
 }
 
+/** The sentence for a time limit this adapter did not set itself. */
+const REQUEST_TIMEOUT_DETAIL =
+  'OpenCode did not finish within the time limit. Recheck before starting another request.';
 function abortError(
   signal: AbortSignal,
   timeoutMs: number,
   budget: 'startup' | 'request',
   stage: SetupStage,
 ): EngineError {
-  if (signal.reason !== 'timeout') return atStage(stopped(), stage);
+  // A deadline the caller imposed is a timeout, not the person stopping the
+  // request, and it does not name this adapter's own startup budget either:
+  // that budget is still running and its number would be a false one.
+  if (abortedByDeadline(signal.reason))
+    return new EngineError('TIMEOUT', REQUEST_TIMEOUT_DETAIL, true, stage);
+  if (signal.reason !== OWN_BUDGET) return atStage(stopped(), stage);
   return budget === 'startup'
     ? new EngineError(
         'TIMEOUT',
@@ -164,12 +181,7 @@ function abortError(
         true,
         stage,
       )
-    : new EngineError(
-        'TIMEOUT',
-        'OpenCode did not finish within the time limit. Recheck before starting another request.',
-        true,
-        stage,
-      );
+    : new EngineError('TIMEOUT', REQUEST_TIMEOUT_DETAIL, true, stage);
 }
 
 /**
@@ -361,7 +373,8 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     env: NodeJS.ProcessEnv;
     root: string;
   }> {
-    if (signal?.aborted) throw atStage(stopped(), 'launch');
+    if (signal?.aborted)
+      throw atStage(abortFailure(signal.reason, REQUEST_TIMEOUT_DETAIL), 'launch');
     const root = await fs.mkdtemp(path.join(this.cwd, '.diomedes-opencode-'));
     let env: NodeJS.ProcessEnv;
     let port: number;

@@ -49,6 +49,37 @@ export const stopped = () =>
     'The request was stopped. A dispatched request may still consume usage.',
     true,
   );
+/**
+ * Whether an abort came from a deadline the host imposed rather than from a
+ * person pressing stop. `AbortSignal.timeout()` aborts with a `TimeoutError`
+ * DOMException and `AbortSignal.any()` carries the reason of whichever signal
+ * fired first, which is exactly how a consented connection test receives its
+ * budget (`server/engines/service.ts`, `AbortSignal.any([AbortSignal.timeout
+ * (TEST_TIMEOUT_MS), caller])`). Every other reason — a bare `abort()`, which
+ * carries an `AbortError`, or a string a caller chose — is the person.
+ */
+export function abortedByDeadline(reason: unknown): boolean {
+  return (
+    typeof reason === 'object' &&
+    reason !== null &&
+    (reason as { name?: unknown }).name === 'TimeoutError'
+  );
+}
+/**
+ * The failure an external abort deserves, shared so every route answers the
+ * same way. A host deadline is a TIMEOUT carrying the caller's own timeout
+ * sentence; anything else stays the person's own cancellation. Neither moves
+ * the `ambiguous` truth — after dispatch a request may still consume usage —
+ * and neither changes what is delivered to the child: the abort still is.
+ */
+export function abortFailure(reason: unknown, timeoutDetail: string): EngineError {
+  return abortedByDeadline(reason)
+    ? new EngineError('TIMEOUT', timeoutDetail, true)
+    : stopped();
+}
+/** The sentence an owned process uses whenever a time limit, not a person, ended it. */
+export const PROCESS_TIMEOUT_DETAIL =
+  'The tool did not finish within the time limit. Recheck before starting another request.';
 const cleanupDetail =
   'The native process could not be confirmed stopped. Wait before trying this route again.';
 export function cleanupFailed(primary?: unknown): EngineError {
@@ -101,9 +132,10 @@ export class EngineProcess {
   private closing?: Promise<void>;
   exitCode: number | null = null;
   closed = false;
-  private readonly abort = () => this.fail(stopped());
+  private readonly abort = () =>
+    this.fail(abortFailure(this.options.signal?.reason, PROCESS_TIMEOUT_DETAIL));
   constructor(private readonly options: ProcessOptions) {
-    if (options.signal?.aborted) throw stopped();
+    if (options.signal?.aborted) throw abortFailure(options.signal.reason, PROCESS_TIMEOUT_DETAIL);
     const command = launchCommand(options.file, options.args);
     this.child = spawn(command.file, command.args, {
       cwd: options.cwd,
@@ -151,14 +183,7 @@ export class EngineProcess {
       this.wake?.();
     });
     this.timer = setTimeout(
-      () =>
-        this.fail(
-          new EngineError(
-            'TIMEOUT',
-            'The tool did not finish within the time limit. Recheck before starting another request.',
-            true,
-          ),
-        ),
+      () => this.fail(new EngineError('TIMEOUT', PROCESS_TIMEOUT_DETAIL, true)),
       options.timeoutMs ?? 120_000,
     );
     options.signal?.addEventListener('abort', this.abort, { once: true });
