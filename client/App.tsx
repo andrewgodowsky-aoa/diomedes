@@ -4,6 +4,7 @@ import type {
   Mode,
   Page,
   Project,
+  Route,
   Settings,
   Surface,
   UsageSnapshot,
@@ -76,6 +77,17 @@ export function App() {
   } | null>(null);
   const [search, setSearch] = useState(false);
   const [sectionRequest, setSectionRequest] = useState<{ section: string; n: number } | null>(null);
+  /**
+   * The route and model a connection test just verified, on its way to the
+   * Console. It is a choice for one thread and never a send, and it waits here
+   * until a Console with a project to carry it into is showing.
+   */
+  const [startTask, setStartTask] = useState<{
+    route: Route;
+    model: string;
+    effort: string | null;
+    n: number;
+  } | null>(null);
   const [query, setQuery] = useState('');
   const [landingText, setLandingText] = useState('');
   const [landingProjectId, setLandingProjectId] = useState<string | null>(null);
@@ -752,6 +764,22 @@ export function App() {
                     setShowSettings(false);
                     setDesignCenter(true);
                   }}
+                  // A verified route, carried into the Console. Settings closes
+                  // behind it the same way the Design Center's does. With no
+                  // project open there is nothing to carry it into, so the
+                  // existing "Open a project" search is what opens — Diomedes
+                  // does not make a project on somebody's behalf — and the
+                  // choice waits here until one is open.
+                  onStartFirstTask={(route, model, effort) => {
+                    setShowSettings(false);
+                    setStartTask((last) => ({
+                      route,
+                      model,
+                      effort,
+                      n: (last?.n ?? 0) + 1,
+                    }));
+                    if (!selected) setSearch(true);
+                  }}
                 />
               ) : selected && surface === 'console' ? (
                 <Shell
@@ -777,6 +805,8 @@ export function App() {
                   onPaletteKey={(open) => {
                     paletteOpen.current = open;
                   }}
+                  firstTask={startTask}
+                  onFirstTaskTaken={() => setStartTask(null)}
                 />
               ) : selected ? (
                 <Workspace

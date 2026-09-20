@@ -52,6 +52,7 @@ import { SendConfirmation } from './SendConfirmation';
 import { PermissionPanel } from './PermissionPanel';
 import { Ledger } from './Ledger';
 import { Picker } from './Picker';
+import { COMPOSER_LABEL } from './Composer';
 import { AgentPicker } from './AgentPicker';
 import { BoardView } from './BoardView';
 import { FilesPane, DEFAULT_WIDTH, clampWidth } from './FilesPane';
@@ -87,6 +88,14 @@ interface ShellProps {
   online: boolean;
   /** Registration so App can open the console palette on Ctrl+K. */
   onPaletteKey?: (open: () => void) => void;
+  /**
+   * A route and model a connection test verified, handed over from Settings so
+   * the person can write their first task on it. `n` identifies one handover,
+   * which is taken exactly once. It chooses; it never sends.
+   */
+  firstTask?: { route: Route; model: string; effort: string | null; n: number } | null;
+  /** Said once the handover above has been applied, so it is not applied again. */
+  onFirstTaskTaken?: () => void;
 }
 
 const emptyTeam: TeamState = { members: [], messages: [], runs: [] };
@@ -122,6 +131,8 @@ export function Shell({
   report,
   online,
   onPaletteKey,
+  firstTask,
+  onFirstTaskTaken,
 }: ShellProps) {
   const [state, setState] = useState<ProjectState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -608,6 +619,32 @@ export function Shell({
     openedForAsk.current = projectId;
     void newThread();
   }, [state, projectId, threads.length]);
+
+  // One handover from Settings, taken once: the route and model a connection
+  // test verified become this thread's choice through the same call the Picker
+  // makes, the cursor goes into the composer, and nothing is sent. A project
+  // that has no thread yet gets the same new thread the rail's own button
+  // opens, rather than a draft with nowhere to land.
+  const takenStart = useRef(0);
+  const openedForStart = useRef('');
+  useEffect(() => {
+    if (!firstTask || firstTask.n === takenStart.current) return;
+    if (!state || state.project.id !== projectId) return;
+    if (!selected) {
+      if (threads.length > 0 || openedForStart.current === projectId) return;
+      openedForStart.current = projectId;
+      void newThread();
+      return;
+    }
+    takenStart.current = firstTask.n;
+    setView('Thread');
+    pick({ model: firstTask.model, effort: firstTask.effort }, firstTask.route);
+    rootRef.current
+      ?.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${COMPOSER_LABEL}"]`)
+      ?.focus();
+    say(`This thread uses ${firstTask.model}. Write your first task.`);
+    onFirstTaskTaken?.();
+  }, [firstTask?.n, state, projectId, selected?.id, threads.length]);
 
   async function newThread(taskId?: string) {
     await perform(async () => {

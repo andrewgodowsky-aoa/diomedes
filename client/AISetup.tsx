@@ -22,6 +22,7 @@ import {
   compatibilityText,
   connected,
   contextText,
+  firstTaskHandoff,
   installationConflict,
   placeholderConnection,
   primaryControl,
@@ -81,6 +82,12 @@ export interface AIConnectionProps {
    * second click inside it.
    */
   openTest?: { engine: ExternalEngine; at: number } | null;
+  /**
+   * Leave this screen and start a first task on a route the host still calls
+   * ready. Absent in onboarding, where Continue already advances the step, and
+   * then no control is drawn at all.
+   */
+  onStartFirstTask?: (route: ExternalEngine, model: string, effort: string | null) => void;
 }
 
 export interface AISetupProps extends AIConnectionProps {
@@ -88,7 +95,13 @@ export interface AISetupProps extends AIConnectionProps {
   onBack: () => void;
 }
 
-export function AIConnections({ settings, busy, onConnections, openTest }: AIConnectionProps) {
+export function AIConnections({
+  settings,
+  busy,
+  onConnections,
+  openTest,
+  onStartFirstTask,
+}: AIConnectionProps) {
   const [connections, setConnections] = useState<EngineConnection[] | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -596,6 +609,11 @@ export function AIConnections({ settings, busy, onConnections, openTest }: AICon
           const showInstalls = showsCandidates(c) || primary.intent === 'choose';
           const offering = primary.intent === 'install';
           const receipt = receipts[engine];
+          // Read from the host's record, never from the click that just
+          // returned: a route the host still calls ready offers the same
+          // handoff on a fresh Settings open, and one whose binding, account
+          // route or model has moved since its receipt offers none.
+          const handoff = firstTaskHandoff(c, storedModel);
           const failure = testFailure[engine];
           const stopped = attemptStage(failure, c);
           // A sign-in window Diomedes opened, or the host's own check after it
@@ -913,6 +931,29 @@ export function AIConnections({ settings, busy, onConnections, openTest }: AICon
                 <p className="ai-note" role="status">
                   Test succeeded {dateTimeOf(receipt.verifiedAt)} on {receipt.model}.
                 </p>
+              )}
+              {handoff && onStartFirstTask && (
+                <>
+                  <p className="caption">
+                    This chooses {handoff.model} on {profile.routeLabel} for the thread you land in.
+                    Nothing is sent until you write a task and send it.
+                  </p>
+                  <div className="actions">
+                    <Button
+                      tone="primary"
+                      disabled={busyRow || testing[engine]}
+                      onClick={() =>
+                        onStartFirstTask(
+                          handoff.route,
+                          handoff.model,
+                          c.models.find((m) => m.slug === handoff.model)?.defaultEffort ?? null,
+                        )
+                      }
+                    >
+                      Start a first task
+                    </Button>
+                  </div>
+                </>
               )}
               {failure && (
                 <div className="ai-test-failure">

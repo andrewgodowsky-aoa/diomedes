@@ -4,6 +4,12 @@ import { askDraftKey } from '../components';
 import { reducedMotion, spring } from './motion';
 import { SendConfirmation } from './SendConfirmation';
 
+/**
+ * The composer's own accessible name. Exported so the Console can put focus in
+ * this field by the name a person hears, rather than by a class the stylesheet
+ * owns.
+ */
+export const COMPOSER_LABEL = 'Message this thread';
 export const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
 export const CAPS: Record<Mode, string> = {
   ask: 'Nothing in the project changes.',
@@ -270,7 +276,7 @@ export function Composer({
         <textarea
           ref={box}
           rows={1}
-          aria-label="Message this thread"
+          aria-label={COMPOSER_LABEL}
           placeholder={PLACEHOLDERS[mode]}
           value={text}
           disabled={preparing || pending !== null}

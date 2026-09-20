@@ -121,6 +121,35 @@ export function setupStates(c: EngineConnection): SetupState[] {
   ];
 }
 
+/** The route and model a first task would be started on. */
+export interface FirstTaskHandoff {
+  readonly route: ExternalEngine;
+  readonly model: string;
+}
+
+/**
+ * Whether this route may carry the person straight into a first real task, and
+ * on what.
+ *
+ * Every term is the host's. `verified` is its receipt against its own binding
+ * revision, `ready` is the next action it derived, and `storedModel` is what
+ * settings says this route is set to use — the same string the test request had
+ * to name. A click that succeeded a moment ago is not consulted: reopening
+ * Settings on a route the host still calls ready offers the same handoff, and a
+ * binding, account route or model that has changed since the receipt offers
+ * none.
+ */
+export function firstTaskHandoff(
+  c: EngineConnection,
+  storedModel: string,
+): FirstTaskHandoff | null {
+  if (!verified(c) || c.nextAction !== 'ready') return null;
+  const receipt = c.verification!;
+  if (receipt.model === '' || receipt.model !== storedModel) return null;
+  if (receipt.accountRoute !== c.accountRoute) return null;
+  return { route: c.engine, model: receipt.model };
+}
+
 /** What the one primary control on this card does. */
 export type PrimaryIntent =
   | 'install'

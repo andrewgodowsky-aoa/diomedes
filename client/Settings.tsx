@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type {
   EngineCatalog,
+  ExternalEngine,
   IntegrationStatus,
   Settings as SettingsModel,
   UsageSnapshot,
@@ -56,6 +57,7 @@ export function SettingsPage({
   sectionRequest,
   refresh,
   onOpenDesignCenter,
+  onStartFirstTask,
   appliedTheme = null,
   themeApplies = false,
 }: {
@@ -81,6 +83,12 @@ export function SettingsPage({
   refresh: () => void;
   /** Opens the full Design Center workspace. Console only. */
   onOpenDesignCenter?: () => void;
+  /**
+   * Closes Settings and puts the person in front of a composer on the route a
+   * test just verified. Console only, and never a send: what it carries is the
+   * thread's route and model choice.
+   */
+  onStartFirstTask?: (route: ExternalEngine, model: string, effort: string | null) => void;
   /**
    * The custom theme this app is actually wearing, or null for a built-in
    * package. The resolved answer from `GET /api/themes/active`, held by
@@ -282,7 +290,13 @@ export function SettingsPage({
                     one sends.
                   </p>
                 )}
-                {isDesk && <AIConnections settings={settings} save={save} />}
+                {isDesk && (
+                  <AIConnections
+                    settings={settings}
+                    save={save}
+                    onStartFirstTask={onStartFirstTask}
+                  />
+                )}
                 <p className="caption">
                   Check connections runs bounded local version, account and status checks. It sends
                   no model prompts and opens no sign-in pages.
