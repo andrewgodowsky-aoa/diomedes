@@ -118,9 +118,12 @@ export class BindingStore {
     }
     // Routes an earlier repair set aside without a new choice, carried forward
     // so a restart does not quietly turn them back into "never chose one".
+    // These bytes are this build's own and were read exactly as written, so
+    // they are not a record to set aside: the next choice replaces them.
     const carried = document?.unreadable;
     if (Array.isArray(carried))
-      for (const engine of EXTERNAL_ENGINES) if (carried.includes(engine)) this.damage(engine);
+      for (const engine of EXTERNAL_ENGINES)
+        if (carried.includes(engine)) this.damaged.add(engine);
     for (const engine of EXTERNAL_ENGINES) {
       const row = engines[engine] as Record<string, unknown> | undefined;
       // No row at all is the ordinary "not chosen yet".

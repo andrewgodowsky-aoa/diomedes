@@ -237,12 +237,14 @@ describe('the binding a person chose, remembered across restarts', () => {
     });
   });
 
-  it('starts empty rather than throwing when the file is unreadable or damaged', () => {
+  it('does not throw on a damaged file, and settles it on the next real save', () => {
     const service = root();
     fs.writeFileSync(path.join(service, 'bindings.json'), '{ not json');
     const store = new BindingStore(service);
+    // A damaged file is never read as authority. It is not silence either, so
+    // the route waits for a choice rather than starting over.
     expect(store.get('opencode')).toBeUndefined();
-    // A damaged file is replaced by the next real save, never read as authority.
+    expect(store.unreadable('opencode')).toBe(true);
     store.save('opencode', { binding: binding(), revision: 1, key: 'k1', model: null });
     expect(new BindingStore(service).get('opencode')?.revision).toBe(1);
   });
@@ -371,6 +373,36 @@ describe('the binding a person chose, remembered across restarts', () => {
     expect(reopened.get('opencode')?.revision).toBe(1);
     expect(reopened.unreadable('claude-code')).toBe(true);
     expect(reopened.unreadable('cursor')).toBe(true);
+  });
+
+  it('sets aside only the record it could not read, however many choices follow', () => {
+    // The record this build writes while other routes are still waiting is one
+    // it reads perfectly well. A later choice replaces it in place; filing it
+    // away as unreadable would make the word mean nothing.
+    const service = root();
+    fs.writeFileSync(path.join(service, 'bindings.json'), '{ not json');
+    new BindingStore(service).save('opencode', {
+      binding: binding(),
+      revision: 1,
+      key: 'k1',
+      model: null,
+    });
+    const reopened = new BindingStore(service);
+    expect(reopened.unreadable('claude-code')).toBe(true);
+    reopened.save('claude-code', {
+      binding: binding({
+        engine: 'claude-code',
+        id: 'system:claude-code:C:\\d\\claude.exe',
+        path: 'C:\\d\\claude.exe',
+        version: '2.1.252',
+      }),
+      revision: 1,
+      key: 'k2',
+      model: null,
+    });
+    const kept = fs.readdirSync(service).filter((name) => name !== 'bindings.json');
+    expect(kept.length).toBe(1);
+    expect(fs.readFileSync(path.join(service, kept[0]), 'utf8')).toBe('{ not json');
   });
 
   it('sets nothing aside, and carries nothing forward, for an ordinary record', () => {
