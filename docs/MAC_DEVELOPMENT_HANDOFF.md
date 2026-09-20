@@ -20,7 +20,7 @@ or **[?]** not yet verified anywhere. There is no **[M]** in this document yet.
 | MAC DEVELOPMENT (M1) | Prepared, not run. Known blockers removed in source. First Mac session must verify. |
 | MAC DESKTOP (M2) | Not started on a Mac. Packaging refuses by design until two decisions are made. |
 | PUBLIC RELEASE (M3) | Not started. No signing identity, no artifact, no release record. |
-| WEBSITE DEPLOYMENT | Merged, not deployed. `diomedes-site` `main` is `fad607a`, a fast-forward from `9140f89` that Andrew approved on 2026-09-20. It adds a Mac platform target and a `/download#mac` section. The live site does not show it until the next manual `wrangler` deploy, which belongs to the site lane as one combined deploy. It shows no Mac button: the button renders only for a Mac target in state `released` with a complete artifact, and the build refuses any other shape. |
+| WEBSITE DEPLOYMENT | Live on 2026-09-20. The Mac platform target and the `/download#mac` section landed on `diomedes-site` `main` as `fad607a`, a fast-forward Andrew approved. The site lane deployed it once, combined with its own work, from `06f817d` as Cloudflare version `fc51851b-ddde-4908-ac76-27bb204e802d`. Checked against `https://diomedes.net/download` afterwards, not against `dist/`: 200, the `#mac` section is present, its only link is `/waitlist`, there is no Mac download control and no `.dmg` anywhere on the page, and the Windows button is unchanged. It shows no Mac button by design: the button renders only for a Mac target in state `released` with a complete artifact, and the build refuses any other shape. This is the Mac half of the website prompt only. The learning section is not started. |
 
 ## Repositories and starting points
 
@@ -54,7 +54,7 @@ branch pushed to `diomedes`, not across repositories.
 | `diomedes-mac` `main` | `80263205133c410d590549efd1c8f40cedf33b1c` | private, identical |
 | `diomedes-mac` `feature/apple-silicon-development` | see `git log`; base `8026320` | private. **The Mac work branch.** |
 | `diomedes-mac` `planning/master-package` | orphan branch | private. Planning masters, never merged into source. |
-| `diomedes-site` `main` | `fad607ab5949170cf8d3dbcbde7022ca118589ad` | private. Includes the Mac availability section. |
+| `diomedes-site` `main` | contains `fad607ab5949170cf8d3dbcbde7022ca118589ad`; see `git log` for the head | private. The Mac availability commit. `main` has moved on since with the site lane's own work. |
 
 ## What is on the Mac work branch
 
@@ -177,7 +177,12 @@ Drive mirrors whose links are in `AGENTS.md`.
 - A GitHub sign-in on the Mac. `diomedes-mac` is private, so an anonymous
   `git clone` over HTTPS is refused. The GitHub CLI is the short route:
   `brew install gh`, then `gh auth login` choosing GitHub.com, HTTPS and the web
-  browser. That flow also sets Git's credential helper, so the clone below works.
+  browser. Answer yes when it offers to authenticate Git with your GitHub
+  credentials: that answer is what sets Git's credential helper, and the clone
+  below is refused without it. Use Homebrew rather than the `.pkg` from the
+  GitHub CLI releases page, which its own documentation says is unsigned. On
+  Apple Silicon, Homebrew lives in `/opt/homebrew` and is not on `PATH` until
+  the two lines its installer prints at the end have been run.
   Sign in on the Mac itself; do not copy a token or credential file from Windows.
 - Work in an ordinary local folder such as `~/dev`. Do not put the checkout in
   iCloud Drive, Dropbox or any synced folder.
@@ -344,7 +349,6 @@ customer data or provider spend is authorized by this handoff.
 No Mac command has run. No Mac package exists. No `.app` has launched. No engine
 has been discovered or signed in on a Mac. Nothing is signed or notarized. The
 CI job has never executed. `npm run package:windows` was not re-run after the
-script change; the unit suite and type-check were. The Mac section is on site
-`main` and is not live. The desktop-shell commit `c8a91dd` has had no independent
+script change; the unit suite and type-check were. The desktop-shell commit `c8a91dd` has had no independent
 review. `feature/macos-desktop-shell` holds nothing the work branch lacks; it is
 kept, not deleted.
