@@ -1,6 +1,7 @@
 import type { AdapterRouteContract, TransientPreview } from '../../shared/adapter-contract.js';
 import type { EngineModel, ExternalEngine } from '../../shared/types.js';
 import type { AccountRouteIssue } from '../../shared/engines.js';
+import type { NativeSessionRef } from '../../shared/contract-revision.js';
 export interface TextRequest {
   projectId: string;
   threadId: string;
@@ -57,6 +58,25 @@ export interface TextEngineAdapter {
   readonly contract: AdapterRouteContract;
   inspect(signal?: AbortSignal): Promise<AdapterInspection>;
   generate(input: TextRequest): Promise<TextResponse>;
+}
+/** Optional native transport, admitted separately from the default text route. */
+export interface PersistentTextAdapter<C> extends TextEngineAdapter {
+  readonly sessionContract: AdapterRouteContract;
+  openSession(
+    input: TextRequest,
+    options: {
+      observedVersion: string;
+      restore?: C;
+      fork?: boolean;
+      onCheckpoint(checkpoint: C, signal: AbortSignal): Promise<void>;
+    },
+  ): Promise<{
+    turn(input: TextRequest): Promise<TextResponse>;
+    interrupt(): Promise<void>;
+    close(reason?: unknown): Promise<void>;
+    readonly checkpoint: C;
+    readonly nativeSession: NativeSessionRef | null;
+  }>;
 }
 /** Instructions remain distinct from selected, untrusted document data. */
 export function contextMessage(input: TextRequest): string {

@@ -12,7 +12,8 @@
  *
  * Every fixture is invented. No workplace is real and no figure is financial.
  */
-import { describe, expect, test } from 'vitest';
+import { beforeAll, describe, expect, test } from 'vitest';
+import path from 'node:path';
 import { AGENT_CATALOG, AGENT_REQUIREMENTS, type AgentRequirement } from '../shared/agents.js';
 import { ROUTE_CAPABILITIES, type RouteCapabilities } from '../shared/capabilities.js';
 import { ruleScopeSchema } from '../shared/connection-rules.js';
@@ -29,13 +30,24 @@ import {
   variantFor,
   type CompileInput,
   type PackVariantId,
+  type WeeklyBriefVariant,
 } from '../shared/packs.js';
 import { agentDigest } from '../server/agents.js';
+import { loadIndustryVariantRegistry } from '../server/rehearsal/industry-registry.js';
 
 const AT = '2026-09-10T09:00:00.000Z';
 const ORG = 'org-weekly-brief';
 const TENANT = 'tenant-weekly-brief';
 const BY = 'person_owner';
+let variants: ReadonlyMap<string, WeeklyBriefVariant>;
+
+beforeAll(async () => {
+  variants = (
+    await loadIndustryVariantRegistry({
+      bundledRoot: path.join(process.cwd(), 'resources', 'industry-variants'),
+    })
+  ).variants;
+});
 
 /** One questionnaire row, so the fixtures read as answers rather than literals. */
 const answer = (questionId: string, value: AnswerValue, unknown = false): BusinessAnswer => ({
@@ -121,6 +133,7 @@ const inputFor = (answers: AnswerMap, options?: Partial<CompileInput>): CompileI
   answersDigest: `sha256:${'c'.repeat(64)}`,
   previousConfigurationDigest: null,
   variantId: 'professional-services',
+  variants,
   agents: catalogAgents(),
   teamExecutionAvailable: true,
   connectedConnections: new Set<string>(),
@@ -162,6 +175,7 @@ describe('variant selection', () => {
           ['name', 'Harborlight Bistro'],
           ['industry', 'cafe'],
         ]),
+        variants,
       ),
     ).toBe('restaurant-operations');
     expect(
@@ -170,9 +184,55 @@ describe('variant selection', () => {
           ['name', 'Northfield Design Studio'],
           ['industry', 'design'],
         ]),
+        variants,
       ),
     ).toBe('professional-services');
-    expect(variantFor(build([]))).toBe('professional-services');
+    expect(variantFor(build([]), variants)).toBe('professional-services');
+  });
+
+  test('matches keywords across an injected registry and keeps the shipped neutral fallback', () => {
+    const extended = new Map(variants);
+    extended.set('salon-operations', {
+      id: 'salon-operations',
+      scopeLabel: 'Salon exports',
+      scopeSelection: ['salon-weekly-exports'],
+      outputLabel: 'Weekly salon brief',
+      destination: 'salon-weekly-brief.md',
+      guidanceText: 'Use approved salon exports only.',
+      keywords: ['salon', 'appointments'],
+    });
+
+    expect(variantFor(build([['industry', 'appointment salon']]), extended)).toBe(
+      'salon-operations',
+    );
+    expect(variantFor(build([['industry', 'unknown']]), extended)).toBe('professional-services');
+  });
+});
+
+describe('registry-driven compilation', () => {
+  test('accepts a validated slug from the injected registry and rejects an unknown id', () => {
+    const extended = new Map(variants);
+    extended.set('salon-operations', {
+      id: 'salon-operations',
+      scopeLabel: 'Salon exports',
+      scopeSelection: ['salon-weekly-exports'],
+      outputLabel: 'Weekly salon brief',
+      destination: 'salon-weekly-brief.md',
+      guidanceText: 'Use approved salon exports only.',
+      keywords: ['salon'],
+    });
+    const proposal = compileProposal(
+      inputFor(fullAnswers(), { variantId: 'salon-operations', variants: extended }),
+    );
+    expect(proposal.template.variantId).toBe('salon-operations');
+    expect(proposal.contextScopes[0]?.selection).toEqual(['salon-weekly-exports']);
+    expect(() => compileProposal(inputFor(fullAnswers(), { variantId: 'not-present' }))).toThrow(
+      /not-present|variant/i,
+    );
+    extended.set('Not A Slug', { ...extended.get('salon-operations')!, id: 'Not A Slug' });
+    expect(() =>
+      compileProposal(inputFor(fullAnswers(), { variantId: 'Not A Slug', variants: extended })),
+    ).toThrow(/slug|variant/i);
   });
 });
 

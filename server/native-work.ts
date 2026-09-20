@@ -27,6 +27,10 @@ import {
   deliverySentence,
   instructionSectionBudget,
 } from './harness/instruction-delivery.js';
+import {
+  markProductKnowledgeResponse,
+  productKnowledgeSentence,
+} from './readiness/instructions.js';
 import type { Route } from '../shared/types.js';
 
 export type NativeGenerator = (input: {
@@ -425,6 +429,7 @@ export class NativeWorkService {
       permission: input.permission ?? 'show-first',
       ...(resolved ? { agent: structuredClone(resolved) } : {}),
       ...(instructions.delivery ? { instructions: instructions.delivery } : {}),
+      productKnowledge: instructions.productKnowledge,
       log: [],
       entryIds: [],
       needId: null,
@@ -610,6 +615,21 @@ export class NativeWorkService {
         const state = this.store.state(run.projectId),
           session = this.session(run),
           task = state.tasks.find((item) => item.id === run.taskId)!;
+        // Assembly proves only that the exact section was prepared. Upgrade
+        // the receipt after generate() returned, so failures and uncertain
+        // dispatches never become success-shaped "sent" evidence.
+        if (session.productKnowledge?.state === 'prepared') {
+          session.productKnowledge = markProductKnowledgeResponse(session.productKnowledge, now());
+          const sentence = productKnowledgeSentence(session.productKnowledge);
+          this.log(session, sentence, 'technical');
+          this.store.addEntry(state, {
+            kind: 'product-knowledge-sent',
+            sentence,
+            sessionId: session.id,
+            taskId: run.taskId,
+            actor: 'diomedes',
+          });
+        }
         // The runtime-reported engine only; a missing report stays unverified.
         // It is recorded and persisted before the proposal is judged, so a
         // refused or failed turn is still attributed to the model that billed

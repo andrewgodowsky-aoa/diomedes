@@ -29,8 +29,10 @@ import {
   screenCandidate,
   validateProposal,
   type ConfigurationManifest,
+  type ConfigurationOwner,
   type ConfigurationProposal,
   type ConfigurationView,
+  type ProspectConfigurationView,
   type ReadinessReport,
   type ValidationContext,
   type ValidationResult,
@@ -42,12 +44,17 @@ import { absent, ApiError } from './paths.js';
 import { jsonWrite, readJson, type Store } from './store.js';
 import { answersDigest, type WorkspaceService } from './workspaces.js';
 import type { AgentRegistry } from './agents.js';
+import {
+  assertProspectProposal,
+  type ProspectConfigurationSource,
+} from './rehearsal/prospect-configuration.js';
 
 /** One organization's durable configuration: every revision plus every activation outcome. */
 interface StoredConfiguration {
   v: 1;
-  organizationId: string;
-  tenantId: string;
+  owner?: ConfigurationOwner;
+  organizationId: string | null;
+  tenantId: string | null;
   manifests: ConfigurationManifest[];
   activations: Record<string, ActivationRecord>;
 }
@@ -64,10 +71,17 @@ export interface ActivationRecord {
   readonly kind: 'activate' | 'rollback';
 }
 
-const emptyStored = (organizationId: string, tenantId: string): StoredConfiguration => ({
+const ownerKey = (owner: ConfigurationOwner) =>
+  owner.kind === 'organization'
+    ? `organization:${owner.organizationId}`
+    : `prospect:${owner.operatorId}:${owner.prospectId}`;
+const OWNER_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$/;
+
+const emptyStored = (owner: ConfigurationOwner): StoredConfiguration => ({
   v: 1,
-  organizationId,
-  tenantId,
+  owner,
+  organizationId: owner.kind === 'organization' ? owner.organizationId : null,
+  tenantId: owner.kind === 'organization' ? owner.tenantId : null,
   manifests: [],
   activations: {},
 });
@@ -97,14 +111,21 @@ export class ConfigurationService {
     private readonly store: Store,
     private readonly workspaces: WorkspaceService,
     private readonly agents: AgentRegistry,
+    private readonly prospects?: ProspectConfigurationSource,
   ) {}
 
   private get root() {
     return path.join(this.store.dataDir, 'workspaces', 'configuration');
   }
 
-  private filePath(organizationId: string) {
-    return path.join(this.root, `${organizationId}.json`);
+  private get prospectRoot() {
+    return path.join(this.store.dataDir, 'prospects', 'configuration');
+  }
+
+  private filePath(owner: ConfigurationOwner) {
+    return owner.kind === 'organization'
+      ? path.join(this.root, `${owner.organizationId}.json`)
+      : path.join(this.prospectRoot, owner.operatorId, `${owner.prospectId}.json`);
   }
 
   /**
@@ -118,8 +139,8 @@ export class ConfigurationService {
     try {
       names = await fs.readdir(this.root);
     } catch (error) {
-      if (absent(error)) return;
-      throw error;
+      if (!absent(error)) throw error;
+      names = [];
     }
     for (const name of names.filter((item) => item.endsWith('.json')).sort()) {
       const stored = await readJson<StoredConfiguration>(path.join(this.root, name), () => {
@@ -129,26 +150,81 @@ export class ConfigurationService {
         throw new Error(
           `The stored configuration ${name} was written by another build and was left alone.`,
         );
+      stored.owner ??= {
+        kind: 'organization',
+        organizationId: stored.organizationId!,
+        tenantId: stored.tenantId!,
+      };
       stored.manifests ??= [];
       stored.activations ??= {};
-      this.files.set(stored.organizationId, stored);
+      this.files.set(ownerKey(stored.owner), stored);
+    }
+    let operators: string[] = [];
+    try {
+      operators = await fs.readdir(this.prospectRoot);
+    } catch (error) {
+      if (!absent(error)) throw error;
+    }
+    for (const operatorId of operators.sort()) {
+      const directory = path.join(this.prospectRoot, operatorId);
+      for (const name of (await fs.readdir(directory))
+        .filter((item) => item.endsWith('.json'))
+        .sort()) {
+        const stored = await readJson<StoredConfiguration>(path.join(directory, name), () => {
+          throw new Error(`The stored prospect configuration ${name} could not be read.`);
+        });
+        if (
+          stored.v !== 1 ||
+          stored.owner?.kind !== 'prospect' ||
+          stored.owner.operatorId !== operatorId ||
+          stored.owner.prospectId !== name.slice(0, -'.json'.length) ||
+          stored.organizationId !== null ||
+          stored.tenantId !== null
+        )
+          throw new Error(`The stored prospect configuration ${name} was left alone.`);
+        this.files.set(ownerKey(stored.owner), stored);
+      }
     }
   }
 
-  history(organizationId: string): ConfigurationManifest[] {
-    const stored = this.files.get(organizationId);
+  private ownerFrom(input: string | ConfigurationOwner): ConfigurationOwner {
+    if (typeof input !== 'string') {
+      if (input.kind === 'organization') {
+        const organization = this.workspaces.organization(input.organizationId);
+        if (!organization || organization.tenantId !== input.tenantId)
+          throw refuse(404, 'That business workspace does not exist here.', 'unknown_organization');
+      }
+      if (
+        input.kind === 'prospect' &&
+        (!OWNER_ID.test(input.prospectId) || !OWNER_ID.test(input.operatorId))
+      )
+        throw refuse(404, 'That prospect is not available to this operator.', 'unknown_prospect');
+      return input;
+    }
+    const organization = this.workspaces.organization(input);
+    if (!organization)
+      throw refuse(404, 'That business workspace does not exist here.', 'unknown_organization');
+    return { kind: 'organization', organizationId: input, tenantId: organization.tenantId };
+  }
+
+  history(input: string | ConfigurationOwner): ConfigurationManifest[] {
+    const stored = this.files.get(ownerKey(this.ownerFrom(input)));
     return [...(stored?.manifests ?? [])].sort((a, b) => b.revision - a.revision);
   }
 
-  active(organizationId: string): ConfigurationManifest | null {
+  active(input: string | ConfigurationOwner): ConfigurationManifest | null {
     return (
-      this.files.get(organizationId)?.manifests.find((item) => item.state === 'active') ?? null
+      this.files
+        .get(ownerKey(this.ownerFrom(input)))
+        ?.manifests.find((item) => item.state === 'active') ?? null
     );
   }
 
-  staged(organizationId: string): ConfigurationManifest | null {
+  staged(input: string | ConfigurationOwner): ConfigurationManifest | null {
     return (
-      this.files.get(organizationId)?.manifests.find((item) => item.state === 'staged') ?? null
+      this.files
+        .get(ownerKey(this.ownerFrom(input)))
+        ?.manifests.find((item) => item.state === 'staged') ?? null
     );
   }
 
@@ -157,10 +233,30 @@ export class ConfigurationService {
    * configuration is never consulted: an Agent that changed since staging
    * must fail the next activation, not ride on an old reading.
    */
-  async context(organizationId: string): Promise<ValidationContext> {
-    const organization = this.workspaces.organization(organizationId);
-    if (!organization)
+  async prospectSnapshot(owner: Extract<ConfigurationOwner, { kind: 'prospect' }>) {
+    if (!this.prospects)
+      throw refuse(
+        409,
+        'Prospect configuration is not connected in this build.',
+        'prospect_unavailable',
+      );
+    const snapshot = await this.prospects.resolve(owner);
+    if (
+      snapshot.owner.prospectId !== owner.prospectId ||
+      snapshot.owner.operatorId !== owner.operatorId ||
+      snapshot.overlay.prospectId !== owner.prospectId
+    )
+      throw refuse(404, 'That prospect is not active for this operator.', 'unknown_prospect');
+    return snapshot;
+  }
+
+  async context(input: string | ConfigurationOwner): Promise<ValidationContext> {
+    const owner = this.ownerFrom(input);
+    const organization =
+      owner.kind === 'organization' ? this.workspaces.organization(owner.organizationId) : null;
+    if (owner.kind === 'organization' && !organization)
       throw refuse(404, 'That business workspace does not exist here.', 'unknown_organization');
+    if (owner.kind === 'prospect') await this.prospectSnapshot(owner);
     const { agents } = await this.agents.list();
     const knownAgents: ValidationContext['knownAgents'] = new Map(
       agents.map((item) => [
@@ -188,8 +284,9 @@ export class ConfigurationService {
       if (routeIsRemote(capabilities)) remoteRoutes.add(routeId);
     }
     return {
-      tenantId: organization.tenantId,
-      organizationId,
+      owner,
+      tenantId: owner.kind === 'organization' ? owner.tenantId : null,
+      organizationId: owner.kind === 'organization' ? owner.organizationId : null,
       knownAgents,
       knownRuleScopeKeys,
       routeRequirements,
@@ -231,32 +328,39 @@ export class ConfigurationService {
   }
 
   /** The intake owns the answers; configuration only compares against them. */
-  private async currentAnswersDigest(organizationId: string): Promise<string> {
+  private async currentAnswersDigest(owner: ConfigurationOwner): Promise<string> {
+    if (owner.kind === 'prospect') return (await this.prospectSnapshot(owner)).answersDigest;
     // Read the stored intake directly so activation cannot outrun an edit the
     // in-memory view has not picked up yet. No intake means no answers.
     const setup = await readJson<{ answers?: Record<string, BusinessAnswer> } | null>(
-      path.join(this.store.dataDir, 'workspaces', 'setup', `${organizationId}.json`),
+      path.join(this.store.dataDir, 'workspaces', 'setup', `${owner.organizationId}.json`),
       () => null,
     );
     return answersDigest(setup?.answers ?? {});
   }
 
-  private async persist(organizationId: string, stored: StoredConfiguration) {
-    await jsonWrite(this.filePath(organizationId), stored);
-    this.files.set(organizationId, stored);
+  private async persist(owner: ConfigurationOwner, stored: StoredConfiguration) {
+    await jsonWrite(this.filePath(owner), stored);
+    this.files.set(ownerKey(owner), stored);
   }
 
   async stage(
-    organizationId: string,
+    input: string | ConfigurationOwner,
     proposal: ConfigurationProposal,
   ): Promise<ConfigurationManifest> {
-    const organization = this.configurer(organizationId);
-    if (proposal.organizationId !== organizationId || proposal.tenantId !== organization.tenantId)
+    const owner = this.ownerFrom(input);
+    if (owner.kind === 'organization') this.configurer(owner.organizationId);
+    const prospect = owner.kind === 'prospect' ? await this.prospectSnapshot(owner) : null;
+    if (
+      owner.kind === 'organization' &&
+      (proposal.organizationId !== owner.organizationId || proposal.tenantId !== owner.tenantId)
+    )
       throw refuse(
         400,
         'This proposal belongs to a different business and cannot be staged here.',
         'tenant_mismatch',
       );
+    if (prospect) assertProspectProposal(proposal, prospect);
     // Screening runs before anything is written: an unsafe candidate leaves no
     // trace on disk, not even an empty file for the organization.
     const refusals = screenCandidate(proposal);
@@ -268,14 +372,13 @@ export class ConfigurationService {
         { fields: refusals.map((item) => item.field) },
       );
     const readiness = toReadiness(
-      validateProposal(proposal, await this.context(organizationId)),
+      validateProposal(proposal, await this.context(owner)),
       new Date().toISOString(),
     );
     // A proposal that fails validation is still staged, with ready false and
     // its blocking problems recorded, because a person needs to see why.
     const at = new Date().toISOString();
-    const stored =
-      this.files.get(organizationId) ?? emptyStored(organizationId, organization.tenantId);
+    const stored = this.files.get(ownerKey(owner)) ?? emptyStored(owner);
     const manifests = stored.manifests.map((item) =>
       // Only one manifest may be staged: the newcomer supersedes its
       // predecessor in the same write.
@@ -283,15 +386,17 @@ export class ConfigurationService {
     );
     const manifest: ConfigurationManifest = {
       v: 1,
-      organizationId,
-      tenantId: organization.tenantId,
+      owner,
+      organizationId: owner.kind === 'organization' ? owner.organizationId : null,
+      tenantId: owner.kind === 'organization' ? owner.tenantId : null,
       revision: manifests.reduce((highest, item) => Math.max(highest, item.revision), 0) + 1,
       digest: payloadDigest(proposal),
       state: 'staged',
       proposal,
       readiness,
       stagedAt: at,
-      stagedBy: this.workspaces.currentPerson().id,
+      stagedBy:
+        owner.kind === 'organization' ? this.workspaces.currentPerson().id : owner.operatorId,
       activatedAt: null,
       activatedBy: null,
       activationId: null,
@@ -299,23 +404,26 @@ export class ConfigurationService {
       failureReason: null,
     };
     manifests.push(manifest);
-    await this.persist(organizationId, { ...stored, manifests });
+    if (owner.kind === 'prospect')
+      assertProspectProposal(proposal, await this.prospectSnapshot(owner));
+    await this.persist(owner, { ...stored, owner, manifests });
     return manifest;
   }
 
   async activate(
-    organizationId: string,
+    ownerInput: string | ConfigurationOwner,
     input: { revision: number; expectedActiveRevision: number | null; activationId: string },
   ): Promise<ConfigurationManifest> {
     // Authority gates every path, replay included: a replay still hands back a
     // manifest, and someone who has lost membership must not receive one.
-    const organization = this.configurer(organizationId);
+    const owner = this.ownerFrom(ownerInput);
+    if (owner.kind === 'organization') this.configurer(owner.organizationId);
+    const prospect = owner.kind === 'prospect' ? await this.prospectSnapshot(owner) : null;
     // Then replay: a recorded activation id returns its manifest unchanged,
     // without a second revision, a second preparation or any write at all.
-    const replayed = this.recorded(organizationId, input.activationId);
+    const replayed = this.recorded(owner, input.activationId);
     if (replayed) return replayed;
-    const stored =
-      this.files.get(organizationId) ?? emptyStored(organizationId, organization.tenantId);
+    const stored = this.files.get(ownerKey(owner)) ?? emptyStored(owner);
     const current = stored.manifests.find((item) => item.state === 'active') ?? null;
     if (input.expectedActiveRevision !== (current ? current.revision : null))
       throw refuse(409, ACTIVATION_CONFLICT, 'stale_configuration', {
@@ -327,7 +435,8 @@ export class ConfigurationService {
     // Re-validate against a freshly built context: an Agent that changed
     // revision since staging fails here as a stale-agent problem.
     const checkedAt = new Date().toISOString();
-    const result = validateProposal(target.proposal, await this.context(organizationId));
+    if (prospect) assertProspectProposal(target.proposal, prospect);
+    const result = validateProposal(target.proposal, await this.context(owner));
     if (!result.ok) {
       const blocking = result.problems.filter((item) => item.severity === 'blocking');
       throw refuse(
@@ -337,11 +446,14 @@ export class ConfigurationService {
         { blocking },
       );
     }
-    if (target.proposal.answersDigest !== (await this.currentAnswersDigest(organizationId)))
+    if (target.proposal.answersDigest !== (await this.currentAnswersDigest(owner)))
       throw refuse(409, ANSWERS_MOVED, 'answers_moved');
+    if (owner.kind === 'prospect')
+      assertProspectProposal(target.proposal, await this.prospectSnapshot(owner));
     // Only now, in a single write: the previous active setup is superseded and
     // this one becomes active. Every refusal above leaves it untouched.
-    const by = this.workspaces.currentPerson().id;
+    const by =
+      owner.kind === 'organization' ? this.workspaces.currentPerson().id : owner.operatorId;
     const readiness = toReadiness(result, checkedAt);
     const manifests = stored.manifests.map((item) => {
       if (item.revision === target.revision)
@@ -367,21 +479,22 @@ export class ConfigurationService {
         kind: 'activate' as const,
       },
     };
-    await this.persist(organizationId, { ...stored, manifests, activations });
+    await this.persist(owner, { ...stored, owner, manifests, activations });
     return manifests.find((item) => item.revision === target.revision)!;
   }
 
   async rollback(
-    organizationId: string,
+    ownerInput: string | ConfigurationOwner,
     input: { toRevision: number; expectedActiveRevision: number | null; activationId: string },
   ): Promise<ConfigurationManifest> {
     // Same order as `activate`: authority first, then replay. Rolling back is
     // still a read of this organization's history.
-    const organization = this.configurer(organizationId);
-    const replayed = this.recorded(organizationId, input.activationId);
+    const owner = this.ownerFrom(ownerInput);
+    if (owner.kind === 'organization') this.configurer(owner.organizationId);
+    const prospect = owner.kind === 'prospect' ? await this.prospectSnapshot(owner) : null;
+    const replayed = this.recorded(owner, input.activationId);
     if (replayed) return replayed;
-    const stored =
-      this.files.get(organizationId) ?? emptyStored(organizationId, organization.tenantId);
+    const stored = this.files.get(ownerKey(owner)) ?? emptyStored(owner);
     const current = stored.manifests.find((item) => item.state === 'active') ?? null;
     if (input.expectedActiveRevision !== (current ? current.revision : null))
       throw refuse(409, ACTIVATION_CONFLICT, 'stale_configuration', {
@@ -394,7 +507,8 @@ export class ConfigurationService {
     // A configuration that was valid before may not be valid now: rolling back
     // must not smuggle a stale Agent revision back into service.
     const checkedAt = new Date().toISOString();
-    const result = validateProposal(target.proposal, await this.context(organizationId));
+    if (prospect) assertProspectProposal(target.proposal, prospect);
+    const result = validateProposal(target.proposal, await this.context(owner));
     if (!result.ok) {
       const blocking = result.problems.filter((item) => item.severity === 'blocking');
       throw refuse(
@@ -404,9 +518,12 @@ export class ConfigurationService {
         { blocking },
       );
     }
-    if (target.proposal.answersDigest !== (await this.currentAnswersDigest(organizationId)))
+    if (target.proposal.answersDigest !== (await this.currentAnswersDigest(owner)))
       throw refuse(409, ANSWERS_MOVED, 'answers_moved');
-    const by = this.workspaces.currentPerson().id;
+    if (owner.kind === 'prospect')
+      assertProspectProposal(target.proposal, await this.prospectSnapshot(owner));
+    const by =
+      owner.kind === 'organization' ? this.workspaces.currentPerson().id : owner.operatorId;
     // Going back restores the setup on this computer only. Say so on the
     // manifest itself, where the person approving the rollback will read it.
     const checked = toReadiness(result, checkedAt);
@@ -440,7 +557,7 @@ export class ConfigurationService {
         kind: 'rollback' as const,
       },
     };
-    await this.persist(organizationId, { ...stored, manifests, activations });
+    await this.persist(owner, { ...stored, owner, manifests, activations });
     return manifests.find((item) => item.revision === target.revision)!;
   }
 
@@ -454,8 +571,8 @@ export class ConfigurationService {
    * idempotency key, not a capability, and it means nothing outside the
    * organization it was recorded against.
    */
-  private recorded(organizationId: string, activationId: string): ConfigurationManifest | null {
-    const stored = this.files.get(organizationId);
+  private recorded(owner: ConfigurationOwner, activationId: string): ConfigurationManifest | null {
+    const stored = this.files.get(ownerKey(owner));
     const record = stored?.activations[activationId];
     if (!record) return null;
     return stored?.manifests.find((item) => item.revision === record.revision) ?? null;
@@ -492,6 +609,30 @@ export class ConfigurationService {
         : staged === null
           ? 'There is no staged setup to activate yet.'
           : 'The staged setup is not ready to activate. Read its blocking problems first.',
+    };
+  }
+
+  /** Fresh FD02 ownership is checked before returning any prospect configuration bytes. */
+  async prospectView(
+    owner: Extract<ConfigurationOwner, { kind: 'prospect' }>,
+  ): Promise<ProspectConfigurationView> {
+    const snapshot = await this.prospectSnapshot(owner);
+    const active = this.active(owner);
+    const staged = this.staged(owner);
+    const canActivate = staged !== null && staged.readiness.ready;
+    return {
+      owner,
+      prospect: { id: owner.prospectId, name: snapshot.name },
+      active,
+      staged,
+      changes: staged ? explainProposal(active?.proposal ?? null, staged.proposal) : [],
+      expectedActiveRevision: active?.revision ?? null,
+      canActivate,
+      whyNot: canActivate
+        ? null
+        : staged === null
+          ? 'There is no staged prospect rehearsal setup to activate yet.'
+          : 'The staged prospect rehearsal setup is not ready to activate.',
     };
   }
 }

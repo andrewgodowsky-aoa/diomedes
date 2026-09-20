@@ -19,10 +19,11 @@ import { parseWorkCommand } from '../work-admission.js';
 import { identifier } from '../store.js';
 import { currentAuthority as resolveTrustAuthority } from '../trust/index.js';
 import {
-  ENGINE_TEXT_TURN,
-  TextRouteRuntime,
-  textDispatchAuthorizer,
-} from './text-route.js';
+  CLAUDE_SESSION_CAPABILITY,
+  ClaudeSessionRuns,
+  validateClaudeNativeCheckpoint,
+} from './claude-session-run.js';
+import { ENGINE_TEXT_TURN, TextRouteRuntime, textDispatchAuthorizer } from './text-route.js';
 
 export const HARNESS_POLICY_VERSION = 'diomedes-host-policy-v1';
 
@@ -144,6 +145,9 @@ const readableRun = z.object({
       output: z.json(),
       outputHash: sha.nullable(),
       origin: stepOrigin,
+      nativeCheckpoint: z
+        .strictObject({ v: z.literal(1), providerId: z.string().min(1).max(80), payload: z.json() })
+        .optional(),
       leaseFence: integer,
       startedAt: stamp.nullable(),
       endedAt: stamp.nullable(),
@@ -351,14 +355,21 @@ export function createHarnessHost({
   const files = new ProjectRunStore(store, dataDir, HOST_TEST_PROJECT);
   let codex: CodexEngineAdapter;
   let textRoute: TextRouteRuntime;
-  const textAuthorize = textDispatchAuthorizer(() => store.settings.services);
+  const textAuthorize = textDispatchAuthorizer(
+    () => store.settings.services,
+    [ENGINE_TEXT_TURN.id, CLAUDE_SESSION_CAPABILITY.id],
+  );
   const runs: HostRunService = new HostRunService(files, {
     clock: Date.now,
     policyVersion: HARNESS_POLICY_VERSION,
     redact,
+    validateNativeCheckpoint: validateClaudeNativeCheckpoint,
     authorizeEgress: async (runId, intent, principal, phase) => {
       const run = await runs.get(runId);
-      if (run.capabilityId === ENGINE_TEXT_TURN.id)
+      if (
+        run.capabilityId === ENGINE_TEXT_TURN.id ||
+        run.capabilityId === CLAUDE_SESSION_CAPABILITY.id
+      )
         return textAuthorize(run, intent, phase);
       return codex.authorize(runId, intent, principal, phase);
     },
@@ -386,6 +397,7 @@ export function createHarnessHost({
     owner: identifier('text-route-'),
     leaseMs: textLeaseMs,
   });
+  const claudeSessions = new ClaudeSessionRuns(runs);
   const bridge = new HarnessBridge(store, runs, tools, adapter, redact, HOST_TEST_PROJECT, codex);
   const observers = new Set<{ runId: string; changed: () => void; closed: () => void }>();
   let closed = false;
@@ -454,6 +466,7 @@ export function createHarnessHost({
     bridge,
     codex,
     textRoute,
+    claudeSessions,
     /** Host-only until authenticated client admission is supplied by Trust.
      * Reuses the same command parser, collision check, receipt and Store lock. */
     startCodexReport(
@@ -531,10 +544,14 @@ export function createHarnessHost({
       await files.list();
       for (const project of await store.projects()) {
         const saved = await savedRuns(project.id);
-        await bridge.recover(project.id, saved);
+        await bridge.recover(
+          project.id,
+          saved.filter((run) => run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id),
+        );
         // Text-route runs are not the bridge's sessions; the runtime's own
         // recovery invalidates dead leases and parks in-flight dispatches.
         for (const run of saved) await textRoute.recover(run.id, run);
+        for (const run of saved) await claudeSessions.recover(run);
       }
       // A host run has no Session and no Task, so the bridge has nothing to
       // recover for it. The runtime still invalidates its dead lease and parks
@@ -542,11 +559,12 @@ export function createHarnessHost({
       for (const run of await savedRuns(HOST_TEST_PROJECT)) await textRoute.recover(run.id, run);
       await bridge.flush();
     },
-    close: () => {
+    close: async () => {
       closed = true;
       for (const observer of observers) observer.closed();
       observers.clear();
-      return bridge.close();
+      await claudeSessions.closeAll();
+      await bridge.close();
     },
   };
 }

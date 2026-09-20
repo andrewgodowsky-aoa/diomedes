@@ -255,3 +255,14 @@ export interface InstructionDelivery {
   /** Instruction bytes actually placed in the prompt. */
   readonly bytes: number;
 }
+
+/*
+ * FD03 adds evidence to the existing Session record rather than introducing a
+ * second run or history store. The receipt is prepared during context
+ * assembly and may become sent only after the provider returns a response.
+ */
+declare module './types.js' {
+  interface Session {
+    productKnowledge?: import('./readiness.js').ProductKnowledgeReceipt;
+  }
+}

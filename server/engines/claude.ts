@@ -5,6 +5,11 @@ import type { EngineModel } from '../../shared/types.js';
 import type { SetupStage } from '../../shared/engines.js';
 import { routeContractFor } from '../harness/route-contract.js';
 import {
+  ClaudeNativeSession,
+  prepareClaudeSession,
+  type ClaudeSessionOptions,
+} from './claude-session.js';
+import {
   contextMessage,
   type AdapterInspection,
   type TextEngineAdapter,
@@ -35,8 +40,14 @@ const ACCOUNT_ROUTE = 'claude-code:claude.ai';
  * by name. Both are observed in this repository; nothing is listed from memory.
  */
 const NAMEABLE_AUTH_METHODS = ['api_key'] as const;
-export function claudeArguments(): string[] {
-  return [
+/**
+ * `persistent` is the native-session transport's one difference: a session keeps
+ * one process across turns, so it must not carry the single-turn guards. Every
+ * other argument, including the closed tool and MCP configuration, is identical
+ * for both, because a persistent process must not be a less restricted one.
+ */
+export function claudeArguments(persistent = false): string[] {
+  const args = [
     '--print',
     '--input-format',
     'stream-json',
@@ -53,12 +64,13 @@ export function claudeArguments(): string[] {
     '--mcp-config',
     '{"mcpServers":{}}',
     '--disable-slash-commands',
-    '--no-session-persistence',
-    '--max-turns',
-    '1',
+  ];
+  if (!persistent) args.push('--no-session-persistence', '--max-turns', '1');
+  args.push(
     '--settings',
     '{"disableAllHooks":true,"autoUpdatesChannel":"stable","enabledPlugins":{}}',
-  ];
+  );
+  return args;
 }
 function environment() {
   return {
@@ -168,15 +180,63 @@ export class ClaudeAdapter implements TextEngineAdapter {
     if (status.loggedIn !== true || !method) throw signInRequired();
     return method;
   }
+  /**
+   * The signed-in account itself, for the one caller that needs more than the
+   * method name: a native session pins the account it opened on, so it has to
+   * see the identity fields. The refusal is the same one `text` makes before it
+   * sends (`accountMethod` plus the `claude.ai` rule), stated once here so the
+   * session transport cannot be a softer door than the single-turn one.
+   */
+  private async claudeAccount(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    const status = await this.account(signal);
+    const method = typeof status.authMethod === 'string' ? status.authMethod : '';
+    if (status.loggedIn !== true || !method || method !== 'claude.ai') throw signInRequired();
+    return status;
+  }
+  /** Opt-in transport leaf. The host must persist checkpoints in its existing run authority. */
+  async openSession(
+    input: TextRequest,
+    options: ClaudeSessionOptions,
+  ): Promise<ClaudeNativeSession> {
+    contextMessage(input);
+    const account = await this.claudeAccount(input.signal);
+    const prepared = prepareClaudeSession(input, options, account, this.cwd, CLAUDE_VERSION);
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
+    const process = await this.start(signal, prepared.args, 30 * 60_000, input.instructions, true);
+    try {
+      await this.initialize(process.child);
+      return new ClaudeNativeSession(
+        process,
+        prepared.checkpoint,
+        options.onCheckpoint,
+        async (signal) => {
+          prepareClaudeSession(
+            input,
+            { ...options, restore: undefined, fork: false },
+            await this.claudeAccount(signal),
+            this.cwd,
+            CLAUDE_VERSION,
+            prepared.checkpoint.accountDigest,
+          );
+        },
+        controller,
+      );
+    } catch (error) {
+      await process.close(error);
+      throw error;
+    }
+  }
   private async start(
     signal?: AbortSignal,
     extra: string[] = [],
     timeoutMs = 120_000,
     instructions?: string,
+    persistent = false,
   ) {
     const directory = await fs.mkdtemp(path.join(this.cwd, '.claude-request-'));
     try {
-      const args = claudeArguments();
+      const args = claudeArguments(persistent);
       for (const flag of ['--mcp-config', '--settings']) {
         const index = args.indexOf(flag) + 1,
           file = path.join(directory, `${flag.slice(2)}.json`);

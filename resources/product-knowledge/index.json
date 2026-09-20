@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "version": "2026-09-19.1",
+  "buildVersion": "0.1.4",
+  "resources": [
+    {
+      "path": "core.json",
+      "sha256": "996d1d78d167984eeba37b5635f925d2dd0e68bade70e18832a913d0094bc62f",
+      "scopes": [
+        "product",
+        "route:native-fixture",
+        "route:codex-report",
+        "route:harness-runtime",
+        "route:sample",
+        "route:codex",
+        "route:claude-code",
+        "route:opencode",
+        "route:oh-my-pi",
+        "route:cursor",
+        "route:devin",
+        "workflow:sample-draft",
+        "workflow:claude-code-draft"
+      ]
+    }
+  ]
+}

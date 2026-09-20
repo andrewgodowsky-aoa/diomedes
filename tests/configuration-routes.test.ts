@@ -139,6 +139,40 @@ async function completeIntake(organizationId: string): Promise<void> {
   if (!view.ready) throw new Error('The test intake did not complete.');
 }
 
+async function writeOperatorVariant(folder: string, id = folder): Promise<string> {
+  const variantRoot = path.join(store.dataDir, 'industry-variants', folder);
+  await fs.mkdir(path.join(variantRoot, 'fixtures'), { recursive: true });
+  await fs.writeFile(
+    path.join(variantRoot, 'variant.json'),
+    JSON.stringify({
+      id,
+      contractVersion: 1,
+      engine: 'weekly-brief',
+      label: 'Salon operations',
+      industry: 'salon',
+      keywords: ['salon', 'appointments'],
+      scopeLabel: 'Salon exports',
+      scopeSelection: ['salon-weekly-exports'],
+      outputLabel: 'Weekly salon brief',
+      destination: 'salon-weekly-brief.md',
+      guidanceText: 'Use the approved salon exports only.',
+      terminology: {
+        location: 'salon',
+        guidance: 'INJECTED OVERLAY GUIDANCE MUST NOT APPEAR',
+      },
+    }),
+  );
+  await fs.writeFile(
+    path.join(variantRoot, 'fixtures.json'),
+    JSON.stringify([{ path: 'summary.md', label: 'Salon summary', default: true }]),
+  );
+  await fs.writeFile(
+    path.join(variantRoot, 'fixtures', 'summary.md'),
+    '# Synthetic salon summary\n',
+  );
+  return variantRoot;
+}
+
 const errorCode = (data: unknown): string | undefined => (data as { code?: string } | null)?.code;
 
 describe('the configuration view', () => {
@@ -181,6 +215,27 @@ describe('compile', () => {
     const unknown = await compile(organizationId, { variantId: 'industrial' });
     expect(unknown.status).toBe(400);
     expect(errorCode(unknown.data)).toBe('invalid_variant');
+  });
+
+  test('freshly compiles an operator variant while malformed and duplicate folders stay isolated', async () => {
+    await writeOperatorVariant('salon-operations');
+    await writeOperatorVariant('bad-folder', 'Not A Slug');
+    await writeOperatorVariant('restaurant-operations');
+    const organizationId = await createOrg('Fourth Street Salon');
+    await completeIntake(organizationId);
+
+    const chosen = await compile(organizationId, { variantId: 'salon-operations' });
+
+    expect(chosen.status).toBe(200);
+    expect(chosen.data.staged?.proposal.template.variantId).toBe('salon-operations');
+    expect(chosen.data.staged?.proposal.contextScopes[0]?.selection).toEqual([
+      'salon-weekly-exports',
+    ]);
+    const guidance = chosen.data.staged?.proposal.rules.find(
+      (rule) => rule.category === 'guidance',
+    )?.text;
+    expect(guidance).toContain('approved salon exports');
+    expect(guidance).not.toContain('INJECTED OVERLAY GUIDANCE');
   });
 
   test('a proposal in the body is refused rather than honoured', async () => {

@@ -15,6 +15,16 @@ export class ApiError extends Error {
 }
 import type { DocumentContent, DocumentInfo, Settings } from '../shared/types';
 import type { EngineConnection } from '../shared/engines';
+import type { ReadinessProjection } from '../shared/readiness';
+
+import type {
+  CreateProspectDiscoveryInput,
+  DiscoveryStage,
+  FactProvenance,
+  HypothesisOutcome,
+  PersonalizationLevel,
+  ProspectDiscoveryRecord,
+} from '../shared/discovery';
 
 export async function api<T>(
   path: string,
@@ -39,6 +49,49 @@ export async function api<T>(
     );
   return payload as T;
 }
+
+type DiscoveryResponse = { record: ProspectDiscoveryRecord | null };
+const discoveryPath = (prospectId: string) => `/discovery/${encodeURIComponent(prospectId)}`;
+
+export const discoveryApi = {
+  active: (signal?: AbortSignal) => api<DiscoveryResponse>('/discovery', 'GET', undefined, signal),
+  create: (input: CreateProspectDiscoveryInput) =>
+    api<DiscoveryResponse>('/discovery', 'POST', input),
+  select: (prospectId: string) =>
+    api<DiscoveryResponse>(`${discoveryPath(prospectId)}/select`, 'POST', {}),
+  correct: (
+    prospectId: string,
+    input: { factId: string; value: string | null; provenance: FactProvenance },
+  ) => api<DiscoveryResponse>(`${discoveryPath(prospectId)}/facts/correct`, 'POST', input),
+  outcome: (prospectId: string, outcome: HypothesisOutcome) =>
+    api<DiscoveryResponse>(`${discoveryPath(prospectId)}/hypothesis/outcome`, 'POST', {
+      outcome,
+      checkedAt: new Date().toISOString(),
+    }),
+  classify: (
+    prospectId: string,
+    stage: DiscoveryStage,
+    personalizationLevel: PersonalizationLevel,
+  ) =>
+    api<DiscoveryResponse>(`${discoveryPath(prospectId)}/classification`, 'POST', {
+      stage,
+      personalizationLevel,
+    }),
+  importBrief: (prospectId: string, input: { projectId: string; path: string; sha: string }) =>
+    api<DiscoveryResponse>(`${discoveryPath(prospectId)}/import`, 'POST', input),
+  exportRecord: (prospectId: string, projectId: string) =>
+    api<DiscoveryResponse>(`${discoveryPath(prospectId)}/export`, 'POST', { projectId }),
+};
+
+export const readinessApi = {
+  read: (projectId?: string, signal?: AbortSignal) =>
+    api<{ readiness: ReadinessProjection }>(
+      `/readiness${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`,
+      'GET',
+      undefined,
+      signal,
+    ),
+};
 
 /**
  * The project's document listing. The SSE `state` fan-out strips `documents`
