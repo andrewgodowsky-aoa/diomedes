@@ -104,7 +104,7 @@ may be filled from a summary rather than a run.
 
 | Lane | Findings it answers | Commits | Gate results |
 | --- | --- | --- | --- |
-| `route-truth-docs` | F02 labels, F03 disclosure, F08, and this record for F09 | `db2d41f`, `ff3d23d`, plus this record | `npx tsc --noEmit` passed; `npx vitest run tests/engine-routes.test.ts` ran 8 tests, 8 passed, 0 failed |
+| `route-truth-docs` | F02 labels, F03 disclosure, F08, and this record for F09 | every commit on `feature/first-run-repair-route-truth-docs` after `357fa7c`, beginning `db2d41f`; the integrator records the merged ids | `npx tsc --noEmit` passed; `npx vitest run tests/engine-routes.test.ts` ran 8 tests, 8 passed, 0 failed |
 | `candidate-binding` | TO BE FILLED | TO BE FILLED | TO BE FILLED |
 | `opencode-adapter` | TO BE FILLED | TO BE FILLED | TO BE FILLED |
 | `setup-ui` | TO BE FILLED | TO BE FILLED | TO BE FILLED |
