@@ -84,6 +84,11 @@ of running it. These are configuration controls, not an operating-system sandbox
 table above repeats `shared/engine-routes.ts`, which is written for the settings screen
 to render; at this commit nothing reads it yet.
 
+The same rows, each with the three states above, are generated into
+`docs/reference/capability-record.json` by `scripts/write-capability-record.ts`. That file
+is the one place these facts are collected, and it is what another repository copies
+instead of retyping this table.
+
 **Found is not usable.** Checking this computer ends in one of these, and the difference
 is the whole point of the list:
 
