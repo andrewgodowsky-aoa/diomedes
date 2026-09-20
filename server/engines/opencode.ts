@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import type { EngineModel } from '../../shared/types.js';
+import type { SetupStage } from '../../shared/engines.js';
 import { routeContractFor } from '../harness/route-contract.js';
 import {
   contextMessage,
@@ -13,6 +14,7 @@ import {
   type TextResponse,
 } from './contract.js';
 import {
+  atStage,
   cleanupFailed,
   engineEnvironment,
   EngineError,
@@ -52,7 +54,7 @@ export interface OpenCodeAdapterDeps {
 const object = (value: unknown): Json =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : {};
 
-async function cappedText(response: Response, limit: number): Promise<string> {
+async function cappedText(response: Response, limit: number, stage: SetupStage): Promise<string> {
   if (!response.body) return '';
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -63,7 +65,7 @@ async function cappedText(response: Response, limit: number): Promise<string> {
       if (part.done) break;
       size += part.value.byteLength;
       if (size > limit)
-        throw new EngineError('OUTPUT_LIMIT', 'OpenCode returned too much data.', true);
+        throw new EngineError('OUTPUT_LIMIT', 'OpenCode returned too much data.', true, stage);
       chunks.push(part.value);
     }
   } finally {
@@ -121,7 +123,7 @@ async function ephemeralPort(): Promise<number> {
   const address = server.address();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   if (!address || typeof address === 'string')
-    throw new EngineError('START_FAILED', 'OpenCode did not provide a loopback port.');
+    throw new EngineError('START_FAILED', 'OpenCode did not provide a loopback port.', false, 'launch');
   return address.port;
 }
 
@@ -147,38 +149,60 @@ function abortError(
   signal: AbortSignal,
   timeoutMs: number,
   budget: 'startup' | 'request',
+  stage: SetupStage,
 ): EngineError {
-  if (signal.reason !== 'timeout') return stopped();
+  if (signal.reason !== 'timeout') return atStage(stopped(), stage);
   return budget === 'startup'
     ? new EngineError(
         'TIMEOUT',
         `OpenCode did not start within ${Math.round(timeoutMs / 1000)} seconds. Recheck the engine in Settings before starting another request.`,
         true,
+        stage,
       )
     : new EngineError(
         'TIMEOUT',
         'OpenCode did not finish within the time limit. Recheck before starting another request.',
         true,
+        stage,
       );
 }
 
-function errorForResponse(status: number, body: string): EngineError {
-  if (status === 401 || status === 403)
+/**
+ * The stage decides what a denial means. Diomedes generates the password for
+ * the server it starts and hands it over itself: that server refusing it is a
+ * local fault, it proves nothing about the person's account, and telling them
+ * to sign in again would send them to repair something that is not broken. A
+ * denial that came back from the account — through the provider catalogue, a
+ * message response or a session error — is the one that means sign-in.
+ */
+function errorForResponse(status: number, body: string, stage: SetupStage): EngineError {
+  if (status === 401 || status === 403) {
+    if (stage === 'local-handshake')
+      return new EngineError(
+        'HANDSHAKE_FAILED',
+        'Diomedes could not authenticate to the OpenCode server it started. No account was reached, so nothing here is known about its sign-in.',
+        false,
+        'local-handshake',
+      );
     return new EngineError(
       'AUTH_REQUIRED',
       'OpenCode Go is not signed in. Sign in through OpenCode, then recheck.',
       true,
+      'provider-auth',
     );
+  }
   if (/retry|rate.?limit|quota|usage/i.test(body))
     return new EngineError(
       'USAGE_LIMIT',
       'OpenCode reported a service limit. No provider or model was substituted.',
       true,
+      stage,
     );
   return new EngineError(
     'PROVIDER_ERROR',
     'OpenCode could not complete this request. No automatic retry was sent.',
     true,
+    stage,
   );
 }
 
@@ -234,6 +258,7 @@ function parseSelection(value: string): { providerID: string; modelID: string } 
       'MODEL_UNAVAILABLE',
       'Choose an explicit OpenCode Go provider/model.',
       true,
+      'model-list',
     );
   const providerID = value.slice(0, slash);
   const modelID = value.slice(slash + 1);
@@ -242,6 +267,7 @@ function parseSelection(value: string): { providerID: string; modelID: string } 
       'ACCOUNT_CHANGED',
       'Only the native OpenCode Go account route is allowed.',
       true,
+      'provider-auth',
     );
   return { providerID, modelID };
 }
@@ -304,7 +330,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     env: NodeJS.ProcessEnv;
     root: string;
   }> {
-    if (signal?.aborted) throw stopped();
+    if (signal?.aborted) throw atStage(stopped(), 'launch');
     const root = await fs.mkdtemp(path.join(this.cwd, '.diomedes-opencode-'));
     let env: NodeJS.ProcessEnv;
     let port: number;
@@ -315,7 +341,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       command = launchCommand(this.file, opencodeArguments(port));
     } catch (error) {
       await fs.rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 });
-      throw error;
+      throw atStage(error, 'launch');
     }
     const password = randomBytes(32).toString('hex');
     env.OPENCODE_SERVER_PASSWORD = password;
@@ -336,6 +362,8 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       throw new EngineError(
         'LAUNCH_FAILED',
         'OpenCode could not start. Recheck its installation and dependencies.',
+        false,
+        'launch',
       );
     }
     // Drain logs without retaining credential-bearing diagnostics. Protocol
@@ -346,6 +374,8 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       launchError ??= new EngineError(
         'LAUNCH_FAILED',
         'OpenCode could not start. Recheck its installation and dependencies.',
+        false,
+        'launch',
       );
     });
     const base = `http://127.0.0.1:${port}`;
@@ -354,13 +384,15 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     try {
       for (;;) {
         try {
+          // Talking to the loopback server Diomedes started, with the password
+          // Diomedes generated for it. Nothing here has reached an account yet.
           const response = await this.fetcher(`${base}/provider`, {
             headers: this.headers(auth),
             signal: ready.signal,
           });
-          const body = await cappedText(response, MAX_JSON_BYTES);
+          const body = await cappedText(response, MAX_JSON_BYTES, 'local-handshake');
           if (response.status === 401 || response.status === 403)
-            throw errorForResponse(response.status, body);
+            throw errorForResponse(response.status, body, 'local-handshake');
           if (response.ok) {
             ready.dispose();
             return { child, base, auth, env, root };
@@ -368,7 +400,8 @@ export class OpenCodeAdapter implements TextEngineAdapter {
         } catch (error) {
           if (error instanceof EngineError) throw error;
           if (launchError) throw launchError;
-          if (ready.signal.aborted) throw abortError(ready.signal, this.startupTimeout, 'startup');
+          if (ready.signal.aborted)
+            throw abortError(ready.signal, this.startupTimeout, 'startup', 'launch');
         }
         if (launchError) throw launchError;
         if (child.exitCode !== null || child.signalCode !== null)
@@ -376,25 +409,34 @@ export class OpenCodeAdapter implements TextEngineAdapter {
             'LAUNCH_FAILED',
             'OpenCode stopped before its server became ready.',
             true,
+            'launch',
           );
         await new Promise((resolve) => setTimeout(resolve, 40));
       }
     } catch (error) {
       ready.dispose();
-      await this.closeChild(child, error);
+      const failure = atStage(error, 'launch');
+      await this.closeChild(child, failure);
       await fs.rm(root, { recursive: true, force: true });
-      throw error;
+      throw failure;
     }
   }
 
   private headers(auth: string): Record<string, string> {
     return { Authorization: auth, Accept: 'application/json', 'x-opencode-directory': this.cwd };
   }
+  /**
+   * A cleanup failure never replaces the failure that caused it, and it must
+   * not lose the stage that failure was found at either: `cleanupFailed`
+   * rebuilds the error from the primary's code and message alone.
+   */
   private async closeChild(child: ChildProcessWithoutNullStreams, primary?: unknown) {
     try {
       await killOwnedProcess(child);
     } catch {
-      throw cleanupFailed(primary);
+      const failure = cleanupFailed(primary);
+      const found = primary instanceof EngineError ? primary.stage : undefined;
+      throw atStage(failure, found ?? 'cleanup');
     }
   }
   private async request(
@@ -402,6 +444,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     route: string,
     init: RequestInit,
     signal: AbortSignal,
+    stage: SetupStage,
   ): Promise<Response> {
     let response: Response;
     try {
@@ -411,21 +454,21 @@ export class OpenCodeAdapter implements TextEngineAdapter {
         headers: { ...this.headers(server.auth), ...(init.headers ?? {}) },
       });
     } catch (error) {
-      if (signal.aborted) throw abortError(signal, this.requestTimeout, 'request');
-      throw new EngineError('PROVIDER_ERROR', 'OpenCode could not be reached.', true);
+      if (signal.aborted) throw abortError(signal, this.requestTimeout, 'request', stage);
+      throw new EngineError('PROVIDER_ERROR', 'OpenCode could not be reached.', true, stage);
     }
     if (!response.ok) {
-      const body = (await cappedText(response, 4096)).slice(0, 4096);
-      throw errorForResponse(response.status, body);
+      const body = (await cappedText(response, 4096, stage)).slice(0, 4096);
+      throw errorForResponse(response.status, body, stage);
     }
     return response;
   }
-  private async json(response: Response): Promise<Json> {
+  private async json(response: Response, stage: SetupStage): Promise<Json> {
     try {
-      return object(JSON.parse(await cappedText(response, MAX_JSON_BYTES)));
+      return object(JSON.parse(await cappedText(response, MAX_JSON_BYTES, stage)));
     } catch (error) {
       if (error instanceof EngineError) throw error;
-      throw new EngineError('PROTOCOL_ERROR', 'OpenCode returned malformed JSON.', true);
+      throw new EngineError('PROTOCOL_ERROR', 'OpenCode returned malformed JSON.', true, stage);
     }
   }
   private async cleanupRequest(server: { base: string; auth: string }, route: string) {
@@ -437,6 +480,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
         route,
         { method: route.endsWith('/abort') ? 'POST' : 'DELETE' },
         control.signal,
+        'cleanup',
       );
     } catch {
       /* Cleanup must not replace the primary provider or cancellation error. */
@@ -449,7 +493,10 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     const server = await this.start(signal);
     const control = deadline(signal, this.requestTimeout);
     try {
-      const body = await this.json(await this.request(server, '/provider', {}, control.signal));
+      const body = await this.json(
+        await this.request(server, '/provider', {}, control.signal, 'model-list'),
+        'model-list',
+      );
       const list = catalogue(body);
       // A connected account that is not Go is neither signed out nor unpaid.
       // Say which route this adapter accepts, say these providers are not the
@@ -489,6 +536,8 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       throw new EngineError(
         'ACCOUNT_CHANGED',
         'The selected OpenCode account route changed. Recheck before sending.',
+        false,
+        'provider-auth',
       );
     const selection = parseSelection(input.model);
     const prompt = contextMessage(input);
@@ -498,9 +547,14 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     let eventResponse: Response | undefined;
     let completed = false;
     let primary: unknown;
+    /** Where the attempt has reached, for anything that arrives without a stage of its own. */
+    let stage: SetupStage = 'model-list';
     try {
       const provider = catalogue(
-        await this.json(await this.request(server, '/provider', {}, control.signal)),
+        await this.json(
+          await this.request(server, '/provider', {}, control.signal, 'model-list'),
+          'model-list',
+        ),
       );
       // Three different situations that a single "model unavailable" used to
       // flatten: no account connected, a different account connected, and a
@@ -510,19 +564,23 @@ export class OpenCodeAdapter implements TextEngineAdapter {
           'ACCOUNT_CHANGED',
           `OpenCode reported connected providers other than ${OPENCODE_ACCOUNT_ROUTE}. This route uses that account only and substitutes nothing for it.`,
           true,
+          'provider-auth',
         );
       if (!provider.connected)
         throw new EngineError(
           'AUTH_REQUIRED',
           'OpenCode Go is not signed in. Sign in through OpenCode, then recheck.',
           true,
+          'provider-auth',
         );
       if (!provider.models.some((model) => model.slug === input.model))
         throw new EngineError(
           'MODEL_UNAVAILABLE',
           'The selected OpenCode Go model is unavailable. Recheck before sending.',
           true,
+          'model-list',
         );
+      stage = 'dispatch';
       const created = await this.json(
         await this.request(
           server,
@@ -538,16 +596,24 @@ export class OpenCodeAdapter implements TextEngineAdapter {
             }),
           },
           control.signal,
+          'dispatch',
         ),
+        'dispatch',
       );
       sessionId = text(created.id) || text(created.sessionID);
       if (!sessionId)
-        throw new EngineError('PROTOCOL_ERROR', 'OpenCode did not return a session id.', true);
+        throw new EngineError(
+          'PROTOCOL_ERROR',
+          'OpenCode did not return a session id.',
+          true,
+          'dispatch',
+        );
       eventResponse = await this.request(
         server,
         '/event',
         { headers: { Accept: 'text/event-stream' } },
         control.signal,
+        'stream',
       );
       await this.request(
         server,
@@ -563,9 +629,18 @@ export class OpenCodeAdapter implements TextEngineAdapter {
           }),
         },
         control.signal,
+        'dispatch',
       );
+      // The prompt is accepted from here on, so every later failure is a
+      // stream failure over work the account may already have been charged for.
+      stage = 'stream';
       if (!eventResponse.body)
-        throw new EngineError('PROTOCOL_ERROR', 'OpenCode did not provide an event stream.', true);
+        throw new EngineError(
+          'PROTOCOL_ERROR',
+          'OpenCode did not provide an event stream.',
+          true,
+          'stream',
+        );
       const reader = eventResponse.body.getReader();
       // Framing follows the specification, so LF, CRLF and CR streams, joined
       // data fields and comments all read the same. Nothing below relaxes:
@@ -711,16 +786,26 @@ export class OpenCodeAdapter implements TextEngineAdapter {
         'PROTOCOL_ERROR',
         'OpenCode ended without a complete text response.',
         true,
+        'stream',
       );
     } catch (error) {
       if (!(error instanceof EngineError) && control.signal.aborted)
-        error = abortError(control.signal, this.requestTimeout, 'request');
-      primary = error;
+        error = abortError(control.signal, this.requestTimeout, 'request', stage);
+      // Anything raised inside the stream loop is stamped here rather than at
+      // every throw; `atStage` keeps a stage the thrower already knew.
+      const failure =
+        error instanceof EngineError
+          ? atStage(error, stage)
+          : new EngineError(
+              'PROVIDER_ERROR',
+              'OpenCode could not complete this request.',
+              true,
+              stage,
+            );
+      primary = failure;
       if (sessionId && !completed)
         await this.cleanupRequest(server, `/session/${encodeURIComponent(sessionId)}/abort`);
-      throw error instanceof EngineError
-        ? error
-        : new EngineError('PROVIDER_ERROR', 'OpenCode could not complete this request.', true);
+      throw failure;
     } finally {
       if (sessionId) await this.cleanupRequest(server, `/session/${encodeURIComponent(sessionId)}`);
       await eventResponse?.body?.cancel().catch(() => {
