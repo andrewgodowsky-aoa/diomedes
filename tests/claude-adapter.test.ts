@@ -19,36 +19,54 @@ const request: TextRequest = {
   prompt: 'Question',
   documents: [],
 };
-async function fixture(mode = 'ok') {
+async function fixture(
+  mode = 'ok',
+  deps: { account?: () => Promise<Record<string, unknown>>; missing?: boolean } = {},
+) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes claude '));
   roots.push(root);
   const file = path.join(root, 'fixture.mjs');
   await fs.writeFile(
     file,
     `import readline from 'node:readline';
-const emit=x=>console.log(JSON.stringify(x));
+import fs from 'node:fs';
+const mode=${JSON.stringify(mode)}; const emit=x=>console.log(JSON.stringify(x));
 readline.createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);
- if(m.type==='control_request') emit({type:'control_response',response:{subtype:'success',request_id:m.request_id,response:{models:[{value:'claude-test',displayName:'Claude test',description:'Fixture'}]}}});
+ if(m.type==='control_request') {
+  if(mode==='handshake') return console.log('{broken');
+  if(mode==='init-auth') return emit({type:'control_response',response:{subtype:'error',request_id:m.request_id,error:'unauthorized'}});
+  return emit({type:'control_response',response:{subtype:'success',request_id:m.request_id,response:{models:[{value:'claude-test',displayName:'Claude test',description:'Fixture'}]}}});
+ }
  if(m.type==='user') {
-  emit({type:'system',subtype:'init',session_id:'native1',model:${JSON.stringify(mode === 'model' ? 'other' : 'claude-test')},tools:${mode === 'tools' ? "['Bash']" : '[]'},mcp_servers:[]});
-  if(${JSON.stringify(mode)}==='hang') return;
+  // Nothing at all comes back, so the turn is waiting at dispatch when the marker appears.
+  if(mode==='dispatched') return fs.writeFileSync(${JSON.stringify(path.join(root, 'dispatched'))},'1');
+  emit({type:'system',subtype:'init',session_id:'native1',model:mode==='model'?'other':'claude-test',tools:mode==='tools'?['Bash']:[],mcp_servers:[]});
+  if(mode==='hang') return;
+  if(mode==='streamed') return emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text:'Answer'}}});
+  if(mode==='early-limit') return emit({type:'result',subtype:'error_during_execution',is_error:true,result:'',errors:['rate_limit_error'],session_id:'native1',modelUsage:{}});
   emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text:'Answer'}}});
-  emit({type:'result',subtype:${JSON.stringify(mode === 'limit' ? 'error_during_execution' : 'success')},is_error:${mode === 'limit'},result:'Answer',errors:${mode === 'limit' ? "['rate_limit_error']" : '[]'},session_id:'native1',modelUsage:{'claude-test':{}}});
+  emit({type:'result',subtype:mode==='limit'?'error_during_execution':'success',is_error:mode==='limit',result:'Answer',errors:mode==='limit'?['rate_limit_error']:[],session_id:'native1',modelUsage:{'claude-test':{}}});
  }
 });`,
   );
   const launches: string[][] = [];
   const launch: ProcessFactory = (options) => {
     launches.push(options.args);
-    return openProcess({ ...options, file: process.execPath, args: [file], timeoutMs: 2500 });
+    return openProcess({
+      ...options,
+      file: deps.missing ? path.join(root, 'absent.exe') : process.execPath,
+      args: deps.missing ? [] : [file],
+      timeoutMs: 2500,
+    });
   };
   const adapter = new ClaudeAdapter('claude.exe', root, {
     launch,
-    account: async () => ({ loggedIn: true, authMethod: 'claude.ai' }),
+    account: deps.account ?? (async () => ({ loggedIn: true, authMethod: 'claude.ai' })),
   });
-  return { adapter, launches };
+  return { adapter, launches, root };
 }
+const exists = (file: string) => fs.access(file).then(() => true).catch(() => false);
 describe('Claude Code structured text route', () => {
   it('retains subscription auth and disables customizations and tools without bare mode', () => {
     const args = claudeArguments();
@@ -99,5 +117,80 @@ describe('Claude Code structured text route', () => {
     const job = adapter.generate({ ...request, signal: controller.signal });
     setTimeout(() => controller.abort(), 100);
     await expect(job).rejects.toMatchObject({ code: 'CANCELLED' });
+  });
+});
+describe('Claude Code failure stages', () => {
+  it.each([
+    ['handshake', 'PROTOCOL_ERROR', 'local-handshake'],
+    ['init-auth', 'AUTH_REQUIRED', 'provider-auth'],
+    ['model', 'POLICY_MISMATCH', 'stream'],
+    ['tools', 'POLICY_MISMATCH', 'stream'],
+    ['limit', 'USAGE_LIMIT', 'stream'],
+    ['early-limit', 'USAGE_LIMIT', 'dispatch'],
+  ] as const)('reports %s as %s at the %s stage', async (mode, code, stage) => {
+    const { adapter } = await fixture(mode);
+    await expect(adapter.generate(request)).rejects.toMatchObject({ code, stage });
+  });
+  it('keeps a cancelled request at the stage it reached, never at the account', async () => {
+    const { adapter, root } = await fixture('dispatched');
+    const controller = new AbortController();
+    const job = adapter.generate({ ...request, signal: controller.signal });
+    const dispatched = expect(job).rejects.toMatchObject({
+      code: 'CANCELLED',
+      stage: 'dispatch',
+      ambiguous: true,
+    });
+    await expect
+      .poll(() => exists(path.join(root, 'dispatched')), { timeout: 5000 })
+      .toBe(true);
+    controller.abort();
+    await dispatched;
+    const { adapter: streaming } = await fixture('streamed');
+    const stopping = new AbortController();
+    await expect(
+      streaming.generate({
+        ...request,
+        signal: stopping.signal,
+        onDelta: () => stopping.abort(),
+      }),
+    ).rejects.toMatchObject({ code: 'CANCELLED', stage: 'stream', ambiguous: true });
+  });
+  it('separates a signed-out account from a tool that could not start', async () => {
+    const { adapter: signedOut } = await fixture('ok', {
+      account: async () => ({ loggedIn: false }),
+    });
+    await expect(signedOut.inspect()).rejects.toMatchObject({
+      code: 'AUTH_REQUIRED',
+      stage: 'provider-auth',
+    });
+    const { adapter } = await fixture('ok', { missing: true });
+    await expect(adapter.inspect()).rejects.toMatchObject({ stage: 'launch' });
+  });
+  it('does not present an unstartable account probe as a sign-in problem', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes claude '));
+    roots.push(root);
+    const adapter = new ClaudeAdapter(path.join(root, 'absent.exe'), root);
+    await expect(adapter.inspect()).rejects.toMatchObject({ stage: 'launch' });
+  });
+  it('explains a different account kind rather than reporting a sign-out', async () => {
+    const { adapter, launches } = await fixture('ok', {
+      account: async () => ({ loggedIn: true, authMethod: 'api_key' }),
+    });
+    await expect(adapter.inspect()).resolves.toEqual({
+      authentication: 'unknown',
+      accountRoute: null,
+      models: [],
+      routeIssue: { required: 'claude-code:claude.ai', connected: ['api_key'] },
+      detail: expect.stringContaining('does not accept'),
+    });
+    expect(launches).toHaveLength(0);
+  });
+  it('names no account when the reported sign-in method is not an identifier', async () => {
+    const { adapter } = await fixture('ok', {
+      account: async () => ({ loggedIn: true, authMethod: 'someone@example.com (token abc)' }),
+    });
+    await expect(adapter.inspect()).resolves.toMatchObject({
+      routeIssue: { required: 'claude-code:claude.ai', connected: [] },
+    });
   });
 });
