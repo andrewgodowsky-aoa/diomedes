@@ -264,6 +264,17 @@ async function fixture(mode = 'ok', deps: DevinAdapterDeps = {}) {
             });
             break;
           }
+          if (mode === 'proxy-ca') {
+            emit({
+              jsonrpc: '2.0',
+              id: frame.id,
+              error: {
+                code: -32603,
+                message: 'unable to verify the certificate authority for the configured proxy',
+              },
+            });
+            break;
+          }
           if (mode === 'exit') {
             child.exitCode = 1;
             child.emit('close', 1);
@@ -360,6 +371,26 @@ describe('Devin ACP text route', () => {
     expect(
       sent.some((frame) => ['session/new', 'session/prompt'].includes(String(frame.method))),
     ).toBe(false);
+  });
+  it('names a host deadline a timeout rather than the person stopping the request', async () => {
+    const { adapter } = await fixture('hang');
+    const failure = await adapter
+      .generate({ ...request, signal: AbortSignal.timeout(300) })
+      .then(
+        () => undefined,
+        (error: { code: string; message: string }) => error,
+      );
+    expect(failure?.code).toBe('TIMEOUT');
+    expect(failure?.message).not.toMatch(/was stopped/i);
+  });
+  it('does not read a certificate authority failure as a missing sign-in', async () => {
+    const { adapter } = await fixture('proxy-ca');
+    const failure = await adapter.generate(request).then(
+      () => undefined,
+      (error: { code: string; message: string }) => error,
+    );
+    expect(failure?.code).toBe('PROVIDER_ERROR');
+    expect(failure?.message).not.toMatch(/sign.?in|login/i);
   });
   it('sends bounded context through stdin, pins the requested model, disables client capabilities and writes workspace deny rules', async () => {
     vi.stubEnv('DEVIN_API_KEY', 'must-not-pass');

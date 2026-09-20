@@ -25,6 +25,7 @@ import {
   acpPromptTurn,
   acpSession,
   acpSessionUpdate,
+  acpTimeoutDetail,
   acpTurnResponse,
   CURSOR_ACP_PROFILE,
   type AcpTurn,
@@ -37,12 +38,12 @@ import {
   type TextResponse,
 } from './contract.js';
 import {
+  abortFailure,
   capture,
   engineEnvironment,
   EngineError,
   record,
   staged,
-  stopped,
   text,
 } from './process.js';
 
@@ -210,7 +211,7 @@ export class CursorAdapter implements TextEngineAdapter {
     turn?: AcpTurn,
   ): Promise<T> {
     phase.at = 'launch';
-    if (signal?.aborted) throw stopped();
+    if (signal?.aborted) throw abortFailure(signal.reason, acpTimeoutDetail(CURSOR_ACP_PROFILE));
     const entry = await resolveCursorEntry(this.file);
     const versionResult = await this.capture({
       ...cursorCommand(entry, ['--version']),

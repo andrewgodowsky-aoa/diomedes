@@ -238,6 +238,17 @@ async function fixture(mode = 'ok', deps: CursorAdapterDeps = {}) {
             });
             break;
           }
+          if (mode === 'proxy-ca') {
+            emit({
+              jsonrpc: '2.0',
+              id: frame.id,
+              error: {
+                code: -32603,
+                message: 'unable to verify the certificate authority for the configured proxy',
+              },
+            });
+            break;
+          }
           if (mode === 'exit') {
             child.exitCode = 1;
             child.emit('close', 1);
@@ -321,6 +332,28 @@ describe('Cursor ACP text route', () => {
       detail: 'Sign in through Cursor, then recheck.',
     });
     expect(launch).not.toHaveBeenCalled();
+  });
+  it('names a host deadline a timeout rather than the person stopping the request', async () => {
+    // The same sixty-second budget every other route now reads correctly: it
+    // reaches this one through the ACP client's own abort listener.
+    const { adapter } = await fixture('hang');
+    const failure = await adapter
+      .generate({ ...request, signal: AbortSignal.timeout(300) })
+      .then(
+        () => undefined,
+        (error: { code: string; message: string }) => error,
+      );
+    expect(failure?.code).toBe('TIMEOUT');
+    expect(failure?.message).not.toMatch(/was stopped/i);
+  });
+  it('does not read a certificate authority failure as a missing sign-in', async () => {
+    const { adapter } = await fixture('proxy-ca');
+    const failure = await adapter.generate(request).then(
+      () => undefined,
+      (error: { code: string; message: string }) => error,
+    );
+    expect(failure?.code).toBe('PROVIDER_ERROR');
+    expect(failure?.message).not.toMatch(/sign.?in|login/i);
   });
   it('sends bounded context through stdin, disables client capabilities and installs native deny rules', async () => {
     vi.stubEnv('CURSOR_API_KEY', 'must-not-pass');

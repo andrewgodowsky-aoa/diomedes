@@ -54,6 +54,7 @@ import {
   acpPromptTurn,
   acpSession,
   acpSessionUpdate,
+  acpTimeoutDetail,
   acpTurnResponse,
   DEVIN_ACP_PROFILE,
   type AcpTurn,
@@ -66,12 +67,12 @@ import {
   type TextResponse,
 } from './contract.js';
 import {
+  abortFailure,
   capture,
   engineEnvironment,
   EngineError,
   record,
   staged,
-  stopped,
   text,
 } from './process.js';
 
@@ -190,7 +191,7 @@ export class DevinAdapter implements TextEngineAdapter {
     model?: string,
   ): Promise<T> {
     phase.at = 'launch';
-    if (signal?.aborted) throw stopped();
+    if (signal?.aborted) throw abortFailure(signal.reason, acpTimeoutDetail(DEVIN_ACP_PROFILE));
     const entry = await resolveDevinEntry(this.file);
     const versionResult = await this.capture({
       ...devinCommand(entry, ['--version']),

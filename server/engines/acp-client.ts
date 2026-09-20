@@ -18,7 +18,15 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { killOwnedProcess } from '../integrations.js';
-import { cleanupFailed, EngineError, record, stopped, text } from './process.js';
+import {
+  abortFailure,
+  cleanupFailed,
+  EngineError,
+  failureKind,
+  record,
+  stopped,
+  text,
+} from './process.js';
 import type { TextRequest, TextResponse } from './contract.js';
 
 type Json = Record<string, unknown>;
@@ -81,6 +89,10 @@ export interface AcpClientOptions {
 const protocolError = (profile: AcpProfile, detail: string) =>
   new EngineError('PROTOCOL_ERROR', `${profile.name} ${detail}`, true);
 
+/** The sentence an ACP route uses when a time limit, not a person, ended the request. */
+export const acpTimeoutDetail = (profile: AcpProfile) =>
+  `${profile.name} exceeded the request time limit. No retry was sent.`;
+
 /** True while the spawned pid still resolves to a live process. */
 export function stillAlive(child: ChildProcessWithoutNullStreams): boolean {
   if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined)
@@ -110,11 +122,18 @@ export class AcpClient {
   >();
   private replies: Promise<void>[] = [];
   sessionId?: string;
-  private readonly abort = () => this.fail(stopped());
+  /**
+   * A deadline the host imposed is not a person pressing stop, and the abort's
+   * reason says which it was. The two ACP routes reach this listener rather
+   * than `EngineProcess`, so without it they would still report a connection
+   * test that ran out of time as the customer's own cancellation.
+   */
+  private readonly abort = () =>
+    this.fail(abortFailure(this.options.signal?.reason, acpTimeoutDetail(this.options.profile)));
 
   constructor(private readonly options: AcpClientOptions) {
     const { profile, signal } = options;
-    if (signal?.aborted) throw stopped();
+    if (signal?.aborted) throw abortFailure(signal.reason, acpTimeoutDetail(profile));
     try {
       this.child = options.launch(options.command.file, options.command.args, {
         cwd: options.cwd,
@@ -174,7 +193,8 @@ export class AcpClient {
   }
 
   assertActive() {
-    if (this.options.signal?.aborted) throw stopped();
+    if (this.options.signal?.aborted)
+      throw abortFailure(this.options.signal.reason, acpTimeoutDetail(this.options.profile));
     if (this.failure) throw this.failure;
   }
 
@@ -649,14 +669,20 @@ const acpRpcFailure =
   ): ((value: unknown) => EngineError) =>
   (value) => {
     const error = record(value);
-    if (error.code === -32000 || /auth|sign.?in|login/i.test(text(error.message)))
-      return new EngineError('AUTH_REQUIRED', authDetail, true);
-    if (/rate.?limit|quota|usage.?limit/i.test(text(error.message)))
+    // -32000 is the agent's own "this host has not authenticated" code, which
+    // is a field it set rather than a word found in a sentence. Everything
+    // else is read from the payload's named fields: `auth` is a substring of
+    // `authority`, so matching the message for it answered "unable to verify
+    // the certificate authority for the configured proxy" with sign-in advice.
+    if (error.code === -32000) return new EngineError('AUTH_REQUIRED', authDetail, true);
+    const kind = failureKind({ code: error.code, message: text(error.message) });
+    if (kind === 'limited')
       return new EngineError(
         'USAGE_LIMIT',
         `${name} reported a service limit. No model or account was substituted.`,
         true,
       );
+    if (kind === 'denied') return new EngineError('AUTH_REQUIRED', authDetail, true);
     return new EngineError(
       'PROVIDER_ERROR',
       `${name} could not complete the ACP request. No automatic retry was sent.`,
