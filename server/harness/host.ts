@@ -403,8 +403,18 @@ export function createHarnessHost({
       for (const token of Object.values(await store.readTeamSecrets(project.id)))
         secrets.add(token);
   };
+  /**
+   * A client reads runs by naming the project they belong to, and the reserved
+   * host project is not one a person can open. Its records were unreachable
+   * only because resolving the project failed; now that the store holds them,
+   * these two refuse it by name, and answer exactly as an id nobody made does.
+   */
+  const customerProject = (projectId: string) => {
+    if (projectId === HOST_TEST_PROJECT) throw new ApiError(404, 'This project was not found.');
+    return projectId;
+  };
   const get = async (projectId: string, runId: string) => {
-    if (!(await files.ids(projectId)).includes(validateRunId(runId)))
+    if (!(await files.ids(customerProject(projectId))).includes(validateRunId(runId)))
       throw new ApiError(404, 'This run was not found in this project.');
     const run = await runs.get(runId);
     if (run.capabilityId === CODEX_REPORT.id) await codex.authorityForRun(run, 'project.read');
@@ -426,7 +436,7 @@ export function createHarnessHost({
     return result;
   };
   const list = async (projectId: string) => {
-    const result = await savedRuns(projectId);
+    const result = await savedRuns(customerProject(projectId));
     for (const run of result)
       if (run.capabilityId === CODEX_REPORT.id) await codex.authorityForRun(run, 'project.read');
     return result;

@@ -269,6 +269,29 @@ describe('a host-initiated connection test through the production wiring', () =>
     expect(listRuns(hostRuns(root))).toHaveLength(1);
   });
 
+  it('will not serve the reserved project through the project-scoped run routes', async () => {
+    const root = temporary();
+    const app = await open(root);
+    await app.settle();
+    const runId = (
+      (await (await app.post(`/ai/test/${ENGINE}`, { consent: true, model: 'small' })).json()) as {
+        receipt: { runId: string };
+      }
+    ).receipt.runId;
+
+    // The reserved id is not a project a person can open, so asking for it as
+    // one answers exactly as an id nobody made does.
+    const listed = await app.get(`/projects/${HOST_TEST_PROJECT}/harness/runs`);
+    expect([listed.status, await listed.text()]).toEqual([
+      404,
+      '{"error":"This project was not found."}',
+    ]);
+    const one = await app.get(`/projects/${HOST_TEST_PROJECT}/harness/runs/${runId}`);
+    expect(one.status).toBe(404);
+    const events = await app.get(`/projects/${HOST_TEST_PROJECT}/harness/runs/${runId}/events`);
+    expect(events.status).toBe(404);
+  });
+
   it('parks a host run interrupted after dispatch instead of sending it again', async () => {
     const root = temporary();
     let release: (() => void) | undefined;
