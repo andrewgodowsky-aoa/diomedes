@@ -14,6 +14,7 @@ import { REPORT_PATH } from './approval.js';
 import { registerFormatReport } from './capabilities/format-report.js';
 import { CODEX_REPORT, CodexEngineAdapter, type ResolveHarnessAuthority } from './codex-engine.js';
 import { askCodex } from '../integrations.js';
+import { HOST_TEST_PROJECT } from '../engines/service.js';
 import { parseWorkCommand } from '../work-admission.js';
 import { identifier } from '../store.js';
 import { currentAuthority as resolveTrustAuthority } from '../trust/index.js';
@@ -179,7 +180,14 @@ const readableRun = z.object({
   lastSeq: integer,
 });
 
-/** One lazily created file store per registered project; no second write queue. */
+/**
+ * One lazily created file store per registered project; no second write queue.
+ *
+ * Diomedes also starts runs for itself — the consented connection test is one —
+ * and those belong to no customer project. They are kept under one reserved
+ * folder of their own so they are durable, recoverable and listable without
+ * being inside anybody's project.
+ */
 class ProjectRunStore implements RunStore {
   private projects = new Map<string, FileRunStore>();
   private locations = new Map<string, string>();
@@ -190,12 +198,28 @@ class ProjectRunStore implements RunStore {
   constructor(
     private readonly store: Store,
     private readonly dataDir: string,
+    /**
+     * The one reserved project id a host-initiated run carries. Compared whole
+     * — never as a prefix or a pattern — so a project a person made can never
+     * be read as this one, and this one is never read as theirs.
+     */
+    private readonly hostProjectId: string,
   ) {}
   private project(projectId: string) {
-    this.store.state(projectId);
+    const host = projectId === this.hostProjectId;
+    // A host run has no project state to open; a customer run still must.
+    if (!host) this.store.state(projectId);
     let files = this.projects.get(projectId);
     if (!files) {
-      files = new FileRunStore(path.join(this.dataDir, 'projects', projectId, 'harness', 'runs'));
+      // The host folder is a constant path. Nothing a caller supplies reaches
+      // it: the branch above already proved the id is the reserved one, and the
+      // only variable part of what is written there is the run id, which
+      // `validateRunId` restricts to one plain file name.
+      files = new FileRunStore(
+        host
+          ? path.join(this.dataDir, 'host', this.hostProjectId, 'harness', 'runs')
+          : path.join(this.dataDir, 'projects', projectId, 'harness', 'runs'),
+      );
       this.projects.set(projectId, files);
     }
     return files;
@@ -225,9 +249,12 @@ class ProjectRunStore implements RunStore {
       }
   }
   async list() {
-    return (
-      await Promise.all((await this.store.projects()).map((project) => this.ids(project.id)))
-    ).flat();
+    const ids = (await this.store.projects()).map((project) => project.id);
+    // Every run this store holds, and it holds the host's own. The reserved
+    // project is in no registry, so listing the registry alone would leave a
+    // record the store keeps out of the index it builds from this listing.
+    if (!ids.includes(this.hostProjectId)) ids.push(this.hostProjectId);
+    return (await Promise.all(ids.map((id) => this.ids(id)))).flat();
   }
   async create(run: HarnessRun) {
     if (this.locations.has(run.id))
@@ -321,7 +348,7 @@ export function createHarnessHost({
     throw new Error('The harness must use the Store data folder.');
   const secrets = new Set<string>();
   const redact = secretScrubber(secrets);
-  const files = new ProjectRunStore(store, dataDir);
+  const files = new ProjectRunStore(store, dataDir, HOST_TEST_PROJECT);
   let codex: CodexEngineAdapter;
   let textRoute: TextRouteRuntime;
   const textAuthorize = textDispatchAuthorizer(() => store.settings.services);
@@ -359,7 +386,7 @@ export function createHarnessHost({
     owner: identifier('text-route-'),
     leaseMs: textLeaseMs,
   });
-  const bridge = new HarnessBridge(store, runs, tools, adapter, redact, codex);
+  const bridge = new HarnessBridge(store, runs, tools, adapter, redact, HOST_TEST_PROJECT, codex);
   const observers = new Set<{ runId: string; changed: () => void; closed: () => void }>();
   let closed = false;
   files.saved = (run) => {
@@ -499,6 +526,10 @@ export function createHarnessHost({
         // recovery invalidates dead leases and parks in-flight dispatches.
         for (const run of saved) await textRoute.recover(run.id, run);
       }
+      // A host run has no Session and no Task, so the bridge has nothing to
+      // recover for it. The runtime still invalidates its dead lease and parks
+      // a dispatch whose outcome was never confirmed; nothing re-sends it.
+      for (const run of await savedRuns(HOST_TEST_PROJECT)) await textRoute.recover(run.id, run);
       await bridge.flush();
     },
     close: () => {
