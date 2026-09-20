@@ -1,0 +1,58 @@
+import { describe, expect, it } from 'vitest';
+import { migrate, type Migration } from '../src/migrations.js';
+import type { SqlClient } from '../src/postgres.js';
+
+const migrations: Migration[] = [
+  { version: 1, name: 'accounts', sql: 'CREATE ACCOUNTS', sha256: 'a'.repeat(64) },
+  { version: 2, name: 'commercial', sql: 'CREATE COMMERCIAL', sha256: 'b'.repeat(64) },
+];
+
+/** Protocol model only: it does not parse SQL or prove PostgreSQL semantics. */
+function database(initial: Migration[] = [], fail?: string) {
+  let state = initial.map(({ version, name, sha256 }) => ({ version, name, sha256 }));
+  let before = structuredClone(state);
+  const calls: string[] = [];
+  const client: SqlClient = {
+    async connect() {},
+    async query(sql, params = []) {
+      calls.push(sql);
+      if (sql === fail) throw new Error('interrupted migration');
+      if (sql === 'BEGIN') before = structuredClone(state);
+      if (sql === 'ROLLBACK') state = before;
+      if (sql.includes('SELECT version, name, sha256')) return { rows: state, rowCount: state.length };
+      if (sql.startsWith('INSERT INTO control_plane.schema_migrations')) state.push({ version: Number(params[0]), name: String(params[1]), sha256: String(params[2]) });
+      return { rows: [], rowCount: 0 };
+    },
+    async end() {},
+  };
+  return { factory: () => client, calls, state: () => state };
+}
+
+describe('versioned migration protocol', () => {
+  it('applies an empty database in a locked atomic transaction', async () => {
+    const db = database();
+    expect(await migrate(db.factory, migrations)).toEqual([1, 2]);
+    expect(db.state()).toHaveLength(2);
+    expect(db.calls.some((sql) => sql.includes('pg_advisory_xact_lock'))).toBe(true);
+  });
+  it('upgrades a prior version without replaying it and is idempotent', async () => {
+    const db = database([migrations[0]]);
+    expect(await migrate(db.factory, migrations)).toEqual([2]);
+    expect(db.calls).not.toContain('CREATE ACCOUNTS');
+    expect(await migrate(db.factory, migrations)).toEqual([]);
+  });
+  it('rolls back interruption, then retries the whole missing batch', async () => {
+    const db = database([], 'CREATE COMMERCIAL');
+    await expect(migrate(db.factory, migrations)).rejects.toThrow('interrupted migration');
+    expect(db.state()).toEqual([]);
+    expect(db.calls).toContain('ROLLBACK');
+    const retry = database(db.state() as Migration[]);
+    expect(await migrate(retry.factory, migrations)).toEqual([1, 2]);
+  });
+  it('rejects changed checksums, unknown versions and gaps', async () => {
+    const changed = database([{ ...migrations[0], sha256: 'c'.repeat(64) }]);
+    await expect(migrate(changed.factory, migrations)).rejects.toThrow('Migration history');
+    await expect(migrate(database(migrations).factory, [migrations[0]])).rejects.toThrow('Migration history');
+    await expect(migrate(database().factory, [migrations[1]])).rejects.toThrow('Migration sequence');
+  });
+});
