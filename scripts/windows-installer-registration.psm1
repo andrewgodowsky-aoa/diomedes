@@ -83,6 +83,53 @@ function Get-ShortcutTarget([string]$Path) {
   (New-Object -ComObject WScript.Shell).CreateShortcut($Path).TargetPath
 }
 
+# WScript expands existing 8.3 components when saving a shortcut. The install
+# target can retain a short profile name (for example RUNNER~1 in Windows CI).
+# Expand names through Windows before comparing, without treating a failed
+# resolution as ownership. Walk only missing suffixes so uninstall recovery also
+# works after the proof executable has been removed.
+if (-not ('DiomedesInstallerProof.PathNames' -as [type])) {
+  Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+using System.Text;
+namespace DiomedesInstallerProof {
+  public static class PathNames {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
+    public static extern uint GetLongPathNameW(string path, StringBuilder output, uint capacity);
+  }
+}
+'@
+}
+
+function Get-ExpandedProofPath([string]$Path) {
+  if ([string]::IsNullOrWhiteSpace($Path) -or -not [IO.Path]::IsPathRooted($Path)) { return $null }
+  $remaining = [IO.Path]::GetFullPath($Path)
+  $suffix = ''
+  while ($remaining) {
+    $buffer = [Text.StringBuilder]::new(32768)
+    $length = [DiomedesInstallerProof.PathNames]::GetLongPathNameW($remaining, $buffer, [uint32]$buffer.Capacity)
+    if ($length -gt 0 -and $length -lt $buffer.Capacity) {
+      return $(if ($suffix) { [IO.Path]::Combine($buffer.ToString(), $suffix) } else { $buffer.ToString() })
+    }
+    # Access denied and every other failure remain a refusal, not a guessed path.
+    if ($length -gt 0 -or [Runtime.InteropServices.Marshal]::GetLastWin32Error() -notin @(2, 3)) { return $null }
+    $name = [IO.Path]::GetFileName($remaining)
+    $parent = [IO.Path]::GetDirectoryName($remaining)
+    if (-not $name -or -not $parent) { return $null }
+    $suffix = if ($suffix) { [IO.Path]::Combine($name, $suffix) } else { $name }
+    $remaining = $parent
+  }
+  $null
+}
+
+function Test-ProofShortcutTarget([string]$Actual, [string]$Expected) {
+  if ([string]::IsNullOrWhiteSpace($Actual)) { return $false }
+  if ([string]::Equals($Actual, $Expected, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+  $actualPath = Get-ExpandedProofPath $Actual
+  $expectedPath = Get-ExpandedProofPath $Expected
+  $actualPath -and $expectedPath -and [string]::Equals($actualPath, $expectedPath, [StringComparison]::OrdinalIgnoreCase)
+}
+
 function Test-KeyOwnedByProof($Record, [string]$InstallTarget) {
   foreach ($value in @($Record.values)) {
     if (($value.name -eq 'InstallDir' -or $value.name -eq 'InstallLocation') -and $value.kind -eq 'String' -and (ConvertFrom-Base64Text $value.data) -eq $InstallTarget) { return $true }
@@ -165,7 +212,7 @@ function Get-RestorePlan($Snapshot) {
     if ($live -and $want -and (Get-FileFingerprint $live) -ceq (Get-FileFingerprint $want)) { continue }
     $plan.differences.Add($path)
     # Replaceable: the proof's own shortcut, or the snapshot's bytes that a stopped restore wrote.
-    if ($live -and (Get-ShortcutTarget $current[$name].FullName) -ne $ownedExe -and -not ($want -and $live.sha256 -eq $want.sha256)) { $plan.refusals.Add("$path was changed by something other than this proof"); continue }
+    if ($live -and -not (Test-ProofShortcutTarget (Get-ShortcutTarget $current[$name].FullName) $ownedExe) -and -not ($want -and $live.sha256 -eq $want.sha256)) { $plan.refusals.Add("$path was changed by something other than this proof"); continue }
     $plan.actions.Add([ordered]@{ kind = $(if ($want) { 'file-restore' } else { 'file-remove' }); name = $name; record = $want })
   }
   if (-not $folder.present -and $exists) {
