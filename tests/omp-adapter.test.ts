@@ -24,6 +24,10 @@ const request: TextRequest = {
 type Mode =
   | 'ok'
   | 'no-models'
+  | 'empty-models'
+  | 'other-provider'
+  | 'models-fail'
+  | 'bad-ready'
   | 'model-mismatch'
   | 'terminal-mismatch'
   | 'tool'
@@ -37,7 +41,7 @@ type Mode =
   | 'session-mismatch'
   | 'hang';
 
-async function fixture(mode: Mode = 'ok') {
+async function fixture(mode: Mode = 'ok', deps: { missing?: boolean } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes omp '));
   roots.push(root);
   if (mode === 'unsafe-profile') {
@@ -55,14 +59,18 @@ const mode=${JSON.stringify(mode)}; const emit=x=>console.log(JSON.stringify(x))
 const ok=(id,command,data={})=>emit({type:'response',id,command,success:true,data});
 const message={role:'assistant',provider:'openai',model:'gpt-test',stopReason:'stop',content:[{type:'text',text:'Answer'}],usage:{input:0,output:0}};
 if(mode==='no-models') { process.stderr.write('No models available.\\n'); process.exit(1); }
-emit({type:'ready',protocolVersion:1,supportedProtocolVersions:[1,2],maxFrameBytes:1000000,maxReassembledFrameBytes:4000000});
+emit({type:'ready',protocolVersion:mode==='bad-ready'?2:1,supportedProtocolVersions:[1,2],maxFrameBytes:1000000,maxReassembledFrameBytes:4000000});
 emit({type:'available_commands_update',commands:[]});
 readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);
  if(m.type==='negotiate_protocol') return ok(m.id,'negotiate_protocol',{protocolVersion:2});
  if(m.type==='set_auto_retry'||m.type==='set_auto_compaction') return ok(m.id,m.type);
  if(m.type==='set_model') return mode==='model-mismatch' ? ok(m.id,'set_model',{provider:'openai',id:'other'}) : ok(m.id,'set_model',{provider:m.provider,id:m.modelId});
  if(m.type==='get_state') return ok(m.id,'get_state',{model:{provider:'openai',id:'gpt-test'},sessionId:'native1',isStreaming:false});
- if(m.type==='get_available_models') return ok(m.id,'get_available_models',{models:[{provider:'openai',id:'gpt-test',name:'GPT test'}]});
+ if(m.type==='get_available_models') {
+  if(mode==='models-fail') return emit({type:'response',id:m.id,command:'get_available_models',success:false,error:'internal service failure'});
+  // An account the route does not accept, plus a provider name that is not an identifier.
+  return ok(m.id,'get_available_models',{models:mode==='other-provider'?[{provider:'anthropic',id:'claude-x',name:'X'},{provider:'open router!',id:'y',name:'Y'}]:mode==='empty-models'?[]:[{provider:'openai',id:'gpt-test',name:'GPT test'}]});
+ }
  if(m.type==='prompt') { if(!m.message.includes('"instructions":"Project rule"')||!m.message.includes('"request":"Question"')) return emit({type:'response',id:m.id,command:'prompt',success:false,error:'missing explicit envelope'}); if(mode==='hang') return; if(mode==='quota'||mode==='auth') return emit({type:'response',id:m.id,command:'prompt',success:false,error:mode==='quota'?'quota reached':'unauthorized'});
   if(mode==='tool') return emit({type:'tool_execution_start',toolCallId:'t1',toolName:'bash',args:{}});
   if(mode==='tool-message') return emit({type:'message_update',message:{...message,content:[{type:'toolCall',id:'t1',name:'bash',arguments:{}}]},assistantMessageEvent:{type:'toolcall_end',toolCall:{id:'t1'}}});
@@ -79,7 +87,12 @@ readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.pa
   const launch: ProcessFactory = (options) => {
     seen.args.push(options.args);
     seen.envs.push(options.env);
-    return openProcess({ ...options, file: process.execPath, args: [file], timeoutMs: 2500 });
+    return openProcess({
+      ...options,
+      file: deps.missing ? path.join(root, 'absent.exe') : process.execPath,
+      args: deps.missing ? [] : [file],
+      timeoutMs: 2500,
+    });
   };
   return { adapter: new OmpAdapter('omp.exe', root, { launch }), seen, root };
 }
@@ -182,5 +195,64 @@ describe('oh-my-pi 18.0.6 text-only RPC route', () => {
     const job = adapter.generate({ ...request, signal: controller.signal });
     setTimeout(() => controller.abort(), 100);
     await expect(job).rejects.toMatchObject({ code: 'CANCELLED' });
+  });
+});
+
+describe('oh-my-pi failure stages', () => {
+  it.each([
+    ['unsafe-profile', 'PROFILE_UNSAFE', 'launch'],
+    ['bad-ready', 'PROTOCOL_ERROR', 'local-handshake'],
+    ['model-mismatch', 'POLICY_MISMATCH', 'model-list'],
+    ['quota', 'USAGE_LIMIT', 'dispatch'],
+    ['auth', 'AUTH_REQUIRED', 'provider-auth'],
+    ['post-ack-error', 'PROVIDER_ERROR', 'dispatch'],
+    ['chunk', 'PROTOCOL_ERROR', 'dispatch'],
+    ['tool', 'POLICY_MISMATCH', 'stream'],
+    ['tool-message', 'POLICY_MISMATCH', 'stream'],
+    ['terminal-mismatch', 'POLICY_MISMATCH', 'stream'],
+    ['session-mismatch', 'PROTOCOL_ERROR', 'stream'],
+  ] as const)('reports %s as %s at the %s stage', async (mode, code, stage) => {
+    const { adapter } = await fixture(mode);
+    await expect(adapter.generate(request)).rejects.toMatchObject({ code, stage });
+  });
+  it('names the model catalogue, not the account, when it cannot be read', async () => {
+    const { adapter } = await fixture('models-fail');
+    await expect(adapter.inspect()).rejects.toMatchObject({
+      code: 'PROVIDER_ERROR',
+      stage: 'model-list',
+    });
+  });
+  it('does not present a tool that cannot start as a sign-in problem', async () => {
+    const { adapter } = await fixture('ok', { missing: true });
+    await expect(adapter.generate(request)).rejects.toMatchObject({ stage: 'launch' });
+  });
+  it('refuses a changed route and a malformed model at their own stages', async () => {
+    const { adapter } = await fixture();
+    await expect(
+      adapter.generate({ ...request, accountRoute: 'oh-my-pi:anthropic' }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_CHANGED', stage: 'provider-auth' });
+    await expect(adapter.generate({ ...request, model: 'anthropic/x' })).rejects.toMatchObject({
+      code: 'PROTOCOL_ERROR',
+      stage: 'model-list',
+    });
+  });
+  it('explains another provider rather than reporting a sign-out', async () => {
+    const { adapter } = await fixture('other-provider');
+    await expect(adapter.inspect()).resolves.toMatchObject({
+      authentication: 'unknown',
+      accountRoute: null,
+      models: [],
+      routeIssue: { required: 'oh-my-pi:openai', connected: ['anthropic'] },
+    });
+  });
+  it('still reports a profile with no authenticated model at all as signed out', async () => {
+    const { adapter } = await fixture('empty-models');
+    await expect(adapter.inspect()).resolves.toEqual({
+      authentication: 'signed-out',
+      accountRoute: null,
+      models: [],
+      detail:
+        'oh-my-pi reported no authenticated direct OpenAI API models in its isolated native profile. OAuth login metadata is not used as route proof.',
+    });
   });
 });
