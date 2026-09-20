@@ -820,6 +820,7 @@ export class EngineService {
     engine: ExternalEngine,
     candidate: EngineCandidate,
     origin: EngineBinding['origin'],
+    model?: string,
   ) {
     const stored = this.bindings.get(engine);
     const binding: EngineBinding = {
@@ -833,12 +834,15 @@ export class EngineService {
       origin,
     };
     const value = this.connections.get(engine)!;
-    const key = revisionKey(binding, value.accountRoute, stored?.model ?? null);
+    const selected = model ?? stored?.model ?? null;
+    const key = revisionKey(binding, value.accountRoute, selected);
+    // Binding an installation and choosing its model are one decision when
+    // they arrive together: the revision moves once, not twice.
     this.bindings.save(engine, {
       binding,
       revision: stored && stored.key === key ? stored.revision : (stored?.revision ?? 0) + 1,
       key,
-      model: stored?.model ?? null,
+      model: selected,
     });
     return this.apply(engine);
   }
@@ -861,8 +865,8 @@ export class EngineService {
     // synchronous because the route that calls this saves settings in the same
     // breath, and because a choice must survive a crash one line later.
     const chosen = this.effective(state);
-    if (!this.bindings.get(engine) && chosen) this.bindCandidate(engine, chosen, 'explicit');
-    this.syncRevision(engine, state.accountRoute, model);
+    if (!this.bindings.get(engine) && chosen) this.bindCandidate(engine, chosen, 'explicit', model);
+    else this.syncRevision(engine, state.accountRoute, model);
     return { engine, model, accountRoute: state.accountRoute };
   }
   /**
