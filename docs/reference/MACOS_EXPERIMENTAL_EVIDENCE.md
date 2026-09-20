@@ -138,9 +138,10 @@ enrollment remain the separate O10 owner decision.
 
 ## Evidence from this Windows lane
 
-Run evidence lives at
-`F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913/runs/mi-demo-20260919/macos-runtime-discovery/`.
-The frozen manifest is authoritative for the exact source bytes and counts.
+Run evidence lives in the Windows machine's coordination root, at
+`<git common dir>/diomedes-coordination/unified-20260913/runs/mi-demo-20260919/macos-runtime-discovery/`.
+It is local to that machine. A clone does not carry it and a Mac checkout cannot
+read it. The frozen manifest is authoritative for the exact source bytes and counts.
 
 - Behavioral RED: discovery 13 failures; packaging 7 failures and 1 existing
   Windows hash-gate pass. Additional copied-Windows-runtime regression failed

@@ -20,7 +20,7 @@ or **[?]** not yet verified anywhere. There is no **[M]** in this document yet.
 | MAC DEVELOPMENT (M1) | Prepared, not run. Known blockers removed in source. First Mac session must verify. |
 | MAC DESKTOP (M2) | Not started on a Mac. Packaging refuses by design until two decisions are made. |
 | PUBLIC RELEASE (M3) | Not started. No signing identity, no artifact, no release record. |
-| WEBSITE DEPLOYMENT | Nothing deployed. `diomedes-site` `feature/mac-availability` (`fad607a`, pushed, not merged) adds a Mac platform target and a `/download#mac` section. It shows no Mac button: the button renders only for a Mac target in state `released` with a complete artifact, and the build refuses any other shape. |
+| WEBSITE DEPLOYMENT | Merged, not deployed. `diomedes-site` `main` is `fad607a`, a fast-forward from `9140f89` that Andrew approved on 2026-09-20. It adds a Mac platform target and a `/download#mac` section. The live site does not show it until the next manual `wrangler` deploy, which belongs to the site lane as one combined deploy. It shows no Mac button: the button renders only for a Mac target in state `released` with a complete artifact, and the build refuses any other shape. |
 
 ## Repositories and starting points
 
@@ -54,7 +54,7 @@ branch pushed to `diomedes`, not across repositories.
 | `diomedes-mac` `main` | `80263205133c410d590549efd1c8f40cedf33b1c` | private, identical |
 | `diomedes-mac` `feature/apple-silicon-development` | see `git log`; base `8026320` | private. **The Mac work branch.** |
 | `diomedes-mac` `planning/master-package` | orphan branch | private. Planning masters, never merged into source. |
-| `diomedes-site` `main` | `9140f8937eeb38cc447a14925afd8294d4eab612` | private |
+| `diomedes-site` `main` | `fad607ab5949170cf8d3dbcbde7022ca118589ad` | private. Includes the Mac availability section. |
 
 ## What is on the Mac work branch
 
@@ -174,6 +174,11 @@ Drive mirrors whose links are in `AGENTS.md`.
   `node -p process.arch` must print `arm64`, not `x64` under Rosetta.
 - Git and the Xcode Command Line Tools (`xcode-select --install`). Full Xcode is
   not needed for source development.
+- A GitHub sign-in on the Mac. `diomedes-mac` is private, so an anonymous
+  `git clone` over HTTPS is refused. The GitHub CLI is the short route:
+  `brew install gh`, then `gh auth login` choosing GitHub.com, HTTPS and the web
+  browser. That flow also sets Git's credential helper, so the clone below works.
+  Sign in on the Mac itself; do not copy a token or credential file from Windows.
 - Work in an ordinary local folder such as `~/dev`. Do not put the checkout in
   iCloud Drive, Dropbox or any synced folder.
 - Do not copy `node_modules`, `.data`, a Windows profile, or engine sign-in
@@ -339,4 +344,7 @@ customer data or provider spend is authorized by this handoff.
 No Mac command has run. No Mac package exists. No `.app` has launched. No engine
 has been discovered or signed in on a Mac. Nothing is signed or notarized. The
 CI job has never executed. `npm run package:windows` was not re-run after the
-script change; the unit suite and type-check were. No website change is live.
+script change; the unit suite and type-check were. The Mac section is on site
+`main` and is not live. The desktop-shell commit `c8a91dd` has had no independent
+review. `feature/macos-desktop-shell` holds nothing the work branch lacks; it is
+kept, not deleted.
