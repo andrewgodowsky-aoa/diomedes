@@ -195,19 +195,36 @@ function modelFrom(value: unknown, providerId: string): EngineModel | undefined 
   };
 }
 
-function catalogue(body: Json): { connected: boolean; models: EngineModel[] } {
+/**
+ * A provider identifier is short and plain. Anything else the tool answers with
+ * is dropped rather than recorded, so an account name, an address or an opaque
+ * value can never reach a diagnostic, a screen or a support bundle.
+ */
+const PROVIDER_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
+const MAX_REPORTED_PROVIDERS = 16;
+
+function catalogue(body: Json): {
+  connected: boolean;
+  /** Every other connected provider the tool named. Counted, never published. */
+  others: string[];
+  /** The identifiers of those that are safe to record: shape-checked and capped. */
+  reported: string[];
+  models: EngineModel[];
+} {
   const all = Array.isArray(body.all) ? body.all : [];
   const connected = Array.isArray(body.connected)
     ? body.connected.filter((v): v is string => typeof v === 'string')
     : [];
   const providerId = 'opencode-go';
-  if (!connected.includes(providerId)) return { connected: false, models: [] };
+  const others = connected.filter((id) => id !== providerId);
+  const reported = others.filter((id) => PROVIDER_ID.test(id)).slice(0, MAX_REPORTED_PROVIDERS);
+  if (!connected.includes(providerId)) return { connected: false, others, reported, models: [] };
   const provider = all.map(object).find((item) => item.id === providerId) ?? {};
   const rawModels = object(provider.models);
   const models = Object.entries(rawModels)
     .slice(0, 80)
     .flatMap(([id, value]) => modelFrom({ ...object(value), id }, providerId) ?? []);
-  return { connected: true, models };
+  return { connected: true, others, reported, models };
 }
 
 function parseSelection(value: string): { providerID: string; modelID: string } {
@@ -434,6 +451,17 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     try {
       const body = await this.json(await this.request(server, '/provider', {}, control.signal));
       const list = catalogue(body);
+      // A connected account that is not Go is neither signed out nor unpaid.
+      // Say which route this adapter accepts, say these providers are not the
+      // one it uses, and leave the person's own OpenCode setup alone.
+      if (!list.connected && list.others.length)
+        return {
+          authentication: 'unknown',
+          accountRoute: null,
+          models: [],
+          routeIssue: { required: OPENCODE_ACCOUNT_ROUTE, connected: list.reported },
+          detail: `This route runs on the native OpenCode Go account (${OPENCODE_ACCOUNT_ROUTE}). OpenCode reported other connected providers, which this route does not use.`,
+        };
       if (!list.connected)
         return {
           authentication: 'signed-out',
@@ -474,7 +502,22 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       const provider = catalogue(
         await this.json(await this.request(server, '/provider', {}, control.signal)),
       );
-      if (!provider.connected || !provider.models.some((model) => model.slug === input.model))
+      // Three different situations that a single "model unavailable" used to
+      // flatten: no account connected, a different account connected, and a
+      // connected Go account that does not offer this model.
+      if (!provider.connected && provider.others.length)
+        throw new EngineError(
+          'ACCOUNT_CHANGED',
+          `OpenCode reported connected providers other than ${OPENCODE_ACCOUNT_ROUTE}. This route uses that account only and substitutes nothing for it.`,
+          true,
+        );
+      if (!provider.connected)
+        throw new EngineError(
+          'AUTH_REQUIRED',
+          'OpenCode Go is not signed in. Sign in through OpenCode, then recheck.',
+          true,
+        );
+      if (!provider.models.some((model) => model.slug === input.model))
         throw new EngineError(
           'MODEL_UNAVAILABLE',
           'The selected OpenCode Go model is unavailable. Recheck before sending.',

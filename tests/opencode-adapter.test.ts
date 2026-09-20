@@ -255,10 +255,63 @@ describe('OpenCode 1.18.4 authenticated text route', () => {
   });
   it('does not treat the separate OpenCode Zen provider as native Go sign-in', async () => {
     const { adapter } = await fixture('zen');
-    await expect(adapter.inspect()).resolves.toMatchObject({
+    const status = await adapter.inspect();
+    // Someone holding another OpenCode provider is not signed out and has not
+    // failed to pay. They hold a route this adapter does not accept, and the
+    // sentence says which route it does accept rather than sending them to
+    // sign in again or to buy something.
+    expect(status).toMatchObject({
+      authentication: 'unknown',
+      accountRoute: null,
+      models: [],
+      routeIssue: { required: OPENCODE_ACCOUNT_ROUTE, connected: ['opencode'] },
+    });
+    expect(status.detail).toContain(OPENCODE_ACCOUNT_ROUTE);
+    expect(status.detail).not.toMatch(/sign ?-?in|sign in|purchase|upgrade|subscribe|buy/i);
+  });
+  it('reports nothing connected as signed out, with no account-route issue', async () => {
+    const { adapter } = await fixture('none');
+    const status = await adapter.inspect();
+    expect(status).toMatchObject({
       authentication: 'signed-out',
       accountRoute: null,
       models: [],
     });
+    expect(status.routeIssue).toBeUndefined();
+    expect(status.detail).toMatch(/sign in/i);
+  });
+  it('reports a connected Go account that offers no models as signed in', async () => {
+    const { adapter } = await fixture('zero-models');
+    const status = await adapter.inspect();
+    expect(status).toMatchObject({
+      authentication: 'signed-in',
+      accountRoute: OPENCODE_ACCOUNT_ROUTE,
+      models: [],
+    });
+    expect(status.routeIssue).toBeUndefined();
+    expect(status.detail).toMatch(/no usable models/i);
+  });
+  it('records only bounded provider identifiers for an unaccepted route', async () => {
+    const { adapter } = await fixture('dirty-route');
+    const status = await adapter.inspect();
+    const connected = status.routeIssue?.connected ?? [];
+    // Whatever the tool answered, only short identifier-shaped values are kept,
+    // so an account name, an address or a long opaque value cannot ride along.
+    expect(connected).toContain('opencode');
+    expect(connected.length).toBeLessThanOrEqual(16);
+    expect(connected.every((value) => /^[a-z0-9][a-z0-9._-]{0,63}$/i.test(value))).toBe(true);
+    expect(connected.join(' ')).not.toContain('@');
+  });
+  it('names an unsigned Go account rather than a missing model before dispatch', async () => {
+    const { adapter } = await fixture('none');
+    await expect(adapter.generate(request)).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+  });
+  it('names a different connected account rather than a missing model before dispatch', async () => {
+    const { adapter } = await fixture('zen');
+    await expect(adapter.generate(request)).rejects.toMatchObject({ code: 'ACCOUNT_CHANGED' });
+  });
+  it('still refuses a model the connected Go account does not offer', async () => {
+    const { adapter } = await fixture('wrong-model');
+    await expect(adapter.generate(request)).rejects.toMatchObject({ code: 'MODEL_UNAVAILABLE' });
   });
 });
