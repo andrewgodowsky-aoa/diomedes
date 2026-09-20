@@ -81,10 +81,11 @@ export interface SupportBundleConnection {
 // trust what is missing as well as what is present. Every sentence here is a
 // claim about this file's own code, so each one has to survive the worst string
 // an adapter or an error could hand it — see `clean()` and `field()` below.
+// Each is rendered after "not included:", so each reads as one.
 const EXCLUDED = [
   // Nothing here is read from the environment. A tool that printed one of its
   // own variables into an error message is the case this cannot promise away,
-  // which is why the text is previewed before it is shared.
+  // which is why the client shows this text before anyone sends it.
   'Environment variables are not collected, though one a tool printed into an error can appear there.',
   'Credential files are not opened and no credential file content is collected.',
   // Held to known secret shapes: the scrubber removes every shape it knows
@@ -101,7 +102,6 @@ const EXCLUDED = [
   // in exactly the failure a person exports this bundle to explain.
   'Connection rows carry no executable path.',
   'Connection rows carry account route identifiers, not account names.',
-  'Read this text before sending it: what a tool wrote into an error is quoted here.',
 ];
 // Paths and a project name can still name a person, so the bundle is not
 // anonymous and does not say it is. The name is the part a person chooses.
