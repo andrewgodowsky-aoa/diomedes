@@ -1160,6 +1160,10 @@ export class EngineService {
       this.save({ ...this.connections.get(engine)!, diagnostic: null });
       return structuredClone(receipt);
     } catch (error) {
+      // Something else being in progress is a reason to wait, not a failure of
+      // the connection, so it is not filed against it — the same reading that
+      // leaves a declined test with a clean record.
+      if (error instanceof EngineError && error.code === 'REQUEST_ACTIVE') throw error;
       // Written down before the caller hears about it: the screen re-reads
       // status the moment this rejects.
       const value = this.connections.get(engine)!;

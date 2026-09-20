@@ -363,9 +363,32 @@ describe('one consented test of the connection a person selected', () => {
     await expect(
       h.service.testConnection(ENGINE, { consent: true, model: 'small' }),
     ).rejects.toMatchObject({ code: 'REQUEST_ACTIVE' });
+    // Waiting for work already in progress is not a failure of the service,
+    // so nothing is filed against the connection.
+    expect(connection(h.service).diagnostic).toBeNull();
     release!();
     await expect(pending).resolves.toMatchObject({ revision: 1 });
     expect(h.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for a check in progress without filing it as a failure', async () => {
+    const h = host();
+    await settle(h);
+    let release: (() => void) | undefined;
+    h.inspect.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return signedIn();
+    });
+    const checking = h.service.check(ENGINE);
+    await expect(
+      h.service.testConnection(ENGINE, { consent: true, model: 'small' }),
+    ).rejects.toMatchObject({ code: 'REQUEST_ACTIVE' });
+    expect(connection(h.service).diagnostic).toBeNull();
+    expect(h.generate).not.toHaveBeenCalled();
+    release!();
+    await checking;
   });
 });
 
