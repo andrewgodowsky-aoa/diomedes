@@ -429,6 +429,7 @@ describe('a reported account-route mismatch', () => {
     expect(refusal.message).toMatch(/different account/i);
     expect(refusal.message).toContain(ROUTE_ISSUE.required);
     expect(refusal.stage).toBe('provider-auth');
-    expect(refusal.code).toBe('AUTH_REQUIRED');
+    // Its own code, so nothing downstream can file it under signing in.
+    expect(refusal.code).toBe('ACCOUNT_ROUTE');
   });
 });

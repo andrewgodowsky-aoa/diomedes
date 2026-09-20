@@ -402,8 +402,9 @@ describe('a test that never reaches the provider', () => {
       h.service.testConnection(ENGINE, { consent: true, model: 'small' }),
     ).rejects.toMatchObject({ code: 'ACCOUNT_ROUTE' });
     expect(h.generate).not.toHaveBeenCalled();
+    // The same refusal, at the same stage, that choosing this route gives.
     expect(connection(h.service).diagnostic).toMatchObject({
-      stage: 'model-list',
+      stage: 'provider-auth',
       code: 'ACCOUNT_ROUTE',
     });
   });

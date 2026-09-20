@@ -2779,6 +2779,7 @@ export async function createApp(options: AppOptions) {
           [
             'CONSENT_REQUIRED',
             'AUTH_REQUIRED',
+            'ACCOUNT_ROUTE',
             'MODEL_UNAVAILABLE',
             'STALE_STATUS',
             'NOT_INSTALLED',

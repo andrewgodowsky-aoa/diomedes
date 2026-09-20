@@ -274,8 +274,8 @@ function testStage(error: unknown, streamed: boolean): SetupStage {
 function stageOf(error: unknown): SetupStage {
   if (error instanceof EngineError && error.stage) return error.stage;
   const code = error instanceof EngineError ? error.code : '';
-  if (code === 'AUTH_REQUIRED') return 'provider-auth';
-  if (code === 'MODEL_UNAVAILABLE' || code === 'ACCOUNT_ROUTE') return 'model-list';
+  if (code === 'AUTH_REQUIRED' || code === 'ACCOUNT_ROUTE') return 'provider-auth';
+  if (code === 'MODEL_UNAVAILABLE') return 'model-list';
   if (code === 'LAUNCH_FAILED' || code === 'START_FAILED' || code === 'UNSUPPORTED_SHIM')
     return 'launch';
   if (code === 'PROTOCOL_ERROR' || code === 'PROCESS_EXITED') return 'local-handshake';
@@ -956,7 +956,7 @@ export class EngineService {
     // route cannot use, and signing in again would not change it.
     if (state.routeIssue)
       throw new EngineError(
-        'AUTH_REQUIRED',
+        'ACCOUNT_ROUTE',
         `This installation is signed in to a different account. Diomedes uses ${state.routeIssue.required} for this route.`,
         false,
         'provider-auth',
@@ -1096,17 +1096,8 @@ export class EngineService {
   ): Promise<ConnectionReceipt> {
     let streamed = false;
     try {
-      const state = this.connections.get(engine)!;
-      // A reported account-route mismatch is not a sign-in problem and sending
-      // anyway would not resolve it: this adapter accepts one route.
-      if (state.routeIssue)
-        throw new EngineError(
-          'ACCOUNT_ROUTE',
-          `This installation is signed in to a different account. Diomedes uses ${state.routeIssue.required} for this route.`,
-          false,
-          'model-list',
-        );
       // Settling the selection first is what makes a receipt mean anything: it
+      // refuses an account this route cannot use before anything is sent,
       // refuses a model this connection does not currently list, refuses a
       // stale or signed-out connection with the existing errors, and names the
       // one account route the admission below will accept.
