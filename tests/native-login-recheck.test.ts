@@ -225,7 +225,10 @@ describe('a finished native sign-in asks for a fresh check', () => {
     await login.start(connection('claude-code'), true);
     await expect(login.stop('claude-code')).rejects.toBeInstanceOf(Error);
     expect(login.state('claude-code')).toBe('idle');
-    expect(onFinished).not.toHaveBeenCalled();
+    // The close failed, but the window is still reported once: the screen
+    // promised a fresh check when it closed, and that promise is kept.
+    await settled(1);
+    expect(onFinished).toHaveBeenCalledTimes(1);
     await login.start(connection('claude-code'), true);
     expect(children).toHaveLength(2);
     children[0].exit(0);
@@ -233,6 +236,45 @@ describe('a finished native sign-in asks for a fresh check', () => {
     await flush();
     expect(calls).toEqual([{ engine: 'claude-code', outcome: 'stopped' }]);
     expect(login.state('claude-code')).toBe('running');
+  });
+  it('still asks for a re-check when the window cannot be confirmed closed', async () => {
+    const root = await setup();
+    // taskkill is absent, so the owned-process close rejects.
+    process.env.SystemRoot = path.join(root, 'absent');
+    const { launch, children } = launcher({ pid: 424242 }),
+      { calls, onFinished, settled } = recorder();
+    const login = new NativeLogin(root, launch, { onFinished });
+    await login.start(connection('claude-code'), true);
+    // The failure stays visible to whoever asked for the close...
+    await expect(login.stop('claude-code')).rejects.toBeInstanceOf(Error);
+    // ...and the promise made on screen is still kept. Skipping it left the
+    // route reported idle with no fresh check ever asked for, so a sign-in the
+    // person really did complete was never seen.
+    await settled(1);
+    await flush();
+    expect(calls).toEqual([{ engine: 'claude-code', outcome: 'stopped' }]);
+    expect(onFinished).toHaveBeenCalledTimes(1);
+    // The window really ending later does not report a second time.
+    children[0].exit(0);
+    await flush();
+    expect(onFinished).toHaveBeenCalledTimes(1);
+  });
+  it('reports every window on shutdown even when one cannot be confirmed closed', async () => {
+    const root = await setup();
+    process.env.SystemRoot = path.join(root, 'absent');
+    const { launch } = launcher({ pid: 424242 }),
+      { calls, onFinished, settled } = recorder();
+    const login = new NativeLogin(root, launch, { onFinished });
+    await login.start(connection('claude-code'), true);
+    await login.start(connection('opencode'), true);
+    // One failing close must not leave the other window unreported.
+    await expect(login.close()).rejects.toBeInstanceOf(Error);
+    await settled(2);
+    await flush();
+    expect(calls.map((call) => call.engine).sort()).toEqual(['claude-code', 'opencode']);
+    expect(onFinished).toHaveBeenCalledTimes(2);
+    expect(login.state('claude-code')).toBe('idle');
+    expect(login.state('opencode')).toBe('idle');
   });
   it('promises a re-check only when it was given one', async () => {
     const wired = new NativeLogin(await setup(), launcher().launch, { onFinished: () => {} });

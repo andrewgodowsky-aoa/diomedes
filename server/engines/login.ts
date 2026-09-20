@@ -107,13 +107,22 @@ export class NativeLogin {
       .then(() => report(engine, session.outcome!))
       .catch(() => {});
   }
-  /** Close a window Diomedes opened, naming why before the process can exit. */
+  /**
+   * Close a window Diomedes opened, naming why before the process can exit.
+   * The bookkeeping survives a kill that fails: a caller still sees the
+   * rejection, but the window is still forgotten and still reported once.
+   * Reporting it is the promise the screen made — "Diomedes checks this
+   * service again when this window closes" — and a kill Windows could not
+   * confirm is not a reason to break that promise, least of all when the
+   * window may still be open and the person may really have signed in.
+   */
   private async end(engine: ExternalEngine, session: SignInSession, outcome: SignInOutcome) {
     session.outcome ??= outcome;
-    if (this.active.get(engine) === session) this.active.delete(engine);
-    clearTimeout(session.timer);
-    await killOwnedProcess(session.child);
-    this.finish(engine, session, outcome);
+    try {
+      await killOwnedProcess(session.child);
+    } finally {
+      this.finish(engine, session, outcome);
+    }
   }
   async start(connection: EngineConnection, consent: boolean) {
     if (!consent)
@@ -248,6 +257,21 @@ export class NativeLogin {
     };
   }
   async close() {
-    for (const engine of this.active.keys()) await this.stop(engine);
+    // Every window is closed and reported even when one of them will not
+    // confirm; the first failure is still raised once they all have been
+    // attempted, so one stuck process cannot hide the others.
+    let failure: unknown;
+    let raised = false;
+    for (const engine of [...this.active.keys()]) {
+      try {
+        await this.stop(engine);
+      } catch (error) {
+        if (!raised) {
+          failure = error;
+          raised = true;
+        }
+      }
+    }
+    if (raised) throw failure;
   }
 }
