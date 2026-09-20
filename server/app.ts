@@ -106,6 +106,8 @@ interface AppOptions {
    */
   reviewerAdapter?: ReviewerAdapter | null;
   engineService?: EngineService;
+  /** How a native sign-in window is opened; tests pass a fake so none opens. */
+  nativeLoginLaunch?: ConstructorParameters<typeof NativeLogin>[1];
   harnessAuthority?: ResolveHarnessAuthority;
   /** Lease TTL for external text-turn runs; tests shorten it to exercise takeover. */
   harnessTextLeaseMs?: number;
@@ -454,7 +456,22 @@ export async function createApp(options: AppOptions) {
       buildId: () => currentBuildIdentity(packageInfo.version).buildId,
     });
   const installer = new EngineInstaller(engines.root);
-  const login = new NativeLogin(engines.root);
+  // A finished native sign-in is not evidence of an account. The window ending
+  // only asks for one fresh inspection, and what that inspection answers is what
+  // the screen shows.
+  let closing = false;
+  const login = new NativeLogin(engines.root, options.nativeLoginLaunch, {
+    onFinished: async (engine) => {
+      if (closing) return;
+      try {
+        await engines.check(engine);
+      } catch (error) {
+        // A failed check has already written its own detail onto the connection,
+        // and REQUEST_ACTIVE only means a check for this route is already running.
+        if (!(error instanceof EngineError && error.code === 'REQUEST_ACTIVE')) noteError(error);
+      }
+    },
+  });
   const reviewerAdapter =
     options.reviewerAdapter === undefined ? codexReviewerAdapter() : options.reviewerAdapter;
   const agents = new AgentRegistry(store.dataDir);
@@ -871,6 +888,9 @@ export async function createApp(options: AppOptions) {
         enabled: store.settings.services?.[connection.engine] === true,
         installSupported: installer.offer(connection.engine).available,
       }),
+      // Whether a native sign-in window Diomedes opened is still open, so a
+      // screen can wait for its check instead of asking for one.
+      signInWindow: login.state(connection.engine),
     }));
   app.get(
     '/api/ai/status',
@@ -2797,6 +2817,9 @@ export async function createApp(options: AppOptions) {
   app.locals.connections = connections;
   app.locals.workControl = workControl;
   app.locals.close = async () => {
+    // A window closed on the way out must not start a check against services
+    // that are already shutting down.
+    closing = true;
     // Stop listening before anything is stopped, or shutting a run down would
     // announce a settled session and schedule a delivery on the way out.
     deliveryClosed = true;

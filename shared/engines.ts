@@ -144,6 +144,12 @@ export interface EngineConnection {
   diagnostic?: SetupDiagnostic | null;
   /** Host-derived. A screen renders this action; it does not compute its own. */
   nextAction?: SetupAction;
+  /**
+   * Whether a native sign-in window Diomedes opened for this route is still
+   * open. The window closing is never read as signed in: the host rechecks,
+   * and the recheck's answer is what `authentication` then says.
+   */
+  signInWindow?: 'idle' | 'running';
 }
 export interface InstallOffer {
   engine: ExternalEngine;
