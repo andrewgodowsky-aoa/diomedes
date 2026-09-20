@@ -5,6 +5,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import packageInfo from '../package.json' with { type: 'json' };
 import type { EngineConnection } from '../shared/engines.js';
 import type { ConnectionInstance, ConnectorManifest } from '../shared/connections.js';
 import type { ReadinessRuntimeSnapshot } from '../shared/readiness.js';
@@ -22,6 +23,7 @@ import { mountReadinessRoutes } from '../server/readiness/routes.js';
 
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 const at = '2026-09-19T12:00:00.000Z';
+/** Fixtures declare this build themselves; the shipped set is checked against package.json. */
 const buildVersion = '0.1.4';
 const roots: string[] = [];
 
@@ -237,7 +239,10 @@ describe('FD03 readiness projection', () => {
     expect(native.ready).toBe(false);
   });
   test('shipped route descriptions do not self-certify verification', async () => {
-    const knowledge = await loadShippedProductKnowledge({ buildVersion, now: at });
+    const knowledge = await loadShippedProductKnowledge({
+      buildVersion: packageInfo.version,
+      now: at,
+    });
     expect(knowledge.conflicts).toEqual([]);
     const route = projectReadiness({
       snapshot: snapshot({ validatedEvidence: [] }),

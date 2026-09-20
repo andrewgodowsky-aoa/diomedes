@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2026-09-19.1",
-  "buildVersion": "0.1.4",
+  "version": "2026-09-20.1",
+  "buildVersion": "0.1.6",
   "resources": [
     {
       "path": "core.json",
-      "sha256": "996d1d78d167984eeba37b5635f925d2dd0e68bade70e18832a913d0094bc62f",
+      "sha256": "eea0079958e1a7736ed23df61847de4b2a58a3b9c7023152743a4c4506387ff9",
       "scopes": [
         "product",
         "route:native-fixture",
@@ -14,6 +14,7 @@
         "route:sample",
         "route:codex",
         "route:claude-code",
+        "route:claude-code-session",
         "route:opencode",
         "route:oh-my-pi",
         "route:cursor",
