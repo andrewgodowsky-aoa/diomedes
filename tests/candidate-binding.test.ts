@@ -285,6 +285,44 @@ describe('the binding a person chose, remembered across restarts', () => {
     expect(RENAME_RETRY_BUDGET_MS).toBeLessThanOrEqual(250);
   });
 
+  it('binds and reloads an installation whose canonical path is a Windows long path', async () => {
+    // A candidate id is `<source>:<engine>:<canonical path>`, and Windows
+    // resolves paths of up to 32,767 units. Neither the service nor this
+    // record may assume a shorter one; the only length rule lives at the
+    // route that accepts the id.
+    const serviceRoot = root();
+    const long = `C:\\${'deep\\'.repeat(2000)}opencode.exe`;
+    expect(long.length).toBeGreaterThan(10_000);
+    const h = host({ system: [{ file: long }], service: serviceRoot });
+    const service = new EngineService(serviceRoot, {
+      discover: async () => [],
+      enumerate: async () => [{ engine: 'opencode', path: long, context: 'windows-native' }],
+      version: async () => TESTED_VERSIONS.opencode,
+      identify: async (file) => ({
+        path: file,
+        size: 10,
+        mtimeMs: 1,
+        sha256: 'e'.repeat(64),
+      }),
+      verifyManaged: async () => {
+        throw new Error('no private copy in this test');
+      },
+      buildId: () => 'test-build',
+      adapter: (id) => ({
+        id,
+        contract: routeContractFor(id),
+        inspect: h.inspect,
+        generate: h.generate,
+      }),
+    });
+    await service.discover(true);
+    const id = connection(service, 'opencode').recommendedCandidateId!;
+    expect(id.length).toBeGreaterThan(10_000);
+    const bound = await service.bind('opencode', id);
+    expect(bound.binding?.id).toBe(id);
+    expect(new BindingStore(serviceRoot).get('opencode')?.binding.id).toBe(id);
+  });
+
   it('separates a route nobody chose from one whose row it cannot read', () => {
     const service = root();
     fs.writeFileSync(
