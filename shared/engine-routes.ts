@@ -18,8 +18,10 @@ import type { ExternalEngine } from './types.js';
 export interface EngineRouteProfile {
   /** The exact account route the adapter accepts. */
   routeLabel: string;
-  /** What a task sent through this route can do. */
+  /** What a task sent through this route can do, short enough for a caption. */
   taskScope: string;
+  /** What the native tool would do on its own and does not do here. */
+  limits: string;
   /** What Diomedes reuses from the person's own setup. */
   reuses: string[];
   /** What it deliberately does not carry over. */
@@ -42,7 +44,8 @@ const WORKING_DIRECTORY = 'The folder you are working in';
 export const ENGINE_ROUTE_PROFILES: Record<ExternalEngine, EngineRouteProfile> = {
   'claude-code': {
     routeLabel: 'Claude subscription, signed in to Claude Code',
-    taskScope: 'Text answers and reviewed proposals. Tools, MCP and slash commands are off.',
+    taskScope: 'Text and reviewed proposals',
+    limits: 'Tools, MCP and slash commands are off.',
     reuses: ['The Claude Code installation on this computer', 'Its own Claude account sign-in'],
     doesNotReuse: [
       'Your Claude Code settings files and setting sources',
@@ -56,7 +59,8 @@ export const ENGINE_ROUTE_PROFILES: Record<ExternalEngine, EngineRouteProfile> =
   },
   opencode: {
     routeLabel: 'OpenCode Go',
-    taskScope: 'Text answers and reviewed proposals. Tools, plugins and MCP are off.',
+    taskScope: 'Text and reviewed proposals',
+    limits: 'Tools, plugins and MCP are off.',
     reuses: [
       'The OpenCode installation on this computer',
       'Its native sign-in data folder, which stays where OpenCode keeps it',
@@ -74,7 +78,8 @@ export const ENGINE_ROUTE_PROFILES: Record<ExternalEngine, EngineRouteProfile> =
   },
   'oh-my-pi': {
     routeLabel: 'OpenAI API key, in a separate oh-my-pi profile',
-    taskScope: 'Text answers and reviewed proposals. Tools, extensions and skills are off.',
+    taskScope: 'Text and reviewed proposals',
+    limits: 'Tools, extensions and skills are off.',
     reuses: ['The oh-my-pi installation on this computer'],
     doesNotReuse: [
       'Your own oh-my-pi profile: this route uses a separate one',
@@ -89,7 +94,8 @@ export const ENGINE_ROUTE_PROFILES: Record<ExternalEngine, EngineRouteProfile> =
   },
   cursor: {
     routeLabel: 'Cursor account, signed in through the Cursor CLI',
-    taskScope: 'Text answers and reviewed proposals in ask mode. A tool event stops the request.',
+    taskScope: 'Text and reviewed proposals',
+    limits: 'Ask mode. A tool event stops the request.',
     reuses: [
       'The Cursor CLI installation on this computer',
       'Its own sign-in, which stays in the native credential location',
@@ -106,7 +112,8 @@ export const ENGINE_ROUTE_PROFILES: Record<ExternalEngine, EngineRouteProfile> =
   },
   devin: {
     routeLabel: 'Devin account, signed in through its browser flow',
-    taskScope: 'Text answers and reviewed proposals in ask mode. A tool event stops the request.',
+    taskScope: 'Text and reviewed proposals',
+    limits: 'Ask mode. A tool event stops the request.',
     reuses: [
       'The Devin CLI installation on this computer',
       'Your Devin account, through the browser sign-in you complete',

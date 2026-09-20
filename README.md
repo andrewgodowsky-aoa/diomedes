@@ -71,11 +71,11 @@ one of the things this repair is for.
 
 | Tool | Account route the adapter accepts | What a task through it can do | Reviewed version |
 | --- | --- | --- | --- |
-| Claude Code | Claude subscription, signed in to Claude Code | Text answers and reviewed proposals. Tools, MCP and slash commands are off. | 2.1.252 |
-| OpenCode | OpenCode Go | Text answers and reviewed proposals. Tools, plugins and MCP are off. | 1.18.4 |
-| oh-my-pi | OpenAI API key, in a separate oh-my-pi profile | Text answers and reviewed proposals. Tools, extensions and skills are off. | 18.0.6 |
-| Cursor | Cursor account, signed in through the Cursor CLI | Text answers and reviewed proposals in ask mode. A tool event stops the request. | 2026.08.11 |
-| Devin | Devin account, signed in through its browser flow | Text answers and reviewed proposals in ask mode. A tool event stops the request. | 3000.10.23 |
+| Claude Code | Claude subscription, signed in to Claude Code | Text and reviewed proposals. Tools, MCP and slash commands are off. | 2.1.252 |
+| OpenCode | OpenCode Go | Text and reviewed proposals. Tools, plugins and MCP are off. | 1.18.4 |
+| oh-my-pi | OpenAI API key, in a separate oh-my-pi profile | Text and reviewed proposals. Tools, extensions and skills are off. | 18.0.6 |
+| Cursor | Cursor account, signed in through the Cursor CLI | Text and reviewed proposals. Ask mode. A tool event stops the request. | 2026.08.11 |
+| Devin | Devin account, signed in through its browser flow | Text and reviewed proposals. Ask mode. A tool event stops the request. | 3000.10.23 |
 
 These are text routes. The tool answers with text and Diomedes's own writer turns that
 text into a proposal you approve or reject. None of them is that tool's own coding

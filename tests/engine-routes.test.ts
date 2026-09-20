@@ -14,6 +14,7 @@ const sentences = (engine: (typeof EXTERNAL_ENGINES)[number]): string[] => {
   return [
     profile.routeLabel,
     profile.taskScope,
+    profile.limits,
     profile.billing,
     ...profile.reuses,
     ...profile.doesNotReuse,
@@ -26,6 +27,7 @@ describe('engine route profiles', () => {
       const profile = ENGINE_ROUTE_PROFILES[engine];
       expect(profile.routeLabel.trim(), engine).not.toBe('');
       expect(profile.taskScope.trim(), engine).not.toBe('');
+      expect(profile.limits.trim(), engine).not.toBe('');
       expect(profile.billing.trim(), engine).not.toBe('');
       expect(profile.reuses.length, engine).toBeGreaterThan(0);
       expect(profile.doesNotReuse.length, engine).toBeGreaterThan(0);

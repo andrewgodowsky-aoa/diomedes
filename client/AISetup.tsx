@@ -847,7 +847,9 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
                   </div>
                   <div className="setting-row">
                     <span>Task scope</span>
-                    <span>{profile.taskScope}</span>
+                    <span>
+                      {profile.taskScope}. {profile.limits}
+                    </span>
                   </div>
                   <div className="setting-row">
                     <span>Permission scope</span>
@@ -866,13 +868,14 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
                   {profile.reuses.length > 0 && (
                     <div className="setting-row">
                       <span>Reused from your setup</span>
-                      <span>{profile.reuses.join(', ')}</span>
+                      {/* Entries carry their own commas, so a comma cannot separate them. */}
+                      <span>{profile.reuses.join('; ')}</span>
                     </div>
                   )}
                   {profile.doesNotReuse.length > 0 && (
                     <div className="setting-row">
                       <span>Not carried over</span>
-                      <span>{profile.doesNotReuse.join(', ')}</span>
+                      <span>{profile.doesNotReuse.join('; ')}</span>
                     </div>
                   )}
                   <div className="setting-row">
