@@ -39,6 +39,8 @@ import { fileURLToPath } from 'node:url';
 
 export const DEV_SERVER_MARKER = '.dev-server.json';
 const RELEASE_DEADLINE_MS = 5000;
+// dev.mjs gives its own children three seconds between SIGTERM and SIGKILL.
+const TERM_GRACE_MS = 3000;
 
 function repoRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -74,23 +76,27 @@ export function listenersOn(port) {
 }
 
 /**
- * Rows of `ps -o pid= -o command=`: a right-aligned pid, then the command line
- * verbatim. Interior spaces are kept, because the signature being matched is an
- * absolute path and a path may contain them.
+ * The answer of `ps -o pid= -o command= -p <one pid>`: a right-aligned pid, then
+ * that process's command line verbatim. Interior spaces are kept, because the
+ * signature being matched is an absolute path and a path may contain them.
+ *
+ * ps prints argv as it is, so an argument holding a newline spans several
+ * lines. Because only one pid was asked about, every later line belongs to that
+ * same process; it is never read as a row for a different pid. Null unless the
+ * answer is about the pid that was asked for.
  */
-export function parsePsCommandLines(stdout) {
-  const lines = new Map();
-  for (const row of String(stdout ?? '').split(/\r?\n/)) {
-    const match = /^\s*(\d+)\s+(.*\S)\s*$/.exec(row);
-    if (match) lines.set(Number(match[1]), match[2]);
-  }
-  return lines;
+export function parsePsCommandLine(stdout, pid) {
+  const match = /^\s*(\d+)\s+([\s\S]*\S)\s*$/.exec(String(stdout ?? ''));
+  if (!match || Number(match[1]) !== pid) return null;
+  return match[2].replace(/\s*\r?\n\s*/g, ' ');
 }
 
 /**
- * pid -> command line, resolved in one batch call. Dead pids are absent, and so
- * is any pid whose command line could not be read: an absent entry can never
- * match a signature, so its holder is reported as foreign and never killed.
+ * pid -> command line. Dead pids are absent, and so is any pid whose command
+ * line could not be read: an absent entry can never match a signature, so its
+ * holder is reported as foreign and never killed. When macOS cannot read a
+ * process's arguments it prints the bare name in parentheses, such as `(node)`;
+ * that is present but carries no path, so it cannot match either.
  * The second argument exists for tests.
  */
 export function commandLinesOf(
@@ -104,15 +110,17 @@ export function commandLinesOf(
     // macOS and the BSDs have no /proc. `-ww` stops ps truncating the command
     // line to the terminal width, which would cut the path we match on. The
     // columns are separate -o options: in `-o pid=,command=` POSIX lets the
-    // first header run to the end of the argument. ps exits 1 when none of the
-    // listed pids exist, so an empty result is an answer, not an error.
-    const result = spawn('ps', ['-ww', '-o', 'pid=', '-o', 'command=', '-p', pids.join(',')], {
-      encoding: 'utf8',
-    });
-    if (result.error || !result.stdout) return lines;
-    const wanted = new Set(pids);
-    for (const [pid, line] of parsePsCommandLines(result.stdout))
-      if (wanted.has(pid)) lines.set(pid, line);
+    // first header run to the end of the argument. One pid per call, so that a
+    // process cannot shape its own arguments into a row for another pid. ps
+    // exits 1 when the pid does not exist: an answer, not an error.
+    for (const pid of pids) {
+      const result = spawn('ps', ['-ww', '-o', 'pid=', '-o', 'command=', '-p', String(pid)], {
+        encoding: 'utf8',
+      });
+      if (result.error || !result.stdout) continue;
+      const line = parsePsCommandLine(result.stdout, pid);
+      if (line) lines.set(pid, line);
+    }
     return lines;
   }
   if (platform === 'win32') {
@@ -186,11 +194,41 @@ export function clearDevServerMarker(root) {
   }
 }
 
+/**
+ * Does this live command line prove ownership? It must contain the recorded
+ * absolute script path. Windows paths are case-insensitive, so case is folded
+ * there. Everywhere else the match is exact: on a case-sensitive volume two
+ * worktrees can differ only by case, and folding would make one answer for the
+ * other. Exact is also the safe way to be wrong, since a miss means "foreign,
+ * refused". This authorizes a kill; `parentIsAlive` below is deliberately more
+ * lenient, because being wrong there means refusing, not killing.
+ */
+export function signatureMatches(commandLine, signature, platform = process.platform) {
+  if (!commandLine || !signature) return false;
+  return platform === 'win32'
+    ? commandLine.toLowerCase().includes(signature.toLowerCase())
+    : commandLine.includes(signature);
+}
+
+/**
+ * Re-read one recorded process and say whether it is still ours. Called
+ * immediately before each signal off Windows, where process ids wrap quickly: a
+ * pid that was ours when the ports were surveyed may belong to something else a
+ * moment later. The second argument exists for tests.
+ */
+export function ownsProcess(entry, options = {}) {
+  if (!entry?.signature) return false;
+  const platform = options.platform ?? process.platform;
+  return signatureMatches(commandLinesOf([entry.pid], options).get(entry.pid), entry.signature, platform);
+}
+
 function killTree(pid) {
   if (process.platform === 'win32') {
     const result = spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
     return result.status === 0;
   }
+  // Not a tree off Windows: one signal to one recorded pid. The marker lists
+  // every process dev.mjs started, so each is signalled by its own record.
   try {
     process.kill(pid, 'SIGTERM');
     return true;
@@ -255,8 +293,7 @@ export function guardDevPorts({ ports, root = repoRoot(), log = () => {} }) {
     for (const pid of pids) {
       const record = records.find((entry) => entry.pid === pid);
       const cmdline = cmdlines.get(pid) ?? '';
-      const ours =
-        record && record.signature && cmdline.toLowerCase().includes(record.signature.toLowerCase());
+      const ours = record && signatureMatches(cmdline, record.signature);
       if (!ours) {
         foreign.push({
           port,
@@ -297,22 +334,44 @@ export function guardDevPorts({ ports, root = repoRoot(), log = () => {} }) {
 
   // Orphaned: the recorded parent is dead and every port holder verified.
   // Kill every marker pid whose live command line still proves it is ours.
+  const offWindows = process.platform !== 'win32';
   const killed = [];
+  const signalled = [];
   for (const entry of marker.processes) {
-    const cmdline = (cmdlines.get(entry.pid) ?? '').toLowerCase();
-    if (!entry.signature || !cmdline.includes(entry.signature.toLowerCase())) continue;
-    if (killTree(entry.pid)) killed.push(`${entry.role ?? 'process'}:${entry.pid}`);
+    if (!signatureMatches(cmdlines.get(entry.pid), entry.signature)) continue;
+    // The survey above is one snapshot. Off Windows, where process ids wrap
+    // quickly, prove ownership again at the last moment before the signal.
+    if (offWindows && !ownsProcess(entry)) continue;
+    if (killTree(entry.pid)) {
+      killed.push(`${entry.role ?? 'process'}:${entry.pid}`);
+      signalled.push(entry);
+    }
   }
 
   const deadline = Date.now() + RELEASE_DEADLINE_MS;
+  const escalateAt = Date.now() + TERM_GRACE_MS;
+  let escalated = false;
   while (Date.now() < deadline) {
     if (ports.every((port) => listenersOn(port).length === 0)) break;
+    if (offWindows && !escalated && Date.now() >= escalateAt) {
+      // SIGTERM was ignored. Windows already forced with /F; match that here,
+      // but only for a pid that is still provably ours.
+      escalated = true;
+      for (const entry of signalled) {
+        if (!ownsProcess(entry)) continue;
+        try {
+          process.kill(entry.pid, 'SIGKILL');
+        } catch {
+          // Gone between the check and the signal.
+        }
+      }
+    }
     sleepSync(100);
   }
   const stillHeld = ports.filter((port) => listenersOn(port).length > 0);
   if (stillHeld.length) {
     throw new Error(
-      `Killed this worktree's orphaned dev-server tree (${killed.join(', ')}) but port(s) ` +
+      `Signalled this worktree's orphaned dev-server processes (${killed.join(', ')}) but port(s) ` +
         `${stillHeld.join(', ')} are still held. Inspect with ${
           process.platform === 'win32' ? 'netstat -ano' : `lsof -i tcp:${stillHeld[0]} -sTCP:LISTEN`
         }.`,
