@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Dev-server ownership tracking and orphan reclaim.
  *
@@ -74,13 +73,51 @@ export function listenersOn(port) {
   return result.stdout.trim().split(/\s+/).map(Number).filter(Boolean);
 }
 
-/** pid -> command line, resolved in one batch call. Dead pids are absent. */
-function commandLinesOf(pids) {
+/**
+ * Rows of `ps -o pid= -o command=`: a right-aligned pid, then the command line
+ * verbatim. Interior spaces are kept, because the signature being matched is an
+ * absolute path and a path may contain them.
+ */
+export function parsePsCommandLines(stdout) {
   const lines = new Map();
+  for (const row of String(stdout ?? '').split(/\r?\n/)) {
+    const match = /^\s*(\d+)\s+(.*\S)\s*$/.exec(row);
+    if (match) lines.set(Number(match[1]), match[2]);
+  }
+  return lines;
+}
+
+/**
+ * pid -> command line, resolved in one batch call. Dead pids are absent, and so
+ * is any pid whose command line could not be read: an absent entry can never
+ * match a signature, so its holder is reported as foreign and never killed.
+ * The second argument exists for tests.
+ */
+export function commandLinesOf(
+  pids,
+  { platform = process.platform, spawn = spawnSync, readFile = fs.readFileSync } = {},
+) {
+  const lines = new Map();
+  pids = [...new Set(pids)].filter((pid) => Number.isInteger(pid) && pid > 0);
   if (!pids.length) return lines;
-  if (process.platform === 'win32') {
+  if (platform !== 'win32' && platform !== 'linux') {
+    // macOS and the BSDs have no /proc. `-ww` stops ps truncating the command
+    // line to the terminal width, which would cut the path we match on. The
+    // columns are separate -o options: in `-o pid=,command=` POSIX lets the
+    // first header run to the end of the argument. ps exits 1 when none of the
+    // listed pids exist, so an empty result is an answer, not an error.
+    const result = spawn('ps', ['-ww', '-o', 'pid=', '-o', 'command=', '-p', pids.join(',')], {
+      encoding: 'utf8',
+    });
+    if (result.error || !result.stdout) return lines;
+    const wanted = new Set(pids);
+    for (const [pid, line] of parsePsCommandLines(result.stdout))
+      if (wanted.has(pid)) lines.set(pid, line);
+    return lines;
+  }
+  if (platform === 'win32') {
     const filter = pids.map((pid) => `ProcessId=${pid}`).join(' OR ');
-    const result = spawnSync(
+    const result = spawn(
       'powershell.exe',
       [
         '-NoProfile',
@@ -99,7 +136,7 @@ function commandLinesOf(pids) {
   }
   for (const pid of pids) {
     try {
-      lines.set(pid, fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ').trim());
+      lines.set(pid, readFile(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ').trim());
     } catch {
       // Process is gone or unreadable.
     }
@@ -246,8 +283,9 @@ export function guardDevPorts({ ports, root = repoRoot(), log = () => {} }) {
     throw new Error(
       `Dev-server port(s) are held by a live dev-server tree started at ` +
         `${marker.startedAt ?? 'unknown time'} (parent pid ${parent?.pid}).\n` +
-        `It is managed, not orphaned — stop it yourself (\`taskkill /PID ${parent?.pid} /T /F\` ` +
-        `or Ctrl+C where it runs), or rerun with different ports.`,
+        `It is managed, not orphaned — stop it yourself (\`${
+          process.platform === 'win32' ? `taskkill /PID ${parent?.pid} /T /F` : `kill ${parent?.pid}`
+        }\` or Ctrl+C where it runs), or rerun with different ports.`,
     );
   }
 
@@ -275,7 +313,9 @@ export function guardDevPorts({ ports, root = repoRoot(), log = () => {} }) {
   if (stillHeld.length) {
     throw new Error(
       `Killed this worktree's orphaned dev-server tree (${killed.join(', ')}) but port(s) ` +
-        `${stillHeld.join(', ')} are still held. Inspect with netstat -ano.`,
+        `${stillHeld.join(', ')} are still held. Inspect with ${
+          process.platform === 'win32' ? 'netstat -ano' : `lsof -i tcp:${stillHeld[0]} -sTCP:LISTEN`
+        }.`,
     );
   }
 
