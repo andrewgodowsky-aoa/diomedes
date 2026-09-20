@@ -1219,7 +1219,9 @@ test('Settings sends a changed binding to the installations, not to a sign-in', 
     await expect(
       section.getByText(/checking the version and integrity of the installation/),
     ).toContainText('Check the installation, or install the compatible copy.');
-    await expect(section.getByText(/sign in/i)).toHaveCount(0);
+    // Not a sign-in problem, and not answered with one.
+    await expect(section.getByRole('button', { name: /Sign in/ })).toHaveCount(0);
+    await expect(section.getByText(/sign in again/i)).toHaveCount(0);
     // The installations opened themselves, both rows in the order sent.
     await expect(section.locator('li.ai-candidate')).toHaveCount(2);
     await expect(candidateRow(section, 1, managedCandidate.path)).toContainText(
@@ -1436,6 +1438,11 @@ test('The thread picker refuses a route whose account is on another route', asyn
     });
     await page.goto(baseURL);
     await expect(page.locator('.console')).toBeVisible();
+    // The Console opens on Home, and the picker belongs to a thread.
+    await page
+      .getByRole('navigation', { name: 'Threads and views' })
+      .getByRole('button', { name: /Engine UI thread/ })
+      .click();
     const picker = page.locator('.model-picker > button');
     await picker.click();
     const menu = page.getByRole('menu');

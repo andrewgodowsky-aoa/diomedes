@@ -426,6 +426,19 @@ describe('waiting on a native sign-in window', () => {
     );
   });
 
+  it('gives a second window its own wait, so the first check cannot answer for it', () => {
+    const first = advanceSignIn(undefined, open, opened);
+    const settling = advanceSignIn(first, { ...ended, checkedAt: CHECKED }, opened + 1_000);
+    expect(settling.state).toBe('checking');
+    // A new window opens before the first check has landed.
+    const second = advanceSignIn(settling, open, opened + 2_000);
+    expect(second).toMatchObject({ state: 'open', startedAtMs: opened + 2_000 });
+    // The first window's check now answers. It is older than this wait began,
+    // so it settles nothing: this window's own check is still to come.
+    const firstAnswer = { ...ended, checkedAt: new Date(opened + 1_500).toISOString() };
+    expect(advanceSignIn(second, firstAnswer, opened + 2_100).state).toBe('checking');
+  });
+
   it('is not started or ended by a payload that reports no window at all', () => {
     expect(advanceSignIn(undefined, base, opened)).toEqual(NOT_SIGNING_IN);
     const watching = advanceSignIn(undefined, open, opened);

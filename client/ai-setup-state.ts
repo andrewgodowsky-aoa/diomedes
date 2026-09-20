@@ -370,7 +370,10 @@ export function advanceSignIn(
   if (c.signInWindow === 'running')
     return {
       state: 'open',
-      startedAtMs: current.state === 'idle' ? nowMs : current.startedAtMs,
+      // One start while one window stays open. A second window opened before
+      // the first one's check landed begins its own wait, so that check cannot
+      // settle this one and answer for a sign-in it never saw.
+      startedAtMs: current.state === 'open' ? current.startedAtMs : nowMs,
       endedAtMs: null,
     };
   if (current.state === 'idle') return NOT_SIGNING_IN;

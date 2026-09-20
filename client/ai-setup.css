@@ -119,17 +119,15 @@
   overflow-wrap: anywhere;
 }
 
-/* The sign-in line stays in the document whether or not it has anything to
-   say, so a change to it is announced; empty, it takes no room. */
+/* The sign-in line stays in the document, and in the accessibility tree,
+   whether or not it has anything to say: a region that is hidden while empty
+   announces nothing when it fills. Empty, its own zero margin gives it no
+   height. */
 .ai-connections .service p.ai-signin {
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--dm-text-1);
-}
-
-.ai-connections .service p.ai-signin:empty {
-  display: none;
 }
 
 /* One explanation the record carries and the status line does not: a broken
