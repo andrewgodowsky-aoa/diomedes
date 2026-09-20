@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Settings } from '../shared/types';
-import { advanceSetup, hasUsableService, migrateOnboarding } from '../shared/onboarding';
+import {
+  advanceSetup,
+  continueChoice,
+  continueLabel,
+  continueNote,
+  hasUsableService,
+  migrateOnboarding,
+} from '../shared/onboarding';
 
 function base(overrides?: Partial<Settings>): Settings {
   return {
@@ -210,5 +217,64 @@ describe('advanceSetup', () => {
     expect(hasUsableService(off)).toBe(false);
     const on = base({ services: { defaultEngine: 'codex', codex: true } });
     expect(hasUsableService(on)).toBe(true);
+  });
+});
+
+/**
+ * What continuing from the AI step is, said honestly.
+ *
+ * Setup completion is not proof that a paid or usable route works, so the three
+ * cases a person can be in must not read alike: a route that answered one real
+ * request, a route that is selected and has answered nothing, and no route at
+ * all. Continuing stays possible in all three; only the words change.
+ */
+describe('what the continue control on the AI step says', () => {
+  const selected = base({ services: { defaultEngine: 'opencode', opencode: true } });
+
+  it('says Continue only for a route whose own record carries a result', () => {
+    expect(continueChoice(selected, ['opencode'])).toBe('verified');
+    expect(continueLabel('verified')).toBe('Continue');
+  });
+
+  it('says the connection was not tested when nothing has been sent through it', () => {
+    expect(continueChoice(selected, [])).toBe('untested');
+    // A receipt that belongs to another route is not this route's result.
+    expect(continueChoice(selected, ['cursor'])).toBe('untested');
+    expect(continueLabel('untested')).toBe('Continue without testing');
+    expect(continueNote('untested')).toBe('This connection has not answered a real request yet.');
+  });
+
+  it('names the local sample when nothing usable is selected', () => {
+    expect(continueChoice(base(), ['opencode'])).toBe('sample');
+    expect(continueChoice(base({ services: { defaultEngine: 'sample', sample: true } }))).toBe(
+      'sample',
+    );
+    // Switched off is not usable, whatever was verified earlier.
+    expect(
+      continueChoice(base({ services: { defaultEngine: 'opencode', opencode: false } }), [
+        'opencode',
+      ]),
+    ).toBe('sample');
+    expect(continueLabel('sample')).toBe('Continue with the local sample');
+    // Scripted sample work is never offered as proof that a provider answered.
+    expect(continueNote('sample')).toBe(
+      'Sample work is scripted on this computer. It is not proof that a provider answered.',
+    );
+  });
+
+  it('reads differently in all three cases, and claims no verification it does not have', () => {
+    const labels = (['verified', 'untested', 'sample'] as const).map(continueLabel);
+    const notes = (['verified', 'untested', 'sample'] as const).map(continueNote);
+    expect(new Set(labels).size).toBe(3);
+    expect(new Set(notes).size).toBe(3);
+    for (const note of [continueNote('untested'), continueNote('sample')])
+      expect(note).not.toMatch(/verified|tested successfully|working/i);
+  });
+
+  it('leaves hasUsableService meaning what it meant for every other caller', () => {
+    // The split is in the label, not in the gate: both non-sample cases are
+    // still one usable service, and nothing here gates continuing.
+    expect(hasUsableService(selected)).toBe(true);
+    expect(continueChoice(selected, ['opencode'])).not.toBe(continueChoice(selected, []));
   });
 });

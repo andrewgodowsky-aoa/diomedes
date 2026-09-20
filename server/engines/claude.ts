@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { EngineModel } from '../../shared/types.js';
+import type { SetupStage } from '../../shared/engines.js';
 import { routeContractFor } from '../harness/route-contract.js';
 import {
   contextMessage,
@@ -15,14 +16,25 @@ import {
   cleanupFailed,
   engineEnvironment,
   EngineError,
+  failureKind,
   openProcess,
   record,
+  staged,
   type EngineProcess,
   type ProcessFactory,
 } from './process.js';
 
 export const CLAUDE_VERSION = '2.1.252';
 const ACCOUNT_ROUTE = 'claude-code:claude.ai';
+/**
+ * The sign-in methods this route can name, as a closed list. Shape alone was
+ * not a guarantee: `acme-holdings-inc` is identifier-shaped, and this value is
+ * rendered in the setup sentence and copied into the support bundle a person
+ * sends to someone else. A method not on this list is counted, never named.
+ * `claude.ai` is the one this route accepts; `api_key` is the one it refuses
+ * by name. Both are observed in this repository; nothing is listed from memory.
+ */
+const NAMEABLE_AUTH_METHODS = ['api_key'] as const;
 export function claudeArguments(): string[] {
   return [
     '--print',
@@ -57,26 +69,44 @@ function environment() {
     CLAUDE_CODE_SAFE_MODE: '1',
   };
 }
-function failure(value: unknown): EngineError {
-  const text = JSON.stringify(value);
-  if (/rate.?limit|usage.?limit|quota|overloaded/i.test(text))
+/**
+ * A denial names the account wherever it is seen; a limit and a plain provider
+ * fault keep the stage they were seen at, so neither is read as a sign-in.
+ */
+function failure(value: unknown, stage: SetupStage): EngineError {
+  // Read from the frame's own fields. Searching the serialised frame made
+  // `auth` inside `authority` a missing sign-in, so an enterprise certificate
+  // or proxy fault — on the audit's own list of hostile machines — was
+  // answered with sign-in advice that repairs nothing.
+  const kind = failureKind(value);
+  if (kind === 'limited')
     return new EngineError(
       'USAGE_LIMIT',
       'Claude Code reported a usage or service limit. No account or model was substituted.',
       true,
+      stage,
     );
-  if (/auth|login|sign.?in|unauthorized/i.test(text))
+  if (kind === 'denied')
     return new EngineError(
       'AUTH_REQUIRED',
       'Claude Code needs sign-in. Use its sign-in action, then recheck.',
       true,
+      'provider-auth',
     );
   return new EngineError(
     'PROVIDER_ERROR',
     'Claude Code could not complete this request. No automatic retry was sent.',
     true,
+    stage,
   );
 }
+const signInRequired = () =>
+  new EngineError(
+    'AUTH_REQUIRED',
+    'Sign in to Claude Code with your Claude account. This route does not use API billing.',
+    false,
+    'provider-auth',
+  );
 function sameModel(requested: string, reported: string) {
   return (
     requested === reported ||
@@ -100,29 +130,43 @@ export class ClaudeAdapter implements TextEngineAdapter {
     this.account =
       deps.account ??
       (async (signal) => {
-        const result = await capture({
-          file,
-          args: ['--safe-mode', '--setting-sources', '', 'auth', 'status', '--json'],
-          cwd,
-          env: environment(),
-          timeoutMs: 10_000,
-          maxBytes: 32_000,
-          signal,
-        });
+        let result;
+        try {
+          result = await capture({
+            file,
+            args: ['--safe-mode', '--setting-sources', '', 'auth', 'status', '--json'],
+            cwd,
+            env: environment(),
+            timeoutMs: 10_000,
+            maxBytes: 32_000,
+            signal,
+          });
+        } catch (error) {
+          // A probe that cannot start has not asked the account anything yet.
+          throw staged(error, 'launch');
+        }
         try {
           return record(JSON.parse(result.stdout));
         } catch {
-          throw new EngineError('AUTH_UNKNOWN', 'Claude Code could not report its sign-in status.');
+          throw new EngineError(
+            'AUTH_UNKNOWN',
+            'Claude Code could not report its sign-in status.',
+            false,
+            'provider-auth',
+          );
         }
       });
   }
-  private async requireAccount(signal?: AbortSignal) {
+  /**
+   * The sign-in method the native tool reports. A tool signed in through
+   * another kind of account is not signed out, so this returns what it holds
+   * and the caller decides; only an absent sign-in refuses here.
+   */
+  private async accountMethod(signal?: AbortSignal): Promise<string> {
     const status = await this.account(signal);
-    if (status.loggedIn !== true || status.authMethod !== 'claude.ai')
-      throw new EngineError(
-        'AUTH_REQUIRED',
-        'Sign in to Claude Code with your Claude account. This route does not use API billing.',
-      );
+    const method = typeof status.authMethod === 'string' ? status.authMethod : '';
+    if (status.loggedIn !== true || !method) throw signInRequired();
+    return method;
   }
   private async start(
     signal?: AbortSignal,
@@ -176,7 +220,7 @@ export class ClaudeAdapter implements TextEngineAdapter {
       };
     } catch (error) {
       await fs.rm(directory, { recursive: true, force: true });
-      throw error;
+      throw staged(error, 'launch');
     }
   }
   private async initialize(child: EngineProcess): Promise<Record<string, unknown>> {
@@ -192,54 +236,80 @@ export class ClaudeAdapter implements TextEngineAdapter {
         throw new EngineError(
           'POLICY_MISMATCH',
           'Claude Code requested a capability during initialization.',
+          false,
+          'local-handshake',
         );
       if (frame.type !== 'control_response') continue;
       const response = record(frame.response);
       if (response.request_id !== id) continue;
-      if (response.subtype !== 'success') throw failure(response);
+      if (response.subtype !== 'success') throw failure(response, 'local-handshake');
       return record(response.response);
     }
   }
   async inspect(signal?: AbortSignal): Promise<AdapterInspection> {
-    await this.requireAccount(signal);
-    const process = await this.start(signal, [], 15_000),
-      child = process.child;
+    let phase: SetupStage = 'provider-auth';
     let primary: unknown;
     try {
-      const init = await this.initialize(child);
-      const models: EngineModel[] = (Array.isArray(init.models) ? init.models : [])
-        .slice(0, 80)
-        .flatMap((raw) => {
-          const m = record(raw);
-          if (
-            typeof m.value !== 'string' ||
-            !/^[a-zA-Z0-9._:/-]{1,120}$/.test(m.value) ||
-            m.value === 'default'
-          )
-            return [];
-          return [
-            {
-              slug: m.value,
-              name: typeof m.displayName === 'string' ? m.displayName.slice(0, 120) : m.value,
-              description: typeof m.description === 'string' ? m.description.slice(0, 240) : '',
-              efforts: [],
-              defaultEffort: null,
-            },
-          ];
-        });
-      return {
-        authentication: 'signed-in',
-        accountRoute: ACCOUNT_ROUTE,
-        models,
-        detail: models.length
-          ? 'Claude account connected. Choose a model for text and reviewed proposals.'
-          : 'Claude Code did not report any model choices. Recheck after updating its account access.',
-      };
+      const method = await this.accountMethod(signal);
+      // Signed in through another kind of account: say which route this is,
+      // never that the person is signed out and never what they bought.
+      if (method !== 'claude.ai')
+        return {
+          authentication: 'unknown',
+          accountRoute: null,
+          models: [],
+          routeIssue: {
+            required: ACCOUNT_ROUTE,
+            connected: (NAMEABLE_AUTH_METHODS as readonly string[]).includes(method)
+              ? [method]
+              : [],
+          },
+          detail:
+            'Claude Code is signed in with an account kind this route does not accept: this route uses a Claude account sign-in, not API billing.',
+        };
+      phase = 'launch';
+      const process = await this.start(signal, [], 15_000),
+        child = process.child;
+      try {
+        phase = 'local-handshake';
+        const init = await this.initialize(child);
+        phase = 'model-list';
+        const models: EngineModel[] = (Array.isArray(init.models) ? init.models : [])
+          .slice(0, 80)
+          .flatMap((raw) => {
+            const m = record(raw);
+            if (
+              typeof m.value !== 'string' ||
+              !/^[a-zA-Z0-9._:/-]{1,120}$/.test(m.value) ||
+              m.value === 'default'
+            )
+              return [];
+            return [
+              {
+                slug: m.value,
+                name: typeof m.displayName === 'string' ? m.displayName.slice(0, 120) : m.value,
+                description: typeof m.description === 'string' ? m.description.slice(0, 240) : '',
+                efforts: [],
+                defaultEffort: null,
+              },
+            ];
+          });
+        return {
+          authentication: 'signed-in',
+          accountRoute: ACCOUNT_ROUTE,
+          models,
+          detail: models.length
+            ? 'Claude account connected. Choose a model for text and reviewed proposals.'
+            : 'Claude Code did not report any model choices. Recheck after updating its account access.',
+        };
+      } catch (error) {
+        primary = error;
+        throw error;
+      } finally {
+        await process.close(primary);
+      }
     } catch (error) {
-      primary = error;
-      throw error;
-    } finally {
-      await process.close(primary);
+      throw staged(error, phase, primary);
     }
   }
   async generate(input: TextRequest): Promise<TextResponse> {
@@ -247,102 +317,121 @@ export class ClaudeAdapter implements TextEngineAdapter {
       throw new EngineError(
         'ACCOUNT_CHANGED',
         'The selected Claude account route changed. Recheck before sending.',
+        false,
+        'provider-auth',
       );
-    const prompt = contextMessage(input);
-    await this.requireAccount(input.signal);
-    const process = await this.start(
-        input.signal,
-        ['--model', input.model],
-        120_000,
-        input.instructions,
-      ),
-      child = process.child;
-    let model: string | undefined;
-    let nativeSession: string | undefined;
+    // Until the answer starts arriving a failed turn is a dispatch; once the
+    // response channel has produced content of its own it is a stream.
+    let phase: SetupStage = 'provider-auth';
     let primary: unknown;
     try {
-      await this.initialize(child);
-      child.send({
-        type: 'user',
-        session_id: '',
-        parent_tool_use_id: null,
-        message: { role: 'user', content: prompt },
-      });
-      for (;;) {
-        const frame = await child.next();
-        if (frame.type === 'control_request')
-          throw new EngineError(
-            'POLICY_MISMATCH',
-            'Claude Code requested an unapproved capability.',
-            true,
-          );
-        if (frame.type === 'system' && frame.subtype === 'init') {
-          if (
-            !Array.isArray(frame.tools) ||
-            frame.tools.length ||
-            !Array.isArray(frame.mcp_servers) ||
-            frame.mcp_servers.length ||
-            typeof frame.model !== 'string' ||
-            !sameModel(input.model, frame.model)
-          )
+      const prompt = contextMessage(input);
+      if ((await this.accountMethod(input.signal)) !== 'claude.ai') throw signInRequired();
+      phase = 'launch';
+      const process = await this.start(
+          input.signal,
+          ['--model', input.model],
+          120_000,
+          input.instructions,
+        ),
+        child = process.child;
+      let model: string | undefined;
+      let nativeSession: string | undefined;
+      try {
+        phase = 'local-handshake';
+        await this.initialize(child);
+        phase = 'dispatch';
+        child.send({
+          type: 'user',
+          session_id: '',
+          parent_tool_use_id: null,
+          message: { role: 'user', content: prompt },
+        });
+        for (;;) {
+          const frame = await child.next();
+          if (frame.type === 'control_request')
             throw new EngineError(
               'POLICY_MISMATCH',
-              'Claude Code reported different tools or a different model than requested.',
+              'Claude Code requested an unapproved capability.',
               true,
+              'stream',
             );
-          model = frame.model;
-          nativeSession = typeof frame.session_id === 'string' ? frame.session_id : undefined;
-        }
-        if (frame.type === 'stream_event' && model) {
-          const delta = record(record(frame.event).delta);
-          if (delta.type === 'text_delta' && typeof delta.text === 'string')
-            input.onDelta?.(delta.text);
-        }
-        if (frame.type === 'assistant' && Array.isArray(record(frame.message).content)) {
-          for (const part of record(frame.message).content as unknown[])
-            if (record(part).type === 'tool_use')
+          if (frame.type === 'system' && frame.subtype === 'init') {
+            if (
+              !Array.isArray(frame.tools) ||
+              frame.tools.length ||
+              !Array.isArray(frame.mcp_servers) ||
+              frame.mcp_servers.length ||
+              typeof frame.model !== 'string' ||
+              !sameModel(input.model, frame.model)
+            )
               throw new EngineError(
                 'POLICY_MISMATCH',
-                'Claude Code attempted a tool call on the text-only route.',
+                'Claude Code reported different tools or a different model than requested.',
                 true,
+                'stream',
               );
+            model = frame.model;
+            nativeSession = typeof frame.session_id === 'string' ? frame.session_id : undefined;
+          }
+          if (frame.type === 'stream_event' && model) {
+            const delta = record(record(frame.event).delta);
+            if (delta.type === 'text_delta' && typeof delta.text === 'string') {
+              phase = 'stream';
+              input.onDelta?.(delta.text);
+            }
+          }
+          if (frame.type === 'assistant' && Array.isArray(record(frame.message).content)) {
+            for (const part of record(frame.message).content as unknown[])
+              if (record(part).type === 'tool_use')
+                throw new EngineError(
+                  'POLICY_MISMATCH',
+                  'Claude Code attempted a tool call on the text-only route.',
+                  true,
+                  'stream',
+                );
+          }
+          if (frame.type !== 'result') continue;
+          if (frame.is_error === true || frame.subtype !== 'success')
+            throw failure(frame.errors ?? frame, phase);
+          if (
+            !model ||
+            !nativeSession ||
+            frame.session_id !== nativeSession ||
+            typeof frame.result !== 'string' ||
+            !frame.result.trim()
+          )
+            throw new EngineError(
+              'PROTOCOL_ERROR',
+              'Claude Code did not complete an identifiable response.',
+              true,
+              'stream',
+            );
+          const used = Object.keys(record(frame.modelUsage));
+          if (used.some((value) => !sameModel(input.model, value)))
+            throw new EngineError(
+              'POLICY_MISMATCH',
+              'Claude Code reported an unexpected model call.',
+              true,
+              'stream',
+            );
+          return {
+            text: frame.result,
+            model,
+            version: CLAUDE_VERSION,
+            projectId: input.projectId,
+            threadId: input.threadId,
+            requestId: input.requestId,
+          };
         }
-        if (frame.type !== 'result') continue;
-        if (frame.is_error === true || frame.subtype !== 'success')
-          throw failure(frame.errors ?? frame);
-        if (
-          !model ||
-          !nativeSession ||
-          frame.session_id !== nativeSession ||
-          typeof frame.result !== 'string' ||
-          !frame.result.trim()
-        )
-          throw new EngineError(
-            'PROTOCOL_ERROR',
-            'Claude Code did not complete an identifiable response.',
-            true,
-          );
-        const used = Object.keys(record(frame.modelUsage));
-        if (used.some((value) => !sameModel(input.model, value)))
-          throw new EngineError(
-            'POLICY_MISMATCH',
-            'Claude Code reported an unexpected model call.',
-            true,
-          );
-        return {
-          text: frame.result,
-          model,
-          version: CLAUDE_VERSION,
-          projectId: input.projectId,
-          threadId: input.threadId,
-          requestId: input.requestId,
-        };
+      } catch (error) {
+        primary = error;
+        throw error;
+      } finally {
+        await process.close(primary);
       }
     } catch (error) {
-      primary = error;
-      throw error;
-    } finally {
-      await process.close(primary);
+      throw staged(error, phase, primary);
     }
   }
 }

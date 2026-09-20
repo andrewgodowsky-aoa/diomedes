@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { EngineModel } from '../../shared/types.js';
+import type { SetupStage } from '../../shared/engines.js';
 import { routeContractFor } from '../harness/route-contract.js';
 import {
   contextMessage,
@@ -13,8 +14,10 @@ import {
 import {
   engineEnvironment,
   EngineError,
+  failureKind,
   openProcess,
   record,
+  staged,
   type EngineProcess,
   type ProcessFactory,
 } from './process.js';
@@ -26,6 +29,8 @@ export const ompAccountRoute = (provider: string) => `oh-my-pi:${provider}`;
 
 const MODEL_PART = /^[A-Za-z0-9._:-]{1,120}$/;
 const SESSION_PART = /^[A-Za-z0-9_.-]{1,128}$/;
+/** A provider name is an identifier: short and printable, never an account or a key. */
+const PROVIDER_PART = /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/;
 const TOOL_EVENT = /^tool_execution_/;
 const PROFILE_CONFIG = '# Diomedes-isolated oh-my-pi profile.\n{}\n';
 const OVERLAY_CONFIG =
@@ -50,24 +55,34 @@ export function ompArguments(overlayPath: string): string[] {
   ];
 }
 
-function failure(value: unknown): EngineError {
-  const text = JSON.stringify(value);
-  if (/rate.?limit|usage.?limit|quota|overloaded|insufficient/i.test(text))
+/**
+ * A denial names the account wherever it is seen; a limit and a plain provider
+ * fault keep the stage they were seen at, so neither is read as a sign-in.
+ */
+function failure(value: unknown, stage: SetupStage): EngineError {
+  // Read from the frame's own fields rather than from the serialised frame,
+  // where `auth` inside `authority` turned a certificate or proxy fault into
+  // sign-in advice, and a stray number or word decided the rest.
+  const kind = failureKind(value);
+  if (kind === 'limited')
     return new EngineError(
       'USAGE_LIMIT',
       'oh-my-pi reported a usage or service limit. No account or model was substituted.',
       true,
+      stage,
     );
-  if (/auth|login|sign.?in|unauthorized|unauthenticated|api.?key/i.test(text))
+  if (kind === 'denied')
     return new EngineError(
       'AUTH_REQUIRED',
       'oh-my-pi needs native provider authentication. Recheck the isolated profile before sending.',
       true,
+      'provider-auth',
     );
   return new EngineError(
     'PROVIDER_ERROR',
     'oh-my-pi could not complete this request. No automatic retry was sent.',
     true,
+    stage,
   );
 }
 
@@ -124,6 +139,7 @@ export class OmpAdapter implements TextEngineAdapter {
         'PROFILE_UNSAFE',
         'The isolated oh-my-pi profile config changed. Remove it or create a fresh native profile before using Diomedes.',
         true,
+        'launch',
       );
     // These are the v18.0.6 schema paths. RPC controls repeat the two active
     // session toggles below; the overlay prevents a future session default from
@@ -148,21 +164,23 @@ export class OmpAdapter implements TextEngineAdapter {
     });
   }
 
-  private static rejectChunk(frame: Record<string, unknown>) {
+  private static rejectChunk(frame: Record<string, unknown>, stage: SetupStage) {
     if (frame.type === 'rpc_chunk')
       throw new EngineError(
         'PROTOCOL_ERROR',
         'oh-my-pi sent a chunked RPC frame, which this text route does not reassemble.',
         true,
+        stage,
       );
   }
 
-  private static observeSafety(frame: Record<string, unknown>) {
+  private static observeSafety(frame: Record<string, unknown>, stage: SetupStage) {
     if (typeof frame.type === 'string' && TOOL_EVENT.test(frame.type))
       throw new EngineError(
         'POLICY_MISMATCH',
         'oh-my-pi attempted a tool execution on the text-only route.',
         true,
+        stage,
       );
     if (
       frame.type === 'host_tool_call' ||
@@ -177,6 +195,7 @@ export class OmpAdapter implements TextEngineAdapter {
         'POLICY_MISMATCH',
         'oh-my-pi requested a tool or host capability on the text-only route.',
         true,
+        stage,
       );
     const message = record(frame.message);
     if (containsTool(message))
@@ -184,6 +203,7 @@ export class OmpAdapter implements TextEngineAdapter {
         'POLICY_MISMATCH',
         'oh-my-pi attempted a tool call on the text-only route.',
         true,
+        stage,
       );
     if (
       Array.isArray(frame.messages) &&
@@ -193,6 +213,7 @@ export class OmpAdapter implements TextEngineAdapter {
         'POLICY_MISMATCH',
         'oh-my-pi attempted a tool call on the text-only route.',
         true,
+        stage,
       );
     if (frame.type === 'message_update') {
       const event = record(frame.assistantMessageEvent);
@@ -201,6 +222,7 @@ export class OmpAdapter implements TextEngineAdapter {
           'POLICY_MISMATCH',
           'oh-my-pi attempted a tool call on the text-only route.',
           true,
+          stage,
         );
     }
   }
@@ -208,9 +230,9 @@ export class OmpAdapter implements TextEngineAdapter {
   private async awaitReady(child: EngineProcess) {
     for (;;) {
       const frame = await child.next();
-      OmpAdapter.rejectChunk(frame);
+      OmpAdapter.rejectChunk(frame, 'local-handshake');
       if (frame.type !== 'ready') {
-        OmpAdapter.observeSafety(frame);
+        OmpAdapter.observeSafety(frame, 'local-handshake');
         continue;
       }
       if (
@@ -222,6 +244,7 @@ export class OmpAdapter implements TextEngineAdapter {
           'PROTOCOL_ERROR',
           'oh-my-pi did not report the expected RPC ready frame.',
           true,
+          'local-handshake',
         );
       return;
     }
@@ -231,14 +254,15 @@ export class OmpAdapter implements TextEngineAdapter {
     child: EngineProcess,
     type: string,
     extra: Record<string, unknown> = {},
+    stage: SetupStage = 'local-handshake',
   ): Promise<Record<string, unknown>> {
     const id = randomUUID();
     child.send({ id, type, ...extra });
     for (;;) {
       const frame = await child.next();
-      OmpAdapter.rejectChunk(frame);
+      OmpAdapter.rejectChunk(frame, stage);
       if (frame.type !== 'response') {
-        OmpAdapter.observeSafety(frame);
+        OmpAdapter.observeSafety(frame, stage);
         continue;
       }
       if (frame.id !== id || frame.command !== type)
@@ -246,8 +270,9 @@ export class OmpAdapter implements TextEngineAdapter {
           'PROTOCOL_ERROR',
           'oh-my-pi returned a response for a different command.',
           true,
+          stage,
         );
-      if (frame.success !== true) throw failure(frame);
+      if (frame.success !== true) throw failure(frame, stage);
       return record(frame.data);
     }
   }
@@ -256,7 +281,12 @@ export class OmpAdapter implements TextEngineAdapter {
     await this.awaitReady(child);
     const negotiated = await this.call(child, 'negotiate_protocol', { protocolVersion: 2 });
     if (negotiated.protocolVersion !== 2)
-      throw new EngineError('PROTOCOL_ERROR', 'oh-my-pi did not negotiate RPC protocol v2.', true);
+      throw new EngineError(
+        'PROTOCOL_ERROR',
+        'oh-my-pi did not negotiate RPC protocol v2.',
+        true,
+        'local-handshake',
+      );
   }
 
   private parseModels(data: Record<string, unknown>) {
@@ -293,47 +323,93 @@ export class OmpAdapter implements TextEngineAdapter {
       }));
   }
 
+  /**
+   * The account kinds the native profile is authenticated for. OMP filters its
+   * model list by its own stored authentication, so an entry for another
+   * provider is an account rather than a catalogue listing.
+   *
+   * What the code guarantees is narrower than "an identifier": the provider is
+   * taken only from an entry that is a usable model row, so a name the tool
+   * did not publish as the provider of a model cannot ride along. Shape alone
+   * would have published `acme-holdings-inc` into the setup sentence and the
+   * support bundle, both of which render this list.
+   */
+  private otherProviders(data: Record<string, unknown>): string[] {
+    const found = new Set<string>();
+    for (const entry of Array.isArray(data.models) ? data.models : []) {
+      const row = record(entry);
+      const provider = row.provider;
+      if (typeof row.id !== 'string' || !MODEL_PART.test(row.id)) continue;
+      if (
+        typeof provider === 'string' &&
+        PROVIDER_PART.test(provider) &&
+        !(SUPPORTED_OMP_PROVIDERS as readonly string[]).includes(provider)
+      )
+        found.add(provider);
+    }
+    return [...found].slice(0, 8);
+  }
+
   async inspect(signal?: AbortSignal): Promise<AdapterInspection> {
-    const child = this.start(signal, 15_000);
+    let phase: SetupStage = 'launch';
     let primary: unknown;
     try {
-      await this.initialise(child);
-      // v18.0.6 maps this to session.getAvailableModels(), filtered via
-      // authStorage.hasAuth. get_login_providers only describes OAuth providers.
-      const models = this.parseModels(await this.call(child, 'get_available_models'));
-      if (!models.length)
+      const child = this.start(signal, 15_000);
+      try {
+        phase = 'local-handshake';
+        await this.initialise(child);
+        // v18.0.6 maps this to session.getAvailableModels(), filtered via
+        // authStorage.hasAuth. get_login_providers only describes OAuth providers.
+        phase = 'model-list';
+        const data = await this.call(child, 'get_available_models', {}, phase);
+        const models = this.parseModels(data);
+        if (!models.length) {
+          const connected = this.otherProviders(data);
+          if (connected.length)
+            return {
+              authentication: 'unknown',
+              accountRoute: null,
+              models: [],
+              routeIssue: { required: ompAccountRoute('openai'), connected },
+              detail:
+                'The isolated native OMP profile is authenticated for another provider; this route accepts direct OpenAI API access only.',
+            };
+          return {
+            authentication: 'signed-out',
+            accountRoute: null,
+            models: [],
+            detail:
+              'oh-my-pi reported no authenticated direct OpenAI API models in its isolated native profile. OAuth login metadata is not used as route proof.',
+          };
+        }
         return {
-          authentication: 'signed-out',
-          accountRoute: null,
-          models: [],
+          authentication: 'signed-in',
+          accountRoute: ompAccountRoute('openai'),
+          models: this.toEngineModels(models),
           detail:
-            'oh-my-pi reported no authenticated direct OpenAI API models in its isolated native profile. OAuth login metadata is not used as route proof.',
+            'Authenticated OpenAI API models reported by the isolated native OMP profile; text-only, no tools, retry, fallback, or compaction.',
         };
-      return {
-        authentication: 'signed-in',
-        accountRoute: ompAccountRoute('openai'),
-        models: this.toEngineModels(models),
-        detail:
-          'Authenticated OpenAI API models reported by the isolated native OMP profile; text-only, no tools, retry, fallback, or compaction.',
-      };
-    } catch (error) {
-      primary = error;
-      // OMP checks for a selected model before it enters RPC mode. A fresh
-      // profile therefore exits before ready, but the same exit can also mean
-      // invalid native model configuration or a broken executable. Do not
-      // represent either case as proof that the user is signed out.
-      if (error instanceof EngineError && error.code === 'PROCESS_EXITED') {
-        return {
-          authentication: 'unknown',
-          accountRoute: null,
-          models: [],
-          detail:
-            'The isolated native OMP profile exited before it could report metadata. Configure supported OpenAI API access in the native profile, then recheck.',
-        };
+      } catch (error) {
+        primary = error;
+        // OMP checks for a selected model before it enters RPC mode. A fresh
+        // profile therefore exits before ready, but the same exit can also mean
+        // invalid native model configuration or a broken executable. Do not
+        // represent either case as proof that the user is signed out.
+        if (error instanceof EngineError && error.code === 'PROCESS_EXITED') {
+          return {
+            authentication: 'unknown',
+            accountRoute: null,
+            models: [],
+            detail:
+              'The isolated native OMP profile exited before it could report metadata. Configure supported OpenAI API access in the native profile, then recheck.',
+          };
+        }
+        throw error;
+      } finally {
+        await child.close(primary);
       }
-      throw error;
-    } finally {
-      await child.close(primary);
+    } catch (error) {
+      throw staged(error, phase, primary);
     }
   }
 
@@ -351,6 +427,7 @@ export class OmpAdapter implements TextEngineAdapter {
         'PROTOCOL_ERROR',
         'The selected model identity is malformed or unsupported.',
         true,
+        'model-list',
       );
     return { provider, modelId };
   }
@@ -361,22 +438,32 @@ export class OmpAdapter implements TextEngineAdapter {
         'POLICY_MISMATCH',
         'oh-my-pi reported a different model than requested.',
         true,
+        'model-list',
       );
   }
 
+  /**
+   * A turn that has produced content of its own — answer text, or a tool event
+   * this route forbids — is a stream; before that a failed turn is a dispatch.
+   */
   private observePromptEvent(
     frame: Record<string, unknown>,
     provider: string,
     modelId: string,
     onDelta?: (text: string) => void,
   ): Record<string, unknown> | undefined {
-    OmpAdapter.observeSafety(frame);
-    if (frame.type === 'extension_error' || frame.type === 'error') throw failure(frame);
+    OmpAdapter.observeSafety(frame, 'stream');
+    if (frame.type === 'extension_error' || frame.type === 'error') throw failure(frame, 'stream');
     if (frame.type === 'message_update') {
       const event = record(frame.assistantMessageEvent);
       if (event.type === 'text_delta') {
         if (typeof event.delta !== 'string')
-          throw new EngineError('PROTOCOL_ERROR', 'oh-my-pi sent a malformed text delta.', true);
+          throw new EngineError(
+            'PROTOCOL_ERROR',
+            'oh-my-pi sent a malformed text delta.',
+            true,
+            'stream',
+          );
         onDelta?.(event.delta);
       }
     }
@@ -393,104 +480,125 @@ export class OmpAdapter implements TextEngineAdapter {
         'POLICY_MISMATCH',
         'oh-my-pi did not report the requested provider and model at terminal completion.',
         true,
+        'stream',
       );
-    if (typeof terminal.errorMessage === 'string' && terminal.errorMessage) throw failure(terminal);
+    if (typeof terminal.errorMessage === 'string' && terminal.errorMessage)
+      throw failure(terminal, 'stream');
     if (terminal.stopReason === 'error' || terminal.stopReason === 'aborted')
-      throw failure(terminal);
+      throw failure(terminal, 'stream');
     return frame;
   }
 
   async generate(input: TextRequest): Promise<TextResponse> {
+    let phase: SetupStage = 'model-list';
+    let primary: unknown;
     const { provider, modelId } = this.splitModel(input.model);
     if (input.accountRoute !== ompAccountRoute(provider))
       throw new EngineError(
         'ACCOUNT_CHANGED',
         'The selected oh-my-pi account route changed. Recheck before sending.',
+        false,
+        'provider-auth',
       );
-    const child = this.start(input.signal, 120_000);
-    let aborted = false;
-    let primary: unknown;
-    const onAbort = () => {
-      aborted = true;
-      try {
-        child.send({ type: 'abort' });
-      } catch {
-        /* close owns cancellation */
-      }
-    };
-    input.signal?.addEventListener('abort', onAbort, { once: true });
     try {
-      await this.initialise(child);
-      await this.call(child, 'set_auto_retry', { enabled: false });
-      await this.call(child, 'set_auto_compaction', { enabled: false });
-      this.acceptRuntimeModel(
-        await this.call(child, 'set_model', { provider, modelId }),
-        provider,
-        modelId,
-      );
-      const state = await this.call(child, 'get_state');
-      this.acceptRuntimeModel(record(state.model), provider, modelId);
-      if (typeof state.sessionId !== 'string' || !SESSION_PART.test(state.sessionId))
-        throw new EngineError(
-          'PROTOCOL_ERROR',
-          'oh-my-pi returned a session with malformed identity.',
-          true,
-        );
-      const sessionId = state.sessionId;
-      const promptId = randomUUID();
-      child.send({ id: promptId, type: 'prompt', message: promptMessage(input) });
-      let terminal: Record<string, unknown> | undefined;
-      let acknowledged = false;
-      while (!acknowledged || !terminal) {
-        const frame = await child.next();
-        OmpAdapter.rejectChunk(frame);
-        if (frame.type === 'response') {
-          if (frame.id !== promptId || frame.command !== 'prompt')
-            throw new EngineError(
-              'PROTOCOL_ERROR',
-              'oh-my-pi returned a response for a different command.',
-              true,
-            );
-          if (frame.success !== true) throw failure(frame);
-          acknowledged = true;
-          continue;
-        }
-        terminal ??= this.observePromptEvent(frame, provider, modelId, input.onDelta);
-      }
-      if (terminal.sessionId !== undefined && terminal.sessionId !== sessionId)
-        throw new EngineError(
-          'PROTOCOL_ERROR',
-          'oh-my-pi ended a different session than requested.',
-          true,
-        );
-      const last = await this.call(child, 'get_last_assistant_text');
-      if (typeof last.text !== 'string' || !last.text.trim())
-        throw new EngineError(
-          'PROTOCOL_ERROR',
-          'oh-my-pi did not complete an identifiable text response.',
-          true,
-        );
-      return {
-        text: last.text,
-        model: input.model,
-        version: OMP_VERSION,
-        projectId: input.projectId,
-        threadId: input.threadId,
-        requestId: input.requestId,
-      };
-    } catch (error) {
-      primary = error;
-      throw error;
-    } finally {
-      input.signal?.removeEventListener('abort', onAbort);
-      if (aborted || input.signal?.aborted) {
+      phase = 'launch';
+      const child = this.start(input.signal, 120_000);
+      let aborted = false;
+      const onAbort = () => {
+        aborted = true;
         try {
           child.send({ type: 'abort' });
         } catch {
-          /* already closed */
+          /* close owns cancellation */
         }
+      };
+      input.signal?.addEventListener('abort', onAbort, { once: true });
+      try {
+        phase = 'local-handshake';
+        await this.initialise(child);
+        await this.call(child, 'set_auto_retry', { enabled: false }, phase);
+        await this.call(child, 'set_auto_compaction', { enabled: false }, phase);
+        phase = 'model-list';
+        this.acceptRuntimeModel(
+          await this.call(child, 'set_model', { provider, modelId }, phase),
+          provider,
+          modelId,
+        );
+        const state = await this.call(child, 'get_state', {}, phase);
+        this.acceptRuntimeModel(record(state.model), provider, modelId);
+        if (typeof state.sessionId !== 'string' || !SESSION_PART.test(state.sessionId))
+          throw new EngineError(
+            'PROTOCOL_ERROR',
+            'oh-my-pi returned a session with malformed identity.',
+            true,
+            'local-handshake',
+          );
+        const sessionId = state.sessionId;
+        const promptId = randomUUID();
+        phase = 'dispatch';
+        child.send({ id: promptId, type: 'prompt', message: promptMessage(input) });
+        let terminal: Record<string, unknown> | undefined;
+        let acknowledged = false;
+        while (!acknowledged || !terminal) {
+          const frame = await child.next();
+          OmpAdapter.rejectChunk(frame, phase);
+          if (frame.type === 'response') {
+            if (frame.id !== promptId || frame.command !== 'prompt')
+              throw new EngineError(
+                'PROTOCOL_ERROR',
+                'oh-my-pi returned a response for a different command.',
+                true,
+                phase,
+              );
+            if (frame.success !== true) throw failure(frame, phase);
+            acknowledged = true;
+            continue;
+          }
+          terminal ??= this.observePromptEvent(frame, provider, modelId, (text) => {
+            phase = 'stream';
+            input.onDelta?.(text);
+          });
+        }
+        phase = 'stream';
+        if (terminal.sessionId !== undefined && terminal.sessionId !== sessionId)
+          throw new EngineError(
+            'PROTOCOL_ERROR',
+            'oh-my-pi ended a different session than requested.',
+            true,
+            'stream',
+          );
+        const last = await this.call(child, 'get_last_assistant_text', {}, phase);
+        if (typeof last.text !== 'string' || !last.text.trim())
+          throw new EngineError(
+            'PROTOCOL_ERROR',
+            'oh-my-pi did not complete an identifiable text response.',
+            true,
+            'stream',
+          );
+        return {
+          text: last.text,
+          model: input.model,
+          version: OMP_VERSION,
+          projectId: input.projectId,
+          threadId: input.threadId,
+          requestId: input.requestId,
+        };
+      } catch (error) {
+        primary = error;
+        throw error;
+      } finally {
+        input.signal?.removeEventListener('abort', onAbort);
+        if (aborted || input.signal?.aborted) {
+          try {
+            child.send({ type: 'abort' });
+          } catch {
+            /* already closed */
+          }
+        }
+        await child.close(primary);
       }
-      await child.close(primary);
+    } catch (error) {
+      throw staged(error, phase, primary);
     }
   }
 }

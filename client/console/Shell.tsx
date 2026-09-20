@@ -3,6 +3,7 @@ import { selectedEngine } from '../../shared/ai-selection';
 import { formatOrigin, originForNeed, originForSession } from '../../shared/attribution';
 import type { ScopeGrantView } from '../../shared/permissions';
 import { isRoute, isExternalEngine } from '../../shared/engines';
+import type { EngineConnection } from '../../shared/engines';
 import {
   selectTaskSources,
   taskDocumentProblem,
@@ -14,6 +15,7 @@ import type {
   Conversation,
   DocumentInfo,
   EngineCatalog,
+  ExternalEngine,
   IntegrationStatus,
   Mode,
   Need,
@@ -29,7 +31,8 @@ import type {
   ThreadPermission,
   UsageSnapshot,
 } from '../../shared/types';
-import { api, listDocuments } from '../api';
+import { api, listDocuments, readSettings } from '../api';
+import { decideFirstTask } from '../first-task-handoff';
 import { reconcileWorkStarts, startWork } from '../work-start';
 import { createTask as admitTaskCreation } from '../task-create';
 import { decideApproval, reconcileApprovals } from '../approval-decisions';
@@ -52,6 +55,7 @@ import { SendConfirmation } from './SendConfirmation';
 import { PermissionPanel } from './PermissionPanel';
 import { Ledger } from './Ledger';
 import { Picker } from './Picker';
+import { COMPOSER_LABEL } from './Composer';
 import { AgentPicker } from './AgentPicker';
 import { BoardView } from './BoardView';
 import { FilesPane, DEFAULT_WIDTH, clampWidth } from './FilesPane';
@@ -87,6 +91,26 @@ interface ShellProps {
   online: boolean;
   /** Registration so App can open the console palette on Ctrl+K. */
   onPaletteKey?: (open: () => void) => void;
+  /**
+   * A route and model a connection test verified, handed over from Settings so
+   * the person can write their first task on it. `n` identifies one handover,
+   * which is settled exactly once, and `madeAtMs` is when it was taken: the
+   * facts it rests on are the host's, and they expire. It chooses; it never
+   * sends.
+   */
+  firstTask?: {
+    route: ExternalEngine;
+    model: string;
+    effort: string | null;
+    madeAtMs: number;
+    n: number;
+  } | null;
+  /**
+   * Said once the handover above is settled — applied, refused or let go — so
+   * that it is never carried into another project, another thread or another
+   * day.
+   */
+  onFirstTaskTaken?: () => void;
 }
 
 const emptyTeam: TeamState = { members: [], messages: [], runs: [] };
@@ -122,6 +146,8 @@ export function Shell({
   report,
   online,
   onPaletteKey,
+  firstTask,
+  onFirstTaskTaken,
 }: ShellProps) {
   const [state, setState] = useState<ProjectState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -546,6 +572,24 @@ export function Shell({
   const taskOf = (thread: Conversation | null) =>
     thread?.taskId ? (state?.tasks.find((t) => t.id === thread.taskId) ?? null) : null;
   const selectedTask = taskOf(selected);
+  /**
+   * A run of the selected thread's task is in flight. One value, read by the
+   * two pickers and by the guard inside `pick()`, so no caller can be looking
+   * at a different answer than the one that refuses.
+   */
+  const selectedLive = selectedTask ? liveByTask(selectedTask.id) !== null : false;
+  /**
+   * The same three facts, kept current at every render. An answer that arrives
+   * after an await — the first-task handover re-reads the host before it
+   * applies anything — must be decided against the thread that is selected
+   * now, not the one that was selected when the read began.
+   */
+  const current = useRef<{ thread: Conversation | null; live: boolean; busy: boolean }>({
+    thread: null,
+    live: false,
+    busy: false,
+  });
+  current.current = { thread: selected ?? null, live: selectedLive, busy };
   // Thread -> Board -> Team -> Thread continuity: one travelling point
   // between the views' anchors (kind `screen`, 260 ms). Enter and every
   // board/team action resolve without waiting on it.
@@ -608,6 +652,126 @@ export function Shell({
     openedForAsk.current = projectId;
     void newThread();
   }, [state, projectId, threads.length]);
+
+  /**
+   * One handover from Settings: the route and model a connection test verified
+   * become a thread's choice through the same call the Picker makes, the cursor
+   * goes into the composer, and nothing is sent.
+   *
+   * The offer was gated on four facts of the host's when it was drawn, and used
+   * to be applied without asking any of them again — to whatever thread was
+   * selected whenever a Console next mounted, over a run in flight and over an
+   * explicit choice. So the host is read again here, `decideFirstTask` re-runs
+   * that gate against what it now says, and the answer is carried out: applied,
+   * given a thread of its own, or let go. An expired offer goes quietly; one
+   * whose route moved says so.
+   */
+  const takenStart = useRef(0);
+  const openedForStart = useRef('');
+  const [startPass, setStartPass] = useState(0);
+  useEffect(() => {
+    if (!firstTask || firstTask.n === takenStart.current) return;
+    if (!state || state.project.id !== projectId) return;
+    // A write of the Console's own is in flight. Nothing is claimed and nothing
+    // is read: this runs again when that write finishes.
+    if (busy) return;
+    // This project has threads and none of them is selected yet, so the Console
+    // is still settling. Deciding now would open a thread nobody needed; the
+    // dependencies below bring this back when one is selected. A carried ask is
+    // already opening one for the same reason.
+    if (!selected && (threads.length > 0 || openedForAsk.current === projectId)) return;
+    // Claimed before the reads below, so a re-render while they are in flight
+    // cannot start a second pass at the same handover.
+    takenStart.current = firstTask.n;
+    const handover = firstTask;
+    let cancelled = false;
+    /**
+     * Give the handover back unsettled. `again` is for a pass that acted on
+     * something — it asks for one more pass, because the dependency it is
+     * waiting on may already have changed while this one was in flight. A pass
+     * that acted on nothing takes the quiet form and waits for a real change,
+     * which is what keeps two of these from chasing each other.
+     */
+    const release = (again = true) => {
+      takenStart.current = 0;
+      if (again) setStartPass((n) => n + 1);
+    };
+    void (async () => {
+      let connection: EngineConnection | null = null;
+      let storedModel = '';
+      try {
+        const [status, saved] = await Promise.all([
+          api<{ connections: EngineConnection[] }>('/ai/status'),
+          readSettings(),
+        ]);
+        connection = status.connections.find((c) => c.engine === handover.route) ?? null;
+        const model = saved.services?.[`${handover.route}Model`];
+        storedModel = typeof model === 'string' ? model : '';
+      } catch {
+        // The host could not be read. That is not a reason to apply a choice
+        // made against an older answer; the decision below says so.
+        connection = null;
+      }
+      if (cancelled || currentId.current !== projectId) return;
+      // Read now, not from the render this pass began in.
+      const { thread, live, busy: writing } = current.current;
+      const decision = decideFirstTask({
+        pending: {
+          route: handover.route,
+          model: handover.model,
+          effort: handover.effort,
+          madeAtMs: handover.madeAtMs,
+          n: handover.n,
+        },
+        now: Date.now(),
+        connection,
+        storedModel,
+        thread: thread
+          ? { live, busy: writing, requested: thread.requested ?? null }
+          : null,
+      });
+      if (decision.kind === 'wait') {
+        release();
+        return;
+      }
+      if (decision.kind === 'new-thread') {
+        const key = `${projectId}:${handover.n}`;
+        // One thread per handover. This one already has its own and is waiting
+        // for it to arrive, so nothing is opened and nothing is chased.
+        if (openedForStart.current === key) {
+          release(false);
+          return;
+        }
+        openedForStart.current = key;
+        await newThread();
+        if (cancelled) return;
+        release();
+        return;
+      }
+      if (decision.kind === 'drop') {
+        if (decision.sentence) say(decision.sentence);
+        onFirstTaskTaken?.();
+        return;
+      }
+      setView('Thread');
+      // The guard lives in `pick()`, so this can still be refused by something
+      // that changed in the moment between the decision and the call.
+      const applied = pick({ model: decision.model, effort: decision.effort }, decision.route, thread, live);
+      if (!applied) {
+        say('This thread changed while Diomedes was checking it, so nothing was selected.');
+        onFirstTaskTaken?.();
+        return;
+      }
+      rootRef.current
+        ?.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${COMPOSER_LABEL}"]`)
+        ?.focus();
+      say(`This thread uses ${decision.model}. Write your first task.`);
+      onFirstTaskTaken?.();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [firstTask?.n, state, projectId, selected?.id, threads.length, busy, startPass]);
 
   async function newThread(taskId?: string) {
     await perform(async () => {
@@ -680,15 +844,32 @@ export function Shell({
           };
     void setRequested(selected, next as Conversation['requested'], route);
   }
-  function pick(requested: Conversation['requested'], engine: string) {
-    if (!selected || !isRoute(engine)) return;
+  /**
+   * One thread's route and model, changed through the one guard every caller
+   * passes. The refusal used to live in the Picker's own menu, which the
+   * first-task handover called straight past: it could change the route of a
+   * thread with a run in flight. It is here now, so a second caller cannot step
+   * around it, and it answers whether the change was made.
+   *
+   * The thread is a parameter because a caller that waited on the host has to
+   * act on the thread that is selected now, not the one its render closed over.
+   */
+  function pick(
+    requested: Conversation['requested'],
+    engine: string,
+    thread: Conversation | null = selected ?? null,
+    live: boolean = selectedLive,
+  ): boolean {
+    if (!thread || !isRoute(engine)) return false;
+    if (live || current.current.busy) return false;
     setRoute(engine);
     // Changing the model must not silently change the worker.
-    const agent = selected.requested?.agent ?? null;
+    const agent = thread.requested?.agent ?? null;
     const next = agent
       ? { model: requested?.model ?? null, effort: requested?.effort ?? null, agent }
       : requested;
-    void setRequested(selected, next as Conversation['requested'], engine);
+    void setRequested(thread, next as Conversation['requested'], engine);
+    return true;
   }
   async function postMessage(to: Slot, content: string) {
     await perform(async () => {
@@ -1196,7 +1377,7 @@ export function Shell({
               thread={selected}
               mode={mode}
               route={route}
-              live={selectedTask ? liveByTask(selectedTask.id) !== null : false}
+              live={selectedLive}
               busy={busy}
               onPick={pickAgent}
             />
@@ -1206,7 +1387,7 @@ export function Shell({
               thread={selected}
               mode={mode}
               route={route}
-              live={selectedTask ? liveByTask(selectedTask.id) !== null : false}
+              live={selectedLive}
               integrations={integrations}
               settings={settings}
               busy={busy}

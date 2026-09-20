@@ -48,6 +48,7 @@ import {
 } from '../shared/capability-packs.js';
 import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText } from './store.js';
 import { buildSupportBundle, renderSupportBundle } from './support-bundle.js';
+import { currentBuildIdentity } from './build-identity.js';
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
 import { ChangeReviewService } from './change-review/service.js';
@@ -81,6 +82,7 @@ import {
   isExternalEngine,
   isRoute,
   ROUTES,
+  type EngineConnection,
 } from '../shared/engines.js';
 import { EngineService } from './engines/service.js';
 import { baselineRedact } from './secrets.js';
@@ -104,6 +106,8 @@ interface AppOptions {
    */
   reviewerAdapter?: ReviewerAdapter | null;
   engineService?: EngineService;
+  /** How a native sign-in window is opened; tests pass a fake so none opens. */
+  nativeLoginLaunch?: ConstructorParameters<typeof NativeLogin>[1];
   harnessAuthority?: ResolveHarnessAuthority;
   /** Lease TTL for external text-turn runs; tests shorten it to exercise takeover. */
   harnessTextLeaseMs?: number;
@@ -447,9 +451,31 @@ export async function createApp(options: AppOptions) {
     options.engineService ??
     new EngineService(path.join(store.dataDir, 'engines'), {
       redactFor: () => baselineRedact,
+      // A staged failure names the build it happened in, so a stale shortcut or
+      // an older installed copy shows up in the first support report.
+      buildId: () => currentBuildIdentity(packageInfo.version).buildId,
     });
   const installer = new EngineInstaller(engines.root);
-  const login = new NativeLogin(engines.root);
+  // A finished native sign-in is not evidence of an account. The window ending
+  // only asks for one fresh inspection, and what that inspection answers is what
+  // the screen shows.
+  let closing = false;
+  const login = new NativeLogin(engines.root, options.nativeLoginLaunch, {
+    onFinished: async (engine) => {
+      if (closing) return;
+      // A check that began before the sign-in finished cannot know about it, so
+      // it is never allowed to be the last word: wait for it, then look again.
+      await engines.settled(engine);
+      if (closing) return;
+      try {
+        await engines.check(engine);
+      } catch (error) {
+        // A failed check has already written its own detail onto the connection,
+        // and REQUEST_ACTIVE only means a newer check for this route is running.
+        if (!(error instanceof EngineError && error.code === 'REQUEST_ACTIVE')) noteError(error);
+      }
+    },
+  });
   const reviewerAdapter =
     options.reviewerAdapter === undefined ? codexReviewerAdapter() : options.reviewerAdapter;
   const agents = new AgentRegistry(store.dataDir);
@@ -796,6 +822,11 @@ export async function createApp(options: AppOptions) {
         projectRoot: store.projectRoot,
         port,
         engines: await getIntegrationStatuses({ refresh: false, passive: true }),
+        // Cached observations only: a support export never starts a scan.
+        connections: engines.status(),
+        services: store.settings.services,
+        // The name is the identifying part, so it travels only when asked for.
+        includeProjectName: req.query.projectName === '1',
         state,
         recentErrors,
         secrets,
@@ -852,9 +883,22 @@ export async function createApp(options: AppOptions) {
     });
     return controller.signal;
   };
+  // The next action is derived on the host, beside the facts it rests on: the
+  // On switch lives in settings and the guided installer knows its platforms.
+  const withNextAction = (connections: EngineConnection[]): EngineConnection[] =>
+    connections.map((connection) => ({
+      ...connection,
+      nextAction: engines.nextAction(connection.engine, {
+        enabled: store.settings.services?.[connection.engine] === true,
+        installSupported: installer.offer(connection.engine).available,
+      }),
+      // Whether a native sign-in window Diomedes opened is still open, so a
+      // screen can wait for its check instead of asking for one.
+      signInWindow: login.state(connection.engine),
+    }));
   app.get(
     '/api/ai/status',
-    route(async () => ({ connections: engines.status() }), false),
+    route(async () => ({ connections: withNextAction(engines.status()) }), false),
   );
   app.post(
     '/api/ai/discover',
@@ -870,12 +914,60 @@ export async function createApp(options: AppOptions) {
           },
         }),
       );
-      return { connections: await engines.discover(true) };
+      return { connections: withNextAction(await engines.discover(true)) };
     }, false),
   );
   app.post(
     '/api/ai/check/:engine',
-    route(async (req, res) => engines.check(externalEngine(req), connectionSignal(res)), false),
+    route(async (req, res) => {
+      const checked = await engines.check(externalEngine(req), connectionSignal(res));
+      return withNextAction([checked])[0];
+    }, false),
+  );
+  /**
+   * Choose which observed installation a route uses. A candidate id names
+   * something the host itself observed; a path from the screen is never bound.
+   */
+  app.post(
+    '/api/ai/bind',
+    route(async (req) => {
+      const b = body(req),
+        engine = choice(b.engine, EXTERNAL_ENGINES, 'engine');
+      // `<source>:<engine>:<canonical path>`: at most 20 characters of prefix and
+      // a Windows path of up to 32,767 units, which a long-path install can have.
+      // The id is only ever compared with ids the host itself produced.
+      const bound = await engines.bind(engine, asString(b.candidateId, 'an installation', 32_787));
+      return withNextAction([bound])[0];
+    }, false),
+  );
+  /**
+   * One real request, on the person's say-so. It may use their allowance or
+   * incur provider charges, so nothing calls it for them: not a scan, not a
+   * finished sign-in, not reopening Settings.
+   */
+  app.post(
+    '/api/ai/test/:engine',
+    route(async (req, res) => {
+      const engine = externalEngine(req),
+        b = body(req);
+      if (b.consent !== true)
+        throw new ApiError(
+          409,
+          'Confirm that this test sends one small request through your selected service first.',
+        );
+      const model = asString(b.model, 'a model', 120);
+      // A receipt verifies the route a run would take, so the model tested is
+      // the model selected — never one the screen names on its own.
+      if (model !== store.settings.services?.[`${engine}Model`])
+        throw new ApiError(409, 'Select this model in AI setup before testing it.');
+      const receipt = await engines.testConnection(engine, {
+        consent: true,
+        model,
+        signal: connectionSignal(res),
+      });
+      const connection = engines.status().find((c) => c.engine === engine)!;
+      return { receipt, connection: withNextAction([connection])[0] };
+    }, false),
   );
   app.post(
     '/api/ai/select',
@@ -933,14 +1025,25 @@ export async function createApp(options: AppOptions) {
       const engine = externalEngine(req);
       if (body(req).consent !== true)
         throw new ApiError(409, 'Review and confirm this installation first.');
-      const found = (await engines.discover(true)).find((c) => c.engine === engine)!;
-      if (found.installation === 'found')
+      // Installing one route is a question about one route, so only it is scanned.
+      const found = (await engines.discover(true, { engine })).find((c) => c.engine === engine)!;
+      // Found is not usable. A wrong-version, changed or corrupt installation
+      // still needs the private compatible copy; only a usable one is reused.
+      const usable =
+        found.installation === 'found' && found.compatibility === 'supported' && !found.repair;
+      if (usable)
         return {
           detail:
             'An installation already exists. Diomedes will reuse it. Check compatibility and sign-in.',
         };
-      const result = await installer.install(engine, true, connectionSignal(res));
-      await engines.discover(true);
+      // A private copy that failed its digest needs the repair path even when
+      // another installation sits beside it and the route reads as unsupported.
+      const result = await installer.install(engine, true, connectionSignal(res), {
+        repair:
+          found.installation === 'corrupt' ||
+          (found.candidates ?? []).some((c) => c.source === 'managed' && c.integrity === 'failed'),
+      });
+      await engines.discover(true, { engine });
       return result;
     }, false),
   );
@@ -2684,17 +2787,25 @@ export async function createApp(options: AppOptions) {
           [
             'CONSENT_REQUIRED',
             'AUTH_REQUIRED',
+            'ACCOUNT_ROUTE',
             'MODEL_UNAVAILABLE',
             'STALE_STATUS',
             'NOT_INSTALLED',
             'UNSUPPORTED_VERSION',
             'ACCOUNT_CHANGED',
             'ROUTE_REFUSED',
+            'BINDING_CHANGED',
           ].includes(error.code)
             ? 409
             : 503,
         )
-        .json({ error: error.message, code: error.code, ambiguous: error.ambiguous });
+        .json({
+          error: error.message,
+          code: error.code,
+          ambiguous: error.ambiguous,
+          // Where it failed decides the recovery, so the stage travels with the code.
+          ...(error.stage ? { stage: error.stage } : {}),
+        });
       return;
     }
     if (error instanceof ApiError) {
@@ -2727,6 +2838,9 @@ export async function createApp(options: AppOptions) {
   app.locals.connections = connections;
   app.locals.workControl = workControl;
   app.locals.close = async () => {
+    // A window closed on the way out must not start a check against services
+    // that are already shutting down.
+    closing = true;
     // Stop listening before anything is stopped, or shutting a run down would
     // announce a settled session and schedule a delivery on the way out.
     deliveryClosed = true;

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  ExternalEngine,
   IntegrationStatus,
   Mode,
   Page,
@@ -32,6 +33,7 @@ import { DesignCenter } from './console/DesignCenter';
 import { MarkGlyph } from './console/Mark';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
+import { ErrorBoundary } from './ErrorBoundary';
 import { Workspace } from './Workspace';
 import { Wake } from './console/Wake';
 import {
@@ -76,6 +78,24 @@ export function App() {
   } | null>(null);
   const [search, setSearch] = useState(false);
   const [sectionRequest, setSectionRequest] = useState<{ section: string; n: number } | null>(null);
+  /**
+   * The route and model a connection test just verified, on its way to the
+   * Console. It is a choice for one thread and never a send, and it waits here
+   * until a Console with a project to carry it into is showing.
+   *
+   * It carries the moment it was made, because the facts behind it are the
+   * host's and they go out of date. Waiting here is only ever for as long as
+   * the person is still doing the thing they pressed it for: dismissing the
+   * project search, or going back into Settings, abandons it, and the Console
+   * lets go of one that has been waiting too long.
+   */
+  const [startTask, setStartTask] = useState<{
+    route: ExternalEngine;
+    model: string;
+    effort: string | null;
+    madeAtMs: number;
+    n: number;
+  } | null>(null);
   const [query, setQuery] = useState('');
   const [landingText, setLandingText] = useState('');
   const [landingProjectId, setLandingProjectId] = useState<string | null>(null);
@@ -401,6 +421,11 @@ export function App() {
     },
     [report, selected],
   );
+  // Going back into Settings abandons the handover too: the person is back at
+  // the screen that made the offer, where they can make it again.
+  useEffect(() => {
+    if (showSettings) setStartTask(null);
+  }, [showSettings]);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key.toLowerCase() === 'k') {
@@ -730,6 +755,14 @@ export function App() {
                 />
               )}
               {showSettings ? (
+                // A narrower one around Settings: AI setup renders host-shaped
+                // records from five adapters, and a failure drawing one of them
+                // should cost the person this screen, not the Console they were
+                // working in. Closing Settings leaves the crash behind.
+                <ErrorBoundary
+                  scope="screen"
+                  onLeave={{ label: 'Close settings', act: () => setShowSettings(false) }}
+                >
                 <SettingsPage
                   settings={settings}
                   save={saveSettings}
@@ -752,7 +785,25 @@ export function App() {
                     setShowSettings(false);
                     setDesignCenter(true);
                   }}
+                  // A verified route, carried into the Console. Settings closes
+                  // behind it the same way the Design Center's does. With no
+                  // project open there is nothing to carry it into, so the
+                  // existing "Open a project" search is what opens — Diomedes
+                  // does not make a project on somebody's behalf — and the
+                  // choice waits here until one is open.
+                  onStartFirstTask={(route, model, effort) => {
+                    setShowSettings(false);
+                    setStartTask((last) => ({
+                      route,
+                      model,
+                      effort,
+                      madeAtMs: Date.now(),
+                      n: (last?.n ?? 0) + 1,
+                    }));
+                    if (!selected) setSearch(true);
+                  }}
                 />
+                </ErrorBoundary>
               ) : selected && surface === 'console' ? (
                 <Shell
                   key={`console:${selected}`}
@@ -777,6 +828,8 @@ export function App() {
                   onPaletteKey={(open) => {
                     paletteOpen.current = open;
                   }}
+                  firstTask={startTask}
+                  onFirstTaskTaken={() => setStartTask(null)}
                 />
               ) : selected ? (
                 <Workspace
@@ -917,7 +970,16 @@ export function App() {
         </Modal>
       )}
       {search && (
-        <Modal title="Open a project" onClose={() => setSearch(false)}>
+        <Modal
+          title="Open a project"
+          onClose={() => {
+            setSearch(false);
+            // Closing this is leaving the flow the offer belongs to. The choice
+            // a connection test made was for the task the person was about to
+            // write, not for whatever project they open next.
+            setStartTask(null);
+          }}
+        >
           <label className="field">
             Find by name
             <input

@@ -129,6 +129,28 @@ export async function extractOpenCode(
     );
 }
 
+/**
+ * Set a private copy aside under a name nothing else can hold. The link is made
+ * first and the destination removed after, so the copy is never lost between
+ * the two, and an existing quarantined file is never written over: a repair is
+ * evidence of what was there, and two repairs in one millisecond are two
+ * pieces of evidence.
+ */
+async function quarantine(destination: string): Promise<string> {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  for (let attempt = 0; ; attempt++) {
+    const aside = `${destination}.quarantined-${stamp}${attempt ? `-${attempt}` : ''}`;
+    try {
+      await fs.link(destination, aside);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST' && attempt < 999) continue;
+      throw error;
+    }
+    await fs.unlink(destination);
+    return aside;
+  }
+}
+
 export class EngineInstaller {
   private active = new Set<ExternalEngine>();
   constructor(
@@ -138,6 +160,8 @@ export class EngineInstaller {
       extract?: typeof extractOpenCode;
       platform?: NodeJS.Platform;
       arch?: string;
+      /** The reviewed-release digest check. Injected so a read failure can be told apart. */
+      verify?: (root: string, engine: ExternalEngine) => Promise<void>;
     } = {},
   ) {}
   offer(engine: ExternalEngine): InstallOffer {
@@ -193,7 +217,17 @@ export class EngineInstaller {
         : 'Guided installation supports Windows x64. Install the native tool for your platform and recheck.',
     };
   }
-  async install(engine: ExternalEngine, consent: boolean, signal?: AbortSignal) {
+  /**
+   * `repair` replaces a private copy that failed its digest. It only ever acts
+   * inside Diomedes's own `installed/` directory; a person's own installation is
+   * never overwritten, downgraded or removed.
+   */
+  async install(
+    engine: ExternalEngine,
+    consent: boolean,
+    signal?: AbortSignal,
+    options: { repair?: boolean } = {},
+  ) {
     if (!consent)
       throw new EngineError(
         'CONSENT_REQUIRED',
@@ -212,10 +246,31 @@ export class EngineInstaller {
       // A completed version is reused. Never overwrite an existing executable.
       try {
         await fs.access(destination);
-        await verifyManagedBinary(this.root, engine);
+        await (this.deps.verify ?? verifyManagedBinary)(this.root, engine);
         return { detail: 'This managed version is already installed. Recheck its connection.' };
       } catch (error) {
-        if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+        const missing = error instanceof Error && 'code' in error && error.code === 'ENOENT';
+        if (!missing) {
+          // A private copy that no longer matches its reviewed release has no
+          // way back without this. Without consent to repair it, the refusal
+          // stands rather than silently replacing a file someone may be using.
+          if (!options.repair) throw error;
+          // Only a proven mismatch is corruption. A copy that could not be read
+          // — held open by a scanner, denied for a moment — has said nothing
+          // about its content, and setting it aside for that would quarantine a
+          // healthy installation. That is something to try again, not to repair.
+          if (!(error instanceof EngineError && error.code === 'INSTALL_CHECKSUM'))
+            throw new EngineError(
+              'INSTALL_UNREADABLE',
+              'The private copy could not be read just now, so nothing was changed. Close anything using it and try again.',
+              false,
+              'runtime-verification',
+            );
+          // Set it aside inside Diomedes's own installed/ tree, still never
+          // launched, so the destination is either empty or verified — never
+          // half-written — if the replacement is interrupted.
+          await quarantine(destination);
+        }
       }
       const installRoot = path.join(this.root, 'installed');
       await fs.mkdir(installRoot, { recursive: true });

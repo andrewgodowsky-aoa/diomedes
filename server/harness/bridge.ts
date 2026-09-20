@@ -42,6 +42,13 @@ export class HarnessBridge {
     private readonly tools: ToolRegistry,
     private readonly adapter: ModelAdapter,
     private readonly redact: (text: string) => string,
+    /**
+     * The one reserved project a run Diomedes starts for itself belongs to.
+     * Runs under it have no Session, no Task and no Board, so there is nothing
+     * here to mirror. Compared whole and never as a prefix or a pattern, so no
+     * customer project can be read as this one.
+     */
+    private readonly hostProjectId: string,
     private readonly codex?: CodexEngineAdapter,
   ) {}
 
@@ -65,6 +72,8 @@ export class HarnessBridge {
   }
   async beforeStep({ runId, step }: Parameters<HarnessHook>[0]) {
     const run = await this.runs.get(runId);
+    // A host run has no project state to open and no Session to write into.
+    if (run.projectId === this.hostProjectId) return;
     if (run.steps.some((item) => item.intent.stepId === step.stepId && item.state === 'succeeded'))
       return;
     await this.store.locked(async () => {
@@ -206,6 +215,8 @@ export class HarnessBridge {
   }
 
   private async mirror(run: HarnessRun) {
+    // Nothing a person owns describes this run, so nothing of theirs shows it.
+    if (run.projectId === this.hostProjectId) return;
     const state = this.store.state(run.projectId);
     const session = state.sessions.find((item) => item.id === run.sessionId);
     const task = state.tasks.find((item) => item.id === run.taskId);

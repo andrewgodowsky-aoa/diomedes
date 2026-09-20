@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractFile } from '@electron/asar';
@@ -196,6 +197,17 @@ async function main(): Promise<void> {
       },
     },
     signing: { application: 'NotSigned', installer: 'NotSigned', publisher: null },
+    // The computer this record was written on, which is the one the gate
+    // reports above were produced on when the release steps run in one place.
+    // The release README prints `host.tested`, and says the question is not
+    // verified when a record carries none. `os.version()` is the product name
+    // ("Windows 11 Home"); `os.release()` alone reads "10.0.26200", which a
+    // person takes for Windows 10.
+    host: {
+      tested: `${os.version()} (${os.release()})`,
+      platform: process.platform,
+      arch: process.arch,
+    },
     recordedAt: new Date().toISOString(),
   };
   const outRel = `evidence/release-candidates/${releaseId}.json`;

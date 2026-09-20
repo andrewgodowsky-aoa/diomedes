@@ -17,6 +17,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { EngineModel } from '../../shared/types.js';
+import type { SetupStage } from '../../shared/engines.js';
 import { routeContractFor } from '../harness/route-contract.js';
 import {
   AcpClient,
@@ -24,6 +25,7 @@ import {
   acpPromptTurn,
   acpSession,
   acpSessionUpdate,
+  acpTimeoutDetail,
   acpTurnResponse,
   CURSOR_ACP_PROFILE,
   type AcpTurn,
@@ -36,16 +38,21 @@ import {
   type TextResponse,
 } from './contract.js';
 import {
+  abortFailure,
   capture,
   engineEnvironment,
   EngineError,
   record,
-  stopped,
+  staged,
   text,
 } from './process.js';
 
 export const CURSOR_VERSION = '2026.08.11';
 export const CURSOR_ACCOUNT_ROUTE = 'cursor:cursor-account';
+/** Where the attempt has reached, so an untagged failure can name its stage. */
+type Phase = { at: SetupStage };
+/** A frame that answers the running turn: the response has begun. */
+const CONTENT_UPDATES = ['agent_message_chunk', 'tool_call', 'tool_call_update', 'plan'];
 const MAX_JSON_BYTES = 512 * 1024;
 const STARTUP_TIMEOUT_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -63,7 +70,12 @@ export interface CursorAdapterDeps {
 export async function resolveCursorEntry(file: string): Promise<string> {
   if (!/\.(cmd|bat)$/i.test(file)) return file;
   if (!/^(agent|cursor-agent)\.cmd$/i.test(path.basename(file)))
-    throw new EngineError('UNSUPPORTED_SHIM', 'Select the installed Cursor CLI launcher.');
+    throw new EngineError(
+      'UNSUPPORTED_SHIM',
+      'Select the installed Cursor CLI launcher.',
+      false,
+      'discovery',
+    );
   const root = await fs.realpath(path.dirname(file));
   const complete = async (directory: string) => {
     const entry = path.join(directory, 'index.js');
@@ -94,13 +106,23 @@ export async function resolveCursorEntry(file: string): Promise<string> {
       );
     });
   if (!versions.length)
-    throw new EngineError('UNSUPPORTED_SHIM', 'Cursor has no installed CLI version.');
+    throw new EngineError(
+      'UNSUPPORTED_SHIM',
+      'Cursor has no installed CLI version.',
+      false,
+      'discovery',
+    );
   return complete(path.join(root, 'versions', versions[0].name));
 }
 
 export function cursorCommand(file: string, args: string[]): { file: string; args: string[] } {
   if (/\.(cmd|bat|ps1)$/i.test(file))
-    throw new EngineError('UNSUPPORTED_SHIM', 'Resolve the Cursor launcher before starting it.');
+    throw new EngineError(
+      'UNSUPPORTED_SHIM',
+      'Resolve the Cursor launcher before starting it.',
+      false,
+      'discovery',
+    );
   return path.basename(file).toLowerCase() === 'index.js'
     ? {
         file: path.join(path.dirname(file), process.platform === 'win32' ? 'node.exe' : 'node'),
@@ -152,19 +174,30 @@ export class CursorAdapter implements TextEngineAdapter {
       '--format',
       'json',
     ]);
-    const output = await this.capture({
-      ...command,
-      cwd: this.cwd,
-      env: engineEnvironment(),
-      signal,
-      timeoutMs: this.startupTimeout,
-      maxBytes: MAX_JSON_BYTES,
-    });
+    let output;
+    try {
+      output = await this.capture({
+        ...command,
+        cwd: this.cwd,
+        env: engineEnvironment(),
+        signal,
+        timeoutMs: this.startupTimeout,
+        maxBytes: MAX_JSON_BYTES,
+      });
+    } catch (error) {
+      // A probe that cannot start has not asked the account anything yet.
+      throw staged(error, 'launch');
+    }
     let status: Json;
     try {
       status = record(JSON.parse(output.stdout));
     } catch {
-      throw new EngineError('AUTH_UNKNOWN', 'Cursor did not report structured sign-in status.');
+      throw new EngineError(
+        'AUTH_UNKNOWN',
+        'Cursor did not report structured sign-in status.',
+        false,
+        'provider-auth',
+      );
     }
     if (status.isAuthenticated === false) return 'signed-out';
     return output.code === 0 && status.isAuthenticated === true && status.status === 'authenticated'
@@ -173,10 +206,12 @@ export class CursorAdapter implements TextEngineAdapter {
   }
   private async withSession<T>(
     signal: AbortSignal | undefined,
+    phase: Phase,
     run: (rpc: AcpClient, created: Json, version: string) => Promise<T>,
     turn?: AcpTurn,
   ): Promise<T> {
-    if (signal?.aborted) throw stopped();
+    phase.at = 'launch';
+    if (signal?.aborted) throw abortFailure(signal.reason, acpTimeoutDetail(CURSOR_ACP_PROFILE));
     const entry = await resolveCursorEntry(this.file);
     const versionResult = await this.capture({
       ...cursorCommand(entry, ['--version']),
@@ -193,7 +228,10 @@ export class CursorAdapter implements TextEngineAdapter {
       throw new EngineError(
         'UNSUPPORTED_VERSION',
         'Cursor changed version. Review compatibility before sending.',
+        false,
+        'runtime-verification',
       );
+    phase.at = 'local-handshake';
     return acpSession(
       {
         profile: CURSOR_ACP_PROFILE,
@@ -246,7 +284,11 @@ export class CursorAdapter implements TextEngineAdapter {
             command: cursorCommand(entry, ['--mode', 'ask', 'acp']),
           };
         },
-        onUpdate: (params, rpc) =>
+        onUpdate: (params, rpc) => {
+          // A frame answering the running turn means the response has begun,
+          // even when that same frame is the one that stops the request.
+          if (turn?.prompting && CONTENT_UPDATES.includes(text(record(params.update).sessionUpdate)))
+            phase.at = 'stream';
           // Ask mode is set at launch and confirmed through set_mode; any
           // other reported mode is a drift the text route does not accept.
           acpSessionUpdate(CURSOR_ACP_PROFILE, rpc, params, turn, {
@@ -256,9 +298,11 @@ export class CursorAdapter implements TextEngineAdapter {
                   'POLICY_MISMATCH',
                   'Cursor changed away from the requested ask mode.',
                   true,
+                  phase.at,
                 );
             },
-          }),
+          });
+        },
         ready: (rpc) =>
           rpc.request('session/set_mode', { sessionId: rpc.sessionId, modeId: 'ask' }).then(() => {}),
       },
@@ -267,41 +311,60 @@ export class CursorAdapter implements TextEngineAdapter {
   }
   private generating = false;
   async inspect(signal?: AbortSignal): Promise<AdapterInspection> {
-    const authentication = await this.status(signal);
-    if (authentication !== 'signed-in')
-      return {
-        authentication,
-        accountRoute: null,
-        models: [],
-        detail:
-          authentication === 'signed-out'
-            ? 'Sign in through Cursor, then recheck.'
-            : 'Cursor sign-in could not be verified.',
-      };
-    return this.withSession(signal, async (_rpc, created) => {
-      const models = modelsFrom(record(created.models).availableModels);
-      return {
-        authentication,
-        accountRoute: CURSOR_ACCOUNT_ROUTE,
-        models,
-        detail: models.length
-          ? 'Cursor account connected for bounded ACP text requests. Tool events stop the request; OS containment is unsupported.'
-          : 'Cursor did not report explicit model choices.',
-      };
-    });
+    const phase: Phase = { at: 'provider-auth' };
+    try {
+      const authentication = await this.status(signal);
+      if (authentication !== 'signed-in')
+        return {
+          authentication,
+          accountRoute: null,
+          models: [],
+          detail:
+            authentication === 'signed-out'
+              ? 'Sign in through Cursor, then recheck.'
+              : 'Cursor sign-in could not be verified.',
+        };
+      return await this.withSession(signal, phase, async (_rpc, created) => {
+        phase.at = 'model-list';
+        const models = modelsFrom(record(created.models).availableModels);
+        return {
+          authentication,
+          accountRoute: CURSOR_ACCOUNT_ROUTE,
+          models,
+          detail: models.length
+            ? 'Cursor account connected for bounded ACP text requests. Tool events stop the request; OS containment is unsupported.'
+            : 'Cursor did not report explicit model choices.',
+        };
+      });
+    } catch (error) {
+      throw staged(error, phase.at);
+    }
   }
   async generate(input: TextRequest): Promise<TextResponse> {
     if (input.accountRoute !== CURSOR_ACCOUNT_ROUTE)
       throw new EngineError(
         'ACCOUNT_CHANGED',
         'Select the native Cursor account route before sending.',
+        false,
+        'provider-auth',
       );
     if (!explicitModel(input.model))
-      throw new EngineError('MODEL_UNAVAILABLE', 'Choose an explicit Cursor model.');
+      throw new EngineError(
+        'MODEL_UNAVAILABLE',
+        'Choose an explicit Cursor model.',
+        false,
+        'model-list',
+      );
     const prompt = contextMessage(input);
     if (this.generating)
-      throw new EngineError('REQUEST_ACTIVE', 'Cursor already has a request in progress.');
+      throw new EngineError(
+        'REQUEST_ACTIVE',
+        'Cursor already has a request in progress.',
+        false,
+        'dispatch',
+      );
     this.generating = true;
+    const phase: Phase = { at: 'provider-auth' };
     const turn: AcpTurn = {
       text: '',
       model: input.model,
@@ -310,10 +373,17 @@ export class CursorAdapter implements TextEngineAdapter {
     };
     try {
       if ((await this.status(input.signal)) !== 'signed-in')
-        throw new EngineError('AUTH_REQUIRED', 'Sign in through Cursor, then recheck.');
+        throw new EngineError(
+          'AUTH_REQUIRED',
+          'Sign in through Cursor, then recheck.',
+          false,
+          'provider-auth',
+        );
       return await this.withSession(
         input.signal,
+        phase,
         async (rpc, created, version) => {
+          phase.at = 'model-list';
           if (
             !modelsFrom(record(created.models).availableModels).some(
               (model) => model.slug === input.model,
@@ -322,11 +392,14 @@ export class CursorAdapter implements TextEngineAdapter {
             throw new EngineError(
               'MODEL_UNAVAILABLE',
               'Cursor no longer offers the requested model. No substitute was selected.',
+              false,
+              'model-list',
             );
           await rpc.request('session/set_model', {
             sessionId: rpc.sessionId,
             modelId: input.model,
           });
+          phase.at = 'dispatch';
           await acpPromptTurn(
             CURSOR_ACP_PROFILE,
             rpc,
@@ -339,6 +412,8 @@ export class CursorAdapter implements TextEngineAdapter {
         },
         turn,
       );
+    } catch (error) {
+      throw staged(error, phase.at);
     } finally {
       this.generating = false;
     }

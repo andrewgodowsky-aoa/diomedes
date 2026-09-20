@@ -264,6 +264,17 @@ async function fixture(mode = 'ok', deps: DevinAdapterDeps = {}) {
             });
             break;
           }
+          if (mode === 'proxy-ca') {
+            emit({
+              jsonrpc: '2.0',
+              id: frame.id,
+              error: {
+                code: -32603,
+                message: 'unable to verify the certificate authority for the configured proxy',
+              },
+            });
+            break;
+          }
           if (mode === 'exit') {
             child.exitCode = 1;
             child.emit('close', 1);
@@ -360,6 +371,26 @@ describe('Devin ACP text route', () => {
     expect(
       sent.some((frame) => ['session/new', 'session/prompt'].includes(String(frame.method))),
     ).toBe(false);
+  });
+  it('names a host deadline a timeout rather than the person stopping the request', async () => {
+    const { adapter } = await fixture('hang');
+    const failure = await adapter
+      .generate({ ...request, signal: AbortSignal.timeout(300) })
+      .then(
+        () => undefined,
+        (error: { code: string; message: string }) => error,
+      );
+    expect(failure?.code).toBe('TIMEOUT');
+    expect(failure?.message).not.toMatch(/was stopped/i);
+  });
+  it('does not read a certificate authority failure as a missing sign-in', async () => {
+    const { adapter } = await fixture('proxy-ca');
+    const failure = await adapter.generate(request).then(
+      () => undefined,
+      (error: { code: string; message: string }) => error,
+    );
+    expect(failure?.code).toBe('PROVIDER_ERROR');
+    expect(failure?.message).not.toMatch(/sign.?in|login/i);
   });
   it('sends bounded context through stdin, pins the requested model, disables client capabilities and writes workspace deny rules', async () => {
     vi.stubEnv('DEVIN_API_KEY', 'must-not-pass');
@@ -651,6 +682,100 @@ describe('Devin ACP text route', () => {
       message: expect.stringContaining('could not be confirmed stopped'),
       ambiguous: true,
     });
+  });
+});
+
+describe('Devin failure stages', () => {
+  it.each([
+    ['version', 'UNSUPPORTED_VERSION', 'runtime-verification'],
+    ['protocol-version', 'PROTOCOL_ERROR', 'local-handshake'],
+    ['auth-fails', 'AUTH_REQUIRED', 'provider-auth'],
+    ['no-ask-mode', 'POLICY_MISMATCH', 'local-handshake'],
+    ['wrong-mode', 'POLICY_MISMATCH', 'local-handshake'],
+    ['model-drift', 'POLICY_MISMATCH', 'model-list'],
+    ['missing-model', 'MODEL_UNAVAILABLE', 'model-list'],
+    ['quota', 'USAGE_LIMIT', 'dispatch'],
+    ['malformed', 'PROTOCOL_ERROR', 'dispatch'],
+    ['exit', 'PROTOCOL_ERROR', 'dispatch'],
+    ['permission', 'UNEXPECTED_TOOL', 'dispatch'],
+    ['unknown-notification', 'UNEXPECTED_TOOL', 'dispatch'],
+    ['late-mode', 'POLICY_MISMATCH', 'dispatch'],
+    ['tool', 'UNEXPECTED_TOOL', 'stream'],
+    ['plan', 'UNEXPECTED_TOOL', 'stream'],
+    ['wrong-session', 'PROTOCOL_ERROR', 'stream'],
+    ['incomplete', 'PROTOCOL_ERROR', 'stream'],
+  ])('reports %s as %s at the %s stage', async (mode, code, stage) => {
+    const { adapter } = await fixture(mode);
+    await expect(adapter.generate(request)).rejects.toMatchObject({ code, stage });
+  });
+  it.each([
+    ['startup-hang', 'launch'],
+    ['auth-hang', 'provider-auth'],
+    ['hang', 'dispatch'],
+  ])('bounds %s at the %s stage', async (mode, stage) => {
+    const { adapter } = await fixture(mode, {
+      startupTimeoutMs: 100,
+      authTimeoutMs: 100,
+      requestTimeoutMs: 20,
+    });
+    await expect(adapter.generate(request)).rejects.toMatchObject({ code: 'TIMEOUT', stage });
+  });
+  it('stops before prompting when ask is never confirmed, at the handshake', async () => {
+    const { adapter } = await fixture('silent-mode', {
+      startupTimeoutMs: 30_000,
+      authTimeoutMs: 30_000,
+    });
+    await expect(adapter.generate(request)).rejects.toMatchObject({
+      code: 'POLICY_MISMATCH',
+      stage: 'local-handshake',
+    });
+  });
+  it('does not present a tool that cannot start as a sign-in problem', async () => {
+    const { adapter } = await fixture('ok', {
+      spawn: () => {
+        throw new Error('native secret diagnostic');
+      },
+    });
+    await expect(adapter.generate(request)).rejects.toMatchObject({
+      code: 'LAUNCH_FAILED',
+      stage: 'launch',
+    });
+  });
+  it('names the stage of every refusal it makes before launching', async () => {
+    const { adapter } = await fixture();
+    await expect(
+      adapter.generate({ ...request, accountRoute: 'devin:api' }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_CHANGED', stage: 'provider-auth' });
+    await expect(adapter.generate({ ...request, model: 'auto' })).rejects.toMatchObject({
+      code: 'MODEL_UNAVAILABLE',
+      stage: 'model-list',
+    });
+    await expect(resolveDevinEntry(path.join(os.tmpdir(), 'other.cmd'))).rejects.toMatchObject({
+      code: 'UNSUPPORTED_SHIM',
+      stage: 'discovery',
+    });
+  });
+  it('separates a cleanup that could not be confirmed from the failure it followed', async () => {
+    const { adapter } = await fixture('malformed');
+    cleanup.fail = true;
+    await expect(adapter.generate(request)).rejects.toMatchObject({
+      code: 'PROTOCOL_ERROR',
+      stage: 'dispatch',
+    });
+    cleanup.fail = false;
+    const { adapter: clean } = await fixture();
+    cleanup.fail = true;
+    await expect(clean.generate(request)).rejects.toMatchObject({
+      code: 'CLEANUP_FAILED',
+      stage: 'cleanup',
+    });
+  });
+  it('cancels mid-turn at the stream it had reached', async () => {
+    const { adapter } = await fixture('abort');
+    const controller = new AbortController();
+    await expect(
+      adapter.generate({ ...request, signal: controller.signal, onDelta: () => controller.abort() }),
+    ).rejects.toMatchObject({ code: 'CANCELLED', stage: 'stream', ambiguous: true });
   });
 });
 

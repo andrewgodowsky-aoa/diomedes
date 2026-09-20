@@ -14,11 +14,14 @@ vi.mock('../server/integrations.js', async (importOriginal) => {
   };
 });
 import {
+  abortFailure,
   launchCommand,
   openProcess,
   capture,
   engineEnvironment,
+  PROCESS_TIMEOUT_DETAIL,
 } from '../server/engines/process.js';
+import { HarnessError } from '../server/harness/policy.js';
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -31,6 +34,60 @@ async function script(source: string) {
   await fs.writeFile(file, source);
   return { root, file };
 }
+describe('what an abort is reported as', () => {
+  it('tells a deadline, a person stopping and the host withdrawing the run apart', () => {
+    // A budget the host imposed.
+    expect(abortFailure(new DOMException('deadline', 'TimeoutError'), PROCESS_TIMEOUT_DETAIL))
+      .toMatchObject({ code: 'TIMEOUT', ambiguous: true });
+    // A person pressing stop: `abort()` with no reason, which is what the
+    // service's own cancellation and a closed connection both pass.
+    for (const reason of [undefined, new DOMException('aborted', 'AbortError')])
+      expect(abortFailure(reason, PROCESS_TIMEOUT_DETAIL)).toMatchObject({
+        code: 'CANCELLED',
+        ambiguous: true,
+        message: expect.stringContaining('The request was stopped.'),
+      });
+  });
+
+  it('does not report a lease the host invalidated as the person’s own cancellation', () => {
+    // `server/harness/run-service.ts` aborts the run's controller with its own
+    // error when a dead process's lease is invalidated. Nobody pressed stop,
+    // and saying they did sends them looking for something they did not do.
+    const withdrawn = abortFailure(
+      new HarnessError('stale_lease', 'stale lease'),
+      PROCESS_TIMEOUT_DETAIL,
+    );
+    expect(withdrawn.code).toBe('DISPATCH_UNCERTAIN');
+    expect(withdrawn.ambiguous).toBe(true);
+    expect(withdrawn.message).not.toMatch(/was stopped/i);
+    expect(withdrawn.message).toMatch(/permission to run changed/i);
+  });
+
+  it('carries that through an owned process the host withdrew', async () => {
+    const { root, file } = await script('process.stdin.resume();');
+    const controller = new AbortController();
+    const child = openProcess({
+      file: process.execPath,
+      args: [file],
+      cwd: root,
+      env: engineEnvironment(),
+      signal: controller.signal,
+      timeoutMs: 30_000,
+    });
+    controller.abort(new HarnessError('stale_lease', 'stale lease'));
+    try {
+      await expect(child.next()).rejects.toMatchObject({
+        code: 'DISPATCH_UNCERTAIN',
+        ambiguous: true,
+      });
+    } finally {
+      await child.close().catch(() => {
+        /* Cleanup is not what this test is about. */
+      });
+    }
+  });
+});
+
 describe('owned engine processes', () => {
   it('quotes Windows shim paths and static arguments with spaces without accepting command syntax', () => {
     const spec = launchCommand(
@@ -151,6 +208,48 @@ describe('owned engine processes', () => {
     } finally {
       cleanup.fail = false;
       await expect.poll(() => child.exitCode, { timeout: 5000 }).toBe(0);
+    }
+  });
+  it('refuses to start under a host deadline that has already passed, as a timeout', async () => {
+    const { root, file } = await script('process.stdin.resume();');
+    // What `EngineService.test()` hands an adapter is a merged signal whose
+    // reason names which half fired. A budget the host imposed is not a person
+    // pressing stop, and must never be reported to them as their own.
+    const expired = AbortSignal.timeout(1);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    let thrown: { code?: string; message?: string } = {};
+    try {
+      openProcess({
+        file: process.execPath,
+        args: [file],
+        cwd: root,
+        env: engineEnvironment(),
+        signal: expired,
+      });
+    } catch (error) {
+      thrown = error as typeof thrown;
+    }
+    expect(thrown.code).toBe('TIMEOUT');
+    expect(thrown.message).not.toMatch(/was stopped/i);
+  });
+  it('still reads the person pressing stop as a cancellation while a host budget rides along', async () => {
+    const { root, file } = await script('process.stdin.resume();');
+    const caller = new AbortController();
+    const child = openProcess({
+      file: process.execPath,
+      args: [file],
+      cwd: root,
+      env: engineEnvironment(),
+      signal: AbortSignal.any([AbortSignal.timeout(30_000), caller.signal]),
+      timeoutMs: 30_000,
+    });
+    caller.abort();
+    try {
+      await expect(child.next()).rejects.toMatchObject({ code: 'CANCELLED', ambiguous: true });
+    } finally {
+      await child.close().catch(() => {
+        /* Cleanup is not what this test is about. */
+      });
     }
   });
   it('rejects malformed output and never returns a partial success', async () => {

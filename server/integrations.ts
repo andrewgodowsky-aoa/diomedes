@@ -217,7 +217,7 @@ export async function killOwnedProcess(child: ChildProcess): Promise<void> {
         if (code === 0 || child.exitCode !== null || child.signalCode !== null) resolve();
         else
           reject(
-            new IntegrationError('CLEANUP_FAILED', 'The owned Codex process could not be stopped.'),
+            new IntegrationError('CLEANUP_FAILED', 'The owned process could not be stopped.'),
           );
       });
     });
@@ -236,7 +236,7 @@ export async function killOwnedProcess(child: ChildProcess): Promise<void> {
           reject(
             new IntegrationError(
               'CLEANUP_TIMEOUT',
-              'The owned Codex process did not confirm exit.',
+              'The owned process did not confirm exit.',
             ),
           ),
         5000,

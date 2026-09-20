@@ -3,6 +3,7 @@ import { validateTaskReceipts } from './task-admission.js';
 import { ScopeGrants, validateScopeGrants } from './trust/scope-grants.js';
 import { validateAgentResolutions } from './agents.js';
 import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/attribution.js';
+import { HOST_TEST_PROJECT } from '../shared/engines.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -48,6 +49,8 @@ import {
 export const now = () => new Date().toISOString();
 export const hash = contentHash;
 export const identifier = (prefix = '') => prefix + randomBytes(6).toString('hex');
+/** One plain folder name: what a saved project id has to be before it meets a path. */
+const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 // Folders that never hold Diomedes documents; skipped during the documents walk.
 export const SKIPPED_FOLDERS = new Set([
   'node_modules',
@@ -362,6 +365,14 @@ export class Store extends EventEmitter {
     migrateSettings(this.settings);
     this.registry = await readJson(path.join(this.dataDir, 'registry.json'), () => []);
     for (const project of this.registry) {
+      // A project id is generated here and never accepted from anyone, so a
+      // saved row naming anything else was not written by this application.
+      // The reserved host id is refused by name; anything that is not one plain
+      // folder name is refused because `statePath` puts it straight into a
+      // path. The id itself stays out of the message: it is untrusted text.
+      const id: unknown = (project as { id?: unknown } | null)?.id;
+      if (typeof id !== 'string' || !PROJECT_ID.test(id) || id === HOST_TEST_PROJECT)
+        throw new Error('A saved project registry entry names an id this build will not open.');
       const state = await readJson<StoredState>(this.statePath(project.id), () => {
         throw new Error(`Project state is missing for ${project.id}.`);
       });
