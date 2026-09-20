@@ -433,3 +433,58 @@ describe('a reported account-route mismatch', () => {
     expect(refusal.code).toBe('ACCOUNT_ROUTE');
   });
 });
+
+describe('waiting for a check that is already running', () => {
+  it('returns at once when nothing is being checked', async () => {
+    const { service, inspect } = fixture();
+    await service.settled('claude-code');
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it('returns after a check that succeeds, so the next one asks again', async () => {
+    const { service, inspect } = fixture();
+    await service.discover(true);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    inspect.mockImplementationOnce(async () => {
+      await held;
+      return {
+        authentication: 'signed-in' as const,
+        accountRoute: 'claude-code:claude.ai',
+        models: [model],
+        detail: 'Checked',
+      };
+    });
+    const running = service.check('claude-code');
+    let waited = false;
+    const waiting = service.settled('claude-code').then(() => {
+      waited = true;
+    });
+    // It is genuinely waiting: the check has not finished yet.
+    await Promise.resolve();
+    expect(waited).toBe(false);
+    release();
+    await running;
+    await waiting;
+    expect(waited).toBe(true);
+    // And the caller may now run its own fresh check rather than inheriting
+    // an answer that was decided before it asked.
+    await service.check('claude-code');
+    expect(inspect).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns after a check that throws, and never throws itself', async () => {
+    const { service, inspect } = fixture();
+    await service.discover(true);
+    inspect.mockRejectedValueOnce(
+      new EngineError('AUTH_REQUIRED', 'Sign in to this service.', false, 'provider-auth'),
+    );
+    const running = service.check('claude-code');
+    const waiting = service.settled('claude-code');
+    await expect(running).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+    await expect(waiting).resolves.toBeUndefined();
+    await expect(service.settled('claude-code')).resolves.toBeUndefined();
+  });
+});

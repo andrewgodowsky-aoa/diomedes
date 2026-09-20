@@ -53,18 +53,18 @@ describe('a timestamp from the future', () => {
     expect(checkedSentence(signedIn(at(60_000)), now, time)).toMatch(/Check again/);
   });
 
-  it('is presented as Ready by the thread picker, which does not use that rule', () => {
-    // client/console/Picker.tsx:78 asks `Date.now() - at < FRESH_MS`, which is
-    // true for every future timestamp. A clock that moved backwards therefore
-    // reads as "Ready" on the thread while AI setup asks for another check.
+  it('is not presented as Ready by the thread picker, which shares that rule', () => {
+    // The picker asks `freshness()` rather than `Date.now() - at < FRESH_MS`,
+    // which was true of every future timestamp. A clock that moved backwards
+    // no longer reads as "Ready" on the thread while AI setup asks for a check.
     const ahead = signedIn(at(60_000));
     expect(freshness(ahead.checkedAt, Date.now())).toBe('unknown');
-    expect(connectionState(ahead)).toBe('Signed in · Ready');
+    expect(connectionState(ahead)).toMatch(/rechecked before sending/);
   });
 
-  it('is still presented as Ready when the clock moved back by a day', () => {
+  it('is not presented as Ready when the clock moved back by a day', () => {
     const ahead = signedIn(at(24 * 60 * 60_000));
     expect(freshness(ahead.checkedAt, Date.now())).toBe('unknown');
-    expect(connectionState(ahead)).toBe('Signed in · Ready');
+    expect(connectionState(ahead)).toMatch(/rechecked before sending/);
   });
 });

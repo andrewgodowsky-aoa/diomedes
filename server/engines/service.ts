@@ -838,6 +838,23 @@ export class EngineService {
       this.checks.delete(engine);
     }
   }
+  /**
+   * Wait for whatever check is already running on this route, then return.
+   *
+   * It never rejects and never answers with that check's result: a caller who
+   * needs a fresh answer — the host after a native sign-in window closes, for
+   * one — waits here and then runs its own `check()`. Joining the running job
+   * instead would hand back an answer decided before the caller asked, which
+   * is the defect this exists to avoid.
+   */
+  async settled(engine: ExternalEngine): Promise<void> {
+    // A check that starts in the instant another finishes is waited out too.
+    for (let active = this.checks.get(engine); active; active = this.checks.get(engine))
+      await active.then(
+        () => {},
+        () => {},
+      );
+  }
   private async inspect(engine: ExternalEngine, signal?: AbortSignal) {
     const saved = this.connections.get(engine)!;
     // A binding that no longer names a usable installation is broken, and a
@@ -988,7 +1005,11 @@ export class EngineService {
       diagnostic: this.diagnostic(engine, {
         stage: error instanceof EngineError && error.stage ? error.stage : stage,
         code: error instanceof EngineError ? error.code : 'SCAN_FAILED',
-        candidateSource: null,
+        // A scan that failed before it enumerated anything has no candidate to
+        // point at, but the record still knows which installation this route
+        // was bound to, and that is the first thing a diagnostic is read for.
+        candidateSource:
+          this.effective(saved)?.source ?? this.bindings.get(engine)?.binding.source ?? null,
       }),
     });
   }

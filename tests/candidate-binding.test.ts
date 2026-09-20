@@ -704,6 +704,25 @@ describe('what a person is asked to do next, and what the record says', () => {
     }
   });
 
+  it('names the installation a scan failure is about when one is already chosen', async () => {
+    // The repair record says a diagnostic carries the candidate source. A scan
+    // that failed still knows which installation this route is bound to, and
+    // "which copy was it" is the first question a support bundle is read for.
+    let failing = false;
+    const file = place(path.join(root(), 'tools', 'opencode.exe'), 'reviewed bytes');
+    const h = host({ system: [{ file }], failDiscoverWhile: () => failing });
+    await h.service.discover(true);
+    const chosen = connection(h.service, 'opencode').recommendedCandidateId!;
+    await h.service.bind('opencode', chosen);
+    failing = true;
+    await h.service.discover(true);
+    expect(connection(h.service, 'opencode').diagnostic).toMatchObject({
+      stage: 'discovery',
+      code: 'SCAN_FAILED',
+      candidateSource: 'system',
+    });
+  });
+
   it('drops a scan failure on the next scan that reaches the end', async () => {
     let failing = true;
     const file = place(path.join(root(), 'tools', 'opencode.exe'), 'reviewed bytes');

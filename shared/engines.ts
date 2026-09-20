@@ -91,6 +91,12 @@ export interface SetupDiagnostic {
   candidateSource: CandidateSource | null;
   installedVersion: string | null;
   accountRoute: string | null;
+  /**
+   * The model the binding's revision was recorded against — what a receipt for
+   * this route would name. `null` means no binding holds a model, which is a
+   * different fact from the model chosen on the settings screen: that one is
+   * the settings value, and the support bundle is where it is read from.
+   */
   selectedModel: string | null;
   stage: SetupStage;
   code: string;
