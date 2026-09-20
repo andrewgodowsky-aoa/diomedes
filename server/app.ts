@@ -797,6 +797,11 @@ export async function createApp(options: AppOptions) {
         projectRoot: store.projectRoot,
         port,
         engines: await getIntegrationStatuses({ refresh: false, passive: true }),
+        // Cached observations only: a support export never starts a scan.
+        connections: engines.status(),
+        services: store.settings.services,
+        // The name is the identifying part, so it travels only when asked for.
+        includeProjectName: req.query.projectName === '1',
         state,
         recentErrors,
         secrets,
