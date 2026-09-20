@@ -11,18 +11,10 @@ import { CursorAdapter, cursorCommand, resolveCursorEntry } from './cursor.js';
 import { DevinAdapter } from './devin.js';
 import { managedBinary, verifyManagedBinary } from './install.js';
 import { capture, engineEnvironment, EngineError } from './process.js';
-import {
-  commandGate,
-  previewSink,
-  type PreviewRejection,
-} from '../../shared/adapter-contract.js';
+import { commandGate, previewSink, type PreviewRejection } from '../../shared/adapter-contract.js';
 import type { TextEngineAdapter, TextRequest, TextResponse } from './contract.js';
 import { HarnessError } from '../harness/policy.js';
-import {
-  TEXT_DISPATCH_STEP,
-  textRunId,
-  type TextDispatch,
-} from '../harness/text-route.js';
+import { TEXT_DISPATCH_STEP, textRunId, type TextDispatch } from '../harness/text-route.js';
 
 function recordShimError(error: unknown): boolean {
   return (
@@ -39,6 +31,7 @@ export const TESTED_VERSIONS: Record<ExternalEngine, string> = {
   devin: '3000.10.23',
 };
 export interface EngineServiceDeps {
+  platform: NodeJS.Platform;
   discover(): Promise<IntegrationStatus[]>;
   version(file: string, signal?: AbortSignal): Promise<string>;
   adapter(engine: ExternalEngine, file: string, cwd: string): TextEngineAdapter;
@@ -64,6 +57,7 @@ export class EngineService {
   private readonly deps: EngineServiceDeps;
   private discovering?: Promise<EngineConnection[]>;
   private checks = new Map<ExternalEngine, Promise<EngineConnection>>();
+  private discoveryDisclosure = new Map<ExternalEngine, string[]>();
   private readonly nativeDiscovery: boolean;
   private running = new Map<string, AbortController>();
   /**
@@ -79,6 +73,7 @@ export class EngineService {
   ) {
     this.nativeDiscovery = !deps.discover;
     this.deps = {
+      platform: process.platform,
       discover: async () => (await createDiscovery().discover()).engines,
       version: async (file, signal) => {
         const command =
@@ -136,13 +131,30 @@ export class EngineService {
       await fs.mkdir(this.root, { recursive: true });
       const found = await this.deps.discover();
       for (const id of EXTERNAL_ENGINES) {
+        this.discoveryDisclosure.set(
+          id,
+          found
+            .find((row) => row.id === id)
+            ?.disclosure.filter((line) => line.startsWith('Discovery: ')) ?? [],
+        );
         let hit = found.find((row) => row.id === id && row.found);
-        if (!hit && this.nativeDiscovery && id !== 'cursor' && id !== 'devin') {
+        // Managed artifacts are pinned Windows executables, never evidence of
+        // an installation on a Mac that received a copied data directory.
+        if (
+          !hit &&
+          this.nativeDiscovery &&
+          this.deps.platform === 'win32' &&
+          id !== 'cursor' &&
+          id !== 'devin'
+        ) {
           const file = managedBinary(this.root, id);
           try {
             await fs.access(file);
             await verifyManagedBinary(this.root, id);
             const version = await this.deps.version(file);
+            this.discoveryDisclosure.set(id, [
+              'Discovery: observed on win32 via managed-installation; pinned artifact verified and version probed.',
+            ]);
             hit = {
               ...this.integration(id, false),
               id,
@@ -327,6 +339,7 @@ export class EngineService {
       location: value.location,
       capabilities: ready ? ['ask', 'plan', 'work-proposals'] : [],
       disclosure: [
+        ...(this.discoveryDisclosure.get(engine) ?? []),
         'Selected text is sent to the chosen service using its native account route.',
         engine === 'cursor'
           ? 'Cursor denies tools through native permissions and stops on tool events; this is not an operating-system sandbox.'
@@ -398,11 +411,7 @@ export class EngineService {
               'The sign-in route changed. Select it again before sending.',
             );
           const value = this.connections.get(engine)!;
-          const adapter = this.deps.adapter(
-            engine,
-            value.location!,
-            path.join(this.root, engine),
-          );
+          const adapter = this.deps.adapter(engine, value.location!, path.join(this.root, engine));
           // The descriptor the adapter carries is operative: dispatch only
           // what the route declares, only for the proven build.
           if (adapter.id !== engine)
@@ -542,11 +551,7 @@ function seamError(error: unknown): unknown {
       'The request was stopped. No late response was saved.',
       true,
     );
-  if (
-    code === 'reconcile_required' ||
-    code === 'stale_lease' ||
-    code === 'stale_attempt'
-  )
+  if (code === 'reconcile_required' || code === 'stale_lease' || code === 'stale_attempt')
     // The dispatch may have reached the provider; the record stays uncertain.
     return new EngineError(
       'DISPATCH_UNCERTAIN',
@@ -555,8 +560,7 @@ function seamError(error: unknown): unknown {
     );
   // A dispatch-phase denial is a refusal: the provider never saw the request.
   // (A result-phase denial surfaces earlier as the parked reconcile_required.)
-  if (code === 'egress_denied')
-    return new EngineError('ROUTE_REFUSED', message, true);
+  if (code === 'egress_denied') return new EngineError('ROUTE_REFUSED', message, true);
   if (code === 'lease_busy' || (code === 'blocked' && /in flight/.test(message)))
     return new EngineError(
       'REQUEST_ACTIVE',
@@ -565,7 +569,6 @@ function seamError(error: unknown): unknown {
     );
   if (code === 'input_mismatch' || code === 'run_id_collision')
     return new EngineError('IDENTITY_MISMATCH', message, true);
-  if (code === 'request_failed')
-    return new EngineError('PROVIDER_ERROR', message, true);
+  if (code === 'request_failed') return new EngineError('PROVIDER_ERROR', message, true);
   return new EngineError('RUNTIME_UNAVAILABLE', message, true);
 }

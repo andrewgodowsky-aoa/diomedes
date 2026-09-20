@@ -59,7 +59,7 @@ const dataRoot =
 export const CODEX_WORKSPACE = path.join(dataRoot, 'native-readonly');
 export const CODEX_EXECUTABLE = path.join(
   process.env.DIOMEDES_RUNTIME_DIR ?? path.join(dataRoot, 'native-runtime'),
-  'codex.exe',
+  process.platform === 'win32' ? 'codex.exe' : 'codex',
 );
 const LOCALAI_STATUS_URL = 'http://127.0.0.1:8080/localai/status';
 const RPC_TIMEOUT_MS = 20_000;
@@ -373,6 +373,11 @@ export function createRpcClient(
 }
 
 async function startNative(env?: NodeJS.ProcessEnv, extra?: JsonObject): Promise<NativeRpc> {
+  if (process.platform !== 'win32')
+    throw new IntegrationError(
+      'PLATFORM_UNPROVEN',
+      'This native adapter has been verified on Windows only.',
+    );
   await fs.mkdir(CODEX_WORKSPACE, { recursive: true });
   await fs.access(CODEX_EXECUTABLE).catch(() => {
     throw new IntegrationError(
@@ -473,6 +478,7 @@ async function verifyWindowsSandbox(): Promise<void> {
 }
 
 interface IntegrationDependencies {
+  platform: NodeJS.Platform;
   createClient: (env?: NodeJS.ProcessEnv, extra?: JsonObject) => Promise<NativeRpc>;
   verifySandbox: () => Promise<void>;
   fetch: typeof globalThis.fetch;
@@ -511,6 +517,7 @@ async function requireChatGpt(client: NativeRpc) {
 
 export function createIntegrations(overrides: Partial<IntegrationDependencies> = {}) {
   const dependencies: IntegrationDependencies = {
+    platform: process.platform,
     createClient: startNative,
     verifySandbox: verifyWindowsSandbox,
     fetch: globalThis.fetch,
@@ -546,6 +553,16 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         nativeWorkDisclosure(),
       ],
     };
+    if (dependencies.platform !== 'win32') {
+      return {
+        ...status,
+        found: false,
+        location: undefined,
+        status: 'Unsupported platform',
+        detail:
+          'Codex native isolation has been verified on Windows only. Installed tools can still be discovered; this route is unavailable.',
+      };
+    }
     let client: NativeRpc | undefined;
     try {
       client = await dependencies.createClient();
@@ -680,7 +697,15 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     return Promise.all([core, found]).then(([[codex, localai], discovery]) => {
       let codexEntry = codex;
       const extra = discovery.codexInstalledVersion;
-      if (extra && extra !== CODEX_PROTOCOL_VERSION) {
+      if (dependencies.platform !== 'win32' && discovery.codex) {
+        codexEntry = {
+          ...codex,
+          found: discovery.codex.found,
+          location: discovery.codex.location,
+          installedVersion: discovery.codex.installedVersion,
+          disclosure: [...codex.disclosure, ...discovery.codex.disclosure],
+        };
+      } else if (extra && extra !== CODEX_PROTOCOL_VERSION) {
         codexEntry = {
           ...codex,
           detail: `${codex.detail} Codex ${extra} is also installed on this computer; Diomedes uses its own proven ${CODEX_PROTOCOL_VERSION} copy.`,
