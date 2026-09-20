@@ -24,8 +24,9 @@ disagrees with it.
 Every capability named below is in one of three states, and this file says which:
 
 - **In source** — the code is in this tree and its tests pass here.
-- **Packaged** — that code is inside a published build, so it is in the executable a
-  person actually runs.
+- **Packaged** — that code is inside a build that was packaged and recorded here, so it
+  is in an executable someone can run. No record in this tree says that build was
+  published, so this state does not claim it.
 - **Verified on a clean machine** — that exact build was installed and used on a machine
   other than the one it was built on.
 
@@ -64,10 +65,12 @@ A portable archive is published beside the installer. Extract the whole folder a
 
 You install the tool and sign in to it yourself; Diomedes uses that installation and
 that sign-in. Five adapters are **in source**, each accepting exactly one account route.
-Holding a different account with the same tool is a different situation from being
-signed out. The contract for saying so is in `shared/engines.ts` (`AccountRouteIssue`);
-at this commit an adapter still reports an unsupported account as signed out, which is
-one of the things this repair is for.
+Holding a different account with the same tool is not the same as being signed out, and
+`shared/engines.ts` (`AccountRouteIssue`) is the contract a route says that with. Claude
+Code and oh-my-pi report an account of a kind their route does not accept as exactly
+that. Cursor and Devin accept one route each. The OpenCode route is OpenCode Go only:
+when no OpenCode Go account with a usable model is connected, Diomedes says so and names
+the route rather than telling you to sign in again.
 
 | Tool | Account route the adapter accepts | What a task through it can do | Reviewed version |
 | --- | --- | --- | --- |
@@ -81,26 +84,51 @@ These are text routes. The tool answers with text and Diomedes's own writer turn
 text into a proposal you approve or reject. None of them is that tool's own coding
 experience: its tools are disabled or denied, and a tool event stops the request instead
 of running it. These are configuration controls, not an operating-system sandbox. The
-table above repeats `shared/engine-routes.ts`, which is written for the settings screen
-to render; at this commit nothing reads it yet.
+table above repeats `shared/engine-routes.ts`, which the AI setup screen renders and
+`scripts/write-capability-record.ts` reads.
 
 The same rows, each with the three states above, are generated into
 `docs/reference/capability-record.json` by `scripts/write-capability-record.ts`. That file
 is the one place these facts are collected, and it is what another repository copies
 instead of retyping this table.
 
+**The newest published build is an older version than this source tree**, and it does not
+contain the repair this tree is carrying. That file names the build, the commit it was
+made from and what has not been shown about it; the releases page is what you can
+actually download today.
+
 **Found is not usable.** Checking this computer ends in one of these, and the difference
 is the whole point of the list:
 
 - **Not checked** — nothing has been looked for yet. Discovery runs only when you ask.
-- **Not installed** — no installation of that tool was found.
-- **Compatibility check needed** — an installation was found and its version is not the
+- **Not found** — no installation of that tool was found.
+- **Found, failed its integrity check** — an installation is there and its bytes are not
+  the ones Diomedes recorded for it. It is never launched.
+- **Found, needs repair** — the copy you chose has gone, has changed since you chose it,
+  or no longer passes its checks. Diomedes does not move to another copy on its own; it
+  offers to repair with a compatible copy of its own.
+- **Found, unsupported version** — an installation was found and its version is not the
   reviewed one above. The adapter refuses rather than guessing.
 - **Sign in required** — found, reviewed version, and the tool reports no account.
-- **Ready** — found, reviewed version, signed in, at least one model offered, and
-  checked within the last five minutes.
+- **An account this route does not accept** — the tool answered with an account of
+  another kind. That is not being signed out, and Diomedes does not switch to it.
+- **No models listed** — the account answered and offered nothing this route can use.
+- **Ready** — found, reviewed version, signed in on this route, at least one model
+  offered, and checked within the last five minutes.
 
 Only **Ready** can send a request, and the same checks run again when one is dispatched.
+
+**Ready is not tested.** A connection test is one small request Diomedes offers to send
+through the exact connection in front of you; the control says **Test this connection**
+and nothing is sent unless you say yes. It goes to the account that route is signed in
+to, may spend that account's allowance, and is never retried: a request whose outcome is
+uncertain may already have been billed. What comes back is saved as a durable receipt
+for that exact binding — a connection test succeeded at that moment — and the receipt
+stops counting as soon as the installation, the account route or the model changes,
+which is what the screen means by "before this route changed". It is a record of what
+happened, not an authority for what may happen. A request is admitted by the checks
+above, which need no receipt, so **can send** and **was tested** are two different
+answers, and this list tells you which one you have.
 
 **What is reused and what is not.** Diomedes reuses the installation you have and the
 sign-in that tool already holds, in the place that tool keeps it. It does not carry over
