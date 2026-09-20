@@ -107,12 +107,28 @@ beforeEach(async () => {
   await request('/settings', 'PUT', { services: { codex: true } });
   proposal('Result.md');
 });
+// close() drains every change-review build the test queued. Runs that share one
+// task each rebuild all the earlier ones, so twenty of them queue about a thousand
+// builds. Alone on a quiet machine the drain is about 17 s; alone on a busy one it
+// has measured 49 s after a 44 s body, each past vitest's 30 s default. This budget
+// covers that cost and nothing else, and should come down when the rebuilds do.
+const DRAIN_BUDGET = 300_000;
 afterEach(async () => {
+  // Hold this test's own app and server. A hook that outlives its timeout keeps
+  // running, and by the time close() returns the module bindings belong to the
+  // next test, whose server it would otherwise shut.
+  const closingApp = app, closingServer = server;
   for (const cancel of [...pendingObservers]) cancel();
-  await app.locals.close();
-  server.closeAllConnections();
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-});
+  try {
+    // Undefined only when beforeEach failed first; its error is the one to report.
+    await closingApp?.locals.close();
+  } finally {
+    if (closingServer) {
+      closingServer.closeAllConnections();
+      await new Promise<void>((resolve) => closingServer.close(() => resolve()));
+    }
+  }
+}, DRAIN_BUDGET);
 
 describe('human-issued task scope', () => {
   test('completion observation stays pending for working sessions and ignores another project', async () => {
@@ -163,7 +179,7 @@ describe('human-issued task scope', () => {
     const current = await state();
     expect(current.history.filter((entry) => entry.kind === 'changed')).toHaveLength(20);
     expect(new Set(current.needs.map((need) => need.authorization?.id)).size).toBe(20);
-  }, 30_000);
+  }, DRAIN_BUDGET);
 
   test('review changes still waits and legacy task flags do not mint authority', async () => {
     const thread = await request(`/projects/${projectId}/threads`, 'POST', {
