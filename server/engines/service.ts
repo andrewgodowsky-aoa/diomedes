@@ -951,6 +951,16 @@ export class EngineService {
   }
   selection(engine: ExternalEngine, model: string) {
     const state = this.connections.get(engine)!;
+    // Checked before sign-in, because a reported route mismatch is not one.
+    // That person did sign in; the kind of account they hold is what this
+    // route cannot use, and signing in again would not change it.
+    if (state.routeIssue)
+      throw new EngineError(
+        'AUTH_REQUIRED',
+        `This installation is signed in to a different account. Diomedes uses ${state.routeIssue.required} for this route.`,
+        false,
+        'provider-auth',
+      );
     if (
       state.authentication !== 'signed-in' ||
       state.compatibility !== 'supported' ||

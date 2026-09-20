@@ -379,4 +379,27 @@ describe('a reported account-route mismatch', () => {
     expect(connection().routeIssue).toBeNull();
     expect(service.nextAction('claude-code', READY)).toBe('check-connection');
   });
+
+  it('refuses a selection without telling a signed-in person to sign in', async () => {
+    const { service, connection } = scripted();
+    await service.discover(true);
+    await service.check('claude-code');
+    expect(connection().routeIssue).toEqual(ROUTE_ISSUE);
+    let thrown: unknown;
+    try {
+      service.selection('claude-code', 'sonnet');
+    } catch (error) {
+      thrown = error;
+    }
+    // Every other unusable state here is answered by checking sign-in. This
+    // one is not: that person signed in, and the account they hold is the
+    // whole problem. Asking them to do it again would not resolve anything.
+    expect(thrown).toBeInstanceOf(EngineError);
+    const refusal = thrown as EngineError;
+    expect(refusal.message).not.toMatch(/check sign-in/i);
+    expect(refusal.message).toMatch(/different account/i);
+    expect(refusal.message).toContain(ROUTE_ISSUE.required);
+    expect(refusal.stage).toBe('provider-auth');
+    expect(refusal.code).toBe('AUTH_REQUIRED');
+  });
 });
