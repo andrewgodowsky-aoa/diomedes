@@ -583,6 +583,11 @@ export function AIConnections({ settings, busy, onConnections, openTest }: AICon
               ? savedModel
               : '';
           const chosen = choices[engine] ?? (storedModel || c.models[0]?.slug || '');
+          // A receipt verifies the route a run would take, so the model tested
+          // is the model this route is set to use — never whatever the select
+          // happens to be showing. Until one is saved there is nothing to
+          // verify, and the host refuses the request anyway.
+          const testModel = storedModel;
           const offer = offers[engine];
           const error = opError[engine];
           const repair = repairText(c);
@@ -866,18 +871,20 @@ export function AIConnections({ settings, busy, onConnections, openTest }: AICon
                   {testOpen[engine] === true ? (
                     <>
                       <p>
-                        This sends one small synthetic request through {profile.routeLabel} using{' '}
-                        {chosen || 'the selected model'}. It may use that service&apos;s allowance
-                        or add provider charges.
+                        {testModel === ''
+                          ? `Choose this route's model with Use as default before testing it.`
+                          : `This sends one small synthetic request through ${profile.routeLabel} using ${testModel}. It may use that service's allowance or add provider charges.`}
                       </p>
                       <div className="actions">
-                        <Button
-                          tone="primary"
-                          disabled={busy || testing[engine] || !chosen}
-                          onClick={() => void test(engine, chosen)}
-                        >
-                          {testing[engine] ? 'Testing…' : 'Send the test request'}
-                        </Button>
+                        {testModel !== '' && (
+                          <Button
+                            tone="primary"
+                            disabled={busy || testing[engine]}
+                            onClick={() => void test(engine, testModel)}
+                          >
+                            {testing[engine] ? 'Testing…' : 'Send the test request'}
+                          </Button>
+                        )}
                         <Button
                           tone="quiet"
                           disabled={testing[engine]}
@@ -1070,7 +1077,13 @@ export default function AISetup({ settings, save, busy, onContinue, onBack }: AI
   const defaultEngine = settings.services?.['defaultEngine'];
   const selected = connections.find((c) => c.engine === defaultEngine);
   // The untested route can be tested from here, in the card that owns the test.
-  const testable = choice === 'untested' && selected !== undefined && connected(selected);
+  // A test verifies the model the route is set to use, so a route with no saved
+  // model has nothing to verify yet and is not offered one.
+  const testable =
+    choice === 'untested' &&
+    selected !== undefined &&
+    connected(selected) &&
+    typeof settings.services?.[`${selected.engine}Model`] === 'string';
   return (
     <div className="ai-setup">
       <h1>Connect an AI service</h1>

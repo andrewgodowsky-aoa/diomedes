@@ -631,6 +631,21 @@ async function openEngines(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Engines', exact: true, level: 1 })).toBeVisible();
 }
 
+/**
+ * The model this route is set to use. A test verifies the route a run would
+ * take, so the screen offers one only for a route whose model is saved, and
+ * the host refuses a request for any other model.
+ */
+async function selectOpenCode(): Promise<void> {
+  await api('/settings', 'PUT', {
+    services: {
+      opencode: true,
+      defaultEngine: 'opencode',
+      opencodeModel: 'opencode/fixture-model',
+    },
+  });
+}
+
 test('Settings offers the private compatible copy for a found but incompatible installation', async ({
   page,
 }) => {
@@ -905,10 +920,15 @@ test('Settings sends one test request only on an explicit second click, and show
     });
   });
   try {
+    await selectOpenCode();
     await openEngines(page);
     const section = setupSection(page);
     await expect(stateChip(page, 'test')).toContainText('Not tested');
     await section.getByRole('button', { name: 'Test this connection', exact: true }).click();
+    // The consent names the model this route is set to use.
+    await expect(section.getByText(/one small synthetic request/)).toContainText(
+      'opencode/fixture-model',
+    );
     await expect(section.getByText(/one small synthetic request/)).toContainText(
       "allowance or add provider charges",
     );
@@ -956,6 +976,7 @@ test('Settings reports the stage a test failed at, and warns when a retry may be
     });
   });
   try {
+    await selectOpenCode();
     await openEngines(page);
     const section = setupSection(page);
     await section.getByRole('button', { name: 'Test this connection', exact: true }).click();
@@ -999,6 +1020,7 @@ test('Settings reads the stage a failed test carried with it, without a status r
     });
   });
   try {
+    await selectOpenCode();
     await openEngines(page);
     const section = setupSection(page);
     await expect(stateChip(page, 'test')).toContainText('Not tested');
@@ -1185,6 +1207,7 @@ test('Settings sends a changed binding to the installations, not to a sign-in', 
     });
   });
   try {
+    await selectOpenCode();
     await openEngines(page);
     const section = setupSection(page);
     await section.getByRole('button', { name: 'Test this connection', exact: true }).click();
