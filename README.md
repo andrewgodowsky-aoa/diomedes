@@ -6,55 +6,151 @@ tasks, conversations, approvals and file history in one place. A helper can prop
 change; Diomedes shows the exact before and after and writes nothing until you say go
 ahead. Every write is recorded and reversible.
 
-It runs entirely on this computer. There is no account, no server, no telemetry and no
-remote service of its own. When you switch a helper on, that helper's own sign-in
-(today, your existing ChatGPT sign-in for Codex) is what talks to the outside world.
+Diomedes has no model of its own. It drives an AI tool you already installed and signed
+in to, through an adapter. Your account, your allowance, your bill.
 
-Diomedes Systems (LLC formation pending). Version 0.1.0, a working prototype.
+It runs on this computer. There is no Diomedes account and no telemetry. The only
+network calls it makes for itself are the update check against its published releases
+page and, when you ask for one, a guided download of a pinned official tool release.
+Everything else leaves through the AI tool you signed in to.
 
-## Work and approval recovery
+Diomedes Systems (LLC formation pending). This source tree is Diomedes 0.1.4;
+`package.json` holds that number and `tests/engine-routes.test.ts` fails if this file
+disagrees with it.
 
-Task Start in Workbook and Console now saves a command identity before sending it.
-If a response is lost, the same request finds the original Work session instead of
-starting another one. The receipt, session and admission History event are saved
-together before the native helper is called. A host restart retains the receipt and
-marks interrupted Work stopped; it does not silently repeat a model call or apply a
-pending proposal.
+## Three states, and which one a sentence means
 
-Native proposals now expire after one hour. Each decision binds the displayed
-proposal, exact output bytes and selected source revisions. The host saves an
-immutable decision receipt before writing. A lost response or identical retry
-returns that decision; restart reconciles prepared writes and explicitly marks an
-accepted decision with no prepared write as not applied. Workbook and Console show
-the expiry, recorded outcome and an expandable Decision record. Exact proposals
-cannot grant permission for a whole task.
+Every capability named below is in one of three states, and this file says which:
 
-Work Start and approval decisions share command identity and conflict primitives.
-Composer sends, team starts and authenticated actors remain later foundation work.
-The older sample flow remains supported. See the
-[Work foundation record](docs/implementation/2026-09-08-work-admission.md) and
-[approval continuation record](docs/implementation/2026-09-08-approval-receipts.md)
-for acceptance gates, limits and evidence.
+- **In source** — the code is in this tree and its tests pass here.
+- **Packaged** — that code is inside a published build, so it is in the executable a
+  person actually runs.
+- **Verified on a clean machine** — that exact build was installed and used on a machine
+  other than the one it was built on.
 
-## Native harness runtime
+None of the three implies the next. A capability can be in source and not packaged, or
+packaged and never used anywhere but here. Where this file does not say, assume only the
+first.
 
-The native harness now has a per-project run store, a Session/Task/Need bridge,
-read and cancellation routes, and durable events with a reconnect cursor. The
-`format-report` capability reads shipped synthetic lines, formats a report and
-waits for an exact approval before writing `Harness report.md` through the existing
-document journal and History. Restart recovery preserves unanswered approvals and
-reuses recorded writes without applying them twice.
+## Install and use the published Windows build
 
-The model adapter is scripted; a real provider adapter is the next implementation.
-TypeScript and all 483 tests passed, including real host and child-process crash
-recovery tests. This source change has not been packaged into the Windows executable.
-See the [runtime report](docs/harness/RUNTIME_VERIFICATION.md) for API invocation,
-verification evidence, migration notes and limitations.
+Windows 11 x64. No Node, npm, Git or developer tool is needed for this path.
+
+1. From https://github.com/andrewgodowsky-aoa/diomedes/releases, download
+   `Diomedes-Experimental-<version>-unsigned-setup.exe` and `SHA256SUMS.txt`.
+2. Check the file before running it. In PowerShell, in the download folder:
+   `Get-FileHash .\Diomedes-Experimental-*-unsigned-setup.exe -Algorithm SHA256`, and
+   compare the result with the matching line in `SHA256SUMS.txt`.
+3. Run the installer and open **Diomedes** from the Start menu. It installs for the
+   current user only: no administrator rights, no PATH change, no background service.
+   Uninstalling removes its own files, its two current-user registry keys and its
+   shortcut; your projects and history stay where they are.
+
+The installer is **unsigned**. A matching SHA-256 proves the bytes are the ones
+published with that checksum; it does not prove who built them. Windows may warn about
+an unknown publisher, and some antivirus products flag new unsigned programs on
+reputation alone. Never turn off Windows protection to install it: if a file is
+quarantined, check its SHA-256 against `SHA256SUMS.txt` and download it again instead of
+making an exception. Code signing is tracked in `docs/releases/CODE_SIGNING.md`.
+
+The application can check that same releases page for a newer stable Windows per-user
+installer. There is no other remote service of its own.
+
+A portable archive is published beside the installer. Extract the whole folder and run
+`Diomedes.exe` from inside it; the bare executable is not the application.
+
+## The AI routes Diomedes can drive
+
+You install the tool and sign in to it yourself; Diomedes uses that installation and
+that sign-in. Five adapters are **in source**, each accepting exactly one account route.
+Holding a different account with the same tool is a different situation, not a failed
+sign-in, and Diomedes says so rather than telling you to sign in again.
+
+| Tool | Account route the adapter accepts | What a task through it can do | Reviewed version |
+| --- | --- | --- | --- |
+| Claude Code | Claude subscription, signed in to Claude Code | Text answers and reviewed proposals. Tools, MCP and slash commands are off. | 2.1.252 |
+| OpenCode | OpenCode Go | Text answers and reviewed proposals. Tools, plugins and MCP are off. | 1.18.4 |
+| oh-my-pi | OpenAI API key, in a separate oh-my-pi profile | Text answers and reviewed proposals. Tools, extensions and skills are off. | 18.0.6 |
+| Cursor | Cursor account, signed in through the Cursor CLI | Text answers and reviewed proposals in ask mode. A tool event stops the request. | 2026.08.11 |
+| Devin | Devin account, signed in through its browser flow | Text answers and reviewed proposals in ask mode. A tool event stops the request. | 3000.10.23 |
+
+These are text routes. The tool answers with text and Diomedes's own writer turns that
+text into a proposal you approve or reject. None of them is that tool's own coding
+experience: its tools are disabled or denied, and a tool event stops the request instead
+of running it. These are configuration controls, not an operating-system sandbox. The
+settings screen and the table above read the same sentences from
+`shared/engine-routes.ts`.
+
+**Found is not usable.** Checking this computer ends in one of these, and the difference
+is the whole point of the list:
+
+- **Not checked** — nothing has been looked for yet. Discovery runs only when you ask.
+- **Not installed** — no installation of that tool was found.
+- **Compatibility check needed** — an installation was found and its version is not the
+  reviewed one above. The adapter refuses rather than guessing.
+- **Sign in required** — found, reviewed version, and the tool reports no account.
+- **Ready** — found, reviewed version, signed in, at least one model offered, and
+  checked within the last five minutes.
+
+Only **Ready** can send a request, and the same checks run again when one is dispatched.
+
+**What is reused and what is not.** Diomedes reuses the installation you have and the
+sign-in that tool already holds, in the place that tool keeps it. It does not carry over
+your plugins, MCP servers, instruction files or custom configuration: each route runs in
+its own directory with configuration Diomedes wrote. A launched tool receives a short
+allowlist of environment variables (`server/engines/process.ts`), so provider keys,
+proxy settings and other custom variables do not reach it. The per-route lists are in
+`shared/engine-routes.ts` and on the settings screen.
+
+**Signing in** happens in the tool, never in Diomedes. Claude Code, OpenCode and Cursor
+open their own sign-in in a console window; Devin opens its browser flow; oh-my-pi opens
+the separate profile folder where you write an OpenAI API key yourself, which Diomedes
+does not read.
+
+**Billing** falls on the account each route is signed in to. Diomedes never substitutes
+a provider or a model, and it cannot see what an account has left unless the provider
+reports it. The OpenCode route is pinned to OpenCode Go; OpenCode documents an
+account-side "Use balance" setting that can continue usage from Zen balance once Go
+limits are reached, so that pin alone does not decide what you are charged. The
+oh-my-pi route spends an OpenAI API key, which is API billing and not a ChatGPT
+subscription.
+
+**Guided installation** is offered for Claude Code, OpenCode and oh-my-pi: Diomedes
+downloads one pinned official release into its own folder, checks its SHA-256 before
+anything runs it, and installs for the current user only, with no elevation and no PATH
+change. It never overwrites, downgrades or removes an installation you already have.
+Cursor and Devin are installed by their own installers.
+
+Discovery itself looks for a program on PATH and in a few known folders, runs
+`--version` on it one at a time, and probes two loopback addresses. It never starts a
+service, never sends a model turn and never reads a credential file. Probe output is
+capped, never evaluated and never logged raw.
+
+## Proposals, approval and recovery
+
+A helper's answer becomes a proposal. Each decision binds the displayed proposal, the
+exact output bytes and the selected source revisions, and the host saves an immutable
+decision receipt before writing. A lost response or an identical retry returns that same
+decision; a restart reconciles prepared writes and marks an accepted decision with no
+prepared write as not applied. Native proposals expire after an hour. An exact proposal
+never grants permission for a whole task.
+
+Task starts save a command identity before sending, so a lost response finds the
+original session instead of starting a second one. A host restart keeps the receipt and
+marks interrupted work stopped; it does not repeat a model call or apply a pending
+proposal on its own.
+
+The records behind those rules are the
+[Work foundation record](docs/implementation/2026-09-08-work-admission.md), the
+[approval continuation record](docs/implementation/2026-09-08-approval-receipts.md) and
+[the runtime report](docs/harness/RUNTIME_VERIFICATION.md), which is also where the
+native harness runtime's current verified state is kept rather than restated here.
 
 ## Two surfaces over one project
 
 There is one model underneath and two ways to see it. Switch in the top-right menu or
-in Settings > Interface.
+in Settings > Interface. The Workbook is frozen: it takes no new screens and is being
+ported into the Console page by page.
 
 **The Workbook** shows one page at a time: Home, Ask, Plan, Work, Review, Tasks, Documents
 and History, with a rail down the left. It has two detail levels, Guided and Standard.
@@ -122,30 +218,15 @@ How it works:
   tell it to describe changes as proposals and not to mark a task done while an approval
   is open.
 
-Codex runs get the tool host turned on for the team server only: `features.code_mode_host`
-is `true` for a team run and false everywhere else, `features.code_mode` stays false, and
-the `diomedes_team` server entry carries `default_tools_approval_mode: 'approve'` so the
-team's own tools do not each raise a per-call approval. Every other tool feature stays
-off, the sandbox is read-only with no network, inherited MCP servers are disabled and
-their disabled state is verified before a model turn is sent, and a thread refuses to
-start if an inherited `diomedes_team` entry is present.
-
-What has actually been proven, on the pinned Codex 0.153.4 binary and recorded in
-`evidence/codex-team-real-binary-2026-09-06.md`: with that configuration the model can
-call the team tools (roster, board, task creation), its own reported tool inventory
-contains the thirteen team tools plus the host's internals and no shell or file tool,
-and it could not read a project file or run a shell command. A member woken by the
-owner's message read its mail, created and updated a board task, and reported back to
-the leader.
-
 What is *not* proven or not there:
 
-- The tool inventory above is the model's own report, not a protocol-level guarantee
+- The team's tool inventory is the model's own report, not a protocol-level guarantee
   that the host exposes nothing else. There is no pre-execution veto: Diomedes rejects a
   foreign tool result when it is reported, which detects a violation after the fact. See
   `QUESTIONS.md`.
-- Only Codex members can run. Adding a member on any other engine is allowed, but
-  starting it returns "This helper cannot run here yet."
+- A member can be added on several engines, but starting one returns "This helper cannot
+  run here yet" unless it is the earlier Codex route (`server/app.ts`). The five adapters
+  above are not wired into a team run.
 - `team_spawn_agent`, `team_describe_assistant` and `team_clear_agent_context` are
   registered and answer "not available in this version"; `team_list_assistants` returns
   an empty list. Diomedes never spawns a process for a helper — you add a member
@@ -157,103 +238,57 @@ What is *not* proven or not there:
 - One run at a time per project. A second start returns "This project already has work
   in progress."
 
-## Helpers on this computer
-
-Settings > **Helpers on this computer** (in the Workbook) or **Engines** (on the Console) lists
-every engine Diomedes knows about, what it found, and what would be sent to it. Nothing
-in that list is contacted until you switch it on.
-
-Discovery runs **only when you ask** — when you open that Settings section or press
-**Check connections**. It never runs at application start. It looks for a binary on
-PATH and in a few known folders, runs `--version` on it, one probe at a time, and probes
-two loopback addresses. It never starts a service, never sends a model turn and never
-reads a credential file. Probe output is capped, never evaluated and never logged raw.
-Before you have asked, the roster says "Not checked".
-
-The roster, in order:
-
-| Engine | What Diomedes does with it |
-| --- | --- |
-| Sample work | Deterministic local demonstration. No AI engine is called. |
-| Codex (native ChatGPT) | The one working adapter. Ask, Plan, Build, Fix and team runs. |
-| Claude Code, OpenCode, oh-my-pi | Found and reported. No adapter yet; Diomedes cannot run them. |
-| Cursor | Reported as installed without being run (its launcher starts an interpreter). |
-| Hermes | Loopback check on `http://127.0.0.1:8642/` only. |
-| LocalAI supervisor | Observational `GET http://127.0.0.1:8080/localai/status` only. Availability and resident readiness are reported; nothing is started, loaded or generated. |
-| Ollama | Binary and `http://127.0.0.1:11434/api/tags` check only. |
-| AionCore | Not installed and not adopted. Listed so its absence is explicit. |
-
-**Codex with native ChatGPT** is the only engine that does work. `npm run prepare-native`
-copies an already-installed, matching Codex 0.153.4 runtime into this application's data
-directory and records its hashes; it does not change the installed Codex application and
-does not copy credentials. Your existing ChatGPT sign-in is required. The adapter proves
-Windows write denial, disables inherited MCP entries and verifies that they are disabled,
-selects no environments and no tools, and requires native account status. There is no
-API-key fallback, no environment-tool access, no command execution and no provider
-fallback.
-
-Modes shape every send. Ask answers from the selected documents and changes nothing.
-Plan writes a plan document for you to read before work begins. Build proposes changes
-to the selected documents — at most eight files and 128 KB — which are applied only
-after approval. Fix is a Build bound to one failing thing: pick the document or paste
-what went wrong, and Diomedes changes as little as it can, up to three tries in a
-thread. The mode belongs to the thread and is shown on every turn.
-
-If another Codex version is on PATH, Diomedes says so and still uses its own proven copy.
+The recorded team evidence is `evidence/codex-team-real-binary-2026-09-06.md`, taken on
+that date against that pinned binary.
 
 ## Which helper answered
 
 Every answer records which helper produced it, taken from the runtime's own report and
-never from the answer text. A Codex turn keeps the engine, the model name the app-server
-reported for the thread (or for the turn, when `turn/completed` names one) and the
-protocol version from `initialize`. The caption under a helper's turn shows that value,
-"Codex, gpt-6-astra". When the runtime reported nothing the caption says so, "Codex, name
-not reported" in the Workbook and "Codex, model not reported" on the Console, rather than
-guessing. Sample work is recorded as sample work. A Codex selection pinned in Settings
-(`services.codexModel`) travels in the thread configuration, never in the text. Turns
-written before 2026-09-07 carry no record and show no caption.
+never from the answer text. The caption under a helper's turn shows that value. When the
+runtime reported nothing the caption says so — "name not reported" in the Workbook,
+"model not reported" on the Console — rather than guessing. Sample work is recorded as
+sample work. A model pinned in Settings travels in the thread configuration, never in the
+text. Turns written before 2026-09-07 carry no record and show no caption.
 
 This exists because a saved conversation once showed the helper calling itself
-"GPT-5.2 Codex" while the runtime was `gpt-6-astra`; the name had come from the model's
-own prose.
+"GPT-5.2 Codex" while the runtime reported a different model; the name had come from the
+model's own prose.
 
 ## Usage
 
-Every helper that reports usage gets a bar. Codex reports its ChatGPT allowance windows
-(`account/rateLimits/read` when its connection is checked, and the
-`account/rateLimits/updated` notification during a turn) and each thread's counts
-(`thread/tokenUsage/updated`). Nothing calls an undocumented endpoint and no number is
-guessed; a helper that reports nothing gets one plain sentence instead.
+A helper that reports usage gets a bar: a chip in the top bar for the helper that is on,
+with the tightest window and a bar that takes the signal colour past 80 percent and the
+fault colour at 100; every window as a labelled bar with its reset time under that helper
+in Settings; the same bar in each Console pane header and on each roster member. Clicking
+the chip opens Settings at the helpers section.
 
-Where it shows: a chip in the top bar for the helper that is on, with the tightest window
-(the highest percent used) and a 72-pixel bar that takes the signal colour past 80
-percent and the fault colour at 100; every window as a labelled bar with its reset time
-under that helper in Settings; the same bar in each Console pane header and on each roster
-member. Clicking the chip opens Settings at the helpers section.
+Nothing calls an undocumented endpoint and no number is guessed. A helper that reports
+nothing gets one plain sentence instead, which is what the five adapter routes above do
+today: their remaining allowance is not reported to Diomedes.
 
-The exact rate-limit payload of the pinned Codex 0.153.4 app-server is not captured in
-`evidence/` yet, so the mapping accepts the documented field names defensively and turns
-an unknown shape into "not reported" rather than a number. The first check against a
-signed-in Codex is still to do.
+## First use
 
-## Run it
+Answer the three setup questions, then create a project or choose **Open sample
+project**, which writes three text documents into a new folder. No sample is created
+during onboarding itself.
 
-### Windows desktop
+1. Open **Plan**, edit the document, save.
+2. Choose **Make tasks from this plan**, review the proposed tasks, add them.
+3. Start a task. **Sample work** is a scripted local demonstration, labelled as such
+   throughout the interface. It calls no AI service, so it proves the application works
+   and proves nothing about a provider.
+4. Answer **Needs your OK**, then look at **Review**. Keep accepts the current file;
+   Undo records and applies the previous contents.
+5. Open **History** to inspect changes, save named versions, or restore. A restore is
+   itself reversible, and newer content produces explicit conflict choices.
 
-Open `release/Diomedes-win32-x64/Diomedes.exe`, and keep the whole release folder
-together. It is a portable, unsigned Windows x64 build with its own window and bundled
-runtime — no Node, npm or browser needed to run it. It starts its own service on a free
-loopback port and closes that service when you exit. Use View > Zoom In/Out or Settings >
-Appearance > Interface size to adjust readability.
+Changing how something is presented never grants a permission. Unsaved text is backed up
+in this browser profile and recovered when you reopen the document.
 
-There is no installer, no code signature and no update service. The **Diomedes**
-desktop shortcut opens this same executable after every rebuild, so keep the release
-folder where it is. Close Diomedes before building and reopen it afterwards; editing
-source does not update a running application.
+## Run from source (development)
 
-### Browser development
-
-Node 22.12 or later. From this directory:
+This section is for working on Diomedes, not for using it. Node 22.12 or later, on
+Windows. From this directory:
 
 ```powershell
 npm ci
@@ -263,7 +298,10 @@ npm run dev
 
 Open **http://127.0.0.1:5173**. The service listens only on **127.0.0.1:47631**. Ctrl+C
 stops both processes. Nothing is added to startup, no tunnel is opened and no global
-package is installed.
+package is installed. `npm run prepare-native` belongs to the earlier Codex route: it
+copies an already-installed matching Codex runtime into this application's data
+directory and records its hashes. It does not change your installed Codex and does not
+copy credentials.
 
 For a single production listener, `npm run build` then `npm start`, and open
 **http://127.0.0.1:47631**. Stop a development service before starting production on the
@@ -275,29 +313,11 @@ On this machine, Node needs the system certificate store for package downloads. 
 reports `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, run with `NODE_USE_SYSTEM_CA=1`. Keep TLS
 verification on. The build makes no external font requests.
 
-## First use
-
-Answer the three setup questions, then create a project or choose **Open sample
-project**, which writes three text documents into a new folder. No sample is created
-during onboarding itself.
-
-1. Open **Plan**, edit the document, save.
-2. Choose **Make tasks from this plan**, review the proposed tasks, add them.
-3. Start a task. **Sample work** is a scripted local demonstration, labelled as such
-   throughout the interface.
-4. Answer **Needs your OK**, then look at **Review**. Keep accepts the current file;
-   Undo records and applies the previous contents.
-5. Open **History** to inspect changes, save named versions, or restore. A restore is
-   itself reversible, and newer content produces explicit conflict choices.
-
-Changing how something is presented never grants a permission. Unsaved text is backed up
-in this browser profile and recovered when you reopen the document.
-
-## Build, test and package
+### Build, test and package
 
 ```powershell
 npm run check          # TypeScript across client, server, shared, scripts and tests
-npm test               # vitest: store, API, work, native proposals, discovery, team
+npm test               # vitest
 npm run test:ui        # Playwright against installed Microsoft Edge
 npm run package:desktop # alias of npm run build; postbuild packages the desktop app
 npm run test:desktop   # smoke the packaged release/Diomedes-win32-x64/Diomedes.exe
@@ -306,23 +326,33 @@ npm run test:desktop   # smoke the packaged release/Diomedes-win32-x64/Diomedes.
 `npm run build` type-checks, builds the client, and then packages the desktop
 application through its `postbuild` step, always to the same
 `release/Diomedes-win32-x64` path. When you finish a change, run the build and
-`npm run test:desktop` so the release on disk is current and verified.
+`npm run test:desktop` so the release on disk is current and verified. Report the counts
+from your own run; a historical total is not evidence about your commit.
 
 Browser tests use the installed Microsoft Edge with isolated data directories and ports;
-no browser is downloaded. Two checks are separate because they spend real subscription
+no browser is downloaded. These checks are separate because they spend real subscription
 usage and are not part of `npm test`:
 
 - `npm run verify:native-work` — a synthetic native Work integration check. It needs the
-  native runtime and a ChatGPT sign-in, creates only its own test project, verifies
+  native runtime and a signed-in account, creates only its own test project, verifies
   preview, approval, write, history and restore, and closes its own service.
-- `node scripts/approval-desktop-smoke.mjs` — one real Luna run through the packaged
-  approval flow, using its own project and profile. Verifies a lost approval response,
-  decision receipt, restart, replay and byte-exact restore.
-- `npm run smoke:team-codex` — a real Codex team session against a running Diomedes
-  service. Set `DIOMEDES_API` to override the default `http://127.0.0.1:47631/api`.
+- `node scripts/approval-desktop-smoke.mjs` — one real run through the packaged approval
+  flow, using its own project and profile. Verifies a lost approval response, decision
+  receipt, restart, replay and byte-exact restore.
+- `npm run smoke:team-codex` — a real team session against a running Diomedes service.
+  Set `DIOMEDES_API` to override the default `http://127.0.0.1:47631/api`.
 
 `npm run probe:team` exercises the team MCP endpoint with a probe member and spends
 nothing.
+
+### Design authoring
+
+Design authoring is off unless the service was started with `DIOMEDES_DESIGN_AUTHORING=1`
+in its environment. It is read once, at launch (`server/customization-gate.ts`), and it
+is deliberately not a setting: nothing inside the running application can turn it on, and
+it grants authoring on the local scope only. The release's optional
+`Start-Experimental.ps1` launcher sets it for an isolated evaluation profile with its own
+data and projects folders.
 
 ## Where things are kept
 
@@ -347,13 +377,14 @@ junctions are rejected.
 
 ## What is not in it
 
-- **Only one engine works.** Claude Code, OpenCode and oh-my-pi are found but have no
-  adapter. Cursor, Hermes, Ollama and LocalAI are observed, never driven. AionCore is
-  not installed or adopted.
-- **The team's limits** are listed under [The team](#the-team): Codex-only members, three
-  tools that answer "not available in this version", no spawning, no steering, no
-  branching, no handoff, one run at a time per project, and no pre-execution veto over
-  the Codex tool host.
+- **A model of its own.** Diomedes ships adapters, not engines. Without an AI tool you
+  installed and signed in to, only the labelled sample work runs.
+- **Full native tool behaviour.** The five routes are text routes; their tools, plugins
+  and MCP servers are off, and configuration controls are not an operating-system
+  sandbox.
+- **A signed installer.** The published installer is unsigned. A SHA-256 match checks
+  bytes, not a publisher.
+- **The team's limits** are listed under [The team](#the-team).
 - **No local authentication on most of the API.** The team MCP routes check a bearer
   token and slot; the rest of the loopback API does not. Origin/Host checks and a
   required mutation header keep unrelated websites out, but any other process on this
@@ -363,25 +394,21 @@ junctions are rejected.
   no setting claims otherwise.
 - **No Git and no messages.** The application never commits, branches, pushes, or sends
   an email or message on your behalf.
-- **No installer, signature or updater**, and no remote access or account pairing.
 - **Business plugins are a proposal, not code.** See
   `docs/research/2026-09-06-business-plugins/`.
 - Keyboard and assistive-technology audits, Windows 150% scaling and text-spacing
-  overrides are not verified. A landing-page rework and an interface-scale rework are in
-  progress and are not in the packaged release.
+  overrides are not verified.
 
 ## Where the record is
 
-- [Main build integration, 2026-09-08](docs/implementation/2026-09-08-main-build.md)
-  records the verified Work foundation and exact approval changes now in the main
-  Windows executable and existing desktop shortcut.
+- `docs/implementation/` — one record per slice, with the evidence behind it. Start with
+  the newest that names your area.
 - `QUESTIONS.md` — what has been settled and what is still open.
-- `evidence/` — dated verification records. `BUILD-REPORT.md` and `DESKTOP-RELEASE.md`
-  describe the 2026-09-05 state; `codex-team-real-binary-2026-09-06.md` is the team
-  proof; `codex-app-server-0.153.4/` holds the pinned protocol facts the adapter relies on.
-- `docs/research/2026-09-06-business-plugins/` — a researched proposal for business
-  plugins. Nothing in it is implemented.
-- `../planning/` — the dated design and planning packages, with `../planning/README.md`
-  saying which are current.
+- `docs/harness/RUNTIME_VERIFICATION.md` — what the runtime has actually been proven to
+  do, as opposed to what exists in source.
+- `evidence/` — dated verification records, including the release candidates and their
+  installer proofs. A proof carries the machine it ran on; read that before reading it as
+  a claim about anyone else's computer.
+- `docs/releases/CODE_SIGNING.md` — the signing work that is still outstanding.
 - `licenses/` — the bundled font licences. `reference/` — read-only copies of source
   documents used during the build.
