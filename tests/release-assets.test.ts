@@ -39,9 +39,9 @@ const capability = (overrides: Record<string, unknown> = {}) => ({
   generatedFrom: { commit: COMMIT },
   release: { releaseId: RELEASE, appVersionMatchesSource: true },
   routes: [
-    { engine: 'claude-code', displayName: 'Claude Code' },
-    { engine: 'opencode', displayName: 'OpenCode' },
-    { engine: 'cursor', displayName: 'Cursor' },
+    { engine: 'claude-code', displayName: 'Claude Code', states: { packaged: { release: RELEASE } } },
+    { engine: 'opencode', displayName: 'OpenCode', states: { packaged: { release: RELEASE } } },
+    { engine: 'cursor', displayName: 'Cursor', states: { packaged: { release: RELEASE } } },
   ],
   notProven: [
     'No clean Windows standard-user install of the exact published artifact has been run for any route.',
@@ -77,10 +77,30 @@ describe('the engines a release README may name', () => {
 
   it('follows the record when a route is removed from it', () => {
     const text = readme({
-      capability: capability({ routes: [{ engine: 'devin', displayName: 'Devin' }] }),
+      capability: capability({
+        routes: [
+          { engine: 'devin', displayName: 'Devin', states: { packaged: { release: RELEASE } } },
+        ],
+      }),
     });
     expect(text).toContain('Devin');
     expect(text).not.toContain('OpenCode');
+  });
+
+  it('does not say this build carries a route the record does not place in it', () => {
+    // The record keeps source and packaged apart for exactly this sentence. A
+    // route whose adapter is in the tree but not in these bytes is named as
+    // that, never as something the downloader can use.
+    const text = readme({
+      capability: capability({
+        routes: [
+          { engine: 'devin', displayName: 'Devin', states: { packaged: { release: RELEASE } } },
+          { engine: 'cursor', displayName: 'Cursor', states: { packaged: null } },
+        ],
+      }),
+    });
+    expect(text).toMatch(/routes this build carries are Devin\b/);
+    expect(text).toMatch(/Cursor[^\n]*not (recorded )?in this build|not in this build[^\n]*Cursor/i);
   });
 });
 

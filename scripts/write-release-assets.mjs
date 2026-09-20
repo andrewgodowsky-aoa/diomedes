@@ -114,7 +114,17 @@ export function releaseReadme({
       `${CAPABILITY_RECORD} describes ${described ?? 'no release'}, not ${record.releaseId}. Run: npm run capability-record`,
     );
   const version = record.appVersion;
-  const engines = list((capability.routes ?? []).map((route) => route.displayName));
+  // The record keeps "the adapter is in the tree" and "it is inside this build"
+  // apart, and this is the sentence that used to collapse them. A route these
+  // bytes do not carry is named as that, not offered to the reader.
+  const routes = capability.routes ?? [];
+  const carried = routes.filter((route) => route.states?.packaged?.release === record.releaseId);
+  const elsewhere = routes.filter((route) => !carried.includes(route));
+  const engines = `The routes this build carries are ${list(carried.map((r) => r.displayName))}.${
+    elsewhere.length
+      ? ` ${list(elsewhere.map((r) => r.displayName))}: in the source repository, not recorded in this build.`
+      : ''
+  }`;
   const verification = record.verification ?? {};
   const unit = verification.unit;
   const browser = verification.browser;
@@ -160,8 +170,9 @@ FIRST RUN
   Open Diomedes from the Start menu (installer) or from the extracted folder.
   On first run it offers to look for AI tools already on this computer and looks
   only if you say yes. Diomedes holds no credential of its own: it uses the
-  sign-in a tool you installed already has. The routes this build carries are
-  ${engines}. Which of those were exercised live on this build is under LIMITS.
+  sign-in a tool you installed already has.
+  ${engines}
+  Which of those were exercised live on this build is under LIMITS.
 
 ISOLATED EVALUATION
   ${launcherName} -Executable <path to Diomedes.exe> starts the app with a

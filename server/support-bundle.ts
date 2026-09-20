@@ -171,19 +171,27 @@ const FLOOR: readonly (readonly [RegExp, string])[] = [
   ],
 ];
 
-/** Any spelling of one absolute path, in either separator and any case. */
+/**
+ * Any spelling of one absolute path, in either separator and any case. The
+ * trailing guard keeps `C:\Users\andre` from matching inside `C:\Users\andrew`,
+ * which would replace one account's name with a tilde and leave the rest of
+ * another account's name behind it.
+ */
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 function homeExpression(home: string): RegExp | null {
   // Too short to be a profile directory, and short enough to match everything.
   if (home.length < 4) return null;
-  return new RegExp(home.split(/[\\/]+/).map(escapeRegExp).join('[\\\\/]+'), 'gi');
+  const path = home.split(/[\\/]+/).map(escapeRegExp).join('[\\\\/]+');
+  return new RegExp(`${path}(?![A-Za-z0-9_.-])`, 'gi');
 }
 
 /**
  * A connection row promises it carries no executable path, so that promise is
  * enforced where the row is built rather than trusted of the fields it reads.
  */
-const EXECUTABLE = /\S*[\\/][^\\/\s"']*\.(?:exe|cmd|bat|com|ps1|psm1|msi|dll|sh|appx)\b/gi;
+// `.com` is left out: in an identifier field a host name is likelier than a
+// DOS executable, and turning one into `[path]` would hide a real fact.
+const EXECUTABLE = /\S*[\\/][^\\/\s"']*\.(?:exe|cmd|bat|ps1|psm1|msi|dll|sh|appx)\b/gi;
 
 export function buildSupportBundle(input: {
   version: string; dataDir: string; projectRoot: string; port: number;
@@ -326,12 +334,17 @@ export function buildSupportBundle(input: {
           ? services[`${engine}Model`]
           : null;
       const installation = field(row.installation, 40) ?? 'unknown';
-      // An installation that failed its integrity check, or that needs repair,
-      // has no version Diomedes trusts. `EngineService` says so by recording the
-      // failure with no installed version, and the binding still remembers the
-      // version it had before: printing that would state what the host refused
-      // to. The version recorded with the failure is carried in `diagnostic`.
-      const untrusted = installation === 'corrupt' || typeof row.repair === 'string';
+      // Two repairs leave no current observation to report. A copy that failed
+      // its integrity check has no version Diomedes trusts — `EngineService`
+      // records that failure with no installed version — and a selected copy
+      // that is gone leaves only the version the binding remembers, which is
+      // what it was before. Printing either would state what the host refused
+      // to; the version recorded with the failure is in `diagnostic`.
+      //
+      // Every other repair — the wrong version, a copy that changed, one that
+      // no longer verifies — was probed just now, and that version is the fact
+      // the support conversation turns on.
+      const untrusted = installation === 'corrupt' || row.repair === 'selected-missing';
       return {
         engine,
         installation,

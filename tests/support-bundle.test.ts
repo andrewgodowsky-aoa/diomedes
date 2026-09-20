@@ -490,6 +490,58 @@ describe('the connection facts in the bundle', () => {
     expect(row.installedVersion).toBeNull();
   });
 
+  test('an installation of the wrong version still reports the version that was probed', () => {
+    // `no-reviewed-candidate` is the everyday case: an installation is there,
+    // it answered its version probe, and the version is not the reviewed one.
+    // That version is the fact the support conversation turns on.
+    const [row] = bundleWith([
+      connection({
+        installation: 'found',
+        compatibility: 'unsupported',
+        repair: 'no-reviewed-candidate',
+        candidates: [candidate()],
+        recommendedCandidateId: 'system:opencode:c:/tools/opencode.exe',
+      }),
+    ]).connections;
+    expect(row.installedVersion).toBe('1.19.0');
+  });
+
+  test('an installation that is no longer there reports no version from the binding', () => {
+    const [row] = bundleWith([
+      connection({
+        installation: 'missing',
+        repair: 'selected-missing',
+        candidates: [],
+        binding: {
+          id: 'managed:opencode:private',
+          engine: 'opencode',
+          path: `${HOME}\\tools\\opencode.exe`,
+          version: '1.18.4',
+          sha256: 'a'.repeat(64),
+          source: 'managed',
+          boundAt: NOW,
+          origin: 'explicit',
+        },
+      }),
+    ]).connections;
+    expect(row.installedVersion).toBeNull();
+  });
+
+  test('a profile directory does not carry a longer account name with it', () => {
+    const previous = process.env.USERPROFILE;
+    process.env.USERPROFILE = 'C:\\Users\\Bundle';
+    try {
+      const [row] = bundleWith([
+        connection({ accountRoute: 'C:\\Users\\BundleTest\\opencode' }),
+      ]).connections;
+      expect(row.accountRoute).not.toContain('Test');
+      expect(row.accountRoute).toContain('[home]');
+    } finally {
+      if (previous === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previous;
+    }
+  });
+
   test('a hostile connection cannot smuggle a field, a path or a secret into the bundle', () => {
     const hostile = {
       engine: 'opencode',
