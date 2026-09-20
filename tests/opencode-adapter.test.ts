@@ -54,7 +54,15 @@ const catalogues={
  'zero-models':{connected:['opencode-go'],all:[{id:'opencode-go',models:{}}]},
  'wrong-model':{connected:['opencode-go'],all:[{id:'opencode-go',models:{'other-model':{id:'other-model',name:'Other model'}}}]},
  'dirty-route':{connected:['opencode','someone@example.com','a'.repeat(200),'',...Array.from({length:40},(v,i)=>'provider-'+i)],all:[]}};
-const catalogue=catalogues[mode]||{connected:['opencode-go'],all:[{id:'opencode-go',models:{'go-model':{id:'go-model',name:'Go model',description:'fixture'}}}]};
+const raw=catalogues[mode]||{connected:['opencode-go'],all:[{id:'opencode-go',models:{'go-model':{id:'go-model',name:'Go model',description:'fixture'}}}]};
+// Diomedes starts this server with enabled_providers: ["opencode-go"], and
+// opencode v1.18.4 prunes every other provider out of its own state before it
+// answers (packages/opencode/src/provider/provider.ts:1606-1611, and the
+// handler's own enabled filter). A fixture that answered with providers the
+// real tool would already have removed would let a test pass against a body
+// production never sends.
+const allowed=new Set(['opencode-go']);
+const catalogue={connected:raw.connected.filter(id=>allowed.has(id)),all:raw.all.filter(p=>allowed.has(p.id))};
 // The same events, framed the way a conforming stream is allowed to frame them.
 const frame=payload=>{
  if(framing==='crlf')return 'data: '+payload+'\\r\\n\\r\\n';
@@ -72,8 +80,10 @@ const server=http.createServer(async(req,res)=>{
  const auth=req.headers.authorization||''; if(!auth.startsWith('Basic ')){res.writeHead(401);return res.end();}
  if(req.url==='/provider'){if(mode==='local-401'){res.writeHead(401);return res.end('the local server rejected this password');} if(mode==='start-hang')return; res.setHeader('content-type','application/json');return res.end(JSON.stringify(catalogue));}
  if(req.url==='/event'){res.writeHead(200,{'content-type':'text/event-stream'});stream=res;send(res,{type:'server.connected',properties:{}});return;}
- if(req.url==='/session'&&req.method==='POST'){let b='';for await(const c of req)b+=c; if(mode==='upstream-401'){res.writeHead(401);return res.end('this account is not authorized for that model');} res.setHeader('content-type','application/json');return res.end(JSON.stringify({id:'session-1'}));}
- if(req.url==='/session/session-1/prompt_async'){if(mode==='dispatch-hang')return; if(mode==='dispatch-500'){res.writeHead(500);return res.end('the server failed');} if(mode==='usage-429'){res.writeHead(429);return res.end('rate limit exceeded for this account');} res.writeHead(204);res.end(); if(mode==='hang')return; setTimeout(()=>{if(!stream)return; if(mode==='malformed'){stream.write('data: {bad\\n\\n');return;} if(mode==='retry'){send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'retry',attempt:1,message:'retry',next:1}}});return;} if(mode==='flood'){stream.write('data: '+'x'.repeat(1_500_000));return;} if(mode==='session-denied'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'ProviderAuthError',data:{message:'unauthorized for this account'}}}});return;} if(mode==='session-failed'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'UnknownError',data:{message:'the model stopped responding'}}}});return;} if(mode==='assistant-denied'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1},error:{name:'AuthError',data:{message:'authentication failed for this account'}}}}});return;} if(mode==='tools'){send(stream,{type:'message.part.updated',properties:{part:{sessionID:'session-1',messageID:'assistant-1',type:'tool',text:''}}});return;} if(mode==='stall'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}}); return;} if(mode==='stream-drop'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); stream.write('data: '+JSON.stringify({type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}})+'\\n\\n',()=>{if(stream.socket)stream.socket.destroy();}); return;} if(mode==='noise'){send(stream,{type:'message.updated',properties:{info:{id:'noise',sessionID:'other-session',role:'assistant',providerID:'other',modelID:'other'}}});} const provider=mode==='mismatch'?'other':'opencode-go'; send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Answer'}}); if(mode==='truncated'){stream.write('data: {"type":"session.status","properties":{"sessionID":"session-1"',()=>{if(stream.socket)stream.socket.destroy();});return;} send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1,completed:2},finish:'stop'}}}); send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'idle'}}});},5);return;}
+ if(req.url==='/session'&&req.method==='POST'){let b='';for await(const c of req)b+=c; if(mode==='session-401'){res.writeHead(401);return res.end('this account is not authorized for that model');} res.setHeader('content-type','application/json');return res.end(JSON.stringify({id:'session-1'}));}
+ if(req.url==='/session/session-1/prompt_async'){if(mode==='dispatch-hang')return; if(mode==='dispatch-500'){res.writeHead(500);return res.end('the server failed');} if(mode==='usage-429'){res.writeHead(429);return res.end('rate limit exceeded for this account');} res.writeHead(204);res.end(); if(mode==='hang')return; setTimeout(()=>{if(!stream)return; if(mode==='malformed'){stream.write('data: {bad\\n\\n');return;} if(mode==='retry'){send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'retry',attempt:1,message:'retry',next:1}}});return;} if(mode==='flood'){stream.write('data: '+'x'.repeat(1_500_000));return;} if(mode==='session-denied'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'ProviderAuthError',data:{message:'unauthorized for this account'}}}});return;} if(mode==='session-failed'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'UnknownError',data:{message:'the model stopped responding'}}}});return;} if(mode==='assistant-denied'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1},error:{name:'APIError',data:{message:'The upstream service refused this account.',statusCode:401,isRetryable:false,responseBody:'{"secret-echo":"sk-live-do-not-publish"}'}}}}});return;}
+  if(mode==='api-limit'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'APIError',data:{message:'Slow down.',statusCode:429,isRetryable:true}}}});return;}
+  if(mode==='context-overflow'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'ContextOverflowError',data:{message:'Too long.',responseBody:'sk-live-do-not-publish'}}}});return;} if(mode==='tools'){send(stream,{type:'message.part.updated',properties:{part:{sessionID:'session-1',messageID:'assistant-1',type:'tool',text:''}}});return;} if(mode==='stall'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}}); return;} if(mode==='stream-drop'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); stream.write('data: '+JSON.stringify({type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}})+'\\n\\n',()=>{if(stream.socket)stream.socket.destroy();}); return;} if(mode==='noise'){send(stream,{type:'message.updated',properties:{info:{id:'noise',sessionID:'other-session',role:'assistant',providerID:'other',modelID:'other'}}});} const provider=mode==='mismatch'?'other':'opencode-go'; send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Answer'}}); if(mode==='truncated'){stream.write('data: {"type":"session.status","properties":{"sessionID":"session-1"',()=>{if(stream.socket)stream.socket.destroy();});return;} send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1,completed:2},finish:'stop'}}}); send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'idle'}}});},5);return;}
  if(req.url==='/session/session-1/abort'||req.url==='/session/session-1'){fs.appendFileSync('drop-seen.log',req.url+'\\n');res.writeHead(200);return res.end('true');}
  res.writeHead(404);res.end();
 }); server.listen(Number(process.argv[2]),'127.0.0.1');`,
@@ -256,21 +266,22 @@ describe('OpenCode 1.18.4 authenticated text route', () => {
     ).rejects.toMatchObject({ code: 'ACCOUNT_CHANGED' });
     expect(launches).toHaveLength(0);
   });
-  it('does not treat the separate OpenCode Zen provider as native Go sign-in', async () => {
+  it('cannot see a separate OpenCode Zen provider at all, and says so rather than implying a missing sign-in', async () => {
+    // Diomedes starts the server with enabled_providers: ["opencode-go"], and
+    // opencode v1.18.4 prunes every other provider out of its own state before
+    // it answers. A Zen-only customer is therefore indistinguishable over HTTP
+    // from someone who has never signed in anywhere: both get an empty list.
+    // The sentence must not turn that into "you are not signed in".
     const { adapter } = await fixture('zen');
     const status = await adapter.inspect();
-    // Someone holding another OpenCode provider is not signed out and has not
-    // failed to pay. They hold a route this adapter does not accept, and the
-    // sentence says which route it does accept rather than sending them to
-    // sign in again or to buy something.
     expect(status).toMatchObject({
-      authentication: 'unknown',
+      authentication: 'signed-out',
       accountRoute: null,
       models: [],
-      routeIssue: { required: OPENCODE_ACCOUNT_ROUTE, connected: ['opencode'] },
     });
     expect(status.detail).toContain(OPENCODE_ACCOUNT_ROUTE);
-    expect(status.detail).not.toMatch(/sign ?-?in|sign in|purchase|upgrade|subscribe|buy/i);
+    expect(status.detail).toMatch(/not visible to this route/i);
+    expect(status.detail).toMatch(/zen/i);
   });
   it('reports nothing connected as signed out, with no account-route issue', async () => {
     const { adapter } = await fixture('none');
@@ -282,6 +293,8 @@ describe('OpenCode 1.18.4 authenticated text route', () => {
     });
     expect(status.routeIssue).toBeUndefined();
     expect(status.detail).toMatch(/sign in/i);
+    // What an empty list actually means here, said plainly.
+    expect(status.detail).toMatch(/no OpenCode Go account is connected/i);
   });
   it('reports a connected Go account that offers no models as signed in', async () => {
     const { adapter } = await fixture('zero-models');
@@ -294,16 +307,16 @@ describe('OpenCode 1.18.4 authenticated text route', () => {
     expect(status.routeIssue).toBeUndefined();
     expect(status.detail).toMatch(/no usable models/i);
   });
-  it('records only bounded provider identifiers for an unaccepted route', async () => {
+  it('records no provider identifier the tool did not publish in its own catalogue', async () => {
+    // The tool prunes these before it answers, so this reaches the same empty
+    // list a signed-out machine does. What the adapter must never do is carry
+    // an address or an opaque value into a sentence or a support bundle.
     const { adapter } = await fixture('dirty-route');
     const status = await adapter.inspect();
     const connected = status.routeIssue?.connected ?? [];
-    // Whatever the tool answered, only short identifier-shaped values are kept,
-    // so an account name, an address or a long opaque value cannot ride along.
-    expect(connected).toContain('opencode');
-    expect(connected.length).toBeLessThanOrEqual(16);
-    expect(connected.every((value) => /^[a-z0-9][a-z0-9._-]{0,63}$/i.test(value))).toBe(true);
-    expect(connected.join(' ')).not.toContain('@');
+    expect(connected).toEqual([]);
+    expect(JSON.stringify(status)).not.toContain('@');
+    expect(JSON.stringify(status)).not.toContain('aaaa');
   });
   it.each(['ok', 'none', 'zero-models', 'zen'])(
     'answers the account-route field for %s so a resolved issue cannot survive a recheck',
@@ -318,9 +331,18 @@ describe('OpenCode 1.18.4 authenticated text route', () => {
     const { adapter } = await fixture('none');
     await expect(adapter.generate(request)).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
   });
-  it('names a different connected account rather than a missing model before dispatch', async () => {
+  it('refuses a Zen-only machine before dispatch, naming the route rather than a missing model', async () => {
+    // The tool has already pruned Zen out of its own state, so this is the
+    // same answer a machine with no account at all gives. What the person
+    // gets must name the route and say that their other account is not it.
     const { adapter } = await fixture('zen');
-    await expect(adapter.generate(request)).rejects.toMatchObject({ code: 'ACCOUNT_CHANGED' });
+    const failure = await adapter.generate(request).then(
+      () => undefined,
+      (error: { code: string; message: string }) => error,
+    );
+    expect(failure?.code).toBe('AUTH_REQUIRED');
+    expect(failure?.message).toContain(OPENCODE_ACCOUNT_ROUTE);
+    expect(failure?.message).toMatch(/not visible to this route/i);
   });
   it('still refuses a model the connected Go account does not offer', async () => {
     const { adapter } = await fixture('wrong-model');
@@ -343,14 +365,44 @@ describe('OpenCode failure stages', () => {
     expect(failure?.code).not.toBe('AUTH_REQUIRED');
     expect(failure?.message).not.toMatch(/sign in/i);
   });
-  it('reads an upstream denial as the account, at the provider-auth stage', async () => {
-    const { adapter } = await fixture('upstream-401');
+  it('reads a 401 after the handshake as the local server too, never as the account', async () => {
+    // The authorization middleware is the only thing that answers 401 here and
+    // it has no 403 path at all, so a 401 on /session or /event is the same
+    // local Basic check the handshake met. Reading it as an account denial
+    // sent a person to fix a sign-in that was never the fault.
+    const { adapter } = await fixture('session-401');
     const failure = await adapter.generate(request).then(
       () => undefined,
       (error: { code: string; stage: string; message: string }) => error,
     );
-    expect(failure).toMatchObject({ code: 'AUTH_REQUIRED', stage: 'provider-auth' });
-    expect(failure?.message).toMatch(/sign in/i);
+    expect(failure).toMatchObject({ code: 'HANDSHAKE_FAILED', stage: 'local-handshake' });
+    expect(failure?.message).not.toMatch(/sign in/i);
+  });
+  it.each(['assistant-denied', 'api-limit', 'context-overflow'])(
+    'never carries a response body from %s into anything a person or support reads',
+    async (mode) => {
+      // APIError and ContextOverflowError both carry responseBody, which is
+      // whatever the upstream service sent back and can hold account detail.
+      const { adapter } = await fixture(mode);
+      const failure = await adapter.generate(request).then(
+        () => undefined,
+        (error: { code: string; message: string }) => error,
+      );
+      expect(failure).toBeDefined();
+      expect(JSON.stringify(failure)).not.toContain('sk-live-do-not-publish');
+    },
+  );
+  it('reads each named stream error as what the tool said it was', async () => {
+    const { adapter: limited } = await fixture('api-limit');
+    await expect(limited.generate(request)).rejects.toMatchObject({
+      code: 'USAGE_LIMIT',
+      stage: 'stream',
+    });
+    const { adapter: overflowed } = await fixture('context-overflow');
+    await expect(overflowed.generate(request)).rejects.toMatchObject({
+      code: 'OUTPUT_LIMIT',
+      stage: 'stream',
+    });
   });
   it('reports a startup timeout at the launch stage', async () => {
     const { adapter } = await fixture('start-hang', 2_000);
@@ -361,7 +413,8 @@ describe('OpenCode failure stages', () => {
   });
   it.each([
     ['none', 'AUTH_REQUIRED', 'provider-auth'],
-    ['zen', 'ACCOUNT_CHANGED', 'provider-auth'],
+    // Pruned by the tool before it answers, so this is the signed-out answer.
+    ['zen', 'AUTH_REQUIRED', 'provider-auth'],
     ['wrong-model', 'MODEL_UNAVAILABLE', 'model-list'],
     ['dispatch-500', 'PROVIDER_ERROR', 'dispatch'],
     ['usage-429', 'USAGE_LIMIT', 'dispatch'],

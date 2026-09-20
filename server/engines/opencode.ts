@@ -20,6 +20,7 @@ import {
   cleanupFailed,
   engineEnvironment,
   EngineError,
+  failureKind,
   launchCommand,
   stopped,
   text,
@@ -185,30 +186,31 @@ function abortError(
 }
 
 /**
- * The stage decides what a denial means. Diomedes generates the password for
- * the server it starts and hands it over itself: that server refusing it is a
- * local fault, it proves nothing about the person's account, and telling them
- * to sign in again would send them to repair something that is not broken. A
- * denial that came back from the account — through the provider catalogue, a
- * message response or a session error — is the one that means sign-in.
+ * Diomedes generates the password for the server it starts and hands it over
+ * itself: that server refusing it is a local fault, it proves nothing about the
+ * person's account, and telling them to sign in again would send them to repair
+ * something that is not broken. A denial that came back from the account
+ * arrives over the stream instead, and `streamFailure` reads it.
  */
 function errorForResponse(status: number, body: string, stage: SetupStage): EngineError {
-  if (status === 401 || status === 403) {
-    if (stage === 'local-handshake')
-      return new EngineError(
-        'HANDSHAKE_FAILED',
-        'Diomedes could not authenticate to the OpenCode server it started. No account was reached, so nothing here is known about its sign-in.',
-        false,
-        'local-handshake',
-      );
+  // Every 401 this server sends is its own Basic check on the password Diomedes
+  // generated and handed it: the authorization middleware is the only producer
+  // of one and has no 403 path at all (opencode v1.18.4,
+  // packages/opencode/src/server/routes/instance/httpapi/middleware/
+  // authorization.ts:13, 47-52). A refusal by the account never arrives as an
+  // HTTP status here; it arrives as a session or assistant error on the stream.
+  // So this is a local fault wherever it is seen, and it proves nothing about
+  // the person's sign-in.
+  if (status === 401 || status === 403)
     return new EngineError(
-      'AUTH_REQUIRED',
-      'OpenCode Go is not signed in. Sign in through OpenCode, then recheck.',
-      true,
-      'provider-auth',
+      'HANDSHAKE_FAILED',
+      'Diomedes could not authenticate to the OpenCode server it started. No account was reached, so nothing here is known about its sign-in.',
+      false,
+      'local-handshake',
     );
-  }
-  if (/retry|rate.?limit|quota|usage/i.test(body))
+  // The body is read to classify and never quoted: it is whatever the tool
+  // chose to send, and a response body can carry account detail.
+  if (failureKind(parsedBody(body), status) === 'limited')
     return new EngineError(
       'USAGE_LIMIT',
       'OpenCode reported a service limit. No provider or model was substituted.',
@@ -222,29 +224,97 @@ function errorForResponse(status: number, body: string, stage: SetupStage): Engi
     stage,
   );
 }
+/** A body read as its parsed fields where it is JSON, and as plain text where it is not. */
+function parsedBody(body: string): unknown {
+  try {
+    return JSON.parse(body);
+  } catch {
+    return body.slice(0, 4096);
+  }
+}
 
 /**
- * A refusal that arrived over the stream can still have come back from the
- * account rather than from the server Diomedes started. The payload belongs to
- * the tool, so this reads conservatively: only wording that plainly means the
- * account would not authorise the work counts, and anything else stays the
- * ordinary stream failure it was. Nothing here has been confirmed against a
- * live account, so a shape that does not match is reported exactly as before.
+ * A refusal that arrived over the stream is the only way a refusal by the
+ * account reaches this adapter, and OpenCode says which one it is rather than
+ * leaving it to be guessed: assistant and session errors are a union
+ * discriminated on `name`, each carrying its own fields under `data` (opencode
+ * v1.18.4, packages/schema/src/v1/session.ts:29-63, 385-394). The name decides.
+ *
+ * `responseBody`, `responseHeaders` and `metadata` are never read into a
+ * sentence, a diagnostic or a support bundle. They are whatever the upstream
+ * service sent back, and that can include account detail.
  */
-const UPSTREAM_DENIAL = /unauthori[sz]ed|forbidden|authenticat|credential|api.?key|\b40[13]\b/i;
-function deniedByAccount(value: unknown, fallback: string): EngineError {
-  let serialized = '';
-  try {
-    serialized = (JSON.stringify(value) ?? '').slice(0, 4096);
-  } catch {
-    /* A payload that cannot be serialised is not evidence of a refusal. */
-  }
-  if (UPSTREAM_DENIAL.test(serialized))
+function streamFailure(value: unknown, fallback: string): EngineError {
+  const error = object(value);
+  const name = text(error.name);
+  const data = object(error.data);
+  const status = typeof data.statusCode === 'number' ? data.statusCode : undefined;
+  if (name === 'ProviderAuthError' || (name === 'APIError' && (status === 401 || status === 403)))
     return new EngineError(
       'AUTH_REQUIRED',
       'OpenCode Go refused this request for the connected account. Check that account in OpenCode, then recheck.',
       true,
       'provider-auth',
+    );
+  if (name === 'APIError' && status === 429)
+    return new EngineError(
+      'USAGE_LIMIT',
+      'OpenCode reported a service limit. No provider or model was substituted.',
+      true,
+      'stream',
+    );
+  if (name === 'ContextOverflowError')
+    return new EngineError(
+      'OUTPUT_LIMIT',
+      'This request was longer than the selected OpenCode Go model accepts. Shorten it before sending again.',
+      true,
+      'stream',
+    );
+  if (name === 'MessageOutputLengthError')
+    return new EngineError(
+      'OUTPUT_LIMIT',
+      'OpenCode Go stopped at its own response length limit.',
+      true,
+      'stream',
+    );
+  if (name === 'ContentFilterError')
+    return new EngineError(
+      'POLICY_MISMATCH',
+      'OpenCode Go stopped this request on its own content policy. Nothing was retried.',
+      true,
+      'stream',
+    );
+  if (name === 'MessageAbortedError')
+    return new EngineError(
+      'PROVIDER_ERROR',
+      'OpenCode Go stopped this message before it finished. No automatic retry was sent.',
+      true,
+      'stream',
+    );
+  if (name === 'StructuredOutputError')
+    return new EngineError(
+      'PROTOCOL_ERROR',
+      'OpenCode Go could not produce a usable response.',
+      true,
+      'stream',
+    );
+  // `UnknownError` is the tool saying it does not know either, and its message
+  // is the only thing left to read. Whole words that actually denote a refusal
+  // or a limit, and nothing shorter; an unrecognised name reads the same way.
+  const kind = failureKind({ message: text(data.message) });
+  if (kind === 'denied')
+    return new EngineError(
+      'AUTH_REQUIRED',
+      'OpenCode Go refused this request for the connected account. Check that account in OpenCode, then recheck.',
+      true,
+      'provider-auth',
+    );
+  if (kind === 'limited')
+    return new EngineError(
+      'USAGE_LIMIT',
+      'OpenCode reported a service limit. No provider or model was substituted.',
+      true,
+      'stream',
     );
   return new EngineError('PROVIDER_ERROR', fallback, true, 'stream');
 }
@@ -263,12 +333,29 @@ function modelFrom(value: unknown, providerId: string): EngineModel | undefined 
 }
 
 /**
- * A provider identifier is short and plain. Anything else the tool answers with
- * is dropped rather than recorded, so an account name, an address or an opaque
- * value can never reach a diagnostic, a screen or a support bundle.
+ * A provider identifier is short and plain. This bounds shape and length only:
+ * `acme-holdings-inc` and a 64-character opaque value both satisfy it, so shape
+ * alone is not what decides that an identifier may be recorded. What decides it
+ * is `reported` below — the intersection with the catalogue the same response
+ * published — and only an identifier the tool itself publishes as a provider
+ * can reach a diagnostic, a screen or a support bundle.
  */
 const PROVIDER_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 const MAX_REPORTED_PROVIDERS = 16;
+/**
+ * What an empty `connected` means on this route, said once. Diomedes starts the
+ * server with `enabled_providers: ["opencode-go"]`, and opencode v1.18.4 prunes
+ * every other provider out of its own state before it answers
+ * (packages/opencode/src/provider/provider.ts:1606-1611). So an empty list does
+ * not mean "this person has no OpenCode account"; it means no OpenCode Go
+ * account is connected here, and a sign-in to OpenCode Zen or to any other
+ * provider in the person's own OpenCode is invisible to this route by
+ * construction. Say that rather than implying the person never signed in.
+ */
+const NO_GO_ACCOUNT_DETAIL =
+  `This route runs on the native OpenCode Go account (${OPENCODE_ACCOUNT_ROUTE}), and no OpenCode Go account is connected on this computer. ` +
+  'A sign-in to OpenCode Zen, or to any other provider inside your own OpenCode, is a different account and is not visible to this route. ' +
+  'Sign in to OpenCode Go, then recheck.';
 
 function catalogue(body: Json): {
   connected: boolean;
@@ -284,7 +371,17 @@ function catalogue(body: Json): {
     : [];
   const providerId = 'opencode-go';
   const others = connected.filter((id) => id !== providerId);
-  const reported = others.filter((id) => PROVIDER_ID.test(id)).slice(0, MAX_REPORTED_PROVIDERS);
+  // Only an id the same response publishes in its own catalogue survives.
+  // Shape and length bound an account name or a secret-shaped value no better
+  // than they bound a provider id, and `connected` is rendered in the setup
+  // sentence and copied into a support bundle the person sends to someone else.
+  const published = new Set(
+    all
+      .map(object)
+      .map((item) => text(item.id))
+      .filter((id) => PROVIDER_ID.test(id)),
+  );
+  const reported = others.filter((id) => published.has(id)).slice(0, MAX_REPORTED_PROVIDERS);
   if (!connected.includes(providerId)) return { connected: false, others, reported, models: [] };
   const provider = all.map(object).find((item) => item.id === providerId) ?? {};
   const rawModels = object(provider.models);
@@ -542,9 +639,13 @@ export class OpenCodeAdapter implements TextEngineAdapter {
         'model-list',
       );
       const list = catalogue(body);
-      // A connected account that is not Go is neither signed out nor unpaid.
-      // Say which route this adapter accepts, say these providers are not the
-      // one it uses, and leave the person's own OpenCode setup alone.
+      // UNREACHABLE over HTTP under this adapter's own configuration, and kept
+      // only as a guard if that configuration ever changes. `enabled_providers`
+      // makes the tool prune every non-Go provider out of its state before it
+      // answers, so `others` is always empty here and a person holding only an
+      // OpenCode Zen account reaches the branch below instead. Nothing on this
+      // route detects that account; the sentence below is what they get, and it
+      // says so rather than pretending this branch covers them.
       if (!list.connected && list.others.length)
         return {
           authentication: 'unknown',
@@ -562,7 +663,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
           accountRoute: null,
           models: [],
           routeIssue: undefined,
-          detail: 'Sign in to the native OpenCode Go account before using this route.',
+          detail: NO_GO_ACCOUNT_DETAIL,
         };
       return {
         authentication: 'signed-in',
@@ -616,12 +717,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
           'provider-auth',
         );
       if (!provider.connected)
-        throw new EngineError(
-          'AUTH_REQUIRED',
-          'OpenCode Go is not signed in. Sign in through OpenCode, then recheck.',
-          true,
-          'provider-auth',
-        );
+        throw new EngineError('AUTH_REQUIRED', NO_GO_ACCOUNT_DETAIL, true, 'provider-auth');
       if (!provider.models.some((model) => model.slug === input.model))
         throw new EngineError(
           'MODEL_UNAVAILABLE',
@@ -768,10 +864,10 @@ export class OpenCodeAdapter implements TextEngineAdapter {
               const time = object(info.time);
               assistantTerminal = Number.isFinite(time.completed) && text(info.finish).length > 0;
               if (info.error)
-                throw deniedByAccount(info.error, 'OpenCode reported an assistant error.');
+                throw streamFailure(info.error, 'OpenCode reported an assistant error.');
             }
             if (kind === 'session.error')
-              throw deniedByAccount(props.error, 'OpenCode reported a session error.');
+              throw streamFailure(props.error, 'OpenCode reported a session error.');
             if (
               kind === 'message.part.updated' &&
               assistantMessageId &&
