@@ -614,9 +614,14 @@ export class EngineService {
     await fs.mkdir(this.root, { recursive: true });
     const engines = scope.engine ? [scope.engine] : [...EXTERNAL_ENGINES];
     let found: IntegrationStatus[] = [];
+    // Whether this pass actually managed to look. A pass that did not is not a
+    // success at the discovery stage, so it does not retire what the last
+    // failure there recorded.
+    let discovered = true;
     try {
       found = await this.deps.discover(scope);
     } catch (error) {
+      discovered = false;
       for (const engine of engines) this.record(engine, error, 'discovery');
     }
     let enumerated: DiscoveredInstallation[] = [];
@@ -632,6 +637,7 @@ export class EngineService {
               context: installationContext(row.location!, process.platform),
             }));
     } catch (error) {
+      discovered = false;
       for (const engine of engines) this.record(engine, error, 'discovery');
     }
     for (const engine of engines) {
@@ -644,7 +650,7 @@ export class EngineService {
             ? { location: hit.location, version: hit.installedVersion }
             : undefined,
         });
-        this.apply(engine);
+        this.apply(engine, { discovered });
       } catch (error) {
         // One route's failure is one route's diagnostic, never a blank roster.
         this.record(engine, error, 'discovery');
@@ -657,11 +663,17 @@ export class EngineService {
    * Turn this route's observed installations into the one effective state,
    * through the shared policy. Discovery recommends; only a person binds.
    */
-  private apply(engine: ExternalEngine): EngineConnection {
+  private apply(
+    engine: ExternalEngine,
+    context: { discovered?: boolean } = {},
+  ): EngineConnection {
     const scanned = this.scanned.get(engine) ?? { inventory: [] };
     const inventory = scanned.inventory;
     const stored = this.bindings.get(engine);
     const binding = stored?.binding ?? null;
+    // What this pass proved. A failure recorded at one of these stages is
+    // answered by it; a failure at any other stage is not, and is kept.
+    const looked: SetupStage[] = context.discovered === false ? [] : ['discovery'];
     const shared = {
       candidates: inventory.map((row) => structuredClone(row)),
       binding,
@@ -679,7 +691,7 @@ export class EngineService {
         ...installationState(inventory, null),
         repair: 'record-unreadable',
         detail: repairDetail(engine, 'record-unreadable', 'found'),
-      });
+      }, looked);
     // Nothing on this computer could be identified and nothing is bound: report
     // what discovery saw without claiming a verified identity for it.
     //
@@ -708,7 +720,7 @@ export class EngineService {
           version === TESTED_VERSIONS[engine]
             ? 'Found a compatible installation. Check sign-in and models next.'
             : `This adapter was checked with ${TESTED_VERSIONS[engine]}. The installed version needs compatibility review.`,
-      });
+      }, looked);
     }
     const decision = selectCandidate(
       inventory,
@@ -728,7 +740,9 @@ export class EngineService {
         detail: decision.requiresSelection
           ? 'Found a compatible installation. Check sign-in and models next.'
           : 'Using the installation you chose. Check sign-in and models next.',
-      });
+      // The effective installation resolved, matched its digest and answered
+      // its version probe, which is what runtime-verification asks of it.
+      }, [...looked, 'runtime-verification']);
     }
     const state = installationState(inventory, binding);
     const corrupt = state.installation === 'corrupt';
@@ -751,7 +765,7 @@ export class EngineService {
             }),
           }
         : {}),
-    });
+    }, looked);
   }
 
   /**
@@ -765,26 +779,50 @@ export class EngineService {
    * computer again, which asks no account anything, would retire what the last
    * check learned and send the person back to "check connection".
    */
-  private merge(engine: ExternalEngine, next: EngineConnection): EngineConnection {
+  private merge(
+    engine: ExternalEngine,
+    next: EngineConnection,
+    succeeded: SetupStage[] = [],
+  ): EngineConnection {
     const old = this.connections.get(engine)!;
     const same =
       !!next.location &&
       next.location === old.location &&
       next.version === old.version &&
       (old.authentication === 'signed-in' || !!old.routeIssue);
-    return this.save(
-      same
-        ? {
-            ...next,
-            authentication: old.authentication,
-            accountRoute: old.accountRoute,
-            models: old.models,
-            routeIssue: old.routeIssue ?? null,
-            checkedAt: old.checkedAt,
-            detail: old.detail,
-          }
-        : next,
-    );
+    const carried = same
+      ? {
+          ...next,
+          authentication: old.authentication,
+          accountRoute: old.accountRoute,
+          models: old.models,
+          routeIssue: old.routeIssue ?? null,
+          checkedAt: old.checkedAt,
+          detail: old.detail,
+        }
+      : next;
+    return this.save({ ...carried, diagnostic: this.lastFailure(old, next, succeeded) });
+  }
+  /**
+   * The failure a connection still carries. A diagnostic is cleared by the next
+   * success at its own stage, or by a change of the executable it was about —
+   * and by nothing else. Checking this computer again is not a successful
+   * sign-in, so it no longer retires what a failed sign-in recorded.
+   *
+   * A failure recorded while no executable was known is about this computer,
+   * not about a file, so finding one afterwards does not answer it either.
+   */
+  private lastFailure(
+    old: EngineConnection,
+    next: EngineConnection,
+    succeeded: SetupStage[],
+  ): SetupDiagnostic | null {
+    if (next.diagnostic) return next.diagnostic;
+    if (!old.diagnostic) return null;
+    const executable = (value: EngineConnection) => value.location ?? value.binding?.path ?? null;
+    const before = executable(old);
+    const sameSubject = before === null || before === executable(next);
+    return sameSubject && !succeeded.includes(old.diagnostic.stage) ? old.diagnostic : null;
   }
   async check(engine: ExternalEngine, signal?: AbortSignal): Promise<EngineConnection> {
     if (this.checks.has(engine))

@@ -41,6 +41,8 @@ interface HostOptions {
   /** A second engine, to prove one engine's failure never hides another. */
   other?: { engine: ExternalEngine; file: string };
   service?: string;
+  /** Make the roster call fail while this answers true. */
+  failDiscoverWhile?: () => boolean;
 }
 
 /**
@@ -116,9 +118,10 @@ function host(options: HostOptions = {}) {
   const enumerate = vi.fn(async (scope?: { engine?: ExternalEngine }) =>
     installations.filter((row) => !scope?.engine || row.engine === scope.engine),
   );
-  const discover = vi.fn(async (scope?: { engine?: ExternalEngine }) =>
-    rows.filter((row) => !scope?.engine || row.id === scope.engine),
-  );
+  const discover = vi.fn(async (scope?: { engine?: ExternalEngine }) => {
+    if (options.failDiscoverWhile?.()) throw new EngineError('SCAN_FAILED', 'The roster failed.');
+    return rows.filter((row) => !scope?.engine || row.id === scope.engine);
+  });
   const service = new EngineService(serviceRoot, {
     discover,
     enumerate,
@@ -142,6 +145,16 @@ function host(options: HostOptions = {}) {
     discover,
     inspect,
     generate,
+    /** This computer now offers one different executable for this route. */
+    replaceSystem(file: string, replacedVersion = TESTED_VERSIONS[engine]) {
+      versions.set(path.resolve(file), replacedVersion);
+      rows.splice(0, rows.length, entry(engine, file, replacedVersion));
+      installations.splice(0, installations.length, {
+        engine,
+        path: file,
+        context: 'windows-native',
+      });
+    },
   };
 }
 const connection = (service: EngineService, engine: ExternalEngine) =>
@@ -609,6 +622,96 @@ describe('what a person is asked to do next, and what the record says', () => {
       detail: 'Checked',
     });
     await h.service.check('opencode');
+    expect(connection(h.service, 'opencode').diagnostic).toBeNull();
+  });
+
+  it('keeps a check failure through a rescan that finds the very same executable', async () => {
+    // `Cleared by the next success at that stage` is what the record promises.
+    // Checking this computer again is not a success at provider-auth, and it
+    // used to erase the failure anyway, so the support bundle and the screen
+    // both forgot why the route stopped working.
+    const file = place(path.join(root(), 'tools', 'opencode.exe'), 'reviewed bytes');
+    const h = host({ system: [{ file }] });
+    await h.service.discover(true);
+    h.inspect.mockRejectedValue(
+      new EngineError('AUTH_REQUIRED', 'Sign in to this service.', false, 'provider-auth'),
+    );
+    await expect(h.service.check('opencode')).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+    const before = connection(h.service, 'opencode').diagnostic!;
+
+    await h.service.discover(true);
+    expect(connection(h.service, 'opencode').diagnostic).toMatchObject({
+      stage: 'provider-auth',
+      code: 'AUTH_REQUIRED',
+      correlationId: before.correlationId,
+    });
+  });
+
+  it('drops a check failure when the executable itself changes', async () => {
+    const first = place(path.join(root(), 'tools', 'opencode.exe'), 'reviewed bytes');
+    const h = host({ system: [{ file: first }] });
+    await h.service.discover(true);
+    h.inspect.mockRejectedValue(
+      new EngineError('AUTH_REQUIRED', 'Sign in to this service.', false, 'provider-auth'),
+    );
+    await expect(h.service.check('opencode')).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+    expect(connection(h.service, 'opencode').diagnostic).toBeTruthy();
+
+    // A different installation is a different subject; what the old one said
+    // about its account is not a fact about this one.
+    const second = place(path.join(root(), 'other', 'opencode.exe'), 'another reviewed copy');
+    h.replaceSystem(second);
+    await h.service.discover(true);
+    expect(connection(h.service, 'opencode').diagnostic).toBeNull();
+  });
+
+  it('keeps a scan failure recorded while the scan that recorded it finishes', async () => {
+    // The roster and the enumeration each failed for this route. `apply()` runs
+    // immediately afterwards inside the same scan and used to overwrite what
+    // they recorded, so the one pass that knew what went wrong forgot it.
+    for (const failing of ['discover', 'enumerate'] as const) {
+      const service = new EngineService(root(), {
+        discover: async () => {
+          if (failing === 'discover') throw new EngineError('SCAN_FAILED', 'The roster failed.');
+          return [];
+        },
+        enumerate: async () => {
+          if (failing === 'enumerate') throw new EngineError('SCAN_FAILED', 'The list failed.');
+          return [];
+        },
+        version: async () => TESTED_VERSIONS.opencode,
+        verifyManaged: async () => {
+          throw new Error('no private copy in this test');
+        },
+        buildId: () => 'test-build',
+        adapter: (id) => ({
+          id,
+          contract: routeContractFor(id),
+          inspect: async () => ({
+            authentication: 'signed-in' as const,
+            accountRoute: 'opencode:account',
+            models: [],
+            detail: 'Checked',
+          }),
+          generate: async (input) => textResponse(input, 'Answer', TESTED_VERSIONS.opencode),
+        }),
+      });
+      await service.discover(true);
+      expect(connection(service, 'opencode').diagnostic).toMatchObject({
+        stage: 'discovery',
+        code: 'SCAN_FAILED',
+      });
+    }
+  });
+
+  it('drops a scan failure on the next scan that reaches the end', async () => {
+    let failing = true;
+    const file = place(path.join(root(), 'tools', 'opencode.exe'), 'reviewed bytes');
+    const h = host({ system: [{ file }], failDiscoverWhile: () => failing });
+    await h.service.discover(true);
+    expect(connection(h.service, 'opencode').diagnostic).toMatchObject({ stage: 'discovery' });
+    failing = false;
+    await h.service.discover(true);
     expect(connection(h.service, 'opencode').diagnostic).toBeNull();
   });
 });
