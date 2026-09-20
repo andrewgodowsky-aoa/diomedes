@@ -451,7 +451,7 @@ export function renderSupportBundle(bundle: SupportBundle): string {
             ]
           : []),
         `models=${connection.models}`,
-        `selected model=${connection.selectedModel ?? 'none'}`,
+        `model selected in settings=${connection.selectedModel ?? 'none'}`,
         ...(connection.revision === null ? [] : [`revision=${connection.revision}`]),
         `last verified=${connection.lastVerifiedAt ?? 'never'}${
           connection.verifiedRevision === null ? '' : ` (revision ${connection.verifiedRevision})`
