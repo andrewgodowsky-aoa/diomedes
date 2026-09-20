@@ -304,6 +304,10 @@ These were found, weighed and deliberately not decided by this work.
   for a real release since it was rewritten, and `scripts/write-candidate-record.ts` does
   not yet record the desktop smoke, installer or installed-runtime gates, so the next
   release README will print those as not verified until it does.
+  *(Later that day: the record half is done. `--desktop-smoke`, `--installer-proof` and
+  `--installed-runtime` record a real outcome from a real report —
+  [`2026-09-20-release-gate-outcomes.md`](2026-09-20-release-gate-outcomes.md). The
+  asset writer's `main()` is still unexercised by a real release.)*
 - **Settings, About.** Its copy still says "Version 0.1." and describes a workbook.
 - **`installGovernance` in `server/harness/lifecycle.ts`** is not wired; if it is, it
   must early-return for the host's own test project as the other three hooks do.
