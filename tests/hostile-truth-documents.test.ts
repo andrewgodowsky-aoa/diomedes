@@ -1,0 +1,79 @@
+/**
+ * Hostile verification of the two documents this repair rewrote.
+ *
+ * Each case pairs one sentence with the code it describes at this commit.
+ * A failure here is a sentence the tree contradicts, which AGENTS.md's
+ * completion rule ("nothing in the tree claims a capability is shipped that is
+ * not shipped") treats as a defect in its own right.
+ *
+ * Read-only: no document is edited.
+ */
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+const read = (name: string) => readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
+const readme = read('README.md');
+const record = read('docs/implementation/2026-09-20-first-run-repair.md');
+
+describe('README sentences against the code at this commit', () => {
+  it('does not say the route profiles are unread', () => {
+    // client/AISetup.tsx:6 and scripts/write-capability-record.ts:27 both
+    // import ENGINE_ROUTE_PROFILES, and the record says the setup screen
+    // renders them.
+    expect(read('client/AISetup.tsx')).toContain('ENGINE_ROUTE_PROFILES');
+    expect(record.replace(/\s+/g, ' ')).toContain('setup screen renders the same profiles');
+    expect(readme).not.toContain('nothing reads it yet');
+  });
+
+  it('does not say an adapter still reports another account as signed out', () => {
+    for (const adapter of ['claude', 'opencode', 'omp'])
+      expect(read(`server/engines/${adapter}.ts`), adapter).toContain('routeIssue:');
+    expect(readme).not.toContain('still reports an unsupported account as signed out');
+  });
+
+  it('lists every state checking this computer can actually end in', () => {
+    // client/ai-setup-state.ts:84-95 renders six installation states and a
+    // separate Test state. The README presents its list as exhaustive:
+    // "Checking this computer ends in one of these".
+    expect(readme).toContain('Checking this computer ends in one of these');
+    expect(readme).toMatch(/integrity check/i);
+    expect(readme).toMatch(/needs repair/i);
+  });
+
+  it('does not define Ready as something the code calls test-connection', () => {
+    // shared/connection-policy.ts:154 returns `test-connection`, not `ready`,
+    // for a found, reviewed, signed-in, model-listing, fresh route that has
+    // never produced a real result.
+    const ready = readme.slice(readme.indexOf('- **Ready**'));
+    expect(ready.slice(0, 400)).toMatch(/tested|verified by a real request/i);
+  });
+});
+
+describe('the implementation record against its own lanes', () => {
+  it('carries no unfilled cell on a commit that integrates the lanes', () => {
+    expect(record).not.toContain('TO BE FILLED');
+  });
+
+  it('keeps naming the four things this work does not prove', () => {
+    for (const sentence of [
+      'A clean Windows standard-user install of the exact artifact',
+      'A real consented provider result',
+      'Restart and repeat',
+      "The reporting customer's diagnosis",
+    ])
+      expect(record, sentence).toContain(sentence);
+  });
+
+  it('does not describe a lane as landed while its cell is empty', () => {
+    const table = record.slice(record.indexOf('| Lane |'), record.indexOf('This lane\'s counts'));
+    const lanes = table
+      .split('\n')
+      .filter((line) => line.startsWith('| `'))
+      .map((line) => line.split('|')[1].trim());
+    const unfilled = table
+      .split('\n')
+      .filter((line) => line.includes('TO BE FILLED'))
+      .map((line) => line.split('|')[1].trim());
+    expect({ lanes: lanes.length, unfilled: unfilled.length }).toMatchObject({ unfilled: 0 });
+  });
+});
