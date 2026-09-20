@@ -89,9 +89,13 @@ const EXCLUDED = [
   'Environment variables are not collected, though one a tool printed into an error can appear there.',
   'Credential files are not opened and no credential file content is collected.',
   // Held to known secret shapes: the scrubber removes every shape it knows
-  // before a string is written. A shape it does not know would pass.
-  'Tokens are not included.',
-  'API keys are not included.',
+  // before a string is written, and a shape it does not know passes. The two
+  // sentences here used to say "Tokens are not included." and "API keys are not
+  // included." flat, which promised the filter nobody wrote. A reader who acts
+  // on the promise rather than the preview is the person that sentence hurt, so
+  // it now says what the code does and asks for the one thing that catches the
+  // rest.
+  "Tokens and API keys in the shapes Diomedes recognises. A shape it does not know can remain inside a tool's own error text, so read this bundle before you share it.",
   'Document contents are not included.',
   'Prompts are not included.',
   'Model output is not included.',
@@ -163,6 +167,10 @@ const FLOOR: readonly (readonly [RegExp, string])[] = [
   [/\/home\/[^/:'"()\s]+/gi, '[home]'],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g, '[redacted]'],
   [/\bgh[pousr]_[A-Za-z0-9]{16,}\b/g, '[redacted]'],
+  // A Google-style key: `AIza` and exactly 35 more characters. Written to its
+  // own length because it carries no separator and no label, so a looser rule
+  // here would start eating ordinary words out of an error message.
+  [/\bAIza[0-9A-Za-z_-]{35}\b/g, '[redacted]'],
   [/\bxox[abprs]-[A-Za-z0-9-]{8,}\b/g, '[redacted]'],
   [/\bAKIA[0-9A-Z]{16}\b/g, '[redacted]'],
   [
@@ -295,7 +303,9 @@ export function buildSupportBundle(input: {
       const status = clean(engine.status).slice(0, MAX_ERROR_CHARS);
       const detail = clean(engine.detail).slice(0, MAX_ERROR_CHARS);
       return {
-        id: engine.id,
+        // An adapter writes this too, and it was the one such string that went
+        // out unfiltered: a newline in it opened a line the bundle never wrote.
+        id: clean(engine.id).slice(0, MAX_FIELD_CHARS),
         found: engine.found,
         available: engine.available,
         // The diagnostic sentence rides along in status so it is scrubbed too.

@@ -86,13 +86,24 @@ function bundleOf(input: {
 const excludedSays = (text: string, sentence: string) =>
   text.includes(`not included: ${sentence}`);
 
+/**
+ * The one sentence the bundle makes about secrets, verbatim. It replaced the
+ * two flat promises ("Tokens are not included." / "API keys are not included.")
+ * that were wider than the filter underneath them: what is removed is every
+ * shape the scrubber knows, and a shape it does not know can still be inside a
+ * tool's own error text.
+ */
+const SECRET_PROMISE =
+  "Tokens and API keys in the shapes Diomedes recognises. A shape it does not know can remain inside a tool's own error text, so read this bundle before you share it.";
+
 describe('what the bundle promises it does not carry', () => {
   test('an API key shape in an adapter-written engine detail survives the export', () => {
     const key = 'sk-hostiletruth0123456789abcdef';
     const bundle = bundleOf({ engines: [engine({ detail: `HTTP 401 for key ${key}` })] });
     const text = renderSupportBundle(bundle);
-    // The bundle states this unconditionally.
-    expect(excludedSays(text, 'API keys are not included.')).toBe(true);
+    // What the bundle now states: the shapes it knows, and the caveat that a
+    // shape it does not know can still be in a tool's own error text.
+    expect(excludedSays(text, SECRET_PROMISE)).toBe(true);
     // baselineRedact() would have caught this exact shape. It is not applied to
     // the engines rows, only to the connection rows.
     expect(text).not.toContain(key);
@@ -102,7 +113,7 @@ describe('what the bundle promises it does not carry', () => {
     const line = '2026-09-20T00:00:00.000Z Error: request failed: Bearer hostile.truth.tok3n';
     const bundle = bundleOf({ recentErrors: [line] });
     const text = renderSupportBundle(bundle);
-    expect(excludedSays(text, 'Tokens are not included.')).toBe(true);
+    expect(excludedSays(text, SECRET_PROMISE)).toBe(true);
     expect(text).not.toContain('Bearer hostile.truth.tok3n');
   });
 

@@ -41,6 +41,11 @@ function engine(overrides: Partial<IntegrationStatus> = {}): IntegrationStatus {
     status: 'ready',
     detail: '',
     capabilities: [],
+    // Required by the contract, and unread by the bundle: it carries the id,
+    // the two booleans, the version and the status text and nothing else.
+    signIn: 'first-use',
+    adapter: 'ready',
+    disclosure: [],
     ...overrides,
   };
 }
