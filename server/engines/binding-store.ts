@@ -181,8 +181,7 @@ export class BindingStore {
     const wasDamaged = this.damaged.has(engine);
     apply();
     try {
-      this.preserve();
-      this.write();
+      this.commit();
     } catch (error) {
       if (previous) this.rows.set(engine, previous);
       else this.rows.delete(engine);
@@ -191,23 +190,65 @@ export class BindingStore {
     }
   }
   /**
-   * Move an unreadable record aside before the first record this build writes
-   * in its place. A record a newer build wrote is evidence of somebody's
-   * choice; it is never deleted to make room for one taken later.
+   * Put the replacement on disk, in the one order that never leaves a person
+   * with no record at all: stage the replacement first, then set an unreadable
+   * original aside, then move the replacement into its place. A replacement
+   * that cannot be staged leaves the original exactly where it was, and a
+   * rename that fails after the original moved puts the original back.
+   *
+   * The alternative — move first, write second — deletes the evidence that
+   * somebody chose anything whenever the second step fails, and a record that
+   * is simply absent reads as "this person never chose one", which is what
+   * lets a recommendation be adopted on their behalf.
    */
-  private preserve() {
-    if (!this.damagedFile) return;
-    const stamp = `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}-${randomBytes(4).toString('hex')}`;
+  private commit() {
+    const temporary = this.stage();
+    let aside: string | undefined;
     try {
-      fs.renameSync(this.file, `${this.file}.unreadable-${stamp}`);
+      aside = this.preserve();
+      this.place(temporary);
+    } catch (error) {
+      // Best effort: the bytes are beside the record either way, but a person
+      // who restarts now must still meet a record this build cannot read
+      // rather than one that is missing.
+      if (aside)
+        try {
+          fs.renameSync(aside, this.file);
+        } catch {
+          // The sidecar still holds the bytes, and the state in memory still
+          // says this route is waiting for a choice.
+        }
+      try {
+        fs.rmSync(temporary, { force: true });
+      } catch {
+        // The temporary file is not the record; leaving it changes nothing.
+      }
+      throw error;
+    }
+    // The record on disk is now one this build wrote and can read.
+    this.damagedFile = false;
+  }
+  /**
+   * Move an unreadable record aside, once its replacement is staged. A record a
+   * newer build wrote is evidence of somebody's choice; it is never deleted to
+   * make room for one taken later.
+   */
+  private preserve(): string | undefined {
+    if (!this.damagedFile) return undefined;
+    const stamp = `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}-${randomBytes(4).toString('hex')}`;
+    const aside = `${this.file}.unreadable-${stamp}`;
+    try {
+      fs.renameSync(this.file, aside);
     } catch (error) {
       // Already gone is the outcome this wanted. Anything else means the record
       // is still there, so the new choice is not written over it.
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      return undefined;
     }
-    this.damagedFile = false;
+    return aside;
   }
-  private write() {
+  /** Write the replacement beside the record, whole, before anything moves. */
+  private stage(): string {
     const document = {
       version: 1,
       engines: Object.fromEntries([...this.rows].map(([engine, row]) => [engine, row])),
@@ -218,6 +259,10 @@ export class BindingStore {
     fs.mkdirSync(this.root, { recursive: true });
     const temporary = `${this.file}.${process.pid}.tmp`;
     fs.writeFileSync(temporary, `${JSON.stringify(document, null, 2)}\n`, 'utf8');
+    return temporary;
+  }
+  /** Move the staged replacement into place, inside the wait budget above. */
+  private place(temporary: string) {
     // On Windows a reader holding the destination open denies the rename for a
     // moment. Retry until the budget above is spent; the destination keeps its
     // previous complete content until the replacement lands, so it is never
@@ -229,14 +274,8 @@ export class BindingStore {
         return;
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
-        if (!code || !RENAME_RETRY_CODES.has(code) || Date.now() + RENAME_RETRY_PAUSE_MS > deadline) {
-          try {
-            fs.rmSync(temporary, { force: true });
-          } catch {
-            // The temporary file is not the record; leaving it changes nothing.
-          }
+        if (!code || !RENAME_RETRY_CODES.has(code) || Date.now() + RENAME_RETRY_PAUSE_MS > deadline)
           throw error;
-        }
         pause(RENAME_RETRY_PAUSE_MS);
       }
     }
