@@ -33,6 +33,7 @@ import { DesignCenter } from './console/DesignCenter';
 import { MarkGlyph } from './console/Mark';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
+import { ErrorBoundary } from './ErrorBoundary';
 import { Workspace } from './Workspace';
 import { Wake } from './console/Wake';
 import {
@@ -754,6 +755,14 @@ export function App() {
                 />
               )}
               {showSettings ? (
+                // A narrower one around Settings: AI setup renders host-shaped
+                // records from five adapters, and a failure drawing one of them
+                // should cost the person this screen, not the Console they were
+                // working in. Closing Settings leaves the crash behind.
+                <ErrorBoundary
+                  scope="screen"
+                  onLeave={{ label: 'Close settings', act: () => setShowSettings(false) }}
+                >
                 <SettingsPage
                   settings={settings}
                   save={saveSettings}
@@ -794,6 +803,7 @@ export function App() {
                     if (!selected) setSearch(true);
                   }}
                 />
+                </ErrorBoundary>
               ) : selected && surface === 'console' ? (
                 <Shell
                   key={`console:${selected}`}
