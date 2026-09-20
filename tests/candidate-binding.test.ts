@@ -444,6 +444,58 @@ describe('an explicit binding, and what breaks it', () => {
   });
 });
 
+describe('what a person is asked to do next, and what the record says', () => {
+  it('offers a choice, not another download, when a binding breaks beside a usable copy', async () => {
+    const theirs = place(path.join(root(), 'chosen', 'opencode.exe'), 'the copy they picked');
+    const h = host({
+      system: [{ file: theirs }],
+      managed: { bytes: 'reviewed release bytes', verifies: true },
+    });
+    await h.service.discover(true);
+    const mine = connection(h.service, 'opencode').candidates!.find(
+      (row) => row.source === 'system',
+    )!;
+    await h.service.bind('opencode', mine.id);
+    fs.writeFileSync(theirs, 'changed underneath them');
+    await h.service.discover(true);
+    expect(connection(h.service, 'opencode').repair).toBe('selected-changed');
+    expect(h.service.nextAction('opencode', { enabled: true, installSupported: true })).toBe(
+      'choose-installation',
+    );
+  });
+
+  it('records the stage a check failed at, with identifiers and nothing else', async () => {
+    const file = place(path.join(root(), 'tools', 'opencode.exe'), 'reviewed bytes');
+    const h = host({ system: [{ file }] });
+    await h.service.discover(true);
+    h.inspect.mockRejectedValue(
+      new EngineError('AUTH_REQUIRED', 'Sign in to this service.', false, 'provider-auth'),
+    );
+    await expect(h.service.check('opencode')).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+    const diagnostic = connection(h.service, 'opencode').diagnostic!;
+    expect(diagnostic).toMatchObject({
+      engine: 'opencode',
+      stage: 'provider-auth',
+      code: 'AUTH_REQUIRED',
+      buildId: 'test-build',
+      candidateSource: 'system',
+      installedVersion: TESTED_VERSIONS.opencode,
+    });
+    expect(diagnostic.correlationId).toMatch(/^[0-9a-f-]{36}$/);
+    // Identifiers only: no prompt, no output, no environment, no secret.
+    expect(JSON.stringify(diagnostic)).not.toMatch(/Sign in to this service|reviewed bytes/);
+    // A clean check clears it rather than leaving a stale failure on screen.
+    h.inspect.mockResolvedValue({
+      authentication: 'signed-in',
+      accountRoute: h.accountRoute,
+      models: [{ slug: 'm', name: 'M', description: '', efforts: [], defaultEffort: null }],
+      detail: 'Checked',
+    });
+    await h.service.check('opencode');
+    expect(connection(h.service, 'opencode').diagnostic).toBeNull();
+  });
+});
+
 describe('the revision a receipt is written against', () => {
   it('does not move on a repeated scan or re-check that finds the same facts', async () => {
     const file = place(path.join(root(), 'tools', 'opencode.exe'), 'reviewed bytes');

@@ -501,7 +501,7 @@ export class EngineService {
     try {
       found = await this.deps.discover(scope);
     } catch (error) {
-      this.record(engines[0], error, 'discovery');
+      for (const engine of engines) this.record(engine, error, 'discovery');
     }
     let enumerated: DiscoveredInstallation[] = [];
     try {
@@ -516,7 +516,7 @@ export class EngineService {
               context: installationContext(row.location!, process.platform),
             }));
     } catch (error) {
-      this.record(engines[0], error, 'discovery');
+      for (const engine of engines) this.record(engine, error, 'discovery');
     }
     for (const engine of engines) {
       try {
@@ -702,7 +702,7 @@ export class EngineService {
       });
       // The account route is part of what a receipt is written against.
       this.syncRevision(engine, value.accountRoute);
-      return this.connections.get(engine)!;
+      return structuredClone(this.connections.get(engine)!);
     } catch (error) {
       this.save({
         ...saved,
@@ -876,6 +876,17 @@ export class EngineService {
   ): SetupAction {
     const value = this.connections.get(engine)!;
     if (value.installation === 'not-checked') return 'check-connection';
+    // A binding broke and this computer still offers a usable installation:
+    // the honest next step is choosing one, not installing another copy.
+    if (
+      value.binding &&
+      value.repair &&
+      selectCandidate(value.candidates ?? [], {
+        engine,
+        version: TESTED_VERSIONS[engine],
+      }).kind === 'candidate'
+    )
+      return 'choose-installation';
     const installation =
       value.installation === 'corrupt'
         ? 'corrupt'
