@@ -395,17 +395,25 @@ describe('a sign-in that finishes while a check is running is still re-checked',
     await h.entered;
     // While it runs they finish the native sign-in and the window closes.
     h.signIn();
-    // This is the re-check the host promised. The host swallows REQUEST_ACTIVE.
-    const recheck = await h.service.check(ENGINE).then(
-      () => 'checked',
-      (error: { code: string }) => error.code,
-    );
+    // A second check is refused rather than joined: the one in flight began
+    // before the sign-in, so its answer could not be the one that was promised.
+    await expect(h.service.check(ENGINE)).rejects.toMatchObject({ code: 'REQUEST_ACTIVE' });
+    // So the host waits for the check in flight and then looks again. This is
+    // the sequence server/app.ts runs when the window closes; the wiring itself
+    // is proved through createApp in tests/sign-in-recheck-wiring.test.ts.
+    const recheck = h.service
+      .settled(ENGINE)
+      .then(() => h.service.check(ENGINE))
+      .then(
+        () => 'checked',
+        (error: { code: string }) => error.code,
+      );
     h.release();
     await first;
+    expect(await recheck).toBe('checked');
     // What the person sees after finishing sign-in and closing the window.
     expect(h.service.status().find((row) => row.engine === ENGINE)?.authentication).toBe(
       'signed-in',
     );
-    expect(recheck).not.toBe('REQUEST_ACTIVE');
   }, 20_000);
 });
