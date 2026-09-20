@@ -403,6 +403,10 @@ export class EngineService {
    * — from this pass's inventory where there is one, and from the record alone
    * otherwise, because a route nobody has looked for yet is not a route that
    * is missing.
+   *
+   * Rebuilding from the record cannot drop a revision `syncRevision` is
+   * holding: this runs only where the file itself could not be read, and a
+   * hold needs a stored row, which such a record has none of.
    */
   private reread() {
     if (!this.bindings.refresh()) return;

@@ -350,6 +350,10 @@ describe('a damaged binding record', () => {
     expect(fs.readdirSync(serviceRoot).filter((name) => name.startsWith('bindings.json.'))).toEqual(
       [],
     );
+    // A second check observes the same route and the same model, so it moves
+    // nothing: what is held is compared exactly as a written row would be.
+    await second.service.check('opencode');
+    expect(connection(second.service).revision).toBe(before + 1);
 
     // The next explicit choice writes the record, and carries the revision the
     // check observed with it.
