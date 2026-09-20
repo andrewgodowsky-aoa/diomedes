@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { CONNECTION_TTL_MS } from '../shared/connection-policy.js';
-import type { EngineCandidate, EngineConnection } from '../shared/engines.js';
+import type { EngineCandidate, EngineConnection, SetupDiagnostic } from '../shared/engines.js';
 import {
+  NOT_SIGNING_IN,
+  SIGN_IN_SETTLE_MS,
+  advanceSignIn,
+  advanceWatches,
+  attemptFailure,
+  attemptSentence,
+  attemptStage,
+  benignConflict,
+  installationConflict,
+  signInSentence,
+  signingIn,
   checkedSentence,
   compatibilityText,
   connected,
@@ -346,6 +357,195 @@ describe('how old a check is', () => {
       'The last check carries no usable time. Check again.',
     );
     expect(checkedSentence({ ...base, checkedAt: null }, NOW, time)).toBe('Not checked yet');
+  });
+});
+
+/**
+ * A native sign-in window Diomedes opened.
+ *
+ * The host owns the window and runs its own sign-in and model check when it
+ * ends, so the screen waits rather than asking. The single rule these cases
+ * exist to hold: a window that closed is not an account. Between the window
+ * ending and the host's check landing, the card is still waiting — and what it
+ * shows afterwards is whatever that check wrote, signed in or not.
+ */
+describe('waiting on a native sign-in window', () => {
+  // The wait begins after the record's own last check, which is the real
+  // ordering: the window opens, and only then does the host look again.
+  const opened = Date.parse(CHECKED) + 60_000;
+  const open: EngineConnection = { ...base, signInWindow: 'running' };
+  const ended: EngineConnection = { ...base, signInWindow: 'idle' };
+
+  it('starts waiting when the host reports a window of its own, and keeps one start', () => {
+    const first = advanceSignIn(undefined, open, opened);
+    expect(first).toMatchObject({ state: 'open', startedAtMs: opened, endedAtMs: null });
+    // A second poll while it is still open does not move the start.
+    expect(advanceSignIn(first, open, opened + 5_000)).toMatchObject({
+      state: 'open',
+      startedAtMs: opened,
+    });
+    expect(signingIn(first)).toBe(true);
+  });
+
+  it('waits for the host check instead of reading a closed window as signed in', () => {
+    const watching = advanceSignIn(undefined, open, opened);
+    // The window ended. The record still carries the check from before it.
+    const settling = advanceSignIn(watching, { ...ended, checkedAt: CHECKED }, opened + 1_000);
+    expect(settling.state).toBe('checking');
+    expect(signingIn(settling)).toBe(true);
+    // Nothing has been checked at all: still waiting, still not an account.
+    expect(advanceSignIn(watching, { ...ended, checkedAt: null }, opened + 1_000).state).toBe(
+      'checking',
+    );
+    // An unreadable stamp cannot end the wait either.
+    expect(
+      advanceSignIn(watching, { ...ended, checkedAt: 'not a date' }, opened + 1_000).state,
+    ).toBe('checking');
+  });
+
+  it('stops waiting as soon as the host check has answered', () => {
+    const watching = advanceSignIn(undefined, open, opened);
+    const rechecked = { ...ended, checkedAt: new Date(opened + 2_000).toISOString() };
+    expect(advanceSignIn(watching, rechecked, opened + 2_100)).toEqual(NOT_SIGNING_IN);
+    // Whatever that check said is what the card then shows: a signed-out answer
+    // ends the wait exactly as a signed-in one does.
+    expect(
+      advanceSignIn(watching, { ...rechecked, authentication: 'signed-out', models: [] }, opened + 2_100),
+    ).toEqual(NOT_SIGNING_IN);
+  });
+
+  it('gives up waiting after a bounded time rather than holding the card open', () => {
+    const watching = advanceSignIn(undefined, open, opened);
+    const stale = { ...ended, checkedAt: CHECKED };
+    const settling = advanceSignIn(watching, stale, opened + 1_000);
+    expect(advanceSignIn(settling, stale, opened + 1_000 + SIGN_IN_SETTLE_MS - 1).state).toBe(
+      'checking',
+    );
+    expect(advanceSignIn(settling, stale, opened + 1_000 + SIGN_IN_SETTLE_MS)).toEqual(
+      NOT_SIGNING_IN,
+    );
+  });
+
+  it('is not started or ended by a payload that reports no window at all', () => {
+    expect(advanceSignIn(undefined, base, opened)).toEqual(NOT_SIGNING_IN);
+    const watching = advanceSignIn(undefined, open, opened);
+    // An older status payload carries no `signInWindow`, so it says nothing
+    // about the window and cannot end the wait on its own.
+    expect(advanceSignIn(watching, base, opened + 1_000)).toEqual(watching);
+  });
+
+  it('keeps one wait per route and drops the routes that settled', () => {
+    const watches = advanceWatches({}, [open, { ...base, engine: 'cursor', signInWindow: 'running' }], opened);
+    expect(Object.keys(watches).sort()).toEqual(['cursor', 'opencode']);
+    // One route's window ended and its check answered; the other is untouched.
+    const after = advanceWatches(
+      watches,
+      [{ ...ended, checkedAt: new Date(opened + 2_000).toISOString() }],
+      opened + 2_100,
+    );
+    expect(Object.keys(after)).toEqual(['cursor']);
+  });
+
+  it('says a window is open, then that its check is running, and never that it worked', () => {
+    const watching = advanceSignIn(undefined, open, opened);
+    expect(signInSentence(watching, 'OpenCode')).toBe(
+      'A OpenCode sign-in window is open on this computer. Finish it there, or close it.',
+    );
+    const settling = advanceSignIn(watching, { ...ended, checkedAt: CHECKED }, opened + 1_000);
+    expect(signInSentence(settling, 'OpenCode')).toBe(
+      'The OpenCode sign-in window closed. Diomedes is checking this service again.',
+    );
+    expect(signInSentence(settling, 'OpenCode')).not.toMatch(/signed in|connected|ready/i);
+    expect(signInSentence(NOT_SIGNING_IN, 'OpenCode')).toBe('');
+    expect(signingIn(undefined)).toBe(false);
+  });
+});
+
+describe('what a failed action says about itself', () => {
+  const diagnostic: SetupDiagnostic = {
+    buildId: 'build-1',
+    engine: 'opencode',
+    candidateSource: 'managed',
+    installedVersion: '1.18.4',
+    accountRoute: 'opencode:opencode-go',
+    selectedModel: 'opencode-go/glm-5.2',
+    stage: 'model-list',
+    code: 'NO_MODELS',
+    correlationId: 'correlation-1',
+    lastVerifiedAt: null,
+    at: CHECKED,
+  };
+
+  it('reads the code, the stage and the ambiguity the host sent with the error', () => {
+    const failure = attemptFailure('The provider refused this request.', {
+      error: 'The provider refused this request.',
+      code: 'PROVIDER_DENIED',
+      ambiguous: true,
+      stage: 'dispatch',
+    });
+    expect(failure).toEqual({
+      message: 'The provider refused this request.',
+      code: 'PROVIDER_DENIED',
+      stage: 'dispatch',
+      ambiguous: true,
+    });
+    // Nothing is invented from a payload that carries none of it.
+    expect(attemptFailure('It failed.')).toEqual({
+      message: 'It failed.',
+      code: '',
+      stage: null,
+      ambiguous: false,
+    });
+    // A stage this build does not know is not a stage.
+    expect(attemptFailure('It failed.', { stage: 'teleport' }).stage).toBeNull();
+  });
+
+  it('treats a collision with the host own check as nothing to report', () => {
+    expect(benignConflict(attemptFailure('Already checking.', { code: 'REQUEST_ACTIVE' }))).toBe(
+      true,
+    );
+    expect(benignConflict(attemptFailure('The provider refused.', { code: 'PROVIDER_DENIED' }))).toBe(
+      false,
+    );
+  });
+
+  it('sends a changed binding to the installations, never to a sign-in', () => {
+    const failure = attemptFailure('The installation you chose has changed.', {
+      code: 'BINDING_CHANGED',
+      stage: 'runtime-verification',
+    });
+    expect(installationConflict(failure)).toBe(true);
+    expect(installationConflict(undefined)).toBe(false);
+    const sentence = attemptSentence(attemptStage(failure, base)!);
+    expect(sentence).toContain('checking the version and integrity of the installation');
+    expect(sentence).toContain('Check the installation, or install the compatible copy.');
+    expect(sentence).not.toMatch(/sign in/i);
+  });
+
+  it('prefers the stage that travelled with the error over the one on the record', () => {
+    const failure = attemptFailure('The provider refused.', {
+      code: 'PROVIDER_DENIED',
+      stage: 'provider-auth',
+    });
+    expect(attemptStage(failure, { ...base, diagnostic })).toEqual({
+      stage: 'provider-auth',
+      code: 'PROVIDER_DENIED',
+    });
+    // No stage on the error: the host record still answers.
+    expect(attemptStage(attemptFailure('It failed.'), { ...base, diagnostic })).toEqual({
+      stage: 'model-list',
+      code: 'NO_MODELS',
+    });
+    expect(attemptStage(undefined, base)).toBeNull();
+  });
+
+  it('names the stage and its action in one sentence, and omits an absent code', () => {
+    expect(attemptSentence({ stage: 'provider-auth', code: 'PROVIDER_DENIED' })).toBe(
+      'The last attempt stopped while the provider checking the account (PROVIDER_DENIED). The provider refused this account for this route. Check the account this route uses.',
+    );
+    expect(attemptSentence({ stage: 'dispatch', code: '' })).toBe(
+      'The last attempt stopped while sending the request. The request reached the provider and did not finish.',
+    );
   });
 });
 

@@ -21,6 +21,7 @@ import type {
   InstallationContext,
   SetupStage,
 } from '../shared/engines';
+import { SETUP_STAGES } from '../shared/engines';
 import type { ExternalEngine } from '../shared/types';
 
 /** A state the screen shows as words, never as a colour alone. */
@@ -325,6 +326,150 @@ export function routeIssueSentences(c: EngineConnection, name: string): string[]
       : `${name} reported no account this adapter accepts.`,
     `This route uses ${c.routeIssue.required} only. Other accounts you hold are not used here, and Diomedes does not switch to one of them.`,
   ];
+}
+
+/**
+ * A native sign-in window Diomedes opened, from this screen's side.
+ *
+ * The host owns the window and runs its own sign-in and model check when the
+ * window ends, so the screen only waits. A window that closed is never read as
+ * an account: `'checking'` lasts until the host's check has written a newer
+ * `checkedAt` than the moment this wait began, or until the wait times out, and
+ * only then does the card go back to saying what the record says.
+ */
+export type SignInState = 'idle' | 'open' | 'checking';
+
+export interface SignInWatch {
+  readonly state: SignInState;
+  /** When this screen first saw the window open, on its own clock. */
+  readonly startedAtMs: number;
+  /** When the window ended. `null` while it is still open. */
+  readonly endedAtMs: number | null;
+}
+
+/** How often status is read while a window is open or its check is landing. */
+export const SIGN_IN_POLL_MS = 1_000;
+/**
+ * How long the host's own re-check is waited for after the window ends. Time,
+ * not a tick count, so an unrelated status read cannot spend the budget.
+ */
+export const SIGN_IN_SETTLE_MS = 4_000;
+
+export const NOT_SIGNING_IN: SignInWatch = { state: 'idle', startedAtMs: 0, endedAtMs: null };
+
+/** One status answer, folded into what this route is waiting on. */
+export function advanceSignIn(
+  watch: SignInWatch | undefined,
+  c: EngineConnection,
+  nowMs: number,
+): SignInWatch {
+  const current = watch ?? NOT_SIGNING_IN;
+  // A payload from before sign-in windows were reported says nothing about one,
+  // so it neither starts nor ends a wait.
+  if (c.signInWindow === undefined) return current;
+  if (c.signInWindow === 'running')
+    return {
+      state: 'open',
+      startedAtMs: current.state === 'idle' ? nowMs : current.startedAtMs,
+      endedAtMs: null,
+    };
+  if (current.state === 'idle') return NOT_SIGNING_IN;
+  const endedAtMs = current.endedAtMs ?? nowMs;
+  const observed = c.checkedAt === null ? Number.NaN : Date.parse(c.checkedAt);
+  // The host's check answered after this wait began: whatever it says is now
+  // what the card shows, signed in or not.
+  if (Number.isFinite(observed) && observed > current.startedAtMs) return NOT_SIGNING_IN;
+  if (nowMs - endedAtMs >= SIGN_IN_SETTLE_MS) return NOT_SIGNING_IN;
+  return { state: 'checking', startedAtMs: current.startedAtMs, endedAtMs };
+}
+
+/** The same fold across a whole status payload. Settled routes leave the map. */
+export function advanceWatches(
+  previous: Readonly<Record<string, SignInWatch>>,
+  connections: readonly EngineConnection[],
+  nowMs: number,
+): Record<string, SignInWatch> {
+  const next: Record<string, SignInWatch> = {};
+  for (const [engine, watch] of Object.entries(previous))
+    if (watch.state !== 'idle') next[engine] = watch;
+  for (const c of connections) {
+    const value = advanceSignIn(next[c.engine], c, nowMs);
+    if (value.state === 'idle') delete next[c.engine];
+    else next[c.engine] = value;
+  }
+  return next;
+}
+
+/** A window in play suspends this card's own next action. */
+export function signingIn(watch: SignInWatch | undefined): boolean {
+  return watch !== undefined && watch.state !== 'idle';
+}
+
+/** What the card says while a window is open, and while its check lands. */
+export function signInSentence(watch: SignInWatch | undefined, name: string): string {
+  if (!watch || watch.state === 'idle') return '';
+  return watch.state === 'open'
+    ? `A ${name} sign-in window is open on this computer. Finish it there, or close it.`
+    : `The ${name} sign-in window closed. Diomedes is checking this service again.`;
+}
+
+/** One failed action, read from the payload the host sent with it. */
+export interface AttemptFailure {
+  readonly message: string;
+  readonly code: string;
+  readonly stage: SetupStage | null;
+  readonly ambiguous: boolean;
+}
+
+export function attemptFailure(
+  message: string,
+  payload?: Record<string, unknown> | null,
+): AttemptFailure {
+  const code = typeof payload?.code === 'string' ? payload.code : '';
+  const stage = payload?.stage;
+  return {
+    message,
+    code,
+    stage:
+      typeof stage === 'string' && (SETUP_STAGES as readonly string[]).includes(stage)
+        ? (stage as SetupStage)
+        : null,
+    ambiguous: payload?.ambiguous === true,
+  };
+}
+
+/**
+ * A check that collided with the one the host started for itself. Nothing
+ * failed, so nothing is reported.
+ */
+export function benignConflict(failure: AttemptFailure): boolean {
+  return failure.code === 'REQUEST_ACTIVE';
+}
+
+/**
+ * The bound installation is not the one that was bound. That is answered among
+ * the installations, never by signing in again.
+ */
+export function installationConflict(failure: AttemptFailure | undefined): boolean {
+  return failure?.code === 'BINDING_CHANGED';
+}
+
+/**
+ * Where the last attempt stopped: the stage that travelled with the error
+ * first, and only then the stage the host recorded on the connection.
+ */
+export function attemptStage(
+  failure: AttemptFailure | undefined,
+  c: EngineConnection,
+): { stage: SetupStage; code: string } | null {
+  if (failure?.stage) return { stage: failure.stage, code: failure.code };
+  return c.diagnostic ? { stage: c.diagnostic.stage, code: c.diagnostic.code } : null;
+}
+
+/** That stage, in plain words, with the action that belongs to it. */
+export function attemptSentence(at: { stage: SetupStage; code: string }): string {
+  const code = at.code ? ` (${at.code})` : '';
+  return `The last attempt stopped while ${stageText(at.stage)}${code}. ${stageAction(at.stage)}`;
 }
 
 /** The engine ids a status payload did not mention still get a card. */

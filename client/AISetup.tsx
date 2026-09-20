@@ -4,12 +4,25 @@ import type { ExternalEngine } from '../shared/types';
 import type { ConnectionReceipt, EngineConnection, InstallOffer } from '../shared/engines';
 import { ENGINE_NAMES, EXTERNAL_ENGINES, TEXT_ROUTE_CONTROLS } from '../shared/engines';
 import { ENGINE_ROUTE_PROFILES, routeCaption } from '../shared/engine-routes';
-import { advanceSetup, hasUsableService } from '../shared/onboarding';
 import {
+  advanceSetup,
+  continueChoice,
+  continueLabel,
+  continueNote,
+} from '../shared/onboarding';
+import type { AttemptFailure, SignInWatch } from './ai-setup-state';
+import {
+  SIGN_IN_POLL_MS,
+  advanceWatches,
+  attemptFailure,
+  attemptSentence,
+  attemptStage,
+  benignConflict,
   checkedSentence,
   compatibilityText,
   connected,
   contextText,
+  installationConflict,
   placeholderConnection,
   primaryControl,
   provenanceText,
@@ -17,9 +30,9 @@ import {
   routeIssueSentences,
   setupStates,
   showsCandidates,
+  signInSentence,
+  signingIn,
   sourceText,
-  stageAction,
-  stageText,
   verified,
   verifiedSentence,
 } from './ai-setup-state';
@@ -44,9 +57,13 @@ function messageOf(error: unknown): string {
   return 'The request could not be completed.';
 }
 
-/** True when the host said this failure may already have reached the provider. */
-function ambiguousFailure(error: unknown): boolean {
-  return error instanceof ApiError && error.data?.ambiguous === true;
+/**
+ * The host's own account of a failed action: its message, its code, whether it
+ * may already have reached the provider, and the stage it stopped at. The stage
+ * travels with the error, so nothing has to re-read status to find it.
+ */
+function failureOf(error: unknown): AttemptFailure {
+  return attemptFailure(messageOf(error), error instanceof ApiError ? error.data : null);
 }
 
 const timeOf = (value: string) => new Date(value).toLocaleTimeString();
@@ -56,6 +73,14 @@ export interface AIConnectionProps {
   settings: Settings;
   save: (value: Settings) => Promise<void>;
   busy?: boolean;
+  /** The rows this component read, for a screen that must describe them. */
+  onConnections?: (connections: EngineConnection[]) => void;
+  /**
+   * Open one route's test consent from outside the card. It reveals the same
+   * panel the card's own control reveals; the request is still the explicit
+   * second click inside it.
+   */
+  openTest?: { engine: ExternalEngine; at: number } | null;
 }
 
 export interface AISetupProps extends AIConnectionProps {
@@ -63,7 +88,7 @@ export interface AISetupProps extends AIConnectionProps {
   onBack: () => void;
 }
 
-export function AIConnections({ settings, busy }: AIConnectionProps) {
+export function AIConnections({ settings, busy, onConnections, openTest }: AIConnectionProps) {
   const [connections, setConnections] = useState<EngineConnection[] | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -79,44 +104,61 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
   const [testOpen, setTestOpen] = useState<Record<string, boolean>>({});
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [receipts, setReceipts] = useState<Record<string, ConnectionReceipt | undefined>>({});
-  const [testFailure, setTestFailure] = useState<
-    Record<string, { message: string; ambiguous: boolean } | undefined>
-  >({});
+  const [testFailure, setTestFailure] = useState<Record<string, AttemptFailure | undefined>>({});
   const [loginBusy, setLoginBusy] = useState<Record<string, boolean>>({});
   const [loginDetail, setLoginDetail] = useState<Record<string, string>>({});
   const [opError, setOpError] = useState<Record<string, string | null>>({});
   const [progress, setProgress] = useState<string | null>('Loading connections…');
+  // What each route is waiting on: a sign-in window Diomedes opened, or the
+  // host's own check after that window ended. Derived from `signInWindow` and
+  // `checkedAt` alone, so a closed window never reads as an account.
+  const [watches, setWatches] = useState<Record<string, SignInWatch>>({});
   const mounted = useRef(true);
   const inFlight = useRef(new Set<AbortController>());
   const installControllers = useRef(new Map<string, AbortController>());
+  const watched = useRef<string[]>([]);
+  const sections = useRef<Record<string, HTMLElement | null>>({});
 
   function fail(engine: string, error: unknown): void {
     if (mounted.current) setOpError((prev) => ({ ...prev, [engine]: messageOf(error) }));
   }
 
-  /** Replace one row from a route that answered with the whole connection. */
-  function apply(updated: EngineConnection): void {
-    setConnections((prev) =>
-      prev === null ? [updated] : prev.map((c) => (c.engine === updated.engine ? updated : c)),
-    );
-  }
-
-  const refreshStatus = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const result = await api<{ connections: EngineConnection[] }>(
-        '/ai/status',
-        'GET',
-        undefined,
-        signal,
-      );
-      if (!mounted.current) return;
-      setConnections(result.connections);
-      setStatusError(null);
-    } catch (error) {
-      if (signal?.aborted || !mounted.current) return;
-      setStatusError(messageOf(error));
-    }
+  /** Fold one or more host answers into what each route is waiting on. */
+  const watch = useCallback((rows: readonly EngineConnection[]) => {
+    setWatches((prev) => advanceWatches(prev, rows, Date.now()));
   }, []);
+
+  /** Replace one row from a route that answered with the whole connection. */
+  const apply = useCallback(
+    (updated: EngineConnection): void => {
+      setConnections((prev) =>
+        prev === null ? [updated] : prev.map((c) => (c.engine === updated.engine ? updated : c)),
+      );
+      watch([updated]);
+    },
+    [watch],
+  );
+
+  const refreshStatus = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        const result = await api<{ connections: EngineConnection[] }>(
+          '/ai/status',
+          'GET',
+          undefined,
+          signal,
+        );
+        if (!mounted.current) return;
+        setConnections(result.connections);
+        watch(result.connections);
+        setStatusError(null);
+      } catch (error) {
+        if (signal?.aborted || !mounted.current) return;
+        setStatusError(messageOf(error));
+      }
+    },
+    [watch],
+  );
 
   // Initial mount reports status only. Discovery is never started here, and
   // neither is a provider test.
@@ -146,6 +188,47 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
     };
   }, [refreshStatus]);
 
+  // While a window is open, or its check has not landed, read status on a
+  // timer. The timer exists only for as long as something is waiting on it, and
+  // the unmount above stops the reads it starts.
+  const waiting = Object.keys(watches).length > 0;
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setInterval(() => {
+      void refreshStatus();
+    }, SIGN_IN_POLL_MS);
+    return () => clearInterval(timer);
+  }, [waiting, refreshStatus]);
+
+  // A route that stopped waiting keeps no caption about a window that has since
+  // closed. A route that never opened one — the separate OMP profile — keeps
+  // the instructions it was given.
+  useEffect(() => {
+    const open = Object.keys(watches);
+    const settled = watched.current.filter((engine) => !open.includes(engine));
+    watched.current = open;
+    if (settled.length === 0) return;
+    setLoginDetail((prev) => {
+      if (!settled.some((engine) => engine in prev)) return prev;
+      const next = { ...prev };
+      for (const engine of settled) delete next[engine];
+      return next;
+    });
+  }, [watches]);
+
+  // The rows this card read, for a screen that must say what continuing does.
+  useEffect(() => {
+    if (connections !== null) onConnections?.(connections);
+  }, [connections, onConnections]);
+
+  // The same consent panel the card's own control reveals, asked for from the
+  // decision point at the bottom of the setup screen.
+  useEffect(() => {
+    if (!openTest) return;
+    setTestOpen((prev) => ({ ...prev, [openTest.engine]: true }));
+    sections.current[openTest.engine]?.scrollIntoView({ block: 'nearest' });
+  }, [openTest]);
+
   async function discover(): Promise<void> {
     if (discovering) return;
     const controller = new AbortController();
@@ -162,6 +245,7 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
       );
       if (!mounted.current) return;
       setConnections(result.connections);
+      watch(result.connections);
     } catch (error) {
       if (controller.signal.aborted || !mounted.current) return;
       setStatusError(messageOf(error));
@@ -193,6 +277,10 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
       await refreshStatus(controller.signal);
     } catch (error) {
       if (controller.signal.aborted || !mounted.current) return;
+      // A check that collided with the one the host runs for itself when a
+      // sign-in window ends is not a failure. The host's check is the answer,
+      // and it is already on its way.
+      if (benignConflict(failureOf(error))) return;
       fail(engine, error);
     } finally {
       inFlight.current.delete(controller);
@@ -363,13 +451,15 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
       setTestOpen((prev) => ({ ...prev, [engine]: false }));
     } catch (error) {
       if (controller.signal.aborted || !mounted.current) return;
-      setTestFailure((prev) => ({
-        ...prev,
-        [engine]: { message: messageOf(error), ambiguous: ambiguousFailure(error) },
-      }));
+      const failure = failureOf(error);
+      setTestFailure((prev) => ({ ...prev, [engine]: failure }));
       setTestOpen((prev) => ({ ...prev, [engine]: false }));
-      // The stage belongs to the host record, not to this error, so read the
-      // connection back before saying where it failed.
+      // The installation this route was bound to is not the one that is there.
+      // That is answered among the installations, so open them.
+      if (installationConflict(failure))
+        setInstallsOpen((prev) => ({ ...prev, [engine]: true }));
+      // The stage travelled with the error. Status is read back for what the
+      // record now says about the route, not to discover where it stopped.
       await refreshStatus(controller.signal);
     } finally {
       inFlight.current.delete(controller);
@@ -407,6 +497,34 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
         setLoginBusy((prev) => ({ ...prev, [engine]: false }));
         setProgress(null);
       }
+    }
+  }
+
+  /**
+   * Close the window Diomedes opened. The host still runs its own check when
+   * the window ends, so this asks for nothing beyond the close.
+   */
+  async function closeSignIn(engine: ExternalEngine): Promise<void> {
+    if (loginBusy[engine]) return;
+    const controller = new AbortController();
+    inFlight.current.add(controller);
+    setLoginBusy((prev) => ({ ...prev, [engine]: true }));
+    setOpError((prev) => ({ ...prev, [engine]: null }));
+    try {
+      await api<{ detail: string }>(
+        `/ai/login/${engine}/cancel`,
+        'POST',
+        {},
+        controller.signal,
+      );
+      if (!mounted.current) return;
+      await refreshStatus(controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted || !mounted.current) return;
+      fail(engine, error);
+    } finally {
+      inFlight.current.delete(controller);
+      if (mounted.current) setLoginBusy((prev) => ({ ...prev, [engine]: false }));
     }
   }
 
@@ -474,10 +592,22 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
           const offering = primary.intent === 'install';
           const receipt = receipts[engine];
           const failure = testFailure[engine];
-          const diagnostic = c.diagnostic;
+          const stopped = attemptStage(failure, c);
+          // A sign-in window Diomedes opened, or the host's own check after it
+          // ended. While either is true the card offers no next action of its
+          // own: the window is finished in the window, and the check answers.
+          const openWindow = watches[engine];
+          const holding = signingIn(openWindow);
           const busyRow = busy || discovering || statusLoading;
           return (
-            <section className="service" key={engine} aria-label={name}>
+            <section
+              className="service"
+              key={engine}
+              aria-label={name}
+              ref={(element) => {
+                sections.current[engine] = element;
+              }}
+            >
               <div className="row">
                 <h3>{name}</h3>
                 {defaultEngine === engine && <span className="caption push-right">Default</span>}
@@ -506,14 +636,25 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
                   ))}
                 </div>
               )}
-              {diagnostic && (
-                <p className="ai-note">
-                  The last attempt stopped while {stageText(diagnostic.stage)} (
-                  {diagnostic.code}). {stageAction(diagnostic.stage)}
-                </p>
+              {stopped && <p className="ai-note">{attemptSentence(stopped)}</p>}
+              {/* Kept mounted so a change is announced, and empty when there is
+                  nothing to announce. */}
+              <p className="caption ai-signin" role="status" aria-live="polite">
+                {signInSentence(openWindow, name)}
+              </p>
+              {openWindow?.state === 'open' && (
+                <div className="actions">
+                  <Button
+                    tone="quiet"
+                    disabled={busy || loginBusy[engine]}
+                    onClick={() => void closeSignIn(engine)}
+                  >
+                    {loginBusy[engine] ? 'Closing…' : 'Close sign-in window'}
+                  </Button>
+                </div>
               )}
               <div className="actions">
-                {primary.intent !== 'none' && (
+                {!holding && primary.intent !== 'none' && (
                   <Button
                     tone="primary"
                     disabled={
@@ -545,7 +686,7 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
                           : primary.label}
                   </Button>
                 )}
-                {primary.intent !== 'check' && (
+                {!holding && primary.intent !== 'check' && (
                   <Button
                     tone="quiet"
                     disabled={busyRow || checking[engine]}
@@ -709,7 +850,7 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
                   )}
                 </details>
               )}
-              {usable && (
+              {usable && !holding && (
                 <div className="ai-test">
                   {testOpen[engine] === true ? (
                     <>
@@ -768,26 +909,12 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
                   )}
                 </div>
               )}
-              {loginDetail[engine] !== undefined && (
-                <>
-                  <p>{loginDetail[engine]}</p>
-                  {engine !== 'oh-my-pi' && (
-                    <Button
-                      tone="quiet"
-                      onClick={() => {
-                        void api<{ detail: string }>(`/ai/login/${engine}/cancel`, 'POST', {})
-                          .then((result) =>
-                            setLoginDetail((prev) => ({ ...prev, [engine]: result.detail })),
-                          )
-                          .catch((error) => fail(engine, error));
-                      }}
-                    >
-                      Close sign-in window
-                    </Button>
-                  )}
-                </>
-              )}
-              {primary.intent === 'sign-in' &&
+              {/* What the host said when the sign-in started, for a route that
+                  opened no window of its own to describe — the separate OMP
+                  profile. A window that is open says so once, above. */}
+              {!holding && loginDetail[engine] !== undefined && <p>{loginDetail[engine]}</p>}
+              {!holding &&
+                primary.intent === 'sign-in' &&
                 (engine === 'oh-my-pi' ? (
                   <p className="caption">
                     Open the separate native profile and edit models.yml with a literal API key
@@ -900,6 +1027,8 @@ export function AIConnections({ settings, busy }: AIConnectionProps) {
 export default function AISetup({ settings, save, busy, onContinue, onBack }: AISetupProps) {
   const [skipBusy, setSkipBusy] = useState(false);
   const [skipError, setSkipError] = useState<string | null>(null);
+  const [connections, setConnections] = useState<EngineConnection[]>([]);
+  const [openTest, setOpenTest] = useState<{ engine: ExternalEngine; at: number } | null>(null);
   const skipping = useRef(false);
 
   async function skip(): Promise<void> {
@@ -921,33 +1050,50 @@ export default function AISetup({ settings, save, busy, onContinue, onBack }: AI
   }
 
   const locked = busy === true || skipBusy;
-  // What continuing actually does: with no engine selected and switched on, the
-  // app runs the local sample, so the control says so rather than implying a
-  // provider is connected.
-  const service = hasUsableService(settings);
+  // What continuing actually does. Three different things, and the control and
+  // its one sentence say which: a route that answered a real request, a route
+  // that is selected and has answered nothing yet, or the scripted local
+  // sample. Continuing is never blocked; only described.
+  const verifiedRoutes = connections.filter(verified).map((c) => c.engine);
+  const choice = continueChoice(settings, verifiedRoutes);
+  const defaultEngine = settings.services?.['defaultEngine'];
+  const selected = connections.find((c) => c.engine === defaultEngine);
+  // The untested route can be tested from here, in the card that owns the test.
+  const testable = choice === 'untested' && selected !== undefined && connected(selected);
   return (
     <div className="ai-setup">
       <h1>Connect an AI service</h1>
-      <AIConnections settings={settings} save={save} busy={busy} />
+      <AIConnections
+        settings={settings}
+        save={save}
+        busy={busy}
+        onConnections={setConnections}
+        openTest={openTest}
+      />
       {skipError !== null && (
         <p className="ai-alert" role="alert">
           {skipError}
         </p>
       )}
-      {!service && (
-        <p className="caption">
-          Sample work is scripted on this computer. It is not proof that a provider answered.
-        </p>
-      )}
+      <p className="caption">{continueNote(choice)}</p>
       <div className="setup-actions">
         <Button tone="quiet" disabled={locked} onClick={onBack}>
           Back
         </Button>
+        {testable && selected && (
+          <Button
+            tone="quiet"
+            disabled={locked}
+            onClick={() => setOpenTest({ engine: selected.engine, at: Date.now() })}
+          >
+            Test this connection
+          </Button>
+        )}
         <Button tone="quiet push-right" disabled={locked} onClick={() => void skip()}>
           {skipBusy ? 'Skipping…' : 'Skip AI setup'}
         </Button>
         <Button tone="primary" disabled={locked} onClick={onContinue}>
-          {service ? 'Continue' : 'Continue with the local sample'}
+          {continueLabel(choice)}
         </Button>
       </div>
     </div>
