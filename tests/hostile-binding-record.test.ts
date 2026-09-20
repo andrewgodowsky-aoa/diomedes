@@ -206,6 +206,22 @@ describe('a damaged binding record', () => {
       expect(h.launched).not.toContain(path.resolve(h.theirs));
     });
 
+  it('is repaired by a connection test into a choice the person never made', async () => {
+    const h = await damaged((file) => fs.writeFileSync(file, '{ not json'));
+    await h.service.discover(true);
+    await h.service.check('opencode');
+    // Pressing Test connection settles the selection first, and settling it
+    // binds the recommended installation as an explicit choice.
+    await expect(
+      h.service.testConnection('opencode', { consent: true, model: 'm' }),
+    ).resolves.toMatchObject({ engine: 'opencode' });
+    const after = connection(h.service);
+    expect(after.binding).toMatchObject({ origin: 'explicit', source: 'managed' });
+    expect(after.binding!.id).not.toBe(h.chosen);
+    // And the receipt now reads as proof of a route the person did not pick.
+    expect(after.verification).toMatchObject({ candidateId: after.binding!.id });
+  });
+
   it('still reloads an intact record, so the damage above is the only difference', async () => {
     const h = await damaged(() => {});
     await h.service.discover(true);

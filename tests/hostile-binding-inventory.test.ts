@@ -170,6 +170,13 @@ describe('an installation the inventory dropped', () => {
     // It ran from the roster's path, with no binding and no recorded digest.
     expect(h.launched).toContain(file);
     expect(h.service.status().find((row) => row.engine === 'opencode')!.binding ?? null).toBeNull();
+
+    // The one action that would prove the route asks for something this state
+    // cannot provide: there is no installation to choose, and no id to choose it by.
+    await expect(
+      h.service.testConnection('opencode', { consent: true, model: 'm' }),
+    ).rejects.toMatchObject({ code: 'BINDING_REQUIRED' });
+    expect(h.service.status().find((row) => row.engine === 'opencode')!.candidates).toEqual([]);
   });
 
   it('switches to whatever the roster finds next, with no repair signal', async () => {
