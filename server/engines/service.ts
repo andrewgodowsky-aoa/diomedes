@@ -23,6 +23,7 @@ import {
 } from '../../shared/connection-policy.js';
 import { createDiscovery, installationContext, type DiscoveredInstallation } from '../discovery.js';
 import { BindingStore } from './binding-store.js';
+import { VerificationStore } from './verification.js';
 import { recordEngineCatalog } from '../models.js';
 import { ClaudeAdapter, CLAUDE_VERSION } from './claude.js';
 import { OpenCodeAdapter } from './opencode.js';
@@ -220,6 +221,55 @@ function repairDetail(
   return `This adapter was checked with ${TESTED_VERSIONS[engine]}. Install a compatible copy for Diomedes, or choose another installation.`;
 }
 
+/**
+ * The whole content of a connection test: one fixed synthetic instruction, no
+ * documents, no instructions and nothing a person wrote. The answer is read
+ * only far enough to see that the route answered; it is never stored, never
+ * attributed and never written into a receipt.
+ */
+const TEST_PROMPT = 'Reply with the single word: ok';
+/**
+ * How long one test may take. There is one attempt and no automatic retry: a
+ * dispatch that may already have been billed is never quietly sent again.
+ */
+const TEST_TIMEOUT_MS = 60_000;
+/**
+ * The reserved identity a host-initiated test runs under. A test is the host's
+ * own evidence, not a person's work, so it names no project of theirs and
+ * writes into no thread, task or document. Real project ids are twelve hex
+ * characters, so this name cannot collide with one.
+ */
+export const HOST_TEST_PROJECT = 'diomedes-host-tests';
+/** One reserved thread per route, so testing one route never blocks another. */
+export const hostTestThread = (engine: ExternalEngine) => `connection-test:${engine}`;
+
+/** Codes that describe the dispatch itself rather than an admission check. */
+const DISPATCH_CODES = new Set([
+  'CANCELLED',
+  'DISPATCH_UNCERTAIN',
+  'ROUTE_REFUSED',
+  'PROVIDER_ERROR',
+  'IDENTITY_MISMATCH',
+  'OUTPUT_LIMIT',
+  'PREVIEW_CONTRACT',
+  'RUNTIME_UNAVAILABLE',
+  'REQUEST_ACTIVE',
+  'EMPTY_ANSWER',
+]);
+
+/**
+ * Where a connection test failed. The thrower's own stage wins. A failure of
+ * the dispatch itself belongs to `dispatch` until a frame has arrived, after
+ * which it belongs to `stream`; everything else is an admission check and is
+ * staged the way every other connection failure is.
+ */
+function testStage(error: unknown, streamed: boolean): SetupStage {
+  if (error instanceof EngineError && error.stage) return error.stage;
+  const code = error instanceof EngineError ? error.code : '';
+  if (!code || DISPATCH_CODES.has(code)) return streamed ? 'stream' : 'dispatch';
+  return stageOf(error);
+}
+
 /** Where a failure happened, from the thrower when it knows and the code otherwise. */
 function stageOf(error: unknown): SetupStage {
   if (error instanceof EngineError && error.stage) return error.stage;
@@ -239,9 +289,12 @@ export class EngineService {
   /** One run per scope: two simultaneous scans of the same routes share it. */
   private scans = new Map<string, Promise<EngineConnection[]>>();
   private checks = new Map<ExternalEngine, Promise<EngineConnection>>();
+  /** One test per route at a time: a second one is refused, never queued. */
+  private tests = new Map<ExternalEngine, Promise<ConnectionReceipt>>();
   private readonly nativeDiscovery: boolean;
   private running = new Map<string, AbortController>();
   private readonly bindings: BindingStore;
+  private readonly receipts: VerificationStore;
   /** The last scan's facts, so a binding can be applied without rescanning. */
   private scanned = new Map<
     ExternalEngine,
@@ -301,6 +354,7 @@ export class EngineService {
       ...deps,
     };
     this.bindings = new BindingStore(root);
+    this.receipts = new VerificationStore(root);
     // A binding is a decision, so it survives a restart. What was merely
     // observed — sign-in, models, when it was last checked — does not.
     for (const engine of EXTERNAL_ENGINES) {
@@ -314,7 +368,36 @@ export class EngineService {
     }
   }
   status(): EngineConnection[] {
-    return EXTERNAL_ENGINES.map((id) => structuredClone(this.connections.get(id)!));
+    return EXTERNAL_ENGINES.map((id) => this.present(id));
+  }
+  /**
+   * One connection as a reader sees it: the facts this service observed, plus
+   * the verification history that still describes them.
+   */
+  private present(engine: ExternalEngine): EngineConnection {
+    return {
+      ...structuredClone(this.connections.get(engine)!),
+      verification: this.verificationFor(engine),
+    };
+  }
+  /**
+   * The last real result for this route, shown only while the stored receipt
+   * still names what is selected now. It is compared against the binding
+   * record rather than the live connection, because a restart reloads the
+   * record while sign-in, models and the account route start unknown again.
+   */
+  private verificationFor(engine: ExternalEngine): ConnectionReceipt | null {
+    const receipt = this.receipts.get(engine);
+    const stored = this.bindings.get(engine);
+    if (!receipt || !stored || receipt.engine !== engine) return null;
+    if (receipt.revision !== stored.revision) return null;
+    if (receipt.candidateId !== stored.binding.id || receipt.version !== stored.binding.version)
+      return null;
+    // The stored key is the exact tuple the revision was last moved for, so a
+    // route or model that changed since fails here even after a restart.
+    return revisionKey(stored.binding, receipt.accountRoute, receipt.model) === stored.key
+      ? receipt
+      : null;
   }
   private save(value: EngineConnection) {
     this.connections.set(value.engine, value);
@@ -323,7 +406,7 @@ export class EngineService {
       models: value.authentication === 'signed-in' ? value.models : [],
       detail: value.detail,
     });
-    return structuredClone(value);
+    return this.present(value.engine);
   }
   /** One file's identity, re-read only when its size or modification time moved. */
   private async identify(file: string): Promise<FileIdentity | null> {
@@ -546,12 +629,10 @@ export class EngineService {
     const inventory = scanned.inventory;
     const stored = this.bindings.get(engine);
     const binding = stored?.binding ?? null;
-    const old = this.connections.get(engine)!;
     const shared = {
       candidates: inventory.map((row) => structuredClone(row)),
       binding,
       revision: stored?.revision ?? 0,
-      verification: old.verification ?? null,
       checkedAt: new Date().toISOString(),
     };
     // Nothing on this computer could be identified and nothing is bound: report
@@ -705,7 +786,7 @@ export class EngineService {
       });
       // The account route is part of what a receipt is written against.
       this.syncRevision(engine, value.accountRoute);
-      return structuredClone(this.connections.get(engine)!);
+      return this.present(engine);
     } catch (error) {
       this.save({
         ...saved,
@@ -778,7 +859,7 @@ export class EngineService {
       stage: facts.stage,
       code: facts.code,
       correlationId: randomUUID(),
-      lastVerifiedAt: value.verification?.verifiedAt ?? null,
+      lastVerifiedAt: this.verificationFor(engine)?.verifiedAt ?? null,
       at: new Date().toISOString(),
     };
   }
@@ -920,7 +1001,7 @@ export class EngineService {
         enabled: facts.enabled,
         checkedAt: value.checkedAt,
         revision: value.revision ?? 0,
-        verifiedRevision: value.verification?.revision ?? null,
+        verifiedRevision: this.verificationFor(engine)?.revision ?? null,
       },
       Date.now(),
     );
@@ -957,12 +1038,141 @@ export class EngineService {
   /**
    * One consented, bounded, synthetic request through the ordinary admitted
    * dispatch path. Never called by a scan, a sign-in or a settings reopen.
+   *
+   * It may use the person's allowance or incur a provider charge, so it runs
+   * only on an explicit say-so, one route at a time, once. There is no retry:
+   * a dispatch whose outcome is uncertain may already have been billed.
    */
   async testConnection(
-    _engine: ExternalEngine,
-    _input: { consent: boolean; model: string; signal?: AbortSignal },
+    engine: ExternalEngine,
+    input: { consent: boolean; model: string; signal?: AbortSignal },
   ): Promise<ConnectionReceipt> {
-    throw new EngineError('NOT_IMPLEMENTED', 'Testing a connection is not available yet.');
+    if (input.consent !== true)
+      throw new EngineError(
+        'CONSENT_REQUIRED',
+        'Confirm that this test sends one small request through your selected service first.',
+        false,
+        'discovery',
+      );
+    if (this.tests.has(engine))
+      throw new EngineError(
+        'REQUEST_ACTIVE',
+        'This service is already being tested. Wait for that test before starting another.',
+      );
+    const job = this.test(engine, input.model, input.signal);
+    this.tests.set(engine, job);
+    try {
+      return await job;
+    } finally {
+      this.tests.delete(engine);
+    }
+  }
+  private async test(
+    engine: ExternalEngine,
+    model: string,
+    caller?: AbortSignal,
+  ): Promise<ConnectionReceipt> {
+    let streamed = false;
+    try {
+      const state = this.connections.get(engine)!;
+      // A reported account-route mismatch is not a sign-in problem and sending
+      // anyway would not resolve it: this adapter accepts one route.
+      if (state.routeIssue)
+        throw new EngineError(
+          'ACCOUNT_ROUTE',
+          `This installation is signed in to a different account. Diomedes uses ${state.routeIssue.required} for this route.`,
+          false,
+          'model-list',
+        );
+      // Settling the selection first is what makes a receipt mean anything: it
+      // refuses a model this connection does not currently list, refuses a
+      // stale or signed-out connection with the existing errors, and names the
+      // one account route the admission below will accept.
+      const selected = this.selection(engine, model);
+      const stored = this.bindings.get(engine);
+      if (!stored)
+        throw new EngineError(
+          'BINDING_REQUIRED',
+          'Choose which installation this service uses before testing it.',
+          false,
+          'discovery',
+        );
+      // Captured before anything is sent. If the binding, account route or
+      // model moves while the answer is in flight, the receipt stays on this
+      // revision and cannot verify whatever is selected when it lands.
+      const captured = {
+        revision: stored.revision,
+        candidateId: stored.binding.id,
+        version: stored.binding.version,
+        accountRoute: selected.accountRoute,
+        model: selected.model,
+      };
+      const signal = AbortSignal.any([
+        AbortSignal.timeout(TEST_TIMEOUT_MS),
+        ...(caller ? [caller] : []),
+      ]);
+      // A fresh request id every time: the durable run id derives from it, so
+      // a test never lands on an earlier run's recorded outcome.
+      const answer = await this.generate(engine, {
+        projectId: HOST_TEST_PROJECT,
+        threadId: hostTestThread(engine),
+        requestId: `test-${randomUUID()}`,
+        model: captured.model,
+        accountRoute: captured.accountRoute,
+        prompt: TEST_PROMPT,
+        instructions: '',
+        documents: [],
+        signal,
+        // Frames are discarded. They are read for one thing only: whether the
+        // route had started answering when a failure happened.
+        onPreview: () => {
+          streamed = true;
+        },
+      });
+      if (!answer.text.trim())
+        throw new EngineError(
+          'EMPTY_ANSWER',
+          'The service accepted the request and returned nothing. Nothing was verified.',
+          true,
+        );
+      const receipt: ConnectionReceipt = {
+        engine,
+        ...captured,
+        runId: answer.runId,
+        buildId: this.deps.buildId?.() ?? 'unknown',
+        verifiedAt: new Date().toISOString(),
+      };
+      // Recorded before it is returned. A receipt Diomedes could not save is a
+      // receipt it does not claim, so the save's failure is the test's failure.
+      try {
+        this.receipts.save(engine, receipt);
+      } catch {
+        // The reason names a file, and a person's screen is not where a path
+        // belongs. The support diagnostic carries the stage and the code.
+        throw new EngineError(
+          'RECEIPT_UNSAVED',
+          'The service answered, but Diomedes could not record the proof. Nothing was verified.',
+          false,
+          'cleanup',
+        );
+      }
+      // A test that answered clears the failure an earlier one left behind.
+      this.save({ ...this.connections.get(engine)!, diagnostic: null });
+      return structuredClone(receipt);
+    } catch (error) {
+      // Written down before the caller hears about it: the screen re-reads
+      // status the moment this rejects.
+      const value = this.connections.get(engine)!;
+      this.save({
+        ...value,
+        diagnostic: this.diagnostic(engine, {
+          stage: testStage(error, streamed),
+          code: error instanceof EngineError ? error.code : 'TEST_FAILED',
+          candidateSource: this.effective(value)?.source ?? null,
+        }),
+      });
+      throw error;
+    }
   }
   integration(engine: ExternalEngine, enabled: boolean): IntegrationStatus {
     const value = this.connections.get(engine)!;
