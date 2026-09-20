@@ -819,31 +819,91 @@ export function SettingsPage({
 }
 
 /**
- * One button that copies the support bundle: version, host, paths, engine
- * status, counts and recent errors, with secrets scrubbed and the exclusions
- * listed in the text itself. The feedback says what actually happened.
+ * A long machine string in a dialog is the case decision 5 is about, so the
+ * preview wraps and scrolls inside its own box instead of widening the dialog.
+ */
+const supportPreview: CSSProperties = {
+  margin: 0,
+  minWidth: 0,
+  maxHeight: '40vh',
+  overflow: 'auto',
+  whiteSpace: 'pre-wrap',
+  overflowWrap: 'anywhere',
+};
+
+/**
+ * The support bundle, read before it is shared: build identity, host, paths,
+ * per-route connection facts, counts and recent errors, with secrets scrubbed
+ * and the exclusions listed in the text itself.
+ *
+ * It carries paths, so it is not anonymous and is not offered as anonymous. The
+ * person sees the exact characters first and copies that same string — the
+ * preview is the payload, never a summary of one.
  */
 function SupportBundleCopy() {
   const [note, setNote] = useState('');
+  const [preview, setPreview] = useState<string | null>(null);
   return (
-    <p className="caption">
-      <button
-        type="button"
-        onClick={async () => {
-          setNote('');
-          try {
-            const { text } = await api<{ text: string }>('/support/bundle');
-            if (!navigator.clipboard) throw new Error('The clipboard is not available here.');
-            await navigator.clipboard.writeText(text);
-            setNote('Copied. Secrets and document contents are not included.');
-          } catch (error) {
-            setNote(error instanceof Error ? error.message : 'The bundle could not be copied.');
-          }
-        }}
-      >
-        Copy support information
-      </button>
-      {note && <span role="status"> {note}</span>}
-    </p>
+    <>
+      <p className="caption">
+        <button
+          type="button"
+          onClick={async () => {
+            setNote('');
+            try {
+              const { text } = await api<{ text: string }>('/support/bundle');
+              setPreview(text);
+            } catch (error) {
+              setNote(error instanceof Error ? error.message : 'The bundle could not be read.');
+            }
+          }}
+        >
+          Review support information
+        </button>
+        {note && preview === null && <span role="status"> {note}</span>}
+      </p>
+      {preview !== null && (
+        <Modal
+          title="Support information"
+          wide
+          onClose={() => {
+            setPreview(null);
+            setNote('');
+          }}
+        >
+          <pre className="code" style={supportPreview}>
+            {preview}
+          </pre>
+          <div className="dialog-actions">
+            <Button
+              tone="primary"
+              onClick={async () => {
+                try {
+                  if (!navigator.clipboard)
+                    throw new Error('The clipboard is not available here.');
+                  await navigator.clipboard.writeText(preview);
+                  setNote('Copied.');
+                } catch (error) {
+                  setNote(
+                    error instanceof Error ? error.message : 'The bundle could not be copied.',
+                  );
+                }
+              }}
+            >
+              Copy
+            </Button>
+            <Button
+              onClick={() => {
+                setPreview(null);
+                setNote('');
+              }}
+            >
+              Close
+            </Button>
+            {note && <span role="status">{note}</span>}
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }
