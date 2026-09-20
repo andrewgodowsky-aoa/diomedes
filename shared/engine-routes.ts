@@ -113,7 +113,7 @@ export const ENGINE_ROUTE_PROFILES: Record<ExternalEngine, EngineRouteProfile> =
     ],
     doesNotReuse: [
       'The Devin CLI sign-in: each session authenticates on its own',
-      'Your Devin configuration; the session workspace is new each time',
+      'Your Devin configuration is not copied into the session workspace, which is new each time',
       ENVIRONMENT,
       WORKING_DIRECTORY,
     ],

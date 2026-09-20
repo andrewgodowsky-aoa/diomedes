@@ -14,6 +14,9 @@ service, adapter, setup screen and diagnostics work described below.
 
 ## The findings and what the repair changes
 
+Each paragraph says what the finding is and what the repair changes. Whether a change has
+landed is the lane table below, not this section.
+
 **F01 — exact version compatibility has an unrecoverable normal-user path.** An engine
 is supported only when its installed version equals `TESTED_VERSIONS[engine]`, discovery
 takes the first found installation, a private managed copy is considered only when
@@ -176,5 +179,6 @@ spelling only, not in what it accepts.
   mirror that says the canonical document could not be updated. That competing authority
   is untouched here and still needs reconciling by its owner.
 
-Everything in this record is in source. None of it is packaged, and none of it has been
-verified on a machine other than the one it was written on.
+This lane's own work is in source only. It is not packaged, and it has not been run on
+any machine but the one it was written on. Every other lane states its own status in the
+table above; this record does not vouch for work it did not do.

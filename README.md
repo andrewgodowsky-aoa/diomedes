@@ -9,10 +9,11 @@ ahead. Every write is recorded and reversible.
 Diomedes has no model of its own. It drives an AI tool you already installed and signed
 in to, through an adapter. Your account, your allowance, your bill.
 
-It runs on this computer. There is no Diomedes account and no telemetry. The only
-network calls it makes for itself are the update check against its published releases
-page and, when you ask for one, a guided download of a pinned official tool release.
-Everything else leaves through the AI tool you signed in to.
+It runs on this computer, and there is no telemetry. An optional account sign-in exists
+in source and needs configuration before it is available at all; personal use works
+without it, without signing in and without network access
+(`docs/implementation/2026-09-20-native-workspace-sign-in.md`). What a task sends leaves
+through the AI tool you signed in to.
 
 Diomedes Systems (LLC formation pending). This source tree is Diomedes 0.1.4;
 `package.json` holds that number and `tests/engine-routes.test.ts` fails if this file
@@ -42,7 +43,7 @@ Windows 11 x64. No Node, npm, Git or developer tool is needed for this path.
    `Get-FileHash .\Diomedes-Experimental-*-unsigned-setup.exe -Algorithm SHA256`, and
    compare the result with the matching line in `SHA256SUMS.txt`.
 3. Run the installer and open **Diomedes** from the Start menu. It installs for the
-   current user only: no administrator rights, no PATH change, no background service.
+   current user only: no administrator rights and no automatic launch.
    Uninstalling removes its own files, its two current-user registry keys and its
    shortcut; your projects and history stay where they are.
 
@@ -63,8 +64,10 @@ A portable archive is published beside the installer. Extract the whole folder a
 
 You install the tool and sign in to it yourself; Diomedes uses that installation and
 that sign-in. Five adapters are **in source**, each accepting exactly one account route.
-Holding a different account with the same tool is a different situation, not a failed
-sign-in, and Diomedes says so rather than telling you to sign in again.
+Holding a different account with the same tool is a different situation from being
+signed out. The contract for saying so is in `shared/engines.ts` (`AccountRouteIssue`);
+at this commit an adapter still reports an unsupported account as signed out, which is
+one of the things this repair is for.
 
 | Tool | Account route the adapter accepts | What a task through it can do | Reviewed version |
 | --- | --- | --- | --- |
@@ -78,8 +81,8 @@ These are text routes. The tool answers with text and Diomedes's own writer turn
 text into a proposal you approve or reject. None of them is that tool's own coding
 experience: its tools are disabled or denied, and a tool event stops the request instead
 of running it. These are configuration controls, not an operating-system sandbox. The
-settings screen and the table above read the same sentences from
-`shared/engine-routes.ts`.
+table above repeats `shared/engine-routes.ts`, which is written for the settings screen
+to render; at this commit nothing reads it yet.
 
 **Found is not usable.** Checking this computer ends in one of these, and the difference
 is the whole point of the list:
@@ -100,7 +103,7 @@ your plugins, MCP servers, instruction files or custom configuration: each route
 its own directory with configuration Diomedes wrote. A launched tool receives a short
 allowlist of environment variables (`server/engines/process.ts`), so provider keys,
 proxy settings and other custom variables do not reach it. The per-route lists are in
-`shared/engine-routes.ts` and on the settings screen.
+`shared/engine-routes.ts`.
 
 **Signing in** happens in the tool, never in Diomedes. Claude Code, OpenCode and Cursor
 open their own sign-in in a console window; Devin opens its browser flow; oh-my-pi opens
