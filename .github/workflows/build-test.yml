@@ -32,13 +32,56 @@ jobs:
       - run: node node_modules/vitest/vitest.mjs run --maxWorkers=2 --reporter=default --reporter=junit --outputFile=test-results/unit.xml
         env:
           CODEX_HOME: ${{ runner.temp }}/diomedes-ci-codex
-      # npm run build also packages the desktop and requires separately staged
-      # pinned native binaries. Client compilation is an independent CI gate.
+      # Packaging (npm run package:windows) requires separately staged pinned
+      # native binaries. Client compilation is an independent CI gate.
       - run: node node_modules/vite/bin/vite.js build
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: unit-test-results
           path: test-results/unit.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  # Source-development evidence for Apple Silicon (milestone M1). This is a hosted
+  # runner: it says nothing about Finder launch, Keychain, signing or a real
+  # MacBook, and it packages nothing. No provider credential, signing secret or
+  # production data is available to it, by design.
+  macos-arm64:
+    # A named image, not macos-latest, whose meaning moves. The first step proves
+    # the architecture instead of trusting the label.
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Assert Apple Silicon and a native arm64 Node
+        run: |
+          set -eu
+          sw_vers
+          test "$(uname -s)" = "Darwin"
+          test "$(uname -m)" = "arm64"
+          test "$(node -p process.arch)" = "arm64"
+          node -p "process.version + ' ' + process.platform + '/' + process.arch"
+      - run: npm ci
+      - run: npm run check
+      - run: node node_modules/vitest/vitest.mjs run --maxWorkers=2 --reporter=default --reporter=junit --outputFile=test-results/unit-macos-arm64.xml
+        env:
+          CODEX_HOME: ${{ runner.temp }}/diomedes-ci-codex
+      # The whole command, not Vite alone: on a Mac host this used to fail in
+      # postbuild after compiling. It must now compile and package nothing.
+      - run: npm run build
+      - name: Build produced no desktop package
+        run: test ! -e release
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: unit-test-results-macos-arm64
+          path: test-results/unit-macos-arm64.xml
           if-no-files-found: warn
           retention-days: 7
