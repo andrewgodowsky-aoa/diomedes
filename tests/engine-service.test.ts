@@ -3,8 +3,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { EngineService, TESTED_VERSIONS } from '../server/engines/service.js';
+import { EngineError } from '../server/engines/process.js';
 import type { ExternalEngine, IntegrationStatus } from '../shared/types.js';
-import type { TextEngineAdapter } from '../server/engines/contract.js';
+import type { AdapterInspection, TextEngineAdapter } from '../server/engines/contract.js';
 import { routeContractFor } from '../server/harness/route-contract.js';
 import { fixtureTextDispatch, textResponse } from './h01-fixture.js';
 const installed: IntegrationStatus = {
@@ -264,5 +265,118 @@ describe('AI setup readiness and dispatch', () => {
     release!();
     await expect(pending).rejects.toMatchObject({ code: 'CANCELLED' });
     expect(generate).toHaveBeenCalledTimes(1);
+  });
+});
+
+const ROUTE_ISSUE = {
+  required: 'claude-code:claude.ai',
+  connected: ['api_key'],
+};
+/** What the adapter reports for an account kind this route does not accept. */
+const wrongAccount = (): AdapterInspection => ({
+  authentication: 'unknown',
+  accountRoute: null,
+  models: [],
+  routeIssue: { ...ROUTE_ISSUE, connected: [...ROUTE_ISSUE.connected] },
+  detail: 'Claude Code is signed in with an account kind this route does not accept.',
+});
+const READY = { enabled: true, installSupported: true };
+
+/** One service whose adapter answers whatever the current script says. */
+function scripted() {
+  const version = TESTED_VERSIONS['claude-code'];
+  let answer: () => Promise<AdapterInspection> = async () => wrongAccount();
+  const inspect = vi.fn(async () => answer());
+  const generate = vi.fn<TextEngineAdapter['generate']>(async (input) =>
+    textResponse(input, 'Answer', version),
+  );
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'diomedes-route-'));
+  roots.push(root);
+  const service = new EngineService(root, {
+    discover: async () => [{ ...installed, installedVersion: version }],
+    version: async () => version,
+    adapter: () => ({
+      id: 'claude-code',
+      contract: routeContractFor('claude-code'),
+      inspect,
+      generate,
+    }),
+  });
+  return {
+    service,
+    inspect,
+    say: (next: () => Promise<AdapterInspection>) => {
+      answer = next;
+    },
+    connection: () => service.status().find((row) => row.engine === 'claude-code')!,
+  };
+}
+
+/**
+ * A route issue means "you are signed in to an account this route cannot use".
+ * It outranks the sign-in state wherever it is reported, so it must be as
+ * carefully retired as it is raised: it describes one observation of one
+ * executable, and it may not outlive either.
+ */
+describe('a reported account-route mismatch', () => {
+  it('stops describing a route issue once the account reports signed out', async () => {
+    const { service, say, connection } = scripted();
+    await service.discover(true);
+    await service.check('claude-code');
+    expect(connection().routeIssue).toEqual(ROUTE_ISSUE);
+    expect(service.nextAction('claude-code', READY)).toBe('explain-account-route');
+    // The person acted on that: they signed out of the account this route
+    // cannot use. The next check finds no sign-in at all.
+    say(async () => {
+      throw new EngineError('AUTH_REQUIRED', 'Sign in to Claude Code.', false, 'provider-auth');
+    });
+    await expect(service.check('claude-code')).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+    expect(connection().routeIssue).toBeNull();
+    expect(connection().authentication).toBe('signed-out');
+    expect(service.nextAction('claude-code', READY)).toBe('sign-in');
+  });
+
+  it('survives a rescan that finds the very same executable', async () => {
+    const { service, inspect, connection } = scripted();
+    await service.discover(true);
+    await service.check('claude-code');
+    const checked = connection();
+    expect(checked.routeIssue).toEqual(ROUTE_ISSUE);
+    // Checking this computer again is not a new observation of the account.
+    // Nothing about this executable moved, so nothing it reported is retired.
+    await service.discover(true);
+    expect(inspect).toHaveBeenCalledTimes(1);
+    expect(connection().routeIssue).toEqual(ROUTE_ISSUE);
+    expect(connection().detail).toBe(checked.detail);
+    expect(service.nextAction('claude-code', READY)).toBe('explain-account-route');
+  });
+
+  it('does not carry a route issue across a change of executable', async () => {
+    const version = TESTED_VERSIONS['claude-code'];
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'diomedes-route-'));
+    roots.push(root);
+    let location = 'tool.exe';
+    const service = new EngineService(root, {
+      discover: async () => [{ ...installed, installedVersion: version, location }],
+      version: async () => version,
+      adapter: () => ({
+        id: 'claude-code',
+        contract: routeContractFor('claude-code'),
+        inspect: vi.fn(async () => wrongAccount()),
+        generate: vi.fn<TextEngineAdapter['generate']>(async (input) =>
+          textResponse(input, 'Answer', version),
+        ),
+      }),
+    });
+    const connection = () => service.status().find((row) => row.engine === 'claude-code')!;
+    await service.discover(true);
+    await service.check('claude-code');
+    expect(connection().routeIssue).toEqual(ROUTE_ISSUE);
+    // A different installation is a different question. What the old one
+    // reported about its account says nothing about this one.
+    location = 'other-tool.exe';
+    await service.discover(true);
+    expect(connection().routeIssue).toBeNull();
+    expect(service.nextAction('claude-code', READY)).toBe('check-connection');
   });
 });

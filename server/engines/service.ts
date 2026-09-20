@@ -705,6 +705,13 @@ export class EngineService {
   /**
    * Replace the inventory every time; keep a readiness observation only while
    * the very same executable is still the effective one.
+   *
+   * A reported account-route mismatch is such an observation. The adapter
+   * reports it with `authentication: 'unknown'` and no models, because it did
+   * not get far enough to say either — so a check that ended there is kept on
+   * the same terms as one that ended signed in. Otherwise checking this
+   * computer again, which asks no account anything, would retire what the last
+   * check learned and send the person back to "check connection".
    */
   private merge(engine: ExternalEngine, next: EngineConnection): EngineConnection {
     const old = this.connections.get(engine)!;
@@ -712,7 +719,7 @@ export class EngineService {
       !!next.location &&
       next.location === old.location &&
       next.version === old.version &&
-      old.authentication === 'signed-in';
+      (old.authentication === 'signed-in' || !!old.routeIssue);
     return this.save(
       same
         ? {
@@ -794,6 +801,11 @@ export class EngineService {
           error instanceof EngineError && error.code === 'AUTH_REQUIRED' ? 'signed-out' : 'unknown',
         models: [],
         accountRoute: null,
+        // What the last check learned about the account is exactly what this
+        // one failed to learn. A route issue is an observation of an account,
+        // so it retires with the sign-in and models it was reported beside;
+        // keeping it would answer a later question with an older answer.
+        routeIssue: null,
         compatibility:
           error instanceof EngineError && error.code === 'UNSUPPORTED_VERSION'
             ? 'unsupported'
