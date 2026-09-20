@@ -1038,12 +1038,19 @@ export class EngineService {
     const selected = model === undefined ? stored.model : model;
     const key = revisionKey(stored.binding, accountRoute, selected);
     if (key === stored.key) return;
-    this.bindings.save(engine, {
+    const moved = {
       binding: stored.binding,
       revision: stored.revision + 1,
       key,
       model: selected,
-    });
+    };
+    // A revision is an observation, not a choice. The record is written by an
+    // explicit bind, by a selection settled where no record existed, and by the
+    // one-time adoption — so while any part of it cannot be read, this is held
+    // in memory and goes to disk with the next choice, rather than filing an
+    // unreadable record away on nobody's say-so.
+    if (this.bindings.intact()) this.bindings.save(engine, moved);
+    else this.bindings.hold(engine, moved);
     const value = this.connections.get(engine)!;
     this.save({ ...value, revision: stored.revision + 1 });
   }

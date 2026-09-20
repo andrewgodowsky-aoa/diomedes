@@ -313,6 +313,58 @@ describe('a damaged binding record', () => {
     );
   });
 
+  it('does not rewrite or move the record for a revision a check merely observed', async () => {
+    // A binding is written by an explicit choice, by settling a selection that
+    // had no record, or by the one-time adoption — never by a check. While any
+    // part of the record cannot be read, writing one would file the bytes of
+    // somebody's other choice away on nobody's say-so.
+    const serviceRoot = root();
+    const theirs = place(path.join(root(), 'chosen', 'opencode.exe'), 'the copy they picked');
+    const first = host({ system: [{ file: theirs }], service: serviceRoot });
+    await first.service.discover(true);
+    const chosen = connection(first.service).recommendedCandidateId!;
+    await first.service.bind('opencode', chosen);
+    first.service.close();
+
+    // Another route's row arrives in a shape this build does not read.
+    const file = bindingsFile(serviceRoot);
+    const document = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+      engines: Record<string, unknown>;
+    };
+    document.engines['claude-code'] = 'written by something else';
+    fs.writeFileSync(file, JSON.stringify(document));
+    const written = fs.readFileSync(file, 'utf8');
+
+    const second = host({ system: [{ file: theirs }], service: serviceRoot });
+    await second.service.discover(true);
+    const before = connection(second.service).revision!;
+    // The check learns the account route for the first time, which is exactly
+    // what moves the revision.
+    await second.service.check('opencode');
+    expect(connection(second.service).revision).toBe(before + 1);
+    expect(
+      second.service.status().find((row) => row.engine === 'claude-code')!.repair,
+    ).toBe('record-unreadable');
+    // Nothing was written and nothing was filed away.
+    expect(fs.readFileSync(file, 'utf8')).toBe(written);
+    expect(fs.readdirSync(serviceRoot).filter((name) => name.startsWith('bindings.json.'))).toEqual(
+      [],
+    );
+
+    // The next explicit choice writes the record, and carries the revision the
+    // check observed with it.
+    await second.service.bind('opencode', chosen);
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+      engines: Record<string, { revision: number }>;
+      unreadable?: string[];
+    };
+    expect(saved.engines.opencode.revision).toBe(before + 1);
+    expect(saved.unreadable).toContain('claude-code');
+    const kept = fs.readdirSync(serviceRoot).filter((name) => name.startsWith('bindings.json.'));
+    expect(kept.length).toBe(1);
+    expect(fs.readFileSync(path.join(serviceRoot, kept[0]), 'utf8')).toBe(written);
+  });
+
   it('reads a route with no row of its own in an intact document as never chosen', async () => {
     const h = await damaged(() => {});
     await h.service.discover(true);
