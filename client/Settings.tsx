@@ -24,7 +24,6 @@ import {
   tightestWindow,
   detailDescriptions,
   meterLine,
-  surfaceDescriptions,
   surfaceOf,
   titleCase,
 } from './components';
@@ -54,6 +53,7 @@ export function SettingsPage({
   integrations,
   usage,
   openHelpersSignal,
+  sectionRequest,
   refresh,
   onOpenDesignCenter,
   appliedTheme = null,
@@ -76,6 +76,8 @@ export function SettingsPage({
   integrations: IntegrationStatus[];
   usage: UsageSnapshot[];
   openHelpersSignal?: number;
+  /** A section asked for by name from outside, e.g. the Projects page's rail. */
+  sectionRequest?: { section: string; n: number } | null;
   refresh: () => void;
   /** Opens the full Design Center workspace. Console only. */
   onOpenDesignCenter?: () => void;
@@ -201,6 +203,16 @@ export function SettingsPage({
   useEffect(() => {
     if (openHelpersSignal) setSection(helpersSection);
   }, [openHelpersSignal, helpersSection]);
+  // Only a section this build offers is opened; an unknown name leaves the page
+  // where it was rather than on an empty pane.
+  const requested = sectionRequest?.section;
+  const requestCount = sectionRequest?.n;
+  useEffect(() => {
+    if (!requested) return;
+    const known = requested === 'Engines' ? helpersSection : requested;
+    if (!isDesk && ['Design Center', 'App updates', 'Rules', 'Developer'].includes(known)) return;
+    setSection(known);
+  }, [requested, requestCount, helpersSection, isDesk]);
   const sections = [
     'Interface detail',
     'Helpers on this computer',
@@ -233,66 +245,29 @@ export function SettingsPage({
             {section === 'Interface detail' && (
               <>
                 <p className="prose">
-                  Choose how Diomedes lays out your work and how much detail the Workbook shows.
+                  Choose how much detail Diomedes shows you about each change.
                 </p>
-                <h2>Surface</h2>
+                {/* Detail stands on its own. It was gated on the Workbook, and
+                    choosing a level also wrote `surface: 'workbook'`, so picking
+                    one from the Console moved you out of it. Both are gone: this
+                    control writes the detail level and nothing else. */}
+                <h2>Detail</h2>
                 <div className="radio-list">
-                  {(['workbook', 'console'] as const).map((s) => (
-                    <label key={s} className={`radio-row ${surface === s ? 'selected' : ''}`}>
+                  {(['guided', 'standard', 'technical'] as const).map((d) => (
+                    <label key={d} className={`radio-row ${settings.detail === d ? 'selected' : ''}`}>
                       <input
                         type="radio"
-                        name="settings-surface"
-                        checked={surface === s}
-                        onChange={() =>
-                          void save({
-                            ...settings,
-                            surface: s,
-                            ...(s === 'workbook' && settings.detail === 'technical'
-                              ? { detail: 'standard' }
-                              : {}),
-                          })
-                        }
+                        name="settings-detail"
+                        checked={settings.detail === d}
+                        onChange={() => void save({ ...settings, detail: d })}
                       />
                       <span>
-                        <strong>The {titleCase(s)}</strong>
-                        <span className="caption">{surfaceDescriptions[s]}</span>
+                        <strong>{titleCase(d)}</strong>
+                        <span className="caption">{detailDescriptions[d]}</span>
                       </span>
                     </label>
                   ))}
                 </div>
-                {surface === 'workbook' && (
-                  <>
-                    <h2>Detail</h2>
-                    <div className="radio-list">
-                      {(['guided', 'standard'] as const).map((d) => (
-                        <label
-                          key={d}
-                          className={`radio-row ${settings.detail === d ? 'selected' : ''}`}
-                        >
-                          <input
-                            type="radio"
-                            name="settings-detail"
-                            checked={settings.detail === d}
-                            onChange={() =>
-                              void save({ ...settings, detail: d, surface: 'workbook' })
-                            }
-                          />
-                          <span>
-                            <strong>{titleCase(d)}</strong>
-                            <span className="caption">{detailDescriptions[d]}</span>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </>
-                )}
-                <section className="block">
-                  <h3>Same work, two surfaces</h3>
-                  <p className="prose">
-                    Documents, tasks, approvals and History stay in place when you switch. Every
-                    decision is still yours.
-                  </p>
-                </section>
               </>
             )}
             {(section === 'Helpers on this computer' || section === 'Engines') && (

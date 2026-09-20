@@ -480,6 +480,7 @@ export function ThreadView({
       </div>
       <Composer
         thread={thread}
+        projectId={projectId}
         mode={mode}
         onMode={onMode}
         busy={busy}

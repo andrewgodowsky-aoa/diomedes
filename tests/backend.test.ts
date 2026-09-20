@@ -572,25 +572,27 @@ describe('threads are first-class conversations', () => {
     await reloadedAgain.init();
     expect(JSON.stringify(reloadedAgain.state(id).conversations)).toBe(snapshot);
   });
-  test("settings without surface get 'workbook' (standard) and 'console' (technical)", async () => {
+  // The Workbook left a person's reach (2026-09-20): nothing switches into it, so
+  // a stored file opens on the Console whatever it holds. It used to fall back on
+  // the detail level, and a stored 'workbook' used to be honoured.
+  test('stored settings open on the Console, with or without a surface', async () => {
     const settingsPath = path.join(temp, 'data', 'settings.json');
     await request('/settings', 'PUT', { detail: 'standard' });
-    let raw = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
-    delete raw.surface;
-    raw.detail = 'standard';
-    await fs.writeFile(settingsPath, JSON.stringify(raw));
-    let reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
-    await reloaded.init();
-    expect(reloaded.settings.detail).toBe('standard');
-    expect(reloaded.settings.surface).toBe('workbook');
-    raw = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
-    delete raw.surface;
-    raw.detail = 'technical';
-    await fs.writeFile(settingsPath, JSON.stringify(raw));
-    reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
-    await reloaded.init();
-    expect(reloaded.settings.detail).toBe('technical');
-    expect(reloaded.settings.surface).toBe('console');
+    for (const [stored, detail] of [
+      [undefined, 'standard'],
+      [undefined, 'technical'],
+      ['workbook', 'guided'],
+    ] as const) {
+      const raw = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
+      if (stored === undefined) delete raw.surface;
+      else raw.surface = stored;
+      raw.detail = detail;
+      await fs.writeFile(settingsPath, JSON.stringify(raw));
+      const reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
+      await reloaded.init();
+      expect(reloaded.settings.detail).toBe(detail);
+      expect(reloaded.settings.surface).toBe('console');
+    }
   });
   test('POST /threads creates, PUT renames, GET lists newest-updated first', async () => {
     const id = await sample();

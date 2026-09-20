@@ -17,7 +17,6 @@ import type {
   IntegrationStatus,
   Mode,
   Need,
-  Page,
   Project,
   ProjectState,
   Route,
@@ -42,6 +41,8 @@ import {
   Modal,
   time,
   titleCase,
+  askDraftKey,
+  askModeKey,
 } from '../components';
 import { Mark } from './Mark';
 import { Rail, type RailItem } from './Rail';
@@ -57,7 +58,9 @@ import { FilesPane, DEFAULT_WIDTH, clampWidth } from './FilesPane';
 import { ActivityOverview } from './ActivityOverview';
 import { projectActivity, type ActivityRow } from './activity';
 import { TeamView } from './TeamView';
-import { Connections } from '../connections/Connections';
+import { HistoryView } from './HistoryView';
+import { DocumentEditor, UNSAVED_WARNING } from './DocumentEditor';
+import type { EverythingItem } from './Everything';
 import { Palette } from './Palette';
 import { WorkspaceMark, WorkspacePanel, useWorkspace } from './Workspaces';
 import { applyQuery, buildEntries, type PaletteContext } from './paletteEntries';
@@ -76,7 +79,6 @@ interface ShellProps {
   integrations: IntegrationStatus[];
   usage: UsageSnapshot[];
   saveSettings: (value: Settings) => Promise<void>;
-  openInBook: (page: Page) => void;
   openEngineSettings: () => void;
   onOpenProject: (project: Project) => void;
   onShowProjects: () => void;
@@ -88,6 +90,15 @@ interface ShellProps {
 }
 
 const emptyTeam: TeamState = { members: [], messages: [], runs: [] };
+
+/**
+ * What the rail carries before anybody changes it: the three screens that were
+ * already in the view switch, the History the Console just gained, and the
+ * Files pane that was already in its foot. That is six fewer decisions made for
+ * everybody than the eight fixed buttons this replaces, and every one of them
+ * can now be taken out. Everything else is one click away in Everything.
+ */
+const DEFAULT_PINS = ['thread', 'board', 'team', 'history', 'files'];
 
 // Cap for the live streamed display: ephemeral text never persists.
 const MAX_STREAM_CHARS = 256 * 1024;
@@ -104,7 +115,6 @@ export function Shell({
   integrations,
   usage,
   saveSettings,
-  openInBook,
   openEngineSettings,
   onOpenProject,
   onShowProjects,
@@ -147,6 +157,30 @@ export function Shell({
     const saved = Number(stored('console.files.width'));
     return Number.isFinite(saved) && saved > 0 ? clampWidth(saved) : DEFAULT_WIDTH;
   });
+  // What this person keeps in the rail. Remembered per person and never per
+  // project, the same as the Files pane above: which destinations you reach for
+  // is a habit, not a property of the work.
+  //
+  // localStorage rather than Settings on purpose. `validateSettings` rejects any
+  // key that is not in `defaults()`, so a new settings key is a server change
+  // that every existing settings file has to be migrated through; pins do not
+  // earn that yet. A browser that refuses storage gets the defaults every time
+  // and everything still works.
+  const [pins, setPins] = useState<string[]>(() => {
+    const saved = stored('console.rail.pins');
+    if (saved === null) return DEFAULT_PINS;
+    try {
+      const parsed: unknown = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : DEFAULT_PINS;
+    } catch {
+      return DEFAULT_PINS;
+    }
+  });
+  // The file being written in, on the main stage, and whether it holds writing
+  // that has not been saved. The Console owns the warning because the Console
+  // owns the navigation the warning is about.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [unsaved, setUnsaved] = useState(false);
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
@@ -405,12 +439,17 @@ export function Shell({
   useEffect(() => {
     remember('console.files.width', String(filesWidth));
   }, [filesWidth]);
+  useEffect(() => {
+    remember('console.rail.pins', JSON.stringify(pins));
+  }, [pins]);
   // `statePayload` strips `documents` from the SSE fan-out, so the listing is
   // fetched here: when the pane or the palette wants it, and again on each
   // state event while one of them is open. Nothing reads `state.documents`.
   // The Board uses the same listing for the new task's document picker.
   // Starts refresh it again before presenting the selection and dispatching.
-  const wantDocuments = filesOpen || paletteOpen || view === 'Board';
+  // The editor is on this list too: it opens one file from the listing, and a
+  // person can reach it from History without the pane ever having been open.
+  const wantDocuments = filesOpen || paletteOpen || view === 'Board' || editing !== null;
   const documentsFor = useRef<string | null>(null);
   useEffect(() => {
     if (!wantDocuments) return;
@@ -473,6 +512,27 @@ export function Shell({
   useEffect(() => {
     if (selected) setMode(selected.mode ?? 'ask');
   }, [selected?.id, selected?.mode]);
+  // A mode chosen on the Projects page arrives with the carried ask and lands on
+  // the thread the draft opens in. Declared after the effect above, which would
+  // otherwise put the thread's stored mode back in the same commit.
+  useEffect(() => {
+    if (!selected) return;
+    let carried: string | null = null;
+    try {
+      carried = localStorage.getItem(askModeKey(projectId));
+      if (carried !== null) localStorage.removeItem(askModeKey(projectId));
+    } catch {
+      // Storage is unavailable; the thread keeps its own mode.
+    }
+    if (carried !== 'ask' && carried !== 'plan' && carried !== 'build' && carried !== 'fix') return;
+    if (carried === (selected.mode ?? 'ask')) return;
+    const next: Mode = carried;
+    setMode(next);
+    void api(`${base}/threads/${selected.id}`, 'PUT', { mode: next }).catch((e: unknown) => {
+      report(e);
+      setMode(selected.mode ?? 'ask');
+    });
+  }, [selected?.id]);
   useEffect(() => {
     setRoute(selectedEngine(settings, state?.project, selected));
   }, [selected?.id, selected?.engine, state?.project.ai, settings.services?.defaultEngine]);
@@ -530,6 +590,24 @@ export function Shell({
       state?.project,
       state?.conversations.find((thread) => thread.taskId === task.id),
     );
+
+  // An ask carried from the Projects page needs a thread to land in. A project
+  // with none would show "No threads yet" over a draft nobody can see, so the
+  // thread is opened for it, once per project.
+  const openedForAsk = useRef('');
+  useEffect(() => {
+    if (!state || state.project.id !== projectId || threads.length > 0) return;
+    if (openedForAsk.current === projectId) return;
+    let carried = '';
+    try {
+      carried = localStorage.getItem(askDraftKey(projectId)) ?? '';
+    } catch {
+      // Storage is unavailable; nothing was carried.
+    }
+    if (!carried) return;
+    openedForAsk.current = projectId;
+    void newThread();
+  }, [state, projectId, threads.length]);
 
   async function newThread(taskId?: string) {
     await perform(async () => {
@@ -892,6 +970,122 @@ export function Shell({
     };
   });
   const openTasks = state.tasks.filter((t) => t.state !== 'done').length;
+
+  /**
+   * Everywhere the Console can go, in one list, because the rail and the
+   * flyout have to agree about what exists and only one of them should be
+   * holding the list.
+   *
+   * Two rows carry `unavailableReason` and open nothing. They are here rather
+   * than hidden because a person asking "can it do X" deserves the answer
+   * "not yet, and here is why" instead of silence:
+   *
+   * - Automations has no built item behind it. The button exists, the work it
+   *   would run does not, and wiring the button to nothing would be worse than
+   *   saying so (owner decision, 2026-09-19).
+   * - Connections runs against three hardcoded example locations, which its own
+   *   heading calls synthetic data. It is real code and a real demo; it is not
+   *   a connection to anything this person owns, and presenting it as one would
+   *   be the drift we just took off the marketing site.
+   */
+  // A label names the screen it opens, so Board and Team keep the words their
+  // own headings use. The plain-language explanation belongs in `hint`, where
+  // it does not have to disagree with the place it takes you.
+  const destinations: EverythingItem[] = [
+    {
+      id: 'thread',
+      label: 'Thread',
+      hint: 'The conversation you are having, and everything it produced.',
+    },
+    {
+      id: 'board',
+      label: 'Board',
+      hint: 'Everything asked for, who has it, and what is waiting on you.',
+      badge: openTasks > 0 ? `${openTasks} open` : undefined,
+    },
+    {
+      id: 'team',
+      label: 'Team',
+      hint: 'The helpers on this project, what they are doing, and what they cost.',
+      badge: team.members.length > 0 ? `${team.members.length} workers` : undefined,
+    },
+    {
+      id: 'history',
+      label: 'History',
+      hint: 'Every change made in this project, and the way to put files back.',
+    },
+    {
+      id: 'files',
+      label: 'Files',
+      hint: "Read and write in this project's documents.",
+    },
+    {
+      id: 'automations',
+      label: 'Automations',
+      hint: 'Work that runs on its own, on a schedule or when something happens.',
+      unavailableReason:
+        'Nothing is built behind this yet. It opens once there is real work for it to run.',
+    },
+    {
+      id: 'connections',
+      label: 'Connections',
+      hint: 'Watch the software your business already runs on, and act on what it says.',
+      unavailableReason:
+        'It runs on example data rather than your own software, so nothing it would show you is yours.',
+    },
+    {
+      id: 'engines',
+      label: 'AI engines',
+      hint: 'Which engines are installed, signed in, and available to this project.',
+    },
+    {
+      id: 'settings',
+      label: 'Settings',
+      hint: 'How much Diomedes explains, what it may do on its own, and how it looks.',
+    },
+    {
+      id: 'projects',
+      label: 'Projects',
+      hint: 'Leave this project and open another one.',
+    },
+  ];
+  const destinationGroups = [
+    { heading: 'In this project', ids: ['thread', 'board', 'team', 'history', 'files'] },
+    { heading: 'Diomedes', ids: ['engines', 'settings', 'projects'] },
+    { heading: 'Not ready yet', ids: ['automations', 'connections'] },
+  ];
+  // Which destination the rail and the flyout mark as the one showing. The
+  // Files pane is a toggle rather than a screen, so it counts as current while
+  // it is open, whatever screen is behind it.
+  const currentDestination = editing
+    ? 'files'
+    : view === 'Board'
+      ? 'board'
+      : view === 'Team'
+        ? 'team'
+        : view === 'History'
+          ? 'history'
+          : 'thread';
+
+  function goTo(id: string) {
+    // The editor is the one screen holding writing that only exists here. It
+    // confirms its own close, so the rail does not close it out from under a
+    // person; it says why it did nothing and leaves them where they are.
+    if (editing && unsaved) {
+      say(UNSAVED_WARNING);
+      return;
+    }
+    if (editing) setEditing(null);
+    if (id === 'thread') setView('Thread');
+    else if (id === 'board') setView('Board');
+    else if (id === 'team') setView('Team');
+    else if (id === 'history') setView('History');
+    else if (id === 'files') setFilesOpen(!filesOpen);
+    else if (id === 'engines') openEngineSettings();
+    else if (id === 'settings') onOpenSettings();
+    else if (id === 'projects') onShowProjects();
+  }
+
   const policy: 'first' | 'go' = selected?.permission === 'task' ? 'go' : 'first';
   const taskWorker = selectedTask
     ? ((liveByTask(selectedTask.id)
@@ -1045,29 +1239,25 @@ export function Shell({
             </button>
             {menuOpen && (
               <div className="pmenu open" role="menu">
-                <p className="caption">Surface</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void saveSettings({
-                      ...settings,
-                      surface: 'workbook',
-                      detail: settings.detail === 'technical' ? 'standard' : settings.detail,
-                    });
-                  }}
-                >
-                  The Workbook
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void saveSettings({ ...settings, surface: 'console' });
-                  }}
-                >
-                  The Console
-                </button>
+                {/* The button opening this menu is labelled "Interface detail
+                    menu" and held no detail control at all, because Detail was
+                    gated on the Workbook. It is kept now, so the label is true. */}
+                <p className="caption">Detail</p>
+                {(['guided', 'standard', 'technical'] as const).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={settings.detail === d}
+                    className={settings.detail === d ? 'on' : ''}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void saveSettings({ ...settings, detail: d });
+                    }}
+                  >
+                    {titleCase(d)}
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -1083,26 +1273,56 @@ export function Shell({
           items={railItems}
           selectedId={selectedId}
           onSelect={(id) => {
+            if (editing && unsaved) {
+              say(UNSAVED_WARNING);
+              return;
+            }
+            setEditing(null);
             setSelectedId(id);
             setView('Thread');
           }}
           onNew={() => void newThread()}
-          view={view}
-          onView={setView}
-          openTasks={openTasks}
-          workerCount={team.members.length}
-          filesOpen={filesOpen}
-          onFiles={() => setFilesOpen(!filesOpen)}
-          onHome={() => openInBook('home')}
-          onHistory={() => openInBook('history')}
-          onEngines={openEngineSettings}
+          destinations={destinations}
+          groups={destinationGroups}
+          pinned={pins}
+          currentId={currentDestination}
+          onDestination={goTo}
+          onTogglePin={(id) =>
+            setPins(pins.includes(id) ? pins.filter((item) => item !== id) : [...pins, id])
+          }
         />
-        {view === 'Connections' && (
-          <section className="screen on" aria-label="Connections">
-            <Connections projectId={projectId} />
+        {editing && (
+          <section className="screen on" aria-label="Writing in a file">
+            <DocumentEditor
+              key={`${projectId}:${editing}`}
+              projectId={projectId}
+              document={
+                documents.find((file) => file.path === editing) ?? {
+                  path: editing,
+                  kind: 'markdown',
+                  size: 0,
+                  changedAt: new Date().toISOString(),
+                  hasChangesWaiting: false,
+                  recorded: false,
+                }
+              }
+              onClose={() => {
+                setUnsaved(false);
+                setEditing(null);
+              }}
+              onUnsavedChange={setUnsaved}
+              onOpen={(path) => setEditing(path)}
+              // `load()` refreshes the listing too: the documents effect runs
+              // again on every new state object, so a saved file's new size and
+              // changed time arrive without a second fetch from here.
+              onSaved={(written) => {
+                say(`Saved ${written.path}.`);
+                void load().catch(report);
+              }}
+            />
           </section>
         )}
-        {view === 'Thread' && selected && (
+        {!editing && view === 'Thread' && selected && (
           <section className="screen on" id="scrThread">
             <ThreadView
               thread={selected}
@@ -1197,7 +1417,41 @@ export function Shell({
             />
           </section>
         )}
-        {view === 'Thread' && !selected && (
+        {!editing && view === 'History' && (
+          <section className="screen on" aria-label="History">
+            <HistoryView
+              projectId={projectId}
+              entries={state.history}
+              sessions={state.sessions}
+              needs={state.needs}
+              busy={busy}
+              detail={settings.detail}
+              onError={report}
+              onRestored={() => void load().catch(report)}
+              onSavedVersion={() => void load().catch(report)}
+              onOpenFile={(path) => setEditing(path)}
+              // Stopped by session, not by task. The session stop route reads
+              // the session and takes the task from it, so a restore is never
+              // blocked by a task id this view could not name.
+              //
+              // Not through `perform`: it reports a failure and swallows it, so
+              // a stop that did not happen would look like one that did, and
+              // History would go straight on to a restore that meets the same
+              // 409 with nothing said about why. This rejects, and the dialog
+              // says what went wrong. Busy is still held for the same window.
+              onStopWork={async (work) => {
+                setBusy(true);
+                try {
+                  await api(`${base}/work/${work.sessionId}/stop`, 'POST', {});
+                  await load();
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            />
+          </section>
+        )}
+        {!editing && view === 'Thread' && !selected && (
           <section className="screen on" id="scrThread">
             <main className="work" aria-label="No thread">
               <div className="col head">
@@ -1237,7 +1491,7 @@ export function Shell({
             />
           </section>
         )}
-        {view === 'Board' && (
+        {!editing && view === 'Board' && (
           <section className="screen on" aria-label="Board">
             <BoardView
               project={project}
@@ -1279,7 +1533,7 @@ export function Shell({
             />
           </section>
         )}
-        {view === 'Team' && (
+        {!editing && view === 'Team' && (
           <section className="screen on" aria-label="Team">
             <TeamView
               project={project}
@@ -1329,6 +1583,7 @@ export function Shell({
             onOpen={setOpenPath}
             onWidth={setFilesWidth}
             onClose={() => setFilesOpen(false)}
+            onEdit={(path) => setEditing(path)}
           />
         )}
       </div>

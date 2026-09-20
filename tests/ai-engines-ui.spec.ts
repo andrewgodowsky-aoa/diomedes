@@ -398,9 +398,14 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
     expect(proposalCall?.input.documents).toEqual(documentScope);
   }
 
+  // History is the Console's own screen now. This button used to switch the
+  // whole surface to the Workbook to show it, which is why the rows it looks
+  // for are `.hrow` rather than the Workbook's `.history-entry`. The sentence
+  // is written by the server and has not changed.
   await page.getByRole('button', { name: 'History', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'History', exact: true, level: 1 })).toBeVisible();
   for (const engine of Object.keys(versions))
-    await expect(page.locator('.history-entry').filter({ hasText: `${engine}/fixture-model changed 1 file` })).toHaveCount(1);
+    await expect(page.locator('.hrow').filter({ hasText: `${engine}/fixture-model changed 1 file` })).toHaveCount(1);
   expect(errors).toEqual([]);
 });
 

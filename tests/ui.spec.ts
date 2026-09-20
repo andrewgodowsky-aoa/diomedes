@@ -27,6 +27,21 @@ async function navigate(page: Page, name: string) {
     .click();
 }
 
+/**
+ * No control switches surface any more: the Workbook is retired from a person's
+ * reach and only the settings key still selects it. The legacy acceptance
+ * scenarios below reach it the one way that is left, through the API, and
+ * reload so the page reads the new setting.
+ */
+async function switchSurface(page: Page, data: Partial<Settings>) {
+  const response = await page.request.put('/api/settings', {
+    headers: { 'X-Diomedes-Client': '1' },
+    data,
+  });
+  expect(response.ok()).toBeTruthy();
+  await page.reload();
+}
+
 async function projectState(page: Page): Promise<ProjectState> {
   const response = await page.request.get(`/api/projects/${projectId}/state`);
   expect(response.ok()).toBeTruthy();
@@ -151,8 +166,10 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   expect(comfortableSettings.detail).toBe('technical');
   expect(comfortableSettings.permissions.changingFiles).toBe(true);
 
+  // The menu offers detail levels and nothing that leaves the Console.
   await page.getByRole('button', { name: 'Interface detail menu' }).click();
-  await page.getByRole('button', { name: 'The Workbook', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'The Workbook', exact: true })).toHaveCount(0);
+  await switchSurface(page, { surface: 'workbook', detail: 'standard' });
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'standard');
   await page.getByRole('button', { name: 'Interface detail menu' }).click();
@@ -571,14 +588,16 @@ test('F17, F20-F22: surface switches preserve data; visible pages meet copy and 
   ).toBe(true);
   await expect(threads.locator('.console-thread')).toHaveCount(afterProjectThreads.length);
 
-  let reloads = 0;
-  page.on('framenavigated', (frame) => {
-    if (frame === page.mainFrame()) reloads += 1;
-  });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('radio', { name: /^The Console\b/ }).click();
+  // Settings offers no surface to choose between.
+  await expect(page.getByRole('radio', { name: /^The (Console|Workbook)\b/ })).toHaveCount(0);
+  // Detail is the person's own setting, and moving to the Console leaves it
+  // alone. It used to be forced to 'technical' here, which is exactly what made
+  // the setting unreachable for anybody who worked in the Console.
+  const detailBeforeConsole = (await page.locator('html').getAttribute('data-detail')) ?? '';
+  await switchSurface(page, { surface: 'console' });
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
+  await expect(page.locator('html')).toHaveAttribute('data-detail', detailBeforeConsole);
   await page
     .getByRole('navigation', { name: 'Open projects' })
     .getByRole('button', { name: /Harbor Street/ })
@@ -595,9 +614,9 @@ test('F17, F20-F22: surface switches preserve data; visible pages meet copy and 
     fullPage: true,
     animations: 'disabled',
   });
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('radio', { name: /^The Workbook\b/ }).click();
+  await switchSurface(page, { surface: 'workbook' });
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(page.getByRole('radio', { name: /^Standard\b/ })).toBeChecked();
   await page.getByRole('radio', { name: /^Guided\b/ }).click();
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
@@ -609,7 +628,6 @@ test('F17, F20-F22: surface switches preserve data; visible pages meet copy and 
   expect(after.tasks).toEqual(before.tasks);
   expect(after.changes).toEqual(before.changes);
   expect(after.history).toEqual(before.history);
-  expect(reloads).toBe(0);
   await navigate(page, 'Home');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const violations = await page.evaluate(() =>
@@ -748,13 +766,14 @@ test('Draft recovery: Settings, reload and same-named files in separate projects
   await editor.fill(draftA);
   await expect(page.getByText('Unsaved changes', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('radio', { name: /^The Console\b/ }).click();
+  // Same rule as above: the surface changes, the detail level does not.
+  const detailAcrossSurfaces = (await page.locator('html').getAttribute('data-detail')) ?? '';
+  await switchSurface(page, { surface: 'console' });
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
-  await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
+  await expect(page.locator('html')).toHaveAttribute('data-detail', detailAcrossSurfaces);
   await tabs.getByRole('button', { name: first.name, exact: true }).click();
   await expect(page.locator('.console')).toBeVisible();
-  await page.getByRole('button', { name: 'Interface detail menu' }).click();
-  await page.getByRole('button', { name: 'The Workbook', exact: true }).click();
+  await switchSurface(page, { surface: 'workbook' });
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
   await expect(editor).toBeVisible();
@@ -853,13 +872,13 @@ test('Services roster: every reported engine listed with switch discipline; Guid
     page.locator('.service', { has: page.getByRole('heading', { name }) });
   // Guided shows only engines Diomedes can run: sample and codex are visible today.
   await expect(service('Sample work')).toHaveCount(0);
-  await expect(service(/Codex/)).toBeVisible();
+  await expect(service(/ChatGPT/)).toBeVisible();
   await expect(service('LocalAI supervisor')).toHaveCount(0);
   await expect(service('AionCore')).toHaveCount(0);
   // The Codex entry has a switch; Sample work has none.
-  await expect(service(/Codex/).locator('input[type="checkbox"]')).toHaveCount(1);
+  await expect(service(/ChatGPT/).locator('input[type="checkbox"]')).toHaveCount(1);
   await expect(service('Sample work').locator('input[type="checkbox"]')).toHaveCount(0);
-  await expect(service(/Codex/).getByRole('button', { name: 'What is sent' })).toHaveCount(1);
+  await expect(service(/ChatGPT/).getByRole('button', { name: 'What is sent' })).toHaveCount(1);
   // Check connections reaches the server with a refresh request.
   const [refreshRequest] = await Promise.all([
     page.waitForRequest(
@@ -891,7 +910,7 @@ test('Services roster: every reported engine listed with switch discipline; Guid
   await expect(deskRail.getByRole('button', { name: 'Connections', exact: true })).toHaveCount(0);
   await deskRail.getByRole('button', { name: 'Engines', exact: true }).click();
   await expect(service('Sample work')).toHaveCount(0);
-  await expect(service(/Codex/)).toBeVisible();
+  await expect(service(/ChatGPT/)).toBeVisible();
 
   const toBook = await page.request.put('/api/settings', {
     headers,
@@ -938,7 +957,7 @@ test('Usage: chip, signal bar and Settings bars from the test-mode snapshot', as
   await page.reload();
   const chip = page.locator('.usage-chip');
   await expect(chip).toBeVisible();
-  await expect(chip).toContainText(/Codex with ChatGPT, week, 9% left/);
+  await expect(chip).toContainText(/ChatGPT, week, 9% left/);
   // Bars fill with what is left; under 20 percent left takes the signal colour.
   await expect(chip.locator('.usage-fill.signal')).toBeVisible();
   // The chip opens Settings at the helpers section with both bars.
@@ -947,7 +966,7 @@ test('Usage: chip, signal bar and Settings bars from the test-mode snapshot', as
     page.getByRole('heading', { level: 1, name: 'Helpers on this computer', exact: true }),
   ).toBeVisible();
   const codexService = page.locator('.service', {
-    has: page.getByRole('heading', { name: /Codex/ }),
+    has: page.getByRole('heading', { name: /ChatGPT/ }),
   });
   await expect(codexService.locator('.usage-row')).toHaveCount(2);
   await expect(codexService).toContainText(/5 hours/);

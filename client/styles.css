@@ -74,6 +74,15 @@
   --dm-texture-opacity: 1;
   --dm-focus-width: 1px;
   --dm-focus-color: var(--dm-glacier);
+  /* The charge: the run of colour the Diomedes signal carries, lead to trail to
+     body. It is the same semantic diomedes.net draws its signal with (cyan,
+     violet, coral there); here it is derived from the scheme in use, so every
+     built-in scheme, Paper and any custom theme has one without naming a
+     colour: Field runs cyan to amber to ember, the Mythic Synthwave pack runs
+     cyan to violet to coral. A theme may set the three directly. */
+  --dm-charge-lead: var(--light);
+  --dm-charge-trail: var(--attn);
+  --dm-charge-body: color-mix(in oklab, var(--attn) 45%, var(--fail));
 }
 html {
   font-size: 100%;
@@ -1396,10 +1405,8 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   padding: 10px 16px;
   background: var(--dm-well);
   border: 1px solid var(--dm-rule);
-  border-left: 4px solid var(--dm-fault);
 }
 .feedback {
-  border-left-color: var(--dm-done);
   z-index: 18;
 }
 .feedback > span:nth-child(2),
@@ -1409,7 +1416,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 /* A fallback is not a fault, and it sits above the error bar rather than under it. */
 .error-bar.appearance-notice {
   bottom: 76px;
-  border-left-color: var(--dm-signal);
 }
 .error-bar .button,
 .feedback .button {
@@ -3101,5 +3107,316 @@ select {
   .document-row > .caption {
     white-space: normal;
     flex-shrink: 1;
+  }
+}
+
+/* ===========================================================================
+   One design language (docs/implementation/2026-09-20-console-design-language.md)
+
+   The shared controls below are drawn outside the Console too: in Settings, in
+   every dialog, in first-run setup. They take the Console's shape so a person
+   never crosses from a rounded screen into a square one.
+
+   Shape: --r (6 px) for containers, --rb (5 px) for controls. Nothing square,
+   nothing pill; the 8 px point is the only circle.
+   Lines: a hairline separates regions. Inside a region a group is made by space
+   and a hover fill. No accent stripe on a box: the point carries the state.
+   Motion: --dm-t-quick for a control answering the pointer, --dm-t-extend for a
+   view arriving. Opacity and transform only. Reduced motion zeroes the tokens.
+   =========================================================================== */
+input,
+textarea,
+select {
+  border-radius: var(--rb);
+  transition: border-color var(--dm-t-quick) var(--dm-ease);
+}
+input:hover:not(:disabled),
+textarea:hover:not(:disabled),
+select:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--dm-text-3) 70%, transparent);
+}
+input[type='radio'] {
+  border-radius: 50%;
+}
+input[type='range'] {
+  transition: none;
+}
+.button {
+  border-radius: var(--rb);
+  transition:
+    background var(--dm-t-quick) var(--dm-ease),
+    border-color var(--dm-t-quick) var(--dm-ease),
+    color var(--dm-t-quick) var(--dm-ease);
+}
+.text-button,
+.rail-link,
+.folder-browser > button,
+.search-results > button {
+  border-radius: var(--rb);
+}
+.rail-link {
+  transition:
+    background var(--dm-t-quick) var(--dm-ease),
+    color var(--dm-t-quick) var(--dm-ease);
+}
+.radio-row,
+.folder-browser,
+.account-menu {
+  border-radius: var(--r);
+}
+.radio-row {
+  transition:
+    background var(--dm-t-quick) var(--dm-ease),
+    border-color var(--dm-t-quick) var(--dm-ease);
+}
+/* A dialog is the Console's menu box at a larger size: one hairline all round,
+   the container radius, and the menu's own shadow. The accent stripe across
+   its top is gone; nothing about a dialog is a state. */
+.dialog {
+  border: 1px solid var(--dm-rule);
+  border-radius: var(--r);
+  box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.9);
+}
+.dialog[open] {
+  animation: dm-dialog-in var(--dm-t-extend) cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dialog[open]::backdrop {
+  animation: dm-fade-in var(--dm-t-extend) var(--dm-ease);
+}
+/* The notice carries its state in its point, which it already has; the 4 px
+   stripe down its left edge said the same thing a second time and is gone. */
+.error-bar,
+.feedback {
+  border-radius: var(--r);
+  box-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.85);
+  animation: dm-notice-in var(--dm-t-extend) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Settings: the rail's spine and the reading column's margin rule were two
+   more verticals beside the two that already divide the regions. */
+.settings-layout .rail::before,
+.settings-layout .reading::before {
+  display: none;
+}
+.settings-layout .rail {
+  padding-inline: 8px;
+}
+/* The current section reads the way the Console rail's current view does: a
+   filled row, not a point on a spine that is no longer there. */
+.settings-layout .rail-link {
+  padding-left: 12px;
+}
+.settings-layout .rail-link.active {
+  background: var(--dm-raised);
+}
+.settings-layout .rail-link.active::before {
+  display: none;
+}
+
+/* The strip lives inside the frame on the Projects page and Settings, exactly
+   where the Shell draws its own, so the frame becomes a column under it. */
+.page-frame.with-strip {
+  display: flex;
+  flex-direction: column;
+}
+.page-frame.with-strip > .settings-layout,
+.page-frame.with-strip > .console.home {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+}
+/* A view arriving: Settings changing section, or Settings itself opening. */
+.page-frame.with-strip > .settings-layout .reading,
+.page-frame.with-strip > .settings-layout .margin {
+  animation: dm-view-in var(--dm-t-extend) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dm-view-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes dm-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dm-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+@keyframes dm-notice-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   One dropdown. A native <select> stays a native <select>: the keyboard, the
+   screen reader and every `selectOption` in the specs keep what they had. What
+   changes is who draws it. `appearance: base-select` hands the closed control
+   and its open list to this stylesheet, so the list is the Console's menu
+   (--raised ground, --hair-2 edge, --r corners, --rb rows) on every surface and
+   in every scheme, instead of a platform rectangle over a themed app. A list
+   box (`multiple`, `size`) is a different control and keeps its own drawing.
+   --------------------------------------------------------------------------- */
+select:not([multiple]):not([size]) {
+  appearance: none;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@supports not (appearance: base-select) {
+  /* The closed control only: a chevron in --t3 from two gradients, because a
+     token cannot be written into a data URI and a select takes no ::after. */
+  select:not([multiple]):not([size]) {
+    padding-inline-end: 26px;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--t3) 50%),
+      linear-gradient(135deg, var(--t3) 50%, transparent 50%);
+    background-size: 5px 5px;
+    background-position:
+      right 13px center,
+      right 8px center;
+    background-repeat: no-repeat;
+  }
+  select option {
+    background: var(--raised);
+    color: var(--t1);
+  }
+}
+@supports (appearance: base-select) {
+  select:not([multiple]):not([size]),
+  select:not([multiple]):not([size])::picker(select) {
+    appearance: base-select;
+  }
+  select:not([multiple]):not([size]) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    overflow: hidden;
+  }
+  select:disabled {
+    cursor: default;
+    color: var(--t3);
+  }
+  /* A drawn chevron in the text's own weight; it turns over while the list is open. */
+  select::picker-icon {
+    content: '';
+    flex: none;
+    width: 6px;
+    height: 6px;
+    margin: -3px 2px 0 0;
+    border: solid var(--t3);
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+    transition:
+      transform var(--dm-t-quick) var(--dm-ease),
+      border-color var(--dm-t-quick) var(--dm-ease);
+  }
+  select:hover:not(:disabled)::picker-icon,
+  select:open::picker-icon {
+    border-color: var(--t1);
+  }
+  select:open::picker-icon {
+    margin-top: 3px;
+    transform: rotate(225deg);
+  }
+  select:open {
+    border-color: color-mix(in oklab, var(--dm-charge-lead) 60%, var(--hair-2));
+  }
+
+  /* The open list: the Console's .pmenu, anchored to its control. */
+  select::picker(select) {
+    box-sizing: border-box;
+    min-width: max(anchor-size(width), 168px);
+    max-width: min(420px, calc(100vw - 32px));
+    max-height: min(60vh, 420px);
+    margin-block: 6px;
+    padding: 5px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--hair-2) transparent;
+    background: var(--raised);
+    color: var(--t1);
+    border: 1px solid var(--hair-2);
+    border-radius: var(--r);
+    /* The menu's own shadow on a dark ground; on Paper the same weight reads as a smudge. */
+    box-shadow: 0 24px 60px -30px light-dark(rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0.9));
+    font: 400 var(--dm-type-caption) / 1.4 var(--dm-font-ui);
+    opacity: 0;
+    transform: scale(0.98);
+    transform-origin: top left;
+    transition:
+      opacity var(--dm-t-quick) cubic-bezier(0.16, 1, 0.3, 1),
+      transform var(--dm-t-quick) cubic-bezier(0.16, 1, 0.3, 1),
+      overlay var(--dm-t-quick) allow-discrete,
+      display var(--dm-t-quick) allow-discrete;
+  }
+  select::picker(select):popover-open {
+    opacity: 1;
+    transform: none;
+  }
+  @starting-style {
+    select::picker(select):popover-open {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+  select option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 0;
+    padding: 6px 8px;
+    border-radius: var(--rb);
+    color: var(--t2);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition:
+      background var(--dm-t-quick) var(--dm-ease),
+      color var(--dm-t-quick) var(--dm-ease);
+  }
+  select option:hover,
+  select option:focus-visible {
+    background: var(--surface);
+    color: var(--t1);
+    outline: none;
+  }
+  select option:checked {
+    color: var(--t1);
+    font-weight: 500;
+  }
+  select option:disabled {
+    color: var(--t3);
+    cursor: default;
+  }
+  /* The chosen row carries the Console's point, not a tick glyph. */
+  select option::checkmark {
+    content: '';
+    order: 2;
+    flex: none;
+    width: 6px;
+    height: 6px;
+    margin-left: auto;
+    border-radius: 50%;
+    background: var(--dm-charge-lead);
+  }
+  select optgroup {
+    padding: 0;
+    font: 500 var(--dm-type-meta) / 1.4 var(--dm-font-ui);
+    color: var(--t3);
+  }
+  select optgroup legend,
+  select optgroup::before {
+    padding: 8px 8px 4px;
   }
 }

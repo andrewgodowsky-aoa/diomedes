@@ -527,6 +527,10 @@ export function SessionStatus({
 export function askDraftKey(projectId: string) {
   return `diomedes.ask-draft.${projectId}`;
 }
+/** The mode chosen beside a carried ask. A key of its own: the draft key stays plain text. */
+export function askModeKey(projectId: string) {
+  return `diomedes.ask-mode.${projectId}`;
+}
 
 /** The window closest to empty: the highest percent used. */
 export function tightestWindow(snapshot: UsageSnapshot): UsageWindow | null {
@@ -621,9 +625,9 @@ export function HelperLine({
   return (
     <p className="caption helper-line">
       {switchedOn ? (
-        <span>
-          {switchedOn.name} is on. {switchedOn.disclosure[0]}
-        </span>
+        // The disclosure names the service and the account itself; "X is on" in
+        // front of it said the same thing twice (standing decision 4).
+        <span>{switchedOn.disclosure[0]}</span>
       ) : signedIn ? (
         <>
           <span>{signedIn.name} is signed in but turned off.</span>

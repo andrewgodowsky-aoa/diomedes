@@ -317,13 +317,8 @@ html[data-surface='console'] body {
   height: 1px;
   background: var(--hair-2);
 }
-.console .rail .views {
-  margin-top: 18px;
-  padding: 10px 8px 0;
-  border-top: 1px solid var(--hair);
-}
-.console .rail .views button,
-.console .rail .foot button {
+.console .rail .foot > button,
+.console .rail .foot .ev-trigger {
   display: flex;
   width: 100%;
   text-align: left;
@@ -333,17 +328,15 @@ html[data-surface='console'] body {
   gap: 10px;
   align-items: baseline;
 }
-.console .rail .views button:hover,
-.console .rail .foot button:hover {
+.console .rail .foot > button:hover {
   background: var(--raised);
   color: var(--t1);
 }
-.console .rail .views button.on,
-.console .rail .foot button.on {
+.console .rail .foot > button.on {
   color: var(--t1);
   background: var(--surface);
 }
-.console .rail .views button .mono {
+.console .rail .foot > button .mono {
   margin-left: auto;
 }
 .console .rail .foot {
@@ -765,7 +758,7 @@ html[data-surface='console'] body {
   white-space: nowrap;
 }
 .console .aux select {
-  background: var(--surface);
+  background-color: var(--surface);
   color: var(--t1);
   border: 1px solid var(--hair-2);
   border-radius: var(--rb);
@@ -1453,7 +1446,6 @@ html[data-motion='reduced'] .console .modes .ind b {
     max-width: 240px;
     overflow: auto;
   }
-  .console .rail .views,
   .console .rail .foot {
     display: flex;
     flex-direction: column;
@@ -1463,8 +1455,8 @@ html[data-motion='reduced'] .console .modes .ind b {
     border-top: 0;
     border-left: 1px solid var(--hair);
   }
-  .console .rail .views button,
-  .console .rail .foot button {
+  .console .rail .foot > button,
+  .console .rail .foot .ev-trigger {
     white-space: nowrap;
     min-height: 28px;
   }
@@ -1718,4 +1710,141 @@ html[data-motion='reduced'] .console .modes .ind b {
   color: var(--t3);
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* ---- the strip outside a project (TopStrip.tsx) ----
+   The Projects page and Settings wear the same strip the Shell draws. This root
+   holds the strip and nothing else, so it takes the strip's height rather than
+   the stage's, and lets the detail menu fall outside it. */
+.console.strip-only {
+  height: auto;
+  flex: none;
+  display: block;
+  overflow: visible;
+  z-index: 6;
+}
+.console .strip-brand {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  border-radius: var(--rb);
+}
+.console .strip-brand:hover .dm-mark-word {
+  color: var(--t1);
+}
+.console .crumb button .mark {
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+.console .strip-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+}
+.console .strip-status > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.console .strip-status:empty {
+  display: none;
+}
+.console .top-right > button {
+  color: var(--t2);
+  padding: 3px 6px;
+  border-radius: var(--rb);
+  transition:
+    background var(--quick),
+    color var(--quick);
+}
+.console .top-right > button:hover {
+  color: var(--t1);
+  background: var(--raised);
+}
+.console .top-right > button.on {
+  color: var(--t1);
+  background: var(--surface);
+}
+/* The usage chip is the app's own control (styles.css); inside the strip it
+   keeps its meter and takes the strip's box. */
+.console .top-right .usage-chip {
+  min-height: 0;
+  padding: 3px 6px;
+  border-radius: var(--rb);
+  transition: background var(--quick);
+}
+.console .top-right .usage-chip:not(.static):hover {
+  background: var(--raised);
+}
+
+/* ---- the signal ----------------------------------------------------------------
+   The mark is a spear-line with a guiding point ahead of it. The strip's rule
+   and the rail's spine are that same line, so they carry the charge where they
+   begin and settle into the plain hairline as they run on: from the mark
+   rightwards along the strip, from the top of the spine downwards. One pixel
+   wide, drawn once, never animated. The channels are styles.css's
+   `--dm-charge-*`, so the line follows whatever scheme or theme is applied. */
+.console .top {
+  /* The rule is the gradient itself, drawn over the border's own pixel, so the
+     strip has one line and not a charged line above a plain one. */
+  border-bottom-color: transparent;
+  background:
+    linear-gradient(
+        90deg,
+        color-mix(in oklab, var(--dm-charge-lead) 85%, var(--hair)) 0,
+        color-mix(in oklab, var(--dm-charge-trail) 75%, var(--hair)) 20%,
+        color-mix(in oklab, var(--dm-charge-body) 60%, var(--hair)) 42%,
+        var(--hair) 68%
+      )
+      left bottom / 100% 1px no-repeat border-box;
+}
+.console .spine::before {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--dm-charge-lead) 70%, var(--hair-2)) 0,
+    color-mix(in oklab, var(--dm-charge-trail) 55%, var(--hair-2)) 72px,
+    color-mix(in oklab, var(--dm-charge-body) 35%, var(--hair-2)) 150px,
+    var(--hair-2) 240px
+  );
+}
+/* The box a person is writing in takes the lead colour on its edge and lets a
+   little of the trail fall under it. */
+.console .composer:focus-within {
+  border-color: color-mix(in oklab, var(--dm-charge-lead) 42%, var(--hair-2));
+  box-shadow: 0 14px 34px -22px color-mix(in oklab, var(--dm-charge-trail) 70%, transparent);
+}
+.console .composer {
+  transition:
+    border-color var(--quick),
+    box-shadow var(--move);
+}
+
+/* Below the phone width the strip keeps the ways in and drops the key hint:
+   there is no Ctrl key to hint at. */
+@media (max-width: 640px) {
+  .console.strip-only .top-right > .mono.link {
+    display: none;
+  }
+}
+
+/* ---- the theme's texture is the chrome's ground ----
+   The texture layer sits at the bottom of `.app` and every Console root used to
+   paint an opaque --chrome over it, so a theme's texture was a setting that
+   changed nothing a person could see. With a texture on, `.app` holds the
+   --chrome ground (which the layer's blend mode needs beneath it) and the
+   strip, the rail and the ledger let it through. The work column keeps its
+   opaque --surface: a texture never runs under something a person reads.
+   Opacity stays with --dm-texture-opacity, so the person's preference and the
+   accessibility layer still switch it off. */
+.app:has(> .dm-texture-layer) {
+  background: var(--chrome);
+}
+.app:has(> .dm-texture-layer) .console,
+.app:has(> .dm-texture-layer) .console .rail,
+.app:has(> .dm-texture-layer) .console .ledger,
+.app:has(> .dm-texture-layer) .page-frame:has(> .console.home) {
+  background: transparent;
 }

@@ -3,11 +3,11 @@ import { defaults, migrateSettings } from '../server/store';
 import type { Settings } from '../shared/types';
 
 /**
- * Settings survive a rename. Anyone already running Diomedes has 'book' or
- * 'desk' written to disk, and the failure this guards against is silent: they
- * open the app and find themselves on a surface they never chose, with no
- * error to explain it. Old spellings are read forever; only the new ones are
- * ever written.
+ * The Workbook is retired from a person's reach. No control switches into it
+ * any more, so the failure this guards against is a stranded person: a stored
+ * 'workbook' (or the older 'book') that opens a surface with no way out of it.
+ * Every stored spelling opens on the Console; the API still accepts the key for
+ * one more release so the legacy acceptance specs stay runnable.
  */
 function saved(surface: unknown, detail: Settings['detail'] = 'standard'): Settings {
   const settings = { ...defaults(), detail } as Settings;
@@ -16,45 +16,45 @@ function saved(surface: unknown, detail: Settings['detail'] = 'standard'): Setti
 }
 
 describe('the surface a stored setting opens on', () => {
-  it('carries the old names onto the new ones', () => {
-    const book = saved('book');
-    migrateSettings(book);
-    expect(book.surface).toBe('workbook');
-    const desk = saved('desk');
-    migrateSettings(desk);
-    expect(desk.surface).toBe('console');
+  it('opens every stored spelling on the Console', () => {
+    for (const stored of ['book', 'workbook', 'desk', 'console', 'technical']) {
+      const settings = saved(stored);
+      migrateSettings(settings);
+      expect(settings.surface).toBe('console');
+    }
   });
 
-  it('still honours the detail level retired before the rename', () => {
-    const technical = saved('technical');
-    migrateSettings(technical);
-    expect(technical.surface).toBe('console');
+  it('opens on the Console when nothing was stored, whatever the detail level', () => {
+    for (const detail of ['guided', 'standard', 'technical'] as const) {
+      const settings = saved(undefined, detail);
+      migrateSettings(settings);
+      expect(settings.surface).toBe('console');
+    }
   });
 
-  it('leaves the current names alone', () => {
-    const workbook = saved('workbook');
-    migrateSettings(workbook);
-    expect(workbook.surface).toBe('workbook');
-    const console_ = saved('console');
-    migrateSettings(console_);
-    expect(console_.surface).toBe('console');
+  it('leaves the detail level alone', () => {
+    const settings = saved('workbook', 'guided');
+    migrateSettings(settings);
+    expect(settings.detail).toBe('guided');
   });
 
-  it('falls back to the detail level when nothing was stored', () => {
-    const technical = saved(undefined, 'technical');
-    migrateSettings(technical);
-    expect(technical.surface).toBe('console');
-    const guided = saved(undefined, 'guided');
-    migrateSettings(guided);
-    expect(guided.surface).toBe('workbook');
+  // The store re-reads settings when it recovers an interrupted write, in the
+  // middle of a session. That is not a launch: the surface showing stays put,
+  // and only a value that is missing altogether is filled.
+  it('leaves a running session where it is on a recovery reload', () => {
+    const running = saved('workbook');
+    migrateSettings(running, { atLaunch: false });
+    expect(running.surface).toBe('workbook');
+    const missing = saved(undefined);
+    migrateSettings(missing, { atLaunch: false });
+    expect(missing.surface).toBe('console');
   });
 
   it('is settled after one pass, so a second load changes nothing', () => {
-    const settings = saved('desk');
+    const settings = saved('book');
     migrateSettings(settings);
-    const once = settings.surface;
     migrateSettings(settings);
-    expect(settings.surface).toBe(once);
+    expect(settings.surface).toBe('console');
   });
 });
 

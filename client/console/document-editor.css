@@ -1,0 +1,244 @@
+/* The document editor.
+
+   The Files pane is the visual reference, because this is the same file in the
+   same surface a moment later: flat graphite, thin separators, compact
+   controls, one restrained accent. Tokens only; no colour is introduced here.
+
+   Every selector carries `.docedit` as well as `.console`, so these rules
+   outrank the two-class `.console …` rules whatever order the bundler puts the
+   files in. The Workbook's own editor styles live on `.document-editor` in
+   client/styles.css and are not touched, borrowed or relied on here.
+
+   A calm page of text, not a code editor: one column, one box, body type and
+   ordinary line height. */
+
+.console .docedit {
+  /* The polite region below is taken out of the flow, so it is measured from
+     this editor rather than from whatever the integrator puts it inside. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* ---- head and bar ---- */
+.console .docedit .de-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 2px 8px 8px;
+  border-bottom: 1px solid var(--hair);
+}
+.console .docedit .de-close {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  transition: color var(--quick);
+}
+.console .docedit .de-close:hover {
+  color: var(--t1);
+}
+.console .docedit .de-path {
+  min-width: 0;
+  color: var(--t1);
+  font-size: var(--dm-type-caption);
+  overflow-wrap: anywhere;
+}
+.console .docedit .de-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px;
+}
+.console .docedit .de-state {
+  min-width: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  overflow-wrap: anywhere;
+}
+
+/* ---- controls ---- */
+.console .docedit .de-act {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t1);
+  font-size: var(--dm-type-caption);
+  transition:
+    background var(--quick),
+    color var(--quick),
+    border-color var(--quick);
+}
+.console .docedit .de-act:hover {
+  background: var(--raised);
+}
+/* The one action a person came here for, and the one that keeps their writing
+   when something has gone wrong. Accent at the edge, never a filled block. */
+.console .docedit .de-strong {
+  color: var(--light);
+  border-color: color-mix(in srgb, var(--light) 40%, transparent);
+}
+.console .docedit .de-strong:hover {
+  background: var(--raised);
+  border-color: color-mix(in srgb, var(--light) 60%, transparent);
+}
+/* Nothing to save reads as nothing to save: quiet, still there, not a target. */
+.console .docedit .de-act:disabled {
+  color: var(--t3);
+  border-color: var(--hair);
+  background: none;
+  cursor: default;
+}
+.console .docedit .de-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ---- what the editor has to say ---- */
+.console .docedit .de-note {
+  margin: 0;
+  padding: 0 8px;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  overflow-wrap: anywhere;
+}
+.console .docedit .de-warn {
+  color: var(--attn);
+}
+.console .docedit .de-trouble {
+  margin: 0;
+  padding: 0 8px;
+  color: var(--attn);
+  font-size: var(--dm-type-caption);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .docedit .de-trouble p {
+  margin: 0 0 8px;
+}
+
+/* ---- a choice that must not be missed ---- */
+.console .docedit .de-panel {
+  display: grid;
+  gap: 8px;
+  margin: 0 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--hair-2);
+  border-left: 2px solid var(--attn);
+  border-radius: var(--rb);
+  min-width: 0;
+}
+/* The panel takes the keyboard when it opens, so the ring shows on that focus
+   as well as on a tab to it. */
+.console .docedit .de-panel:focus,
+.console .docedit .de-panel:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 2px;
+}
+.console .docedit .de-panel h3 {
+  margin: 0;
+  font-family: var(--dm-font-ui);
+  font-size: var(--dm-type-ui);
+  font-weight: 500;
+  color: var(--t1);
+  overflow-wrap: anywhere;
+}
+.console .docedit .de-panel p {
+  margin: 0;
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+  overflow-wrap: anywhere;
+}
+.console .docedit .de-panel .de-note {
+  padding: 0;
+}
+
+/* The other version, read only and kept short, so the choice is made with both
+   in view and neither one is mistaken for the box you write in. */
+.console .docedit .de-theirs {
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px 10px;
+  background: var(--chrome);
+  border: 1px solid var(--hair);
+  border-radius: var(--rb);
+  min-width: 0;
+}
+.console .docedit .de-theirs:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 2px;
+}
+.console .docedit .de-theirs pre {
+  margin: 0;
+  font: 400 var(--dm-type-code) / 1.6 var(--mono);
+  color: var(--t2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---- the box ---- */
+.console .docedit .de-label {
+  padding: 0 8px;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .docedit .de-area {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  min-height: 220px;
+  margin: 0 8px 8px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t1);
+  /* Reading type, not code type: this holds what a person wrote. */
+  font: 400 var(--dm-type-body) / 1.6 var(--ui);
+  resize: vertical;
+}
+.console .docedit .de-area::placeholder {
+  color: var(--t3);
+}
+.console .docedit .de-area[readonly] {
+  background: var(--chrome);
+  color: var(--t2);
+  resize: none;
+}
+
+/* The polite region. Always mounted, so what the editor says is a change inside
+   a region the reader is already on. */
+.console .docedit .de-said {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+@media (max-width: 860px) {
+  /* Narrow, the head stacks rather than squeezing the path to nothing. */
+  .console .docedit .de-head {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .console .docedit .de-close,
+  .console .docedit .de-act {
+    transition: none;
+  }
+}
