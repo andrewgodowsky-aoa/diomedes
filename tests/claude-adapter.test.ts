@@ -197,6 +197,17 @@ describe('Claude Code failure stages', () => {
     });
     expect(launches).toHaveLength(0);
   });
+  it('names no account when the reported sign-in method is not one this route knows', async () => {
+    // Identifier shape is not a guarantee: an organisation name satisfies it,
+    // and this list is rendered in the setup sentence and copied into the
+    // support bundle a person sends to someone else. The vocabulary is closed.
+    const { adapter } = await fixture('ok', {
+      account: async () => ({ loggedIn: true, authMethod: 'acme-holdings-inc' }),
+    });
+    await expect(adapter.inspect()).resolves.toMatchObject({
+      routeIssue: { required: 'claude-code:claude.ai', connected: [] },
+    });
+  });
   it('names no account when the reported sign-in method is not an identifier', async () => {
     const { adapter } = await fixture('ok', {
       account: async () => ({ loggedIn: true, authMethod: 'someone@example.com (token abc)' }),

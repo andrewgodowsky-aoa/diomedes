@@ -69,8 +69,9 @@ readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.pa
  if(m.type==='get_state') return ok(m.id,'get_state',{model:{provider:'openai',id:'gpt-test'},sessionId:'native1',isStreaming:false});
  if(m.type==='get_available_models') {
   if(mode==='models-fail') return emit({type:'response',id:m.id,command:'get_available_models',success:false,error:'internal service failure'});
-  // An account the route does not accept, plus a provider name that is not an identifier.
-  return ok(m.id,'get_available_models',{models:mode==='other-provider'?[{provider:'anthropic',id:'claude-x',name:'X'},{provider:'open router!',id:'y',name:'Y'}]:mode==='empty-models'?[]:[{provider:'openai',id:'gpt-test',name:'GPT test'}]});
+  // An account the route does not accept, a provider name that is not an
+  // identifier, and a provider named on an entry that is not a catalogue row.
+  return ok(m.id,'get_available_models',{models:mode==='other-provider'?[{provider:'anthropic',id:'claude-x',name:'X'},{provider:'open router!',id:'y',name:'Y'},{provider:'acme-holdings-inc',id:'not an id!',name:'Z'}]:mode==='empty-models'?[]:[{provider:'openai',id:'gpt-test',name:'GPT test'}]});
  }
  if(m.type==='prompt') { if(!m.message.includes('"instructions":"Project rule"')||!m.message.includes('"request":"Question"')) return emit({type:'response',id:m.id,command:'prompt',success:false,error:'missing explicit envelope'}); if(mode==='hang') return; if(mode==='quota'||mode==='auth'||mode==='proxy-ca') return emit({type:'response',id:m.id,command:'prompt',success:false,error:mode==='quota'?'quota reached':mode==='auth'?'unauthorized':'unable to verify the certificate authority for the configured proxy'});
   if(mode==='tool') return emit({type:'tool_execution_start',toolCallId:'t1',toolName:'bash',args:{}});
@@ -258,6 +259,15 @@ describe('oh-my-pi failure stages', () => {
       models: [],
       routeIssue: { required: 'oh-my-pi:openai', connected: ['anthropic'] },
     });
+  });
+  it('names only a provider the tool published on a real catalogue row', async () => {
+    // Identifier shape alone would publish an organisation name into the setup
+    // sentence and the support bundle. A provider is taken only from an entry
+    // that is a usable model row, which is what makes it a provider at all.
+    const { adapter } = await fixture('other-provider');
+    const status = await adapter.inspect();
+    expect(status.routeIssue?.connected).toEqual(['anthropic']);
+    expect(JSON.stringify(status)).not.toContain('acme-holdings-inc');
   });
   it('still reports a profile with no authenticated model at all as signed out', async () => {
     const { adapter } = await fixture('empty-models');

@@ -324,14 +324,22 @@ export class OmpAdapter implements TextEngineAdapter {
   }
 
   /**
-   * The account kinds the native profile is authenticated for, as identifiers
-   * only. OMP filters its model list by its own stored authentication, so an
-   * entry for another provider is an account, never a catalogue listing.
+   * The account kinds the native profile is authenticated for. OMP filters its
+   * model list by its own stored authentication, so an entry for another
+   * provider is an account rather than a catalogue listing.
+   *
+   * What the code guarantees is narrower than "an identifier": the provider is
+   * taken only from an entry that is a usable model row, so a name the tool
+   * did not publish as the provider of a model cannot ride along. Shape alone
+   * would have published `acme-holdings-inc` into the setup sentence and the
+   * support bundle, both of which render this list.
    */
   private otherProviders(data: Record<string, unknown>): string[] {
     const found = new Set<string>();
     for (const entry of Array.isArray(data.models) ? data.models : []) {
-      const provider = record(entry).provider;
+      const row = record(entry);
+      const provider = row.provider;
+      if (typeof row.id !== 'string' || !MODEL_PART.test(row.id)) continue;
       if (
         typeof provider === 'string' &&
         PROVIDER_PART.test(provider) &&

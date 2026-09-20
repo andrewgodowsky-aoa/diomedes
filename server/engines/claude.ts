@@ -26,8 +26,15 @@ import {
 
 export const CLAUDE_VERSION = '2.1.252';
 const ACCOUNT_ROUTE = 'claude-code:claude.ai';
-/** A sign-in method is an identifier: short and printable, never an account or a token. */
-const AUTH_METHOD = /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/;
+/**
+ * The sign-in methods this route can name, as a closed list. Shape alone was
+ * not a guarantee: `acme-holdings-inc` is identifier-shaped, and this value is
+ * rendered in the setup sentence and copied into the support bundle a person
+ * sends to someone else. A method not on this list is counted, never named.
+ * `claude.ai` is the one this route accepts; `api_key` is the one it refuses
+ * by name. Both are observed in this repository; nothing is listed from memory.
+ */
+const NAMEABLE_AUTH_METHODS = ['api_key'] as const;
 export function claudeArguments(): string[] {
   return [
     '--print',
@@ -253,7 +260,9 @@ export class ClaudeAdapter implements TextEngineAdapter {
           models: [],
           routeIssue: {
             required: ACCOUNT_ROUTE,
-            connected: AUTH_METHOD.test(method) ? [method] : [],
+            connected: (NAMEABLE_AUTH_METHODS as readonly string[]).includes(method)
+              ? [method]
+              : [],
           },
           detail:
             'Claude Code is signed in with an account kind this route does not accept: this route uses a Claude account sign-in, not API billing.',

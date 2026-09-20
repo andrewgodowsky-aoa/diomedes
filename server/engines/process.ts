@@ -97,6 +97,14 @@ const STATUS_KEYS = new Set(['status', 'statuscode', 'httpstatus']);
 const TEXT_KEYS = new Set(['message', 'detail', 'description', 'errormessage', 'error', 'reason']);
 /** An identity compared without punctuation: `ProviderAuthError` and `provider_auth_error` are one word. */
 const asIdentity = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+/**
+ * Only an identifier-shaped value is read as an identity. An identity is
+ * matched as a word within a word, which is right for `rate_limit_error` and
+ * wrong for a sentence: "over quota on the local cache disk" would otherwise
+ * become a service limit by the same substring reasoning this replaced. A
+ * sentence is read as text, where whole words decide.
+ */
+const IDENTIFIER_SHAPE = /^[A-Za-z0-9_.:-]{1,64}$/;
 
 /** What a failure payload said about itself, gathered from its named fields only. */
 export interface FailureFacts {
@@ -118,7 +126,7 @@ export function failureFacts(value: unknown): FailureFacts {
   const facts: FailureFacts = { identities: [], statuses: [], texts: [] };
   let budget = 96;
   const bare = (item: string) => {
-    facts.identities.push(asIdentity(item));
+    if (IDENTIFIER_SHAPE.test(item)) facts.identities.push(asIdentity(item));
     facts.texts.push(item.slice(0, 512));
   };
   const visit = (node: unknown, depth: number) => {
@@ -140,7 +148,8 @@ export function failureFacts(value: unknown): FailureFacts {
         if (STATUS_KEYS.has(key)) facts.statuses.push(item);
       } else if (typeof item === 'string') {
         if (STATUS_KEYS.has(key) && /^\d{3}$/.test(item)) facts.statuses.push(Number(item));
-        if (IDENTITY_KEYS.has(key) || key === 'error') facts.identities.push(asIdentity(item));
+        if ((IDENTITY_KEYS.has(key) || key === 'error') && IDENTIFIER_SHAPE.test(item))
+          facts.identities.push(asIdentity(item));
         if (TEXT_KEYS.has(key)) facts.texts.push(item.slice(0, 512));
       } else visit(item, depth + 1);
     }
@@ -156,7 +165,8 @@ const DENIAL_IDENTITY =
 const DENIAL_TEXT =
   /\bunauthori[sz]ed\b|\bunauthenticated\b|\bforbidden\b|\bauthenticat(e|es|ed|ing|ion)\b|\b(sign|log)[- ]?in (is )?required\b|\bapi key\b|\binvalid credentials?\b|\bpermission denied\b/i;
 /** An identity that denotes a service or allowance limit. */
-const LIMIT_IDENTITY = /ratelimit|usagelimit|quota|toomanyrequests|overloaded|insufficient/;
+const LIMIT_IDENTITY =
+  /ratelimit|usagelimit|quota|toomanyrequests|overloaded|insufficient(quota|credit|balance|funds)/;
 /** Free text that plainly says a limit, not merely a word that appears near one. */
 const LIMIT_TEXT =
   /\brate.?limit(ed|s|ing)?\b|\bquota (exceeded|reached|limit)\b|\busage limit\b|\btoo many requests\b|\boverloaded\b|\bout of (credits?|quota)\b|\binsufficient (quota|credit|balance|funds)\b/i;
