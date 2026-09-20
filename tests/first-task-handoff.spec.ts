@@ -193,13 +193,10 @@ test.beforeAll(async () => {
     name: 'First task thread',
     mode: 'ask',
   });
-  // The host refuses `POST /api/ai/test/:engine` unless the model equals the
-  // saved `opencodeModel`, so the route is selected before it is tested.
   await api('/settings', 'PUT', {
     surface: 'console',
     detail: 'technical',
     openProjects: [project.id],
-    services: { opencode: true, defaultEngine: 'opencode', opencodeModel: MODEL },
     onboarding: {
       work: 'software',
       detail: 'technical',
@@ -208,6 +205,14 @@ test.beforeAll(async () => {
       completedAt: new Date().toISOString(),
     },
   });
+  // The fixture service's own discovery and sign-in check, so the host records
+  // this route's catalogue: `PUT /threads/:id` refuses a model this computer
+  // has not been told about. Neither call reaches a provider — `inspect` is the
+  // fixture adapter's. `POST /api/ai/test/:engine` then refuses any model but
+  // the saved one, so the route is selected before it is tested.
+  await api('/ai/discover', 'POST', { consent: true });
+  await api('/ai/check/opencode', 'POST', {});
+  await api('/ai/select', 'POST', { engine: 'opencode', model: MODEL });
 });
 
 test.afterAll(async () => {
