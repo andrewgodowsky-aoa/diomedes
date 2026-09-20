@@ -27,7 +27,7 @@ import {
   placeholderConnection,
   primaryControl,
   provenanceText,
-  repairText,
+  repairNote,
   routeIssueSentences,
   setupStates,
   showsCandidates,
@@ -120,7 +120,10 @@ export function AIConnections({
   const [testFailure, setTestFailure] = useState<Record<string, AttemptFailure | undefined>>({});
   const [loginBusy, setLoginBusy] = useState<Record<string, boolean>>({});
   const [loginDetail, setLoginDetail] = useState<Record<string, string>>({});
-  const [opError, setOpError] = useState<Record<string, string | null>>({});
+  // The host's own account of the last failed action on this route, kept as
+  // what it was rather than as a sentence: which code arrived decides what the
+  // card does about it, and a string has thrown that away.
+  const [opError, setOpError] = useState<Record<string, AttemptFailure | null>>({});
   const [progress, setProgress] = useState<string | null>('Loading connections…');
   // What each route is waiting on: a sign-in window Diomedes opened, or the
   // host's own check after that window ended. Derived from `signInWindow` and
@@ -132,8 +135,29 @@ export function AIConnections({
   const watched = useRef<string[]>([]);
   const sections = useRef<Record<string, HTMLElement | null>>({});
 
+  /**
+   * What a failure means for this card, wherever it arrived from.
+   *
+   * The host throws `BINDING_CHANGED` from the check and from the model
+   * selection as well as from the test, and it throws `ACCOUNT_ROUTE` from the
+   * selection. Both used to be answered only inside `test()`, so every other
+   * action that could receive them showed a red banner with the installations
+   * shut and the account-route explanation the card already owns unused.
+   */
+  function answer(engine: string, failure: AttemptFailure): void {
+    if (!mounted.current) return;
+    // The bound installation is not the one that was bound. That is answered
+    // among the installations, never by signing in again, so open them.
+    if (installationConflict(failure)) setInstallsOpen((prev) => ({ ...prev, [engine]: true }));
+    // The account this route reached is not the one this route uses. The host
+    // records that on the connection, and the card has the words for it.
+    if (failure.code === 'ACCOUNT_ROUTE') void refreshStatus();
+  }
+
   function fail(engine: string, error: unknown): void {
-    if (mounted.current) setOpError((prev) => ({ ...prev, [engine]: messageOf(error) }));
+    const failure = failureOf(error);
+    if (mounted.current) setOpError((prev) => ({ ...prev, [engine]: failure }));
+    answer(engine, failure);
   }
 
   /** Fold one or more host answers into what each route is waiting on. */
@@ -398,7 +422,7 @@ export function AIConnections({
     } catch (error) {
       if (!mounted.current) return;
       if (controller.signal.aborted) {
-        setOpError((prev) => ({ ...prev, [engine]: 'Installation cancelled.' }));
+        setOpError((prev) => ({ ...prev, [engine]: attemptFailure('Installation cancelled.') }));
         return;
       }
       fail(engine, error);
@@ -476,10 +500,9 @@ export function AIConnections({
       const failure = failureOf(error);
       setTestFailure((prev) => ({ ...prev, [engine]: failure }));
       setTestOpen((prev) => ({ ...prev, [engine]: false }));
-      // The installation this route was bound to is not the one that is there.
-      // That is answered among the installations, so open them.
-      if (installationConflict(failure))
-        setInstallsOpen((prev) => ({ ...prev, [engine]: true }));
+      // The same handler every other action passes through. This one keeps its
+      // own message beside the test rather than in the card's banner.
+      answer(engine, failure);
       // The stage travelled with the error. Status is read back for what the
       // record now says about the route, not to discover where it stopped.
       await refreshStatus(controller.signal);
@@ -621,8 +644,14 @@ export function AIConnections({
           const testModel = storedModel;
           const offer = offers[engine];
           const error = opError[engine];
-          const repair = repairText(c);
-          const issue = routeIssueSentences(c, name);
+          const repair = repairNote(c);
+          // A refused account route is not a red banner: this card already has
+          // the words for it, and they say which account this route uses and
+          // that Diomedes substitutes nothing for it. Until the record catches
+          // up, the host's own sentence goes in the same calm place.
+          const routeRefused = error?.code === 'ACCOUNT_ROUTE';
+          const reported = routeIssueSentences(c, name);
+          const issue = reported.length > 0 ? reported : routeRefused ? [error.message] : [];
           const candidates = c.candidates ?? [];
           const showInstalls = showsCandidates(c) || primary.intent === 'choose';
           const offering = primary.intent === 'install';
@@ -1088,9 +1117,9 @@ export function AIConnections({
                   </div>
                 </div>
               </details>
-              {error !== null && error !== undefined && (
+              {error !== null && error !== undefined && !routeRefused && (
                 <p className="ai-alert" role="alert">
-                  {error}
+                  {error.message}
                 </p>
               )}
             </section>

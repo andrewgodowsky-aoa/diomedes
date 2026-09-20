@@ -226,6 +226,24 @@ export function repairText(c: EngineConnection): string {
   }
 }
 
+/**
+ * The sentence the card shows for a route that needs repair.
+ *
+ * `repairText` answers for the reasons this build has words for, and nothing
+ * for one it does not know: a host newer than this build can name a reason
+ * written after it. An empty sentence under a route that says it needs repair
+ * is a card showing a problem and saying nothing about it, so this is what the
+ * screen renders. It claims no knowledge of the reason — only that Diomedes
+ * cannot explain this one, and what the person can do regardless.
+ */
+export function repairNote(c: EngineConnection): string {
+  const said = repairText(c);
+  if (said !== '') return said;
+  return c.repair
+    ? 'This installation needs attention for a reason this version of Diomedes cannot put into words. Choose an installation again, or install the compatible copy.'
+    : '';
+}
+
 /** Where in a connection attempt a failure happened, in plain words. */
 export function stageText(stage: SetupStage): string {
   switch (stage) {

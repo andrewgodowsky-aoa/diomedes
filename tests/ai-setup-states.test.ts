@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONNECTION_TTL_MS } from '../shared/connection-policy.js';
+import type { RepairReason } from '../shared/connection-policy.js';
 import type { EngineCandidate, EngineConnection, SetupDiagnostic } from '../shared/engines.js';
 import {
   NOT_SIGNING_IN,
@@ -21,6 +22,7 @@ import {
   placeholderConnection,
   primaryControl,
   provenanceText,
+  repairNote,
   repairText,
   routeIssueSentences,
   setupStates,
@@ -237,6 +239,22 @@ describe('a binding that broke', () => {
   it('says plainly when no installation matches the supported version', () => {
     expect(repairText({ ...base, repair: 'no-reviewed-candidate' })).toBe(
       'No installation on this computer matches the version Diomedes supports.',
+    );
+  });
+
+  it('says something about a repair reason this build has no words for', () => {
+    // A newer host can send a reason this build was written before. The card
+    // renders one sentence for a route that says it needs repair, and an empty
+    // one is a card showing a problem and saying nothing about it.
+    const newer = { ...bound, repair: 'a-reason-from-a-newer-host' as RepairReason };
+    expect(repairText(newer)).toBe('');
+    expect(repairNote(newer)).not.toBe('');
+    expect(repairNote(newer)).toMatch(/installation/i);
+    // A route that needs no repair still says nothing.
+    expect(repairNote(base)).toBe('');
+    // A reason it does know is said in its own words, not the fallback.
+    expect(repairNote({ ...bound, repair: 'selected-missing' })).toBe(
+      repairText({ ...bound, repair: 'selected-missing' }),
     );
   });
 
