@@ -22,7 +22,6 @@ import {
   EngineError,
   failureKind,
   launchCommand,
-  stopped,
   text,
 } from './process.js';
 import { SseLimitError, SseParser, type SseEvent } from './sse.js';
@@ -174,7 +173,11 @@ function abortError(
   // that budget is still running and its number would be a false one.
   if (abortedByDeadline(signal.reason))
     return new EngineError('TIMEOUT', REQUEST_TIMEOUT_DETAIL, true, stage);
-  if (signal.reason !== OWN_BUDGET) return atStage(stopped(), stage);
+  // Anything else that is not this adapter's own budget came from outside: the
+  // person stopping it, or the host withdrawing the run. The shared reader tells
+  // those apart, so this route gives the same answer as the other four.
+  if (signal.reason !== OWN_BUDGET)
+    return atStage(abortFailure(signal.reason, REQUEST_TIMEOUT_DETAIL), stage);
   return budget === 'startup'
     ? new EngineError(
         'TIMEOUT',

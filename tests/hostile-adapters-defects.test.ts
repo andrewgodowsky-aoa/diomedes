@@ -139,6 +139,30 @@ describe('a timeout the host imposed is not the person stopping the request', ()
     const failure = await failureOf(adapter.generate(request()));
     expect(failure?.code).toBe('TIMEOUT');
   });
+  it('reports a run the host withdrew as the host withdrawing it, not the person stopping', async () => {
+    // The harness aborts a run whose lease went stale with an error-shaped
+    // reason. This route used to answer that with "The request was stopped.",
+    // the sentence for a person pressing stop, while the other four did not.
+    const controller = new AbortController();
+    const adapter = await adapterFor({});
+    const pending = failureOf(adapter.generate(request(controller.signal)));
+    setTimeout(
+      () => controller.abort(Object.assign(new Error('stale_lease'), { name: 'HarnessError' })),
+      120,
+    );
+    const failure = await pending;
+    expect(failure?.code).toBe('DISPATCH_UNCERTAIN');
+    expect(failure?.message).not.toMatch(/was stopped/i);
+    expect(failure?.ambiguous).toBe(true);
+  });
+  it('still reports a person pressing stop as the request being stopped', async () => {
+    const controller = new AbortController();
+    const adapter = await adapterFor({});
+    const pending = failureOf(adapter.generate(request(controller.signal)));
+    setTimeout(() => controller.abort(), 120);
+    const failure = await pending;
+    expect(failure?.code).toBe('CANCELLED');
+  });
 });
 
 describe('a refusal is read from what the payload says, not from a number inside it', () => {

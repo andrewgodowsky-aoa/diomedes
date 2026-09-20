@@ -441,6 +441,22 @@ describe('waiting for a check that is already running', () => {
     expect(inspect).not.toHaveBeenCalled();
   });
 
+  it('answers anyway when checks keep being handed over, and never rejects', async () => {
+    const { service } = fixture();
+    // A producer that always has another check in flight. No outside caller can
+    // build this through `check()`, which clears its entry before anyone
+    // waiting resumes, so the table the wait reads is made to say it directly.
+    const checks = (service as unknown as { checks: Map<string, Promise<unknown>> }).checks;
+    let looked = 0;
+    checks.get = () => {
+      looked += 1;
+      return looked % 2 ? Promise.resolve() : Promise.reject(new Error('a failed check'));
+    };
+    await expect(service.settled('claude-code')).resolves.toBeUndefined();
+    // One look per handover it was willing to follow, and then it stopped.
+    expect(looked).toBe(9);
+  });
+
   it('returns after a check that succeeds, so the next one asks again', async () => {
     const { service, inspect } = fixture();
     await service.discover(true);

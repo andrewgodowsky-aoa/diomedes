@@ -257,6 +257,8 @@ const TEST_PROMPT = 'Reply with the single word: ok';
  * dispatch that may already have been billed is never quietly sent again.
  */
 const TEST_TIMEOUT_MS = 60_000;
+/** How many checks handed over back to back one `settled()` wait follows before it answers anyway. */
+const SETTLE_HANDOVERS = 8;
 /**
  * The reserved identity a host-initiated test runs under. It is declared with
  * the shared engine types so the store can refuse it without importing this
@@ -867,12 +869,19 @@ export class EngineService {
    * is the defect this exists to avoid.
    */
   async settled(engine: ExternalEngine): Promise<void> {
-    // A check that starts in the instant another finishes is waited out too.
-    for (let active = this.checks.get(engine); active; active = this.checks.get(engine))
+    // A check that starts in the instant another finishes is waited out too,
+    // but only so many times: a caller that keeps starting checks must not be
+    // able to hold this wait open for ever. Past the bound the caller's own
+    // `check()` is refused as active, which it already reads as "a newer check
+    // is running".
+    for (let handover = 0; handover <= SETTLE_HANDOVERS; handover++) {
+      const active = this.checks.get(engine);
+      if (!active) return;
       await active.then(
         () => {},
         () => {},
       );
+    }
   }
   private async inspect(engine: ExternalEngine, signal?: AbortSignal) {
     const saved = this.connections.get(engine)!;
