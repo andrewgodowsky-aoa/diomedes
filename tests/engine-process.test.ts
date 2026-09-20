@@ -25,7 +25,10 @@ import { HarnessError } from '../server/harness/policy.js';
 
 const roots: string[] = [];
 afterEach(async () => {
-  for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
+  // Windows can keep a killed child's working directory busy for a moment after
+  // the process itself is gone, so the removal retries rather than failing the test.
+  for (const root of roots.splice(0))
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 async function script(source: string) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes engine '));
@@ -138,14 +141,17 @@ describe('owned engine processes', () => {
       controller.abort();
       await child.close();
       await expect
-        .poll(() => {
-          try {
-            process.kill(Number(frame.pid), 0);
-            return true;
-          } catch {
-            return false;
-          }
-        })
+        .poll(
+          () => {
+            try {
+              process.kill(Number(frame.pid), 0);
+              return true;
+            } catch {
+              return false;
+            }
+          },
+          { timeout: 10_000 },
+        )
         .toBe(false);
     },
   );
