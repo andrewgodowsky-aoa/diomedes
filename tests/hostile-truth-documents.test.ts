@@ -40,12 +40,14 @@ describe('README sentences against the code at this commit', () => {
     expect(readme).toMatch(/needs repair/i);
   });
 
-  it('does not define Ready as something the code calls test-connection', () => {
-    // shared/connection-policy.ts:154 returns `test-connection`, not `ready`,
-    // for a found, reviewed, signed-in, model-listing, fresh route that has
-    // never produced a real result.
-    const ready = readme.slice(readme.indexOf('- **Ready**'));
-    expect(ready.slice(0, 400)).toMatch(/tested|verified by a real request/i);
+  it('mentions the consented test that now stands between Ready and a real result', () => {
+    // README's "Ready" is the state `EngineService.generate()` admits on
+    // (service.ts:1278-1288, which needs no receipt). `SetupAction 'ready'`
+    // is a different state: shared/connection-policy.ts:154 answers
+    // `test-connection` until a receipt matches the binding revision, and
+    // client/ai-setup-state.ts:114-119 renders a fourth Test row for it.
+    // One word, two meanings, and the README never names the test.
+    expect(readme).toMatch(/test this connection|connection test|test succeeded/i);
   });
 });
 

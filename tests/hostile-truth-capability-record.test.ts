@@ -119,10 +119,15 @@ describe('the one release fact, and whether a reader ever sees it', () => {
     expect(committed.release!.appVersion).not.toBe(committed.appVersion);
   });
 
-  it('is repeated where a person reads about installing the build', () => {
-    // The README sends people to the releases page and describes the states,
-    // but never says which version was actually published from this tree.
-    expect(readme).toContain(committed.release!.appVersion);
+  it('is said somewhere a person reads, not only in the file they do not open', () => {
+    // The README sends people to the releases page, says this tree is 0.1.5
+    // and never says the newest published build is an older version. Naming
+    // the number there is additionally constrained by
+    // tests/engine-routes.test.ts:81-85, which rejects any version literal in
+    // the README other than package.json's.
+    expect(readme).toMatch(
+      /(published|release[ds]?)[^.]{0,80}(older|earlier|previous) version|no published build of this version/i,
+    );
   });
 
   it('reaches the README a downloader actually opens', () => {
