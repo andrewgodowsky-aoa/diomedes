@@ -324,7 +324,8 @@ test('a terminal transition asked for inside the child commit lands after it, ne
       });
     await new Promise((resolve) => setTimeout(resolve, 300));
     // It has not landed: it is waiting on the queue the fence is holding, and nothing about
-    // the source run has changed while this message's child commits against it.
+    // the source run has changed since it was asked for. The run is parked `waiting` for its
+    // next command here, which is the live, non-terminal state the fence admits against.
     expect(settled).toBe(false);
     expect(await driver().get(project.id, proposed.runId)).toEqual(during);
     release();
