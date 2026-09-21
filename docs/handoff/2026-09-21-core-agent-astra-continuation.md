@@ -58,7 +58,7 @@ capability record's inverted pack index search; PR #33 before it: test teardown 
 
 | Branch (worktree under `F:/Diomedes/diomedes-wt/`) | Head | What it is |
 |---|---|---|
-| `feature/core-agent-bot` (`core-agent-bot`) | `2b3f933` | THE integration branch, draft PR #29. Holds main, the client repair through R-12, the admission repair, the AWS composition, the routing decision |
+| `feature/core-agent-bot` (`core-agent-bot`) | `b37a199` (= `2b3f933`, the gated commit, plus this handoff document) | THE integration branch, draft PR #29. Holds main, the client repair through R-12, the admission repair, the AWS composition, the routing decision |
 | `feature/core-agent-client-repair` (`core-agent-client-repair`) | `1f6f93c` | CD-05b client repair line. Candidate for CD-05.R-5 |
 | `feature/core-agent-client-review` (`core-agent-client-review`) | `c17cf26` | Your clean review checkout. Fast-forward it to the candidate before R-5 |
 | `feature/core-agent-admission-repair` (`core-agent-admission-repair`) | `7f1b9b3` | CD-01 admission repair, successor for the executing re-review |
@@ -85,8 +85,11 @@ Documents to read first, all on the integration branch under `docs/implementatio
 - `cd01-bounded-review-20260921/`: the executing reviewer's rejection and owner handoff.
 - `2026-09-21-routing-decision-and-owner-work-order.md`: the routing decision, section 4 below.
 
-Evidence on this machine (integrator's, labelled as such), in
-`F:/Temp/andre/claude/F--Diomedes/e96b0c5b-6ccf-4f64-a907-b99ad1a4ae8d/scratchpad/`:
+Evidence on this machine (integrator's, labelled as such). Durable copies are in
+`F:/Diomedes/deliverables/core-agent-handoff-20260921/evidence/` and `tools/`; the originals are in
+`F:/Temp/andre/claude/F--Diomedes/e96b0c5b-6ccf-4f64-a907-b99ad1a4ae8d/scratchpad/` (a session
+folder that may be cleaned, and whose scripts carry the OUTGOING integrator's coordination
+identity: change `--role`, `--pid` and `--start` in `with_heavy_slot.py` to your own):
 `cd05-r5-evidence.txt` (R-5 candidate: tsc, 90 unit cases, whole page spec 33 of 33 in one serial
 run at `5cbd15f`, unit mutants U1 to U5, browser mutants B14 to B18, and the note on one
 unexplained closure failure in sixteen runs), `cd05-r4-evidence.txt`,
@@ -241,5 +244,5 @@ Finished 2026-09-21 10:56 UTC, one run under the heavy slot, clean tree at
 | `tests/diomedes-home.spec.ts`, whole file, serial | 33 passed |
 | full browser suite | 159 passed |
 
-Log: `scratchpad/bot-gates-2b3f933.txt`. The 40 rewritten evidence PNGs were restored by name
+Log: `evidence/bot-gates-2b3f933.txt` beside this file. The 40 rewritten evidence PNGs were restored by name
 afterwards; the worktree is clean.
