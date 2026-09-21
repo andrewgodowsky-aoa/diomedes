@@ -1,0 +1,36 @@
+{
+  "candidate": "d11c468e69e279ab0c2581bbdeb6cf113e166d7a",
+  "reviewCheckout": "F:/Diomedes/diomedes-wt/interaction-authority-review",
+  "boundedSeam": "rejected",
+  "fullCD01": "not-accepted",
+  "productionModified": false,
+  "repairCommit": null,
+  "latestOwnerCommitObserved": "26b33ff3fec77786d88b1dd3b1cf1a79bff82696",
+  "latestOwnerCommitExecuted": false,
+  "delegatedModel": "swe-2-max",
+  "independentDelegatedReview": true,
+  "originalCasesOnSuccessor": { "passed": 2, "failed": 1 },
+  "unfilteredFocusedSuite": { "passed": 90, "failed": 1, "skipped": 0, "exitCode": 1 },
+  "correctedMatrix": { "passed": 6, "failed": 7, "skipped": 0, "timeouts": 0, "exitCode": 1 },
+  "gates": {
+    "typecheck": { "exitCode": 0 },
+    "unit": { "passed": 4242, "failed": 8, "skipped": 1, "exitCode": 1 },
+    "build": { "exitCode": 0 },
+    "browser": { "passed": 36, "failed": 0, "skipped": 0, "exitCode": 0 }
+  },
+  "remainingFindings": [
+    "P1: current Ask/Plan restriction can be bypassed after selection",
+    "P1: asynchronous Runtime reconciliation can precede a new Work admission",
+    "P1: child receipt lookup accepts a command bound to different intent",
+    "P2: concurrent identical selections do not return the same receipt",
+    "P2: receipt-only selection replay is refused after source cancellation",
+    "P2: polling loses a durably acknowledged interruption"
+  ],
+  "handoff": "OWNER-HANDOFF.md",
+  "review": "REVIEW-RESULT.md",
+  "partialUnappliedPatch": "SWE-MAX-mode-bindings-PARTIAL-UNAPPLIED.patch",
+  "partialPatchAccepted": false,
+  "liveProviderAcceptance": false,
+  "packageReleaseAcceptance": false,
+  "publicationAuthorizedByThisReview": false
+}

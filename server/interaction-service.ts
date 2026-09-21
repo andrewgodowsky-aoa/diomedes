@@ -7,13 +7,14 @@
 // of its own: a task is created by the path a person's task takes and work starts by the path
 // a person's Start takes, each under the command id derived for this message, so a retry
 // reaches the existing receipt. What a person is told is read from phases and receipts.
-import type { ClaudeSessionRuns, InteractionPhase } from './harness/claude-session-run.js';
+import type { InteractionPhase } from './harness/claude-session-run.js';
 import { HarnessError } from './harness/policy.js';
 import type { TextRequest } from './engines/contract.js';
 import { EngineError } from './engines/process.js';
 import type { EngineService } from './engines/service.js';
 import { ApiError } from './paths.js';
 import type { MessageResult } from '../shared/conversation.js';
+import type { InteractionDecision } from '../shared/interaction.js';
 import {
   admitInteraction,
   conversationCommandIds,
@@ -86,10 +87,64 @@ export interface LocatedMessage {
   restriction: Restriction;
 }
 
-/** The conversation run an admission comes from. */
+/**
+ * The conversation run an admission comes from, and the saved intent its children are held
+ * to. These are check inputs, not grants: each child admission re-reads what the conversation
+ * says now and admits only what this exact saved proposal still allows.
+ */
 export interface AdmissionSource {
   projectId: string;
+  threadId: string;
   runId: string;
+  commandId: string;
+  sourceMessageId: string;
+  /** What the answered message was bound to. Intersected with the Mode control as it stands. */
+  restriction: Restriction;
+  /** The proposal this message recorded, read back from its own first phase. */
+  decision: InteractionDecision;
+  /** The person's saved choice of that exact proposal. */
+  selection: ActionSelection;
+  /** What the choice was pinned to: nothing else may be started under it. */
+  proposalDigest: string;
+  targetProjectId: string;
+}
+
+/**
+ * What this message's children are made from, rebuilt from its own saved phases. A receipt
+ * found under a derived command id is this message's child only when the command holds
+ * exactly this, so an id bound to different work is a conflict rather than a start.
+ */
+export interface ChildIntent {
+  task: { name: string; description: string };
+  /** Null until the Work input phase pinned the task and the route it was resolved on. */
+  work: { taskId: string; route: string; instruction: string } | null;
+}
+
+/**
+ * The conversation runtime, as this sequence uses it: three reads, one write, and nothing
+ * particular to any one runtime. Everything above it here decides from saved phases, saved
+ * receipts and the Mode control, so a second driver composes by satisfying exactly this.
+ */
+export interface ConversationDriver {
+  /** Which of these runs already holds this command, newest first. A read. */
+  locate(
+    projectId: string,
+    runIds: readonly string[],
+    commandId: string,
+  ): Promise<{ runId: string; answered: boolean; settled: boolean; dispatched: boolean } | null>;
+  /** The phases saved for one message, in the order they were saved. A read. */
+  phases(projectId: string, runId: string, sourceMessageId: string): Promise<InteractionPhase[]>;
+  /** Saves the phases that are not saved yet. Identical concurrent saves are one write. */
+  record(projectId: string, runId: string, phases: readonly InteractionPhase[]): Promise<void>;
+  /**
+   * What the runtime durably saved for one command's turn. A step that succeeded carrying no
+   * answer is an acknowledged interruption, which is neither a completed answer nor nothing.
+   */
+  turnResult(
+    projectId: string,
+    runId: string,
+    commandId: string,
+  ): Promise<{ answered: boolean; interrupted: boolean } | null>;
 }
 
 /** What the host supplies. Every method that touches the Store takes and releases its own lock. */
@@ -112,10 +167,16 @@ export interface InteractionHost {
     result: { runId: string; text: string; model: string; version: string },
   ): Promise<void>;
   admissionContext(): Promise<{ homeProjectId: string | null; targetableProjectIds: string[] }>;
-  /** A read. The receipts that exist under these derived command ids in this project. */
+  /**
+   * A read. The receipts that exist under these derived command ids in this project, and only
+   * where the command holds what this message would submit. A command bound to different work
+   * is refused here, through the same replay check a person's own task goes through, so no
+   * other request's child is ever read back as this message's start.
+   */
   receipts(
     projectId: string,
     ids: { taskCommandId: string; workCommandId: string },
+    intent: ChildIntent | null,
   ): Promise<Receipts>;
   /**
    * Both admissions name the conversation run they come from. The host refuses, inside the
@@ -129,19 +190,41 @@ export interface InteractionHost {
   ): Promise<{ taskId: string }>;
   startWork(
     projectId: string,
-    command: { commandId: string; taskId: string; instruction: string },
+    command: { commandId: string; taskId: string; instruction: string; route: string },
     source: AdmissionSource,
   ): Promise<{ sessionId: string }>;
+  /**
+   * The route the target project would start Work on. Read once and saved with the Work
+   * input, so a retry builds the command this message already sent rather than one made
+   * from a setting that has changed since.
+   */
+  workRoute(projectId: string): Promise<string>;
 }
 
 export type { MessageResult };
 
 const NARROW: Record<Restriction, number> = { 'answer-only': 0, 'plan-only': 1, automatic: 2 };
 /** The narrower of what was recorded with the answer and what the Mode control says now. */
-const narrower = (a: Restriction, b: Restriction) => (NARROW[a] <= NARROW[b] ? a : b);
+export const narrower = (a: Restriction, b: Restriction) => (NARROW[a] <= NARROW[b] ? a : b);
 
 const MOVED_ON =
   'This message did not finish before the conversation moved on. Send it again as a new message if you still want it.';
+
+/**
+ * The task this message proposes, from its first phase and nothing else. Admission submits
+ * exactly this and a read compares exactly this, so a retry from any route reaches the same
+ * receipt and a command holding anything else is not this message's child.
+ */
+const taskIntent = (body: DecisionPhaseBody) => ({
+  name: (body.decision.publicSummary.trim() || body.text).slice(0, 200),
+  description: body.text,
+});
+
+/** What the Work input phase pinned: the task it named and the route it was resolved on. */
+const workInput = (phases: readonly InteractionPhase[]) =>
+  phases.find((phase) => phase.phase === 'work-input')?.body as
+    | { taskId?: unknown; route?: unknown }
+    | undefined;
 
 /** Which guard refused a new message, if it is one a fresh lineage answers. */
 function retirement(error: unknown): LineageRetirement | null {
@@ -164,7 +247,7 @@ export class InteractionTurns {
     private readonly host: InteractionHost,
   ) {}
 
-  private driver(): ClaudeSessionRuns {
+  private driver(): ConversationDriver {
     if (!this.engines.nativeSessions)
       throw new ApiError(503, 'The native conversation runtime is unavailable.');
     return this.engines.nativeSessions;
@@ -214,6 +297,7 @@ export class InteractionTurns {
     // never saved is not rebuilt in memory: the message reads as unresolved on every route.
     const outcome = await this.settle({
       projectId,
+      threadId,
       commandId: command.commandId,
       runId: resolved.runId,
       sourceMessageId: resolved.sourceMessageId,
@@ -243,7 +327,6 @@ export class InteractionTurns {
     const driver = this.driver();
     const located = await this.host.locate(projectId, threadId, commandId);
     if (!located?.answered) throw new ApiError(404, 'This message was not found.');
-    if (located.settled) throw new ApiError(409, MOVED_ON, { code: 'conversation_settled' });
     const phases = await driver.phases(projectId, located.runId, located.sourceMessageId);
     const recorded = decisionOf(phases);
     if (!recorded || recorded.block !== 'parsed')
@@ -255,6 +338,26 @@ export class InteractionTurns {
       proposalDigest: chosen.proposalDigest,
       projectId: chosen.projectId,
     };
+    const message = {
+      projectId,
+      runId: located.runId,
+      sourceMessageId: located.sourceMessageId,
+      restriction: located.restriction,
+    };
+    // The choice the person already made, and what it already started, is a record. Reading
+    // it back needs the read they already have and nothing more, so a conversation that has
+    // since been cancelled or narrowed still answers with its own receipt.
+    const committed = await this.replayed(message, phases, selection, located.settled);
+    if (committed)
+      return {
+        runId: located.runId,
+        commandId,
+        sourceMessageId: located.sourceMessageId,
+        answerText: null,
+        interrupted: false,
+        outcome: committed,
+      };
+    if (located.settled) throw new ApiError(409, MOVED_ON, { code: 'conversation_settled' });
     const verdict = admitInteraction({
       decision: recorded.decision,
       restriction: narrower(recorded.restriction, located.restriction),
@@ -271,6 +374,7 @@ export class InteractionTurns {
     ]);
     const outcome = await this.settle({
       projectId,
+      threadId,
       commandId,
       runId: located.runId,
       sourceMessageId: located.sourceMessageId,
@@ -286,10 +390,41 @@ export class InteractionTurns {
     };
   }
 
+  /**
+   * What an identical selection already settled, or null where there is still something to
+   * admit. The saved choice must name this message, this proposal and this target; the
+   * message must already hold its Work receipt or its final refusal, so nothing here applies
+   * authority to a new effect. Nothing is written: a settled run is read and left alone.
+   */
+  private async replayed(
+    message: { projectId: string; runId: string; sourceMessageId: string; restriction: Restriction },
+    phases: readonly InteractionPhase[],
+    selection: ActionSelection,
+    settled: boolean,
+  ): Promise<InteractionOutcome | null> {
+    const saved = selectionOf(phases);
+    if (
+      !saved ||
+      saved.sourceMessageId !== selection.sourceMessageId ||
+      saved.proposalDigest !== selection.proposalDigest ||
+      saved.projectId !== selection.projectId
+    )
+      return null;
+    const refused = phases.some(
+      (phase) => phase.phase === 'task-refused' || phase.phase === 'work-refused',
+    );
+    const read = await this.read(message, settled);
+    return refused || read.receipts.sessionId ? read.outcome : null;
+  }
+
   /** A read. What happened to a message, from its phases and receipts. Nothing is written or started. */
   async outcome(projectId: string, threadId: string, commandId: string): Promise<MessageResult> {
     const located = await this.host.locate(projectId, threadId, commandId);
     if (!located) throw new ApiError(404, 'This message was not found.');
+    // Read from what the turn itself saved, not from the fact that its step succeeded: an
+    // interruption the provider acknowledged succeeds with no answer, and a person polling
+    // this message must be told that, not that nothing happened.
+    const turn = await this.driver().turnResult(projectId, located.runId, commandId);
     const outcome = await this.read(
       {
         projectId,
@@ -304,7 +439,7 @@ export class InteractionTurns {
       commandId,
       sourceMessageId: located.sourceMessageId,
       answerText: null,
-      interrupted: false,
+      interrupted: turn?.interrupted ?? false,
       outcome: outcome.outcome,
     };
   }
@@ -338,8 +473,21 @@ export class InteractionTurns {
       (verdict && (verdict.outcome === 'proposed' || verdict.outcome === 'escalate')
         ? verdict.projectId
         : null);
+    const pinned = workInput(phases);
     const receipts: Receipts = target
-      ? await this.host.receipts(target, conversationCommandIds(message.sourceMessageId))
+      ? await this.host.receipts(
+          target,
+          conversationCommandIds(message.sourceMessageId),
+          body
+            ? {
+                task: taskIntent(body),
+                work:
+                  typeof pinned?.taskId === 'string' && typeof pinned.route === 'string'
+                    ? { taskId: pinned.taskId, route: pinned.route, instruction: body.text }
+                    : null,
+              }
+            : null,
+        )
       : { projectId: null, taskId: null, sessionId: null };
     return { phases, body, verdict, receipts, outcome: outcomeOf(phases, receipts, verdict, { settled }) };
   }
@@ -352,6 +500,7 @@ export class InteractionTurns {
   private async settle(
     message: {
       projectId: string;
+      threadId: string;
       commandId: string;
       runId: string;
       sourceMessageId: string;
@@ -362,22 +511,41 @@ export class InteractionTurns {
     const located = await driver.locate(message.projectId, [message.runId], message.commandId);
     const settled = located?.settled ?? false;
     const first = await this.read(message, settled);
-    const source: AdmissionSource = { projectId: message.projectId, runId: message.runId };
     const done = first.phases.some(
       (phase) => phase.phase === 'task-refused' || phase.phase === 'work-refused',
     );
-    if (settled || done || first.verdict?.outcome !== 'escalate' || first.receipts.sessionId)
+    const chosen = selectionOf(first.phases);
+    if (
+      settled ||
+      done ||
+      !chosen ||
+      first.verdict?.outcome !== 'escalate' ||
+      first.receipts.sessionId
+    )
       return first.outcome;
     const verdict = first.verdict;
     const body = first.body!;
+    // What each child admission is held to. The saved restriction and the saved choice
+    // travel with it; what the conversation says now is read where the child commits.
+    const source: AdmissionSource = {
+      projectId: message.projectId,
+      threadId: message.threadId,
+      runId: message.runId,
+      commandId: message.commandId,
+      sourceMessageId: message.sourceMessageId,
+      restriction: body.restriction,
+      decision: body.decision,
+      selection: chosen,
+      proposalDigest: verdict.proposalDigest,
+      targetProjectId: verdict.projectId,
+    };
     const record = (phase: InteractionPhase['phase'], content: InteractionPhase['body']) =>
       driver.record(message.projectId, message.runId, [
         { phase, sourceMessageId: message.sourceMessageId, body: content },
       ]);
     // Everything a task or a Work command is made from comes out of the saved first phase, so
     // a retry from any route builds the same payload and reaches the receipt it already has.
-    const instruction = body.text;
-    const name = (body.decision.publicSummary.trim() || instruction).slice(0, 200);
+    const { name, description: instruction } = taskIntent(body);
     const refusal = (error: unknown) =>
       error instanceof ApiError && error.status >= 400 && error.status < 500
         ? { status: error.status, message: error.message }
@@ -404,15 +572,23 @@ export class InteractionTurns {
         return (await this.read(message, false)).outcome;
       }
     await record('task-receipt', { taskId });
+    // The route is resolved once and saved here, so a retry after the target project's
+    // engine changed sends the command this message already sent and reaches its receipt.
+    const pinned = workInput(first.phases);
+    const route =
+      typeof pinned?.route === 'string'
+        ? pinned.route
+        : await this.host.workRoute(verdict.projectId);
     await record('work-input', {
       projectId: verdict.projectId,
       workCommandId: verdict.workCommandId,
       taskId,
+      route,
     });
     try {
       const started = await this.host.startWork(
         verdict.projectId,
-        { commandId: verdict.workCommandId, taskId, instruction },
+        { commandId: verdict.workCommandId, taskId, instruction, route },
         source,
       );
       await record('work-receipt', { sessionId: started.sessionId });

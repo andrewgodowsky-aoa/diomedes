@@ -404,10 +404,18 @@ export class ClaudeSessionRuns {
     const last = missing[missing.length - 1];
     await this.park(runId, projectId, `${last.sourceMessageId}:${last.phase}`);
   }
-  /** Saves interaction phases under this driver's own lease. The app never touches a step. */
+  /**
+   * Saves interaction phases under this driver's own lease. The app never touches a step.
+   *
+   * Two requests saving the same immutable phases are one write. The second reads the
+   * first's result instead of meeting its own step in flight, which is not a conflict but
+   * the same fact arriving twice, so identical concurrent requests converge on one record.
+   */
   async record(projectId: string, runId: string, phases: readonly InteractionPhase[]) {
     if (this.closed) throw new EngineError('SESSION_CLOSED', 'The native runtime is shutting down.');
-    await this.append(projectId, runId, phases);
+    return this.runs.join(`phases:${projectId}:${runId}:${digest(phases)}`, () =>
+      this.append(projectId, runId, phases),
+    );
   }
   /** The phases saved for one message, in the order they were saved. A read; never a step. */
   async phases(
@@ -472,6 +480,35 @@ export class ClaudeSessionRuns {
     }
   }
   /**
+   * Commits a child of this conversation inside the run's own writer queue, refusing first a
+   * run that is already settled. The Runtime's own terminal transitions take that same queue,
+   * so a cancellation, a failed model step or a denial is ordered either before this refusal
+   * or after the commit it protects. Process-local ordering, not crash recovery: a child that
+   * did commit is found again by its durable receipt.
+   *
+   * The commit must not record, claim or step this run, and must await no provider, no person
+   * and no background work.
+   */
+  async fenced<T>(projectId: string, runId: string, commit: () => Promise<T>): Promise<T> {
+    try {
+      return await this.runs.fence(runId, localHarnessPrincipal(projectId), async (run) => {
+        if (run.projectId !== projectId || run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id)
+          throw new HarnessError(
+            'unknown_run',
+            'This native conversation was not found in this project.',
+          );
+        return commit();
+      });
+    } catch (error) {
+      if (error instanceof HarnessError && error.code === 'run_settled')
+        throw new EngineError(
+          'RUN_SETTLED',
+          'This conversation moved on before this was started. Nothing was started.',
+        );
+      throw error;
+    }
+  }
+  /**
    * Refuses when the conversation run is settled. The admission boundary calls this inside the
    * Store lock, which is the lock the run-cancel route holds while it cancels, so a cancellation
    * is either seen here or comes after the admission it would have stopped.
@@ -482,6 +519,26 @@ export class ClaudeSessionRuns {
         'RUN_SETTLED',
         'This conversation moved on before this was started. Nothing was started.',
       );
+  }
+  /**
+   * What the Runtime durably saved for one command's turn. A step that succeeded carrying no
+   * response is an interruption the person asked for and the provider acknowledged, not a
+   * completed answer, so a later read of that message must not report it as answered either.
+   * A turn still running, or one that never finished, has saved nothing to read.
+   */
+  async turnResult(
+    projectId: string,
+    runId: string,
+    commandId: string,
+  ): Promise<{ answered: boolean; interrupted: boolean } | null> {
+    const run = await this.get(projectId, runId);
+    const turn = run.steps.find((step) => step.intent.stepId === stepKey('turn', commandId));
+    if (!turn || turn.state !== 'succeeded') return null;
+    const saved = turn.output as { response?: unknown; interrupted?: unknown } | null;
+    return {
+      answered: saved?.response !== null && saved?.response !== undefined,
+      interrupted: saved?.interrupted === true,
+    };
   }
   /**
    * What one answered message was sent with, read from its immutable turn: the source files
