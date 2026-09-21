@@ -1,0 +1,307 @@
+# Core Diomedes Agent: work orders, lanes and worktrees
+
+Version 2026-09-20.1. Ledger for the CD-1 program. Decision record:
+`docs/product/2026-09-20-core-diomedes-agent.md`.
+
+**Status: planning and dispatch ledger. It records assignments and evidence, never completion by
+assertion.** A work order is DONE only when its work is complete, its required tests and
+independent review passed, and the exact accepted patch is merged to `main`
+(`F:/Diomedes/AGENTS.md`).
+
+The package's thirteen work orders (CD-00 to CD-12) are kept with their IDs. What changes here is
+their **order**, because the package was written without reading the current source, and the
+source moved the critical path.
+
+---
+
+## 1. Routes verified on this machine, 2026-09-20
+
+| Label in the package | Route used | Verified |
+|---|---|---|
+| Fable | This session (integrator seat). Never as a subagent | yes |
+| Opus | Claude Code Agent tool, `model: opus`, one worktree per agent | yes |
+| Sonnet | Agent tool, `model: sonnet`, read-only exploration and mechanical edits | yes |
+| Astra | `ask-codex.ps1 -Model gpt-6-astra` under `pwsh` 7, never 5.1 | helper present, `codex.exe` on PATH |
+| SWE 2.0 | Devin ACP | **no.** Only Devin Desktop is installed. There is no `devin.exe` CLI for `server/engines/devin.ts` to resolve, and ACP sign-in is a browser flow. Not fabricated |
+| Muse (takes the SWE 2.0 lanes) | `ask-opencode.ps1 -Model opencode-go/muse-spark-1.3-contributor`, GLM-5.3-Flash as fallback | helper present |
+
+Muse rules learned the hard way: one file per brief, pass `-Model` explicitly, and check that the
+deliverable file exists rather than trusting exit 0.
+
+---
+
+## 2. Worktrees
+
+All branch from `origin/main` (`dadb72d` on 2026-09-20), not from local `main`, which lags. The
+main checkout `F:/Diomedes/diomedes` sits on a docs branch 226 commits behind and must never be
+used as a source of truth for code.
+
+| Feature | Work order | Branch | Path | Owner | State |
+|---|---|---|---|---|---|
+| core-agent-bot | CD-00, integration | `feature/core-agent-bot` | `F:/Diomedes/diomedes-wt/core-agent-bot` | Fable | open; the integration branch the lanes merge into |
+| core-agent-contract | CD-01 | `feature/core-agent-contract` | `F:/Diomedes/diomedes-wt/core-agent-contract` | Opus; Astra reviews | round 3 running, rejected twice |
+| core-agent-page | CD-05a | `feature/core-agent-page` | `F:/Diomedes/diomedes-wt/core-agent-page` | Sonnet 5 builds under the Fable seat's claim; Astra reviews | dispatched 2026-09-21, four new files |
+| core-agent-admission | CD-02 | `feature/core-agent-admission` | not created | Muse, one file per brief | waits on CD-01 acceptance |
+
+The page went to Sonnet rather than Muse: a long Muse brief ends early with no files, and this
+lane needs design fidelity. Muse keeps the bounded single-file lanes. The coordination tool knows
+three seats only (`fable`, `astra`, `opus`), so a Sonnet or Muse worker builds under the seat that
+dispatched it, and the journal names the builder.
+
+Each worktree needs two junctions for `tsc`: `node_modules` and
+`services/control-plane/node_modules`, both to the shared install. **Detach both before removing a
+worktree.** `git worktree remove --force` follows a junction and empties the shared install.
+Script: session scratchpad `new-lane-worktree.ps1 -Feature <name>`.
+
+Claims go through the pinned tool only:
+`F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913/tool/coordination.ts`.
+Live: `claim_muaow7wh_00888721` (fable, CD-00, the two CD-00 documents);
+`claim_muap4jbp_16cc3b46` (opus, CD-01, four files); `claim_muaptqnf_bffca3eb` and
+`claim_muaqncga_75ffb6cb` (astra, the two reviews and her test file);
+`claim_muar92eo_56568471` (fable, CD-05a, the four page files).
+
+---
+
+## 3. Order of work
+
+### Wave 0: decide and freeze (running)
+
+| ID | Lead | Reviewer | Output | State |
+|---|---|---|---|---|
+| CD-00 | Fable | Opus checks feasibility through CD-01 | Decision record, this ledger, the design artifact | drafted, awaiting Andrew |
+| CD-01 | Opus | Astra | `docs/implementation/2026-09-20-core-agent-contract.md`, `...-source-map.md`, `shared/interaction.ts`, `tests/interaction-contract.test.ts` | returned, **not accepted**; in review |
+
+**CD-01 as returned, 2026-09-20.** Four untracked files in `core-agent-contract`, base `dadb72d`,
+nothing committed, no tracked file touched. The integrator re-ran both permitted commands:
+`tsc --noEmit` exit 0; `vitest run tests/interaction-contract.test.ts` 40 passed of 40. Opus's claim
+is `claim_muap4jbp_16cc3b46`. It marks 10 of 22 cases UNCLAIMED with a named prerequisite each.
+
+**Open finding from the integrator's read, F-1 (candidate P1).** Decision 3 gives the project-less
+landing "an unbound composer that can only produce `respond`, `clarify` and `blocked`" needing
+"no project, no run and no durable record". But the same contract stores the decision as a step on
+the conversation run, and every conversation run is per project. With no project there is no run,
+so nothing can generate or record even a greeting. Since the landing is the conversation by owner
+decision, this cannot stay UNCLAIMED. One alternative is on the table: a reserved workspace home
+project, an ordinary Project that holds the home thread so the native session works unchanged.
+
+**CD-01.R, Astra, dispatched 2026-09-20** with F-1 and six other risk claims, under
+`claim_muaptqnf_bffca3eb`. It may write exactly
+`docs/implementation/2026-09-20-core-agent-contract-review.md` and
+`tests/interaction-contract.astra.test.ts`. The hop bills the ChatGPT subscription.
+
+**CD-01.R verdict, 2026-09-21: REJECTED.** Verdict file as above, in `core-agent-contract`. Astra
+stayed inside its two files; the four candidate files were untouched.
+
+| ID | Sev | Finding | Integrator check |
+|---|---|---|---|
+| R-01 | P1 | The landing cannot generate or record its answer (F-1) | confirmed by reading |
+| R-02 | P1 | Decision 4 moves `admitWork` outside the Store lock that admission relies on. Its deadlock rationale cites `prepare`, which `start()` does not await | **confirmed**: `native-work.ts:540-552`, `store.ts:588`, `app.ts:895-899`, `:1957-1959` |
+| R-03 | P1 | No recovery contract from a recorded decision to its admission; a run query already exists | **confirmed**: `server/harness/routes.ts:46-61` |
+| R-04 | P1 | C24 claimed on a hardcoded local principal | **confirmed**: `server/harness/bridge.ts:24-31` |
+| R-05 | P2 | Automatic's transitions and the trusted restriction input are not frozen | read |
+| R-06 | P2 | The parser is not equivalent to the package fixture | **observed**: see below |
+| R-07 | P2 | `sourceCommandId` is hashed but never stored | read |
+| R-08 | P2 | Lane map omits `EngineService.claudeSession` threading and several landing pins | read |
+| R-09 | P2 | Three prerequisite claims contradict source; the contract-revision status is a conflict in the records | **confirmed**: `evidence/unified-20260913/C00.R-rollout-20260917.json:14-22` records an accepted rollout with `approved_contract_revision 2026-09-13.1`, while `shared/contract-revision.ts:37-41` still says `proposed` |
+
+Astra's own vitest could not start (`EPERM` on the junctioned `node_modules` inside its sandbox),
+and it said so rather than claiming failures. The integrator ran the exact command:
+`vitest run tests/interaction-contract.test.ts tests/interaction-contract.astra.test.ts` gave
+**42 passed, 9 failed of 51**. All 40 of the candidate's tests pass; 9 of Astra's 11
+counterexamples fail against the candidate schema. R-06 is observed, not only argued.
+
+**The reserved home Project.** Astra holds it acceptable under six conditions: provisioned
+deterministically and findable on retry; never a work destination; never a last-used-project
+alias; target work admitted through the existing locked admission and linked back; single-owner
+local scope only; and no other project's documents, names, counts or notifications in the home
+prompt before a proved context adapter exists. It is the **proposed default, pending Andrew**.
+
+**CD-01 round 2, Opus, dispatched 2026-09-21.** One scoped correction round on the same four
+files under the same claim. Both test files must pass, Astra's unedited. A second review follows.
+
+**CD-01 round 2 returned, 2026-09-21. Not yet accepted.** Opus reports all nine findings closed
+and disputes none; it retracts its own round-1 deadlock reasoning with the source that refutes it.
+Patch identity (`git hash-object`, base and HEAD still `dadb72d`, nothing committed):
+
+| File | Blob | Lines |
+|---|---|---|
+| `docs/implementation/2026-09-20-core-agent-contract.md` | `72a2602b` | 858 |
+| `docs/implementation/2026-09-20-core-agent-source-map.md` | `76ec4277` | 176 |
+| `shared/interaction.ts` | `d40541b0` | 333 |
+| `tests/interaction-contract.test.ts` | `8e874208` | 253 |
+
+The integrator's own run on that candidate: `tsc --noEmit` exit 0; both contract test files,
+56 passed of 56 (round 1 was 42 passed, 9 failed of 51). Astra's test file and round-1 review are
+byte-identical to the blobs recorded before the repair (`0590ac87`, `80fa323f`), so her eleven
+counterexamples pass against a file the author did not touch.
+
+Opus chose differently from Astra's literal suggestion in two places, both to stay out of hot files:
+
+1. **Finding the run again (R-03).** Rather than storing a run id on the `Conversation` record
+   (`shared/types.ts`), the run id becomes a pure function of `(project, thread, mode)` through a
+   small patch to the non-hot `server/engines/claude-session-routes.ts:88-91`. Fork keeps
+   command-id derivation so it cannot collide with its source. The integrator checked this against
+   source: the route body already carries `mode: 'ask' | 'plan'`, and the succeeded-turn replay at
+   `claude-session-run.ts:348` runs before the `SESSION_EXISTS` guard at `:400`, so a retried first
+   message replays and a wrongly posted second start is refused.
+2. **The durable link (R-07).** The link from a conversation turn to the work it admitted lives in
+   the admission envelope step, not an extended work receipt. The receipt route is written out and
+   declined because it needs the hot `server/store.ts` writer and the strict validator in one patch.
+
+**Carried risk.** `EngineService.claudeSession` (`server/engines/service.ts:1595-1659`) sits under
+the external claim `devin-acp-adapter-20260913.json`, still marked discovered. If that handoff is
+refused, the decision hook has no transport. The contract names this as a blocker to return, not
+to route around.
+
+**The carried risk, checked 2026-09-21: the claim is a fossil, and still needs a ruling.** The
+external claim was recorded 2026-09-15 against worktree `diomedes-wt/devin-acp-20260913` at base
+`212106e`. That directory no longer exists and no worktree is registered for it (the 2026-09-20
+sweep). Its base is an ancestor of `origin/main`. The work it describes is on main: `2237787`
+"Add Devin as an external engine over its ACP stdio transport", then `e20d7ca`, `37b591f`,
+`5915238`, `7cf1197`. `server/engines/service.ts` has been changed by five landed commits since.
+So nothing live can collide with a thread-through edit. The record itself still reads
+"discovered, not integrated" and says it is held for Andrew, and age is not a release.
+**Ruled by Andrew, 2026-09-21: superseded by `2237787`.** The `service.ts` thread-through stays an
+integrator patch (CD-02h), which it would be anyway as an H01.I anchor.
+
+**Integrator finding F-2, held until Astra's verdict so her review stays independent.** The
+admission envelope is a `RunService` step. A step's intent is hashed and a succeeded step only
+ever returns its cached output (`server/harness/run-service.ts:381-392`, `:606`), so it cannot be
+amended. The envelope nevertheless lists `receipts` as filled "once they exist", and the crash
+table says to "record the receipt reference" with no place or transport named: the run is
+owner-exclusive, and the only hook the contract adds (`decide`) runs before admission. Smallest
+closure: `receipts` is a lookup, not a stored field. Both command ids are derived from the source
+message, so given the envelope's `resolvedTarget`, `taskCommandId` and `workCommandId`, the
+authoritative receipts are found in the target project's existing receipts, and which crash
+boundary was crossed is read from their presence. Nothing is rewritten and no second hook is
+needed. Severity P2: it does not change what CD-02 admits, only what it must not try to write.
+
+**CD-01.R-2, Astra, dispatched 2026-09-21** under `claim_muaqncga_75ffb6cb`, scoped to one new
+file, `docs/implementation/2026-09-20-core-agent-contract-review-r2.md`. It must give each of the
+nine findings a verdict of closed, narrowed or open, look for regressions the repair introduced,
+and judge the contract under the reserved home Project default without rejecting it merely
+because Andrew has not yet confirmed that default.
+
+**CD-01.R-2 verdict, 2026-09-21: REJECTED.** Verdict file
+`docs/implementation/2026-09-20-core-agent-contract-review-r2.md` (blob `de82681a`) in
+`core-agent-contract`. Scope verified: Astra wrote that one file; the candidate and her two
+round-1 files are byte-identical to the recorded blobs. Six findings closed and stay closed:
+R-02, R-04, R-06, R-07, R-08, R-09.
+
+| Finding | State | What remains |
+|---|---|---|
+| R-01 | narrowed, P1 | Returning people still launch into the last project (`client/App.tsx:197-203`). The contract preserved that; the owner's decision does not |
+| R-03 | narrowed, P1 | The envelope cannot hold a `workPayload` with a task id the Store has not allocated (`server/store.ts:1504-1506`); a retry under a new transport id misses the turn cache (`server/app.ts:2358`); the `decide` hook has no placement and the cached-result early return (`claude-session-run.ts:349-358`) bypasses reconciliation |
+| R-05 | narrowed, P2 | The Automatic prompt and output wrapper is unfrozen; `prepare_artifact` covers both a plan and an artifact job, and `admitWork` forwards no mode |
+| R-10 | new, P2 | One permanent run id per thread and mode cannot continue past a model change, a terminal run or the 128-call budget (`claude-session-run.ts:294`, `:320-324`) |
+| R-11 | new, P2 | `server/app.ts:2366-2375` still derives the progress run id from the transport command, so progress names a different run |
+| R-12 | new, P2 | Source identity has three different length and trim policies across ingress, decision and work link |
+| R-13 | new, P2 | The Settings binding and home provisioning have no owner and need hot-file patches the contract said were not required (`server/app.ts:214-218`) |
+
+The integrator checked R-01, R-03(1), R-10, R-11 and R-13 against source: all hold. F-2 above is
+the same defect as R-03(1) seen from the other side, reached independently, so the two are merged.
+
+**What the two rounds teach.** Three of the four new findings come from designing around hot
+files. The lineage derivation avoided a `shared/types.ts` patch and produced R-10 and R-11; the
+"no patch required" line is what R-13 refutes. Hot-file patches were always allowed as returned
+patches. The round-3 brief says so in those words.
+
+**CD-01 round 3, Opus, dispatched 2026-09-21, and it is the last Opus round on this order.**
+Same four files, same claim. It carries Andrew's confirmed decisions (section 1 of the decision
+record, items 7 to 11), so no "pending the owner" marker survives. Convergence guard: round 1
+found nine, round 2 closed six and added four. If round 3 introduces a new P1 or P2, the order is
+split: the hot-file seams (the R-13 Settings shape and provisioning, the R-11 progress patch)
+become the integrator's directly, and the pure design decisions stay with Opus. A third Astra
+review follows either way.
+
+**The open conflict for the integrator.** The contract-revision marker and the accepted rollout
+record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
+
+CD-01 must settle six things before any consumer starts: how Automatic, Answer only and Plan only
+sit on a mode-pinned session; the identity that binds a conversation turn to the work it admits;
+where a workspace-level conversation lives; how an admitted `act` enters existing work without
+deadlocking `store.locked`; what a non-Claude person gets; and recording the decision as a run
+step so `shared/types.ts` stays untouched.
+
+**Gate to Wave 1:** Astra accepts the exact CD-01 base and patch, and Andrew has reacted to the
+design. No code lane starts before both. **Andrew's half cleared 2026-09-21** ("go with
+recommendations"). What can start before Astra's half, because no open finding touches it: the
+page and its stylesheet (CD-05a), which is props-only and never fetches or mints identity. What
+cannot: anything on the server side of the contract, and the launch change in `client/App.tsx`,
+which R-01 is still rewriting.
+
+### Wave 1: the first complete experience
+
+| ID | Lead | Reviewer | Scope | Depends on |
+|---|---|---|---|---|
+| CD-05a | Muse | Astra | The page as an app-level Console screen: `client/console/Diomedes.tsx` and its view-model over existing records, plus `tests/diomedes-page.test.ts`. New files only. The name follows the contract: the product's agent is Diomedes, and "Agent" already means a catalogue entry (`shared/agents.ts`) | CD-01 |
+| CD-05b | Fable | Astra | Non-hot, claimed: `client/App.tsx` landing gate `:848-862`, `loadInitial` `:187-210`, the home filter on `byRecency` `:52`; `client/console/Home.tsx:142` loses the `?? byRecency[0]` fallback (condition H3). Hot, returned as patches: `client/api.ts` conversation client with a minted, persisted `commandId` (pattern: `client/work-start.ts`); `client/console/Shell.tsx` routing, Everything hover intent, Automations as the one default dead pin | CD-05a |
+| CD-02 | Muse | Astra | `server/interaction-admission.ts` (deterministic admission over a parsed decision plus the trusted `restriction`; sibling of `work-admission.ts`), `server/engines/interaction-routes.ts` (shape of `mountClaudeSessionRoutes`), `tests/interaction-admission.test.ts`, `tests/interaction-cases.test.ts`. Parsing already lives in `shared/interaction.ts`; no second parser. One file per brief | CD-01 |
+| CD-02p | Opus | Astra | The three digest-bearing or lease-bearing patches to existing non-hot files, each written out in the contract: `server/work-admission.ts` (`sourceCommandId`), `server/engines/claude-session-routes.ts:88-91` (lineage derivation), `server/harness/claude-session-run.ts` (`decide?` hook). Not Muse work: a wrong digest input breaks replay of every old receipt | CD-01 |
+| CD-02h | Fable (hot files) | Astra | `server/app.ts`: mount beside `:2317`, resolve `restriction` in `prepare` `:2321`, supply `decide`, fresh `store.locked` around admission after `recordResult`. Blocked on a handoff for `server/engines/service.ts:1595-1659` (external claim `devin-acp-adapter-20260913.json`) | CD-02, CD-02p |
+
+Tests that pin today's landing and must move with CD-05b, not be deleted:
+`tests/ui.spec.ts` F01-F02 (the Projects heading after first run) and the Home ask-box block near
+`:1026`; `tests/field.spec.ts` C01 and C02; `tests/first-task-handoff.spec.ts` (composer focus on
+handover); `tests/surface.test.ts` and `tests/backend.test.ts` (`migrateSettings` at launch).
+
+### Wave 2: deepen, only on accepted ground
+
+| ID | Lead | Note |
+|---|---|---|
+| CD-03 | Muse for the adapter, Opus for any shared interface | Workspace index and source excerpts. May not claim multi-person isolation: there is no authorized projection before egress today |
+| CD-06 | Muse under Opus's profile contract | Depends on H09, which is an unmerged candidate |
+
+### Unclaimed, with the missing prerequisite named
+
+| ID | Blocked on |
+|---|---|
+| CD-04 bounded workers, verified outcomes | H13, H14 and H17 have no code. Building it now would be the second runtime this program forbids |
+| CD-07 capability creation | CD-04 and pack containment |
+| CD-08 learning and ongoing responsibilities | Automations is planning only; there is no scheduler |
+| CD-09 paid admission | B01 and B02 are partial-merged, not accepted |
+| CD-10 one channel, then voice | CD-04, installation identity, egress controls |
+| CD-11 website | A separate repository and not requested in this pass. Not dispatched |
+| CD-12 integrated evaluation | Astra, when not the author. Runs on whatever scope is actually claimed |
+
+---
+
+## 4. Every brief carries these
+
+- Exact base, exact owned paths, the accepted contract revision, what must be preserved,
+  input and output examples, negative requirements, the exact tests.
+- New files only for bounded workers. A needed hot-file change comes back as a proposed patch.
+- No commit, push, stash, clean, checkout or rebase. No `npm install`. No `Co-Authored-By` or any
+  AI attribution.
+- Focused tests only. The full suite, Playwright, `vite build`, packaging and live calls need the
+  single shared heavy slot, taken through the pinned tool.
+- The common result contract: ID, base, patch identity, owned files, behaviours, real commands and
+  results, evidence, unclaimed features, blockers, next eligible item.
+
+Gates before anything merges, on the commit to be pushed, with ports 5174 and 47632 free:
+`npx tsc --noEmit`, `npx vitest run`, `npx vite build`,
+`npx playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts`.
+Commits, pushes and releases need Andrew's approval for the patch in front of him.
+
+---
+
+## 5. Registering the program in the unified package: pending
+
+Follow the Field Readiness amendment of 2026-09-17, not a new layout:
+
+1. Preserve the CD-1 ZIP byte for byte under `sources/core-agent-2026-09-20/` with `MANIFEST.json`
+   and `ZIP_SHA256.txt`.
+2. Add `coordination/external-book-core-agent-2026-09-20.json`: new item IDs CD-00 to CD-12, the
+   overlap mapping onto H09, H12, H13, H14, H17 to H20, SDKR, B01, B02, proposed dependencies,
+   owned paths, model assignments.
+3. Add a dated section to `shared/AMENDMENTS.md`. Record the BOT-00 to BOT-07 mapping and mark
+   the `docs/bots-*` branches superseded. Note that the Bots cases B01 to B36 share short IDs with
+   package items B01 and B02 and are a different namespace.
+4. Insert the rows into `RUN_ORDER.md` and `RUN_ORDER.json` at collision-checked numbers, status
+   `open`. Do not reset any accepted item.
+5. Regenerate `SHA256SUMS.txt` and run
+   `python -m unittest discover -s validation -p test_validator.py -v` and
+   `python validation/validate_package.py --write-report`.
+
+Not started. It edits the live planning ledger, so it waits for Andrew's go-ahead on the order of
+work above.
