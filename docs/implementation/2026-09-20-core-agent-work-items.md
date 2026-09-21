@@ -303,5 +303,44 @@ Follow the Field Readiness amendment of 2026-09-17, not a new layout:
    `python -m unittest discover -s validation -p test_validator.py -v` and
    `python validation/validate_package.py --write-report`.
 
-Not started. It edits the live planning ledger, so it waits for Andrew's go-ahead on the order of
-work above.
+Not started, and deliberately held until Astra accepts CD-01. An `open` node in `RUN_ORDER` is
+schedulable by any other session, and two sessions are working in these repositories right now.
+Andrew approved the order of work on 2026-09-21.
+
+---
+
+## 6. The merge train and the release (authorized 2026-09-21)
+
+Andrew: merge this program's worktrees and the other finished worktrees by Claude sessions and by
+Codex into main, open a pull request, fix what it finds, push, deploy the site and publish the new
+build, once everything is done. That approval lowers no gate. Evidence below is from a read-only
+inventory of both repositories taken 2026-09-21 (session scratchpad, `merge-train-inventory.md`).
+
+**Most of it has already landed.** 9 of 20 app worktrees and 20 of 25 site worktrees are clean
+ancestors of `origin/main`. Codex's inventory receipts work is the current tip, `dadb72d`. App
+main CI is green; the latest release is v0.1.6.
+
+| Lane | State | Decision |
+|---|---|---|
+| `feature/worktree-hygiene`, PR #28 | 2 commits, mergeable, both checks green. Authored by Opus; no independent review found | Merge after an Astra review. Queued behind CD-01.R-3 |
+| `feature/core-agent-bot` and its lanes | this program | Merge when each lane is accepted |
+| `change-review-ended-sessions` | branch fully merged; the fix and its tests exist only as 4 uncommitted files, returned by an earlier Claude session | Confirm the owning process is gone, review the diff, run its tests, commit, review, then merge |
+| `test-teardown-capture` | branch fully merged; 32 uncommitted files. Its own note says hosted CI has not run | Same treatment. Hosted CI first |
+| site `contact-booking`, site `first-run-repair/site-first-run-guide` | one commit each, no verdict | Needs a verdict before it moves |
+| `jev-live-decision-plane` | its own ledger says "not accepted for release" | **Does not merge** |
+| `durable-write-retry-20260917` | its one commit is byte-identical to `a2c40cf`, already on main | Nothing to merge. Retire |
+| `devin-agent-worker-20260917` | 289 behind; 612 files diverge, including subsystems main has removed | **Does not merge.** A rewrite, not a merge |
+| `cloud-development-handoff`, site `cloud-site-handoff` | appeared during the inventory; the app one has unresolved conflicts in `README.md` and `desktop/main.mjs` | **Another session is working there now. Untouched.** Whatever it lands reaches main on its own path |
+| site `model-aware-harness-20260917`, site `private-ai-pricing-20260917` | "clean" only because a WIP sweep commit swallowed their edits | Unclear ownership. Not merged without Andrew |
+
+Two things to show Andrew rather than act on: the locked `stock-receipt-review` worktree (Codex,
+"do not remove") is empty on disk although its branch is intact and merged; and site PR #1 is a
+draft from 2026-09-10 with no worktree and no checks.
+
+**Order.** (1) CD-01 accepted. (2) Lanes built, reviewed and merged into `feature/core-agent-bot`.
+(3) The four gates and the full browser suite on that branch, through the shared slot. (4) One
+pull request to main; fix what hosted CI finds. (5) PR #28 and the two recovered lanes, each on
+its own pull request so a failure names its cause. (6) Version, candidate build, the release gates
+and honest notes: the release says what it ships and nothing more. (7) Publish, then the site's
+release record and `wrangler deploy`. The release is last, and it does not claim the agent before
+its lanes are accepted.
