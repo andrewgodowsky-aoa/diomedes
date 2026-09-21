@@ -954,6 +954,64 @@ Connections demonstration capabilities as included. No live AWS/provider turn,
 credential exercise, clean customer install, older-customer upgrade or Mac desktop
 release is claimed. The wider CD-00, CD-01, CD-02 and CD-05 prompt pairs remain OPEN.
 
+### Round 27: v0.1.7 published and website deployed (2026-09-21)
+
+Andrew's publication and website instruction is executed. The independent
+publication review accepted the actual records, six assets, Round26 and website
+patch. Its corrected report, the runtime review and hosted diagnosis were
+committed unedited with the final evidence at `2b0f60d4915b3bc524471b28660ead993dd42f0c`.
+The three proof hashes were checked against the committed Git blobs. Only
+documentation and evidence follow the packaged source, and all hosted checks on
+`2b0f60d` also passed. Earlier rejected candidates and failures remain recorded.
+
+GitHub release `393274078`, [v0.1.7](https://github.com/andrewgodowsky-aoa/diomedes/releases/tag/v0.1.7),
+was published at `2026-09-21T20:27:44Z` as latest, non-draft and non-prerelease.
+The product remains experimental and unsigned. Its tag points to the exact
+packaged and gated source `6e2f033b4778d88ff544d11874f3c1aedb2051f7`, not the later
+evidence commit. All six assets were downloaded anonymously from their versioned
+public URLs; each byte count and SHA-256 matched the accepted local asset.
+All five entries in the public checksum file matched. The portable archive's
+76 files also matched the tested payload before publication.
+
+The production update-feed checker, supplied currentVersion `0.1.6` in an
+isolated check-only harness, reports `0.1.7` available with the correct installer.
+Download remained unstarted and installation idle. This is metadata compatibility
+proof; an older installed customer's upgrade has not been exercised.
+
+Website source `c69e6e69dd257baff235da88c6ded144b5a3c9ee` is on site main.
+Its first full run before publication passed 399, failed the real public-download
+test with HTTP 404, and skipped two. That failure remains in
+`release-v017-site-final-*`. After publication, the entire unchanged suite passed
+400 with zero failures and two skips, alongside the complete 40-page build,
+type, theme, copy and public-bundle checks (`release-v017-site-published-*`).
+No test was changed, skipped or retried to remove the failure.
+
+Wrangler deployed that accepted build with `--keep-vars --strict`, preserving
+the existing database and email bindings. Cloudflare deployment
+`6313cb9c-ce7e-4b98-b4aa-c20c82fef48c` serves version
+`ee618219-944e-42ba-99af-3cd051f6ec47` at 100 percent, created
+`2026-09-21T20:31:53.878644Z`. Anonymous HTTP verification passed for `/download`
+on both domains and `/docs/getting-started`, `/docs/releases`, and `/roadmap` on
+the apex. Every response was 200 and matched the built HTML SHA-256 exactly;
+all canonical URLs name the apex. The www response stays on www without a
+redirect, so no redirect claim is made. The rendered installer checksum and
+versioned link agree with the verified public installer. The guide names AWS
+consent/setup and Stop; the retired Connections entries remain unavailable.
+
+Evidence is retained in `F:/Diomedes/deliverables/core-agent-continuation-20260921/`
+under `release-v017-public-download-verification.json`,
+`release-v017-public-updater-check.json`, `release-v017-committed-record-verification.json`,
+`release-v017-site-published-results.json`, `release-v017-site-deploy.log`,
+`release-v017-site-deployments-after.json` and `release-v017-live-site-verification.json`.
+Site verification is also recorded in its repository at
+`docs/verification/2026-09-21-core-agent-release.md`.
+
+Still unproven: live AWS/provider operation, credentials/spend exercised against
+AWS, clean customer setup, an older customer's upgrade, and a Mac desktop release.
+Andrew and the AWS owner retain the live-call/spend/credential decisions. No
+live website form or email was submitted. Broader CD-00, CD-01, CD-02 and CD-05
+prompt acceptance remains OPEN; this release does not mark those pairs DONE.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
