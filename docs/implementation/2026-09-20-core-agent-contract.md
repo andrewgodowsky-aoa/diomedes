@@ -13,6 +13,57 @@ The reviews answered are
 Nothing here is implemented. This freezes shapes and boundaries so CD-02 and
 CD-05 can be written against one contract.
 
+## Round 9: what the client review added beside the seam, and what is open (2026-09-21)
+
+Read this round first. Round 8's acceptance no longer stands for the admission boundary: a
+bounded independent review that executes its cases rejected it, the integrator reproduced the
+failures at `26b33ff` (8 of 26 cases red, tests committed unedited as `25122e0`), and the repair
+is in progress on `feature/core-agent-admission-repair`. Its record is
+`docs/implementation/cd01-bounded-review-20260921/` on that branch. Nothing below changes the
+message, selection or outcome shapes, and nothing below closes that rejection.
+
+CD-05.R-2 (`2026-09-21-core-agent-client-review-r2.md`) rejected the client wiring on six
+findings. Two of its repairs sit on the server side of this contract, so they are recorded here
+as additions for the next review to attack. Neither is a change to an accepted route.
+
+### I-20. A project's Diomedes conversation is provisioned in one step
+
+`POST /api/projects/:id/conversation` finds or makes the project's own Diomedes conversation and
+answers `{ projectId, threadId }`. It is `Store.provisionProjectConversation`, which takes the
+Store lock for the whole sequence as `provisionHome` does: adopt the thread
+`diomedesThread` picks, or make one that is field for field what the threads route makes for
+`{ name: 'Diomedes', mode: 'auto' }`, with `engine: 'claude-code'`. An adopted thread on another
+engine is pinned in the same operation, with exactly what the thread update route does for that
+engine and nothing more. It writes only when it changed something. The reserved home Project is
+refused with 409, by reserved identity and never by `settings.home`; an unknown project is 404.
+There is no GET: the read path stays "read the project's state and apply the selector", and it
+creates and repairs nothing.
+
+The selector moved to `shared/diomedes-thread.ts`, so the page's read and the server's adoption
+cannot disagree about which thread that is. No ordinary thread is made Claude Code-only, and who
+may send or select is unchanged.
+
+Proved by `tests/project-conversation.test.ts` (12 cases): two concurrent first requests on a
+fresh project, repeated, give one binding and one thread; adoption, oldest first and ties by id;
+task, document and review threads and work-Mode threads are never adopted; the pin touches one
+thread; a second call writes nothing (a spy on `persist`, because rewriting identical bytes is
+invisible to a byte comparison); home is refused; the binding survives a restart. Five guard
+removals are killed. One survives and is disclosed: with the lock removed the cases still pass,
+because there is no `await` between the read and the push, so Node runs them to completion. The
+worker showed the window is real by adding one (two threads at once). The lock is what keeps the
+sequence one operation the day an `await` enters it, and what orders it against every other
+writer of the same state file.
+
+### I-21. The turns a message projects have one shared name
+
+`shared/conversation-turn-id.ts` holds the two lines that name a projected message's turns from
+its run and command. Both projection sites in `server/app.ts` use it, with output identical to
+before, and the page derives the same name through Web Crypto (`client/conversation-turn.ts`) to
+find a command's answer in the transcript it shows. An outcome read still carries
+`answerText: null`, and the page never matches on prose: two commands can be answered in the same
+words. `tests/conversation-turn-id.test.ts` holds the page's derivation to the real projection
+through the real app, including two commands with equal answers and the outcome read.
+
 ## Round 8: accepted, and the one obligation that came with it (2026-09-21)
 
 Astra's round-7 review (`2026-09-21-core-agent-contract-review-r7.md`) is **accepted with

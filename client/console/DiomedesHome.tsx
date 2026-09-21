@@ -5,10 +5,13 @@ import {
   lastCommand,
   pendingMessage,
   readOutcome,
+  resendPending,
   selectProposal,
   sendMessage,
   UnconfirmedMessage,
+  type PendingMessage,
 } from '../conversation-send';
+import { answerTurnId } from '../conversation-turn';
 import type { MessageResult } from '../../shared/conversation';
 import type { Conversation, Project, ProjectState, Turn } from '../../shared/types';
 import { Diomedes } from './Diomedes';
@@ -46,14 +49,26 @@ export interface DiomedesHomeProps {
 const words = (error: unknown) =>
   error instanceof Error ? error.message : 'Diomedes could not complete that.';
 
+/** The message a conversation may still be owed an answer for. Unreadable storage reads as none. */
+function retained(found: Binding): PendingMessage | null {
+  try {
+    return pendingMessage(found.projectId, found.threadId);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The Diomedes page with its records: it finds the conversation for the scope the person chose,
  * sends through `conversation-send`, and reads every outcome from the server each time it shows
  * one. It keeps no status of its own. `Diomedes` stays a page of props.
  *
- * "All projects" is the home conversation, which the server provisions on the first message and
- * never before. A project scope is that project's own Diomedes thread (`diomedesThread`), made
- * the same way: on the first send, adopting one that already exists.
+ * "All projects" is the home conversation, and a project scope is that project's own Diomedes
+ * thread. The server provisions both, on the first message and never before, so two windows
+ * that send at once still end up in one conversation. Reading a scope creates nothing.
+ *
+ * Everything here is asynchronous and the person can move on at any moment, so every read, send
+ * and start takes a turn number when it begins and publishes nothing once that number has moved.
  */
 export function DiomedesHome(props: DiomedesHomeProps) {
   const { projects, onOpenWork } = props;
@@ -67,27 +82,54 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const [unavailable, setUnavailable] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [cardBusy, setCardBusy] = useState(false);
+  const [unread, setUnread] = useState(false);
   const stop = useRef<AbortController | null>(null);
-  // Answers arrive for the scope that asked. A scope the person has left must not paint this one.
-  const scopeRef = useRef(scopeId);
-  scopeRef.current = scopeId;
-  // The project thread this page has seen pinned to Claude Code. The home thread is made pinned.
-  const pinned = useRef<string | null>(null);
+  // Whose turn it is to paint. A scope change, a read and a send each take the next number, so
+  // an answer for a visit the person has left, or for a message they have since followed with
+  // another, finds the number moved and is dropped. Leaving a scope and coming back is a new
+  // visit: the scope's id alone could not tell the two apart.
+  const turn = useRef(0);
+  const lastRef = useRef(last);
+  lastRef.current = last;
 
   const thread = useCallback(async (found: Binding): Promise<Conversation | null> => {
     const state = await api<ProjectState>(`/projects/${encodeURIComponent(found.projectId)}/state`);
     return state.conversations.find((item) => item.id === found.threadId) ?? null;
   }, []);
 
+  /**
+   * Shows one message's outcome under its own answer, and only while that answer is still the
+   * end of the transcript. The transcript is read after the outcome, so a message another window
+   * added in between is seen. The answer is found by the name the server gave its turn, never by
+   * its words: an outcome read carries no words, and two messages can be answered alike.
+   */
+  const show = useCallback(
+    async (found: Binding, result: MessageResult, owns: () => boolean) => {
+      const conversation = await thread(found);
+      const answer = await answerTurnId(result.runId, result.commandId);
+      if (!owns()) return;
+      const ending = conversation?.turns.at(-1);
+      setTurns(conversation?.turns ?? []);
+      setLast(ending && answer !== null && ending.id === answer ? result : null);
+    },
+    [thread],
+  );
+
   /** Reads the scope's conversation. Creates nothing. */
   const load = useCallback(
     async (scope: string | null) => {
+      stop.current?.abort();
+      const mine = ++turn.current;
+      const owns = () => turn.current === mine;
       setBinding(null);
       setTurns([]);
       setLast(null);
       setUnconfirmed(null);
       setNotice(null);
       setUnavailable(null);
+      setUnread(false);
+      setPending(false);
+      setCardBusy(false);
       try {
         let found: Binding | null;
         let conversation: Conversation | null = null;
@@ -98,26 +140,22 @@ export function DiomedesHome(props: DiomedesHomeProps) {
           const state = await api<ProjectState>(`/projects/${encodeURIComponent(scope)}/state`);
           conversation = diomedesThread(state.conversations);
           found = conversation ? { projectId: scope, threadId: conversation.id } : null;
-          pinned.current = conversation?.engine === 'claude-code' ? conversation.id : null;
         }
-        if (scopeRef.current !== scope) return;
+        if (!owns()) return;
         setBinding(found);
         if (!found || !conversation) return;
         setTurns(conversation.turns);
         setRestriction(restrictionFor(conversation.mode));
-        setUnconfirmed(pendingMessage(found.projectId, found.threadId)?.input.text ?? null);
-        // The last message's outcome is asked for again, never remembered. It is shown only
-        // while its answer is still the end of the transcript.
+        setUnconfirmed(retained(found)?.input.text ?? null);
+        // The last message's outcome is asked for again, never remembered.
         const command = lastCommand(found.projectId, found.threadId);
         const recorded = command
           ? await readOutcome(found.projectId, found.threadId, command)
           : null;
-        if (scopeRef.current !== scope) return;
-        const ending = conversation.turns.at(-1);
-        if (recorded && ending && ending.role !== 'you' && ending.text === recorded.answerText)
-          setLast(recorded);
+        if (!owns() || !recorded || !outcomeCard(recorded.outcome, [])) return;
+        await show(found, recorded, owns);
       } catch (error) {
-        if (scopeRef.current !== scope) return;
+        if (!owns()) return;
         setUnavailable(
           scope === null && error instanceof ApiError && error.status === 404
             ? 'The conversation across all projects is not available in this build. Choose a project to talk about.'
@@ -125,105 +163,142 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         );
       }
     },
-    [thread],
+    [thread, show],
   );
   useEffect(() => {
     void load(scopeId);
   }, [load, scopeId]);
 
-  /** The scope's conversation, made now if it never was. Only a send calls this. */
-  const ensure = async (scope: string | null): Promise<Binding> => {
-    if (binding && (scope === null || pinned.current === binding.threadId)) return binding;
-    if (scope === null) return api<Binding>('/home/conversation', 'POST', {});
-    const project = `/projects/${encodeURIComponent(scope)}`;
-    const state = await api<ProjectState>(`${project}/state`);
-    const found =
-      diomedesThread(state.conversations) ??
-      (await api<Conversation>(`${project}/threads`, 'POST', { name: 'Diomedes', mode: 'auto' }));
-    // Diomedes talks through Claude Code whatever the project's own work runs on, and work it
-    // starts still runs on the project's AI. Asked on every first send rather than once at
-    // creation, so a thread whose pin was lost between the two requests gets it now.
-    if (found.engine !== 'claude-code')
-      await api(`${project}/threads/${encodeURIComponent(found.id)}`, 'PUT', {
-        engine: 'claude-code',
-      });
-    pinned.current = found.id;
-    return { projectId: scope, threadId: found.id };
+  /**
+   * The scope's conversation, made now if it never was. Only a send calls this. The server finds
+   * or makes it in one step and keeps it on Claude Code, whatever the project's own work runs
+   * on; work the conversation starts still runs on the project's AI. A project is asked on every
+   * send, which writes nothing when nothing changed and mends a thread another window re-routed.
+   */
+  const ensure = (scope: string | null): Promise<Binding> => {
+    if (scope === null)
+      return binding ? Promise.resolve(binding) : api<Binding>('/home/conversation', 'POST', {});
+    return api<Binding>(`/projects/${encodeURIComponent(scope)}/conversation`, 'POST', {});
   };
 
-  /** True when the message was sent, or may have been. False when it was refused and never sent. */
-  const send = async (text: string, mode = modeFor(restriction)): Promise<boolean> => {
-    const scope = scopeId;
+  /**
+   * One delivery, a new message or a saved one sent again. True when the message was sent, or
+   * may have been. False only when it was refused, never sent, and is still the person's to
+   * change, which is when the page puts the text back in the box.
+   */
+  const deliver = async (
+    text: string,
+    where: () => Promise<Binding>,
+    transport: (found: Binding, signal: AbortSignal) => Promise<MessageResult>,
+  ): Promise<boolean> => {
+    const mine = ++turn.current;
+    const owns = () => turn.current === mine;
     setNotice(null);
     setLast(null);
+    setUnread(false);
+    setCardBusy(false);
     setPending(true);
     const controller = new AbortController();
     stop.current = controller;
+    let found: Binding | null = null;
     try {
-      const found = await ensure(scope);
-      if (scopeRef.current === scope) setBinding(found);
-      const result = await sendMessage(
-        found.projectId,
-        found.threadId,
-        { text, mode, sources: [] },
-        controller.signal,
-      );
-      const conversation = await thread(found);
-      if (scopeRef.current !== scope) return true;
-      setUnconfirmed(null);
-      setTurns(conversation?.turns ?? []);
-      setLast(result);
+      found = await where();
+      if (owns()) setBinding(found);
+      const result = await transport(found, controller.signal);
+      // Confirmed. Nothing after this line may hand the text back or send it again: a
+      // transcript that cannot be read is a failed read, not a failed send.
+      if (owns()) setUnconfirmed(null);
+      try {
+        await show(found, result, owns);
+      } catch (error) {
+        if (owns()) {
+          setNotice(words(error));
+          setUnread(true);
+        }
+      }
       return true;
     } catch (error) {
-      // The saved message holds the text of an unconfirmed send; only a refusal gives it back.
-      const kept = error instanceof UnconfirmedMessage;
-      if (scopeRef.current !== scope) return kept;
-      if (kept) setUnconfirmed(text);
-      else setNotice(words(error));
-      return kept;
+      // A refusal that arrives after the person has moved on is not put back in a box that
+      // now speaks to somewhere else.
+      if (!owns()) return true;
+      if (error instanceof UnconfirmedMessage) {
+        setUnconfirmed(text);
+        return true;
+      }
+      setNotice(words(error));
+      // A refusal after an uncertain attempt may be about the retry, not the original, and the
+      // saved message is kept for exactly that case. It is shown with its own words so it can
+      // be sent again or given up, never silently turned back into a draft.
+      const saved = found ? retained(found) : null;
+      setUnconfirmed(saved?.input.text ?? null);
+      return saved?.input.text === text.trim();
     } finally {
       if (stop.current === controller) stop.current = null;
-      if (scopeRef.current === scope) setPending(false);
+      if (owns()) setPending(false);
     }
   };
 
+  const send = (text: string): Promise<boolean> => {
+    const scope = scopeId;
+    const mode = modeFor(restriction);
+    return deliver(
+      text,
+      () => ensure(scope),
+      (found, signal) =>
+        sendMessage(found.projectId, found.threadId, { text, mode, sources: [] }, signal),
+    );
+  };
+
   const resend = () => {
-    if (!binding) return;
-    const saved = pendingMessage(binding.projectId, binding.threadId);
-    // Exactly what was saved, Mode included: the server refuses the same command with a changed body.
-    if (saved) void send(saved.input.text, saved.input.mode);
-    else setUnconfirmed(null);
+    const found = binding;
+    const saved = found ? retained(found) : null;
+    // Settled or given up in another window since this page last looked: read what happened.
+    if (!found || !saved) return void load(scopeId);
+    // The saved command itself, with the body it was saved with, Mode included. Sending it again
+    // never makes a new message, whatever the box or the Mode control say now.
+    void deliver(
+      saved.input.text,
+      () => Promise.resolve(found),
+      (where, signal) => resendPending(where.projectId, where.threadId, saved.commandId, signal),
+    ).then((sent) => {
+      if (!sent) void load(scopeId);
+    });
   };
   const discard = () => {
     if (binding) discardPendingMessage(binding.projectId, binding.threadId);
-    setUnconfirmed(null);
     void load(scopeId);
   };
 
   const card = outcomeCard(last?.outcome ?? null, projects);
   const act = async () => {
-    const outcome = last?.outcome;
-    if (!outcome || !binding || !last) return;
+    const shown = last;
+    const found = binding;
+    if (!shown || !found) return;
+    const outcome = shown.outcome;
     if (outcome.status === 'started') return onOpenWork(outcome.projectId);
     if (outcome.status !== 'proposed') return;
+    const mine = turn.current;
+    // The answer belongs to this visit and to this message. Once either has moved on it is the
+    // record's to tell, the next time this conversation is read.
+    const owns = () => turn.current === mine && lastRef.current?.commandId === shown.commandId;
     setCardBusy(true);
     setNotice(null);
     try {
-      setLast(
-        await selectProposal(binding.projectId, binding.threadId, last.commandId, {
-          proposalDigest: outcome.proposalDigest,
-          projectId: outcome.projectId,
-        }),
-      );
+      const result = await selectProposal(found.projectId, found.threadId, shown.commandId, {
+        proposalDigest: outcome.proposalDigest,
+        projectId: outcome.projectId,
+      });
+      if (owns()) setLast(result);
     } catch (error) {
+      if (!owns()) return;
       setNotice(words(error));
       // The record decides what is still on offer, not this screen.
-      const recorded = await readOutcome(binding.projectId, binding.threadId, last.commandId).catch(
+      const recorded = await readOutcome(found.projectId, found.threadId, shown.commandId).catch(
         () => null,
       );
-      if (recorded) setLast(recorded);
+      if (recorded && owns()) setLast(recorded);
     } finally {
-      setCardBusy(false);
+      if (owns()) setCardBusy(false);
     }
   };
 
@@ -232,7 +307,9 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       projects={projects}
       scopeId={scopeId}
       onScope={(id) => {
+        if (id === scopeId) return;
         stop.current?.abort();
+        turn.current += 1;
         setPending(false);
         setScopeId(id);
       }}
@@ -240,7 +317,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       pending={pending}
       restriction={restriction}
       onRestriction={setRestriction}
-      onSend={(text) => send(text)}
+      onSend={send}
       onStop={() => stop.current?.abort()}
       unavailable={unavailable}
       card={card}
@@ -250,6 +327,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       onResend={resend}
       onDiscard={discard}
       notice={notice}
+      onReadAgain={unread ? () => void load(scopeId) : null}
       results={props.results}
       onOpenResult={props.onOpenResult}
       destinations={props.destinations}

@@ -343,6 +343,79 @@ Guard-removal mutations now stand at 22 single removals and 3 pairs across round
 single removals survive, both disclosed to the reviewer, and both for the same reason: a second
 guard refuses the same request one call later, and the pair is killed.
 
+### Round 9: two rejections, both reproduced (2026-09-21)
+
+**CD-05.R-2, the client wiring: rejected by Astra at `28ead73`.** Six P2 findings, CD05-R-05 to
+R-10, in `2026-09-21-core-agent-client-review-r2.md` (committed unedited, `7890c27`). She closed
+O5 in the same review. Every reproducer was pasted in unchanged and run on the unfixed build
+before any code changed: the unit case failed with `uuid-2` where `uuid-1` was required, and the
+five browser cases failed at exactly the assertions she traced. The spec's own eight cases passed,
+which was their first complete run.
+
+| Finding | What was wrong | Repair | Lane |
+|---|---|---|---|
+| R-05 | a failed transcript read after a confirmed send handed the text back, and Enter sent it again | confirmation and refresh are separate; the read is retried with "Read again", the send never | Fable, `core-agent-client-repair` |
+| R-06 | the pending identity lived in one tab, so a second window minted a new command | a shared claim under a Web Lock; the session copy stays as the window's reference; "Send again" resends a command and can never mint | Opus, `core-agent-pending-claim` |
+| R-07 | late results were fenced by scope id only, so A to B to A and a late selection painted the wrong visit | one turn number taken by every scope change, read and send; a selection also has to still be the last command | Fable |
+| R-08 | the card matched on answer prose, which an outcome read never carries, so it never survived a reload | the answer is found by the turn name the server gave it (`shared/conversation-turn-id.ts`), and the transcript is read after the outcome | Fable |
+| R-09 | a refusal after an uncertain attempt hid the kept message behind a restored draft | the kept message is shown with Send again and Discard; the refusal stays as the notice | Fable |
+| R-10 | two windows' first sends each made a Diomedes thread | `POST /api/projects/:id/conversation`, one Store-locked adopt-or-create that also pins the engine; the selector moved to `shared/` | Opus, `core-agent-project-conversation` |
+
+Found while repairing, not by the reviewer: `28ead73` restored the project on a reload but not
+the page the person was on, which the old restore did. `client/App.tsx` restores both now.
+
+**CD-01, the admission boundary: rejected by a bounded independent review that executes.** A
+Codex session (SWE-2 Max) ran a real-app matrix against `d11c468` and failed 7 of 13 cases; the
+record is `docs/implementation/cd01-bounded-review-20260921/` on the repair branch and the
+originals are in `F:/Diomedes/deliverables/cd01-bounded-repair-20260921/`. The integrator ran the
+same files, unedited, at `26b33ff`: 8 of 26 red (`25122e0`). Three are P1: Work is admitted after
+the Mode was narrowed to Ask or Plan, Work is admitted after an asynchronous Runtime failure that
+still answers 409, and a child command is trusted by its id without its digest. Three are P2:
+identical concurrent selections answer 200 and 409, a selection retry is refused after
+cancellation instead of returning its receipt, and a polled outcome says `interrupted: false`
+for an acknowledged interruption.
+
+This supersedes round 7's acceptance for the admission boundary. Astra's sandbox cannot run
+Vitest, so her reviews are source traces, and these defects are interleavings that only show when
+run. From here the seam needs a reviewer that executes. The repair is the integrator's, under
+the existing CD-01 claims, by an Opus worker in `core-agent-admission-repair`, held to the
+reviewer's matrix with its files never edited. PR #29 stays a draft until the repaired successor
+is re-run by that reviewer.
+
+**One pull request.** Andrew asked for one. PR #32 (the Bedrock bridge) is closed unmerged with
+its branch kept, and PR #29 is the only combined candidate. The Bedrock Responses route
+(SDKR-CONN-02, `aws-luna-conversation`) reaches main through it, after its owner closes the
+transport cancellation gap recorded in
+`F:/Diomedes/deliverables/bedrock-integration-20260921/RESPONSES-OWNER-HANDOFF.md`.
+
+**Composing the AWS route onto the repair (2026-09-21, from Codex's live-lane report,
+`F:/Diomedes/deliverables/bedrock-integration-20260921/LIVE-LANE-ASSISTANCE-20260921.md`).** An
+independent run through the AWS driver failed 4 of 11 cases on the same shared defects: Work
+admitted after an Ask or Plan narrowing (two cases), `interrupted: false` on a polled outcome,
+and a selection retry refused after cancellation. The AWS driver's admission check is a
+liveness-only copy of the Claude one, which its owner has confirmed. So:
+
+1. The admission fence is built driver-agnostic, in RunService and above the drivers, and the
+   repair worker reports the exact entry point for a second driver. The AWS owner adopts it and
+   deletes its copy. The old liveness-only path is not kept when conflicts are resolved.
+2. Order: the admission repair lands and is re-run by the executing reviewer; then the AWS
+   owner's patches 01 to 03 (hashes checked against its `IDENTITY.md`) are rebased onto it with
+   `git apply --3way`; then both reviewer files, the CD-01 matrix and
+   `aws-conversation-authority.review-20260921.test.ts`, run unchanged on the composition.
+3. Main moved to `d4f5384` when PR #33 merged. Merge main into the integration branch before the
+   final gates, and run them on that exact commit.
+4. Not changed by the merge: Work follows the project's configured route, not the thread picker;
+   the home conversation stays on Claude Code; a project's Diomedes thread stays pinned to Claude
+   Code (I-20). Nobody describes the Diomedes page as AWS-backed.
+5. Open, and not in CD-05b: the Console's own thread composer still posts to `/ask`, which the
+   AWS route refuses, and it has no Stop for a conversation turn. The Diomedes page has both a
+   conversation send path and Stop, but only on Claude Code. Putting the Console composer on the
+   conversation seam, with one shared interrupt route that resolves the driver, is a separate
+   work item for after acceptance. It needs an owner decision on whether a project's Diomedes
+   conversation may run on a route other than Claude Code.
+6. Live and packaged AWS proof waits for the accepted composed build. The live call and its
+   spend cap are between Andrew and the AWS owner.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
@@ -414,7 +487,7 @@ Commits, pushes and releases need Andrew's approval for the patch in front of hi
 
 ---
 
-## 5. Registering the program in the unified package: pending
+## 5. Registering the program in the unified package: done 2026-09-21
 
 Follow the Field Readiness amendment of 2026-09-17, not a new layout:
 
@@ -432,9 +505,10 @@ Follow the Field Readiness amendment of 2026-09-17, not a new layout:
    `python -m unittest discover -s validation -p test_validator.py -v` and
    `python validation/validate_package.py --write-report`.
 
-Not started, and deliberately held until Astra accepts CD-01. An `open` node in `RUN_ORDER` is
-schedulable by any other session, and two sessions are working in these repositories right now.
-Andrew approved the order of work on 2026-09-21.
+Done on 2026-09-21 by a Sonnet worker and checked by the integrator: CD-00 to CD-12 are in the
+package as 79 work items and 158 prompts, 152 open and 6 done, both validators pass, and the ZIP
+is preserved with its SHA-256. Nothing accepted was reset. CD-01 stays open: its acceptance in
+round 7 was superseded by the bounded review recorded under round 9.
 
 ---
 
@@ -454,7 +528,8 @@ main CI is green; the latest release is v0.1.6.
 | `feature/worktree-hygiene`, PR #28 | 2 commits, mergeable, both checks green. Authored by Opus; no independent review found | Merge after an Astra review. Queued behind CD-01.R-3 |
 | `feature/core-agent-bot` and its lanes | this program | Merge when each lane is accepted |
 | `change-review-ended-sessions` | branch fully merged; the fix and its tests exist only as 4 uncommitted files, returned by an earlier Claude session | Confirm the owning process is gone, review the diff, run its tests, commit, review, then merge |
-| `test-teardown-capture` | branch fully merged; 32 uncommitted files. Its own note says hosted CI has not run | Same treatment. Hosted CI first |
+| `test-teardown-capture` | committed, merged with main, hosted CI green on all three checks | **Merged 2026-09-21 as PR #33, `d4f5384`** |
+| `feature/vercel-model-bridge`, PR #32 | closed unmerged on Andrew's one-PR instruction; branch kept | The Bedrock Responses route lands through PR #29 instead |
 | site `contact-booking`, site `first-run-repair/site-first-run-guide` | one commit each, no verdict | Needs a verdict before it moves |
 | `jev-live-decision-plane` | its own ledger says "not accepted for release" | **Does not merge** |
 | `durable-write-retry-20260917` | its one commit is byte-identical to `a2c40cf`, already on main | Nothing to merge. Retire |

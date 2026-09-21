@@ -115,6 +115,7 @@ import { claudeSessionRunId } from './harness/claude-session-run.js';
 import { baselineRedact } from './secrets.js';
 import { EngineError } from './engines/process.js';
 import { selectedEngine, selectedModel } from '../shared/ai-selection.js';
+import { projectedTurnIds, turnIdentityText } from '../shared/conversation-turn-id.js';
 import { AppUpdateService, mountAppUpdateRoutes, type UpdateTransport } from './app-updates.js';
 import { EngineInstaller } from './engines/install.js';
 import { NativeLogin } from './engines/login.js';
@@ -2467,9 +2468,9 @@ export async function createApp(options: AppOptions) {
             404,
             'The response is recorded in the runtime, but its thread is missing.',
           );
-        const identity = hash(JSON.stringify([result.runId, input.requestId]))!;
-        const userId = `Uclaude-${identity.slice(0, 32)}`;
-        const assistantId = `Aclaude-${identity.slice(0, 32)}`;
+        const { user: userId, assistant: assistantId } = projectedTurnIds(
+          hash(turnIdentityText(result.runId, input.requestId))!,
+        );
         const priorUser = thread.turns.find((turn) => turn.id === userId);
         const priorAssistant = thread.turns.find((turn) => turn.id === assistantId);
         if (priorUser || priorAssistant) {
@@ -2733,9 +2734,9 @@ export async function createApp(options: AppOptions) {
             404,
             'The response is recorded in the runtime, but its thread is missing.',
           );
-        const identity = hash(JSON.stringify([result.runId, resolved.commandId]))!;
-        const userId = `Uclaude-${identity.slice(0, 32)}`;
-        const assistantId = `Aclaude-${identity.slice(0, 32)}`;
+        const { user: userId, assistant: assistantId } = projectedTurnIds(
+          hash(turnIdentityText(result.runId, resolved.commandId))!,
+        );
         const priorUser = thread.turns.find((turn) => turn.id === userId);
         const priorAssistant = thread.turns.find((turn) => turn.id === assistantId);
         if (priorUser || priorAssistant) {
@@ -2880,6 +2881,18 @@ export async function createApp(options: AppOptions) {
     '/api/home/conversation',
     // The provisioner takes the Store lock itself: its steps are one mutation.
     route(async () => store.provisionHome(), false),
+  );
+  /**
+   * Where a project's own Diomedes conversation lives. There is no read here on
+   * purpose: a page that wants to know reads the project's state and applies
+   * `diomedesThread`, which creates and repairs nothing. This POST is the only
+   * thing that adopts or makes one, and it does both in one locked sequence, so
+   * two windows sending their first message at once land on one thread rather
+   * than each on its own. The body is ignored; the project is the whole request.
+   */
+  app.post(
+    '/api/projects/:id/conversation',
+    route(async (req) => store.provisionProjectConversation(id(req)), false),
   );
   mountInteractionRoutes(app, new InteractionTurns(engines, interactionHost), {
     authorize: async (req) => {

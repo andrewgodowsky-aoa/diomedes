@@ -235,7 +235,13 @@ export function App() {
       // launch: the window keeps the place it was showing, so refreshing mid-work, or the
       // app restarting its page, never throws a person out of their project.
       const kept = keptPlace();
-      if (kept && p.projects.some((project) => project.id === kept)) setSelected(kept);
+      if (kept && p.projects.some((project) => project.id === kept)) {
+        setSelected(kept);
+        // The page too, as the old restore did. A page the rail no longer offers would
+        // otherwise come back as an empty pane.
+        const restored = s.lastPage[kept];
+        setPage(restored && (pages as readonly Page[]).includes(restored) ? restored : 'home');
+      }
       void refreshIntegrations();
       void refreshUsage();
     } catch (e) {
