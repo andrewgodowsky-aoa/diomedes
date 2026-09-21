@@ -1,5 +1,5 @@
 import type { ConversationMode, InteractionOutcome } from '../../shared/conversation';
-import type { Conversation, Project } from '../../shared/types';
+import type { Project } from '../../shared/types';
 import type { RailItem } from './Rail';
 
 /**
@@ -194,27 +194,11 @@ export function restrictionFor(mode: string | undefined): Restriction {
 }
 
 /**
- * The thread a project's own Diomedes conversation lives on, or null when there is none yet.
- *
- * The same rule the home conversation uses, for the same reason: the oldest qualifying thread,
- * ties broken by id, so every window and every restart agree on one. A thread qualifies when it
- * belongs to the project itself (not to a task, a document or a review) and either has spoken
- * through the conversation routes (it has lineages) or was made for them (its Mode is Automatic,
- * which only this page creates). Adopting before creating is what keeps a crash between making
- * the thread and sending the first message from leaving two.
+ * Which thread is a project's Diomedes conversation is not this page's rule alone: the server
+ * adopts the same thread when it provisions one. The rule lives in `shared/diomedes-thread`, and
+ * this page reads it from there so the two can never choose differently.
  */
-export function diomedesThread(conversations: readonly Conversation[]): Conversation | null {
-  const mine = conversations.filter(
-    (thread) =>
-      thread.attachedTo.kind === 'project' &&
-      !thread.taskId &&
-      ((thread.lineages?.length ?? 0) > 0 || thread.mode === 'auto'),
-  );
-  mine.sort(
-    (a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? '') || a.id.localeCompare(b.id),
-  );
-  return mine[0] ?? null;
-}
+export { diomedesThread } from '../../shared/diomedes-thread';
 
 /** What the page shows under the last answer. Null when the answer is all there is to show. */
 export interface OutcomeCard {

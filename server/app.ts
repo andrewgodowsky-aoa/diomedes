@@ -2882,6 +2882,18 @@ export async function createApp(options: AppOptions) {
     // The provisioner takes the Store lock itself: its steps are one mutation.
     route(async () => store.provisionHome(), false),
   );
+  /**
+   * Where a project's own Diomedes conversation lives. There is no read here on
+   * purpose: a page that wants to know reads the project's state and applies
+   * `diomedesThread`, which creates and repairs nothing. This POST is the only
+   * thing that adopts or makes one, and it does both in one locked sequence, so
+   * two windows sending their first message at once land on one thread rather
+   * than each on its own. The body is ignored; the project is the whole request.
+   */
+  app.post(
+    '/api/projects/:id/conversation',
+    route(async (req) => store.provisionProjectConversation(id(req)), false),
+  );
   mountInteractionRoutes(app, new InteractionTurns(engines, interactionHost), {
     authorize: async (req) => {
       store.state(String(req.params.id));
