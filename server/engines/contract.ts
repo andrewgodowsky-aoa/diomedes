@@ -2,6 +2,23 @@ import type { AdapterRouteContract, TransientPreview } from '../../shared/adapte
 import type { EngineModel, ExternalEngine } from '../../shared/types.js';
 import type { AccountRouteIssue } from '../../shared/engines.js';
 import type { NativeSessionRef } from '../../shared/contract-revision.js';
+import type { Json } from '../../shared/harness.js';
+/**
+ * One message of a Diomedes conversation, as the host admitted it. Set by the host's own
+ * prepare step and never taken from a client or a model. It rides on the request the way
+ * `onPreview` does, so the engine service passes it through without knowing it is there, and
+ * the native session driver removes it before anything reaches an adapter.
+ */
+export interface InteractionRequest {
+  /** `sm.` and 32 hex characters, computed from the project, the thread and the command. */
+  sourceMessageId: string;
+  /**
+   * Splits a committed answer into the text a person reads and the body of the first
+   * interaction phase. Pure: no I/O, no store, no model. It runs again on every replay, so it
+   * must give the same result for the same answer.
+   */
+  decide(answer: string): { answerText: string; body: Json };
+}
 export interface TextRequest {
   projectId: string;
   threadId: string;
@@ -13,6 +30,15 @@ export interface TextRequest {
   accountRoute: string;
   effort?: string;
   signal?: AbortSignal;
+  /**
+   * What the person sent, reduced to one digest by the host before it resolves anything else:
+   * the text, the chosen mode, each chosen source with its version, and the transport action.
+   * The native session driver saves it with the turn. A later request that reuses the command
+   * is compared against it before any recorded answer is returned, so a reused command with a
+   * different message is refused rather than answered with somebody else's reply.
+   */
+  binding?: string;
+  interaction?: InteractionRequest;
   /**
    * Caller-facing preview channel: stamped, redacted, byte-bounded frames.
    * A caller never receives raw adapter text — see `previewSink` in
