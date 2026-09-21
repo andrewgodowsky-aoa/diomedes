@@ -134,10 +134,11 @@ address to obtain physical-device access. Those need the separately qualified
 inventory gateway. The fixture is a local reproducible rehearsal, not MI-DEMO
 completion, production deployment or a live purchasing system.
 
-Before integration or independent acceptance, also compose the accepted stock
-repository recovery repair identified in the [implementation record](../implementation/2026-09-20-inventory-mobile-receipt-history.md#integration-prerequisite)
-and resolve the recorded broader gate failures. The ordinary fixture flows above
-are verified; that does not qualify the pending recovery edge cases.
+The branch now includes the merged stock-repository recovery repair through main
+`41147e2`; the [implementation record](../implementation/2026-09-20-inventory-mobile-receipt-history.md#integration-prerequisite)
+separates its scoped acceptance from combined-candidate verification. The ordinary
+fixture flows above were verified on the original base; new combined verification
+does not qualify the pending recovery edge cases by implication.
 The recovery prerequisite also includes malformed-journal scoping and recovery
 before generic Store readers/writers. The isolated demo starts inventory recovery
 before listening, but that is not proof of general desktop-host integration.

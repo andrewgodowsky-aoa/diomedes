@@ -54,6 +54,8 @@ demonstration remain separate acceptance.
 
 ## Verification
 
+### Original base b4eb2c2
+
 Performed in the feature worktree on 2026-09-20 (local time):
 
 - `npm run check`: passed. Existing root and control-plane dependencies were
@@ -86,15 +88,28 @@ The complete repository gates are not green. This work is preserved as a local
 feature commit; push, merge, packaging and release remain withheld. The detached
 baseline worktree and its evidence are retained.
 
+### Rebase onto merged recovery composition
+
+PR24 merged at 2026-09-21T02:41:53Z as
+`41147e232a3d19dcd849a80db3c69e612683ddc0`, after PR20. A fresh fetch, GitHub PR
+record and ancestry check confirm this main commit contains recovery candidate
+`a27e0188459f370b808a565956eca565ac126dcb` and the release-fact repair in
+`27c157ddb2991661f2ace42d0734083d543b3a80`. The clean local consumer branch was
+rebased without conflicts; its initial work-order base above is historical.
+The previously pending receipt-recovery prerequisite is now included by ancestry.
+Earlier test counts do not certify this combined candidate; its verification is
+recorded separately when complete. No installed application or deployment changes
+as a result of rebasing.
+
 ## Integration prerequisite
 
 The separate `inventory-receipt-validation` task reported two reproduced defects
 in the merged stock repository: an unrecognized stock replacement discards the
 pending journal, and malformed stock JSON escapes operation status as a
 `SyntaxError`. That task owns `server/inventory/stock-repository.ts`; this slice
-does not change it. Its accepted recovery repair must be composed and checked
-before integration. The reported worker result is not recorded here as an
-accepted commit or as proof of the combined candidate.
+does not change it. The repair has now been merged and included as recorded in
+the rebase section. Independent scoped acceptance of that repair does not prove
+the combined consumer or resolve the additional findings below.
 
 Follow-up recovery audit: the other task's SWE report at
 `F:/Diomedes/deliverables/personalized-demo-readiness-20260920/continuation-native-workflows/stock-recovery-swe-review.md`
@@ -103,9 +118,9 @@ also identifies generic Store reads recording a pending inventory replacement as
 being parsed before project/path filtering. These remain reported integration
 blockers, not fixes accepted by this consumer. Recovery candidate
 `a27e0188459f370b808a565956eca565ac126dcb` is reported to address lost receipt
-evidence and malformed stock JSON only; its acceptance was still pending when
-this note was written. Do not infer journal scoping or general Store integration
-from that candidate.
+evidence and malformed stock JSON only. Its initial pending status is superseded
+by the merged ancestry above. Do not infer journal scoping or general Store
+integration from that candidate.
 
 The current isolated fixture awaits `InventoryStockService.init(project.id)`
 before returning the service and before the demonstration mounts/listens. Its
