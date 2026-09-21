@@ -122,6 +122,37 @@ describe('packHolds reads a hand-built v2 index directly', () => {
     expect(await packHolds(file, id('52' + 'ab'.repeat(19)))).toBe(false);
   });
 
+  // Bucket 0x52 sits between ids in 0x51 and 0x53, so neither fanout bound is
+  // the table's edge. The first probe lands on the middle id, which the
+  // inverted search also found; the lowest and highest need the search to move
+  // the right way. The absent id between two ids differs from each only in its
+  // last byte, so a comparison shorter than 20 bytes would call it present.
+  it.each([
+    [true, 'its lowest id', '5210000000000000000000000000000000000000'],
+    [true, 'its middle id, probed first', '52db51dc70961fcdcb202c28c86814cdc23795a4'],
+    [true, 'its highest id', '52f0000000000000000000000000000000000000'],
+    [false, 'an id below its lowest', '5200000000000000000000000000000000000000'],
+    [false, 'an id between two of its ids', '52db51dc70961fcdcb202c28c86814cdc23795a5'],
+    [false, 'an id above its highest', '52ffffffffffffffffffffffffffffffffffffff'],
+  ])('in a bucket between two other buckets, answers %s for %s', async (want, _position, hex) => {
+    const dir = tmpDir('idx-bucket-inner-');
+    const file = path.join(dir, 'pack.idx');
+    fs.writeFileSync(
+      file,
+      buildV2Idx([
+        id('51ffffffffffffffffffffffffffffffffffffff'),
+        id('5210000000000000000000000000000000000000'),
+        id('5230000000000000000000000000000000000000'),
+        id('52db51dc70961fcdcb202c28c86814cdc23795a4'),
+        id('52db51dc70961fcdcb202c28c86814cdc23795a6'),
+        id('52f0000000000000000000000000000000000000'),
+        id('5300000000000000000000000000000000000000'),
+      ]),
+    );
+
+    expect(await packHolds(file, id(hex))).toBe(want);
+  });
+
   it('returns null, not false, for an index with an unrecognized version', async () => {
     const dir = tmpDir('idx-bad-version-');
     const file = path.join(dir, 'pack.idx');
