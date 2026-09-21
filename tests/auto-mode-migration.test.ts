@@ -286,16 +286,21 @@ describe('auto over the HTTP thread API, including a restart', () => {
     const turnsBefore = before.data.conversations.find(
       (c: Conversation) => c.id === thread.id,
     ).turns.length;
+    const sessionsBefore = before.data.sessions.length;
+    const tasksBefore = before.data.tasks.length;
     const refused = await request(`/projects/${id}/ask`, 'POST', {
       mode: 'auto',
       text: 'Do the thing',
       threadId: thread.id,
     });
-    expect([400, 409]).toContain(refused.status);
+    expect(refused.status).toBe(409);
     const after = await request(`/projects/${id}/state`);
     const reloadedThread = after.data.conversations.find((c: Conversation) => c.id === thread.id);
-    // Refused, not relabelled: the thread stays in Ask, with no new turn.
+    // Refused, not relabelled: the thread stays in Ask, with no new turn, and
+    // no session or task was created in Build's place.
     expect(reloadedThread.mode).toBe('ask');
     expect(reloadedThread.turns.length).toBe(turnsBefore);
+    expect(after.data.sessions.length).toBe(sessionsBefore);
+    expect(after.data.tasks.length).toBe(tasksBefore);
   });
 });
