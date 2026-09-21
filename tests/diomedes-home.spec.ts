@@ -883,3 +883,68 @@ test('CD05-R-07 closure: an answer that lands after the person left does not pai
     read.release();
   }
 });
+
+// CD-05.R-3's reproducer, pasted unchanged from
+// docs/implementation/2026-09-21-core-agent-client-review-r3.md.
+for (const action of ['Discard', 'Send again'] as const) {
+  test(`CD05-R-11: stale ${action} cannot consume a newer pending message`, async ({
+    page,
+    context,
+  }) => {
+    const p = await reviewProject(page, `R11 ${action}`);
+    const oldText = `Old R11 ${action}`;
+    const newText = `New R11 ${action}`;
+    const pattern = '**/api/projects/*/threads/*/messages';
+    await page.route(pattern, async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      await route.fetch();
+      await route.abort('failed');
+    });
+    await say(page, oldText);
+    await expect(strip(page)).toContainText(oldText);
+    const other = await context.newPage();
+    try {
+      await open(other);
+      await other.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+      await expect(strip(other)).toContainText(oldText);
+      await strip(other).getByRole('button', { name: 'Send again', exact: true }).click();
+      await expect(strip(other)).toHaveCount(0);
+      await expect(answers(other).last()).toHaveText(`You said: ${oldText}`);
+
+      await other.route(pattern, async (route) => {
+        if (route.request().method() !== 'POST') return route.continue();
+        await route.fetch();
+        await route.abort('failed');
+      });
+      await say(other, newText);
+      await expect(strip(other)).toContainText(newText);
+      const state = await api<ProjectState>(`/projects/${p.id}/state`);
+      const thread = state.conversations.find((item) => item.name === 'Diomedes')!;
+      const key = `diomedes.conversation.claim.${encodeURIComponent(p.id)}|${encodeURIComponent(thread.id)}`;
+      const claim = await other.evaluate((k) => localStorage.getItem(k), key);
+      expect(claim).not.toBeNull();
+      expect(JSON.parse(claim!).input.text).toBe(newText);
+      expect(await said(p.id, newText)).toBe(1);
+
+      // A still offers the old message, although B now owns the pending claim.
+      await expect(strip(page)).toContainText(oldText);
+      await page.unroute(pattern);
+      const posts: string[] = [];
+      page.on('request', (request) => {
+        if (messagePost(request)) posts.push(request.postDataJSON().commandId);
+      });
+      const refreshed = page.waitForResponse((response) =>
+        response.request().method() === 'GET' &&
+        response.url().endsWith(`/projects/${p.id}/state`));
+      await strip(page).getByRole('button', { name: action, exact: true }).click();
+      await refreshed;
+      await painted(page);
+
+      // Candidate: Discard deletes B; Send again POSTs B and then clears it.
+      expect(posts).toEqual([]);
+      expect(await other.evaluate((k) => localStorage.getItem(k), key)).toBe(claim);
+    } finally {
+      await other.close();
+    }
+  });
+}
