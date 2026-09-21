@@ -19,9 +19,9 @@ import type {
   Restriction,
 } from './interaction-admission.js';
 import type { InteractionPhase, InteractionPhaseName } from './harness/claude-session-run.js';
+import type { ConversationMode, InteractionOutcome } from '../shared/conversation.js';
 
-/** The conversation's Mode control. Build and Fix are work modes and never reach a conversation. */
-export type ConversationMode = 'ask' | 'plan' | 'auto';
+export type { ConversationMode, InteractionOutcome };
 export type TurnAction = 'start' | 'follow-up' | 'resume' | 'fork';
 
 /** Resolved from the Mode control and from nothing else. Never read from a model or a message. */
@@ -44,7 +44,9 @@ export function sourceMessageIdFor(projectId: string, threadId: string, commandI
  * the order is part of what the model was given.
  */
 export function commandBinding(
-  action: TurnAction,
+  // `message` is the conversation route, where the server picks the transport action itself,
+  // so the action is no part of what the person sent.
+  action: TurnAction | 'message',
   command: {
     text: string;
     mode: ConversationMode;
@@ -214,21 +216,6 @@ export function previewGate() {
     return out;
   };
 }
-
-/** What the person is told about one message, read from its phases and receipts and never from a copied status. */
-export type InteractionOutcome =
-  | { status: 'answered' }
-  | { status: 'read'; projectId: string }
-  | {
-      status: 'proposed';
-      projectId: string;
-      operationClass: 'prepare_artifact' | 'write_internal';
-      proposalDigest: string;
-      summary: string;
-    }
-  | { status: 'started'; projectId: string; taskId: string; sessionId: string }
-  | { status: 'not-started'; reason: BlockReason | 'refused'; message: string; taskId: string | null }
-  | { status: 'unresolved'; message: string };
 
 const BLOCKED: Record<BlockReason, string> = {
   'above-ceiling': 'This conversation is limited, so nothing was started.',

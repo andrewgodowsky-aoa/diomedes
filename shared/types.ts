@@ -410,6 +410,19 @@ export interface Turn {
   };
 }
 /** A thread: a named conversation that belongs to a project and, optionally, to a task. */
+/**
+ * One native conversation run a thread has used. A thread keeps one current lineage per
+ * conversation mode; a new one is admitted, with the next generation, when the current one can
+ * no longer take a message. Retired lineages stay, so a message answered on one is still found.
+ */
+export interface ConversationLineage {
+  mode: 'ask' | 'plan' | 'auto';
+  /** Counts every lineage the thread ever had, retired ones included. Starts at 1. */
+  generation: number;
+  runId: string;
+  /** Absent means current. The guard that refused a new message names the reason. */
+  retired?: 'scope-change' | 'terminated' | 'budget';
+}
 export interface Conversation {
   engine?: Route;
   id: string;
@@ -437,6 +450,8 @@ export interface Conversation {
   requested?: { model: string | null; effort: string | null; agent?: string | null } | null;
   /** The thread's current mode. State written before modes lacks it; the store fills it on load. */
   mode: Mode;
+  /** Native conversation lineages, oldest first. Missing on state written before this field. */
+  lineages?: ConversationLineage[];
 }
 
 /** One model an engine offers, with the reasoning ladder that model supports. */

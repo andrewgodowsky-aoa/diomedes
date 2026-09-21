@@ -13,6 +13,7 @@ import type { TextRequest } from './engines/contract.js';
 import { EngineError } from './engines/process.js';
 import type { EngineService } from './engines/service.js';
 import { ApiError } from './paths.js';
+import type { MessageResult } from '../shared/conversation.js';
 import {
   admitInteraction,
   conversationCommandIds,
@@ -36,6 +37,11 @@ export interface MessageCommand {
   text: string;
   mode: ConversationMode;
   sources: { path: string; sha: string }[];
+}
+/** What one request lends the sequence: when to stop, and when the response has ended. */
+export interface RequestContext {
+  signal?: AbortSignal;
+  whenDone?(end: () => void): void;
 }
 /** Why the current lineage could not take a new message. The guard that refused it names the reason. */
 export type LineageRetirement = 'scope-change' | 'terminated' | 'budget';
@@ -84,7 +90,7 @@ export interface InteractionHost {
     projectId: string,
     threadId: string,
     command: MessageCommand,
-    options: { replace?: LineageRetirement; signal?: AbortSignal },
+    options: RequestContext & { replace?: LineageRetirement },
   ): Promise<ResolvedMessage | UnfinishedElsewhere>;
   locate(projectId: string, threadId: string, commandId: string): Promise<LocatedMessage | null>;
   /** Idempotent transcript projection of a committed answer. */
@@ -108,15 +114,7 @@ export interface InteractionHost {
   ): Promise<{ sessionId: string }>;
 }
 
-export interface MessageResult {
-  runId: string;
-  commandId: string;
-  sourceMessageId: string;
-  /** What the person reads. Null when nothing was answered, for example a turn that never finished. */
-  answerText: string | null;
-  interrupted: boolean;
-  outcome: InteractionOutcome;
-}
+export type { MessageResult };
 
 const NARROW: Record<Restriction, number> = { 'answer-only': 0, 'plan-only': 1, automatic: 2 };
 /** The narrower of what was recorded with the answer and what the Mode control says now. */
@@ -150,10 +148,10 @@ export class InteractionTurns {
     projectId: string,
     threadId: string,
     command: MessageCommand,
-    signal?: AbortSignal,
+    context: RequestContext = {},
   ): Promise<MessageResult> {
     this.driver();
-    let resolved = await this.host.resolve(projectId, threadId, command, { signal });
+    let resolved = await this.host.resolve(projectId, threadId, command, context);
     if ('unfinished' in resolved)
       return {
         runId: resolved.runId,
@@ -171,7 +169,10 @@ export class InteractionTurns {
       // bypassed, it never fires for a replay, and it is answered at most once per message.
       const reason = resolved.replay ? null : retirement(error);
       if (!reason) throw error;
-      const next = await this.host.resolve(projectId, threadId, command, { replace: reason, signal });
+      const next = await this.host.resolve(projectId, threadId, command, {
+        ...context,
+        replace: reason,
+      });
       if ('unfinished' in next) throw error;
       resolved = next;
       result = await this.engines.claudeSession(resolved.action, resolved.runId, resolved.input);

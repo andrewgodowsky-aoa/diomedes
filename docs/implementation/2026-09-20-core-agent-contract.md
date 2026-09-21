@@ -13,6 +13,108 @@ The reviews answered are
 Nothing here is implemented. This freezes shapes and boundaries so CD-02 and
 CD-05 can be written against one contract.
 
+## Round 5: the code that answers round 4 (2026-09-21)
+
+Astra rejected round 4 (`2026-09-20-core-agent-contract-review-r4.md`, blob `206a652b`) on three
+seams and asked for code and a fake-provider test, not a fifth round of prose. This section is
+short on purpose: **where it and the code disagree, the code and its tests are the candidate.**
+It supersedes the round-4 passages it names, which carry markers pointing here.
+
+| Finding | Closed by | Proved by |
+|---|---|---|
+| R-03 P1, replay skipped the body check | I-8 | `tests/interaction-driver.test.ts`, `tests/interaction-seam.test.ts` (R-03 case) |
+| R-14 P2, terminal replay could not write the phases it needed | I-9 | the same two files (settled-run and R-14 cases) |
+| R-05 P2, explicit limits were redefined as advice | I-10 | `tests/interaction-admission.test.ts`, `tests/interaction-seam.test.ts` (C06 cases) |
+| R-13 P3, home validator | not in this candidate; obligation O4 stands | none claimed |
+
+### I-8. A reused command is compared before any answer comes back
+
+Supersedes I-1 item 4, which relied on a guard the read path never reached.
+
+The host reduces what the person sent to one **binding**: a digest of the parsed command alone
+(`commandBinding`, `server/interaction-turn.ts`): text, mode, each source with its version and
+order. It needs no setting, file or model, so it is computed first and still compares after any
+of those change. It rides on `TextRequest.binding`, and the driver saves it in the turn step's
+input. `ClaudeSessionRuns.replay` compares it before returning anything, and refuses a mismatch
+with `intent_mismatch`, the code the `RunService` guard it stands in for already gave. A turn
+saved before bindings existed compares the fields it did save (prompt, documents, transport
+mode, source run, and the run's pinned instructions). The model and the account route are left
+out on purpose: a read reaches no provider, and a person who changed model must still be able to
+read what was said. A request that would generate anything still meets the scope check.
+
+A refused retry produces no generation, no projection change and no admission. The seam test
+asserts the project state and the run record are deep-equal before and after.
+
+### I-9. An answered command is read first; a settled run is read and never touched
+
+Supersedes I-2 item 2's "then I-3 step 4 runs against that run's phases" for settled runs, and
+I-3's claim that one tail serves both paths on any run.
+
+`drive` looks for the command's succeeded turn **before** the settled-run refusal, the scope
+check and the claim, and hands it to `replay`. `replay` never calls `step` and never calls
+`claim` (which would move a settled run's fence).
+
+- **Live run:** the first phase a crash left unwritten is appended under a reacquired lease
+  (startup recovery released the old one), with no model call, and the run is parked again.
+  Admission may resume from the highest phase present.
+- **Settled run** (cancelled, completed, failed, reconcile required): read only. Nothing is
+  claimed, written, charged or admitted. `record` refuses it with `RUN_SETTLED`. Because
+  `InteractionTurns.settle` saves each input phase **before** its admission, that refusal comes
+  first and the admission is never reached: a cancelled conversation cannot start work. A
+  missing first phase is never claimed to exist. The decision is recomputed in memory from the
+  recorded answer only to say what was proposed, and the outcome is `unresolved`. Receipts
+  found under the derived command ids are still authoritative and still read as started.
+
+A replay returns exactly what the first request returned; nothing marks it as a replay, because
+an existing test pins that equality and the settled-run refusal makes a marker unnecessary.
+
+Phases are `transform` steps: pure, local, zero cost, charging neither budget counter. `record`
+follows `control`'s idiom (resolve waits, write, park) and does nothing when nothing is missing.
+`action-selected` is added to the phase names.
+
+**No change to `server/engines/service.ts`.** It is held by another live session's claim. The
+identity rides on the request as `TextRequest.interaction` (the issued id and a pure splitter),
+the way `onPreview` already does, and the driver removes it before an adapter sees it. This
+replaces the `decision?` callback I-3 put on `ClaudeSessionTurn`.
+
+### I-10. Under Automatic, proposed work is shown; the person's selection starts it
+
+**I-4 item 4 is withdrawn.** Astra's ruling stands: package 01 names natural-language limits
+and selected modes separately, and a reviewer may not narrow that. Of the two exits Astra
+named, this takes the deterministic one and leaves the guarantee whole. The other, model-only
+enforcement, would need an owner decision and is not taken.
+
+`admitInteraction` (`server/interaction-admission.ts`) never returns `escalate` on a model's
+word. Work that passes every other rule is `proposed`: shown with its words and its target, and
+not started. `POST …/messages/:commandId/select` carries the person's choice, bound to the
+message (`sourceMessageId`), to `proposalDigest` (message, disposition, operation class, target,
+summary and refs) and to the target project. A choice for another message, for reworded work or
+for another project is `stale-selection` and records nothing. A matching choice is saved as the
+`action-selected` phase **before** anything is admitted, and carries the same explicit consent a
+Work start carries. Under Answer only and Plan only a selection is not read at all. The
+restriction used is the narrower of the one saved with the answer and the Mode control as it
+stands now, so narrowing the control after a proposal was shown means it can no longer start.
+
+This asks for no confirmation of an ordinary answer, a read, or a step of work already admitted.
+C06 is proved against an adversarial, schema-valid `act` proposal, not against a model.
+
+### I-11. What this candidate does not contain
+
+- **The plan-lineage hop** in decision 1's transition table. Under Automatic a `plan` proposal
+  is answered on the `auto` lineage; no second run is started. Unclaimed.
+- **A portable handoff** across a mode or lineage change. A new lineage starts without the
+  earlier turns. Unclaimed; it belongs to CD-03.
+- **The reserved home Project** (I-5, obligation O4). `homeProjectId` is `null`, so the
+  `needs-target` and `home-is-not-a-target` rules are proved in the pure tests only.
+- **The `auto` Mode migration** (O1 to O3) is a separate lane, merged beside this.
+- The explicit native session routes (`claude-session-routes.ts`) are unchanged. The
+  conversation has its own three routes (`server/engines/interaction-routes.ts`), where the
+  server resolves the run and the transport action and a client never names a run.
+- Conversational `control`, external sends and capability building are reported as not
+  reachable, and reach nothing.
+
+---
+
 ## Round 4: integrator rulings (2026-09-21)
 
 Astra rejected round 3 (`2026-09-20-core-agent-contract-review-r3.md`, blob `63ee039e`) and asked
@@ -46,6 +148,8 @@ first persisted in phase 1.
    the `commandId` (`server/harness/claude-session-run.ts:336-343`), and the run pins project and
    thread in its scope (`:83-90`). Reproducer 1 (crash after the model result, before phase 1) no
    longer loses the identity, because nothing had to be persisted for it to exist.
+> **Superseded by Round 5, I-8.** The read path never reached that guard. A saved binding is compared before any answer is returned.
+
 4. **A retry with the same `commandId` and a different body is refused by what already exists.**
    The turn step's intent includes the prompt, documents and mode, and `RunService` refuses a
    changed intent for an existing step id (`server/harness/run-service.ts:381-387`). No second
@@ -63,6 +167,8 @@ Inside `prepare`'s existing lock, before model selection, restriction and lineag
 1. `findTurn(thread, commandId)`: walk `Conversation.lineages` newest first, **retired entries
    included**, read each run through the existing run read (`server/harness/host.ts:428-454`) and
    look for the step `stepKey('turn', commandId)`. A thread has few lineages; the walk is bounded.
+> **Superseded in part by Round 5, I-8 and I-9.** The body is compared first, and a settled run is read and never written to.
+
 2. **Found and succeeded: read-only replay.** Return the recorded output from the run record.
    No `RunService.step` call, because a cancelled or terminal run refuses `step` before it reaches
    cached output (`run-service.ts:592-606`); no scope comparison, no budget charge, no generation,
@@ -89,6 +195,9 @@ tail patch in decision 7. The five phases themselves stand, with two refusal pha
 `StepContext` has no sibling-append or run-read operation (`run-service.ts:77-96`). So there is no
 callback into the app. The app hands the driver pure data and the driver writes the steps.
 
+> **Superseded in part by Round 5, I-9.** The splitter rides on `TextRequest.interaction`, so
+> `server/engines/service.ts` is unchanged, and `action-selected` joins the phase names.
+
 ```ts
 // server/harness/claude-session-run.ts (not a hot file; applied in CD-02p)
 export type InteractionPhaseName =
@@ -107,6 +216,8 @@ record(runId: string, phases: readonly InteractionPhase[]): Promise<void>;
 /** The phases recorded for one source message, read from the run record. Never a step call. */
 phases(runId: string, sourceMessageId: string): Promise<InteractionPhase[]>;
 ```
+
+> **Superseded in part by Round 5, I-9.** The tail writes on a live run only. A settled run is never written to.
 
 **Phase 1 is written by the driver inside `request()`**, in one tail that both the normal path and
 the succeeded-turn early return (`:348-358`) pass through, before `park`. The step id is keyed and
@@ -165,6 +276,8 @@ Addresses the R-05 remainder. Supersedes the `AUTO_INSTRUCTIONS` text in decisio
    control (`auto`, `ask`, `plan`), written into phase 1, and rechecked by `admitInteraction` at
    admission. A mode of `ask` or `plan` never reaches `admit` at all (round 3's ceiling stands);
    the recheck is the second lock on the same door.
+> **Withdrawn by Round 5, I-10.** Astra overturned this reading. Proposed work is shown and the person's selection starts it.
+
 4. **A ruling for Astra to rule on in turn: "explicit" means the control.** Owner decision 3 names
    Answer-only and Plan-only, which are the Mode control. Package 01 section 5 forbids a keyword
    rule. A sentence such as "just explain, don't change anything" inside an Automatic conversation
