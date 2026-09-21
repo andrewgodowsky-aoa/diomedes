@@ -45,16 +45,18 @@ import {
   titleCase,
 } from './components';
 
-const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
+export const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
 const BOOK_CAPTIONS: Record<Mode, string> = {
   ask: 'Diomedes answers. Nothing in the project changes.',
   plan: 'Diomedes writes a plan for you to read before work begins.',
+  auto: 'Diomedes answers, and says when something needs doing.',
   build: 'Diomedes proposes changes. Nothing is written until you say go ahead.',
   fix: 'Point at what is wrong. Diomedes changes as little as it can, up to three tries.',
 };
 const BOOK_PLACEHOLDERS: Record<Mode, string> = {
   ask: 'Ask a question about this project...',
   plan: 'What should the plan cover?...',
+  auto: 'Ask Diomedes...',
   build: 'What should be done?...',
   fix: 'What should be fixed?...',
 };
