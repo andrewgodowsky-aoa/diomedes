@@ -45,7 +45,16 @@ import {
   CAPABILITY_PACKS,
   isCapabilityPackId,
 } from '../shared/capability-packs.js';
-import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText } from './store.js';
+import {
+  defaults,
+  findTasks,
+  hash,
+  HOME_REFUSES_WORK,
+  identifier,
+  now,
+  Store,
+  threadNameFromText,
+} from './store.js';
 import { buildSupportBundle, renderSupportBundle } from './support-bundle.js';
 import { currentBuildIdentity } from './build-identity.js';
 import { WorkService } from './work.js';
@@ -1603,15 +1612,12 @@ export async function createApp(options: AppOptions) {
     })),
   );
   /**
-   * Home is a conversation container, never a work destination. Both admission
-   * paths check it, so no route starts work there by going round the other one.
+   * Home is a conversation container, never a work destination. Both admission paths say so
+   * before they read a command. What holds for every route is `Store.createTask`, which makes
+   * no task there: review r6 found the direct route going round these two.
    */
   const refuseHomeWork = (projectId: string) => {
-    if (store.isHomeProject(projectId))
-      throw new ApiError(
-        409,
-        'The Diomedes conversation is not a place work runs. Name the project this work belongs to.',
-      );
+    if (store.isHomeProject(projectId)) throw new ApiError(409, HOME_REFUSES_WORK);
   };
   /**
    * The task route's own creation path, called with the store lock held. A task proposed from
@@ -3059,6 +3065,14 @@ export async function createApp(options: AppOptions) {
                 store.state(projectId).conversations.find((c) => c.id === b.threadId),
               )
             : choice(b.route, ROUTES, 'service');
+      // Home is reached through its messages route alone. This direct route would start work
+      // there, write a plan into it, or re-route the one thread that has to stay on Claude
+      // Code, so it is refused for every mode before anything is read or changed.
+      if (store.isHomeProject(projectId))
+        throw new ApiError(
+          409,
+          'The Diomedes conversation does not take direct requests. Send it a message, or name the project this belongs to.',
+        );
       const parsedMode = modeOf(b.mode);
       if (!parsedMode) throw new ApiError(400, 'Choose a valid mode.');
       if (parsedMode === 'auto')
