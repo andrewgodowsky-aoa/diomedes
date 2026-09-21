@@ -164,8 +164,9 @@ function place(trigger: HTMLElement): CSSProperties {
  * up later moves nothing. The rail draws it inert and says why when pressed.
  *
  * It opens on hover as well as on a click or a key. A panel the pointer opened
- * takes no focus and closes when the pointer leaves; one opened on purpose
- * behaves as it always did. Touch has no hover and is unchanged.
+ * takes no focus and closes when the pointer leaves, until a person presses
+ * something in it or tabs into it; from then on it is theirs. One opened on
+ * purpose behaves as it always did. Touch has no hover and is unchanged.
  *
  * Presentation only. It holds no list of its own and remembers nothing: the
  * caller owns `items`, `pinned` and where a row goes.
@@ -253,6 +254,12 @@ export function Everything({
       by.current = 'pointer';
       setOpen(true);
     }, HOVER_OPEN_MS);
+  }
+
+  /** The panel now belongs to the person rather than the pointer, and stays until they close it. */
+  function own() {
+    by.current = 'intent';
+    cancel(closing);
   }
 
   function onPointerLeave(event: React.PointerEvent) {
@@ -440,10 +447,12 @@ export function Everything({
           // Pressing anything in here is a decision: the panel stops following
           // the pointer, so pinning three destinations does not end when the
           // hand drifts off the edge.
-          onPointerDown={() => {
-            by.current = 'intent';
-            cancel(closing);
-          }}
+          onPointerDown={own}
+          // So is arriving by keyboard. Hovering never puts focus in here, so
+          // focus landing on a row or a pin means a person tabbed in, and a
+          // mouse left resting elsewhere must not take the panel from under
+          // them, nor may a close already counting down when they arrived.
+          onFocus={own}
           // Tab out of the last control closes the panel rather than leaving it
           // open behind the person. Focus is never pulled back here: that would
           // be a trap.
