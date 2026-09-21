@@ -204,6 +204,23 @@ describe('sending one message', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  test('a different message while one is in flight is refused as itself, never called unconfirmed', async () => {
+    let release!: () => void;
+    fetchMock.mockImplementationOnce(
+      () => new Promise((resolve) => (release = () => resolve(answered()))),
+    );
+    const first = mod.sendMessage(PROJECT, THREAD, input());
+    const other = mod.sendMessage(PROJECT, THREAD, input('Something else'));
+    // It was never sent, so the page may hand it back. Only the first can be unconfirmed.
+    await expect(other).rejects.toThrow(/never confirmed/);
+    await expect(other).rejects.not.toBeInstanceOf(mod.UnconfirmedMessage);
+    await settle();
+    release();
+    await first;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sent(0).text).toBe('Order the usual');
+  });
+
   test('nothing is sent when the message cannot be saved first', async () => {
     session.failSet();
     await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toThrow(/cannot save/);

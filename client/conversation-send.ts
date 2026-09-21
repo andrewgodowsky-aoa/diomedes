@@ -51,6 +51,10 @@ const busy = () =>
   new Error('Another window is still sending on this conversation. Nothing was sent from this one.');
 const elsewhere = () =>
   new Error('That message was discarded or settled in another window. Nothing was sent from this one.');
+const earlier = () =>
+  new Error(
+    'An earlier message on this conversation was never confirmed. Send it again or discard it first.',
+  );
 /** The request may have been accepted. Sending the same message again checks the original. */
 export class UnconfirmedMessage extends Error {
   constructor() {
@@ -355,16 +359,15 @@ export async function sendMessage(
   // This window's own second press, answered before the lock: the send that holds it is this one.
   const flight = inFlight.get(key);
   if (flight) {
-    if (flight.input !== inputJson) throw new UnconfirmedMessage();
+    // A different message while one is on its way was never sent, so it is refused as itself
+    // and stays the person's to keep. Only the message in flight can be unconfirmed.
+    if (flight.input !== inputJson) throw earlier();
     return flight.promise;
   }
   const promise = underLock(projectId, threadId, signal, async () => {
     const reference = readReference(projectId, threadId);
     const claim = readClaim(projectId, threadId);
-    if (claim && JSON.stringify(claim.input) !== inputJson)
-      throw new Error(
-        'An earlier message on this conversation was never confirmed. Send it again or discard it first.',
-      );
+    if (claim && JSON.stringify(claim.input) !== inputJson) throw earlier();
     // A claim still pending is this message, whichever window began it. Without one the text is a
     // new message however often it has been sent before, and any reference left here named a
     // command another window confirmed or discarded.

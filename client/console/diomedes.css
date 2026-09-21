@@ -146,6 +146,11 @@
   gap: 8px;
   margin-top: 10px;
 }
+/* A read that failed after a message went through. The message is not offered back: only the
+   read is owed, so the one control reads again. */
+.console.diomedes .dio-reread {
+  margin: 0 0 8px;
+}
 
 /* Both voices are set from the same left margin, as the approved boards draw
    them. The person's turns are told apart by the dimmer body colour

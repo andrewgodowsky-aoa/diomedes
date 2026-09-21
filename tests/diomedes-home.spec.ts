@@ -281,3 +281,534 @@ test('a message the server refuses stays in the box', async ({ page }) => {
     await api('/settings', 'PUT', { services: { 'claude-code': true } });
   }
 });
+
+// CD-05.R-2's reproducers, pasted unchanged from
+// docs/implementation/2026-09-21-core-agent-client-review-r2.md.
+async function reviewProject(page: Page, name: string) {
+  const p = await api<Project>('/projects', 'POST', { name });
+  const store = application!.locals.store as Store;
+  const saved = store.state(p.id);
+  saved.project.ai = { engine: 'sample', model: null };
+  await store.persist(saved);
+  await open(page);
+  await page.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+  await say(page, `Warm ${name}`);
+  await expect(answers(page).last()).toHaveText(`You said: Warm ${name}`);
+  await page.getByRole('combobox', { name: 'Mode' }).selectOption('automatic');
+  return p;
+}
+
+async function painted(page: Page) {
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+}
+
+test('CD05-R-05: a failed transcript read does not return a confirmed send', async ({ page }) => {
+  await open(page);
+  await say(page, 'Warm R05');
+  await expect(answers(page).last()).toHaveText('You said: Warm R05');
+  const bound = (await home())!;
+  await page.route(`**/api/projects/${bound.projectId}/state`, (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { message: 'Transcript read failed' } }),
+    }), { times: 1 });
+  await say(page, 'Only once R05');
+  await expect(page.getByRole('alert')).toHaveText('Transcript read failed');
+  const recorded = await api<ProjectState>(`/projects/${bound.projectId}/state`);
+  const turns = recorded.conversations.find((t) => t.id === bound.threadId)!.turns;
+  expect(turns.filter((t) => t.role === 'you' && t.text === 'Only once R05')).toHaveLength(1);
+  // Candidate instead restores "Only once R05". Enter then sends a new command.
+  await expect(composer(page)).toHaveValue('');
+});
+
+test('CD05-R-07: a selection result cannot paint a different scope', async ({ page }) => {
+  const p = await reviewProject(page, 'R07 project');
+  await say(page, 'ACT R07 work');
+  await expect(page.locator('.dio-card')).toContainText('Diomedes can start this');
+  let release!: () => void;
+  let reached!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const recorded = new Promise<void>((resolve) => { reached = resolve; });
+  await page.route('**/messages/*/select', async (route) => {
+    const response = await route.fetch();
+    reached();
+    await held;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.locator('.dio-card').getByRole('button', { name: 'Start', exact: true }).click();
+    await recorded;
+    await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'All projects' });
+    await say(page, 'Home after R07');
+    await expect(answers(page).last()).toHaveText('You said: Home after R07');
+    const arrived = page.waitForResponse((r) => r.url().endsWith('/select'));
+    release();
+    await arrived;
+    await painted(page);
+    await expect(page.getByRole('combobox', { name: 'In' })).not.toHaveValue(p.id);
+    // Candidate shows "Started in R07 project" under the home greeting.
+    await expect(page.locator('.dio-card')).toHaveCount(0);
+  } finally {
+    release();
+  }
+});
+
+test('CD05-R-08: a proposal remains selectable after reload', async ({ page }) => {
+  const p = await reviewProject(page, 'R08 project');
+  await say(page, 'ACT R08 proposal');
+  await expect(page.locator('.dio-card')).toContainText('Diomedes can start this');
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  const outcomeRead = page.waitForResponse((r) =>
+    r.request().method() === 'GET' && /\/messages\/[^/]+$/.test(r.url()));
+  await page.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+  const result = await (await outcomeRead).json();
+  expect(result.outcome.status).toBe('proposed');
+  expect(result.answerText).toBeNull();
+  await expect(answers(page).last()).toContainText('I can start that.');
+  // Candidate has no card, even though the read above returned the proposal.
+  await expect(page.locator('.dio-card').getByRole('button', { name: 'Start', exact: true }))
+    .toBeVisible();
+});
+
+test('CD05-R-09: refusal after a lost reply exposes the retained message', async ({ page }) => {
+  await open(page);
+  await say(page, 'Warm R09');
+  await expect(answers(page).last()).toHaveText('You said: Warm R09');
+  let attempts = 0;
+  await page.route('**/api/projects/*/threads/*/messages', async (route) => {
+    if (++attempts === 1) {
+      await route.fetch();
+      return route.abort('failed');
+    }
+    return route.fulfill({
+      status: 409,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { message: 'Retry refused R09' } }),
+    });
+  });
+  await say(page, 'Uncertain R09');
+  await expect(page.getByRole('alert')).toHaveText('Retry refused R09');
+  const bound = (await home())!;
+  const key = `diomedes.conversation.pending.${encodeURIComponent(bound.projectId)}|${encodeURIComponent(bound.threadId)}`;
+  expect(await page.evaluate((k) => sessionStorage.getItem(k), key)).not.toBeNull();
+  // Candidate has the saved command but no strip or Discard control.
+  await expect(page.getByRole('group', { name: 'A message that was not confirmed' }))
+    .toContainText('Uncertain R09');
+});
+
+test('CD05-R-10: concurrent first sends adopt one project thread', async ({ page, context }) => {
+  const p = await api<Project>('/projects', 'POST', { name: 'R10 project' });
+  const other = await context.newPage();
+  try {
+    await Promise.all([open(page), open(other)]);
+    await Promise.all([page, other].map(async (window) => {
+      const loaded = window.waitForResponse((r) => r.url().endsWith(`/projects/${p.id}/state`));
+      await window.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+      await loaded;
+      await painted(window);
+    }));
+    let readers = 0;
+    let release!: () => void;
+    const bothRead = new Promise<void>((resolve) => { release = resolve; });
+    for (const window of [page, other]) {
+      await window.route(`**/api/projects/${p.id}/state`, async (route) => {
+        const snapshot = await route.fetch();
+        if (++readers === 2) release();
+        await bothRead;
+        await route.fulfill({ response: snapshot });
+      }, { times: 1 });
+    }
+    await Promise.all([say(page, 'First R10'), say(other, 'Second R10')]);
+    await Promise.all([
+      expect(answers(page).last()).toHaveText('You said: First R10'),
+      expect(answers(other).last()).toHaveText('You said: Second R10'),
+    ]);
+    const saved = await api<ProjectState>(`/projects/${p.id}/state`);
+    // Candidate creates two. No test here sends the same text twice.
+    expect(saved.conversations.filter((t) => t.name === 'Diomedes')).toHaveLength(1);
+  } finally {
+    await other.close();
+  }
+});
+
+// The closure cases CD-05.R-2 asked for beyond its reproducers. Each makes its own project or
+// uses its own words, so it runs alone as well as in the file.
+
+const strip = (page: Page) =>
+  page.getByRole('group', { name: 'A message that was not confirmed' });
+const messagePost = (request: { method(): string; url(): string }) =>
+  request.method() === 'POST' && /\/messages$/.test(request.url());
+/** How many times the person's words are on record, across the project's Diomedes threads. */
+async function said(projectId: string, text: string) {
+  const saved = await api<ProjectState>(`/projects/${projectId}/state`);
+  return saved.conversations
+    .filter((thread) => thread.name === 'Diomedes' || thread.name === 'Conversation')
+    .flatMap((thread) => thread.turns)
+    .filter((turn) => turn.role === 'you' && turn.text === text).length;
+}
+/** Holds one response after the server has answered it, until the test lets it through. */
+function gate() {
+  let release!: () => void;
+  let reached!: () => void;
+  let delivered!: () => void;
+  return {
+    held: new Promise<void>((resolve) => (release = resolve)),
+    recorded: new Promise<void>((resolve) => (reached = resolve)),
+    arrived: new Promise<void>((resolve) => (delivered = resolve)),
+    release: () => release(),
+    reached: () => reached(),
+    delivered: () => delivered(),
+  };
+}
+
+test('CD05-R-05 closure: reading again after a failed read sends nothing', async ({ page }) => {
+  await open(page);
+  await say(page, 'Warm R05b');
+  await expect(answers(page).last()).toHaveText('You said: Warm R05b');
+  const bound = (await home())!;
+  let posts = 0;
+  page.on('request', (request) => {
+    if (messagePost(request)) posts += 1;
+  });
+  await page.route(
+    `**/api/projects/${bound.projectId}/state`,
+    (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { message: 'Transcript read failed' } }),
+      }),
+    { times: 1 },
+  );
+  await say(page, 'Read again R05');
+  await expect(page.getByRole('alert')).toHaveText('Transcript read failed');
+  await expect(composer(page)).toHaveValue('');
+  await page.getByRole('button', { name: 'Read again', exact: true }).click();
+  await expect(answers(page).last()).toHaveText('You said: Read again R05');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Read again', exact: true })).toHaveCount(0);
+  // One message, one command: the read was owed, never the send.
+  expect(posts).toBe(1);
+  expect(await said(bound.projectId, 'Read again R05')).toBe(1);
+});
+
+test('CD05-R-06 closure: another window offers the unconfirmed message and sends the same command', async ({
+  page,
+  context,
+}) => {
+  const commands: string[] = [];
+  const watch = (window: Page) =>
+    window.on('request', (request) => {
+      if (messagePost(request)) commands.push(request.postDataJSON().commandId);
+    });
+  watch(page);
+  await open(page);
+  await say(page, 'Warm R06');
+  await expect(answers(page).last()).toHaveText('You said: Warm R06');
+  commands.length = 0;
+  // The server records the message. Both of this window's attempts lose the reply.
+  await page.route('**/api/projects/*/threads/*/messages', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    await route.fetch();
+    await route.abort('failed');
+  });
+  await say(page, 'Lost R06');
+  await expect(strip(page)).toContainText('Lost R06');
+
+  const other = await context.newPage();
+  try {
+    watch(other);
+    await open(other);
+    await expect(strip(other)).toContainText('Lost R06');
+    await strip(other).getByRole('button', { name: 'Send again', exact: true }).click();
+    await expect(answers(other).last()).toHaveText('You said: Lost R06');
+    await expect(strip(other)).toHaveCount(0);
+    // Two attempts in the first window and one in the second, all one command.
+    expect(commands).toHaveLength(3);
+    expect(new Set(commands).size).toBe(1);
+
+    // What the first window still holds is settled now, and reading again says so.
+    await page.unroute('**/api/projects/*/threads/*/messages');
+    await page.reload();
+    await expect(answers(page).last()).toHaveText('You said: Lost R06');
+    await expect(strip(page)).toHaveCount(0);
+    expect(await said((await home())!.projectId, 'Lost R06')).toBe(1);
+  } finally {
+    await other.close();
+  }
+});
+
+test('CD05-R-07 closure: a selection result cannot paint a later message', async ({ page }) => {
+  const p = await reviewProject(page, 'R07b project');
+  await say(page, 'ACT R07b work');
+  await expect(page.locator('.dio-card')).toContainText('Diomedes can start this');
+  const select = gate();
+  await page.route('**/messages/*/select', async (route) => {
+    const response = await route.fetch();
+    select.reached();
+    await select.held;
+    await route.fulfill({ response });
+    select.delivered();
+  });
+  try {
+    await page.locator('.dio-card').getByRole('button', { name: 'Start', exact: true }).click();
+    await select.recorded;
+    await say(page, 'Later R07b');
+    await expect(answers(page).last()).toHaveText('You said: Later R07b');
+    select.release();
+    await select.arrived;
+    await painted(page);
+    await expect(page.locator('.dio-card')).toHaveCount(0);
+    await expect(answers(page).last()).toHaveText('You said: Later R07b');
+    // The work did start. The record has it; this screen just is not where it is told.
+    expect((await api<ProjectState>(`/projects/${p.id}/state`)).tasks).toHaveLength(1);
+  } finally {
+    select.release();
+  }
+});
+
+test('CD05-R-07 closure: a read from an earlier visit cannot paint this one', async ({ page }) => {
+  const p = await reviewProject(page, 'R07c project');
+  const scope = page.getByRole('combobox', { name: 'In' });
+  await scope.selectOption({ label: 'All projects' });
+  const read = gate();
+  await page.route(
+    `**/api/projects/${p.id}/state`,
+    async (route) => {
+      const response = await route.fetch();
+      read.reached();
+      await read.held;
+      await route.fulfill({ response });
+      read.delivered();
+    },
+    { times: 1 },
+  );
+  try {
+    // The first visit's read is held. The person leaves and comes back, and the second visit
+    // reads, sends and is answered before the first read ever lands.
+    await scope.selectOption(p.id);
+    await read.recorded;
+    await scope.selectOption({ label: 'All projects' });
+    await scope.selectOption(p.id);
+    await expect(answers(page).last()).toHaveText('You said: Warm R07c project');
+    await say(page, 'Second visit R07c');
+    await expect(answers(page).last()).toHaveText('You said: Second visit R07c');
+    read.release();
+    await read.arrived;
+    await painted(page);
+    await expect(answers(page).last()).toHaveText('You said: Second visit R07c');
+  } finally {
+    read.release();
+  }
+});
+
+test('CD05-R-07 closure: a send the person walked away from is offered back, and sent once', async ({
+  page,
+}) => {
+  const p = await reviewProject(page, 'R07d project');
+  const scope = page.getByRole('combobox', { name: 'In' });
+  const sent = gate();
+  await page.route(
+    '**/api/projects/*/threads/*/messages',
+    async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      await route.fetch();
+      sent.reached();
+      await sent.held;
+      await route.abort('failed').catch(() => undefined);
+    },
+    { times: 1 },
+  );
+  try {
+    await say(page, 'Held R07d');
+    await sent.recorded;
+    // Leaving stops the send. Nothing about it may show across all projects.
+    await scope.selectOption({ label: 'All projects' });
+    sent.release();
+    await painted(page);
+    await expect(strip(page)).toHaveCount(0);
+    await expect(composer(page)).toHaveValue('');
+    // Coming back, it is offered as what it is: sent, never confirmed.
+    await scope.selectOption(p.id);
+    await expect(strip(page)).toContainText('Held R07d');
+    await strip(page).getByRole('button', { name: 'Send again', exact: true }).click();
+    await expect(answers(page).last()).toHaveText('You said: Held R07d');
+    await expect(strip(page)).toHaveCount(0);
+    expect(await said(p.id, 'Held R07d')).toBe(1);
+  } finally {
+    sent.release();
+  }
+});
+
+test('CD05-R-08 closure: started work keeps its card after a reload', async ({ page }) => {
+  const p = await reviewProject(page, 'R08b project');
+  await say(page, 'ACT R08b work');
+  const card = page.locator('.dio-card');
+  await card.getByRole('button', { name: 'Start', exact: true }).click();
+  await expect(card).toContainText('Started in R08b project');
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await page.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+  await expect(card).toContainText('Started in R08b project');
+  await expect(card.getByRole('button', { name: 'Open the work', exact: true })).toBeVisible();
+  expect((await api<ProjectState>(`/projects/${p.id}/state`)).tasks).toHaveLength(1);
+});
+
+test('CD05-R-08 closure: a newer message retires the card, and a reload does not bring it back', async ({
+  page,
+}) => {
+  const p = await reviewProject(page, 'R08c project');
+  await say(page, 'ACT R08c proposal');
+  await expect(page.locator('.dio-card')).toContainText('Diomedes can start this');
+  await say(page, 'Thanks R08c');
+  await expect(answers(page).last()).toHaveText('You said: Thanks R08c');
+  await expect(page.locator('.dio-card')).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  const outcomeRead = page.waitForResponse(
+    (r) => r.request().method() === 'GET' && /\/messages\/[^/]+$/.test(r.url()),
+  );
+  await page.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+  await outcomeRead;
+  await expect(answers(page).last()).toHaveText('You said: Thanks R08c');
+  await painted(page);
+  await expect(page.locator('.dio-card')).toHaveCount(0);
+});
+
+test("CD05-R-08 closure: an outcome is never shown under another command's answer, however alike", async ({
+  page,
+}) => {
+  const p = await reviewProject(page, 'R08d project');
+  await say(page, 'ACT R08d proposal');
+  await expect(page.locator('.dio-card')).toContainText('Diomedes can start this');
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  const outcome = gate();
+  await page.route(/\/messages\/[^/]+$/, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch();
+    outcome.reached();
+    await outcome.held;
+    await route.fulfill({ response });
+    outcome.delivered();
+  });
+  try {
+    await page.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+    await outcome.recorded;
+    // While that read is in flight, another window asks for the same thing in the same words,
+    // and is answered in the same words.
+    const thread = (await api<ProjectState>(`/projects/${p.id}/state`)).conversations.find(
+      (item) => item.name === 'Diomedes',
+    )!;
+    const before = thread.turns.at(-1)!;
+    await api(`/projects/${p.id}/threads/${thread.id}/messages`, 'POST', {
+      commandId: 'outside-r08d',
+      text: 'ACT R08d proposal',
+      mode: 'auto',
+      sources: [],
+      consent: true,
+    });
+    const after = (await api<ProjectState>(`/projects/${p.id}/state`)).conversations
+      .find((item) => item.id === thread.id)!
+      .turns.at(-1)!;
+    expect(after.text).toBe(before.text);
+    expect(after.id).not.toBe(before.id);
+    outcome.release();
+    await outcome.arrived;
+    await painted(page);
+    // The transcript read after the outcome has both requests, and the first one's proposal is
+    // not offered under the second one's answer.
+    await expect(page.locator('.turn.you .body', { hasText: 'ACT R08d proposal' })).toHaveCount(2);
+    await expect(page.locator('.dio-card')).toHaveCount(0);
+  } finally {
+    outcome.release();
+  }
+});
+
+test('CD05-R-09 closure: sending again sends what was saved, whatever the Mode control says now', async ({
+  page,
+}) => {
+  const bodies: { commandId: string; mode: string; text: string }[] = [];
+  page.on('request', (request) => {
+    if (messagePost(request)) bodies.push(request.postDataJSON());
+  });
+  await open(page);
+  await say(page, 'Warm R09b');
+  await expect(answers(page).last()).toHaveText('You said: Warm R09b');
+  bodies.length = 0;
+  let attempts = 0;
+  await page.route('**/api/projects/*/threads/*/messages', async (route) => {
+    if (++attempts === 1) {
+      await route.fetch();
+      return route.abort('failed');
+    }
+    return route.fulfill({
+      status: 409,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { message: 'Retry refused R09b' } }),
+    });
+  });
+  await say(page, 'Uncertain R09b');
+  await expect(page.getByRole('alert')).toHaveText('Retry refused R09b');
+  await expect(strip(page)).toContainText('Uncertain R09b');
+  // It may have been accepted, so it is not handed back as a draft.
+  await expect(composer(page)).toHaveValue('');
+  await page.unroute('**/api/projects/*/threads/*/messages');
+  await page.getByRole('combobox', { name: 'Mode' }).selectOption({ label: 'Answer only' });
+  await strip(page).getByRole('button', { name: 'Send again', exact: true }).click();
+  await expect(answers(page).last()).toHaveText('You said: Uncertain R09b');
+  await expect(strip(page)).toHaveCount(0);
+  expect(bodies).toHaveLength(3);
+  expect(bodies.map((body) => [body.commandId, body.mode, body.text])).toEqual(
+    Array(3).fill([bodies[0].commandId, bodies[0].mode, 'Uncertain R09b']),
+  );
+  expect(await said((await home())!.projectId, 'Uncertain R09b')).toBe(1);
+});
+
+test('CD05-R-10 closure: a reply lost during concurrent first sends is recovered on the one thread', async ({
+  page,
+  context,
+}) => {
+  const p = await api<Project>('/projects', 'POST', { name: 'R10b project' });
+  const other = await context.newPage();
+  try {
+    await Promise.all([open(page), open(other)]);
+    await Promise.all(
+      [page, other].map(async (window) => {
+        const loaded = window.waitForResponse((r) => r.url().endsWith(`/projects/${p.id}/state`));
+        await window.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+        await loaded;
+        await painted(window);
+      }),
+    );
+    // The second window's message is recorded, and both of its attempts lose the reply.
+    await other.route('**/api/projects/*/threads/*/messages', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      await route.fetch();
+      await route.abort('failed');
+    });
+    await Promise.all([say(page, 'First R10b'), say(other, 'Second R10b')]);
+    await expect(answers(page).filter({ hasText: 'You said: First R10b' })).toHaveCount(1);
+    await expect(strip(other)).toContainText('Second R10b');
+
+    await other.unroute('**/api/projects/*/threads/*/messages');
+    await other.reload();
+    await expect(other.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+    await other.getByRole('combobox', { name: 'In' }).selectOption(p.id);
+    await expect(strip(other)).toContainText('Second R10b');
+    await strip(other).getByRole('button', { name: 'Send again', exact: true }).click();
+    await expect(answers(other).filter({ hasText: 'You said: Second R10b' })).toHaveCount(1);
+    await expect(strip(other)).toHaveCount(0);
+
+    const saved = await api<ProjectState>(`/projects/${p.id}/state`);
+    expect(saved.conversations.filter((thread) => thread.name === 'Diomedes')).toHaveLength(1);
+    expect(await said(p.id, 'First R10b')).toBe(1);
+    expect(await said(p.id, 'Second R10b')).toBe(1);
+  } finally {
+    await other.close();
+  }
+});

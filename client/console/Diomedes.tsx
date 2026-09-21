@@ -48,6 +48,8 @@ export interface DiomedesPageProps {
   onDiscard(): void;
   /** One plain sentence about the last thing that went wrong, or null. */
   notice: string | null;
+  /** Reads the conversation again after a read of it failed. Null when no read is owed. */
+  onReadAgain: (() => void) | null;
   results: DiomedesResult[];
   onOpenResult(id: string): void;
   destinations: EverythingItem[];
@@ -108,6 +110,7 @@ export function Diomedes({
   onResend,
   onDiscard,
   notice,
+  onReadAgain,
   results,
   onOpenResult,
   destinations,
@@ -212,6 +215,13 @@ export function Diomedes({
                 <p className="dio-notice" role="alert">
                   {notice}
                 </p>
+              )}
+              {onReadAgain !== null && (
+                <div className="dio-reread">
+                  <button type="button" className="send" onClick={onReadAgain}>
+                    Read again
+                  </button>
+                </div>
               )}
               {unconfirmed !== null && !pending && (
                 <div className="dio-unconfirmed" role="group" aria-label="A message that was not confirmed">
