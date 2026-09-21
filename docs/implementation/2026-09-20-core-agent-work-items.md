@@ -596,6 +596,40 @@ The assembled Home candidate, independent server/client review, new guard
 checks and all final composed gates are still owed before merge. The
 release/site endgame remains after that acceptance. Nothing new is DONE.
 
+### Round 17: Home candidate reviewed; two client display defects require repair (2026-09-21)
+
+**The original three acceptance reviews remain accepted. Expanded Home acceptance is open.**
+The separate server and client authors returned candidate `b387059`; it does not alter the
+accepted driver source. Independent execution first found one TypeScript error in a new
+browser helper and one strict-body fixture assertion that confused the JSON parser with the
+endpoint. Review `edbe2b0` records both failures before repair. The authors corrected only
+those fixtures at `38e5270`. Fresh TypeScript passed and all nine focused files passed, 141
+tests, including the unchanged AWS review, CD-01 matrix and interaction seam. The new held
+preparation/disconnect case passed with zero dispatch and a truthful unresolved outcome.
+
+**Two independent browser counterexamples failed on unchanged product source.** The parent
+wrote the reproducers and a different Devin SWE 2.0 Max reviewer checked the fixtures before
+execution. At exact `edbe2b0`, an older route response repainted a newer saved choice, and a
+migrated pending AWS conversation still displayed Claude Code. The original tests and returned
+static review are committed; runtime review `2026-09-21-core-agent-home-browser-review-r1.md`
+is committed unedited at `38e5270`. A third browser failure was a premature claim-cleanup
+assertion: its trace shows the read preceding the confirming replay response. The original
+client author is repairing only these named findings. No repair has been accepted yet.
+
+**Stop checks have distinct evidence.** Six initial Home browser cases passed; the premature
+seventh assertion caused five later serial cases to be skipped. Those five then ran separately
+on clean `38e5270` and all passed: Stop during Home provisioning, Stop while queued on the real
+Web Lock, a late nonconfirming acknowledgement after changing scope, a late failed acknowledgement
+after revisiting Home, and duplicate Stop. Every run held the exclusive slot, which was released.
+These results do not replace the required full expanded candidate gates or guard removals.
+
+The candidate and all review checkpoints are on `feature/core-agent-home-luna`, with exact
+execution in `core-agent-home-driver-review`. They are still outside the integration branch.
+The refreshed `origin/main` remains `58bdc65`. Hosted local-gates, macos-arm64 and Workers Builds
+all passed on integration checkpoint `0c6d24c`; PR #29 remains draft. Remaining work is the
+client repair, guard checks, full exact composed acceptance, then the authorized merge and
+release/site endgame. Nothing new is DONE. No live provider call or credential authority was used.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
