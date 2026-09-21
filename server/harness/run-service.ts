@@ -184,6 +184,8 @@ type StartOutcome =
 export class RunService {
   private hooks: HarnessHook[] = [];
   private queues = new Map<string, Promise<unknown>>();
+  /** One in-flight identical write per key, so the same record is made once. See `join`. */
+  private joined = new Map<string, Promise<unknown>>();
   private controllers = new Map<string, AbortController>();
   private readonly clock: () => number;
   private readonly policyVersion: string;
@@ -489,13 +491,18 @@ export class RunService {
   }
 
   /**
-   * Hold one run's writer queue while the caller commits something of its own, and hand it
-   * this run as it stands inside that queue. A cancellation, a failed step, a denial or
-   * startup recovery takes the same queue, so each is ordered either before the callback
-   * reads the run or after the commit it protects, never between the two.
+   * Hold one run's writer queue while the caller commits a child of it, and hand it this run
+   * as it stands inside that queue. A settled run is refused there, where `cancel`, a failed
+   * step, a denial and startup recovery are decided too, so each of those is ordered either
+   * before this refusal or after the commit it protects, never between the two.
    *
-   * This is process-local ordering. The callback must not claim, record, step or cancel this
-   * run: it would wait on the queue it is already holding.
+   * This is process-local ordering, not crash recovery. The callback must not claim, record,
+   * step, cancel or fence this run: it would wait on the queue it is already holding. It must
+   * await no provider, no person and no background work, and it must already hold whatever
+   * outer lock its own commit needs, because that lock is never taken under this one.
+   *
+   * Nothing here is particular to one runtime: a driver supplies its own run id and adds its
+   * own capability scope inside the callback.
    */
   async fence<T>(
     runId: string,
@@ -505,8 +512,25 @@ export class RunService {
     return this.serialize(runId, async () => {
       const run = await this.load(runId);
       this.scope(run, principal);
+      if (['completed', 'cancelled', 'failed', 'reconcile_required'].includes(run.state))
+        throw new HarnessError('run_settled', 'This run is settled and admits nothing further.');
       return action(copy(run));
     });
+  }
+
+  /**
+   * One in-flight call per key, so two callers asking for the same immutable write are one
+   * write and the second reads the first's result rather than meeting it in flight. The key
+   * is the caller's own: a run and a digest of what is being written.
+   */
+  join<T>(key: string, action: () => Promise<T>): Promise<T> {
+    const joined = this.joined.get(key);
+    if (joined) return joined as Promise<T>;
+    const running = action().finally(() => {
+      if (this.joined.get(key) === running) this.joined.delete(key);
+    });
+    this.joined.set(key, running);
+    return running;
   }
 
   async events(runId: string, afterSeq = 0): Promise<HarnessEvent[]> {

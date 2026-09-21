@@ -164,8 +164,6 @@ export class ClaudeSessionRuns {
     }
   >();
   private readonly forkLocks = new Set<string>();
-  /** One in-flight save per run and phase body, so the same record is written once. */
-  private readonly recording = new Map<string, Promise<void>>();
   private readonly closing = new Set<Promise<void>>();
   private readonly cleanupFailures: unknown[] = [];
   private readonly lifetimeMs: number;
@@ -415,14 +413,9 @@ export class ClaudeSessionRuns {
    */
   async record(projectId: string, runId: string, phases: readonly InteractionPhase[]) {
     if (this.closed) throw new EngineError('SESSION_CLOSED', 'The native runtime is shutting down.');
-    const key = `${projectId}:${runId}:${digest(phases)}`;
-    const joined = this.recording.get(key);
-    if (joined) return joined;
-    const saving = this.append(projectId, runId, phases).finally(() => {
-      if (this.recording.get(key) === saving) this.recording.delete(key);
-    });
-    this.recording.set(key, saving);
-    return saving;
+    return this.runs.join(`phases:${projectId}:${runId}:${digest(phases)}`, () =>
+      this.append(projectId, runId, phases),
+    );
   }
   /** The phases saved for one message, in the order they were saved. A read; never a step. */
   async phases(
@@ -497,19 +490,23 @@ export class ClaudeSessionRuns {
    * and no background work.
    */
   async fenced<T>(projectId: string, runId: string, commit: () => Promise<T>): Promise<T> {
-    return this.runs.fence(runId, localHarnessPrincipal(projectId), async (run) => {
-      if (run.projectId !== projectId || run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id)
-        throw new HarnessError(
-          'unknown_run',
-          'This native conversation was not found in this project.',
-        );
-      if (terminal(run))
+    try {
+      return await this.runs.fence(runId, localHarnessPrincipal(projectId), async (run) => {
+        if (run.projectId !== projectId || run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id)
+          throw new HarnessError(
+            'unknown_run',
+            'This native conversation was not found in this project.',
+          );
+        return commit();
+      });
+    } catch (error) {
+      if (error instanceof HarnessError && error.code === 'run_settled')
         throw new EngineError(
           'RUN_SETTLED',
           'This conversation moved on before this was started. Nothing was started.',
         );
-      return commit();
-    });
+      throw error;
+    }
   }
   /**
    * Refuses when the conversation run is settled. The admission boundary calls this inside the

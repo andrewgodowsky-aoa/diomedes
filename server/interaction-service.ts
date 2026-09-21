@@ -7,7 +7,7 @@
 // of its own: a task is created by the path a person's task takes and work starts by the path
 // a person's Start takes, each under the command id derived for this message, so a retry
 // reaches the existing receipt. What a person is told is read from phases and receipts.
-import type { ClaudeSessionRuns, InteractionPhase } from './harness/claude-session-run.js';
+import type { InteractionPhase } from './harness/claude-session-run.js';
 import { HarnessError } from './harness/policy.js';
 import type { TextRequest } from './engines/contract.js';
 import { EngineError } from './engines/process.js';
@@ -120,6 +120,33 @@ export interface ChildIntent {
   work: { taskId: string; route: string; instruction: string } | null;
 }
 
+/**
+ * The conversation runtime, as this sequence uses it: three reads, one write, and nothing
+ * particular to any one runtime. Everything above it here decides from saved phases, saved
+ * receipts and the Mode control, so a second driver composes by satisfying exactly this.
+ */
+export interface ConversationDriver {
+  /** Which of these runs already holds this command, newest first. A read. */
+  locate(
+    projectId: string,
+    runIds: readonly string[],
+    commandId: string,
+  ): Promise<{ runId: string; answered: boolean; settled: boolean; dispatched: boolean } | null>;
+  /** The phases saved for one message, in the order they were saved. A read. */
+  phases(projectId: string, runId: string, sourceMessageId: string): Promise<InteractionPhase[]>;
+  /** Saves the phases that are not saved yet. Identical concurrent saves are one write. */
+  record(projectId: string, runId: string, phases: readonly InteractionPhase[]): Promise<void>;
+  /**
+   * What the runtime durably saved for one command's turn. A step that succeeded carrying no
+   * answer is an acknowledged interruption, which is neither a completed answer nor nothing.
+   */
+  turnResult(
+    projectId: string,
+    runId: string,
+    commandId: string,
+  ): Promise<{ answered: boolean; interrupted: boolean } | null>;
+}
+
 /** What the host supplies. Every method that touches the Store takes and releases its own lock. */
 export interface InteractionHost {
   /**
@@ -220,7 +247,7 @@ export class InteractionTurns {
     private readonly host: InteractionHost,
   ) {}
 
-  private driver(): ClaudeSessionRuns {
+  private driver(): ConversationDriver {
     if (!this.engines.nativeSessions)
       throw new ApiError(503, 'The native conversation runtime is unavailable.');
     return this.engines.nativeSessions;
