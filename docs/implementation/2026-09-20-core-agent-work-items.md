@@ -473,6 +473,47 @@ search.
 **Integration branch.** `feature/core-agent-bot` has main (`d4f5384`) merged in as `8c0a3aa`,
 type check clean. Its gates are rerun after R-11 is merged in.
 
+### Round 11: R-06 and R-11 closed, R-12 repaired, and where the program stops for handoff (2026-09-21)
+
+**CD-05.R-4: Astra closed CD05-R-06 and CD05-R-11 at `6d2fc8b` and rejected on one new finding,
+CD05-R-12 (P2).** Her review is `2026-09-21-core-agent-client-review-r4.md`, committed unedited
+(`c17cf26`). She ruled the `say` helper change acceptable as is, Enter being ignored during a
+delivery not a defect, and her frozen R-10 case acceptable as retained history.
+
+R-12 was introduced by the R-11 repair: Discard became asynchronous, and its two callbacks
+published with no visit fence. A Discard queued behind another window's lock in project A could
+settle after the person had moved to B, reload A under B's selector and stop B's delivery. Her
+reproducer was pasted in unchanged (`0e7602f`) and was red on the unfixed build as traced: one
+obsolete read of A's state. The repair is `0d197c8`: both callbacks take the visit number when
+Discard is pressed and do nothing to the page once it has moved on. The message is still given
+up. Three closures, `5cbd15f`, as she asked: a delivery running elsewhere is not stopped and
+finishes; leaving and coming back to the same project is a new visit and is not reloaded; a
+Discard that fails says so where it was pressed and nowhere else. The whole page spec in file
+order: 33 passed, one serial run at 5cbd15f. Guard removals B14 to B18 through the browser: all five killed, each by the case written for it (B18 on its second run; the first is explained in the evidence file).
+
+Disclosed: in the leaving-and-coming-back case the new visit still shows a strip for a message
+the old Discard has since given up. Either control heals it in one press (Send again reads what
+the command came to, Discard reads again), and nothing is sent. A fence on the scope id alone is
+not separately mutated, because the container keeps no current-scope reference to compare with;
+the same-project case is what shows the visit number is needed.
+
+CD-05.R-5 is the next review. CD-05b stays unaccepted until it rules.
+
+**CD-01 admission repair.** Repaired on `feature/core-agent-admission-repair`, `31c10e9` to `7f1b9b3`. After the first repair left seven survivors, an Opus worker added seven executed schedules (`4b0e68f`, tests only) that kill M7 (retired lineage), M10 and M11 (prepared scope revalidated under the guard, including the first test to drive `NativeWork.start` with a real guard), M12 (the saved Work route, reached by a first attempt that saves `work-input` and stops before admission) and M15 (the queue held across the child commit). Only M8 and M17 survive, the disclosed pair that are each other's second guard; M16 removes both and is killed. No production file changed and no test was red on unmutated code. The record is `2026-09-21-core-agent-admission-repair.md`. Eleven files, 233 tests, pass at `7f1b9b3`. Open from the worker: a task soft-deleted between preparation and commit is not re-read under the guard (`deletedAt` lives only in `admitWork`'s pre-check). The executing reviewer has not re-run the matrix on this successor.
+
+**The AWS route is composed onto the repair by its owner:** `73aaa0b` on
+`feature/aws-luna-conversation-on-repair` (parent `7b063b6`, 37 files, committed with Andrew's
+approval, not pushed). `ModelSessionRuns` meets `ConversationDriver`; `createTask` and `startWork`
+keep the repair's bodies and take their driver from `conversationDriver(source.runId)`; Codex's
+`tests/aws-conversation-authority.review-20260921.test.ts` is in the commit unedited and passes
+11 of 11 there. Merging it into the integration branch conflicts in `server/app.ts` only, which
+is the integrator's to resolve and the AWS owner's to read afterwards.
+
+**Integration branch.** `feature/core-agent-bot` at `09e6929` (main, R-11 and the capability fix
+merged) passed all four gates and the full browser suite: tsc 0; Vitest 237 files, 4,488 passed,
+0 failed, 4 skipped; build; page spec 29 of 29; browser suite 155 passed. Pushed to draft PR #29.
+It does not yet hold R-12, the admission repair or the AWS composition.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
