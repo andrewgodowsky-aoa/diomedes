@@ -128,6 +128,8 @@ function host(options: HostOptions = {}) {
     return rows.filter((row) => !scope?.engine || row.id === scope.engine);
   });
   const service = new EngineService(serviceRoot, {
+    // The synthetic inventory includes pinned Windows managed executables.
+    platform: 'win32',
     discover,
     enumerate,
     version,
@@ -210,7 +212,7 @@ describe('the binding a person chose, remembered across restarts', () => {
     expect(reopened.get('claude-code')).toBeUndefined();
   });
 
-  it('replaces the file atomically and never leaves a partial one or a phantom binding', () => {
+  it.skipIf(process.platform !== 'win32')('replaces the file atomically under Windows reader contention without a phantom binding', () => {
     const service = root();
     const store = new BindingStore(service);
     store.save('opencode', { binding: binding(), revision: 1, key: 'k1', model: null });
@@ -268,7 +270,7 @@ describe('the binding a person chose, remembered across restarts', () => {
     expect(new BindingStore(service).get('opencode')).toBeUndefined();
   });
 
-  it('retries a denied replacement inside a bounded wait, and gives up inside it', () => {
+  it.skipIf(process.platform !== 'win32')('retries Windows reader contention inside a bounded wait, and gives up inside it', () => {
     // The record is written synchronously, because `/api/ai/select` saves
     // settings in the same breath and a choice must survive the crash one line
     // later. A reader holding the destination denies the rename on Windows, so

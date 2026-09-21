@@ -57,15 +57,8 @@ jobs:
   # MacBook, and it packages nothing. No provider credential, signing secret or
   # production data is available to it, by design.
   macos-arm64:
-    # The unit suite was written on Windows and has never run on macOS, so its
-    # first runs here are expected to find platform assumptions. Until it has
-    # passed once, this job runs only when asked for, or on a pull request from a
-    # Mac-lane branch, so it cannot turn unrelated pull requests red. Remove this
-    # condition once the suite is green on macOS.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      startsWith(github.head_ref, 'feature/apple-silicon') ||
-      startsWith(github.head_ref, 'feature/macos')
+    # Both editions share main, so every pull request and main push checks the
+    # Mac development source as well as the Windows regression target.
     # A named image, not macos-latest, whose meaning moves. The first step proves
     # the architecture instead of trusting the label.
     runs-on: macos-15

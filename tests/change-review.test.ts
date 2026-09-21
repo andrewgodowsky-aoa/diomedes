@@ -1019,6 +1019,38 @@ describe('git source — modes, binary, names', () => {
     },
   );
 
+  test.skipIf(!gitAvailable)('same-stat edits stay visible when the real index is racy', async () => {
+    const { dir, run } = await makeRepo();
+    const file = path.join(dir, 'racy.txt');
+    const stamp = new Date(Math.floor(Date.now() / 1000 - 5) * 1000);
+    run('config', 'core.trustctime', 'false');
+    run('config', 'core.checkStat', 'minimal');
+    await fs.writeFile(file, 'v0\n');
+    await fs.utimes(file, stamp, stamp);
+    run('add', '.');
+    run('commit', '-m', 'init');
+    await fs.utimes(path.join(dir, '.git', 'index'), stamp, stamp);
+    const env = (await prepareGit(dir))!;
+    try {
+      const before = await snapshotGit(env);
+      expect(before.captured).toBe(true);
+      if (!before.captured) throw new Error(before.reason);
+      expect(before.files).toEqual([]);
+      // Same size and recorded mtime, with ctime explicitly unavailable. Git
+      // must use its racy-index content check, not trust the copied index date.
+      await fs.writeFile(file, 'v1\n');
+      await fs.utimes(file, stamp, stamp);
+      const expected = run('hash-object', '--no-filters', 'racy.txt').trim();
+      const after = await snapshotGit(env);
+      expect(after.captured).toBe(true);
+      if (!after.captured) throw new Error(after.reason);
+      expect(after.files.find((row) => row.path === 'racy.txt')?.blobSha).toBe(expected);
+      expect(diffGitSnapshots(before.files, after.files, [])[0]?.afterSha).toBe(expected);
+    } finally {
+      await env.cleanup();
+    }
+  });
+
   test.skipIf(!gitAvailable)('unusual filenames survive the real NUL parser', async () => {
     const { dir, run } = await makeRepo();
     run('commit', '--allow-empty', '-m', 'init'); // prepareGit needs a HEAD

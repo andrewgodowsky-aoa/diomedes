@@ -214,14 +214,15 @@ function knownFolders(deps: DiscoveryDeps): string[] {
     ];
   }
   const folders: string[] = [];
+  const join = path.win32.join;
   const localAppData = deps.env.LOCALAPPDATA;
-  if (localAppData) folders.push(path.join(localAppData, 'Programs', 'OpenAI', 'Codex', 'bin'));
+  if (localAppData) folders.push(join(localAppData, 'Programs', 'OpenAI', 'Codex', 'bin'));
   if (localAppData)
     folders.push(
-      path.join(localAppData, 'Microsoft', 'WinGet', 'Links'),
-      path.join(localAppData, 'omp'),
-      path.join(localAppData, 'cursor-agent'),
-      path.join(
+      join(localAppData, 'Microsoft', 'WinGet', 'Links'),
+      join(localAppData, 'omp'),
+      join(localAppData, 'cursor-agent'),
+      join(
         localAppData,
         'Programs',
         'Devin',
@@ -233,11 +234,11 @@ function knownFolders(deps: DiscoveryDeps): string[] {
         'bin',
       ),
     );
-  if (deps.env.APPDATA) folders.push(path.join(deps.env.APPDATA, 'npm'));
+  if (deps.env.APPDATA) folders.push(join(deps.env.APPDATA, 'npm'));
   const home = deps.env.USERPROFILE ?? deps.env.HOME;
   if (home) {
-    folders.push(path.join(home, '.local', 'bin'));
-    folders.push(path.join(home, '.bun', 'bin'));
+    folders.push(join(home, '.local', 'bin'));
+    folders.push(join(home, '.bun', 'bin'));
   }
   return folders;
 }
@@ -296,7 +297,7 @@ async function resolveBinary(name: string, deps: DiscoveryDeps): Promise<BinaryR
       }
     }
   }
-  const join = deps.platform === 'win32' ? path.join : path.posix.join;
+  const join = deps.platform === 'win32' ? path.win32.join : path.posix.join;
   for (const folder of knownFolders(deps)) {
     for (const suffix of deps.platform === 'win32' ? ['.exe', '.cmd', ''] : ['']) {
       const candidate = join(folder, `${name}${suffix}`);
@@ -376,7 +377,7 @@ async function userPathFolders(deps: DiscoveryDeps): Promise<string[]> {
   let pending = userPaths.get(deps);
   if (!pending) {
     pending = (async () => {
-      const reg = path.join(
+      const reg = path.win32.join(
         deps.env.SystemRoot ?? 'C:\\Windows',
         'System32',
         'reg.exe',
@@ -463,7 +464,7 @@ async function enumerateBinary(name: string, deps: DiscoveryDeps): Promise<strin
   const folders = [...knownFolders(deps), ...(await userPathFolders(deps))];
   for (const folder of folders)
     for (const suffix of deps.platform === 'win32' ? ['.exe', '.cmd', ''] : ['']) {
-      const join = deps.platform === 'win32' ? path.join : path.posix.join;
+      const join = deps.platform === 'win32' ? path.win32.join : path.posix.join;
       const candidate = join(folder, `${name}${suffix}`);
       try {
         if (await deps.exists(candidate)) add(candidate);

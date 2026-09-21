@@ -168,9 +168,11 @@ describe('FD01 independent observed discovery and hostile output', () => {
     const service = new EngineService(root, { platform: 'win32', version });
     await service.discover(true);
     expect(verify).toHaveBeenCalledWith(root, 'claude-code');
-    expect(version).toHaveBeenCalledWith(managed);
+    // The runtime resolves Windows RUNNER~1 aliases before probing a file.
+    const canonicalManaged = await fs.realpath(managed);
+    expect(version).toHaveBeenCalledWith(canonicalManaged);
     const entry = service.integration('claude-code', false);
-    expect(entry).toMatchObject({ found: true, location: managed });
+    expect(entry).toMatchObject({ found: true, location: canonicalManaged });
     expect(entry.disclosure.some((line) => /^Discovery: observed on win32 via /.test(line))).toBe(true);
   });
 });
