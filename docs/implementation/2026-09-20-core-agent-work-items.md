@@ -630,6 +630,42 @@ all passed on integration checkpoint `0c6d24c`; PR #29 remains draft. Remaining 
 client repair, guard checks, full exact composed acceptance, then the authorized merge and
 release/site endgame. Nothing new is DONE. No live provider call or credential authority was used.
 
+### Round 18: Home server accepted; client behavior green with timing coverage still open (2026-09-21)
+
+**Bounded server acceptance is recorded at `429b5b6`, for exact candidate `f37f29a`.**
+Independent TypeScript and nine focused files passed 143/143, including the original AWS review,
+admission matrix and seam oracle. Server review R1 at `457419f` had disclosed two adoption
+guard survivors and unobserved held-request rejections during intended failures. The original
+author added the two missing adoption states and explicit request draining. The unchanged S6,
+S7, S15 and S16 removals were repeated as S17-S20: all failed at their intended assertions,
+each restored byte-for-byte and green. S19/S20 had no unhandled rejection, ENOTEMPTY or hook
+timeout. The earlier reviews, survivors and failure logs remain unchanged.
+
+**Client repair found and corrected one regression before acceptance.** Candidate `457419f`
+passed both frozen route counterexamples and all 13 new Home cases, but failed original R05:
+the new preflight state read consumed the one injected 503 intended for post-response recovery.
+Immutable review `0a41a02` was committed before repair. The author changed only the route
+metadata preflight to the existing thread-list endpoint. Exact `f37f29a` then passed TypeScript,
+build, and all 48 page cases. Frozen R2/R4 payloads, original review files and the three authority
+oracles are verified unchanged. Full Vitest and the full expanded browser suite are still owed.
+
+**Client guard review remains open.** The executed checks catch missing dispatch identities,
+wrong read-only resend identity, premature pending cleanup, missing current-route options,
+invalid Stop targets, late Stop responses and superseded route responses. Four specific timing
+coverage gaps are committed in review `ec1ab82`: late same-window join after identity issuance,
+two synchronous Stop clicks, old delivery cleanup while a new one is active, and the modeled
+resend lock-entry abort boundary. Their original author is adding test-only cases in the Home
+worktree. Product source remains fixed. A route-option mutation also survives because the
+generic next branch preserves the same option; it is disclosed as equivalent, not counted killed.
+
+The Home branch carries these code, fixture and immutable review checkpoints separately from
+the integration branch. The current review identity is unchanged; the server/client mutations
+use the one exclusive slot `slot_mubct1pj_5c932e02`, still held during this ledger checkpoint.
+No test runs alongside a typecheck. No live Luna call, credential or spend authority is used.
+At the 15:02 UTC refresh, `origin/main` is still `58bdc65` and all three hosted checks on
+integration `2deca17` are successful. PR #29 stays draft until expanded acceptance and exact
+composed gates pass. Merge, packaging, release and site publication remain owed. Nothing is DONE.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
