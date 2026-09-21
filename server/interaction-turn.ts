@@ -73,6 +73,31 @@ export function promptFor(mode: ConversationMode, text: string, sourceMessageId:
 }
 
 const FENCE_OPEN = '```diomedes-decision';
+/**
+ * What the model is told about the decision block. It lives beside `splitDecision`, the only
+ * reader of that block, and not in the Mode's own text: a Mode's instructions stay short plain
+ * English, and a machine contract stays with its parser, the way the Build JSON contract stays
+ * in `native-work.ts`.
+ */
+export const DECISION_FORMAT = `End your reply with exactly one fenced block tagged diomedes-decision that holds a single JSON object, and write nothing after it. Never mention the block in your answer. The object has exactly these eight fields:
+- source_message_id: copy it exactly from the last line of the message, which reads [[diomedes source_message_id=...]].
+- disposition: one of respond, retrieve, plan, act, build_capability, control, clarify, blocked.
+- requested_project_id: the project the person named, or null.
+- operation_class: none for respond, clarify and blocked; read for retrieve; none or prepare_artifact for plan; read, prepare_artifact, write_internal or send_external for act; develop_capability for build_capability; control_run for control.
+- source_refs: up to 32 names of documents already supplied. Never their contents.
+- target_run_id: the run a control decision addresses, otherwise null.
+- question: the one missing input when the disposition is clarify, otherwise null.
+- public_summary: one or two plain sentences the person can read. Never private reasoning.`;
+
+/**
+ * The instructions one Mode sends. Static per Mode, so the scope a conversation run pins never
+ * moves from turn to turn. Answer only and Plan only send exactly their own text: no block is
+ * asked for where none would be read.
+ */
+export function instructionsFor(mode: ConversationMode, base: string) {
+  return mode === 'auto' ? `${base}\n\n${DECISION_FORMAT}` : base;
+}
+
 const RAW_LIMIT = 8000;
 const SNAKE_TO_CAMEL = new Map<string, string>(
   Object.entries(PACKAGE_FIELD_NAMES).map(([camel, snake]) => [snake, camel]),

@@ -14,6 +14,8 @@ import { localHarnessPrincipal } from '../server/harness/bridge';
 import { hash, type Store } from '../server/store';
 import { conversationCommandIds } from '../server/interaction-admission';
 import type { MessageResult } from '../server/interaction-service';
+import { DECISION_FORMAT } from '../server/interaction-turn';
+import { MODES } from '../server/modes';
 import type { Project, Conversation } from '../shared/types';
 
 // The conversation seam through the real app over HTTP: the real Store, RunService, session
@@ -32,6 +34,7 @@ let base: string;
 let project: Project;
 let thread: Conversation;
 let dispatches: TextRequest[];
+let opened: string[];
 let lockFreeDuringTurn: boolean[];
 
 async function request(route: string, method = 'GET', body?: unknown) {
@@ -101,6 +104,7 @@ function scripted(prompt: string) {
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-interaction-'));
   dispatches = [];
+  opened = [];
   lockFreeDuringTurn = [];
   const adapter: PersistentTextAdapter<ClaudeSessionCheckpoint> = {
     id: 'claude-code',
@@ -116,6 +120,7 @@ beforeEach(async () => {
       throw new Error('Conversation requests must use the native transport');
     },
     openSession: async (input, options) => {
+      opened.push(input.instructions);
       let checkpoint: ClaudeSessionCheckpoint = options.restore
         ? structuredClone(options.restore)
         : {
@@ -276,6 +281,9 @@ test('C01: a greeting is answered and creates nothing', async () => {
   // The identity line went to the model and is nowhere in the transcript.
   expect(dispatches[0].prompt).toContain('[[diomedes source_message_id=sm.');
   expect(turnsOf().join('\n')).not.toContain('diomedes source_message_id');
+  // The model was told how to propose: the Mode text, then the format, at open and on the turn.
+  expect(opened).toEqual([`${MODES.auto.instructions}\n\n${DECISION_FORMAT}`]);
+  expect(dispatches[0].instructions).toBe(opened[0]);
 });
 
 test('C06: under Automatic a valid act proposal is shown, never started, until the person selects it', async () => {
@@ -351,6 +359,9 @@ test('Answer only and Plan only never show or start work, whatever the model pro
     expect(limited.outcome).toEqual({ status: 'answered' });
     expect(workFor(limited.sourceMessageId)).toEqual({ tasks: [], sessions: [] });
   }
+  // Neither is told about a decision block: each is sent exactly its own Mode text.
+  expect(opened).toEqual([MODES.ask.instructions, MODES.plan.instructions]);
+  expect(dispatches.map((turn) => turn.instructions)).toEqual(opened);
   // Each mode is its own lineage and its own run.
   const lineages = store().state(project.id).conversations.find((item) => item.id === thread.id)!
     .lineages!;
@@ -358,6 +369,15 @@ test('Answer only and Plan only never show or start work, whatever the model pro
     ['ask', 1],
     ['plan', 2],
   ]);
+  // After the switch to Plan only, the Answer only message is still found on its own lineage:
+  // the same body reads back with no model call, and a changed one is refused.
+  const again = await send('m-ask', 'ACT order the usual', { mode: 'ask' });
+  expect(again.answerText).toBe('answer:ACT order the usual');
+  expect(
+    (await request(messages(), 'POST', message('m-ask', 'ACT order the usual', { mode: 'auto' })))
+      .status,
+  ).toBe(409);
+  expect(dispatches).toHaveLength(2);
 });
 
 test('narrowing the Mode control after a proposal was shown means it can no longer be started', async () => {
@@ -421,6 +441,14 @@ test('R-14: a message answered on a cancelled conversation is still readable, an
     [2, null],
   ]);
   expect((await send('m-act', 'ACT order the usual')).answerText).toBe('I can start that.');
+  // Retired as well as settled: a changed body is still refused, against what was first sent.
+  for (const changed of [
+    message('m-act', 'ACT order double'),
+    message('m-act', 'ACT order the usual', { mode: 'plan' }),
+  ])
+    expect((await request(messages(), 'POST', changed)).status).toBe(409);
+  expect(await driver().get(project.id, proposed.runId)).toEqual(settled);
+  expect(workFor(proposed.sourceMessageId)).toEqual({ tasks: [], sessions: [] });
   expect(dispatches).toHaveLength(2);
 });
 

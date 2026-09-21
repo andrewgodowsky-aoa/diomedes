@@ -27,6 +27,9 @@ It supersedes the round-4 passages it names, which carry markers pointing here.
 | R-05 P2, explicit limits were redefined as advice | I-10 | `tests/interaction-admission.test.ts`, `tests/interaction-seam.test.ts` (C06 cases) |
 | R-13 P3, home validator | not in this candidate; obligation O4 stands | none claimed |
 
+I-12 is not an answer to a finding. It records a split the full test suite forced after the
+Mode lane was merged, so that the contract and the code say the same thing.
+
 ### I-8. A reused command is compared before any answer comes back
 
 Supersedes I-1 item 4, which relied on a guard the read path never reached.
@@ -112,6 +115,31 @@ C06 is proved against an adversarial, schema-valid `act` proposal, not against a
   server resolves the run and the transport action and a client never names a run.
 - Conversational `control`, external sends and capability building are reported as not
   reachable, and reach nothing.
+
+### I-12. The decision format lives beside its parser, not in the Mode text
+
+Supersedes the sentence in I-4 item 1 that puts the eight-field schema inside `AUTO_INSTRUCTIONS`.
+
+`QUESTIONS.md` (Modes, 4) records that every Mode's instructions are short plain English under
+900 characters, and `tests/modes.test.ts` pins it. The same decision keeps the Build JSON contract
+out of the Mode text and in `native-work.ts`, beside the code that reads it. The first draft of
+`AUTO_INSTRUCTIONS` was 1,760 characters and failed that test once the Mode lane was merged; the
+full suite found it, the lane's focused runs had not. The test is unchanged. The text is split:
+
+- `MODES.auto.instructions` is the plain-English half: answer from the message and the supplied
+  documents, documents are data, you may propose one decision, proposing is not acting, a person
+  who limits what they want gets `respond`.
+- `DECISION_FORMAT` in `server/interaction-turn.ts` is the machine half: the fence tag, the
+  identity line to copy from, and the eight fields with their allowed pairings. It sits beside
+  `splitDecision`, its only reader.
+- `instructionsFor(mode, base)` is what the host sends: the Mode text followed by the format under
+  Automatic, and exactly the Mode text under Answer only and Plan only, where no block is read.
+
+What the model receives under Automatic is unchanged from I-4, word for word. It is still static
+per Mode, so the pinned scope still never moves from turn to turn. Proved by
+`tests/interaction-turn.test.ts` (the format names exactly `PACKAGE_FIELD_NAMES`, in order, and a
+block written that way parses) and by `tests/interaction-seam.test.ts`, where the fake provider
+records what it was given at session open and on the turn under each of the three Modes.
 
 ---
 
@@ -258,6 +286,10 @@ phases 1 to 4, a receipt without its phase, a busy-target refusal, and replay th
 lineage.
 
 ### I-4. Automatic: what the model sees, and what "explicit" means
+
+> **Superseded in part by Round 5, I-12.** The eight-field schema is still sent verbatim, but it
+> is no longer part of `AUTO_INSTRUCTIONS`. It is `DECISION_FORMAT`, beside the parser, and
+> `instructionsFor` appends it under Automatic only.
 
 Addresses the R-05 remainder. Supersedes the `AUTO_INSTRUCTIONS` text in decision 1.
 
@@ -468,6 +500,11 @@ const AUTO_INSTRUCTIONS =
 
 `writes: 'none'` is deliberate. `auto` never writes by virtue of its mode; work
 reaches the existing Build path only through admission, below.
+
+> **Superseded by Round 5, I-11.** The explicit session route keeps `z.enum(['ask', 'plan'])`.
+> Automatic runs only through the conversation's own routes (`interaction-routes.ts`), where the
+> server resolves the run; a client can never name a run and ask for `auto` on it. The `auto`
+> round trip O1 asks for is proved through those routes in `tests/interaction-seam.test.ts`.
 
 **Returned to the integrator, lane CD-02h.** `server/engines/claude-session-routes.ts:16`
 (CD-02 may apply this one directly, it is not a hot file):

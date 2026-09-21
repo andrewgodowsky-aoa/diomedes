@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { ISSUED_SOURCE_ID } from '../shared/interaction.js';
+import { ISSUED_SOURCE_ID, PACKAGE_FIELD_NAMES } from '../shared/interaction.js';
+import { MODES } from '../server/modes.js';
 import type { InteractionPhase } from '../server/harness/claude-session-run.js';
 import type { AdmissionVerdict } from '../server/interaction-admission.js';
 import {
   commandBinding,
+  DECISION_FORMAT,
   decideWith,
+  instructionsFor,
   outcomeOf,
   previewGate,
   promptFor,
@@ -239,5 +242,30 @@ describe('outcomeOf', () => {
       status: 'read',
       projectId: 'p',
     });
+  });
+});
+
+describe('what the model is told', () => {
+  it('names the tag, the identity line and exactly the eight fields the parser accepts', () => {
+    expect(DECISION_FORMAT).toContain('fenced block tagged diomedes-decision');
+    expect(DECISION_FORMAT).toContain('[[diomedes source_message_id=...]]');
+    const named = [...DECISION_FORMAT.matchAll(/^- ([a-z_]+):/gm)].map((match) => match[1]);
+    expect(named).toEqual(Object.values(PACKAGE_FIELD_NAMES));
+  });
+
+  it('asks for the block under Automatic only, and leaves every Mode text short', () => {
+    expect(instructionsFor('ask', MODES.ask.instructions)).toBe(MODES.ask.instructions);
+    expect(instructionsFor('plan', MODES.plan.instructions)).toBe(MODES.plan.instructions);
+    expect(instructionsFor('auto', MODES.auto.instructions)).toBe(
+      `${MODES.auto.instructions}\n\n${DECISION_FORMAT}`,
+    );
+    expect(MODES.auto.instructions).not.toContain('diomedes-decision');
+  });
+
+  it('a block written the way the format describes is the block the parser reads', () => {
+    const answer = 'Done.\n\n' + block(proposal());
+    const read = splitDecision(answer, SM, 'automatic', 'Order the usual');
+    expect(read.body.block).toBe('parsed');
+    expect(read.answerText).toBe('Done.');
   });
 });

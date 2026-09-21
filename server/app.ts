@@ -95,6 +95,7 @@ import { InteractionTurns, type InteractionHost } from './interaction-service.js
 import {
   commandBinding,
   decideWith,
+  instructionsFor,
   previewGate,
   promptFor,
   restrictionOf,
@@ -2508,7 +2509,7 @@ export async function createApp(options: AppOptions) {
           threadId,
           requestId: command.commandId,
           prompt: promptFor(command.mode, command.text, sourceMessageId),
-          instructions: MODES[command.mode].instructions,
+          instructions: instructionsFor(command.mode, MODES[command.mode].instructions),
           // From the parsed command alone, before any setting or file is read, so a retry is
           // compared with what was sent even after either has changed.
           binding: commandBinding('message', command),
