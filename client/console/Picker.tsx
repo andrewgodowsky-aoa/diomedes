@@ -10,11 +10,13 @@ import type {
   Settings,
 } from '../../shared/types';
 import type { EngineConnection } from '../../shared/engines';
+import type { AwsConnectionView } from '../../shared/model-api';
 import { EXTERNAL_ENGINES, isExternalEngine } from '../../shared/engines';
 import { freshness } from '../../shared/connection-policy';
 import { routeCaption } from '../../shared/engine-routes';
 import { MODE_CEILING, effortFor } from '../../shared/effort';
 import { api, engineConnections } from '../api';
+import { AWS_ROUTE_NAME, awsPickerState } from '../aws-bedrock-view';
 
 const ENGINE_IDS = ['codex', 'claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin'] as const;
 
@@ -110,6 +112,7 @@ export function Picker({
   const [connections, setConnections] = useState<Partial<Record<ExternalEngine, EngineConnection>>>(
     {},
   );
+  const [aws, setAws] = useState<AwsConnectionView | null>(null);
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -144,6 +147,15 @@ export function Picker({
       })
       .catch(() => {
         // A failed read leaves the last answer in place; nothing is invented.
+      });
+    // The AWS route is a company account, not an installed engine: its own view says
+    // whether anything blocks a send, and the menu offers it only when nothing does.
+    void api<AwsConnectionView>('/ai/model-api/aws-bedrock')
+      .then((view) => {
+        if (alive) setAws(view);
+      })
+      .catch(() => {
+        // Same rule: an unreadable view offers nothing new.
       });
     return () => {
       alive = false;
@@ -193,7 +205,10 @@ export function Picker({
   const engLabel =
     displayEngine === 'sample'
       ? ''
-      : (integrations.find((i) => i.id === displayEngine)?.name ?? displayEngine);
+      : displayEngine === 'aws-bedrock'
+        ? AWS_ROUTE_NAME
+        : (integrations.find((i) => i.id === displayEngine)?.name ?? displayEngine);
+  const awsState = awsPickerState(aws);
   const displayModel = chosenSlug || savedModel || chosen?.model.slug || 'default';
   const wantedEffort =
     route === 'codex'
@@ -298,7 +313,33 @@ export function Picker({
                   </p>
                 );
               })}
-              {offeredIds.length === 0 && waiting.length === 0 && (
+              {awsState.offered && aws?.connection && (
+                <div key="aws-bedrock">
+                  <h4>
+                    {AWS_ROUTE_NAME}
+                    <span title={aws.connection.endpoint}>
+                      {aws.connection.account} · {aws.connection.region}
+                    </span>
+                  </h4>
+                  <p className="note">
+                    Your company’s AWS account, billed there. Reads this project’s files and proposes
+                    changes for your approval.
+                  </p>
+                  <button
+                    type="button"
+                    className={`m ${route === 'aws-bedrock' ? 'on' : ''}`}
+                    role="menuitemradio"
+                    aria-checked={route === 'aws-bedrock'}
+                    onClick={() => choose(null, 'aws-bedrock')}
+                  >
+                    <span>GPT-5.6 Luna</span>
+                    <span className="id">{aws.connection.model}</span>
+                    <small>Within the spend limit set in Settings</small>
+                  </button>
+                </div>
+              )}
+              {awsState.note && <p className="note">{awsState.note}</p>}
+              {offeredIds.length === 0 && waiting.length === 0 && !awsState.offered && !awsState.note && (
                 <p className="note">Connect an engine in Settings.</p>
               )}
               {chosen && chosen.model.efforts.length > 0 ? (

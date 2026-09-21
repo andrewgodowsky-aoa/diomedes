@@ -26,6 +26,7 @@ import { HarnessError, digest, copy } from './policy.js';
 import type { RunService, StepContext, StepDefinition } from './run-service.js';
 import { localHarnessPrincipal } from './bridge.js';
 import { isExternalEngine } from '../../shared/engines.js';
+import { isModelApiRoute } from '../../shared/model-api.js';
 import type {
   CapabilityManifest,
   HarnessRun,
@@ -144,7 +145,7 @@ export class TextRouteRuntime {
     if (typeof projectId !== 'string' || !projectId)
       throw new HarnessError('invalid_input', 'A text-route intent must name its project.');
     const engine = (request.intent as { engine?: unknown }).engine;
-    if (typeof engine !== 'string' || !isExternalEngine(engine))
+    if (typeof engine !== 'string' || !(isExternalEngine(engine) || isModelApiRoute(engine)))
       throw new HarnessError('invalid_input', 'A text-route intent must name an external engine.');
     const requestId = (request.intent as { requestId?: unknown }).requestId;
     if (typeof requestId !== 'string' || !requestId)
@@ -307,7 +308,7 @@ export function textDispatchAuthorizer(
       throw new HarnessError('egress_denied', 'This run is not a text-route run.');
     if (intent.destination !== 'external') return;
     const engine = (intent.input as { engine?: unknown } | null)?.engine;
-    if (typeof engine !== 'string' || !isExternalEngine(engine))
+    if (typeof engine !== 'string' || !(isExternalEngine(engine) || isModelApiRoute(engine)))
       throw new HarnessError('egress_denied', 'The step does not name an external engine route.');
     const settings = services();
     if (settings?.[engine] !== true)

@@ -11,6 +11,7 @@
  */
 import type {
   AdapterCapabilities,
+  Destination,
   HarnessPrincipal,
   Json,
   ModelRequest,
@@ -29,6 +30,8 @@ import { commandGate, type AdapterRouteContract } from '../../shared/adapter-con
 export interface ModelAdapter {
   id: string;
   version: string;
+  /** The host must authorize external inference before dispatch and result acceptance. */
+  destination?: Destination;
   /**
    * The route descriptor this adapter is bound to. The loop does not trust a
    * model that cannot say what it is: an adapter without a valid contract, or
@@ -223,6 +226,7 @@ export class NativeAgent {
             effect: 'read',
             name: this.adapter.id,
             cost: 1,
+            destination: this.adapter.destination ?? 'local',
             input: prepare
               ? z.json().parse({ provider: this.adapter.id, request: effective })
               : ({

@@ -4,6 +4,7 @@ import type { ExternalEngine } from '../shared/types';
 import type { ConnectionReceipt, EngineConnection, InstallOffer } from '../shared/engines';
 import { ENGINE_NAMES, EXTERNAL_ENGINES, TEXT_ROUTE_CONTROLS } from '../shared/engines';
 import { ENGINE_ROUTE_PROFILES, routeCaption } from '../shared/engine-routes';
+import { AwsBedrockSetup } from './AwsBedrockSetup';
 import {
   advanceSetup,
   continueChoice,
@@ -97,6 +98,7 @@ export interface AISetupProps extends AIConnectionProps {
 
 export function AIConnections({
   settings,
+  save,
   busy,
   onConnections,
   openTest,
@@ -1127,6 +1129,8 @@ export function AIConnections({
             </section>
           );
         })}
+        {/* A model-API route: the company's own AWS account, not an installed engine. */}
+        <AwsBedrockSetup settings={settings} save={save} busy={busy} />
       </div>
     </div>
   );

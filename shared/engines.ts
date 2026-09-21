@@ -1,4 +1,5 @@
 import type { EngineModel, ExternalEngine, Route } from './types.js';
+import { MODEL_API_ROUTES } from './model-api.js';
 import type {
   Candidate,
   CandidateSource,
@@ -16,7 +17,7 @@ export const EXTERNAL_ENGINES = ['claude-code', 'opencode', 'oh-my-pi', 'cursor'
  * registry row that names this one.
  */
 export const HOST_TEST_PROJECT = 'diomedes-host-tests';
-export const ROUTES = ['sample', 'codex', ...EXTERNAL_ENGINES] as const;
+export const ROUTES = ['sample', 'codex', ...EXTERNAL_ENGINES, ...MODEL_API_ROUTES] as const;
 export function isExternalEngine(value: unknown): value is ExternalEngine {
   return EXTERNAL_ENGINES.some((id) => id === value);
 }
