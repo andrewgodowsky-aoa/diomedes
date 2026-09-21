@@ -47,6 +47,16 @@ import { resolveAppearance } from '../shared/theme-pack/resolve';
 import type { ThemePackV1 } from '../shared/theme-pack/types';
 import { useWake } from './console/useWake';
 
+const PLACE_KEY = 'diomedes.window.place';
+/** The project this window was showing before a reload, or null. */
+function keptPlace(): string | null {
+  try {
+    return sessionStorage.getItem(PLACE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -198,6 +208,17 @@ export function App() {
       setBusy(false);
     }
   }
+  // This window's place, remembered for a reload only. Session storage ends with the window,
+  // so the next launch opens to Diomedes again. It holds an id and nothing about the project.
+  useEffect(() => {
+    if (!initialLoaded) return;
+    try {
+      if (selected) sessionStorage.setItem(PLACE_KEY, selected);
+      else sessionStorage.removeItem(PLACE_KEY);
+    } catch {
+      // Storage can be refused. The window then opens to Diomedes after a reload too.
+    }
+  }, [initialLoaded, selected]);
   const loadInitial = useCallback(async () => {
     try {
       const [s, p] = await Promise.all([
@@ -210,7 +231,11 @@ export function App() {
       setOnline(true);
       // The project last open is navigation context, not the launch destination: it stays in
       // `openProjects`, first on the spine and one click away. A launch lands on Diomedes,
-      // for a returning person too (core agent contract, decision 3).
+      // for a returning person too (core agent contract, decision 3). A reload is not a
+      // launch: the window keeps the place it was showing, so refreshing mid-work, or the
+      // app restarting its page, never throws a person out of their project.
+      const kept = keptPlace();
+      if (kept && p.projects.some((project) => project.id === kept)) setSelected(kept);
       void refreshIntegrations();
       void refreshUsage();
     } catch (e) {

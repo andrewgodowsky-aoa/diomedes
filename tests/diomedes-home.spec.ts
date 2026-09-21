@@ -198,7 +198,13 @@ test('in a project, work is offered and starts only when Start is pressed', asyn
   expect([started.tasks.length, started.sessions.length]).toEqual([1, 1]);
 
   await card.getByRole('button', { name: 'Open the work', exact: true }).click();
-  await expect(page.getByRole('navigation', { name: 'Project pages', exact: true })).toBeVisible();
+  // The project opens in the Console, where the work it started can be followed.
+  await expect(page.getByRole('navigation', { name: 'Threads and views', exact: true })).toBeVisible();
+  await expect(
+    page
+      .getByRole('navigation', { name: 'Open projects', exact: true })
+      .getByRole('button', { name: 'Linen service', exact: true }),
+  ).toBeVisible();
 });
 
 test('Answer only holds the same request to an answer', async ({ page }) => {
