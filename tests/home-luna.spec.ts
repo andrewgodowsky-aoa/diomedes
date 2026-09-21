@@ -83,7 +83,10 @@ const interruptPost = (request: { method(): string; url(): string }) =>
 /** Two paints, so anything an arriving answer could paint has had its chance. */
 async function painted(page: Page) {
   await page.evaluate(
-    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
   );
 }
 /** Holds one response after the server has answered it, until the test lets it through. */

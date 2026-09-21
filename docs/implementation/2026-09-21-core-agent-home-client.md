@@ -148,6 +148,16 @@ The follow-up acceptance cases, same spec, all through the real delivery path:
   the abort settles produce exactly one interrupt request, and once the delivery is over its
   control is gone so a later press cannot exist.
 
+## Review corrections
+
+Independent review of candidate `b387059367cca89dfa32268793ac2132b748aeb3`
+(`2026-09-21-core-agent-home-initial-review.md`) ran `tsc --noEmit` red with one error, TS2345
+at `tests/home-luna.spec.ts:86`: the `painted` helper passed the `Promise<void>` resolver
+straight to the inner `requestAnimationFrame`, whose callback is invoked with a timestamp
+number. Corrected to `requestAnimationFrame(() => resolve())`, keeping the two-frame schedule
+and every assertion. No rerun of tsc or of the suite has been executed by this lane; the
+review's HSR-1 finding belongs to another author's fixture and is untouched here.
+
 ## Decisions kept
 
 - Pending-claim, retry, discard, `inFlight` join, cross-window adoption and visit-fence

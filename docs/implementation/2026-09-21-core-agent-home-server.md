@@ -80,9 +80,9 @@ acceptance; the parent runs the gates and the independent review judges the code
   instant; it is not a promise the command will never run.
 - The pre-durable window between `active` installation and turn-step durability is the
   driver's, specified by the contract; no window is hidden and none is claimed durable.
-- The work order forbade commands, so no test, typecheck or build has been run on this lane.
-  The held-preparation case named above is new evidence and is explicitly unexecuted; the
-  parent executes the gates and mutation checks and reports any failure before a repair.
+- The work order forbade commands, so this author ran no test, typecheck or build on this
+  lane. The parent's own executed run is recorded under Corrections below; this author's
+  correction to it is likewise unexecuted pending the parent's rerun.
 - The client lane (`conversation-send.ts`, `DiomedesHome.tsx`, `Diomedes.tsx`) and the driver
   lane (`model-session-run.ts`, `claude-session-run.ts`, already carrying `interruptCommand`)
   are other authors' files and are untouched here.
@@ -93,3 +93,18 @@ acceptance; the parent runs the gates and the independent review judges the code
   otherwise; that contract is the drivers lane's and is already satisfied in this worktree.
 - `turnResult` non-null means a succeeded turn step; a failed turn leaves nothing to read, which
   is what makes its Stop `idle`. That semantic is the drivers' and is relied on, not re-decided.
+
+## Corrections after the parent's initial executed review
+
+- HSR-1. The parent executed the focused suite at candidate
+  `b387059367cca89dfa32268793ac2132b748aeb3`: 140 tests passed including the held-preparation
+  case above, and `the interrupt endpoint names the command in its path and takes nothing
+  else` failed. Raw evidence is `home-initial-vitest.log` and `home-initial-results.json` in
+  `F:/Diomedes/deliverables/core-agent-continuation-20260921/`; the review is
+  `docs/implementation/2026-09-21-core-agent-home-initial-review.md`. The fixture had sent the
+  scalar JSON body `'halt'` through the same loop as the three forbidden-object bodies and
+  demanded the endpoint's `no body` wording for all four. The scalar is refused earlier by the
+  app's strict JSON parser with `The request is not valid JSON or is too large.` The loop now
+  covers only the object bodies with the endpoint wording check, and the scalar asserts the
+  parser's own 400 response separately. Every payload and every 400 assertion is preserved;
+  no production handling was changed. This correction has not been re-run by this author.

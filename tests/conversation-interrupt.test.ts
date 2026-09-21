@@ -381,12 +381,18 @@ test('the interrupt endpoint names the command in its path and takes nothing els
   // A malformed command id is 400.
   expect((await interruptRaw('bad id')).status).toBe(400);
   expect((await interruptRaw('x'.repeat(200))).status).toBe(400);
-  // Any body at all is refused before the command is ever looked up.
-  for (const body of [{ note: 'x' }, { engine: 'claude-code' }, { runId: 'model-abc' }, 'halt']) {
+  // Any object body at all is refused by the endpoint before the command is
+  // ever looked up.
+  for (const body of [{ note: 'x' }, { engine: 'claude-code' }, { runId: 'model-abc' }]) {
     const refused = await interruptRaw('m-never', thread.id, body);
     expect([body, refused.status]).toEqual([body, 400]);
     expect(await refused.text()).toContain('no body');
   }
+  // A scalar JSON payload is refused earlier still: the app's strict JSON
+  // parser rejects it before the endpoint is reached, with its own wording.
+  const scalar = await interruptRaw('m-never', thread.id, 'halt');
+  expect(scalar.status).toBe(400);
+  expect(await scalar.json()).toEqual({ error: 'The request is not valid JSON or is too large.' });
   // A project that is not there is 404 before the endpoint is reached.
   expect(
     (await request(`/projects/nosuch/threads/${thread.id}/messages/m-x/interrupt`, 'POST')).status,
