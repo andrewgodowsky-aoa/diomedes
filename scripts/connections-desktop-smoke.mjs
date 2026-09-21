@@ -37,9 +37,24 @@ async function launch(extra = {}) {
   await api('/health');
   proof.launches ??= []; proof.launches.push({ pid: desktop.process().pid, readyMs: Math.round(performance.now() - at), origin });
 }
-async function openConnections() {
-  await page.reload(); await page.getByRole('button', { name: 'Connections', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Connections', exact: true })).toBeVisible();
+// tests/fixtures/landing.ts does this for the browser suite and is TypeScript, so
+// the same pattern lives here: a launch opens on Diomedes even with openProjects
+// saved, and the last open project is entered through its Open projects button,
+// with the same guard against clicking "Projects" and the same active-state check.
+async function enterLastOpenProject(win) {
+  const openProjects = () => win.getByRole('navigation', { name: 'Open projects', exact: true });
+  const buttons = openProjects().getByRole('button');
+  await expect(buttons.first()).toBeVisible();
+  if ((await buttons.count()) < 2) {
+    throw new Error(
+      'enterLastOpenProject: the Open projects bar has only the "Projects" button, so there is ' +
+        'no project to enter. Give the settings at least one project in openProjects first.',
+    );
+  }
+  await buttons.last().click();
+  await expect(openProjects().getByRole('button').last()).toHaveClass(
+    /(?:^|\s)(?:on|active)(?:\s|$)/,
+  );
 }
 try {
   await launch(); proof.version = (await api('/health')).version;
@@ -48,35 +63,59 @@ try {
   await api('/settings', 'PUT', { detail: 'technical', surface: 'console', openProjects: [project.id],
     onboarding: { work: 'business', detail: 'technical', familiarity: 'some', resumeAt: 'done', completedAt: new Date().toISOString() } });
   const base = `/projects/${project.id}/connections`;
-  await openConnections();
-  await page.getByRole('button', { name: 'Prepare connection proposal' }).click();
-  await expect(page.getByText('Choose the reported numeric quantity threshold for a manager issue.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Approve synthetic connection' })).toHaveCount(0);
+  // The retired Connections screen's own calls, driven at the same API it used
+  // (client/connections/Connections.tsx): an incomplete intent asks for its
+  // threshold and service window, and the server itself refuses to adopt it.
+  const requestText = 'Watch Toast menu availability across my three Raleigh restaurants and alert a manager.';
+  const incomplete = await api(`${base}/propose`, 'POST', { text: requestText });
+  expect(incomplete.plan.questions).toContain(
+    'Choose the reported numeric quantity threshold for a manager issue.',
+  );
+  expect(incomplete.plan.questions).toContain('Choose service days, hours and time zone.');
+  const refused = await api(`${base}/adopt`, 'POST', { id: incomplete.plan.id, digest: incomplete.digest }, 409);
+  expect(refused.code).toBe('proposal_conflict');
+  expect((await api(base)).connections).toHaveLength(0);
   proof.checks.push('Incomplete natural-language intent remains inactive and asks for threshold/service window');
-  await page.getByLabel('Reported quantity threshold').fill('5');
-  await page.getByLabel('Service starts').fill('00:00'); await page.getByLabel('Service ends').fill('23:59');
-  await page.getByRole('button', { name: 'Prepare connection proposal' }).click();
-  await page.getByRole('button', { name: 'Approve synthetic connection' }).click();
-  await expect(page.getByTestId('connection-health')).toHaveText('stale');
-  await page.getByRole('button', { name: 'Refresh availability' }).click();
-  await expect(page.getByTestId('connection-health')).toHaveText('healthy');
-  await expect(page.getByRole('cell', { name: 'Not tracked', exact: true })).toHaveCount(3);
+  const proposal = await api(`${base}/propose`, 'POST', {
+    text: requestText, threshold: 5,
+    serviceWindow: { start: '00:00', end: '23:59', timeZone: 'America/New_York', days: [0, 1, 2, 3, 4, 5, 6] },
+  });
+  expect(proposal.plan.questions).toEqual([]);
+  await api(`${base}/adopt`, 'POST', { id: proposal.plan.id, digest: proposal.digest });
+  expect(
+    (await api(base)).connections.find((item) => item.connection.id.startsWith('toast-')).health,
+  ).toBe('stale');
+  await api(`${base}/read`, 'POST', {});
+  const readBack = await api(base);
+  expect(
+    readBack.connections.find((item) => item.connection.id.startsWith('toast-')).health,
+  ).toBe('healthy');
+  expect(new Set(readBack.observations.map((item) => item.resourceId)).size).toBe(3);
+  expect(readBack.observations.filter((item) => item.facts.quantityState === 'not-tracked')).toHaveLength(3);
   proof.checks.push('Reviewed three-location scope; typed fixture read preserves unknown and untracked quantities');
-  await page.getByRole('button', { name: 'Run correction demo' }).click();
-  await expect(page.getByText('completed / 3 scripted model calls / 1 tool calls')).toBeVisible();
+  await api(`${base}/investigate`, 'POST', {});
   const afterModel = await api(base), run = afterModel.runs.at(-1);
+  expect(run.state).toBe('completed');
+  expect(run.used.modelCalls).toBe(3);
+  expect(run.used.toolCalls).toBe(1);
   const modelSteps = run.steps.filter((step) => step.intent.kind === 'model');
   expect(modelSteps[0].intent.input.request.messages[0].text).toContain('stock-investigator-notes v1');
   expect(JSON.stringify(modelSteps[1].output)).toContain('12 units');
   expect(JSON.stringify(modelSteps[2].output)).toContain('not tracked');
   proof.correctionRun = run;
   proof.checks.push('Frozen effective model context, raw bad observation, new budgeted correction identity and rule provenance');
-  await page.getByRole('button', { name: 'Propose improvement from corrections' }).click();
-  await page.getByRole('button', { name: 'Adopt reviewed revision' }).click();
-  await expect(page.getByText('stock-investigator-notes v2', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Review rollback to guidance v1' }).click();
-  await page.getByRole('button', { name: 'Adopt reviewed revision' }).click();
-  await expect(page.getByText('stock-investigator-notes v3', { exact: true })).toBeVisible();
+  const improvement = await api(`${base}/rules/revise`, 'POST', {});
+  expect(improvement.proposal.review.kind).toBe('improvement');
+  await api(`${base}/rules/adopt`, 'POST', { id: improvement.proposal.id, digest: improvement.digest });
+  expect(
+    (await api(base)).rules.active.find((rule) => rule.id === 'stock-investigator-notes').version,
+  ).toBe(2);
+  const rollback = await api(`${base}/rules/revise`, 'POST', { rollbackVersion: 1 });
+  expect(rollback.proposal.review.kind).toBe('rollback');
+  await api(`${base}/rules/adopt`, 'POST', { id: rollback.proposal.id, digest: rollback.digest });
+  expect(
+    (await api(base)).rules.active.find((rule) => rule.id === 'stock-investigator-notes').version,
+  ).toBe(3);
   proof.checks.push('Correction history -> offline replay comparison -> explicit revision adoption -> versioned rollback');
   savedEvent = { id: randomUUID(), at: new Date().toISOString(), quantity: 3 };
   const ackAt = performance.now(); await api(`${base}/event`, 'POST', savedEvent, 202);
@@ -91,21 +130,17 @@ try {
   proof.writeProbe = await api(`${base}/proof/write-denial`, 'POST', {});
   expect(proof.writeProbe.registered).toBe(true); expect(proof.writeProbe.dispatches).toBe(0); expect(proof.writeProbe.denied).toBeTruthy();
   proof.checks.push('Registered prohibited write refused before handler, zero dispatches');
-  await page.getByText('Review generated connection examples', { exact: true }).click();
-  await page.getByRole('button', { name: 'Load generated candidates' }).click();
+  const candidates = await api(`${base}/compiler`);
   for (const name of ['library', 'helpdesk']) {
-    await page.getByRole('button', { name: `Approve ${name} fixture`, exact: true }).click();
-    await page.getByRole('button', { name: `Run ${name} MCP check`, exact: true }).click();
-    await expect(page.getByLabel('MCP result')).toContainText(name === 'library' ? 'conn_library_list_books' : 'conn_helpdesk_list_tickets');
+    const candidate = candidates.find((item) => item.name === name);
+    expect(candidate.installed).toBe(false);
+    await api(`${base}/compiler/activate`, 'POST', { name, previewDigest: candidate.previewDigest });
+    const result = await api(`${base}/compiler/run`, 'POST', { name });
+    expect(JSON.stringify(result)).toContain(name === 'library' ? 'conn_library_list_books' : 'conn_helpdesk_list_tickets');
   }
   proof.compiler = (await api(base)).runs.filter((item) => ['connection-library', 'connection-helpdesk'].includes(item.capabilityId));
   expect(proof.compiler).toHaveLength(2); expect(proof.compiler.every((item) => item.state === 'completed' && item.steps.length === 1)).toBe(true);
   proof.checks.push('Two unrelated generic OpenAPI adapters reviewed and called by official SDK MCP client through same Runtime');
-  await page.locator('.connection-desktop').evaluate((element) => { element.scrollTop = 0; });
-  await page.screenshot({ path: path.join(root, 'connections.png') });
-  await page.setViewportSize({ width: 760, height: 960 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: path.join(root, 'connections-narrow.png') });
   await api(`${base}/control`, 'POST', { status: 'disconnected' });
   await api(`${base}/read`, 'POST', {}, 409);
   await api(`${base}/event`, 'POST', { ...savedEvent, id: randomUUID() }, 409);
@@ -119,12 +154,27 @@ try {
   await api(`${base}/event`, 'POST', savedEvent, 202);
   expect((await api(base)).tasks).toHaveLength(1);
   proof.checks.push('Fresh process requires explicit authorization, starts stale, keeps durable receipts and never duplicates manager Task');
-  // Connections is Console-only: AGENTS.md standing decision 1 freezes the Workbook and
-  // takes no new screens there. This proves the rail entry on a fresh process, which is a
-  // stronger check than the settings write it replaces.
-  await page.reload(); await page.getByRole('button', { name: 'Connections', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Reported availability', exact: true })).toBeVisible();
-  proof.checks.push('Connections reachable through ordinary Console navigation on a fresh process');
+  // Connections is retired from navigation: the Console lists it in Everything
+  // under Not ready yet with its reason (client/console/Shell.tsx), and nothing
+  // opens a screen. On a fresh process the window lands on Diomedes; the project
+  // is entered through the Open projects bar the way tests/fixtures/landing.ts
+  // does, and the row is read where a person actually finds it.
+  await expect(page.locator('html[data-surface="console"]')).toHaveCount(1);
+  await expect(page.getByRole('main', { name: 'Diomedes', exact: true })).toBeVisible();
+  await enterLastOpenProject(page);
+  await page.getByRole('button', { name: 'Everything', exact: true }).click();
+  const menu = page.getByRole('menu', { name: 'Everything' });
+  await expect(menu.getByRole('heading', { name: 'Not ready yet' })).toBeVisible();
+  const connectionsRow = menu.getByRole('menuitem', { name: 'Connections' });
+  await expect(connectionsRow).toHaveAttribute('aria-disabled', 'true');
+  await expect(connectionsRow).toContainText('Not ready');
+  await expect(connectionsRow).toContainText('It runs on example data rather than your own software');
+  await expect(page.getByRole('button', { name: 'Connections', exact: true })).toHaveCount(0);
+  await page.screenshot({ path: path.join(root, 'connections-unavailable.png') });
+  await page.setViewportSize({ width: 760, height: 960 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: path.join(root, 'connections-unavailable-narrow.png') });
+  proof.checks.push('Connections has no entry point: on a fresh process the Console lists it in Everything under Not ready yet with its reason');
   await desktop.close(); desktop = undefined;
   await launch({ DIOMEDES_TEST_HOLD_TRIAGE: '1' });
   await api(`${base}/resume`, 'POST', {});

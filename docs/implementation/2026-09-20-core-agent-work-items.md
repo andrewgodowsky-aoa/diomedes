@@ -866,6 +866,55 @@ hash-bound candidate record and public asset verification. No live AWS call,
 customer setup or public older-version upgrade proof is claimed. Broader CD-1
 prompt gaps remain open; no numbered prompt, index or checksum status moved.
 
+### Round 25: current runtime gate and hosted timing diagnosis (2026-09-21)
+
+Exact `79d5b361259f8add1b8e4bb5ebe74afcc3662247` passed the full independent
+local gates: typecheck, build, 50 page cases, 176 browser cases and 4,682 unit
+tests with zero failures and four skips across 252 files. The unit run took
+500.66 seconds. All original review oracles remain unchanged. The separate
+review accepts the desktop fixture repair and Round24 with no blocking finding.
+It explicitly distinguishes fresh final execution from the desktop proof schema's
+executable-only binding; the schema alone does not identify a same-version ASAR.
+
+Hosted run `35644771576` initially failed on Windows: 4,680 passed, three
+failed and three skipped. Two h01-event-recovery cases and one step-origin case
+timed out waiting five seconds for their synthetic Codex run to reach approval.
+The source, tests and workflow are unchanged from the earlier green cc04e42
+candidate. macOS and Workers checks passed. Both original files then passed
+unchanged locally with the same two-worker scheduling: 30 passed, zero failed.
+The original hosted log and JUnit report are retained. A single unchanged
+failed-job rerun passed, so all three hosted checks now pass on that exact
+candidate. No timeout, assertion or concurrency setting changed. Independent
+diagnosis remains pending; the precise cause of the initial timing failure is
+not yet established. Both attempts remain evidence. Main remains cc04e42.
+
+The installer runtime driver also had a stale navigation contract. Its original
+committed bytes ran unchanged before any fix, with SHA-256
+`14102bebe9f64badfd331d249fcf7bcbf19dac756a6b136b0c792358bbbd54cb`.
+The preserved cc04e42 package timed out at its removed Connections button,
+with zero completed checks and `passed: false`. No installer registration was
+touched. Source and an existing browser spec document the earlier owner decision
+to list that synthetic demo as unavailable, opening no screen.
+
+The separate author's correction preserves the backend workflow, current
+authority, exact statuses, event deduplication, prohibited-write denial and
+crash-after-202 recovery through the same real loopback API. Actual UI coverage
+will assert the unavailable entry and its reason, plus the Console's narrow
+layout, rather than restore a retired product screen. Independent proposal
+review accepts this scope with the original assertions mapped explicitly and
+the changed UI subject disclosed. The completed patch now passes all eleven
+runtime checks against the preserved cc04e42 payload, including actual
+crash/restart recovery and the unavailable UI. The reviewer-requested
+proposal_conflict response-code assertion was added by the integrator and must
+be covered by the different reviewer's final verdict. Final independent review
+and a fresh run on the installed final bytes remain pending. The release notes
+and site drafts now name
+the retired screen; no live vendor capability or completed prompt is promoted.
+
+Publication, final package/installer/runtime proof and website deployment are
+still owed. Preparatory proofs remain separate. Credentials, live Luna and
+spend authorization remain with Andrew and the AWS owner.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
