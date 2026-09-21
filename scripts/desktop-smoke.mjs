@@ -28,6 +28,25 @@ async function api(route, method = 'GET', data) {
   if (!response.ok) throw new Error(`${route}: ${response.status} ${await response.text()}`);
   return response.json();
 }
+// tests/fixtures/landing.ts does this for the browser suite and is TypeScript, so
+// the same pattern lives here: a launch opens on Diomedes even with openProjects
+// saved, and the last open project is entered through its Open projects button,
+// with the same guard against clicking "Projects" and the same active-state check.
+async function enterLastOpenProject(page) {
+  const openProjects = () => page.getByRole('navigation', { name: 'Open projects', exact: true });
+  const buttons = openProjects().getByRole('button');
+  await expect(buttons.first()).toBeVisible();
+  if ((await buttons.count()) < 2) {
+    throw new Error(
+      'enterLastOpenProject: the Open projects bar has only the "Projects" button, so there is ' +
+        'no project to enter. Give the settings at least one project in openProjects first.',
+    );
+  }
+  await buttons.last().click();
+  await expect(openProjects().getByRole('button').last()).toHaveClass(
+    /(?:^|\s)(?:on|active)(?:\s|$)/,
+  );
+}
 try {
   // Taken before the first launch, so it names the bytes this smoke drives. The
   // release record ties the smoke to a build by this hash alone and refuses a
@@ -67,6 +86,17 @@ try {
     lastPage: { [project.id]: 'tasks' },
   });
   await page.reload();
+  // A launch lands on Diomedes even with openProjects and lastPage saved: those
+  // settings are navigation context, and only a window that already selected a
+  // project keeps its place on reload (client/App.tsx keptPlace). Assert that
+  // landing, enter the project through its bar button, then reach Tasks over the
+  // rail the way a person does: openProject lands on the project's Home page.
+  await expect(page.getByRole('main', { name: 'Diomedes', exact: true })).toBeVisible();
+  await enterLastOpenProject(page);
+  await page
+    .getByRole('navigation', { name: 'Project pages' })
+    .getByRole('button', { name: /^Tasks/ })
+    .click();
   await expect(page.locator('.task-card')).toHaveCount(found.length);
   const sizes = () =>
     page.evaluate(() =>
@@ -247,6 +277,14 @@ try {
     .toBe(false);
   desktop = await electron.launch({ executablePath, env });
   const reopened = await desktop.firstWindow();
+  // The restart is a launch, not a reload: the new window opens on Diomedes
+  // again, so the project and its Tasks page are entered explicitly here too.
+  await expect(reopened.getByRole('main', { name: 'Diomedes', exact: true })).toBeVisible();
+  await enterLastOpenProject(reopened);
+  await reopened
+    .getByRole('navigation', { name: 'Project pages' })
+    .getByRole('button', { name: /^Tasks/ })
+    .click();
   await expect(reopened.locator('.task-card')).toHaveCount(found.length);
   url = new URL(reopened.url()).origin;
   for (const proof of admissionProof) {
