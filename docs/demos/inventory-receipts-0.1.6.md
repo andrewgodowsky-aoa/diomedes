@@ -138,3 +138,6 @@ Before integration or independent acceptance, also compose the accepted stock
 repository recovery repair identified in the [implementation record](../implementation/2026-09-20-inventory-mobile-receipt-history.md#integration-prerequisite)
 and resolve the recorded broader gate failures. The ordinary fixture flows above
 are verified; that does not qualify the pending recovery edge cases.
+The recovery prerequisite also includes malformed-journal scoping and recovery
+before generic Store readers/writers. The isolated demo starts inventory recovery
+before listening, but that is not proof of general desktop-host integration.

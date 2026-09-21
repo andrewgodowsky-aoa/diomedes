@@ -96,6 +96,27 @@ does not change it. Its accepted recovery repair must be composed and checked
 before integration. The reported worker result is not recorded here as an
 accepted commit or as proof of the combined candidate.
 
+Follow-up recovery audit: the other task's SWE report at
+`F:/Diomedes/deliverables/personalized-demo-readiness-20260920/continuation-native-workflows/stock-recovery-swe-review.md`
+also identifies generic Store reads recording a pending inventory replacement as
+`outside`/`observed` before inventory recovery, and malformed pending journals
+being parsed before project/path filtering. These remain reported integration
+blockers, not fixes accepted by this consumer. Recovery candidate
+`a27e0188459f370b808a565956eca565ac126dcb` is reported to address lost receipt
+evidence and malformed stock JSON only; its acceptance was still pending when
+this note was written. Do not infer journal scoping or general Store integration
+from that candidate.
+
+The current isolated fixture awaits `InventoryStockService.init(project.id)`
+before returning the service and before the demonstration mounts/listens. Its
+startup validation reads the stock file directly without recording History, and
+it exposes no generic `readDocument`, `writeRecorded` or restore route. This
+ordering was checked in source; it does not qualify the general desktop host.
+Future host composition must finish inventory recovery before admitting generic
+readers/writers of the stock path, and must remain closed when recovery cannot
+settle. Add explicit crash-window and malformed/foreign-journal coverage with
+the owning recovery task before integration. Full MI03 remains OPEN.
+
 ## Changed files
 
 ```text
