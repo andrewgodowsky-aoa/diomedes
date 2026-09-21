@@ -12,6 +12,11 @@ The package's thirteen work orders (CD-00 to CD-12) are kept with their IDs. Wha
 their **order**, because the package was written without reading the current source, and the
 source moved the critical path.
 
+**Current delegated route, 2026-09-21:** Andrew requires SWE 2.0 Max through
+Devin. The installed Devin CLI and explicit `swe-2-max` model are verified;
+the historical routing inventory below is retained as history, not dispatch
+authority. Rounds 12 onward record this integrator's actual route and evidence.
+
 ---
 
 ## 1. Routes verified on this machine, 2026-09-20
@@ -553,6 +558,43 @@ It does not yet hold R-12, the admission repair or the AWS composition.
 **Three disjoint SWE 2.0 Max authors are executing through Devin.** Same isolated Home worktree at `ff02829`: driver interruption (two driver files and a new focused test), server/default routing and HTTP behavior (formal hot-file handoff `handoff_mub87ap0_a8d16149`, claim `claim_mub87b3u_bbb2be33`), and client flow/browser fixtures (`claim_mub87c8u_8a211992`). The driver lane uses the authorized AWS single-file claim plus `claim_mub87boe_17e907b3`. They may not run tests, mutate Git, contact providers, read main-checkout source, edit each other's files or change frozen reviewers' oracles. The parent independently executes tests and guard removals after their combined candidate is committed. No inherited model or OpenCode delegation is used.
 
 **Original oracle bytes remain verified unchanged.** The three frozen AWS/admission/seam Git blobs match their archived SHA-256 values; the original 3,034-byte R4 client reproducer still appears exactly once; R5/R6, admission-successor and composed-baseline review reports match their committed originals. `verify-frozen-oracles.py` in the continuation evidence folder records these assertions for the final candidate too. PR #29 remains draft, and the full expanded-candidate gates, independent implementation acceptance, merge and release/site endgame remain owed.
+
+### Round 16: Home drivers independently accepted; HTTP and client work continues (2026-09-21)
+
+**The bounded driver lane is accepted at `e2411ca`, review `ef77568`.** The
+separate author added command-scoped interruption to both conversation
+drivers. Independent TypeScript and five focused files passed: 75 tests,
+including 14 new driver cases. Ten guard/order mutants failed at their
+intended assertions, each followed by source-byte restoration and 14/14
+green. Two inserted-microtask mutants survived and remain explicitly
+disclosed. The native route can require reconciliation after an abrupt
+signal abort; the model route records interruption. An acknowledgement is
+not treated as the durable outcome.
+
+**Review also repaired the test harness.** Immutable review `45eafc6`
+recorded HDR-R1: assertion failure skipped driver close and raced temporary
+store removal. The author changed only test lifecycle ownership and the
+producer record. The independent re-review reran both frozen failure
+schedules: each failed only at its intended assertion, with no ENOTEMPTY,
+unhandled rejection or hook timeout, then restored 14/14 green. Both review
+reports are unedited. Driver code, test repair and reports are pushed on
+`feature/core-agent-home-luna` and `feature/core-agent-home-driver-review`.
+They have not yet been composed into this integration branch.
+
+**Server and client acceptance remain open.** The two original Devin
+SWE 2.0 Max authors continue their disjoint Home routing/HTTP and client/UI
+assignments. Their first print attempts stopped at denied shell-tool calls;
+exit zero was not credited as task completion. Native-file-only resumes are
+producing the scoped code and fixtures. No different model, shell permission
+escalation, live provider call or credential access was used. All review
+heavy slots and completed driver claims are released; active server/client
+claims remain their owners'.
+
+`origin/main` was refreshed and remains `58bdc65`. Hosted checks on pushed
+integration checkpoint `f363b78` are all successful. PR #29 remains draft.
+The assembled Home candidate, independent server/client review, new guard
+checks and all final composed gates are still owed before merge. The
+release/site endgame remains after that acceptance. Nothing new is DONE.
 
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
