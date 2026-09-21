@@ -230,11 +230,17 @@ const slurp = async (file: string) => {
 /**
  * This checkout's git directory and, for a worktree, the common one beside it.
  * A worktree's `.git` is a pointer file rather than a directory.
+ *
+ * `root` is the checkout to resolve from; it defaults to this repository so
+ * production callers need not pass it, and a test can point it at a
+ * hand-built directory to exercise the same resolution without touching this
+ * repository's own `.git`.
  */
-async function gitDirectories(): Promise<string[]> {
-  const pointer = await slurp(at('.git'));
-  let gitDir = at('.git');
-  if (pointer?.startsWith('gitdir:')) gitDir = path.resolve(at('.'), pointer.slice(7).trim());
+export async function gitDirectories(root: string = at('.')): Promise<string[]> {
+  const dotGit = path.join(root, '.git');
+  const pointer = await slurp(dotGit);
+  let gitDir = dotGit;
+  if (pointer?.startsWith('gitdir:')) gitDir = path.resolve(root, pointer.slice(7).trim());
   const common = await slurp(path.join(gitDir, 'commondir'));
   return [gitDir, ...(common ? [path.resolve(gitDir, common.trim())] : [])];
 }
@@ -248,10 +254,17 @@ async function gitDirectories(): Promise<string[]> {
  * `null` means it could not be determined: no repository, a shallow clone, an
  * alternates file pointing elsewhere, or a pack index this cannot read. A
  * caller must treat `null` as "no answer" and never as "absent".
+ *
+ * `root` defaults to this repository; a test may pass a hand-built checkout
+ * instead, so the whole resolution (worktree and all) runs against a fixture
+ * rather than this repository's own object store.
  */
-export async function commitPresent(commit: string): Promise<boolean | null> {
+export async function commitPresent(
+  commit: string,
+  root: string = at('.'),
+): Promise<boolean | null> {
   if (!sha(commit)) return false;
-  const dirs = await gitDirectories();
+  const dirs = await gitDirectories(root);
   let readable = false;
   for (const dir of dirs) {
     if (await slurp(path.join(dir, 'shallow'))) return null;
@@ -282,7 +295,7 @@ export async function commitPresent(commit: string): Promise<boolean | null> {
 }
 
 /** One version 2 pack index, searched by its own fanout table. */
-async function packHolds(file: string, commit: string): Promise<boolean | null> {
+export async function packHolds(file: string, commit: string): Promise<boolean | null> {
   let index: Buffer;
   try {
     index = await readFile(file);
@@ -300,10 +313,13 @@ async function packHolds(file: string, commit: string): Promise<boolean | null> 
   if (names + high * 20 > index.length) return null;
   while (low < high) {
     const middle = (low + high) >> 1;
+    // buf.compare(target, ...) reports how the buf-side slice (the pack's
+    // entry at `middle`) orders against the target-side slice (`id`): negative
+    // when the entry sorts before id, so id is further along the table.
     const order = index.compare(id, 0, 20, names + middle * 20, names + middle * 20 + 20);
     if (order === 0) return true;
-    if (order < 0) high = middle;
-    else low = middle + 1;
+    if (order < 0) low = middle + 1;
+    else high = middle;
   }
   return false;
 }
