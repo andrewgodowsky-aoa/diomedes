@@ -92,10 +92,8 @@ The same rows, each with the three states above, are generated into
 is the one place these facts are collected, and it is what another repository copies
 instead of retyping this table.
 
-**The newest published build is an older version than this source tree**, and it does not
-contain the repair this tree is carrying. That file names the build, the commit it was
-made from and what has not been shown about it; the releases page is what you can
-actually download today.
+That file also names the newest build recorded here, the commit it was made from and what
+has not been shown about it; the releases page is what you can actually download today.
 
 **Found is not usable.** Checking this computer ends in one of these, and the difference
 is the whole point of the list:

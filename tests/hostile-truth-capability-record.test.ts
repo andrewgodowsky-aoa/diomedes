@@ -113,19 +113,45 @@ describe('what the record is hand-typed rather than derived from', () => {
 });
 
 describe('the one release fact, and whether a reader ever sees it', () => {
-  it('records that the published build is not this source version', () => {
+  it('records the version relationship of the newest recorded build', () => {
     expect(committed.release).not.toBeNull();
-    expect(committed.release!.appVersionMatchesSource).toBe(false);
-    expect(committed.release!.appVersion).not.toBe(committed.appVersion);
+    const source = (JSON.parse(read('package.json')) as { version: string }).version;
+    expect(committed.appVersion).toBe(source);
+    expect(committed.release!.appVersionMatchesSource).toBe(
+      committed.release!.appVersion === source,
+    );
   });
 
-  it('is said somewhere a person reads, not only in the file they do not open', () => {
-    // The README sends people to the releases page, says this tree is 0.1.5
-    // and never says the newest published build is an older version. Naming
-    // the number there is additionally constrained by
-    // tests/engine-routes.test.ts:81-85, which rejects any version literal in
-    // the README other than package.json's.
-    expect(readme).toMatch(
+  it('derives the relationship for both matching and differing versions', () => {
+    const matchesAt = (appVersion: string) =>
+      buildCapabilityRecord({
+        appVersion,
+        generatedFrom: 'c'.repeat(40),
+        routes: [],
+        release: {
+          releaseId: 'diomedes-9.9.9-windows-experimental-00000000-0123456789ab',
+          appVersion: '9.9.9',
+          channel: 'experimental',
+          baseCommit: 'd'.repeat(40),
+          recordedAt: '2026-01-01T00:00:00.000Z',
+          installerFilename: null,
+          installerSha256: null,
+          applicationSigning: null,
+          installerSigning: null,
+          evidencePath: 'evidence/release-candidates/synthetic.json',
+          engineVersions: {},
+        },
+      }).release!.appVersionMatchesSource;
+    expect(matchesAt('9.9.9')).toBe(true);
+    expect(matchesAt('9.9.10')).toBe(false);
+  });
+
+  it('directs readers to recorded build evidence without claiming publication from it', () => {
+    // A local candidate record does not establish which build was published.
+    // The README must remain truthful across releases and version bumps.
+    expect(readme).toContain('newest build recorded here');
+    expect(readme).toContain('the releases page is what you can actually download today');
+    expect(readme).not.toMatch(
       /(published|release[ds]?)[^.]{0,80}(older|earlier|previous) version|no published build of this version/i,
     );
   });
@@ -143,7 +169,8 @@ describe('the one release fact, and whether a reader ever sees it', () => {
     // the desktop smoke, the installer's install, repair and uninstall, and
     // the installed runtime as literals that are printed whatever happened.
     const generator = read('scripts/write-release-assets.mjs');
-    const hardcoded = "the packaged desktop smoke; the\n  installer's install, same-version repair and uninstall; the installed runtime.";
+    const hardcoded =
+      "the packaged desktop smoke; the\n  installer's install, same-version repair and uninstall; the installed runtime.";
     expect(lf(generator)).not.toContain(hardcoded);
   });
 
