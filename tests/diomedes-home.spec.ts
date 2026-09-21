@@ -769,13 +769,14 @@ test('CD05-R-09 closure: sending again sends what was saved, whatever the Mode c
   expect(await said((await home())!.projectId, 'Uncertain R09b')).toBe(1);
 });
 
-test('CD05-R-10 closure: a reply lost during concurrent first sends is recovered on the one thread', async ({
+test("CD05-R-10 closure: a first send's lost reply is recovered from the other window, on the one thread", async ({
   page,
   context,
 }) => {
   const p = await api<Project>('/projects', 'POST', { name: 'R10b project' });
   const other = await context.newPage();
   try {
+    // Both windows read the fresh project before either sends, so neither has seen a thread.
     await Promise.all([open(page), open(other)]);
     await Promise.all(
       [page, other].map(async (window) => {
@@ -785,23 +786,36 @@ test('CD05-R-10 closure: a reply lost during concurrent first sends is recovered
         await painted(window);
       }),
     );
-    // The second window's message is recorded, and both of its attempts lose the reply.
+    // The second window's first message is recorded, and both of its attempts lose the reply.
     await other.route('**/api/projects/*/threads/*/messages', async (route) => {
       if (route.request().method() !== 'POST') return route.continue();
       await route.fetch();
       await route.abort('failed');
     });
-    await Promise.all([say(page, 'First R10b'), say(other, 'Second R10b')]);
-    await expect(answers(page).filter({ hasText: 'You said: First R10b' })).toHaveCount(1);
+    await say(other, 'Second R10b');
     await expect(strip(other)).toContainText('Second R10b');
 
+    // The first window's first send lands on that same thread, where a message is still owed
+    // an answer. It is refused as itself and kept, and the owed message is offered here too.
+    await say(page, 'First R10b');
+    await expect(page.getByRole('alert')).toContainText('never confirmed');
+    await expect(composer(page)).toHaveValue('First R10b');
+    await expect(strip(page)).toContainText('Second R10b');
+    expect(await said(p.id, 'First R10b')).toBe(0);
+
+    // Either window can settle it. This one does, then sends its own.
+    await strip(page).getByRole('button', { name: 'Send again', exact: true }).click();
+    await expect(answers(page).last()).toHaveText('You said: Second R10b');
+    await expect(strip(page)).toHaveCount(0);
+    await composer(page).press('Enter');
+    await expect(answers(page).last()).toHaveText('You said: First R10b');
+
+    // The window that lost the reply reads the same conversation, with nothing left to settle.
     await other.unroute('**/api/projects/*/threads/*/messages');
     await other.reload();
     await expect(other.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
     await other.getByRole('combobox', { name: 'In' }).selectOption(p.id);
-    await expect(strip(other)).toContainText('Second R10b');
-    await strip(other).getByRole('button', { name: 'Send again', exact: true }).click();
-    await expect(answers(other).filter({ hasText: 'You said: Second R10b' })).toHaveCount(1);
+    await expect(answers(other).last()).toHaveText('You said: First R10b');
     await expect(strip(other)).toHaveCount(0);
 
     const saved = await api<ProjectState>(`/projects/${p.id}/state`);
@@ -811,4 +825,22 @@ test('CD05-R-10 closure: a reply lost during concurrent first sends is recovered
   } finally {
     await other.close();
   }
+});
+
+test('CD05-R-10 closure: a conversation another window re-routed is mended by the next send', async ({
+  page,
+}) => {
+  const p = await reviewProject(page, 'R10c project');
+  const thread = (await api<ProjectState>(`/projects/${p.id}/state`)).conversations.find(
+    (item) => item.name === 'Diomedes',
+  )!;
+  // An ordinary thread's engine is its own to change, so another window can do this.
+  await api(`/projects/${p.id}/threads/${thread.id}`, 'PUT', { engine: 'sample' });
+  await say(page, 'After the re-route R10c');
+  await expect(answers(page).last()).toHaveText('You said: After the re-route R10c');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  const mended = (await api<ProjectState>(`/projects/${p.id}/state`)).conversations.find(
+    (item) => item.id === thread.id,
+  )!;
+  expect(mended.engine).toBe('claude-code');
 });
