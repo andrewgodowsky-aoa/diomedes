@@ -268,7 +268,6 @@ export class InteractionTurns {
     const driver = this.driver();
     const located = await this.host.locate(projectId, threadId, commandId);
     if (!located?.answered) throw new ApiError(404, 'This message was not found.');
-    if (located.settled) throw new ApiError(409, MOVED_ON, { code: 'conversation_settled' });
     const phases = await driver.phases(projectId, located.runId, located.sourceMessageId);
     const recorded = decisionOf(phases);
     if (!recorded || recorded.block !== 'parsed')
@@ -280,6 +279,26 @@ export class InteractionTurns {
       proposalDigest: chosen.proposalDigest,
       projectId: chosen.projectId,
     };
+    const message = {
+      projectId,
+      runId: located.runId,
+      sourceMessageId: located.sourceMessageId,
+      restriction: located.restriction,
+    };
+    // The choice the person already made, and what it already started, is a record. Reading
+    // it back needs the read they already have and nothing more, so a conversation that has
+    // since been cancelled or narrowed still answers with its own receipt.
+    const committed = await this.replayed(message, phases, selection, located.settled);
+    if (committed)
+      return {
+        runId: located.runId,
+        commandId,
+        sourceMessageId: located.sourceMessageId,
+        answerText: null,
+        interrupted: false,
+        outcome: committed,
+      };
+    if (located.settled) throw new ApiError(409, MOVED_ON, { code: 'conversation_settled' });
     const verdict = admitInteraction({
       decision: recorded.decision,
       restriction: narrower(recorded.restriction, located.restriction),
@@ -309,6 +328,33 @@ export class InteractionTurns {
       interrupted: false,
       outcome,
     };
+  }
+
+  /**
+   * What an identical selection already settled, or null where there is still something to
+   * admit. The saved choice must name this message, this proposal and this target; the
+   * message must already hold its Work receipt or its final refusal, so nothing here applies
+   * authority to a new effect. Nothing is written: a settled run is read and left alone.
+   */
+  private async replayed(
+    message: { projectId: string; runId: string; sourceMessageId: string; restriction: Restriction },
+    phases: readonly InteractionPhase[],
+    selection: ActionSelection,
+    settled: boolean,
+  ): Promise<InteractionOutcome | null> {
+    const saved = selectionOf(phases);
+    if (
+      !saved ||
+      saved.sourceMessageId !== selection.sourceMessageId ||
+      saved.proposalDigest !== selection.proposalDigest ||
+      saved.projectId !== selection.projectId
+    )
+      return null;
+    const refused = phases.some(
+      (phase) => phase.phase === 'task-refused' || phase.phase === 'work-refused',
+    );
+    const read = await this.read(message, settled);
+    return refused || read.receipts.sessionId ? read.outcome : null;
   }
 
   /** A read. What happened to a message, from its phases and receipts. Nothing is written or started. */
