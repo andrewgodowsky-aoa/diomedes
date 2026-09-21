@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Route } from '@playwright/test';
 import express from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -1171,23 +1171,29 @@ test('CD05-R-12 closure: an old Discard settling does not stop a delivery somewh
   const b = await reviewProject(page, 'R12c B');
   const other = await context.newPage();
   const sent = gate();
+  // The route and its handler live outside the try so the finally can unroute however the try
+  // exits. The handler stays registered through the assertions: with the one-shot form the
+  // transcript read that follows the send was repeatedly observed stalling adjacent to the
+  // route teardown at fulfillment (CD05-R-13). Only the first POST is gated; other requests
+  // continue, and further POSTs are still counted so a resend or stray post is observed.
+  const messages = '**/api/projects/*/threads/*/messages';
+  let posts = 0;
+  const gateFirstPost = async (route: Route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    posts += 1;
+    if (posts !== 1) return route.continue();
+    const response = await route.fetch();
+    sent.reached();
+    await sent.held;
+    await route.fulfill({ response });
+  };
   try {
     const queued = await queuedDiscard(page, other, 'R12c A');
     const scope = page.getByRole('combobox', { name: 'In' });
     await scope.selectOption(b.id);
     await expect(answers(page).last()).toHaveText('You said: Warm R12c B');
     // A message in B whose reply is held open, so its delivery is running when Discard settles.
-    await page.route(
-      '**/api/projects/*/threads/*/messages',
-      async (route) => {
-        if (route.request().method() !== 'POST') return route.continue();
-        const response = await route.fetch();
-        sent.reached();
-        await sent.held;
-        await route.fulfill({ response });
-      },
-      { times: 1 },
-    );
+    await page.route(messages, gateFirstPost);
     await say(page, 'Running R12c B');
     await sent.recorded;
     await queued.release();
@@ -1198,9 +1204,11 @@ test('CD05-R-12 closure: an old Discard settling does not stop a delivery somewh
     await expect(scope).toHaveValue(b.id);
     await expect(strip(page)).toHaveCount(0);
     await expect(page.locator('.dio-notice')).toHaveCount(0);
+    expect(posts).toBe(1);
     expect(await said(b.id, 'Running R12c B')).toBe(1);
   } finally {
     sent.release();
+    await page.unroute(messages, gateFirstPost);
     await other
       .evaluate(() => (window as typeof window & { releaseR12c?: () => void }).releaseR12c?.())
       .catch(() => undefined);
