@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "diomedes-0.1.7-windows-experimental-20260921-6e2f033b4778",
+  "named": true,
+  "product": "Diomedes",
+  "appVersion": "0.1.7",
+  "channel": "experimental",
+  "build": {
+    "baseCommit": "6e2f033b4778d88ff544d11874f3c1aedb2051f7",
+    "sourceStatus": "committed",
+    "sourceDigest": "a5f53684ef95c28ee0319b8dd740d2a4d629086c9e9cb2c3d7f3189f15960d43",
+    "builtAt": "2026-09-21T20:03:43.345Z",
+    "identityEmbeddedIn": "resources/app.asar:BUILD_INFO.json",
+    "sourceFiles": 423
+  },
+  "package": {
+    "directory": "release/Diomedes-win32-x64",
+    "executableSha256": "df6e7afddf718aa86a7f6b0b40758ae0eebd5cdc5ef80c6dd926ad7905f9ac2a",
+    "asarSha256": "46a60af5d91ce23637a4e6794fea04d9e97d5dfb896a9d70a7818ba5fa99f6e7",
+    "electron": "44.2.0"
+  },
+  "installer": {
+    "filename": "Diomedes-Experimental-0.1.7-unsigned-setup.exe",
+    "bytes": 266655455,
+    "sha256": "ae024d7912957323d23012c3ee88299f2554d074362de3d07a3cf2d815790fbe",
+    "productId": "Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001",
+    "appTreeSha256": "a332a94c0295f62b637854c41d6813bb8d38bcdae843963bd1008620220665b6",
+    "compiler": {
+      "name": "NSIS",
+      "version": "3.12"
+    }
+  },
+  "nativeRuntime": {
+    "version": "0.153.4",
+    "sha256": {
+      "codex.exe": "a1cf6360ca71918d5466bc3a32d9f18b7044c9128756d1949e715d277b88c9b6",
+      "codex-command-runner.exe": "08b56828cca57c83d14f03eb9ec62c73a2cd6648248cc731ae8fedd5fa3ae566",
+      "codex-windows-sandbox-setup.exe": "682cf7b351a871f3479b78fe3b7ea7348554de655bd98b0f322cef2d006a8d62"
+    }
+  },
+  "protocols": {
+    "workCommand": 1,
+    "scopedGrant": 2,
+    "reviewer": 3,
+    "agent": 1,
+    "harness": [
+      "stream-json",
+      "harness-v1",
+      "in-process",
+      "codex app-server 0.153.4",
+      "codex app-server 0.153.4 with diomedes_team MCP",
+      "http+sse",
+      "acp/1"
+    ],
+    "engines": {
+      "testedVersions": {
+        "claude-code": "2.1.252",
+        "opencode": "1.18.4",
+        "oh-my-pi": "18.0.6",
+        "cursor": "2026.08.11",
+        "devin": "3000.10.23"
+      },
+      "claude": "2.1.252",
+      "opencode": "1.18.4",
+      "cursor": "2026.08.11",
+      "devin": "3000.10.23"
+    }
+  },
+  "verification": {
+    "typecheck": "passed",
+    "unit": {
+      "passed": 4682,
+      "failed": 0,
+      "pending": 4,
+      "total": 4686,
+      "files": 252,
+      "report": "test-results/release-v017-record/unit-results.json"
+    },
+    "browser": {
+      "expected": 176,
+      "unexpected": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "report": "test-results/release-v017-record/browser-results.json",
+      "lastRun": null
+    },
+    "desktopSmoke": {
+      "result": "passed",
+      "report": "evidence/release-candidates/diomedes-0.1.7-windows-experimental-20260921-6e2f033b4778-desktop-proof.json",
+      "reportSha256": "024dbb18e83b96fbab5a4abdf5779ecf1714c5d8ebd6d6fadc17acb80f46f391",
+      "ranAt": "2026-09-21T20:04:44.766Z"
+    },
+    "installer": {
+      "result": "passed",
+      "report": "evidence/release-candidates/diomedes-0.1.7-windows-experimental-20260921-6e2f033b4778-installer-proof.json",
+      "reportSha256": "e460bf384343dbf4e53d89fbd725354f8c9ea89849956ec60c782bcaa36fde89",
+      "ranAt": "2026-09-21T20:05:47.3309722Z",
+      "checks": 5
+    },
+    "installedRuntime": {
+      "result": "passed",
+      "report": "evidence/release-candidates/diomedes-0.1.7-windows-experimental-20260921-6e2f033b4778-installed-runtime.json",
+      "reportSha256": "5f3ec5e260fa9e9f5ddaee0fa5b45b998a61ef6c81c29ae49aa260af25e5fa63",
+      "ranAt": "2026-09-21T20:06:05.591Z",
+      "checks": 11
+    }
+  },
+  "signing": {
+    "application": "NotSigned",
+    "installer": "NotSigned",
+    "publisher": null
+  },
+  "host": {
+    "tested": "Windows 11 Home (10.0.26200)",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "recordedAt": "2026-09-21T20:11:36.196Z"
+}

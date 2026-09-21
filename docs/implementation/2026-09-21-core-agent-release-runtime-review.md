@@ -1,0 +1,34 @@
+## Independent Final Review - Runtime Driver Repair at 6e2f033
+
+Reviewer: independent release review session complete-gooseberry. Candidate: 6e2f033b4778d88ff544d11874f3c1aedb2051f7 (driver repair + Round25 ledger over 79d5b361). Method: native read-only inspection of `release-v017-runtime-final.diff`, the current `scripts/connections-desktop-smoke.mjs`, Round25, and the five evidence artifacts. I executed nothing; every run result cited is the parent's recorded artifact, not mine.
+
+### Verdict
+
+Accept the driver repair and Round25. No blocking findings. The two reviewer-requested conditions are present in source.
+
+### The actual patch vs the accepted proposal
+
+The on-disk driver is identical to the diff's post-image. Every mapping verified:
+
+- Incomplete leg (lines 70-78): `propose {text}` asserts both question strings verbatim against desktop.ts:91-92; `adopt` expected-409 via the driver's existing `status` arg; `expect(refused.code).toBe('proposal_conflict')` is the exact response-code condition I required - the 409 body carries `{error, code}` (desktop.ts:267). The added `connections` length-0 assertion proves the refused adoption installed nothing. Accepted: this parent-authored line strengthens the gate without weakening any oracle.
+- Complete leg (79-94): threshold 5 + all-days America/New_York service window satisfies `connectionIntentSchema`/`serviceWindowSchema`; adopt; `health==='stale'` then `healthy` after `/read` - matches service.ts:501-509 and the `lastReconciledAt` set at :233. Three distinct `resourceId`s plus three `quantityState==='not-tracked'` observations equal the old three "Not tracked" cells on the same facts subject (toast.ts:84-88), and the resource-set check is a strengthening the cell count did not carry.
+- Correction run (96-105): `run.state==='completed'`, `run.used.modelCalls===3`, `run.used.toolCalls===1` - the required `used.used` typo correction is present and matches `HarnessRun.used` (harness.ts:203). `modelSteps` content assertions and `proof.correctionRun` unchanged. The r1 proof's run record carries exactly these values.
+- Rules (107-118): revise {} -> `review.kind==='improvement'` -> adopt -> version 2; revise `{rollbackVersion:1}` -> 'rollback' -> adopt -> version 3. Matches `version=(previous?.version??0)+1` (service.ts:918), kind selection (:1136), and revision lookup (:1107-1109). Stronger than the retired text assertions: it pins the numeric version field.
+- Event/idempotence (120-129), write probe (130-132), disconnect->read/event 409 (144-147), restart leg (148-156): verbatim unchanged.
+- Compiler (133-143): candidates GET, `installed===false`, activate with `previewDigest`, run contains `conn_library_list_books`/`conn_helpdesk_list_tickets`; `proof.compiler` filter unchanged; server-side `principal()` enforcement still exercised at desktop.ts:302. One non-blocking observation: `candidates` is fetched once before the loop, so helpdesk's `installed===false` is asserted on the pre-activation snapshot rather than a re-fetch after library's activate - a cross-install bug would escape. Tightening (re-GET per iteration) is optional; the authoritative invariants (exactly two completed connection-* runs, digest-pinned activation, principal enforcement) are intact.
+- Retirement UI block (157-177): `html[data-surface="console"]` is a real selector (console.css:6); the 'Open projects' `navigation` landmark exists (TopStrip.tsx:76, Shell.tsx:1375, App.tsx:717) so `enterLastOpenProject` is grounded; menu role/aria-label, h4 'Not ready yet' heading, `aria-disabled="true"` menuitem, reason substring, button count-0, renamed `connections-unavailable*.png` screenshots, and the 760px `scrollWidth<=innerWidth` check on the real Console frame - the changed overflow subject is honestly disclosed in the comment. The reason is asserted via two `toContainText` calls ('Not ready' + the reason text) rather than the proposal's single 'Not ready · ...' string - the '·' separator goes unasserted; trivial.
+- Crash/restart/identity/cleanup (178-233): HOLD_TRIAGE launch, queued 202, `pendingBeforeCrash`, taskkill of the owned PID with the `ownedGone` poll and `crashKill` evidence, relaunch `authorized===false`, resume, `processed`, dedupe at one task, idle metrics, `applicationPath===...resources/app.asar`, empty `proof.errors`, exe+asar SHA-256 in `finally`, per-launch origin closed-poll flipping `passed` false. All retained verbatim.
+
+Every old assertion has an equivalent or an explicitly retired subject; nothing silently disappeared.
+
+### Evidence review (inspected artifacts; parent's executions)
+
+- Original red: committed original driver (SHA-256 14102beb... as recorded) at 79d5 against the cc04 payload exited 1 in `openConnections` waiting for the removed 'Connections' button (proof error names line 41:93, matching the committed original), zero checks, `passed:false`, version 0.1.7, sole launch's service closed. Confirms the planned red.
+- Repair r1: new driver (cbf370df...) exit 0, 11 checks matching the pushed strings, four launches all closed, `errors:[]`, `correctionRun`/`writeProbe`/`compiler`/`pendingBeforeCrash`/`crashKill`/`idle`/`applicationPath` all present, exe+asar hashes (8983422d.../843692b7...) identical to the red run's - the same preserved cc04 bytes drove both. Preliminary driver evidence only; it is not installed-final-package proof and is not claimed as such.
+- r3 gates JSON: five checks (tsc, build, page, browser, vitest) all exitCode 0 at 79d5 with retained per-check logs; the 50/176/4682/4-skip counts are parent-reported from those logs, not recomputed here.
+- Round25 ledger: preserves the original failure with driver hash and failing line, separates preliminary driver proof from owed installed-final proof, names the integrator-added assertion as requiring this verdict, keeps hosted diagnosis explicitly unsettled, and carries the owed list (publication, final package/installer/runtime proof, website). Accurate on everything I could check.
+- Notes r5 (pending draft, not published): LIMITS states Connections is unavailable, opens no screen, and that runtime checks cover the synthetic backend plus crash recovery plus the unavailable entry - the required disclosure is present.
+
+### Limits
+
+The red, r1, and r3 executions are the parent's; I inspected artifacts only. Exact-6e2f033 gates and hosted run 35647138706 are running separately and are not certified. The repaired driver must still run fresh against the final installed package before it can enter a candidate record; the desktop proof schema binds the executable and version, and ASAR binding comes from the candidate writer's separate checks, so no reuse of this preliminary proof is valid. No final package, installer proof, publication, deployment, live AWS, or customer upgrade is claimed or reviewed.

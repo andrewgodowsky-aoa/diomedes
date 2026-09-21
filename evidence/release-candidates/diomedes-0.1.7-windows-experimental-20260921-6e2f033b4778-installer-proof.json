@@ -1,0 +1,35 @@
+{
+  "startedAt": "2026-09-21T20:05:47.3309722Z",
+  "installer": "F:\\Diomedes\\deliverables\\core-agent-release-v017-20260921\\installer\\Diomedes-Experimental-0.1.7-unsigned-setup.exe",
+  "installerSha256": "ae024d7912957323d23012c3ee88299f2554d074362de3d07a3cf2d815790fbe",
+  "installTarget": "F:\\Diomedes\\diomedes-wt\\core-agent-release\\test-results\\release-v017-installer-proof\\installation",
+  "registryKeys": [
+    "HKCU:\\Software\\Diomedes\\Experimental\\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001",
+    "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001"
+  ],
+  "preExistingRegistration": {
+    "present": true,
+    "installDir": null,
+    "installDirFileCount": 0,
+    "snapshot": "F:\\Diomedes\\diomedes-wt\\core-agent-release\\test-results\\release-v017-installer-proof\\registration-before\\snapshot.json"
+  },
+  "checks": [
+    "Installed all payload files with identical SHA-256; both current-user keys and the Start Menu shortcut name this installation",
+    "Installed executable passed full Connections desktop/crash/restart smoke with isolated profile",
+    "Same-version repair install retained unknown data and isolated profile; all program hashes and the registration still match",
+    "Uninstall removed only owned payload/registration/shortcut; unknown file and isolated profile retained",
+    "The registration found before the proof (0 keys, 1 Start Menu files) was handed back and reads back identical; the existing installation's 0 files and every Diomedes taskbar pin are unchanged"
+  ],
+  "passed": true,
+  "registration": {
+    "displayName": "Diomedes Experimental 2026-09-09 (Unsigned)",
+    "displayVersion": "0.1.7"
+  },
+  "payloadFileCount": 76,
+  "runtime": "F:\\Diomedes\\diomedes-wt\\core-agent-release\\test-results\\release-v017-installer-proof\\runtime-proof\\proof.json",
+  "registrationRestore": {
+    "result": "restored",
+    "afterFailure": false
+  },
+  "finishedAt": "2026-09-21T20:07:28.5838858Z"
+}

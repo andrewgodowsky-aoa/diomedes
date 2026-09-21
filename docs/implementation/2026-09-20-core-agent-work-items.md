@@ -915,6 +915,45 @@ Publication, final package/installer/runtime proof and website deployment are
 still owed. Preparatory proofs remain separate. Credentials, live Luna and
 spend authorization remain with Andrew and the AWS owner.
 
+### Round 26: final release bytes verified; publication pending (2026-09-21)
+
+The exact release source is `6e2f033b4778d88ff544d11874f3c1aedb2051f7`, now on
+`origin/main`. Fresh independent integrator execution on that commit passed
+TypeScript, Vite build, 50 page cases, 176 browser cases (zero failed, flaky or
+skipped), and 4,682 unit tests (zero failed, four skipped, 252 files). Hosted
+Windows and macOS checks passed on their first attempt at this commit, including
+run `35647138706`; the subsequent main checks also passed. The original hosted
+failures at `79d5b36` remain recorded in Round25 and the unedited hosted review.
+The independent runtime review accepts the final driver and integrator-added
+`proposal_conflict` assertion; it distinguishes preliminary execution from the
+fresh final proof below.
+
+The frozen source was packaged at `2026-09-21T20:03:43.345Z`. Embedded build
+identity and all 423 packaged source hashes were verified. A fresh desktop smoke
+passed, then the actual unsigned installer passed install, all 11 installed
+runtime checks, same-version repair and uninstall. Its 76 payload files matched;
+all owned services closed; prior registration, Start Menu files and taskbar pins
+were restored or unchanged. No pending registration restore remains. The retired
+Connections screen stays unavailable; the runtime proof exercises its synthetic
+backend and crash recovery, plus that unavailable entry in the real Console.
+
+Candidate record:
+`evidence/release-candidates/diomedes-0.1.7-windows-experimental-20260921-6e2f033b4778.json`.
+It was generated while HEAD still equaled the packaged source, with all three
+fresh proof inputs and the exact full test reports. The capability record was
+regenerated and its check passed; the website receives an identical copy.
+The installer is 266,655,455 bytes, SHA-256
+`ae024d7912957323d23012c3ee88299f2554d074362de3d07a3cf2d815790fbe`.
+Public assets are generated from that candidate and the reviewed release notes.
+The tag must name the packaged source, even after later evidence-only commits.
+
+Publication and the site deployment still await final independent facts review,
+public download and updater metadata checks, and the website's full gates.
+The website draft names the real installer and no longer lists the three retired
+Connections demonstration capabilities as included. No live AWS/provider turn,
+credential exercise, clean customer install, older-customer upgrade or Mac desktop
+release is claimed. The wider CD-00, CD-01, CD-02 and CD-05 prompt pairs remain OPEN.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 

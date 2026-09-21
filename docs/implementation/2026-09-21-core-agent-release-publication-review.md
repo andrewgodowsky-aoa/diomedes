@@ -1,0 +1,36 @@
+# v0.1.7 publication candidate and website patch - independent review (corrected)
+
+Reviewer: independent publication reviewer. Method: native read-only inspection of the app worktree, public assets, site worktree and deliverable evidence. No commands, tests, builds, hashing, deploys or edits were run by me; every execution result cited is the parent's recorded artifact. This report supersedes my earlier one; the records, candidate, assets and site patch reviewed are unchanged.
+
+**Verdict: ACCEPT** the candidate record, proof sidecars, public asset set, capability record and the three-file site patch as internally consistent and truthful for gated publication. This accepts the records and patch contents only. Publication, the anonymous download/updater check, a green site suite and deployment have not occurred and are not certified. One real gate failure is retained below.
+
+## Candidate record and proofs
+
+`evidence/release-candidates/diomedes-0.1.7-windows-experimental-20260921-6e2f033b4778.json`: `appVersion 0.1.7`, channel experimental, `baseCommit 6e2f033b4778d88ff544d11874f3c1aedb2051f7`, sourceDigest `a5f53684...`, builtAt 20:03:43.345Z, 423 source files, electron 44.2.0, nativeRuntime 0.153.4 pinned. Installer `Diomedes-Experimental-0.1.7-unsigned-setup.exe`, 266,655,455 bytes, SHA-256 `ae024d79...`. Signing NotSigned/NotSigned, publisher null. Host Windows 11 (10.0.26200) x64 only. Verification: typecheck passed; unit 4682/0 failed/4 pending/252 files; browser 176 expected/0 unexpected/0 flaky/0 skipped; desktop smoke, installer (5 checks) and installed runtime (11 checks) all passed with named, hashed sidecars.
+
+The sidecars corroborate the record: packaged 0.1.7 exe with matching SHA-256, persistence/lock/service-stop/work-admission receipts, 76 payload files identical, repair and uninstall scoped to owned items, pre-existing registration restored, and the installed-runtime check "Connections has no entry point ... under Not ready yet with its reason" - confirming synthetic backend plus retired unavailable UI, not a working Connections screen or live vendor route. `docs/reference/capability-record.json` was regenerated for this candidate with build-level evidence honestly bounded and all `notProven` lines preserved.
+
+## Public assets
+
+`release-manifest.json` matches the candidate on identity, tag `v0.1.7`, commit, digests, both artifact byte counts and hashes, internal package hashes, signing and verification counts. `SHA256SUMS.txt` covers the other five assets. `release-v017-local-assets-verification.json` records all six intended files with matching bytes/hashes, `zipParity: true` over 76 files and `capabilityCopyIdentical: true`; the owner dotfile is excluded from upload. `README.txt` matches the candidate (commit, build time, host, unsigned honesty, verification counts, `notProven` verbatim) and carries the notes-r5 UPDATES/LIMITS verbatim: discovery consent, scoped installed-tool sign-in, Connect AWS then Save limit ordering, estimated-not-billing-cap, unchosen-route default with explicit route retained, project authority, Stop-unconfirmed semantics, and the Connections/AWS/clean-install/upgrade/Windows-only limits.
+
+## Site patch (committed at c69e6e6)
+
+Three files only: `releases.ts`, `getting-started.md`, `capability-record.json`. `status.json` untouched; Mac target stays `development`. `releases.ts` id/version/build/date/url/bytes/SHA-256 equal the candidate; `channel: 'stable'` is justified by the stable tag and updater policy while the copy says the product is experimental and unsigned; `connections`/`connection-build`/`improvement` removed from `capabilities`; the stale 0.1.6 proof-count limitation replaced by a pointer to the record's README; Connections note and limitation rewritten to unavailable/synthetic. `getting-started.md` keeps the `data-account-routes` anchor (line 54) rendering the five-route table from the copied record, adds AWS Bedrock as the non-tool route with the same consent flow, scopes the reuse claim to installed-tool routes, adds the durable-conversation paragraph and three honest limitations. The site `capability-record.json` copy is proven byte-identical by the parent's verification.
+
+## Round 26, copied reviews, hosted checks
+
+Round 26 is consistent with the records reviewed: gates on 6e2f033 (50 page, 176 browser, 4,682 unit / 4 skipped), packaging timestamp, 423 hashes, all three proofs, installer bytes/SHA, tag-names-packaged-source rule, publication/deploy still owed, no live AWS/credential/clean-install/upgrade/Mac claims, CD-00/01/02/05 OPEN. The runtime review accepts the driver repair and demanded fresh installed proof, which the installed-runtime sidecar now supplies. The hosted review keeps the 79d5b36 failures recorded with its inference marked unproven. `release-v017-final-r4-hosted-compact.json` lists all three check runs `completed`/`success` on `head_sha 6e2f033`, with local-gates and macos-arm64 under run `35647138706`; `release-v017-final-r4-hosted-run.json` records that run attempt 1 completed success on the same head. `release-v017-proof-results.json` preserves the earlier cc04e42 red fixture.
+
+## Corrections superseding my earlier report
+
+1. Observation 1 is superseded. I had read the older `release-v017-final-identity.json` (cc04 baseline). The current `release-v017-final-r4-final-identity.json` names `baseCommit 6e2f033`, version 0.1.7, committed, 423 files, sourceDigest `a5f53684...`, `embeddedIdentity` and `allSourceHashes` equal. The final build baseline is the packaged source itself.
+2. Hosted checks: confirmed above via the compact extraction; the earlier `release-v017-hosted-checks.json` reflects a prior check state, not this commit's.
+
+## Retained gate failure (not waived)
+
+`release-v017-site-final-results.json`: site candidate c69e6e6, build exit 0, browser exit 1, `complete: false`. The browser log records 402 tests, 399 passed, 2 skipped, and one real failure: `tests/download.spec.ts:264` "an anonymous client gets exactly the approved bytes" - the anonymous fetch of the published URL returned 404 at line 270 because v0.1.7 is not yet published. This is the gate doing its job: the suite cannot go green before the bytes exist at the published address. It is a retained failure, not a waiver. The stated order - publish the app first, verify the six assets anonymously plus the updater check, then rerun the unchanged suite and deploy only on green - is the correct disposition and is a precondition for any site deploy.
+
+## Evidence limits
+
+Static review only. I ran no gates, proofs, hashes, zip parity, installs, builds or deploys; asset rehashing, zip parity, capability-copy identity, hosted queries and the site suite are the parent's executions on recorded artifacts. App publication, anonymous six-asset verification, the updater check, the site suite rerun and deployment all remain pending and uncertified. No live provider/AWS exercise, clean-machine install, customer upgrade or Mac release exists in this evidence, and every artifact says so.
