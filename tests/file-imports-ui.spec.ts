@@ -9,6 +9,7 @@ import type { Project, ProjectState } from '../shared/types.js';
 import type { WorkspaceView } from '../shared/workspaces.js';
 import type { BusinessSetupView } from '../shared/business-setup.js';
 import type { ConfigurationView } from '../shared/configuration.js';
+import { reopenLastProject } from './fixtures/landing';
 
 // Only setup identity/intake are prepared over the API. The two invented source
 // exports live OUTSIDE the project, like normal downloads. The UI must import
@@ -138,6 +139,7 @@ test('imports exports through Files, removes a source, runs and revises the acti
     } else await route.continue();
   });
   await page.goto(url);
+  await reopenLastProject(page);
   await expect(page.locator('.console')).toBeVisible();
   await page.getByRole('button', { name: 'Change workspace' }).click();
   await page.getByRole('button', { name: 'Review the setup' }).click();
@@ -218,6 +220,9 @@ test('imports exports through Files, removes a source, runs and revises the acti
   await stop();
   await launch();
   await page.goto(url);
+  // launch() picked a new random port, so this is a fresh origin: sessionStorage
+  // carries nothing across it, exactly like a real app restart.
+  await reopenLastProject(page);
   await expect(page.locator('.console')).toBeVisible();
   const reopened = await api<ProjectState>(`/projects/${project.id}/state`);
   expect(reopened.history.filter((entry) => entry.kind === 'weekly-brief')).toHaveLength(2);
