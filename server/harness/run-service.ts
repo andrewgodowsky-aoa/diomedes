@@ -488,6 +488,27 @@ export class RunService {
     return this.load(runId);
   }
 
+  /**
+   * Hold one run's writer queue while the caller commits something of its own, and hand it
+   * this run as it stands inside that queue. A cancellation, a failed step, a denial or
+   * startup recovery takes the same queue, so each is ordered either before the callback
+   * reads the run or after the commit it protects, never between the two.
+   *
+   * This is process-local ordering. The callback must not claim, record, step or cancel this
+   * run: it would wait on the queue it is already holding.
+   */
+  async fence<T>(
+    runId: string,
+    principal: HarnessPrincipal,
+    action: (run: HarnessRun) => Promise<T>,
+  ): Promise<T> {
+    return this.serialize(runId, async () => {
+      const run = await this.load(runId);
+      this.scope(run, principal);
+      return action(copy(run));
+    });
+  }
+
   async events(runId: string, afterSeq = 0): Promise<HarnessEvent[]> {
     units(afterSeq, 'The event cursor');
     return (await this.load(runId)).events.filter((e) => e.seq > afterSeq);

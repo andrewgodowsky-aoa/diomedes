@@ -100,8 +100,15 @@ import {
 import { EngineService } from './engines/service.js';
 import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
 import { mountInteractionRoutes } from './engines/interaction-routes.js';
-import { InteractionTurns, type InteractionHost } from './interaction-service.js';
 import {
+  InteractionTurns,
+  narrower,
+  type AdmissionSource,
+  type InteractionHost,
+} from './interaction-service.js';
+import { admitInteraction } from './interaction-admission.js';
+import {
+  blockedMessage,
   commandBinding,
   decideWith,
   instructionsFor,
@@ -1814,6 +1821,12 @@ export async function createApp(options: AppOptions) {
     projectId: string,
     supplied: Record<string, unknown>,
     port: number | undefined,
+    /**
+     * The caller's ordering guard for the durable admission alone, where one supplied it.
+     * The conversation passes the guard that holds its own source run; a person's Start
+     * passes none and the two Work paths run exactly as they did.
+     */
+    commit?: <T>(step: () => Promise<T>) => Promise<T>,
   ) => {
     refuseHomeWork(projectId);
     if (isUpdateClosing())
@@ -1906,6 +1919,7 @@ export async function createApp(options: AppOptions) {
         team,
         permission: threadPermission,
         admission: command?.admission,
+        commit,
       });
     }
     return work.start(
@@ -1913,7 +1927,7 @@ export async function createApp(options: AppOptions) {
       taskId,
       typeof b.instruction === 'string' ? b.instruction : '',
       b.demo === 'fault',
-      { permission: threadPermission, admission: command?.admission },
+      { permission: threadPermission, admission: command?.admission, commit },
     );
   };
   /**
@@ -2544,6 +2558,84 @@ export async function createApp(options: AppOptions) {
       return null;
     }
   };
+  /** The same, for the Work command, from the route and task its own input phase pinned. */
+  const conversationWorkDigest = (
+    commandId: string,
+    work: { taskId: string; route: string; instruction: string },
+  ) => {
+    try {
+      return parseWorkCommand({
+        protocolVersion: 1,
+        commandId,
+        taskId: work.taskId,
+        route: work.route,
+        instruction: work.instruction,
+        sources: [],
+        consent: true,
+      })!.admission.payloadDigest;
+    } catch {
+      return null;
+    }
+  };
+  /**
+   * The projects a conversation may target, read per turn. Only a valid binding counts:
+   * before the first message there is no home, so no project is one and every project is
+   * targetable.
+   */
+  const admissionContext = async () => {
+    const home = store.homeBinding();
+    return {
+      homeProjectId: home?.projectId ?? null,
+      targetableProjectIds: (await store.projects())
+        .map((project) => project.id)
+        .filter((id) => id !== home?.projectId),
+    };
+  };
+  /**
+   * What every child admission is held to, read here rather than sampled before the awaits
+   * that precede it: the thread, this message's own lineage, the Mode control as it stands
+   * now intersected with what the message was bound to, and the person's saved choice of
+   * this exact proposal. A narrowing, a retirement or a changed target between the answer
+   * and this commit refuses the new child. A child that already committed is not revisited.
+   */
+  const admitChild = async (
+    projectId: string,
+    command: { commandId: string },
+    source: AdmissionSource,
+    family: 'task' | 'work',
+  ) => {
+    const thread = store
+      .state(source.projectId)
+      .conversations.find((item) => item.id === source.threadId);
+    if (!thread) throw new ApiError(404, 'This thread was not found.');
+    const lineage = (thread.lineages ?? []).find((item) => item.runId === source.runId);
+    if (!lineage || lineage.retired)
+      throw new ApiError(409, 'This conversation moved on before this was started.', {
+        code: 'conversation_settled',
+      });
+    const verdict = admitInteraction({
+      decision: source.decision,
+      restriction: narrower(
+        source.restriction,
+        restrictionOf(thread.mode === 'auto' || thread.mode === 'plan' ? thread.mode : 'ask'),
+      ),
+      conversationProjectId: source.projectId,
+      ...(await admissionContext()),
+      selection: source.selection,
+    });
+    if (verdict.outcome === 'blocked')
+      throw new ApiError(409, blockedMessage(verdict.reason), { code: verdict.reason });
+    if (
+      verdict.outcome !== 'escalate' ||
+      verdict.projectId !== projectId ||
+      verdict.projectId !== source.targetProjectId ||
+      verdict.proposalDigest !== source.proposalDigest ||
+      (family === 'task' ? verdict.taskCommandId : verdict.workCommandId) !== command.commandId
+    )
+      throw new ApiError(409, 'This message can no longer start that work. Nothing was started.', {
+        code: 'not_startable',
+      });
+  };
   // The Diomedes conversation. `InteractionTurns` owns the sequence; what follows is only what
   // the Store and the existing admission paths supply to it. Each method takes and releases
   // its own lock, and none of them holds one while a provider runs.
@@ -2830,17 +2922,7 @@ export async function createApp(options: AppOptions) {
         touchThread(thread, at, state.tasks);
         await store.persist(state);
       }),
-    admissionContext: async () => {
-      // Read per turn, and only a valid binding counts: before the first message
-      // there is no home, so no project is one and every project is targetable.
-      const home = store.homeBinding();
-      return {
-        homeProjectId: home?.projectId ?? null,
-        targetableProjectIds: (await store.projects())
-          .map((project) => project.id)
-          .filter((id) => id !== home?.projectId),
-      };
-    },
+    admissionContext,
     receipts: (projectId, ids, intent) =>
       store.locked(async () => {
         const state = store.state(projectId);
@@ -2852,43 +2934,57 @@ export async function createApp(options: AppOptions) {
           ? store.taskCommand(projectId, ids.taskCommandId, expected)
           : undefined;
         if (!expected) assertReplay(findCommand(state, ids.taskCommandId), 'task.create');
-        const work = findCommand(state, ids.workCommandId);
-        assertReplay(work, 'work.start');
-        return {
-          projectId,
-          taskId: task?.id ?? null,
-          sessionId: work?.type === 'work.start' ? work.subject.id : null,
-        };
+        // The Work command is compared only once its own input phase has pinned what it
+        // names. Until then this message has nothing to recognise, so nothing is trusted.
+        const started = intent?.work && conversationWorkDigest(ids.workCommandId, intent.work);
+        const work = started
+          ? store.workCommand(projectId, ids.workCommandId, started)
+          : undefined;
+        if (!started) assertReplay(findCommand(state, ids.workCommandId), 'work.start');
+        return { projectId, taskId: task?.id ?? null, sessionId: work?.id ?? null };
       }),
+    workRoute: async (projectId) =>
+      // The target project's own engine, as a person's Start there would use.
+      selectedEngine(store.settings, store.state(projectId).project, null),
     createTask: (projectId, command, source) =>
       store.locked(async () => {
-        await engines.nativeSessions!.assertLive(source.projectId, source.runId);
-        const task = await createTaskFrom(projectId, {
-          protocolVersion: 1,
-          commandId: command.commandId,
-          name: command.name,
-          description: command.description,
-          owner: 'diomedes-with-ok',
-        });
-        return { taskId: task.id };
+        const driver = engines.nativeSessions!;
+        await driver.assertLive(source.projectId, source.runId);
+        await admitChild(projectId, command, source, 'task');
+        return driver.fenced(source.projectId, source.runId, async () => ({
+          taskId: (
+            await createTaskFrom(projectId, {
+              protocolVersion: 1,
+              commandId: command.commandId,
+              name: command.name,
+              description: command.description,
+              owner: 'diomedes-with-ok',
+            })
+          ).id,
+        }));
       }),
     startWork: (projectId, command, source) =>
       store.locked(async () => {
-        await engines.nativeSessions!.assertLive(source.projectId, source.runId);
+        const driver = engines.nativeSessions!;
+        await driver.assertLive(source.projectId, source.runId);
+        await admitChild(projectId, command, source, 'work');
         const session = (await admitWork(
           projectId,
           {
             protocolVersion: 1,
             commandId: command.commandId,
             taskId: command.taskId,
-            // The target project's own engine, as a person's Start there would use.
-            route: selectedEngine(store.settings, store.state(projectId).project, null),
+            // The route this message's own Work input pinned, not the setting as it stands.
+            route: command.route,
             instruction: command.instruction,
             sources: [],
             // The person's selection of this exact proposal carried this consent.
             consent: true,
           },
           undefined,
+          // Only the durable admission is ordered against this conversation's own Runtime
+          // transitions; the preparation the Work path does first stays outside that queue.
+          (step) => driver.fenced(source.projectId, source.runId, step),
         )) as { id: string };
         return { sessionId: session.id };
       }),

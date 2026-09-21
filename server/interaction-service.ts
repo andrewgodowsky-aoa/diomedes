@@ -14,6 +14,7 @@ import { EngineError } from './engines/process.js';
 import type { EngineService } from './engines/service.js';
 import { ApiError } from './paths.js';
 import type { MessageResult } from '../shared/conversation.js';
+import type { InteractionDecision } from '../shared/interaction.js';
 import {
   admitInteraction,
   conversationCommandIds,
@@ -86,10 +87,26 @@ export interface LocatedMessage {
   restriction: Restriction;
 }
 
-/** The conversation run an admission comes from. */
+/**
+ * The conversation run an admission comes from, and the saved intent its children are held
+ * to. These are check inputs, not grants: each child admission re-reads what the conversation
+ * says now and admits only what this exact saved proposal still allows.
+ */
 export interface AdmissionSource {
   projectId: string;
+  threadId: string;
   runId: string;
+  commandId: string;
+  sourceMessageId: string;
+  /** What the answered message was bound to. Intersected with the Mode control as it stands. */
+  restriction: Restriction;
+  /** The proposal this message recorded, read back from its own first phase. */
+  decision: InteractionDecision;
+  /** The person's saved choice of that exact proposal. */
+  selection: ActionSelection;
+  /** What the choice was pinned to: nothing else may be started under it. */
+  proposalDigest: string;
+  targetProjectId: string;
 }
 
 /**
@@ -99,6 +116,8 @@ export interface AdmissionSource {
  */
 export interface ChildIntent {
   task: { name: string; description: string };
+  /** Null until the Work input phase pinned the task and the route it was resolved on. */
+  work: { taskId: string; route: string; instruction: string } | null;
 }
 
 /** What the host supplies. Every method that touches the Store takes and releases its own lock. */
@@ -144,16 +163,22 @@ export interface InteractionHost {
   ): Promise<{ taskId: string }>;
   startWork(
     projectId: string,
-    command: { commandId: string; taskId: string; instruction: string },
+    command: { commandId: string; taskId: string; instruction: string; route: string },
     source: AdmissionSource,
   ): Promise<{ sessionId: string }>;
+  /**
+   * The route the target project would start Work on. Read once and saved with the Work
+   * input, so a retry builds the command this message already sent rather than one made
+   * from a setting that has changed since.
+   */
+  workRoute(projectId: string): Promise<string>;
 }
 
 export type { MessageResult };
 
 const NARROW: Record<Restriction, number> = { 'answer-only': 0, 'plan-only': 1, automatic: 2 };
 /** The narrower of what was recorded with the answer and what the Mode control says now. */
-const narrower = (a: Restriction, b: Restriction) => (NARROW[a] <= NARROW[b] ? a : b);
+export const narrower = (a: Restriction, b: Restriction) => (NARROW[a] <= NARROW[b] ? a : b);
 
 const MOVED_ON =
   'This message did not finish before the conversation moved on. Send it again as a new message if you still want it.';
@@ -167,6 +192,12 @@ const taskIntent = (body: DecisionPhaseBody) => ({
   name: (body.decision.publicSummary.trim() || body.text).slice(0, 200),
   description: body.text,
 });
+
+/** What the Work input phase pinned: the task it named and the route it was resolved on. */
+const workInput = (phases: readonly InteractionPhase[]) =>
+  phases.find((phase) => phase.phase === 'work-input')?.body as
+    | { taskId?: unknown; route?: unknown }
+    | undefined;
 
 /** Which guard refused a new message, if it is one a fresh lineage answers. */
 function retirement(error: unknown): LineageRetirement | null {
@@ -239,6 +270,7 @@ export class InteractionTurns {
     // never saved is not rebuilt in memory: the message reads as unresolved on every route.
     const outcome = await this.settle({
       projectId,
+      threadId,
       commandId: command.commandId,
       runId: resolved.runId,
       sourceMessageId: resolved.sourceMessageId,
@@ -315,6 +347,7 @@ export class InteractionTurns {
     ]);
     const outcome = await this.settle({
       projectId,
+      threadId,
       commandId,
       runId: located.runId,
       sourceMessageId: located.sourceMessageId,
@@ -413,11 +446,20 @@ export class InteractionTurns {
       (verdict && (verdict.outcome === 'proposed' || verdict.outcome === 'escalate')
         ? verdict.projectId
         : null);
+    const pinned = workInput(phases);
     const receipts: Receipts = target
       ? await this.host.receipts(
           target,
           conversationCommandIds(message.sourceMessageId),
-          body ? { task: taskIntent(body) } : null,
+          body
+            ? {
+                task: taskIntent(body),
+                work:
+                  typeof pinned?.taskId === 'string' && typeof pinned.route === 'string'
+                    ? { taskId: pinned.taskId, route: pinned.route, instruction: body.text }
+                    : null,
+              }
+            : null,
         )
       : { projectId: null, taskId: null, sessionId: null };
     return { phases, body, verdict, receipts, outcome: outcomeOf(phases, receipts, verdict, { settled }) };
@@ -431,6 +473,7 @@ export class InteractionTurns {
   private async settle(
     message: {
       projectId: string;
+      threadId: string;
       commandId: string;
       runId: string;
       sourceMessageId: string;
@@ -441,14 +484,34 @@ export class InteractionTurns {
     const located = await driver.locate(message.projectId, [message.runId], message.commandId);
     const settled = located?.settled ?? false;
     const first = await this.read(message, settled);
-    const source: AdmissionSource = { projectId: message.projectId, runId: message.runId };
     const done = first.phases.some(
       (phase) => phase.phase === 'task-refused' || phase.phase === 'work-refused',
     );
-    if (settled || done || first.verdict?.outcome !== 'escalate' || first.receipts.sessionId)
+    const chosen = selectionOf(first.phases);
+    if (
+      settled ||
+      done ||
+      !chosen ||
+      first.verdict?.outcome !== 'escalate' ||
+      first.receipts.sessionId
+    )
       return first.outcome;
     const verdict = first.verdict;
     const body = first.body!;
+    // What each child admission is held to. The saved restriction and the saved choice
+    // travel with it; what the conversation says now is read where the child commits.
+    const source: AdmissionSource = {
+      projectId: message.projectId,
+      threadId: message.threadId,
+      runId: message.runId,
+      commandId: message.commandId,
+      sourceMessageId: message.sourceMessageId,
+      restriction: body.restriction,
+      decision: body.decision,
+      selection: chosen,
+      proposalDigest: verdict.proposalDigest,
+      targetProjectId: verdict.projectId,
+    };
     const record = (phase: InteractionPhase['phase'], content: InteractionPhase['body']) =>
       driver.record(message.projectId, message.runId, [
         { phase, sourceMessageId: message.sourceMessageId, body: content },
@@ -482,15 +545,23 @@ export class InteractionTurns {
         return (await this.read(message, false)).outcome;
       }
     await record('task-receipt', { taskId });
+    // The route is resolved once and saved here, so a retry after the target project's
+    // engine changed sends the command this message already sent and reaches its receipt.
+    const pinned = workInput(first.phases);
+    const route =
+      typeof pinned?.route === 'string'
+        ? pinned.route
+        : await this.host.workRoute(verdict.projectId);
     await record('work-input', {
       projectId: verdict.projectId,
       workCommandId: verdict.workCommandId,
       taskId,
+      route,
     });
     try {
       const started = await this.host.startWork(
         verdict.projectId,
-        { commandId: verdict.workCommandId, taskId, instruction },
+        { commandId: verdict.workCommandId, taskId, instruction, route },
         source,
       );
       await record('work-receipt', { sessionId: started.sessionId });

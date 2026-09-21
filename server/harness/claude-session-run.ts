@@ -472,6 +472,31 @@ export class ClaudeSessionRuns {
     }
   }
   /**
+   * Commits a child of this conversation inside the run's own writer queue, refusing first a
+   * run that is already settled. The Runtime's own terminal transitions take that same queue,
+   * so a cancellation, a failed model step or a denial is ordered either before this refusal
+   * or after the commit it protects. Process-local ordering, not crash recovery: a child that
+   * did commit is found again by its durable receipt.
+   *
+   * The commit must not record, claim or step this run, and must await no provider, no person
+   * and no background work.
+   */
+  async fenced<T>(projectId: string, runId: string, commit: () => Promise<T>): Promise<T> {
+    return this.runs.fence(runId, localHarnessPrincipal(projectId), async (run) => {
+      if (run.projectId !== projectId || run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id)
+        throw new HarnessError(
+          'unknown_run',
+          'This native conversation was not found in this project.',
+        );
+      if (terminal(run))
+        throw new EngineError(
+          'RUN_SETTLED',
+          'This conversation moved on before this was started. Nothing was started.',
+        );
+      return commit();
+    });
+  }
+  /**
    * Refuses when the conversation run is settled. The admission boundary calls this inside the
    * Store lock, which is the lock the run-cancel route holds while it cancels, so a cancellation
    * is either seen here or comes after the admission it would have stopped.

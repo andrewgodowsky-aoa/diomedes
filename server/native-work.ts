@@ -312,6 +312,13 @@ export class NativeWorkService {
       agentId?: string | null;
       permission?: ThreadPermission;
       admission?: WorkAdmission;
+      /**
+       * Runs the durable admission inside the caller's own ordering guard. A conversation
+       * passes the guard that holds its source run's queue, so a cancellation there is
+       * ordered against this commit rather than racing it. The Agent, file and instruction
+       * preparation above stays outside it. A person's own Start passes none.
+       */
+      commit?: <T>(step: () => Promise<T>) => Promise<T>;
     },
   ) {
     const engine = input.engine ?? 'codex';
@@ -417,124 +424,137 @@ export class NativeWorkService {
         redact: secretScrubber([token]),
       };
     }
-    const session: Session = {
-      route: engine,
-      ...(input.threadId ? { threadId: input.threadId } : {}),
-      id: identifier('S'),
-      taskId,
-      state: 'working',
-      startedAt: now(),
-      endedAt: null,
-      sample: false,
-      permission: input.permission ?? 'show-first',
-      ...(resolved ? { agent: structuredClone(resolved) } : {}),
-      ...(instructions.delivery ? { instructions: instructions.delivery } : {}),
-      productKnowledge: instructions.productKnowledge,
-      log: [],
-      entryIds: [],
-      needId: null,
-      ...(member ? { slotId: member.slotId } : {}),
-      engine: {
-        name: `${engine === 'codex' ? 'Codex' : engine}, guarded file proposals`,
-        model: null,
-        worker: 1,
-        branch: null,
-        context: bytes,
-        events: 0,
-        // Verified once the runtime reports its engine in prepare(); never from text.
-        version: null,
-        verified: false,
-      },
-    };
-    state.sessions.push(session);
-    task.sessionIds.push(session.id);
-    task.needId = null;
-    task.reason = null;
-    this.store.moveTask(state, task, 'working', 'diomedes');
-    this.log(
-      session,
-      sources.length
-        ? `Preparing a proposal with ${engine} from ${sources.length} ${sources.length === 1 ? 'document' : 'documents'}.`
-        : `Preparing a proposal with ${engine}.`,
-    );
-    this.log(
-      session,
-      engine === 'codex'
-        ? 'The engine has no file or shell access.'
-        : 'The adapter disables engine tools and sends only selected text. This is not an operating-system sandbox.',
-      'technical',
-    );
-    if (input.team) this.log(session, nativeWorkDisclosure(input.team), 'technical');
-    if (instructions.delivery) {
-      // Said once, in the place History already reads: which files went, at
-      // which sha, and which were left out whole. The session carries the same
-      // record structurally; this is the sentence a person sees.
-      const sentence = deliverySentence(instructions.delivery);
-      this.log(session, sentence, 'technical');
-      this.store.addEntry(state, {
-        kind: 'instructions-sent',
-        sentence,
-        sessionId: session.id,
+    const commit = input.commit ?? (<T>(step: () => Promise<T>) => step());
+    // Preparation is done. What follows is the final validation and the durable admission,
+    // ordered by whatever guard the caller supplied: a conversation hands one that holds its
+    // own source run, so a cancellation there is either seen before this or lands after it.
+    const { run, session } = await commit(async () => {
+      // The prepared scope, read again here: the task and the project having no other work
+      // are what the checks above read, and the awaits since could have moved either.
+      const current = state.tasks.find((item) => item.id === taskId);
+      if (!current) throw new ApiError(404, 'This task was not found.');
+      if (state.sessions.some(active) || this.runs.has(projectId))
+        throw new ApiError(409, 'This project already has work in progress.');
+      const session: Session = {
+        route: engine,
+        ...(input.threadId ? { threadId: input.threadId } : {}),
+        id: identifier('S'),
         taskId,
-        actor: 'diomedes',
-      });
-    }
-    if (sources.length) {
-      const snapshot = this.store.addEntry(state, {
-        kind: 'saved-version',
-        sentence: 'Diomedes saved a version (selected documents)',
-        sessionId: session.id,
-        taskId,
-        actor: 'diomedes',
-      });
-      snapshot.files = sources.map((source) => ({
-        path: source.path,
-        op: 'modified',
-        before: source.sha,
-        after: source.sha,
-        recorded: true,
-        reason: null,
-      }));
-    }
-    const run: NativeRun = {
-      engine,
-      accountRoute:
-        typeof this.store.settings.services?.[`${engine}AccountRoute`] === 'string'
-          ? String(this.store.settings.services[`${engine}AccountRoute`])
-          : undefined,
-      threadId: input.threadId ?? input.turnId ?? session.id,
-      projectId,
-      taskId,
-      sessionId: session.id,
-      ...(input.turnId ? { turnId: input.turnId } : {}),
-      controller: new AbortController(),
-      sources,
-      instruction,
-      mode: input.mode ?? 'build',
-      ...(input.team ? { team: { ...input.team } } : {}),
-      ...(input.requested ? { requested: { ...input.requested } } : {}),
-      ...(resolved ? { agent: resolved } : {}),
-      ...(instructions.section ? { instructionSection: instructions.section } : {}),
-      ...tokenLease,
-    };
-    this.runs.set(projectId, run);
-    try {
-      this.store.recordWorkAdmission(projectId, session, input.admission);
-      if (member)
-        run.teamRunId = new TeamService(this.store).acceptRun(
-          projectId,
-          member.slotId,
-          session.id,
-        ).id;
-      await this.store.persist(state);
-      if (run.teamRunId) {
-        new TeamService(this.store).updateRun(projectId, run.teamRunId, 'running');
-        await this.store.persist(state);
+        state: 'working',
+        startedAt: now(),
+        endedAt: null,
+        sample: false,
+        permission: input.permission ?? 'show-first',
+        ...(resolved ? { agent: structuredClone(resolved) } : {}),
+        ...(instructions.delivery ? { instructions: instructions.delivery } : {}),
+        productKnowledge: instructions.productKnowledge,
+        log: [],
+        entryIds: [],
+        needId: null,
+        ...(member ? { slotId: member.slotId } : {}),
+        engine: {
+          name: `${engine === 'codex' ? 'Codex' : engine}, guarded file proposals`,
+          model: null,
+          worker: 1,
+          branch: null,
+          context: bytes,
+          events: 0,
+          // Verified once the runtime reports its engine in prepare(); never from text.
+          version: null,
+          verified: false,
+        },
+      };
+      state.sessions.push(session);
+      current.sessionIds.push(session.id);
+      current.needId = null;
+      current.reason = null;
+      this.store.moveTask(state, current, 'working', 'diomedes');
+      this.log(
+        session,
+        sources.length
+          ? `Preparing a proposal with ${engine} from ${sources.length} ${sources.length === 1 ? 'document' : 'documents'}.`
+          : `Preparing a proposal with ${engine}.`,
+      );
+      this.log(
+        session,
+        engine === 'codex'
+          ? 'The engine has no file or shell access.'
+          : 'The adapter disables engine tools and sends only selected text. This is not an operating-system sandbox.',
+        'technical',
+      );
+      if (input.team) this.log(session, nativeWorkDisclosure(input.team), 'technical');
+      if (instructions.delivery) {
+        // Said once, in the place History already reads: which files went, at
+        // which sha, and which were left out whole. The session carries the same
+        // record structurally; this is the sentence a person sees.
+        const sentence = deliverySentence(instructions.delivery);
+        this.log(session, sentence, 'technical');
+        this.store.addEntry(state, {
+          kind: 'instructions-sent',
+          sentence,
+          sessionId: session.id,
+          taskId,
+          actor: 'diomedes',
+        });
       }
-    } catch (error) {
-      await this.fail(run, error);
-      throw error;
-    }
+      if (sources.length) {
+        const snapshot = this.store.addEntry(state, {
+          kind: 'saved-version',
+          sentence: 'Diomedes saved a version (selected documents)',
+          sessionId: session.id,
+          taskId,
+          actor: 'diomedes',
+        });
+        snapshot.files = sources.map((source) => ({
+          path: source.path,
+          op: 'modified',
+          before: source.sha,
+          after: source.sha,
+          recorded: true,
+          reason: null,
+        }));
+      }
+      const run: NativeRun = {
+        engine,
+        accountRoute:
+          typeof this.store.settings.services?.[`${engine}AccountRoute`] === 'string'
+            ? String(this.store.settings.services[`${engine}AccountRoute`])
+            : undefined,
+        threadId: input.threadId ?? input.turnId ?? session.id,
+        projectId,
+        taskId,
+        sessionId: session.id,
+        ...(input.turnId ? { turnId: input.turnId } : {}),
+        controller: new AbortController(),
+        sources,
+        instruction,
+        mode: input.mode ?? 'build',
+        ...(input.team ? { team: { ...input.team } } : {}),
+        ...(input.requested ? { requested: { ...input.requested } } : {}),
+        ...(resolved ? { agent: resolved } : {}),
+        ...(instructions.section ? { instructionSection: instructions.section } : {}),
+        ...tokenLease,
+      };
+      this.runs.set(projectId, run);
+      try {
+        this.store.recordWorkAdmission(projectId, session, input.admission);
+        if (member)
+          run.teamRunId = new TeamService(this.store).acceptRun(
+            projectId,
+            member.slotId,
+            session.id,
+          ).id;
+        await this.store.persist(state);
+        if (run.teamRunId) {
+          new TeamService(this.store).updateRun(projectId, run.teamRunId, 'running');
+          await this.store.persist(state);
+        }
+      } catch (error) {
+        await this.fail(run, error);
+        throw error;
+      }
+      return { run, session };
+    });
     // The baseline precedes generation: every later write is inside its window.
     await this.changeReview?.runStarted(projectId, session.id, session.taskId);
     // The network request is deliberately not awaited while holding Store.locked.
