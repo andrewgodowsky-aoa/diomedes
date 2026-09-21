@@ -16,6 +16,7 @@ import type {
   ProjectState,
   Task,
 } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 // This is a browser contract fixture. The adapters below never start a native
 // engine, read credentials, or contact a provider; they only exercise the
@@ -244,6 +245,7 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(baseURL);
+  await reopenLastProject(page);
   await expect(page.locator('.console')).toBeVisible();
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -439,6 +441,7 @@ test('Console Ask revision confirms the named task documents, preserves Cancel, 
   expect(calls).toHaveLength(count);
 
   await page.goto(baseURL);
+  await reopenLastProject(page);
   const composer = page.getByRole('textbox', { name: 'Message this thread', exact: true });
   await composer.fill(instruction);
   await composer.press('Enter');
@@ -483,6 +486,7 @@ test('Console standalone Ask includes only documents named in the message and re
   await api(`/projects/${fixture.id}/threads`, 'POST', { name: 'Standalone Ask', mode: 'ask' });
   await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id] });
   await page.goto(baseURL);
+  await reopenLastProject(page);
   const composer = page.getByRole('textbox', { name: 'Message this thread', exact: true });
   const count = calls.length;
   await page.route(`**/api/projects/${fixture.id}/documents`, (route) => route.fulfill({ status: 503, json: { error: 'Listing unavailable' } }));
@@ -529,6 +533,7 @@ test('Console keeps the Codex sending preference and sample route separate from 
       surface: 'console', openProjects: [fixture.id], services: { codex: true }, permissions: { sending: scenario.sending },
     });
     await page.goto(baseURL);
+    await reopenLastProject(page);
     const count = sent.length;
     const composer = page.getByRole('textbox', { name: 'Message this thread', exact: true });
     await composer.fill('Check this send preference.');
@@ -625,7 +630,11 @@ async function serveStatus(page: Page, connections: Record<string, unknown>[]): 
 
 async function openEngines(page: Page): Promise<void> {
   await page.goto(baseURL);
-  await expect(page.locator('.console')).toBeVisible();
+  // Settings-only flow: the top strip's Settings button is on the Diomedes
+  // landing too, so there is no project to enter here. Waiting for the click
+  // itself to succeed replaces the old `.console` load-wait, which is now
+  // ambiguous on the landing (it holds both `.console.strip-only` and
+  // `.console.diomedes`).
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('button', { name: 'Engines', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Engines', exact: true, level: 1 })).toBeVisible();
@@ -1512,6 +1521,7 @@ test('The thread picker refuses a route whose account is on another route', asyn
       onboarding: { resumeAt: 'done', completedAt: new Date().toISOString() },
     });
     await page.goto(baseURL);
+    await reopenLastProject(page);
     await expect(page.locator('.console')).toBeVisible();
     // The Console opens on Home, and the picker belongs to a thread.
     await page
@@ -1548,6 +1558,7 @@ test('Console drops a late source listing when the person changes threads', asyn
   await api(`/projects/${fixture.id}/threads`, 'POST', { name: 'Second composer', mode: 'ask' });
   await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id], services: { defaultEngine: 'opencode' } });
   await page.goto(baseURL);
+  await reopenLastProject(page);
   const rail = page.getByRole('navigation', { name: 'Threads and views' });
   await rail.getByRole('button', { name: /First composer/ }).click();
   let release: (() => void) | undefined;
@@ -1605,7 +1616,9 @@ test('Settings shows the support information before it is shared, and copies exa
     });
   });
   await page.goto(baseURL);
-  await expect(page.locator('.console')).toBeVisible();
+  // The landing page renders two elements with a `console` class (the strip
+  // chrome and the Diomedes content itself), so a plain `.console` check is
+  // ambiguous here; the Settings click below provides its own wait.
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('button', { name: 'About', exact: true }).click();
 
