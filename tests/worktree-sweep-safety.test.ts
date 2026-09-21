@@ -113,7 +113,7 @@ describe('detachLinks', () => {
     const root = tmpDir('ws-root-');
     const target = tmpDir('ws-ext-');
     execFileSync('git', ['init', '--quiet', root]);
-    fs.writeFileSync(path.join(root, '.gitignore'), '.env\ndist/\nnode_modules/\n');
+    fs.writeFileSync(path.join(root, '.gitignore'), '.env\ndist/\nnode_modules\n');
     fs.writeFileSync(path.join(root, '.env'), 'synthetic local data');
     fs.writeFileSync(path.join(mkdirs(root, 'dist'), 'owned.txt'), 'preserve');
     linkTo(target, path.join(root, 'node_modules'));
@@ -205,7 +205,8 @@ describe('sweep in an owned temporary repository', () => {
     const worktree = path.join(root, 'landed');
     const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
     git('init', '--quiet');
-    fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/\n.env\n');
+    // A directory-only pattern misses POSIX directory symlinks, which Git treats as files.
+    fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules\n.env\n');
     git('add', '.gitignore');
     git('-c', 'user.name=Sweep fixture', '-c', 'user.email=fixture@example.invalid',
       'commit', '--quiet', '-m', 'Fixture');
@@ -225,6 +226,8 @@ describe('sweep in an owned temporary repository', () => {
     const target = mkdirs(root, 'external-target');
     fs.writeFileSync(path.join(target, 'sentinel'), SENTINEL);
     linkTo(target, path.join(worktree, 'node_modules'));
+    expect(execFileSync('git', ['-C', worktree, 'check-ignore', 'node_modules'],
+      { encoding: 'utf8' }).trim()).toBe('node_modules');
     expect(sweep()).toContain('removed 1');
     expect(fs.existsSync(worktree)).toBe(false);
     expect(fs.readFileSync(path.join(target, 'sentinel'))).toEqual(SENTINEL);
