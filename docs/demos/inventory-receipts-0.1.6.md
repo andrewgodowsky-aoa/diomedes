@@ -120,7 +120,7 @@ npx playwright test --config playwright.inventory.config.ts
 
 ## Evidence and acceptance boundary
 
-The Playwright config runs the same nine scenarios in iPhone and iPad emulation
+The Playwright config runs the same ten scenarios in iPhone and iPad emulation
 and desktop Chromium. It saves `receipt-review.png` and `receipt-history.png` per
 viewport, failure traces and `test-results/inventory-receipts/results.json`.
 Record the commit, source status, package version, fixture revision, browser,
@@ -134,11 +134,11 @@ address to obtain physical-device access. Those need the separately qualified
 inventory gateway. The fixture is a local reproducible rehearsal, not MI-DEMO
 completion, production deployment or a live purchasing system.
 
-The branch now includes the merged stock-repository recovery repair through main
-`41147e2`; the [implementation record](../implementation/2026-09-20-inventory-mobile-receipt-history.md#integration-prerequisite)
+The branch includes the merged stock-repository recovery repair through main
+`d8e3921`; the [implementation record](../implementation/2026-09-20-inventory-mobile-receipt-history.md#integration-prerequisite)
 separates its scoped acceptance from combined-candidate verification. The ordinary
-fixture flows above were verified on the original base; new combined verification
-does not qualify the pending recovery edge cases by implication.
+fixture flows and combined-candidate checks are recorded there. They do not
+qualify the pending recovery edge cases by implication.
 The recovery prerequisite also includes malformed-journal scoping and recovery
 before generic Store readers/writers. The isolated demo starts inventory recovery
 before listening, but that is not proof of general desktop-host integration.

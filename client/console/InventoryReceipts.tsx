@@ -49,9 +49,9 @@ export function InventoryReceipts({ client = defaultClient }: { client?: Invento
       setBusy(false);
     }
   }
-  async function refresh() {
+  async function refresh(olderThan?: string) {
     try {
-      const next = await client.view();
+      const next = await client.view(olderThan);
       const key = receiptPendingKey(next.catalog.scope);
       if (storageKey.current !== null && storageKey.current !== key)
         throw new Error('The inventory binding changed. Reload to inspect the selected project.');
@@ -347,8 +347,7 @@ export function InventoryReceipts({ client = defaultClient }: { client?: Invento
                 disabled={busy}
                 onClick={() =>
                   void exclusive(async () => {
-                    const older = await client.view(view.olderThan!);
-                    setView(older);
+                    await refresh(view.olderThan!);
                   })
                 }
               >

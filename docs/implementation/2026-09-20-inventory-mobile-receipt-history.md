@@ -84,9 +84,9 @@ Performed in the feature worktree on 2026-09-20 (local time):
   `test-results/baseline-detail-menu.log`. No UI or capability-record test outside
   the named spec-coverage registration was changed to conceal a failing gate.
 
-The complete repository gates are not green. This work is preserved as a local
-feature commit; push, merge, packaging and release remain withheld. The detached
-baseline worktree and its evidence are retained.
+At this original-base checkpoint the complete repository gates were not green,
+so publication was withheld. The detached baseline worktree and its evidence are
+retained. The combined-candidate verification below supersedes that checkpoint.
 
 ### Rebase onto merged recovery composition
 
@@ -100,6 +100,44 @@ The previously pending receipt-recovery prerequisite is now included by ancestry
 Earlier test counts do not certify this combined candidate; its verification is
 recorded separately when complete. No installed application or deployment changes
 as a result of rebasing.
+
+The branch subsequently rebased without conflicts onto current main
+`d8e39212fdea80cc2d6b70f500117fe65809751a`, which also contains PR21/22/23.
+Final review made older-history pagination use the same binding and saved-intent
+checks as Refresh; a real 21-receipt browser case verifies both pagination and
+refusal after a changed binding.
+
+### Final combined candidate on d8e3921
+
+Performed on 2026-09-20 local time, with the exclusive repository heavy slot:
+
+- TypeScript: passed (`test-results/inventory-rebased-typecheck.log`).
+- Full Vitest: **4,069 passed, 1 skipped**, all **211 files passed**
+  (`test-results/inventory-rebased-vitest.log`). This includes the 30 new
+  receipt service/client unit cases and the merged recovery authority tests.
+- Vite build: passed (`test-results/inventory-rebased-vite.log`).
+- Inventory browser suite: **30 passed**, ten scenarios per viewport
+  (`test-results/inventory-rebased-browser.log` and
+  `test-results/inventory-receipts/results.json`). No stock-response mocks;
+  the actual service writes the isolated Store. Phone, tablet and desktop
+  captures remain labeled as emulation/development evidence.
+- Required core browser confirmation: **36 passed**
+  (`test-results/inventory-rebased-core-browser-confirmation.log`).
+
+The first combined core run had **32 passed, 1 failed, 3 not run**: the Engines
+test at `tests/ui.spec.ts:1097` could not find `Default choice`. Clean main
+`d8e3921` then passed all 36 in the retained detached comparison checkout
+`F:/Diomedes/diomedes-wt/inventory-receipt-main-comparison`, and the unchanged
+feature code passed all 36 on a fresh profile. The original failure's cause is
+not established; this is not a claimed repair. Its log and trace are retained in
+`test-results/inventory-rebased-core-browser.log` and
+`test-results/rebased-core-first-failure/`. Test-generated tracked screenshots
+were archived under ignored test-results and only those files restored.
+
+All final source changes are limited to the manifest below. Fresh fetch still
+identified main as `d8e3921` before publication. The scoped source slice is ready
+for review; installer publication, physical-device and independent demonstration
+acceptance, and the broader recovery findings below remain separate.
 
 ## Integration prerequisite
 

@@ -182,6 +182,50 @@ test('a changed project binding clears a stale review without sending it', async
   expect(demo.fixture.store.state(demo.fixture.project.id).history).toHaveLength(0);
 });
 
+test('older receipt pages retain the project binding and cannot preserve a stale review', async ({
+  page,
+  demo,
+}) => {
+  const { service, project } = demo.fixture;
+  let version = (await service.view(project.id, {})).catalog.balances[0].version;
+  for (let index = 0; index < 21; index++) {
+    const result = await service.execute(
+      project.id,
+      {
+        kind: 'receive',
+        operationId: `history-page-${index}`,
+        itemId: 'bolt',
+        siteId: 'workshop',
+        binId: 'shelf-a',
+        quantity: { minor: 1, scale: 0, unit: 'each' },
+        expectedVersion: version,
+      },
+      {},
+    );
+    expect(result.status).toBe('applied');
+    if (result.status !== 'applied') throw new Error('History setup did not apply.');
+    version = result.receipt.changes[0].version;
+  }
+  await page.goto(demo.url);
+  await expect(page.getByRole('heading', { name: 'Received 1 each', exact: true })).toHaveCount(20);
+  await page.getByRole('button', { name: 'Show older receipts' }).click();
+  await expect(page.getByRole('heading', { name: 'Received 1 each', exact: true })).toHaveCount(1);
+  await page.getByRole('button', { name: 'Refresh stock and history' }).click();
+  await review(page);
+  await page.route('**/api/inventory/view?olderThan=*', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.catalog.scope.projectId = 'changed-project';
+    await route.fulfill({ response, json: body });
+  });
+  await page.getByRole('button', { name: 'Show older receipts' }).click();
+  await expect(
+    page.getByText('The inventory binding changed. Reload to inspect the selected project.'),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Confirm receipt' })).toHaveCount(0);
+  expect(demo.fixture.store.state(project.id).history).toHaveLength(21);
+});
+
 test('unavailable intent storage prevents dispatch', async ({ page, demo }) => {
   await page.addInitScript(() => {
     const setItem = Storage.prototype.setItem;
