@@ -523,6 +523,19 @@ describe('one pending message, shared by every window', () => {
     expect(session.getItem(PENDING)).toBeNull();
   });
 
+  test('a reference no claim backs is dropped even when the next claim cannot be written', async () => {
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    // Another window confirmed or discarded that message and left this reference behind.
+    local.removeItem(CLAIM);
+    local.failSet();
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toThrow(/cannot save/);
+    expect(session.getItem(PENDING)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   test('a reference that cannot be written takes the claim back with it', async () => {
     session.failSet();
     await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toThrow(/cannot save/);
