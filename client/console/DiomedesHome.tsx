@@ -288,9 +288,20 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     if (!found || !command) return void load(scopeId);
     // Gives up the command that was shown. A newer message another window has claimed since is
     // not this one to give up, and reading again shows it for what it is.
+    //
+    // It can wait a while for the conversation's lock. The message is given up wherever the
+    // person has gone by then, but what happens on the page afterwards belongs to the visit it
+    // was pressed in: a later visit is not reloaded, and its delivery is not stopped.
+    const mine = turn.current;
+    const scope = scopeId;
+    const owns = () => turn.current === mine;
     void discardPendingMessage(found.projectId, found.threadId, command).then(
-      () => load(scopeId),
-      (error) => setNotice(words(error)),
+      () => {
+        if (owns()) void load(scope);
+      },
+      (error) => {
+        if (owns()) setNotice(words(error));
+      },
     );
   };
 
