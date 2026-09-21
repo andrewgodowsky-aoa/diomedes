@@ -388,6 +388,34 @@ its branch kept, and PR #29 is the only combined candidate. The Bedrock Response
 transport cancellation gap recorded in
 `F:/Diomedes/deliverables/bedrock-integration-20260921/RESPONSES-OWNER-HANDOFF.md`.
 
+**Composing the AWS route onto the repair (2026-09-21, from Codex's live-lane report,
+`F:/Diomedes/deliverables/bedrock-integration-20260921/LIVE-LANE-ASSISTANCE-20260921.md`).** An
+independent run through the AWS driver failed 4 of 11 cases on the same shared defects: Work
+admitted after an Ask or Plan narrowing (two cases), `interrupted: false` on a polled outcome,
+and a selection retry refused after cancellation. The AWS driver's admission check is a
+liveness-only copy of the Claude one, which its owner has confirmed. So:
+
+1. The admission fence is built driver-agnostic, in RunService and above the drivers, and the
+   repair worker reports the exact entry point for a second driver. The AWS owner adopts it and
+   deletes its copy. The old liveness-only path is not kept when conflicts are resolved.
+2. Order: the admission repair lands and is re-run by the executing reviewer; then the AWS
+   owner's patches 01 to 03 (hashes checked against its `IDENTITY.md`) are rebased onto it with
+   `git apply --3way`; then both reviewer files, the CD-01 matrix and
+   `aws-conversation-authority.review-20260921.test.ts`, run unchanged on the composition.
+3. Main moved to `d4f5384` when PR #33 merged. Merge main into the integration branch before the
+   final gates, and run them on that exact commit.
+4. Not changed by the merge: Work follows the project's configured route, not the thread picker;
+   the home conversation stays on Claude Code; a project's Diomedes thread stays pinned to Claude
+   Code (I-20). Nobody describes the Diomedes page as AWS-backed.
+5. Open, and not in CD-05b: the Console's own thread composer still posts to `/ask`, which the
+   AWS route refuses, and it has no Stop for a conversation turn. The Diomedes page has both a
+   conversation send path and Stop, but only on Claude Code. Putting the Console composer on the
+   conversation seam, with one shared interrupt route that resolves the driver, is a separate
+   work item for after acceptance. It needs an owner decision on whether a project's Diomedes
+   conversation may run on a route other than Claude Code.
+6. Live and packaged AWS proof waits for the accepted composed build. The live call and its
+   spend cap are between Andrew and the AWS owner.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
