@@ -229,11 +229,13 @@ function validateSettings(current: Settings, body: unknown): Settings {
   const result = structuredClone(current);
   for (const key of Object.keys(supplied))
     if (!Object.hasOwn(defaults(), key)) throw new ApiError(400, `Unknown setting: ${key}`);
-  // `activeWorkspace` is deliberately absent from every branch below. The clone
-  // above keeps whatever is stored, so a client that echoes the whole settings
-  // object back cannot move itself into a business workspace: only
-  // POST /api/workspace/switch writes it, and only after checking membership.
-  // Do not add a branch here that reads `supplied.activeWorkspace`.
+  // `activeWorkspace` and `home` are deliberately absent from every branch
+  // below. The clone above keeps whatever is stored, so a client that echoes
+  // the whole settings object back cannot move itself into a business
+  // workspace, and cannot rebind Diomedes' own conversation: only
+  // POST /api/workspace/switch writes the first, after checking membership, and
+  // only the home provisioner writes the second. Do not add a branch here that
+  // reads `supplied.activeWorkspace` or `supplied.home`.
   if (supplied.version !== undefined && supplied.version !== 1)
     throw new ApiError(400, 'This settings version is unsupported.');
   if (supplied.detail !== undefined)
@@ -1273,7 +1275,13 @@ export async function createApp(options: AppOptions) {
   );
   app.get(
     '/api/projects',
-    route(async () => ({ projects: await store.projects() })),
+    // The reserved home Project is not one of the person's projects and is
+    // never listed. The filter lives here and never in `Store.projects()`,
+    // which startup recovery enumerates to recover saved runs, home
+    // conversations included.
+    route(async () => ({
+      projects: (await store.projects()).filter((project) => !store.isHomeProject(project.id)),
+    })),
   );
   app.post(
     '/api/projects/sample',
@@ -1595,12 +1603,24 @@ export async function createApp(options: AppOptions) {
     })),
   );
   /**
+   * Home is a conversation container, never a work destination. Both admission
+   * paths check it, so no route starts work there by going round the other one.
+   */
+  const refuseHomeWork = (projectId: string) => {
+    if (store.isHomeProject(projectId))
+      throw new ApiError(
+        409,
+        'The Diomedes conversation is not a place work runs. Name the project this work belongs to.',
+      );
+  };
+  /**
    * The task route's own creation path, called with the store lock held. A task proposed from
    * a conversation is made by calling exactly this with the command id derived for that
    * message, so the protocol check, the receipt replay and the journal entry are the ones a
    * person's task goes through. Nothing here is duplicated elsewhere.
    */
   const createTaskFrom = async (projectId: string, b: Record<string, unknown>) => {
+    refuseHomeWork(projectId);
     const state = store.state(projectId);
     const command = parseTaskCommand(b);
     if (command) {
@@ -1789,6 +1809,7 @@ export async function createApp(options: AppOptions) {
     supplied: Record<string, unknown>,
     port: number | undefined,
   ) => {
+    refuseHomeWork(projectId);
     if (isUpdateClosing())
       throw new ApiError(409, 'The app update is accepted. New work pauses until restart.');
     if (supplied.capabilityId !== undefined) {
@@ -2744,11 +2765,17 @@ export async function createApp(options: AppOptions) {
         touchThread(thread, at, state.tasks);
         await store.persist(state);
       }),
-    admissionContext: async () => ({
-      // The reserved home Project is provisioned by CD-02h O4. Until it is, no project is home.
-      homeProjectId: null,
-      targetableProjectIds: (await store.projects()).map((project) => project.id),
-    }),
+    admissionContext: async () => {
+      // Read per turn, and only a valid binding counts: before the first message
+      // there is no home, so no project is one and every project is targetable.
+      const home = store.homeBinding();
+      return {
+        homeProjectId: home?.projectId ?? null,
+        targetableProjectIds: (await store.projects())
+          .map((project) => project.id)
+          .filter((id) => id !== home?.projectId),
+      };
+    },
     receipts: (projectId, ids) =>
       store.locked(async () => {
         const state = store.state(projectId);
@@ -2791,6 +2818,22 @@ export async function createApp(options: AppOptions) {
         return { sessionId: session.id };
       }),
   };
+  /**
+   * Where Diomedes' own conversation lives: the reserved home Project and its
+   * one thread. The read answers null until a binding is both saved and valid,
+   * and creates nothing, so opening the app provisions no home. The page posts
+   * here when the person sends their first message, and that is the only thing
+   * that ever makes one.
+   */
+  app.get(
+    '/api/home/conversation',
+    route(async () => store.homeBinding()),
+  );
+  app.post(
+    '/api/home/conversation',
+    // The provisioner takes the Store lock itself: its steps are one mutation.
+    route(async () => store.provisionHome(), false),
+  );
   mountInteractionRoutes(app, new InteractionTurns(engines, interactionHost), {
     authorize: async (req) => {
       store.state(String(req.params.id));

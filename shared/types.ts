@@ -100,6 +100,19 @@ export interface Settings {
    */
   activeWorkspace?: WorkspaceRef;
   /**
+   * The reserved home conversation container: the Project and thread Diomedes'
+   * own conversation runs in. Absent on settings written before this field
+   * existed, and null until the first message on that conversation provisions
+   * it. The server never provisions it at startup.
+   *
+   * Like `activeWorkspace` it is not writable through `PUT /api/settings`: the
+   * server is the only writer. It is a pointer rather than the records, so it
+   * is a claim and not evidence: every use re-checks that the project it names
+   * is the reserved home Project and the thread it names is that project's
+   * designated home thread, and re-establishes it by adoption when it is not.
+   */
+  home?: { projectId: string; threadId: string; revision: 1 } | null;
+  /**
    * Which helpers are switched on, by engine id; only engines whose adapter is
    * ready can be on. A few keys are choices rather than switches, and hold a
    * string: `codexModel` and `codexEffort` are the default Codex runs use when
