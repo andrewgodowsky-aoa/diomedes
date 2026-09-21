@@ -323,11 +323,12 @@ reserved home Project was built in its own lane and merged in round 6.
 |---|---|---|---|
 | R-5 | `ef5e366` | rejected, five P2 defects, each with a reproducer | a retry ignored the Mode control as it stands; cancellation between a recorded input and its admission; a missing decision read as answered; a repaired projection rebuilt from the present; budget exhaustion never replaced the lineage. Accepted: body binding, the terminal-write guard, the selection mechanism (ruled to need no owner decision), I-11, I-12 |
 | R-6 | `976b688` | rejected, one P2 defect (CD01-R-16); all five above closed | the older direct route `POST /projects/:id/ask` went round both home guards and started Work in the reserved home Project |
-| R-7 | `4e2c93c` plus evidence | dispatched | `Store.createTask` makes no task in home, so no route has one to start Work on; the direct route refuses home for every mode |
+| R-7 | `4e2c93c` | **accepted with one integrator obligation (O5)** | `Store.createTask` makes no task in home, so no route has one to start Work on; the direct route refuses home for every mode, which she ruled within bounds. CD-02 and CD-05 may build against the seam as frozen. Her words: acceptance of a development seam, not a release or production certification |
+| O5 | `26b33ff` | closed by the integrator, awaiting a later reviewer | CD01-R-17 (P3): the ordinary thread update could re-route the home conversation, after which every message was refused. Refused now for home before any field is touched; name, permission and Mode stay home's own |
 
 Her sandbox cannot run Vitest, so every reproducer is a source trace. The rule that has held since
-round 5: paste it in unchanged, run it, and only then change code. Five of six failed as
-traced. The sixth (R-10) failed for a different reason, which was the real defect: the budget
+round 5: paste it in unchanged, run it, and only then change code. Six of seven failed as
+traced. The other (R-10) failed for a different reason, which was the real defect: the budget
 matcher had never fired, because `EngineService` rewraps the Runtime's refusal.
 
 Lanes that closed inside these rounds:
@@ -338,7 +339,7 @@ Lanes that closed inside these rounds:
 | CD-02h.HOME, the reserved home Project (O4) | Opus | `core-agent-home` | `08fbbdf`, `7a6d107`, 14 cases, merged into the contract branch. R-6 narrowed it to R-16 |
 | CD-05b, launch and the conversation client | Fable | `core-agent-bot` | `client/conversation-send.ts`, `client/console/DiomedesHome.tsx`, the landing gate in `client/App.tsx`, H3 in `client/console/Home.tsx`, `tests/diomedes-home.spec.ts` through the real app with a scripted provider. Awaits CD-05.R-2 |
 
-Guard-removal mutations now stand at 21 single removals and 3 pairs across rounds 5 to 7. Two
+Guard-removal mutations now stand at 22 single removals and 3 pairs across rounds 5 to 8. Two
 single removals survive, both disclosed to the reviewer, and both for the same reason: a second
 guard refuses the same request one call later, and the pair is killed.
 
