@@ -145,7 +145,12 @@ The exact composed candidate is `2b3f933`. Codex's
 `tests/aws-conversation-authority.review-20260921.test.ts` (sha256 `fe06fda3…`, unedited) and the
 CD-01 matrix both run inside the full Vitest there. The AWS owner reported 11 of 11 on its own
 composition; an independent re-run on `2b3f933` is still owed. Ask the AWS owner session ("AWS
-Luna Diomedes integration") to read `git show 9803121 -- server/app.ts`; it was asked already.
+Luna Diomedes integration") read `git show 9803121 -- server/app.ts` and confirmed it matches its
+intent with nothing to change; its write-up is
+`F:/Diomedes/deliverables/bedrock-integration-20260921/MERGE-REVIEW-9803121.md`. It also reported
+one pre-existing finding that is not from the merge: `licenses/DEPENDENCIES.txt` records the lock
+file's hash from the CRLF working copy, so an LF checkout will not match; no test reads it; the
+fix is to hash the blob or normalize to LF and regenerate. Not a blocker, and not done.
 
 ### D. PR #29
 Stays a DRAFT until A, B and C are accepted on the exact commit. Then: mark ready, merge to main
