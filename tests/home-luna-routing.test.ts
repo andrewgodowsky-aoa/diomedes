@@ -334,6 +334,97 @@ test('an adopted pre-upgrade home thread is re-pinned to the default by the same
   expect(homeThread(home).engineChoice).toBeUndefined();
 });
 
+test('an adopted home thread the person already routed keeps that choice', async () => {
+  // The same adoption state as above, except this thread was deliberately
+  // routed: the binding is absent and the choice marker is present.
+  const homeProject = await store().createProject('Diomedes', store().homeFolder());
+  const stamped = now();
+  const thread: Conversation = {
+    id: identifier('C'),
+    attachedTo: { kind: 'project', ref: homeProject.id },
+    turns: [],
+    name: 'Diomedes',
+    createdAt: stamped,
+    updatedAt: stamped,
+    taskId: null,
+    helper: null,
+    permission: 'show-first',
+    mode: 'auto',
+    engine: 'claude-code',
+    engineChoice: 'person',
+  };
+  const state = store().state(homeProject.id);
+  state.conversations.push(thread);
+  await store().persist(state);
+  expect(store().settings.home).toBe(null);
+  expect(store().homeBinding()).toBe(null);
+
+  // Adoption binds the same thread and leaves the person's route untouched;
+  // nothing in the project state changed, so it is not persisted again.
+  const persist = vi.spyOn(store(), 'persist');
+  try {
+    const home = await provisionHome();
+    expect(home).toEqual({ projectId: homeProject.id, threadId: thread.id });
+    expect(persist).not.toHaveBeenCalled();
+  } finally {
+    persist.mockRestore();
+  }
+  expect(threadsOf(homeProject.id)).toHaveLength(1);
+  expect(homeThread({ projectId: homeProject.id, threadId: thread.id })).toMatchObject({
+    engine: 'claude-code',
+    engineChoice: 'person',
+  });
+  // Settings still gains the binding: the home is adopted, not left unbound.
+  expect(store().settings.home).toMatchObject({
+    projectId: homeProject.id,
+    threadId: thread.id,
+  });
+});
+
+test('an adopted home thread already on the default is bound without a redundant write', async () => {
+  // The same adoption state again, but the designated thread already carries
+  // the default route: there is nothing to migrate.
+  const homeProject = await store().createProject('Diomedes', store().homeFolder());
+  const stamped = now();
+  const thread: Conversation = {
+    id: identifier('C'),
+    attachedTo: { kind: 'project', ref: homeProject.id },
+    turns: [],
+    name: 'Diomedes',
+    createdAt: stamped,
+    updatedAt: stamped,
+    taskId: null,
+    helper: null,
+    permission: 'show-first',
+    mode: 'auto',
+    engine: 'aws-bedrock',
+  };
+  const state = store().state(homeProject.id);
+  state.conversations.push(thread);
+  await store().persist(state);
+  expect(store().settings.home).toBe(null);
+  expect(store().homeBinding()).toBe(null);
+
+  const persist = vi.spyOn(store(), 'persist');
+  try {
+    const home = await provisionHome();
+    expect(home).toEqual({ projectId: homeProject.id, threadId: thread.id });
+    // The binding is written to settings; the unchanged project state is not.
+    expect(persist).not.toHaveBeenCalled();
+  } finally {
+    persist.mockRestore();
+  }
+  expect(threadsOf(homeProject.id)).toHaveLength(1);
+  expect(homeThread({ projectId: homeProject.id, threadId: thread.id })).toMatchObject({
+    engine: 'aws-bedrock',
+  });
+  expect(homeThread({ projectId: homeProject.id, threadId: thread.id }).engineChoice).toBeUndefined();
+  expect(store().settings.home).toMatchObject({
+    projectId: homeProject.id,
+    threadId: thread.id,
+  });
+});
+
 test('a route the person chose survives provisioning and restart, on home and on a project', async () => {
   const home = await provisionHome();
   const chosen = await api<Conversation>(

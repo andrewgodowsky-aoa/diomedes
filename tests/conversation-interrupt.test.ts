@@ -47,6 +47,13 @@ let opens: number;
 let closes: number;
 /** Set when the server sees the response to a message POST close. */
 let responseClosed: boolean;
+/**
+ * Every HTTP request the fixture has in flight. Each is observed the moment it
+ * is created and removed when it settles, so a failed assertion can never leave
+ * a held request to reject unobserved at teardown. The promise a caller holds
+ * is the fetch's own; its rejection still belongs to that caller.
+ */
+const inflight = new Set<Promise<Response>>();
 
 // --- the fake AWS Responses endpoint ------------------------------------------------
 
@@ -128,13 +135,19 @@ const aws = (async (input: RequestInfo | URL, init?: RequestInit) => {
 
 // --- the app ------------------------------------------------------------------------
 
-async function request(route: string, method = 'GET', body?: unknown, signal?: AbortSignal) {
-  return fetch(`${base}/api${route}`, {
+function request(route: string, method = 'GET', body?: unknown, signal?: AbortSignal) {
+  const pending = fetch(`${base}/api${route}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   });
+  inflight.add(pending);
+  void pending.then(
+    () => inflight.delete(pending),
+    () => inflight.delete(pending),
+  );
+  return pending;
 }
 async function api<T>(route: string, method = 'GET', body?: unknown): Promise<T> {
   const response = await request(route, method, body);
@@ -171,13 +184,18 @@ async function open() {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 async function close() {
-  if (!server) return;
-  await app.locals.close();
-  server.closeAllConnections();
-  await new Promise<void>((resolve, reject) =>
-    server!.close((error) => (error ? reject(error) : resolve())),
-  );
-  server = undefined;
+  if (server) {
+    await app.locals.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server!.close((error) => (error ? reject(error) : resolve())),
+    );
+    server = undefined;
+  }
+  // Held requests reject as their sockets are torn down; each was observed when
+  // it was made, and the drain waits for every one before the data directory is
+  // removed. A request's own rejection still belongs to whoever awaits it.
+  await Promise.allSettled([...inflight]);
 }
 let service: EngineService;
 

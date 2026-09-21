@@ -184,6 +184,21 @@ and removes each guard to verify red/restoration/green.
   to finish, and only then keeps the original claim-cleared assertion. Every prior interrupt
   and identity assertion is unchanged.
 
+Client re-review R2 of candidate `457419f236ccc7efd1f026e27b874f443c719a1b`
+(`2026-09-21-core-agent-home-client-review-r2.md`) passed TypeScript, build, both unchanged
+HLR counterexamples and all Home cases, but rejected one preflight read: the HLR-02 refresh
+called `thread(found)`, the full project-state GET, before dispatch. Frozen CD05-R-05 injects
+a single failed state GET after its warm-up; the new read consumed and suppressed that failure
+(`home-client-r2-page.log` trace: route-refresh GET 503, message POST 200, post-confirmation
+state GET 200), so the required `Transcript read failed` notice never appeared.
+
+Corrected as directed: `deliver` now reads the bound thread through the existing narrow list
+endpoint `GET /api/projects/:id/threads` (response `{ threads }`), selecting the concrete
+`found.threadId`, via a new `listedThread` helper. The post-confirmation `show`/`load` state
+read is untouched, so the frozen confirmed-POST/failed-state-GET split stays meaningful.
+Marked choices, the `routePick` fences, visit ownership and the in-lock early-Stop check are
+unchanged; no new endpoint, field, notice or test edit. No rerun is claimed by this lane.
+
 ## Decisions kept
 
 - Pending-claim, retry, discard, `inFlight` join, cross-window adoption and visit-fence

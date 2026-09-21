@@ -140,6 +140,18 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   }, []);
 
   /**
+   * The bound thread through the narrow list read: route metadata, not the transcript. The
+   * pre-dispatch refresh uses this on purpose, so it never stands in front of the state read
+   * the answer's own confirmation still performs.
+   */
+  const listedThread = useCallback(async (found: Binding): Promise<Conversation | null> => {
+    const listed = await api<{ threads: Conversation[] }>(
+      `/projects/${encodeURIComponent(found.projectId)}/threads`,
+    );
+    return listed.threads.find((item) => item.id === found.threadId) ?? null;
+  }, []);
+
+  /**
    * Shows one message's outcome under its own answer, and only while that answer is still the
    * end of the transcript. The transcript is read after the outcome, so a message another window
    * added in between is seen. The answer is found by the name the server gave its turn, never by
@@ -281,7 +293,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       // not from the record the last visit read. A marked choice is untouched either way; the
       // thread is the authority. A failed read blocks nothing - the send still proceeds and the
       // outcome read afterwards still refreshes it.
-      const provisioned = await thread(found).catch(() => null);
+      const provisioned = await listedThread(found).catch(() => null);
       if (owns() && !current.cancelled && provisioned) setRoute(provisioned.engine ?? null);
       const result = await transport(found, current.controller.signal, (identity) => {
         current.issued = identity;

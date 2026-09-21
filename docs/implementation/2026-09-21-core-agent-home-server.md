@@ -46,7 +46,11 @@ acceptance; the parent runs the gates and the independent review judges the code
   restart`.
 - Provisioner re-pin of unmarked threads, including the bound early return and crash adoption:
   `a bound home whose thread was never deliberately routed is re-pinned` and `an adopted
-  pre-upgrade home thread is re-pinned`.
+  pre-upgrade home thread is re-pinned`. The two adoption states that were missed before R1:
+  `an adopted home thread the person already routed keeps that choice` (marked choice
+  survives adoption, kills removing the explicit-choice guard) and `an adopted home thread
+  already on the default is bound without a redundant write` (kills removing the
+  unchanged-route guard).
 - Persist-only-on-change: the `persist` spy assertions in the re-pin test and in `a second send
   finds the same conversation and writes nothing at all` (project lane).
 - Send-path refusal before admission: `unconfigured AWS is refused by name and nothing is
@@ -81,8 +85,8 @@ acceptance; the parent runs the gates and the independent review judges the code
 - The pre-durable window between `active` installation and turn-step durability is the
   driver's, specified by the contract; no window is hidden and none is claimed durable.
 - The work order forbade commands, so this author ran no test, typecheck or build on this
-  lane. The parent's own executed run is recorded under Corrections below; this author's
-  correction to it is likewise unexecuted pending the parent's rerun.
+  lane. The parent's own executed runs are recorded under Corrections below; this author's
+  corrections are likewise unexecuted pending the parent's rerun.
 - The client lane (`conversation-send.ts`, `DiomedesHome.tsx`, `Diomedes.tsx`) and the driver
   lane (`model-session-run.ts`, `claude-session-run.ts`, already carrying `interruptCommand`)
   are other authors' files and are untouched here.
@@ -108,3 +112,20 @@ acceptance; the parent runs the gates and the independent review judges the code
   covers only the object bodies with the endpoint wording check, and the scalar asserts the
   parser's own 400 response separately. Every payload and every 400 assertion is preserved;
   no production handling was changed. This correction has not been re-run by this author.
+- HSR-2. The parent's R1 mutation pass at candidate `38e5270ef00a72f16d4dc64036f52a49d2b61705`
+  (review `docs/implementation/2026-09-21-core-agent-home-server-review-r1.md`) found S6 and
+  S7 surviving: Home adoption had no case for a marked choice or an already-default thread.
+  Two real adoption cases were added to `tests/home-luna-routing.test.ts`, named in the guard
+  list above: each seeds the reserved home project and designated thread on disk with the
+  binding absent, proves the absence, runs the real provisioner over HTTP, and asserts the
+  preserved route/marker or the absent state persist. Settings is still written to bind home;
+  nothing asserts zero settings writes. Authored, not yet executed.
+- HSR-3. The same R1 pass observed unhandled `fetch failed` rejections at teardown under the
+  S15/S16 mutations (one and three respectively): a held message request's promise rejected
+  unobserved when an earlier assertion failure skipped its await. `request()` now registers
+  every fixture request in `inflight` and observes each promise at creation, so a rejection is
+  never unhandled while remaining a rejection for the caller that awaits the original promise;
+  `close()` drains the set after server teardown and before the data directory is removed. All
+  assertions and request schedules are unchanged, so the intended S15/S16 assertion failures
+  still fire at the same places; the parent reruns both mutations unchanged and restores the
+  source before requiring green. Authored, not yet executed.
