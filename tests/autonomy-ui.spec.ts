@@ -6,6 +6,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import type { Project, ProjectState, TaskCandidate } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 // Deterministic browser proof for task-scope autonomy using the real built UI
 // and a synthetic nativeGenerator. No model calls, credentials, or quota.
@@ -278,6 +279,7 @@ test('scope confirmation covers the same task; recorded actor survives a picker 
   const beforePlan = await fs.readFile(path.join(project.folder, 'Reopening plan.md'), 'utf8');
 
   await page.goto(baseURL);
+  await reopenLastProject(page);
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   await startFromBoard(page, taskName);
   await openThread(page, taskName);
@@ -466,6 +468,7 @@ test('out-of-scope proposals wait for exact review; revocation forces exact appr
   proposalMode = 'out-of-scope';
 
   await page.goto(baseURL);
+  await reopenLastProject(page);
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   await openThread(page, taskName);
   // Narrow the grant to reports only through the real panel.
@@ -575,6 +578,7 @@ test('long names hold at 800px; Stop is truthful and inspector refresh stays hon
   const shortName = taskName.slice(0, 120);
 
   await page.goto(baseURL);
+  await reopenLastProject(page);
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   await page.setViewportSize({ width: 800, height: 900 });
   await rail(page)
