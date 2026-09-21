@@ -1048,6 +1048,10 @@ test('Landing: ask box carries a draft into the chosen project', async ({ page }
   await expect(startHere.getByRole('heading', { name: 'What do you want to do?' })).toBeVisible();
   const projectSelect = page.getByLabel('In project');
   await expect(projectSelect).toBeVisible();
+  // Nothing is inferred from recency any more (review condition H3): the ask box sends nowhere
+  // until the person says where.
+  await expect(projectSelect).toHaveValue('');
+  await projectSelect.selectOption(latest.id);
   await expect(projectSelect).toHaveValue(latest.id);
   const askText = 'Which suppliers are late?';
   await startHere.getByRole('textbox').fill(askText);
