@@ -795,6 +795,34 @@ describe('the dispatch identity a Stop may act on', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  test("a same-window join after the identity was issued is handed it, not asked to wait", async () => {
+    let reached!: () => void;
+    let release!: () => void;
+    const arrived = new Promise<void>((resolve) => (reached = resolve));
+    fetchMock.mockImplementationOnce(async () => {
+      reached();
+      await new Promise<void>((resolve) => (release = resolve));
+      return answered();
+    });
+    const claims: (string | null)[] = [null, null];
+    const first = mod.sendMessage(PROJECT, THREAD, input(), undefined, (identity) => {
+      claims[0] = identity.commandId;
+    });
+    // The POST on the wire is the proof the locked section already issued this send's identity.
+    // A join now meets a flight whose claim is already set, and takes it rather than queueing
+    // behind an issuance that already happened.
+    await arrived;
+    const second = mod.sendMessage(PROJECT, THREAD, input(), undefined, (identity) => {
+      claims[1] = identity.commandId;
+    });
+    await settle();
+    expect(claims).toEqual(['uuid-1', 'uuid-1']);
+    release();
+    // Both callers were told the same command once, share the one result, and one POST ran.
+    expect(await second).toBe(await first);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   test('a pending claim for different words issues no identity and sends nothing', async () => {
     fetchMock.mockRejectedValue(new TypeError('network'));
     await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
@@ -888,5 +916,37 @@ describe('the dispatch identity a Stop may act on', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     // The claim was never touched: the message stays pending, still recoverable.
     expect(JSON.parse(local.getItem(CLAIM)!).commandId).toBe('uuid-1');
+  });
+
+  test('a resend stopped as the lock is granted reads and sends nothing', async () => {
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    fetchMock.mockReset();
+    const stop = new AbortController();
+    // A modeled boundary, not a real Web Lock: this lock manager grants the request and aborts
+    // the caller's signal in the same instant it invokes the callback. The wait itself was
+    // never refused, so only the resend's own check at the callback's entry can end it here.
+    vi.stubGlobal('navigator', {
+      locks: {
+        async request(_name: string, _options: { signal?: AbortSignal }, callback: () => unknown) {
+          stop.abort();
+          return callback();
+        },
+      },
+    });
+    let issued: unknown = null;
+    await expect(
+      mod.resendPending(PROJECT, THREAD, 'uuid-1', stop.signal, (identity) => {
+        issued = identity;
+      }),
+    ).rejects.toThrow(/Stopped/);
+    // No read ran, nothing was posted, no identity exists a Stop could name - and the claim
+    // and this window's reference are exactly what they were.
+    expect(issued).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(JSON.parse(local.getItem(CLAIM)!).commandId).toBe('uuid-1');
+    expect(mod.pendingMessage(PROJECT, THREAD)?.commandId).toBe('uuid-1');
   });
 });

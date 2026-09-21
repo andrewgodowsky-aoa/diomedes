@@ -701,3 +701,105 @@ test('a Stop already answered names nothing again', async ({ page }) => {
   await painted(page);
   expect(interrupts).toBe(1);
 });
+
+test('two Stop presses in one JavaScript turn name the command once', async ({ page }) => {
+  await open(page);
+  const callsBefore = seen.length;
+  const interrupts: string[] = [];
+  page.on('request', (request) => {
+    if (interruptPost(request)) interrupts.push(request.url());
+  });
+  await composer(page).fill('SLOW two presses one turn');
+  await composer(page).press('Enter');
+  await expect.poll(() => seen.length).toBeGreaterThan(callsBefore);
+  const commandId = await claimedCommand(page);
+  expect(commandId).not.toBeNull();
+  // Both click events run in one page evaluation, before any promise continuation can settle
+  // the first press: the second finds the delivery's identity already released and has nothing
+  // left to name.
+  await page.evaluate(() => {
+    const stop = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Stop',
+    );
+    if (!stop) throw new Error('The Stop button is not on screen.');
+    stop.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    stop.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+  // One interrupt, for that delivery's command and no other. The message stays the person's
+  // pending message to recover, and the page threw nothing.
+  await expect(strip(page)).toContainText('SLOW two presses one turn');
+  await painted(page);
+  expect(interrupts).toHaveLength(1);
+  expect(interrupts[0]).toContain(`/messages/${commandId}/interrupt`);
+  const bound = await home();
+  const recorded = await api<{ interrupted: boolean }>(
+    `/projects/${bound!.projectId}/threads/${bound!.threadId}/messages/${commandId}`,
+  );
+  expect(recorded.interrupted).toBe(true);
+});
+
+test('a delivery left behind in an old visit cannot take the new Stop with it', async ({
+  page,
+}) => {
+  const project = await api<Project>('/projects', 'POST', { name: 'Second scope' });
+  await open(page);
+  const callsBefore = seen.length;
+  const posts: string[] = [];
+  page.on('request', (request) => {
+    if (messagePost(request)) posts.push(request.url());
+  });
+  // Home's provisioner really answers; only its response reaching this window is held, so the
+  // old delivery is still finding its conversation while the person moves on.
+  const old = gate();
+  const holdOldProvision = async (route: Route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const response = await route.fetch();
+    old.reached();
+    await old.held;
+    await route.fulfill({ response });
+    old.delivered();
+  };
+  await page.route('**/api/home/conversation', holdOldProvision);
+  try {
+    await composer(page).fill('Left before it landed');
+    await composer(page).press('Enter');
+    await expect(page.locator('.dio-pending')).toBeVisible();
+    await old.recorded;
+    // The new scope's delivery is the one on screen now: it provisions, dispatches, and its
+    // provider call holds long enough to be stopped.
+    const scope = page.getByRole('combobox', { name: 'In' });
+    await scope.selectOption({ label: 'Second scope' });
+    await expect(scope).toHaveValue(project.id);
+    await composer(page).fill('SLOW newer delivery');
+    await composer(page).press('Enter');
+    await expect(page.locator('.dio-pending')).toBeVisible();
+    await expect.poll(() => seen.length).toBeGreaterThan(callsBefore);
+    const commandId = await claimedCommand(page);
+    expect(commandId).not.toBeNull();
+    const interrupt = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/messages/${commandId}/interrupt`) &&
+        response.request().method() === 'POST',
+    );
+    // Now the old provision answer is let through. Its continuation finds the visit moved and
+    // its own delivery cancelled, and finishes; two paints is further than that continuation
+    // can take to run its cleanup.
+    old.release();
+    await old.arrived;
+    await painted(page);
+    // The delivery on screen still owns its identity: this Stop names the newer command.
+    await page.getByRole('button', { name: 'Stop' }).click();
+    const ack = await interrupt;
+    expect(ack.ok()).toBe(true);
+    expect((await ack.json() as { commandId: string }).commandId).toBe(commandId);
+    // The delivery that never learned its conversation sent nothing: one message POST, and it
+    // belongs to the new scope's thread. The stopped message stays pending, ready to be sent
+    // again from its own record.
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toContain(`/projects/${project.id}/`);
+    await expect(strip(page)).toContainText('SLOW newer delivery');
+  } finally {
+    old.release();
+    await page.unroute('**/api/home/conversation', holdOldProvision);
+  }
+});

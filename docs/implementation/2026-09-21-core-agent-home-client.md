@@ -199,6 +199,37 @@ read is untouched, so the frozen confirmed-POST/failed-state-GET split stays mea
 Marked choices, the `routePick` fences, visit ownership and the in-lock early-Stop check are
 unchanged; no new endpoint, field, notice or test edit. No rerun is claimed by this lane.
 
+Guard review R1 of candidate `f37f29a4068f6b9b6e3b6cce80eb46f685a938ae`
+(`2026-09-21-core-agent-home-client-guards-review-r1.md`) executed surviving guard removals and
+required four test-only closures, added without touching any source or frozen payload. No rerun
+is claimed by this lane - the reviewer reapplies the unchanged mutation patches red, restores,
+and runs green.
+
+- HCG-1 / C4 (identity handed to a join after issuance): the existing join test queues behind
+  issuance. Added `a same-window join after the identity was issued is handed it, not asked to
+  wait` in `conversation-send.test.ts`: the second `sendMessage` joins only once the first POST
+  is demonstrably on the wire, so `flight.claim` is already set. Both callers receive `uuid-1`
+  once, share the one result, one POST runs.
+- HCG-2 / C13 (Stop releases the active identity synchronously): the earlier duplicate case
+  used two protocol-level dispatches. Added `two Stop presses in one JavaScript turn name the
+  command once` in `home-luna.spec.ts`: both click events run inside a single `page.evaluate`
+  before any continuation can settle the first press. One interrupt for the exact command, the
+  pending strip keeps the message recoverable, the record shows `interrupted: true`, and the
+  global pageerror check still applies. The later-Stop case is retained.
+- HCG-3 / C22 (old delivery clears only its own active reference): added `a delivery left
+  behind in an old visit cannot take the new Stop with it` in `home-luna.spec.ts`. Home's
+  provision response is held after the real provisioner answered; the person moves to a project
+  scope, whose delivery provisions, dispatches a held SLOW message and is issued its command;
+  the old provision response is then released and its continuation allowed to finish. Stop
+  still interrupts the newer command exactly once, one message POST ran (to the project
+  thread), and the stopped message stays pending.
+- HCG-4 / C2 (abort check at the resend's lock-callback entry): the queued-wait case is ended
+  by the lock itself. Added `a resend stopped as the lock is granted reads and sends nothing`
+  in `conversation-send.test.ts` with a labelled modeled boundary: a fixture lock manager that
+  grants the request and aborts the signal in the same instant it invokes the callback, so only
+  the callback-entry check can end the resend. No read, no POST, no issued identity; claim and
+  reference unchanged.
+
 ## Decisions kept
 
 - Pending-claim, retry, discard, `inFlight` join, cross-window adoption and visit-fence
