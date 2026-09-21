@@ -546,6 +546,14 @@ It does not yet hold R-12, the admission repair or the AWS composition.
 
 **PR #29 remains draft.** Admission at `7f1b9b3`, preserved-composition oracles at `2b3f933`, and the original client repair are accepted within their stated bounds. Home contract correction, implementation, separate executing review, fresh complete gates on the expanded integration, main merge and the authorized release/site endgame remain owed. The single failure of the old admission candidate's full suite remains recorded and its main-branch fix was independently verified in Round 13. No release or deployment is claimed.
 
+### Round 15: Home contract accepted, three bounded implementation lanes dispatched (2026-09-21)
+
+**The Home Luna/Stop contract is independently accepted for implementation.** Exact proposal `4643f71`, accepted review `ff02829`, in `2026-09-21-core-agent-home-luna-contract-review-r4.md`. Three earlier reviews are preserved, including the rejected consume-once cancellation store, proposed timer retry, missing cached-Home migration, and missing direct driver project validation. The accepted design uses existing lookup, active command identity, request signals and durable outcome authority. Home and project conversations default to AWS, unmarked historical pins migrate at intentional ensure, marked explicit choices persist, and Work routing remains separate. This is design acceptance only; no new application behavior is accepted yet.
+
+**Three disjoint SWE 2.0 Max authors are executing through Devin.** Same isolated Home worktree at `ff02829`: driver interruption (two driver files and a new focused test), server/default routing and HTTP behavior (formal hot-file handoff `handoff_mub87ap0_a8d16149`, claim `claim_mub87b3u_bbb2be33`), and client flow/browser fixtures (`claim_mub87c8u_8a211992`). The driver lane uses the authorized AWS single-file claim plus `claim_mub87boe_17e907b3`. They may not run tests, mutate Git, contact providers, read main-checkout source, edit each other's files or change frozen reviewers' oracles. The parent independently executes tests and guard removals after their combined candidate is committed. No inherited model or OpenCode delegation is used.
+
+**Original oracle bytes remain verified unchanged.** The three frozen AWS/admission/seam Git blobs match their archived SHA-256 values; the original 3,034-byte R4 client reproducer still appears exactly once; R5/R6, admission-successor and composed-baseline review reports match their committed originals. `verify-frozen-oracles.py` in the continuation evidence folder records these assertions for the final candidate too. PR #29 remains draft, and the full expanded-candidate gates, independent implementation acceptance, merge and release/site endgame remain owed.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
