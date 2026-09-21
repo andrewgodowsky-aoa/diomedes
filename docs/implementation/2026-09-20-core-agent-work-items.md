@@ -826,6 +826,46 @@ corrected the README introduction's stale installed-tool-only claim; local/sampl
 offline work is distinguished from provider-backed conversation. These focused
 results do not close the generated-build-record or full-release gates.
 
+### Round 24: release source accepted, desktop fixture corrected (2026-09-21)
+
+The real preparatory package generated the 0.1.7 record at `6aac6a1`; its
+embedded identity and all 423 source hashes matched. The independent version
+repair report accepts that bounded metadata repair. Exact candidate
+`cc04e425442249856879621db546ef2ae474f845` then passed typecheck, Vite build,
+50 page cases, 176 browser cases with no failed, skipped or flaky cases, and
+4,682 unit tests with zero failures and four skips across 252 files. All three
+hosted checks passed, including both jobs in run `35639824674`. Main was
+fast-forwarded to that candidate after a fresh ancestry and no-drift check.
+
+The final package built from cc04e42 failed the unchanged desktop smoke before
+the first screenshot. Two independent executions preserved the same original
+driver hash and showed the intended All projects landing. Saved openProjects
+and lastPage are navigation context, not a selected project in a fresh window.
+The failure report was committed alone at `223818f`; no production fix was
+needed and no new passing package proof or installer was produced.
+
+The separate driver's first repair, committed at `1e6d59a`, explicitly enters
+the fixture project and Tasks. Its complete execution passed every first-window
+check, including scaling, both lost-response admission legs, team, isolation,
+shutdown and lock release, then failed at restart. The captured restart shows
+Console, as `migrateSettings` and the existing surface tests require on every
+launch. The legacy Workbook smoke also needs to explicitly select its test
+surface after restart. The original assertions, task state and receipts remain
+the oracle. The second correction now passes the complete smoke against the
+preserved cc04e42 package: the new origin is selected before API reads, default
+Console launch is asserted, then the legacy fixture explicitly selects Workbook.
+Both original task and stopped-receipt persistence checks pass. Independent
+driver and ledger review is pending. All failed logs and screenshots remain
+separate from this successful preliminary run in the continuation deliverable.
+The own heavy slots are released; final release bytes have not been regenerated.
+
+Publication and deployment remain owed. A corrected driver must pass complete
+execution and independent review, followed by the exact candidate source gates,
+hosted checks, regenerated package, desktop and installer/runtime proof, the
+hash-bound candidate record and public asset verification. No live AWS call,
+customer setup or public older-version upgrade proof is claimed. Broader CD-1
+prompt gaps remain open; no numbered prompt, index or checksum status moved.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 

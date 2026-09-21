@@ -277,8 +277,20 @@ try {
     .toBe(false);
   desktop = await electron.launch({ executablePath, env });
   const reopened = await desktop.firstWindow();
-  // The restart is a launch, not a reload: the new window opens on Diomedes
-  // again, so the project and its Tasks page are entered explicitly here too.
+  await reopened.waitForURL('http://127.0.0.1:*/');
+  // The restarted service listens on a new port, so this window's origin must be
+  // recorded before the settings calls below and the receipt reads after them.
+  url = new URL(reopened.url()).origin;
+  // A restart is a launch: the window opens on Diomedes, and migrateSettings
+  // opens every stored surface on the Console at launch (server/store.ts). This
+  // legacy smoke still exercises the Workbook, which the settings API accepts
+  // for one more release, so it opts in again for this window before entering.
+  await expect(reopened.locator('html[data-surface="console"]')).toHaveCount(1);
+  await expect(reopened.getByRole('main', { name: 'Diomedes', exact: true })).toBeVisible();
+  const reopenedSettings = await api('/settings');
+  await api('/settings', 'PUT', { ...reopenedSettings, surface: 'workbook' });
+  await reopened.reload();
+  await expect(reopened.locator('html[data-surface="workbook"]')).toHaveCount(1);
   await expect(reopened.getByRole('main', { name: 'Diomedes', exact: true })).toBeVisible();
   await enterLastOpenProject(reopened);
   await reopened
@@ -286,7 +298,6 @@ try {
     .getByRole('button', { name: /^Tasks/ })
     .click();
   await expect(reopened.locator('.task-card')).toHaveCount(found.length);
-  url = new URL(reopened.url()).origin;
   for (const proof of admissionProof) {
     const saved = await api(`/projects/${project.id}/work/commands/${proof.receipt.commandId}`);
     expect(saved.receipt).toEqual(proof.receipt);
