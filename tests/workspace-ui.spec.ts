@@ -6,6 +6,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import type { Project } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 /**
  * Browser proof of the workspace boundary in the real Console.
@@ -96,6 +97,7 @@ const mark = (page: Page) => page.getByRole('button', { name: 'Change workspace'
 
 async function open(page: Page) {
   await page.goto(`${baseURL}/`);
+  await reopenLastProject(page);
   await expect(page.locator('.console')).toBeVisible();
   await expect(mark(page)).toBeVisible();
 }
