@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Change, DocumentContent, Project, ProjectState, Settings } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -162,6 +163,8 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
     page.getByRole('heading', { name: 'Your workspace is ready', exact: true }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Open Diomedes' }).click();
+  // First run now ends on the Diomedes page too; the Projects page is one click away.
+  await showProjects(page);
   await page.getByRole('button', { name: /^Try the sample project/ }).click();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
@@ -206,7 +209,7 @@ test('F04, F06: sample project opens and a plan edit survives reload with Histor
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
   // The first-run test already opened the sample project; reuse it rather than creating a second one.
-  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await showProjects(page);
   const existing = page.getByRole('button', { name: /^Harbor Street restaurants/ }).first();
   if (await existing.count()) await existing.click();
   else await page.getByRole('button', { name: /^Try the sample project/ }).click();
@@ -767,6 +770,13 @@ test('Draft recovery: Settings, reload and same-named files in separate projects
   await page.goto('/');
   const editor = page.getByRole('textbox', { name: 'Document content' });
   const tabs = page.getByRole('navigation', { name: 'Open projects' });
+  // Land in project A specifically (not just "the last tab": `shownProjects`
+  // follows `/api/projects` creation order, not `openProjects`, so it is not
+  // safe to assume which tab is last). Opening a project always lands on its
+  // Home page — `lastPage` is only replayed by the retired auto-reopen-on-launch
+  // path — so the Plan page it left saved is reached explicitly too.
+  await tabs.getByRole('button', { name: first.name, exact: true }).click();
+  await navigate(page, 'Plan');
   const draftA = `${originalA}\nUnsaved writing that belongs only to project A.\n`;
   const draftB = `${originalB}\nA separate unsaved draft that belongs only to project B.\n`;
   await page.getByRole('button', { name: 'Edit document', exact: true }).click();
@@ -1031,7 +1041,7 @@ test('Landing: ask box carries a draft into the chosen project', async ({ page }
   );
   const latest = sorted[0];
   await page.goto('/');
-  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await showProjects(page);
   await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
   const startHere = page.getByRole('region', { name: 'Start here' });
   await expect(startHere).toBeVisible();
@@ -1183,6 +1193,7 @@ test('Modes: the Workbook composer shows four modes and Fix needs what is failin
   });
   expect(setup.ok()).toBe(true);
   await page.goto('/');
+  await reopenLastProject(page);
   await expect(page.getByRole('navigation', { name: 'Project pages', exact: true })).toBeVisible();
   await navigate(page, 'Ask');
   const composer = page.getByRole('region', { name: 'Ask box', exact: true });
@@ -1279,6 +1290,7 @@ test('Usage: navigation preserves a concurrent engine setting while refresh is d
   });
   expect(setup.ok()).toBe(true);
   await page.goto('/');
+  await reopenLastProject(page);
   await expect(page.getByRole('navigation', { name: 'Project pages', exact: true })).toBeVisible();
   let releaseRefresh!: () => void;
   const refreshReleased = new Promise<void>((resolve) => {
