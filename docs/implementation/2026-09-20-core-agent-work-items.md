@@ -666,6 +666,36 @@ At the 15:02 UTC refresh, `origin/main` is still `58bdc65` and all three hosted 
 integration `2deca17` are successful. PR #29 stays draft until expanded acceptance and exact
 composed gates pass. Merge, packaging, release and site publication remain owed. Nothing is DONE.
 
+### Round 19: Home scope independently accepted and composed for final gates (2026-09-21)
+
+**Home client acceptance is committed at `a20d825`, for exact candidate `21879ed`.** The
+original author added the four missing timing schedules, then corrected a masked failure path
+under immutable guard reviews `ec1ab82` and `72da6d0`. Independent TypeScript, both client unit
+files (55/55), build and all 15 Home cases passed. The unchanged original C2, C4, C13 and C22
+patches now fail at their intended assertions and restore byte-for-byte green. The last old-
+delivery probe expects one exact-command interrupt response and receives zero, with no cleanup
+error. Its earlier global timeout/unroute failure is preserved, not counted as a clean kill.
+
+Two remaining client survivors are explicitly ruled on: C9 has an equivalent following route-
+option branch; C21's early cancelled-delivery shortcut overlaps the aborted transport's lock
+barrier. Neither is counted killed. Driver inserted-yield survivors remain disclosed in their
+own accepted review. The source did not change during these test-only closures, and all frozen
+R2/R4, AWS/admission/seam and earlier review bytes remain unchanged.
+
+**Accepted Home source and every immutable review are composed at `de13b6e`.** The merge into
+`feature/core-agent-bot` was conflict-free. Its application, shared code, tests and Playwright
+config match accepted Home `a20d825` exactly; the integration ledger was preserved. The Home and
+review branches are pushed through `a20d825`. All completed Home implementation/review claims
+and their heavy slots are released. The integration composition claim is `claim_mube5lo0_88362031`
+under the appointed integrator's handoff; the legacy coordinator role names are administrative.
+
+The next gate candidate is this ledger checkpoint on the composed branch. TypeScript, full
+Vitest, production build, all 50 page cases and the full browser suite must pass there under
+one exclusive slot before PR readiness. Their results are PENDING in this record. Main was
+refreshed immediately before composition and remains `58bdc65`; PR #29 stays draft. No live
+provider, credential, spend, release, installer or site deployment result is claimed. Nothing
+is DONE until its required exact implementation is merged into main.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
