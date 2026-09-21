@@ -484,6 +484,26 @@ export class ClaudeSessionRuns {
       );
   }
   /**
+   * What the Runtime durably saved for one command's turn. A step that succeeded carrying no
+   * response is an interruption the person asked for and the provider acknowledged, not a
+   * completed answer, so a later read of that message must not report it as answered either.
+   * A turn still running, or one that never finished, has saved nothing to read.
+   */
+  async turnResult(
+    projectId: string,
+    runId: string,
+    commandId: string,
+  ): Promise<{ answered: boolean; interrupted: boolean } | null> {
+    const run = await this.get(projectId, runId);
+    const turn = run.steps.find((step) => step.intent.stepId === stepKey('turn', commandId));
+    if (!turn || turn.state !== 'succeeded') return null;
+    const saved = turn.output as { response?: unknown; interrupted?: unknown } | null;
+    return {
+      answered: saved?.response !== null && saved?.response !== undefined,
+      interrupted: saved?.interrupted === true,
+    };
+  }
+  /**
    * What one answered message was sent with, read from its immutable turn: the source files
    * it carried and the origin the Runtime recorded. A projection repaired later is rebuilt
    * from this, never from the files and settings as they stand now.

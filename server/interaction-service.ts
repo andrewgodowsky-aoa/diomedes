@@ -290,6 +290,10 @@ export class InteractionTurns {
   async outcome(projectId: string, threadId: string, commandId: string): Promise<MessageResult> {
     const located = await this.host.locate(projectId, threadId, commandId);
     if (!located) throw new ApiError(404, 'This message was not found.');
+    // Read from what the turn itself saved, not from the fact that its step succeeded: an
+    // interruption the provider acknowledged succeeds with no answer, and a person polling
+    // this message must be told that, not that nothing happened.
+    const turn = await this.driver().turnResult(projectId, located.runId, commandId);
     const outcome = await this.read(
       {
         projectId,
@@ -304,7 +308,7 @@ export class InteractionTurns {
       commandId,
       sourceMessageId: located.sourceMessageId,
       answerText: null,
-      interrupted: false,
+      interrupted: turn?.interrupted ?? false,
       outcome: outcome.outcome,
     };
   }
