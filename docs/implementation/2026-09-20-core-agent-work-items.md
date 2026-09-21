@@ -514,6 +514,16 @@ merged) passed all four gates and the full browser suite: tsc 0; Vitest 237 file
 0 failed, 4 skipped; build; page spec 29 of 29; browser suite 155 passed. Pushed to draft PR #29.
 It does not yet hold R-12, the admission repair or the AWS composition.
 
+### Round 12: independent R-5 execution and expanded PR #29 scope (2026-09-21)
+
+**CD-05.R-5 is recorded unedited in `2026-09-21-core-agent-client-review-r5.md`, commit `1cbee5e`.** The review branch fast-forwarded cleanly from `c17cf26` to `1f6f93c`, and the repair branch then fast-forwarded to the committed review. R-12's two callback guards are independently verified: the exact 3,034-byte original reproducer failed at its intended obsolete-read assertion on `0e7602f`; the repaired full page spec passed 33/33; tsc passed; four focused unit files passed 90/90. Both guard removals failed at their intended assertions, were restored byte-for-byte, and were followed by four passing R-12 cases.
+
+**CD-05b remains unaccepted. CD05-R-13 is a P2 acceptance-evidence blocker, not an established production defect.** The required running-delivery closure independently produced 13 passes and 3 failures in sixteen unchanged repetitions, followed by 4 passes and 1 failure in a five-repeat protocol diagnostic. Each failure hangs on B's own state GET after its successful POST; B remains Working, and no obsolete read of A was observed. Traces and original failures are retained in `F:/Diomedes/deliverables/core-agent-continuation-20260921/`. The next bounded worker owns diagnosis and any repair; the reviewer must not author and accept that repair. A green retry alone cannot close it.
+
+**Andrew decided that Home Luna default and Stop belongs inside PR #29.** His exact response in this continuation was `Include in PR #29`. The existing routing decision is therefore in this PR's required scope. I-19 and I-20 need a reviewed contract amendment and implementation after the ordered review checkpoints. No automatic fallback, broader managed launch, live Luna call, credential handling or spend-cap decision is authorized by this scope answer. Anything newly authored by the integrator requires a different reviewer.
+
+**Current integration facts were verified live.** `origin/main` was `58bdc65`, PR #29 was draft at `a3cb70b`, the client candidate was `1f6f93c`, and the admission successor was `7f1b9b3`. The handoff documents after `2b3f933` did not change application or test code. Independent admission re-review and composed acceptance remain owed. The later Home/Stop implementation must be independently reviewed and included in a fresh final composed gate run. No merge to main, version bump, package, publication or deployment has occurred in this checkpoint.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
