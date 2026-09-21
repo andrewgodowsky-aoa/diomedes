@@ -13,8 +13,16 @@ import type {
  * same identity and the same body. The server compares a retry with what was first sent, so a
  * reused identity with a different body is refused there, not guessed at here.
  *
- * A thread is one sequential conversation, so it holds at most one unconfirmed message. Clearing
- * this browser's storage makes the next send a new message; that is the cost a Work start carries.
+ * A thread is one sequential conversation, so it holds at most one unconfirmed message, and that
+ * message belongs to the person rather than to the window that typed it. Two records say so: a
+ * shared claim in local storage, which every window of this browser reads and which alone decides
+ * whether a message is pending, and a window reference in session storage, which records that this
+ * window is the one waiting for it. An exclusive Web Lock covers a whole send, so a second window
+ * waits for the first to finish and then reuses the command the claim holds instead of minting its
+ * own. Clearing this browser's local storage makes the next send a new message; that is the cost a
+ * Work start carries. Nothing here deduplicates equal text once it has been confirmed: only a
+ * pending claim is shared, and only until it settles, so two windows that each send the same text
+ * after a confirmation send two messages, exactly as pressing Enter twice does.
  */
 export interface MessageInput {
   text: string;
@@ -29,7 +37,9 @@ export interface PendingMessage {
 }
 
 const PENDING = 'diomedes.conversation.pending.';
+const CLAIM = 'diomedes.conversation.claim.';
 const LAST = 'diomedes.conversation.last.';
+const LOCK = 'diomedes.conversation.send.';
 const commandPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const shaPattern = /^[a-f0-9]{64}$/;
 const inFlight = new Map<string, { input: string; promise: Promise<MessageResult> }>();
@@ -37,6 +47,10 @@ const inFlight = new Map<string, { input: string; promise: Promise<MessageResult
 const invalid = () => new Error('The saved message is damaged; nothing was sent.');
 const unavailable = () =>
   new Error('This browser cannot save the message before sending it; nothing was sent.');
+const busy = () =>
+  new Error('Another window is still sending on this conversation. Nothing was sent from this one.');
+const elsewhere = () =>
+  new Error('That message was discarded or settled in another window. Nothing was sent from this one.');
 /** The request may have been accepted. Sending the same message again checks the original. */
 export class UnconfirmedMessage extends Error {
   constructor() {
@@ -98,10 +112,10 @@ function storageFor(kind: 'session' | 'local'): Storage {
   }
 }
 
-function readPending(storage: Storage, projectId: string, threadId: string) {
+function readRecord(storage: Storage, prefix: string, projectId: string, threadId: string) {
   let raw: string | null;
   try {
-    raw = storage.getItem(keyOf(PENDING, projectId, threadId));
+    raw = storage.getItem(keyOf(prefix, projectId, threadId));
   } catch {
     throw unavailable();
   }
@@ -131,16 +145,138 @@ function readPending(storage: Storage, projectId: string, threadId: string) {
   return pending;
 }
 
-/** The message this thread sent and never had confirmed, or null. Read on load, to offer it back. */
+/** The record every window of this browser reads. It alone says whether a message is pending. */
+const readClaim = (projectId: string, threadId: string) =>
+  readRecord(storageFor('local'), CLAIM, projectId, threadId);
+/** This window's own note that it is the one waiting. Never the only record a second window has. */
+const readReference = (projectId: string, threadId: string) =>
+  readRecord(storageFor('session'), PENDING, projectId, threadId);
+
+/**
+ * The claim first, then this window's reference, both before the first request. A write that fails
+ * leaves nothing half saved: a claim this send minted is taken back, and nothing is sent.
+ */
+function save(pending: PendingMessage, minted: boolean) {
+  const json = JSON.stringify(pending);
+  const claimKey = keyOf(CLAIM, pending.projectId, pending.threadId);
+  const shared = storageFor('local');
+  if (minted) {
+    try {
+      shared.setItem(claimKey, json);
+    } catch {
+      throw unavailable();
+    }
+  }
+  try {
+    storageFor('session').setItem(keyOf(PENDING, pending.projectId, pending.threadId), json);
+  } catch {
+    if (minted)
+      try {
+        shared.removeItem(claimKey);
+      } catch {
+        // Nothing was sent under it. The next send reads it and sends that command, not a new one.
+      }
+    throw unavailable();
+  }
+}
+
+/** Both records go when the message stops being pending. A cleanup fault never retries a send. */
+function clear(projectId: string, threadId: string) {
+  try {
+    storageFor('local').removeItem(keyOf(CLAIM, projectId, threadId));
+  } catch {
+    // The same body and identity read back the same answer.
+  }
+  try {
+    storageFor('session').removeItem(keyOf(PENDING, projectId, threadId));
+  } catch {
+    // The claim decides; a reference no claim backs is dropped the next time it is read.
+  }
+}
+
+/**
+ * A reference no claim backs points at nothing: the message it names was confirmed or discarded in
+ * another window. Given a command, only a reference naming that command is dropped, so a reference
+ * to a different message still pending is left alone. Damaged storage is left for a send to refuse.
+ */
+function dropReference(projectId: string, threadId: string, commandId?: string) {
+  try {
+    if (commandId !== undefined) {
+      const reference = readReference(projectId, threadId);
+      if (!reference || reference.commandId !== commandId) return;
+    }
+    storageFor('session').removeItem(keyOf(PENDING, projectId, threadId));
+  } catch {
+    // A reference that cannot be read or removed is not what decides anything.
+  }
+}
+
+/**
+ * One sender per conversation, across every window of this browser. Reading the claim, deciding the
+ * command, both writes, both attempts and the cleanup happen inside one lock, so a second window
+ * acts on what the first settled rather than on what it read before the first began. Web Locks are
+ * the only atomicity a browser offers here: without them this sends nothing rather than guess.
+ *
+ * The caller's Stop ends a wait for the lock. A wait that ends that way held nothing, wrote nothing
+ * and sent nothing, so it is told so plainly rather than told its message may have been accepted.
+ */
+async function underLock<T>(
+  projectId: string,
+  threadId: string,
+  signal: AbortSignal | undefined,
+  run: () => Promise<T>,
+): Promise<T> {
+  const locks = (globalThis.navigator as { locks?: LockManager } | undefined)?.locks;
+  if (!locks || typeof locks.request !== 'function') throw unavailable();
+  const settled: ({ value: T } | { error: unknown })[] = [];
+  try {
+    await locks.request(
+      keyOf(LOCK, projectId, threadId),
+      { mode: 'exclusive', signal },
+      async () => {
+        try {
+          settled.push({ value: await run() });
+        } catch (error) {
+          settled.push({ error });
+        }
+      },
+    );
+  } catch (error) {
+    // The lock was never granted. What the callback would have written and sent, it did not.
+    if (settled.length === 0) throw signal?.aborted ? busy() : error;
+  }
+  if (settled.length === 0) throw signal?.aborted ? busy() : unavailable();
+  const outcome = settled[0];
+  if ('error' in outcome) throw outcome.error;
+  return outcome.value;
+}
+
+/**
+ * The message this thread sent and never had confirmed, or null. Read on load, to offer it back.
+ * The shared claim answers: a send another window began is found here, and one another window
+ * confirmed or discarded is not offered again.
+ */
 export function pendingMessage(projectId: string, threadId: string): PendingMessage | null {
-  return readPending(storageFor('session'), projectId, threadId);
+  const claim = readClaim(projectId, threadId);
+  if (!claim) {
+    dropReference(projectId, threadId);
+    return null;
+  }
+  // A claim naming the last confirmed command is a cleanup that failed, not a message to resend.
+  if (claim.commandId === lastCommand(projectId, threadId)) {
+    clear(projectId, threadId);
+    return null;
+  }
+  return claim;
 }
 
 /**
  * The person's own choice to give up on an unconfirmed message. It may have been answered; if it
  * was, the transcript shows it. Nothing it proposed can start, because only a selection starts work.
+ * The claim goes first, so no window still reads the message as pending.
  */
 export function discardPendingMessage(projectId: string, threadId: string) {
+  storageFor('local').removeItem(keyOf(CLAIM, projectId, threadId));
   storageFor('session').removeItem(keyOf(PENDING, projectId, threadId));
 }
 
@@ -172,12 +308,10 @@ const confirms = (result: MessageResult, pending: PendingMessage) =>
   record(result) && result.commandId === pending.commandId && record(result.outcome);
 
 async function dispatch(
-  storage: Storage,
   pending: PendingMessage,
   uncertain: boolean,
   signal: AbortSignal | undefined,
 ) {
-  const key = keyOf(PENDING, pending.projectId, pending.threadId);
   const body: MessageRequest = { ...pending.input, commandId: pending.commandId, consent: true };
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -189,18 +323,14 @@ async function dispatch(
       );
       if (!confirms(result, pending)) throw new UnconfirmedMessage();
       // A cleanup failure must never retry a confirmed send.
-      try {
-        storage.removeItem(key);
-      } catch {
-        /* the same body and identity read back the same answer */
-      }
+      clear(pending.projectId, pending.threadId);
       rememberLast(pending.projectId, pending.threadId, pending.commandId);
       return result;
     } catch (error) {
       if (final(error)) {
         // A first attempt the server refused was never accepted. After an uncertain attempt a
         // refusal may be about the retry, not the original, so the saved message is kept.
-        if (!uncertain) storage.removeItem(key);
+        if (!uncertain) clear(pending.projectId, pending.threadId);
         throw error;
       }
       // Stopping is the person's act, not a fault to retry. The saved message stays, so sending
@@ -221,32 +351,55 @@ export async function sendMessage(
   if (!id(projectId) || !id(threadId)) throw invalid();
   const normalized = normalize(input);
   const inputJson = JSON.stringify(normalized);
-  const storage = storageFor('session');
   const key = keyOf(PENDING, projectId, threadId);
-  let pending = readPending(storage, projectId, threadId);
-  const uncertain = pending !== null;
-  if (pending && JSON.stringify(pending.input) !== inputJson)
-    throw new Error(
-      'An earlier message on this conversation was never confirmed. Send it again or discard it first.',
-    );
+  // This window's own second press, answered before the lock: the send that holds it is this one.
   const flight = inFlight.get(key);
   if (flight) {
     if (flight.input !== inputJson) throw new UnconfirmedMessage();
     return flight.promise;
   }
-  if (!pending) {
-    pending = { commandId: mintCommandId(), projectId, threadId, input: normalized };
-    try {
-      storage.setItem(key, JSON.stringify(pending));
-    } catch {
-      throw unavailable();
-    }
-  }
-  const promise = dispatch(storage, pending, uncertain, signal).finally(() =>
-    inFlight.delete(key),
-  );
+  const promise = underLock(projectId, threadId, signal, async () => {
+    const reference = readReference(projectId, threadId);
+    const claim = readClaim(projectId, threadId);
+    if (claim && JSON.stringify(claim.input) !== inputJson)
+      throw new Error(
+        'An earlier message on this conversation was never confirmed. Send it again or discard it first.',
+      );
+    // A claim still pending is this message, whichever window began it. Without one the text is a
+    // new message however often it has been sent before, and any reference left here named a
+    // command another window confirmed or discarded.
+    if (!claim && reference) dropReference(projectId, threadId);
+    const pending =
+      claim ?? { commandId: mintCommandId(), projectId, threadId, input: normalized };
+    save(pending, claim === null);
+    return dispatch(pending, claim !== null, signal);
+  }).finally(() => inFlight.delete(key));
   inFlight.set(key, { input: inputJson, promise });
   return promise;
+}
+
+/**
+ * Send again, for the message a window was offered back. It can only ever send the command the
+ * shared claim still holds. If that command settled or was discarded in another window while this
+ * one was showing it, the record is read instead and nothing is sent, so Send again never mints a
+ * second command for a message that already has one.
+ */
+export async function resendPending(
+  projectId: string,
+  threadId: string,
+  commandId: string,
+  signal?: AbortSignal,
+): Promise<MessageResult> {
+  if (!id(projectId) || !id(threadId)) throw invalid();
+  return underLock(projectId, threadId, signal, async () => {
+    const claim = readClaim(projectId, threadId);
+    if (claim && claim.commandId === commandId) return dispatch(claim, true, signal);
+    const settled = await readOutcome(projectId, threadId, commandId, signal);
+    dropReference(projectId, threadId, commandId);
+    if (!settled) throw elsewhere();
+    rememberLast(projectId, threadId, commandId);
+    return settled;
+  });
 }
 
 /**
