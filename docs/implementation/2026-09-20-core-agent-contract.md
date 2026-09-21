@@ -13,6 +13,27 @@ The reviews answered are
 Nothing here is implemented. This freezes shapes and boundaries so CD-02 and
 CD-05 can be written against one contract.
 
+## Round 11: I-19 and I-20 are superseded by the Home Luna contract (2026-09-21)
+
+`2026-09-21-core-agent-home-luna-contract.md`, accepted as a bounded design in
+`2026-09-21-core-agent-home-luna-contract-review-r4.md`, supersedes the two Claude-only pins the
+rounds below recorded. This note is the supersession only; it claims no implementation.
+
+- **I-19.** The home thread update still refuses an unsupported engine atomically, by reserved
+  project identity and never by `settings.home`, before any field is touched. What it now admits
+  is the conversation routes, `claude-code` and every model-API route, through the shared
+  `isConversationRoute` predicate the send path also uses, so update and send cannot disagree. A
+  route the person picks through the update is marked `engineChoice: 'person'`; an unmarked pin
+  is provisioned, not chosen, and a provisioner may re-pin it.
+- **I-20.** `provisionProjectConversation` and `provisionHome` now pin
+  `CONVERSATION_DEFAULT_ROUTE`, `aws-bedrock` on Luna, whenever the thread carries no marked
+  choice: on creation, on adoption and on the bound early return, inside the same lock and
+  writing only when something changed. A marked choice is preserved through provisioning and
+  restart.
+
+The message, selection and outcome shapes are untouched. The message-scoped interrupt endpoint
+and its `requested`/`settled`/`idle`/`superseded` states are that contract's, not this one's.
+
 ## Round 10: the client half of I-1, by command (2026-09-21)
 
 Read this round first, then Round 9. Nothing here changes a route, a shape or the server. The

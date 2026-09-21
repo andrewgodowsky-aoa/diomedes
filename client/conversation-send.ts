@@ -2,6 +2,7 @@ import { api, ApiError } from './api';
 import { mintCommandId } from './work-start';
 import type {
   ConversationMode,
+  InterruptResponse,
   MessageRequest,
   MessageResult,
   SelectionRequest,
@@ -36,13 +37,34 @@ export interface PendingMessage {
   input: MessageInput;
 }
 
+/**
+ * The identity a delivery's dispatch was actually issued under: this project, this thread and
+ * this command. It is handed out once, by the locked section that saved or adopted the claim,
+ * and it is never guessed from a stored record a send merely found.
+ */
+export interface DispatchIdentity {
+  projectId: string;
+  threadId: string;
+  commandId: string;
+}
+
 const PENDING = 'diomedes.conversation.pending.';
 const CLAIM = 'diomedes.conversation.claim.';
 const LAST = 'diomedes.conversation.last.';
 const LOCK = 'diomedes.conversation.send.';
 const commandPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const shaPattern = /^[a-f0-9]{64}$/;
-const inFlight = new Map<string, { input: string; promise: Promise<MessageResult> }>();
+const inFlight = new Map<
+  string,
+  {
+    input: string;
+    /** Null until the locked section has issued this send's dispatch identity. */
+    claim: DispatchIdentity | null;
+    /** Joined sends to be told that identity the moment it is issued. */
+    waiting: Set<(identity: DispatchIdentity) => void>;
+    promise: Promise<MessageResult>;
+  }
+>();
 
 const invalid = () => new Error('The saved message is damaged; nothing was sent.');
 const unavailable = () =>
@@ -55,6 +77,8 @@ const earlier = () =>
   new Error(
     'An earlier message on this conversation was never confirmed. Send it again or discard it first.',
   );
+/** A send whose own Stop landed before it could save or dispatch. Nothing happened at all. */
+const stopped = () => new Error('Stopped before anything was sent.');
 /** The request may have been accepted. Sending the same message again checks the original. */
 export class UnconfirmedMessage extends Error {
   constructor() {
@@ -370,6 +394,7 @@ export async function sendMessage(
   threadId: string,
   input: MessageInput,
   signal?: AbortSignal,
+  onClaim?: (identity: DispatchIdentity) => void,
 ): Promise<MessageResult> {
   if (!id(projectId) || !id(threadId)) throw invalid();
   const normalized = normalize(input);
@@ -381,9 +406,20 @@ export async function sendMessage(
     // A different message while one is on its way was never sent, so it is refused as itself
     // and stays the person's to keep. Only the message in flight can be unconfirmed.
     if (flight.input !== inputJson) throw earlier();
+    // The send in flight is this message's dispatch, so its identity is this one's too: issued
+    // already, or told to the join the moment the locked section issues it.
+    if (flight.claim) onClaim?.(flight.claim);
+    else if (onClaim) flight.waiting.add(onClaim);
     return flight.promise;
   }
-  const promise = underLock(projectId, threadId, signal, async () => {
+  const entry: {
+    input: string;
+    claim: DispatchIdentity | null;
+    waiting: Set<(identity: DispatchIdentity) => void>;
+    promise: Promise<MessageResult>;
+  } = { input: inputJson, claim: null, waiting: new Set(), promise: undefined as never };
+  if (onClaim) entry.waiting.add(onClaim);
+  entry.promise = underLock(projectId, threadId, signal, async () => {
     const reference = readReference(projectId, threadId);
     let claim = readClaim(projectId, threadId);
     // A claim naming the last confirmed command is a cleanup that failed. It is settled, so it
@@ -397,13 +433,21 @@ export async function sendMessage(
     // new message however often it has been sent before, and any reference left here named a
     // command another window confirmed or discarded.
     if (!claim && reference) dropReference(projectId, threadId);
+    // A Stop that landed while this window waited for the lock still ends the send here:
+    // nothing is saved and nothing is sent.
+    if (signal?.aborted) throw stopped();
     const pending =
       claim ?? { commandId: mintCommandId(), projectId, threadId, input: normalized };
     save(pending, claim === null);
+    // The dispatch identity, issued once this send owns the claim: minted now, or the pending
+    // command this window found and is sending again. The sender and every same-window join
+    // waiting on it are told the same command.
+    entry.claim = { projectId, threadId, commandId: pending.commandId };
+    for (const tell of entry.waiting) tell(entry.claim);
     return dispatch(pending, claim !== null, signal);
   }).finally(() => inFlight.delete(key));
-  inFlight.set(key, { input: inputJson, promise });
-  return promise;
+  inFlight.set(key, entry);
+  return entry.promise;
 }
 
 /**
@@ -417,11 +461,20 @@ export async function resendPending(
   threadId: string,
   commandId: string,
   signal?: AbortSignal,
+  onClaim?: (identity: DispatchIdentity) => void,
 ): Promise<MessageResult> {
   if (!id(projectId) || !id(threadId)) throw invalid();
   return underLock(projectId, threadId, signal, async () => {
+    // A Stop that landed while this resend waited for the lock ends it before it saves or sends.
+    if (signal?.aborted) throw stopped();
     const claim = readClaim(projectId, threadId);
-    if (claim && claim.commandId === commandId) return dispatch(claim, true, signal);
+    if (claim && claim.commandId === commandId) {
+      // This branch is a real dispatch of the claimed command: the identity it issues is the
+      // claim's own, so a Stop beside it names this command and no other.
+      onClaim?.({ projectId, threadId, commandId: claim.commandId });
+      return dispatch(claim, true, signal);
+    }
+    // The read path dispatches nothing, so it issues no identity a Stop could act on.
     const settled = await readOutcome(projectId, threadId, commandId, signal);
     dropReference(projectId, threadId, commandId);
     if (!settled) throw elsewhere();
@@ -469,4 +522,24 @@ export async function readOutcome(
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;
   }
+}
+
+/**
+ * The person's Stop for the one command a delivery was issued. `requested` and `settled` are
+ * the transport answering, never the message's outcome: what the command came to is read from
+ * its record each time it is asked for. `idle` means no live turn held it, and a 404 means the
+ * command is not durable yet; neither is a promise that it stopped or that it will never run.
+ * This call never touches the pending claim: acknowledging a transport is not settling it.
+ */
+export async function interruptMessage(
+  projectId: string,
+  threadId: string,
+  commandId: string,
+): Promise<InterruptResponse> {
+  if (!id(projectId) || !id(threadId) || !commandPattern.test(commandId)) throw invalid();
+  return api<InterruptResponse>(
+    `${base(projectId, threadId)}/${encodeURIComponent(commandId)}/interrupt`,
+    'POST',
+    {},
+  );
 }

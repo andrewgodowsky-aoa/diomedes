@@ -1,5 +1,5 @@
 import type { EngineModel, ExternalEngine, Route } from './types.js';
-import { MODEL_API_ROUTES } from './model-api.js';
+import { isModelApiRoute, MODEL_API_ROUTES, type ModelApiRoute } from './model-api.js';
 import type {
   Candidate,
   CandidateSource,
@@ -23,6 +23,22 @@ export function isExternalEngine(value: unknown): value is ExternalEngine {
 }
 export function isRoute(value: unknown): value is Route {
   return ROUTES.some((id) => id === value);
+}
+/**
+ * The route a Diomedes conversation is provisioned on when nobody chose one. A
+ * typed literal, not the server-owned `AWS_BEDROCK_ROUTE`, because shared code
+ * must not import a server module; a test asserts the two spellings agree.
+ * Used only by the two conversation provisioners.
+ */
+export const CONVERSATION_DEFAULT_ROUTE: Route = 'aws-bedrock';
+/**
+ * What a Diomedes conversation may run on: the native Claude Code session or a
+ * model-API route. The Home thread update and the send path share this one
+ * predicate so the two can never disagree about which routes a conversation
+ * accepts.
+ */
+export function isConversationRoute(value: unknown): value is 'claude-code' | ModelApiRoute {
+  return value === 'claude-code' || isModelApiRoute(value);
 }
 export const ENGINE_NAMES: Record<ExternalEngine, string> = {
   'claude-code': 'Claude Code',

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { Project, Turn } from '../../shared/types';
+import type { ExternalEngine, Project, Route, Turn } from '../../shared/types';
+import { ENGINE_NAMES } from '../../shared/engines';
 import type { EverythingItem } from './Everything';
 import { Rail } from './Rail';
 import {
@@ -36,6 +37,18 @@ export interface DiomedesPageProps {
   /** Resolves false when the message was refused and never sent, so the text is given back. */
   onSend(text: string): Promise<boolean>;
   onStop(): void;
+  /**
+   * The route this conversation's messages take: the thread's recorded engine, or the default a
+   * first send takes. The caption names it even when the route is not currently usable.
+   */
+  route: Route;
+  /**
+   * What the Route control may offer on this scope, or null while there is no thread to write a
+   * choice to. The route the thread is on is always in it, offered or not.
+   */
+  routeChoices: Route[] | null;
+  /** The person's route choice, written to the thread. */
+  onRoute(next: Route): void;
   /** Why the conversation cannot run here, in plain words, or null when it can. */
   unavailable: string | null;
   /** What the last message led to, beyond its answer. Null when the answer is all there is. */
@@ -79,6 +92,30 @@ const POINT_FOR: Record<DiomedesResult['state'], string> = {
 };
 
 /**
+ * A conversation route as a person reads it. The name is the route's own: the caption never
+ * substitutes another engine for the one the thread is actually on.
+ */
+export function routeName(route: Route): string {
+  if (route === 'aws-bedrock') return 'AWS Bedrock (Luna)';
+  if (route === 'codex') return 'Codex';
+  if (route === 'sample') return 'Sample';
+  return ENGINE_NAMES[route as ExternalEngine] ?? route;
+}
+
+/**
+ * The entries the Route control offers: Claude Code is always a conversation route, and AWS
+ * Bedrock joins it while its availability rule holds, or stays while it is the route the thread
+ * is on, offered or not, because the control must keep naming the truth. A route outside the
+ * two stays listed as itself.
+ */
+export function routeOptions(current: Route, awsOffered: boolean): Route[] {
+  const entries: Route[] = ['claude-code'];
+  if (awsOffered || current === 'aws-bedrock') entries.push('aws-bedrock');
+  if (!entries.includes(current)) entries.push(current);
+  return entries;
+}
+
+/**
  * The primary Diomedes page: the app opens here, to a conversation rather
  * than a project chooser. It is the Console's three regions (docs/
  * implementation/2026-09-20-console-design-language.md): the rail lists
@@ -102,6 +139,9 @@ export function Diomedes({
   onRestriction,
   onSend,
   onStop,
+  route,
+  routeChoices,
+  onRoute,
   unavailable,
   card,
   cardBusy,
@@ -168,6 +208,7 @@ export function Diomedes({
             </div>
             <div className="col instr" aria-label="This conversation">
               <span>{instrumentLine(scopeId, projects, restriction)}</span>
+              <span className="dio-route">{routeName(route)}</span>
             </div>
 
             <div className="transcript">
@@ -295,6 +336,23 @@ export function Diomedes({
                         ))}
                       </select>
                     </label>
+                    {routeChoices !== null && (
+                      <label className="dio-field">
+                        <span>Route</span>
+                        <select
+                          aria-label="Route"
+                          value={route}
+                          disabled={pending}
+                          onChange={(e) => onRoute(e.target.value as Route)}
+                        >
+                          {routeChoices.map((choice) => (
+                            <option key={choice} value={choice}>
+                              {routeName(choice)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                     <span className="cap">{CAPS[restriction]}</span>
                     {pending ? (
                       <button type="button" className="send ready" onClick={onStop}>

@@ -18,6 +18,12 @@
   grid-template-columns: minmax(0, 1fr) 296px;
 }
 
+/* The route the conversation's messages take, on the same instrumentation line: a fact about
+   this thread, so it reads in the line's stronger colour the way `.instr b` marks one. */
+.console.diomedes .dio-route {
+  color: var(--t2);
+}
+
 /* The composer starts tall and inviting on a quiet conversation with nothing
    in it yet, and drops to the thread composer's usual single line once there
    is something above it to read. */
@@ -57,6 +63,12 @@
 }
 .console.diomedes .dio-field select:hover {
   border-color: color-mix(in srgb, var(--t3) 70%, transparent);
+}
+/* The Route control is disabled while its delivery runs: the choice a send takes is the route
+   it started on, and a select that cannot be changed keeps the quiet colour rather than the
+   interactive one. */
+.console.diomedes .dio-field select:disabled {
+  color: var(--t3);
 }
 
 /* The plain sentence that replaces the composer when this conversation

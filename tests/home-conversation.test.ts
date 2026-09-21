@@ -216,7 +216,17 @@ afterEach(async () => {
 
 type Binding = { projectId: string; threadId: string };
 const readHome = () => api<Binding | null>('/home/conversation');
-const provision = () => api<Binding>('/home/conversation', 'POST');
+// A provisioned home takes the conversation default route, which is AWS Bedrock; that lane is
+// proven in tests/home-luna-routing.test.ts. Everything this file exercises runs on the fake
+// Claude session, so the provisioned home is routed there the way a person's picker routes it:
+// an explicit choice through the thread update, which provisioning and restart then preserve.
+const provision = async (): Promise<Binding> => {
+  const home = await api<Binding>('/home/conversation', 'POST');
+  await api<Conversation>(`/projects/${home.projectId}/threads/${home.threadId}`, 'PUT', {
+    engine: 'claude-code',
+  });
+  return home;
+};
 const listed = async () => (await api<{ projects: Project[] }>('/projects')).projects;
 /** Every registry row whose folder is the reserved one, however the binding points. */
 const homeRows = async () =>
@@ -413,7 +423,7 @@ test('a crash after the binding was saved leaves exactly one home', async () => 
 test('the home Project is never listed, and is still enumerated for recovery after a restart', async () => {
   const home = await provision();
   const mine = await realProject();
-  // The conversation uses Claude Code without the person configuring a thread.
+  // The fixture routed it to Claude Code through the same thread update a person uses.
   expect(threadsOf(home.projectId)[0]).toMatchObject({ engine: 'claude-code', mode: 'auto' });
   expect((await listed()).map((project) => project.id)).toEqual([mine.id]);
   // The filter is the route's, not the store's: startup recovery reads this enumeration.
@@ -504,8 +514,8 @@ test('R-16: the direct route is refused in the home Project for every mode, befo
   const requests: Record<string, unknown>[] = [
     { mode: 'build' },
     { mode: 'fix', failing: { text: 'The order total is wrong.' } },
-    // Plan writes a file and a plans entry. Ask re-routes the thread it is given, and the home
-    // conversation only runs on Claude Code, so either would damage home without starting Work.
+    // Plan writes a file and a plans entry. Ask re-routes the thread it is given onto a route
+    // the home conversation cannot send on, so either would damage home without starting Work.
     { mode: 'plan' },
     { mode: 'ask' },
   ];
@@ -651,4 +661,33 @@ test('R-17: home keeps every control that is not its engine, and an ordinary pro
     engine: 'sample',
   });
   expect([rerouted.name, rerouted.engine]).toEqual(['Orders', 'sample']);
+});
+
+test('the home update accepts a supported conversation route and records it as the person\'s', async () => {
+  const home = await provision();
+  const threadPath = `/projects/${home.projectId}/threads/${home.threadId}`;
+  // AWS Bedrock is a route a Diomedes conversation supports, so the update takes it even where
+  // nothing is configured for it yet; the send below is where that fact is enforced, by name.
+  const bedrock = await api<Conversation>(threadPath, 'PUT', { engine: 'aws-bedrock' });
+  expect([bedrock.engine, bedrock.engineChoice]).toEqual(['aws-bedrock', 'person']);
+  const sent = await request(`${threadPath}/messages`, 'POST', {
+    commandId: 'm-unconfigured',
+    text: 'Good morning',
+    mode: 'auto',
+    sources: [],
+    consent: true,
+  });
+  expect(sent.status).toBe(409);
+  expect(await sent.text()).toContain('AWS Bedrock');
+  // The refusal is whole: no turn was recorded and no lineage admitted for it.
+  const thread = threadsOf(home.projectId)[0];
+  expect(thread.turns).toEqual([]);
+  expect(thread.lineages ?? []).toEqual([]);
+  // A supported choice stands through provisioning, and routing back is the same update.
+  expect(await api<Binding>('/home/conversation', 'POST')).toEqual(home);
+  expect(threadsOf(home.projectId)[0].engine).toBe('aws-bedrock');
+  expect((await api<Conversation>(threadPath, 'PUT', { engine: 'claude-code' })).engine).toBe(
+    'claude-code',
+  );
+  expect((await send(home, 'm-back', 'Good morning')).outcome).toEqual({ status: 'answered' });
 });

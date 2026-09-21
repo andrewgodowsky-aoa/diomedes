@@ -1,0 +1,629 @@
+import { test, expect, type Page, type Route } from '@playwright/test';
+import express from 'express';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import type { Server } from 'node:http';
+import { createApp } from '../server/app';
+import { EngineService } from '../server/engines/service';
+import { testOnlySecretBox } from '../server/connection-secrets';
+import type { Store } from '../server/store';
+import type { Project, ProjectState } from '../shared/types';
+import { AWS_CONNECT_BODY, AWS_TEST_KEY, awsTransport, seen } from './fixtures/scripted-home-luna';
+import { AWS_LUNA_MODEL } from '../server/engines/aws-bedrock';
+
+// The Diomedes page on AWS Bedrock (Luna), end to end in a real browser and with no Claude
+// installed at all: the engine service discovers nothing, so there is no login to fall back
+// to. The conversation still runs on the real Store, Runtime, interaction service and
+// model-session driver; only the HTTPS call the provider boundary makes is scripted. It never
+// reaches AWS and never spends money. It serves the built bundle, so it refuses a stale one.
+test.describe.configure({ mode: 'serial' });
+
+const port = Number(process.env.DIOMEDES_LUNA_UI_PORT ?? 47640);
+const baseURL = `http://127.0.0.1:${port}`;
+const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
+let application: Awaited<ReturnType<typeof createApp>> | undefined;
+let server: Server | undefined;
+let pageErrors: string[] = [];
+
+async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T> {
+  const response = await fetch(`${baseURL}/api${route}`, {
+    method,
+    headers,
+    body: data === undefined ? undefined : JSON.stringify(data),
+  });
+  if (!response.ok)
+    throw new Error(
+      `Luna page fixture request ${route} failed (${response.status}): ${await response.text()}`,
+    );
+  return response.json() as Promise<T>;
+}
+
+async function expectFreshBundle(dist: string): Promise<void> {
+  const built = (await fs.stat(path.join(dist, 'index.html'))).mtimeMs;
+  let newest = 0;
+  let newestPath = '';
+  for (const dir of ['client', 'client/console', 'shared']) {
+    for (const entry of await fs.readdir(path.resolve(dir), { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const file = path.resolve(dir, entry.name);
+      const { mtimeMs } = await fs.stat(file);
+      if (mtimeMs > newest) {
+        newest = mtimeMs;
+        newestPath = path.relative(process.cwd(), file);
+      }
+    }
+  }
+  expect(
+    built,
+    `dist is older than ${newestPath}, so this spec would test the previous build. Run "npm run build" first.`,
+  ).toBeGreaterThan(newest);
+}
+
+const home = () => api<{ projectId: string; threadId: string } | null>('/home/conversation');
+const homeState = async () => {
+  const bound = await home();
+  if (!bound) return null;
+  return api<ProjectState>(`/projects/${bound.projectId}/state`);
+};
+const homeThread = async () => {
+  const [bound, state] = [await home(), await homeState()];
+  if (!bound || !state) return null;
+  return state.conversations.find((item) => item.id === bound.threadId) ?? null;
+};
+const composer = (page: Page) => page.getByRole('textbox', { name: 'Message Diomedes' });
+const answers = (page: Page) => page.locator('.turn.dio .body');
+const routeControl = (page: Page) => page.getByRole('combobox', { name: 'Route' });
+const strip = (page: Page) =>
+  page.getByRole('group', { name: 'A message that was not confirmed' });
+/** A message send is a POST to the collection; an interrupt POST ends in /interrupt. */
+const messagePost = (request: { method(): string; url(): string }) =>
+  request.method() === 'POST' && /\/messages$/.test(request.url());
+const interruptPost = (request: { method(): string; url(): string }) =>
+  request.method() === 'POST' && /\/messages\/[^/]+\/interrupt$/.test(request.url());
+/** Two paints, so anything an arriving answer could paint has had its chance. */
+async function painted(page: Page) {
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+}
+/** Holds one response after the server has answered it, until the test lets it through. */
+function gate() {
+  let release!: () => void;
+  let reached!: () => void;
+  let delivered!: () => void;
+  return {
+    held: new Promise<void>((resolve) => (release = resolve)),
+    recorded: new Promise<void>((resolve) => (reached = resolve)),
+    arrived: new Promise<void>((resolve) => (delivered = resolve)),
+    release: () => release(),
+    reached: () => reached(),
+    delivered: () => delivered(),
+  };
+}
+
+async function open(page: Page) {
+  await page.goto(baseURL);
+  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+}
+async function say(page: Page, text: string) {
+  await expect(page.locator('.dio-pending')).toHaveCount(0);
+  await composer(page).fill(text);
+  await composer(page).press('Enter');
+}
+/** The command this browser still holds pending, read the way the page's own recovery reads it. */
+const claimedCommand = (page: Page): Promise<string | null> =>
+  page.evaluate(() => {
+    for (const key of Object.keys(localStorage)) {
+      if (!key.startsWith('diomedes.conversation.claim.')) continue;
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      try {
+        const saved = JSON.parse(raw) as { commandId?: unknown };
+        if (typeof saved.commandId === 'string') return saved.commandId;
+      } catch {
+        // A damaged record is not this test's to repair.
+      }
+    }
+    return null;
+  });
+
+test.beforeAll(async () => {
+  const results = path.resolve('test-results');
+  await fs.mkdir(results, { recursive: true });
+  const root = await fs.mkdtemp(path.join(results, 'home-luna-'));
+  application = await createApp({
+    dataDir: path.join(root, 'data'),
+    projectRoot: path.join(root, 'projects'),
+    port,
+    clientPort: port,
+    // No engine on this computer: discovery finds nothing, so there is no Claude login to
+    // fall back to and nothing the conversation could silently retarget.
+    engineService: new EngineService(path.join(root, 'engines'), {
+      discover: async () => [],
+      version: async () => {
+        throw new Error('No engine is installed in this fixture.');
+      },
+      adapter: () => {
+        throw new Error('No engine is installed in this fixture.');
+      },
+    }),
+    reviewerAdapter: null,
+    secretBox: testOnlySecretBox(),
+    modelApiTransport: awsTransport,
+  });
+  const dist = path.resolve('dist');
+  await fs.access(path.join(dist, 'index.html'));
+  await expectFreshBundle(dist);
+  application.use(express.static(dist));
+  application.get('/{*path}', (_request, response) =>
+    response.sendFile(path.join(dist, 'index.html')),
+  );
+  server = application.listen(port, '127.0.0.1');
+  await new Promise<void>((resolve, reject) => {
+    server!.once('listening', resolve);
+    server!.once('error', reject);
+  });
+  // AWS is connected and spend-approved the way a person would do it in AI setup. Nothing but
+  // the transport is faked.
+  await api('/ai/model-api/aws-bedrock', 'PUT', AWS_CONNECT_BODY);
+  await api('/ai/model-api/aws-bedrock/spend-limit', 'PUT', { capUsd: 1, consent: true });
+  await api('/settings', 'PUT', {
+    surface: 'console',
+    onboarding: {
+      work: 'business',
+      detail: 'guided',
+      familiarity: 'new',
+      resumeAt: 'done',
+      completedAt: new Date().toISOString(),
+    },
+  });
+});
+
+test.afterAll(async () => {
+  await application?.locals.close?.();
+  server?.closeAllConnections();
+  await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
+});
+
+test.beforeEach(async ({ page }) => {
+  pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+});
+test.afterEach(() => {
+  expect(pageErrors, 'The interface must not throw uncaught browser errors').toEqual([]);
+});
+
+test('the home conversation opens on AWS Bedrock (Luna) and answers with no Claude login', async ({
+  page,
+}) => {
+  await open(page);
+  // The caption names the default a first send takes, before any thread exists to read.
+  await expect(page.locator('.instr')).toContainText('AWS Bedrock (Luna)');
+  // And there is nothing to choose yet: the control needs a concrete thread to write to.
+  await expect(routeControl(page)).toHaveCount(0);
+
+  const callsBefore = seen.length;
+  await say(page, 'Good morning');
+  await expect(answers(page).last()).toHaveText('You said: Good morning');
+  await expect(composer(page)).toHaveValue('');
+
+  // The provisioner pinned the new thread to the default, and the provider boundary really was
+  // AWS's: the guarded transport attached the saved credential, the approved endpoint and the
+  // Luna model, and the call carried the conversation's tools.
+  const bound = await home();
+  expect(bound).not.toBeNull();
+  const thread = await homeThread();
+  expect(thread?.engine).toBe('aws-bedrock');
+  const call = seen.slice(callsBefore).at(-1)!;
+  expect(call.url).toBe('https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1/responses');
+  expect(call.authorization).toBe(`Bearer ${AWS_TEST_KEY}`);
+  expect(call.body.model).toBe(AWS_LUNA_MODEL);
+  expect(Array.isArray(call.body.tools)).toBe(true);
+  expect(call.body.store).toBe(false);
+
+  // Now that the thread exists, the bounded control offers the two conversation routes.
+  const route = routeControl(page);
+  await expect(route).toBeVisible();
+  await expect(route).toHaveValue('aws-bedrock');
+  await expect(route.locator('option')).toHaveText(['Claude Code', 'AWS Bedrock (Luna)']);
+});
+
+test('a project scope conversation is provisioned on AWS Bedrock too', async ({ page }) => {
+  const project = await api<Project>('/projects', 'POST', { name: 'Linen service' });
+  await open(page);
+  await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'Linen service' });
+  await say(page, 'About this project');
+  await expect(answers(page).last()).toHaveText('You said: About this project');
+  const state = await api<ProjectState>(`/projects/${project.id}/state`);
+  const thread = state.conversations.find((item) => item.name === 'Diomedes');
+  expect(thread?.engine).toBe('aws-bedrock');
+  // The Route control is a home-scope thing. A project keeps its caption but chooses its
+  // route on its own Console surface.
+  await expect(routeControl(page)).toHaveCount(0);
+  await expect(page.locator('.instr')).toContainText('AWS Bedrock (Luna)');
+});
+
+test('AWS that is on but not configured refuses by name, and nothing falls back', async ({
+  page,
+}) => {
+  // The services map is replaced whole, so the account route and model keys are dropped inside
+  // the full map and the full map is put back afterwards.
+  const { services } = await api<{ services: Record<string, boolean | string> }>('/settings');
+  const narrowed = { ...services };
+  delete narrowed['aws-bedrockAccountRoute'];
+  delete narrowed['aws-bedrockModel'];
+  await api('/settings', 'PUT', { services: narrowed });
+  try {
+    await open(page);
+    const callsBefore = seen.length;
+    await say(page, 'Are you there?');
+    await expect(page.getByRole('alert')).toHaveText(
+      'Connect AWS Bedrock (GPT-5.6 Luna) and choose its model in AI setup first.',
+    );
+    await expect(composer(page)).toHaveValue('Are you there?');
+    await expect(page.locator('.dio-card')).toHaveCount(0);
+    // The refusal happened in admission: no provider call was ever attempted, and the caption
+    // still names the route the thread is actually on rather than a fallback it did not take.
+    expect(seen.length).toBe(callsBefore);
+    await expect(page.locator('.instr')).toContainText('AWS Bedrock (Luna)');
+  } finally {
+    await api('/settings', 'PUT', { services });
+  }
+});
+
+test('a pin saved before choices were marked is re-pinned to the default on the next send', async ({
+  page,
+}) => {
+  const bound = await home();
+  expect(bound).not.toBeNull();
+  // What a thread pinned before engineChoice existed looks like: the engine alone, no marker.
+  const store = application!.locals.store as Store;
+  const saved = store.state(bound!.projectId);
+  const pinned = saved.conversations.find((item) => item.id === bound!.threadId)!;
+  pinned.engine = 'claude-code';
+  delete (pinned as { engineChoice?: string }).engineChoice;
+  await store.persist(saved);
+
+  await open(page);
+  // The pin is still the truth while nothing has run: the caption names it, and the control
+  // keeps it listed even though this computer cannot send on it.
+  await expect(page.locator('.instr')).toContainText('Claude Code');
+  await expect(routeControl(page)).toHaveValue('claude-code');
+
+  await say(page, 'Still here after the upgrade');
+  await expect(answers(page).last()).toHaveText('You said: Still here after the upgrade');
+  const thread = await homeThread();
+  expect(thread?.engine).toBe('aws-bedrock');
+  await expect(page.locator('.instr')).toContainText('AWS Bedrock (Luna)');
+});
+
+test('a route the person chose is kept, and its refusal names it', async ({ page }) => {
+  const bound = await home();
+  expect(bound).not.toBeNull();
+  try {
+    // The person's own choice, written through the same PUT the control uses, so it is marked.
+    await api(`/projects/${bound!.projectId}/threads/${bound!.threadId}`, 'PUT', {
+      engine: 'claude-code',
+    });
+    await open(page);
+    await expect(routeControl(page)).toHaveValue('claude-code');
+    const callsBefore = seen.length;
+    await say(page, 'On the route I chose');
+    // The provisioner kept the choice, the send refused on it by name, and nothing was
+    // silently retargeted to the AWS route that would have answered.
+    await expect(page.getByRole('alert')).toHaveText(
+      'Turn Claude Code on in Settings before sending.',
+    );
+    await expect(composer(page)).toHaveValue('On the route I chose');
+    expect(seen.length).toBe(callsBefore);
+    expect((await homeThread())?.engine).toBe('claude-code');
+  } finally {
+    await api(`/projects/${bound!.projectId}/threads/${bound!.threadId}`, 'PUT', {
+      engine: 'aws-bedrock',
+    });
+  }
+});
+
+test('the Route control writes the choice to the thread, marked as the person\'s', async ({
+  page,
+}) => {
+  const bound = await home();
+  expect(bound).not.toBeNull();
+  await open(page);
+  const route = routeControl(page);
+  await expect(route).toHaveValue('aws-bedrock');
+  const wrote = () =>
+    page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/threads/${bound!.threadId}`) &&
+        response.request().method() === 'PUT',
+    );
+  let writing = wrote();
+  await route.selectOption('claude-code');
+  await writing;
+  let thread = await homeThread();
+  expect([thread?.engine, thread?.engineChoice]).toEqual(['claude-code', 'person']);
+  writing = wrote();
+  await route.selectOption('aws-bedrock');
+  await writing;
+  thread = await homeThread();
+  expect([thread?.engine, thread?.engineChoice]).toEqual(['aws-bedrock', 'person']);
+  await say(page, 'Back on Luna');
+  await expect(answers(page).last()).toHaveText('You said: Back on Luna');
+});
+
+test('Stop names only this message\'s command, and the record says what it came to', async ({
+  page,
+}) => {
+  await open(page);
+  const callsBefore = seen.length;
+  // SLOW tells the scripted provider to hold the call on the wire, so the delivery is still
+  // pending when the person stops it.
+  await composer(page).fill('SLOW hold this');
+  await composer(page).press('Enter');
+  await expect(page.locator('.dio-pending')).toBeVisible();
+  // The provider call on the wire is the proof this delivery's dispatch was issued an identity:
+  // a Stop pressed before it would find nothing to name. The fixture records each call as it
+  // starts, so the wait is deterministic.
+  await expect.poll(() => seen.length).toBeGreaterThan(callsBefore);
+  // The delivery that is on its way is the only one the choice and the Stop can name.
+  await expect(routeControl(page)).toBeDisabled();
+  // The claim was issued before the dispatch: it is the one command this Stop may name.
+  const commandId = await claimedCommand(page);
+  expect(commandId).not.toBeNull();
+  const interrupt = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/messages/${commandId}/interrupt`) &&
+      response.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Stop' }).click();
+  const ack = await interrupt;
+  expect(ack.ok()).toBe(true);
+  // The path named the command and the body was empty: no run id, no engine, nothing else.
+  expect(ack.request().postDataJSON()).toEqual({});
+  const ackBody = (await ack.json()) as { commandId: string; state: string };
+  expect(ackBody.commandId).toBe(commandId);
+  expect(['requested', 'settled']).toContain(ackBody.state);
+
+  // The pending strip owns what was never confirmed, under the command it was issued. The
+  // transport acknowledgement is not the outcome: the command's own record is.
+  const bound = await home();
+  const recorded = await api<{ interrupted: boolean; answerText: string | null }>(
+    `/projects/${bound!.projectId}/threads/${bound!.threadId}/messages/${commandId}`,
+  );
+  expect(recorded.interrupted).toBe(true);
+  expect(recorded.answerText).toBeNull();
+  expect(seen.length).toBeGreaterThan(callsBefore);
+
+  const strip = page.locator('.dio-unconfirmed');
+  await expect(strip).toBeVisible();
+  await expect(strip).toContainText('SLOW hold this');
+  // Send again sends that same command: the server answers it from its record rather than
+  // running it again, and the strip resolves.
+  await strip.getByRole('button', { name: 'Send again' }).click();
+  await expect(strip).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  expect(await claimedCommand(page)).toBeNull();
+});
+
+test('a Stop while Home is still being provisioned sends nothing at all', async ({ page }) => {
+  await open(page);
+  const callsBefore = seen.length;
+  let posts = 0;
+  let interrupts = 0;
+  page.on('request', (request) => {
+    if (messagePost(request)) posts += 1;
+    if (interruptPost(request)) interrupts += 1;
+  });
+  // The real provisioner answers; only its response reaching this window is held, the way a
+  // slow network would hold it. Whether provisioning itself ran is not this test's to claim.
+  const provision = gate();
+  const holdProvision = async (route: Route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const response = await route.fetch();
+    provision.reached();
+    await provision.held;
+    await route.fulfill({ response });
+    provision.delivered();
+  };
+  await page.route('**/api/home/conversation', holdProvision);
+  try {
+    await composer(page).fill('Stopped before it left');
+    await composer(page).press('Enter');
+    await expect(page.locator('.dio-pending')).toBeVisible();
+    // The provisioner has answered, but the delivery still does not know where to send.
+    await provision.recorded;
+    await page.getByRole('button', { name: 'Stop' }).click();
+    provision.release();
+    await provision.arrived;
+    // The delivery ends with nothing issued: no message POST, no interrupt, no provider call,
+    // no saved claim. The words are still the person's, back in the box, not an unconfirmed
+    // claim the record never saw.
+    await expect(page.locator('.dio-pending')).toHaveCount(0);
+    await expect(composer(page)).toHaveValue('Stopped before it left');
+    await expect(strip(page)).toHaveCount(0);
+    await expect(page.locator('.dio-notice')).toHaveCount(0);
+    expect(posts).toBe(0);
+    expect(interrupts).toBe(0);
+    expect(seen.length).toBe(callsBefore);
+    expect(await claimedCommand(page)).toBeNull();
+  } finally {
+    provision.release();
+    await page.unroute('**/api/home/conversation', holdProvision);
+  }
+});
+
+test('a Stop while the send waits on the conversation lock sends nothing', async ({
+  page,
+  context,
+}) => {
+  await open(page);
+  // A real bound thread, so the lock the next send waits on is the real one.
+  await say(page, 'A conversation to hold');
+  await expect(answers(page).last()).toHaveText('You said: A conversation to hold');
+  const bound = (await home())!;
+  const lock = `diomedes.conversation.send.${encodeURIComponent(bound.projectId)}|${encodeURIComponent(bound.threadId)}`;
+  const other = await context.newPage();
+  try {
+    await open(other);
+    // The other window holds this conversation's send lock, the way a send there would.
+    await other.evaluate(async (name) => {
+      const holder = window as typeof window & { releaseLunaLock?: () => void };
+      await new Promise<void>((acquired, reject) => {
+        void navigator.locks
+          .request(name, async () => {
+            await new Promise<void>((release) => {
+              holder.releaseLunaLock = release;
+              acquired();
+            });
+          })
+          .catch(reject);
+      });
+    }, lock);
+    const callsBefore = seen.length;
+    let posts = 0;
+    let interrupts = 0;
+    page.on('request', (request) => {
+      if (messagePost(request)) posts += 1;
+      if (interruptPost(request)) interrupts += 1;
+    });
+    await composer(page).fill('Queued behind the lock');
+    await composer(page).press('Enter');
+    // The send really is queued on the lock before the Stop lands.
+    await expect
+      .poll(() =>
+        other.evaluate(async (name) => {
+          const snapshot = await navigator.locks.query();
+          return snapshot.pending?.some((entry) => entry.name === name) ?? false;
+        }, lock),
+      )
+      .toBe(true);
+    await page.getByRole('button', { name: 'Stop' }).click();
+    await other.evaluate(
+      () => (window as typeof window & { releaseLunaLock?: () => void }).releaseLunaLock?.(),
+    );
+    // The wait ended with nothing written and nothing sent: no save, no POST, no provider
+    // call, no interrupt, and the words are still the person's.
+    await expect(page.locator('.dio-pending')).toHaveCount(0);
+    await expect(composer(page)).toHaveValue('Queued behind the lock');
+    await expect(strip(page)).toHaveCount(0);
+    await expect(page.locator('.dio-notice')).toHaveCount(0);
+    expect(posts).toBe(0);
+    expect(interrupts).toBe(0);
+    expect(seen.length).toBe(callsBefore);
+    expect(await claimedCommand(page)).toBeNull();
+  } finally {
+    await other
+      .evaluate(
+        () => (window as typeof window & { releaseLunaLock?: () => void }).releaseLunaLock?.(),
+      )
+      .catch(() => undefined);
+    await other.close();
+  }
+});
+
+test('a late interrupt answer cannot paint the scope the person moved to', async ({ page }) => {
+  const project = await api<Project>('/projects', 'POST', { name: 'Away scope' });
+  await open(page);
+  const callsBefore = seen.length;
+  // The interrupt really reaches the server; only its answer is held until the visit moved.
+  const ack = gate();
+  const holdAck = async (route: Route) => {
+    const response = await route.fetch();
+    ack.reached();
+    await ack.held;
+    // A successful acknowledgement that still cannot confirm a stop: no live turn held it.
+    const commandId = decodeURIComponent(
+      route.request().url().split('/messages/')[1].split('/')[0],
+    );
+    await route.fulfill({ response, json: { commandId, runId: null, state: 'idle' } });
+    ack.delivered();
+  };
+  await page.route('**/api/projects/*/threads/*/messages/*/interrupt', holdAck);
+  try {
+    await composer(page).fill('SLOW while I leave');
+    await composer(page).press('Enter');
+    await expect.poll(() => seen.length).toBeGreaterThan(callsBefore);
+    await page.getByRole('button', { name: 'Stop' }).click();
+    // The request is on the wire, unanswered.
+    await ack.recorded;
+    // The person is somewhere else entirely before the answer arrives.
+    await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'Away scope' });
+    const scope = page.getByRole('combobox', { name: 'In' });
+    await expect(scope).toHaveValue(project.id);
+    await expect(composer(page)).toBeVisible();
+    ack.release();
+    await ack.arrived;
+    await painted(page);
+    // The acknowledgement belonged to the visit that asked. This scope is told nothing.
+    await expect(page.locator('.dio-notice')).toHaveCount(0);
+  } finally {
+    ack.release();
+    await page.unroute('**/api/projects/*/threads/*/messages/*/interrupt', holdAck);
+  }
+});
+
+test('a late failed interrupt cannot paint a newer visit to the same scope', async ({ page }) => {
+  const project = await api<Project>('/projects', 'POST', { name: 'Layover' });
+  await open(page);
+  const callsBefore = seen.length;
+  const ack = gate();
+  const holdAck = async (route: Route) => {
+    await route.fetch();
+    ack.reached();
+    await ack.held;
+    // The answer never arrives: the connection dropped after the interrupt ran.
+    await route.abort('failed');
+    ack.delivered();
+  };
+  await page.route('**/api/projects/*/threads/*/messages/*/interrupt', holdAck);
+  try {
+    await composer(page).fill('SLOW then back home');
+    await composer(page).press('Enter');
+    await expect.poll(() => seen.length).toBeGreaterThan(callsBefore);
+    await page.getByRole('button', { name: 'Stop' }).click();
+    await ack.recorded;
+    // Leave and come back: the home scope the person returns to is a newer visit, and it is
+    // visibly the active one before the failure lands.
+    const scope = page.getByRole('combobox', { name: 'In' });
+    await scope.selectOption({ label: 'Layover' });
+    await expect(scope).toHaveValue(project.id);
+    await scope.selectOption({ label: 'All projects' });
+    await expect(scope).toHaveValue(':all');
+    await expect(composer(page)).toBeVisible();
+    ack.release();
+    await ack.arrived;
+    await painted(page);
+    // A failed interrupt would have said "Stop was not confirmed" - in the visit that asked.
+    // This newer visit to the same conversation is not that visit.
+    await expect(page.locator('.dio-notice')).toHaveCount(0);
+  } finally {
+    ack.release();
+    await page.unroute('**/api/projects/*/threads/*/messages/*/interrupt', holdAck);
+  }
+});
+
+test('a Stop already answered names nothing again', async ({ page }) => {
+  await open(page);
+  const callsBefore = seen.length;
+  let interrupts = 0;
+  page.on('request', (request) => {
+    if (interruptPost(request)) interrupts += 1;
+  });
+  await composer(page).fill('SLOW double stop');
+  await composer(page).press('Enter');
+  await expect.poll(() => seen.length).toBeGreaterThan(callsBefore);
+  const stop = page.getByRole('button', { name: 'Stop' });
+  await expect(stop).toBeVisible();
+  // Two presses on the same delivery, faster than the abort can settle: the first released the
+  // delivery's identity, so the second has nothing to name.
+  await Promise.all([
+    stop.dispatchEvent('click', { bubbles: true }),
+    stop.dispatchEvent('click', { bubbles: true }),
+  ]);
+  // The delivery is over and so is its control: a press after it cannot exist on screen.
+  await expect(strip(page)).toContainText('SLOW double stop');
+  await expect(stop).toHaveCount(0);
+  await painted(page);
+  expect(interrupts).toBe(1);
+});

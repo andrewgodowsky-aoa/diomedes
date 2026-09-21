@@ -94,6 +94,7 @@ import {
   ENGINE_NAMES,
   isExternalEngine,
   isRoute,
+  isConversationRoute,
   ROUTES,
   type EngineConnection,
 } from '../shared/engines.js';
@@ -2351,13 +2352,14 @@ export async function createApp(options: AppOptions) {
         b.engine === undefined
       )
         throw new ApiError(400, 'Provide a thread name, permission mode, mode or helper choice.');
-      // The home conversation only runs on Claude Code, and no screen lists home to change it
-      // back. Refused before any field is touched, so a request that also renames or narrows
-      // the Mode leaves nothing half applied. Its name, Mode and permission stay its own.
-      if (b.engine !== undefined && b.engine !== 'claude-code' && store.isHomeProject(id(req)))
+      // The home conversation runs on the routes a Diomedes conversation supports: Claude
+      // Code or a model-API route. Anything else is refused before any field is touched, so a
+      // request that also renames or narrows the Mode leaves nothing half applied. Its name,
+      // Mode and permission stay its own. The same predicate guards the send path.
+      if (b.engine !== undefined && store.isHomeProject(id(req)) && !isConversationRoute(b.engine))
         throw new ApiError(
           409,
-          'The Diomedes conversation runs on Claude Code. Its engine cannot be changed.',
+          'The Diomedes conversation runs on Claude Code or AWS Bedrock. Its engine cannot be changed to that.',
         );
       if (b.name !== undefined) {
         if (typeof b.name !== 'string' || !b.name.trim() || b.name.trim().length > 120)
@@ -2375,7 +2377,12 @@ export async function createApp(options: AppOptions) {
           ? selectedEngine(store.settings, state.project, conversation)
           : choice(b.engine, ROUTES, 'engine');
       if (b.requested !== undefined) conversation.requested = parseRequested(b.requested, engine);
-      if (b.engine !== undefined) conversation.engine = engine;
+      if (b.engine !== undefined) {
+        conversation.engine = engine;
+        // A route the person picked is marked theirs: the conversation provisioners
+        // re-pin only threads that were never deliberately routed.
+        conversation.engineChoice = 'person';
+      }
       await store.persist(state);
       return conversation;
     }),
@@ -2679,7 +2686,7 @@ export async function createApp(options: AppOptions) {
   // The Diomedes conversation. `InteractionTurns` owns the sequence; what follows is only what
   // the Store and the existing admission paths supply to it. Each method takes and releases
   // its own lock, and none of them holds one while a provider runs.
-  /** The driver that owns a conversation run. Model-API runs are named `model-…`. */
+  /** The driver that owns a conversation run. Model-API runs are named `model-...`. */
   const conversationDriver = (runId: string) => {
     const driver = runId.startsWith('model-') ? engines.modelSessions : engines.nativeSessions;
     if (!driver) throw new ApiError(503, 'The conversation runtime is unavailable.');
@@ -2758,9 +2765,10 @@ export async function createApp(options: AppOptions) {
         )
           return { unfinished: true as const, runId: sent.runId, sourceMessageId };
         // CD-01 Decision 5: a conversation runs on the native Claude session or on a
-        // model-API route through its own driver. Any other route is refused here, by name.
+        // model-API route through its own driver. Any other route is refused here, by
+        // name, through the same predicate the thread update guards with.
         const conversationRoute = selectedEngine(store.settings, state.project, thread);
-        if (conversationRoute !== 'claude-code' && !isModelApiRoute(conversationRoute))
+        if (!isConversationRoute(conversationRoute))
           throw new ApiError(
             409,
             'Select Claude Code or AWS Bedrock for this conversation before sending.',

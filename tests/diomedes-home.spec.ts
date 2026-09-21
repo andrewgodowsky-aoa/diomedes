@@ -5,11 +5,15 @@ import path from 'node:path';
 import type { Server } from 'node:http';
 import { createApp } from '../server/app';
 import type { Store } from '../server/store';
+import { testOnlySecretBox } from '../server/connection-secrets';
 import type { Project, ProjectState } from '../shared/types';
 import { SCRIPTED_MODEL, scriptedEngineService } from './fixtures/scripted-conversation';
+import { AWS_CONNECT_BODY, awsTransport } from './fixtures/scripted-home-luna';
 
 // The Diomedes page end to end in a real browser: the real Store, Runtime, session driver and
-// both admissions, with only the provider scripted. It never calls a model, uses credentials or
+// both admissions, with only the providers scripted. The conversation runs on AWS Bedrock
+// (Luna), the default a Diomedes conversation is provisioned on, at the real provider boundary:
+// the HTTPS call the model-API runtime makes. It never calls a model, uses credentials or
 // spends quota. Like native-ui.spec.ts it serves the built bundle, so it refuses a stale one.
 test.describe.configure({ mode: 'serial' });
 
@@ -86,6 +90,8 @@ test.beforeAll(async () => {
     clientPort: port,
     engineService: scriptedEngineService(path.join(root, 'engines'), root),
     reviewerAdapter: null,
+    secretBox: testOnlySecretBox(),
+    modelApiTransport: awsTransport,
   });
   const dist = path.resolve('dist');
   await fs.access(path.join(dist, 'index.html'));
@@ -102,6 +108,10 @@ test.beforeAll(async () => {
   await api('/ai/discover', 'POST', { consent: true });
   await api('/ai/check/claude-code', 'POST', {});
   await api('/ai/select', 'POST', { engine: 'claude-code', model: SCRIPTED_MODEL });
+  // AWS is connected and spend-approved the way a person would do it, so the default route a
+  // conversation is provisioned on can actually send. Nothing but the transport is faked.
+  await api('/ai/model-api/aws-bedrock', 'PUT', AWS_CONNECT_BODY);
+  await api('/ai/model-api/aws-bedrock/spend-limit', 'PUT', { capUsd: 1, consent: true });
   await api('/settings', 'PUT', {
     surface: 'console',
     onboarding: {
@@ -114,7 +124,7 @@ test.beforeAll(async () => {
   });
   project = await api<Project>('/projects', 'POST', { name: 'Linen service' });
   // The project's own work runs on the scripted sample worker, so starting Work needs no
-  // provider. The conversation still runs on Claude Code: the page pins its thread to it.
+  // provider. The conversation runs on AWS Bedrock: the provisioner's default pins its thread.
   const store = application.locals.store as Store;
   const saved = store.state(project.id);
   saved.project.ai = { engine: 'sample', model: null };
@@ -194,7 +204,7 @@ test('in a project, work is offered and starts only when Start is pressed', asyn
   const offered = await state();
   expect([offered.tasks.length, offered.sessions.length]).toEqual([0, 0]);
   const thread = offered.conversations.find((item) => item.name === 'Diomedes');
-  expect([thread?.mode, thread?.engine]).toEqual(['auto', 'claude-code']);
+  expect([thread?.mode, thread?.engine]).toEqual(['auto', 'aws-bedrock']);
 
   await card.getByRole('button', { name: 'Start', exact: true }).click();
   await expect(card).toContainText('Started in Linen service');
@@ -275,12 +285,13 @@ test('a message the server refuses stays in the box', async ({ page }) => {
   // The server replaces `services` whole, so the switch is flipped inside the full map and the
   // full map is put back. A partial map would drop the account route and refuse every later send.
   const { services } = await api<{ services: Record<string, boolean | string> }>('/settings');
-  await api('/settings', 'PUT', { services: { ...services, 'claude-code': false } });
+  await api('/settings', 'PUT', { services: { ...services, 'aws-bedrock': false } });
   try {
     await open(page);
     await say(page, 'Are you there?');
+    // The refusal names the route the conversation is on, never a fallback it did not take.
     await expect(page.getByRole('alert')).toHaveText(
-      'Turn Claude Code on in Settings before sending.',
+      'Turn AWS Bedrock (GPT-5.6 Luna) on in Settings before sending.',
     );
     await expect(composer(page)).toHaveValue('Are you there?');
     await expect(page.locator('.dio-card')).toHaveCount(0);
@@ -841,15 +852,21 @@ test('CD05-R-10 closure: a conversation another window re-routed is mended by th
   const thread = (await api<ProjectState>(`/projects/${p.id}/state`)).conversations.find(
     (item) => item.name === 'Diomedes',
   )!;
-  // An ordinary thread's engine is its own to change, so another window can do this.
-  await api(`/projects/${p.id}/threads/${thread.id}`, 'PUT', { engine: 'sample' });
+  // What a re-route from before choices were marked looks like: the pin alone, with no marker.
+  // A change through the thread PUT would be the person's own and the provisioner would keep it.
+  const store = application!.locals.store as Store;
+  const saved = store.state(p.id);
+  const pinned = saved.conversations.find((item) => item.id === thread.id)!;
+  pinned.engine = 'sample';
+  delete (pinned as { engineChoice?: string }).engineChoice;
+  await store.persist(saved);
   await say(page, 'After the re-route R10c');
   await expect(answers(page).last()).toHaveText('You said: After the re-route R10c');
   await expect(page.getByRole('alert')).toHaveCount(0);
   const mended = (await api<ProjectState>(`/projects/${p.id}/state`)).conversations.find(
     (item) => item.id === thread.id,
   )!;
-  expect(mended.engine).toBe('claude-code');
+  expect(mended.engine).toBe('aws-bedrock');
 });
 
 test('CD05-R-07 closure: an answer that lands after the person left does not paint where they went', async ({

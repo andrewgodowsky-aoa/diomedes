@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api';
 import {
   discardPendingMessage,
+  interruptMessage,
   lastCommand,
   pendingMessage,
   readOutcome,
@@ -9,12 +10,16 @@ import {
   selectProposal,
   sendMessage,
   UnconfirmedMessage,
+  type DispatchIdentity,
   type PendingMessage,
 } from '../conversation-send';
 import { answerTurnId } from '../conversation-turn';
+import { awsPickerState } from '../aws-bedrock-view';
+import type { AwsConnectionView } from '../../shared/model-api';
 import type { MessageResult } from '../../shared/conversation';
-import type { Conversation, Project, ProjectState, Turn } from '../../shared/types';
-import { Diomedes } from './Diomedes';
+import { CONVERSATION_DEFAULT_ROUTE } from '../../shared/engines';
+import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
+import { Diomedes, routeOptions } from './Diomedes';
 import type { EverythingItem } from './Everything';
 import {
   diomedesThread,
@@ -49,6 +54,10 @@ export interface DiomedesHomeProps {
 const words = (error: unknown) =>
   error instanceof Error ? error.message : 'Diomedes could not complete that.';
 
+/** What an interrupt acknowledgement that cannot confirm a stop is told as. */
+const STOP_UNCONFIRMED =
+  'Stop was not confirmed. Sending the message again checks what happened.';
+
 /** The message a conversation may still be owed an answer for. Unreadable storage reads as none. */
 function retained(found: Binding): PendingMessage | null {
   try {
@@ -70,6 +79,18 @@ interface Kept {
 }
 const keptOf = (saved: PendingMessage | null): Kept | null =>
   saved ? { text: saved.input.text, commandId: saved.commandId } : null;
+
+/**
+ * The delivery on screen now. `cancelled` is set by Stop and by the visit ending, and closes
+ * the gap before the first request: a delivery cancelled while it was still finding the
+ * conversation or waiting on the lock never dispatches. `issued` is the one command identity
+ * this delivery's dispatch was given, so a Stop can name it and no other.
+ */
+interface ActiveDelivery {
+  controller: AbortController;
+  cancelled: boolean;
+  issued: DispatchIdentity | null;
+}
 
 /**
  * The Diomedes page with its records: it finds the conversation for the scope the person chose,
@@ -96,7 +117,11 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [cardBusy, setCardBusy] = useState(false);
   const [unread, setUnread] = useState(false);
-  const stop = useRef<AbortController | null>(null);
+  // The route the scoped thread is recorded on, or null until one is read: the caption then
+  // names the default a first send takes. The AWS view feeds only what the Route control offers.
+  const [route, setRoute] = useState<Route | null>(null);
+  const [aws, setAws] = useState<AwsConnectionView | null>(null);
+  const delivery = useRef<ActiveDelivery | null>(null);
   // Whose turn it is to paint. A scope change, a read and a send each take the next number, so
   // an answer for a visit the person has left, or for a message they have since followed with
   // another, finds the number moved and is dropped. Leaving a scope and coming back is a new
@@ -122,19 +147,29 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       const answer = await answerTurnId(result.runId, result.commandId);
       if (!owns()) return;
       const ending = conversation?.turns.at(-1);
+      setRoute(conversation?.engine ?? null);
       setTurns(conversation?.turns ?? []);
       setLast(ending && answer !== null && ending.id === answer ? result : null);
     },
     [thread],
   );
 
+  /** Ends whatever is in flight: its signal fires, and the cancelled flag closes the gap before it. */
+  const endDelivery = useCallback(() => {
+    const active = delivery.current;
+    if (!active) return;
+    active.cancelled = true;
+    active.controller.abort();
+  }, []);
+
   /** Reads the scope's conversation. Creates nothing. */
   const load = useCallback(
     async (scope: string | null) => {
-      stop.current?.abort();
+      endDelivery();
       const mine = ++turn.current;
       const owns = () => turn.current === mine;
       setBinding(null);
+      setRoute(null);
       setTurns([]);
       setLast(null);
       setKept(null);
@@ -143,6 +178,14 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       setUnread(false);
       setPending(false);
       setCardBusy(false);
+      // The AWS view is a read from memory. It refreshes what the Route control may offer
+      // whenever the conversation is read, and a failed read leaves the last answer in place.
+      void api<AwsConnectionView>('/ai/model-api/aws-bedrock').then(
+        (view) => {
+          if (owns()) setAws(view);
+        },
+        () => undefined,
+      );
       try {
         let found: Binding | null;
         let conversation: Conversation | null = null;
@@ -157,6 +200,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         if (!owns()) return;
         setBinding(found);
         if (!found || !conversation) return;
+        setRoute(conversation.engine ?? null);
         setTurns(conversation.turns);
         setRestriction(restrictionFor(conversation.mode));
         setKept(keptOf(retained(found)));
@@ -176,23 +220,22 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         );
       }
     },
-    [thread, show],
+    [thread, show, endDelivery],
   );
   useEffect(() => {
     void load(scopeId);
   }, [load, scopeId]);
 
   /**
-   * The scope's conversation, made now if it never was. Only a send calls this. The server finds
-   * or makes it in one step and keeps it on Claude Code, whatever the project's own work runs
-   * on; work the conversation starts still runs on the project's AI. A project is asked on every
-   * send, which writes nothing when nothing changed and mends a thread another window re-routed.
+   * The scope's conversation, made now if it never was. Only a send calls this. Both scopes ask
+   * every time: the provisioner is also where the route default lands and where an unmarked pin
+   * is migrated once, so a cached binding can never stand in for the ask. A provisioner that
+   * changed nothing writes nothing.
    */
-  const ensure = (scope: string | null): Promise<Binding> => {
-    if (scope === null)
-      return binding ? Promise.resolve(binding) : api<Binding>('/home/conversation', 'POST', {});
-    return api<Binding>(`/projects/${encodeURIComponent(scope)}/conversation`, 'POST', {});
-  };
+  const ensure = (scope: string | null): Promise<Binding> =>
+    scope === null
+      ? api<Binding>('/home/conversation', 'POST', {})
+      : api<Binding>(`/projects/${encodeURIComponent(scope)}/conversation`, 'POST', {});
 
   /**
    * One delivery, a new message or a saved one sent again. True when the message was sent, or
@@ -202,7 +245,11 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const deliver = async (
     text: string,
     where: () => Promise<Binding>,
-    transport: (found: Binding, signal: AbortSignal) => Promise<MessageResult>,
+    transport: (
+      found: Binding,
+      signal: AbortSignal,
+      onClaim: (identity: DispatchIdentity) => void,
+    ) => Promise<MessageResult>,
   ): Promise<boolean> => {
     const mine = ++turn.current;
     const owns = () => turn.current === mine;
@@ -211,13 +258,23 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     setUnread(false);
     setCardBusy(false);
     setPending(true);
-    const controller = new AbortController();
-    stop.current = controller;
+    const current: ActiveDelivery = {
+      controller: new AbortController(),
+      cancelled: false,
+      issued: null,
+    };
+    delivery.current = current;
     let found: Binding | null = null;
     try {
       found = await where();
       if (owns()) setBinding(found);
-      const result = await transport(found, controller.signal);
+      // A Stop pressed while the conversation was being found sent nothing. This visit's Stop
+      // hands the text back; after the visit has moved on, nothing is put back in a box that
+      // now speaks to somewhere else.
+      if (current.cancelled) return !owns();
+      const result = await transport(found, current.controller.signal, (identity) => {
+        current.issued = identity;
+      });
       // Confirmed. Nothing after this line may hand the text back or send it again: a
       // transcript that cannot be read is a failed read, not a failed send. What is shown as
       // unconfirmed now is whatever the conversation still holds, which is nothing unless
@@ -241,6 +298,12 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         setKept(keptOf(saved) ?? { text, commandId: null });
         return true;
       }
+      // A delivery its own Stop ended before dispatch saved and sent nothing: the text is still
+      // the person's to take back, and whatever the conversation still owes is shown as it is.
+      if (current.cancelled) {
+        setKept(keptOf(found ? retained(found) : null));
+        return false;
+      }
       setNotice(words(error));
       // A refusal after an uncertain attempt may be about the retry, not the original, and the
       // saved message is kept for exactly that case. It is shown with its own words so it can
@@ -249,7 +312,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       setKept(keptOf(saved));
       return saved?.input.text === text.trim();
     } finally {
-      if (stop.current === controller) stop.current = null;
+      if (delivery.current === current) delivery.current = null;
       if (owns()) setPending(false);
     }
   };
@@ -260,8 +323,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     return deliver(
       text,
       () => ensure(scope),
-      (found, signal) =>
-        sendMessage(found.projectId, found.threadId, { text, mode, sources: [] }, signal),
+      (found, signal, onClaim) =>
+        sendMessage(found.projectId, found.threadId, { text, mode, sources: [] }, signal, onClaim),
     );
   };
 
@@ -277,7 +340,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     void deliver(
       shown.text,
       () => Promise.resolve(found),
-      (where, signal) => resendPending(where.projectId, where.threadId, command, signal),
+      (where, signal, onClaim) =>
+        resendPending(where.projectId, where.threadId, command, signal, onClaim),
     ).then((sent) => {
       if (!sent) void load(scopeId);
     });
@@ -301,6 +365,63 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       },
       (error) => {
         if (owns()) setNotice(words(error));
+      },
+    );
+  };
+
+  /**
+   * Stop, for the delivery on screen now. It ends this window's wait, and when the delivery was
+   * issued an identity it asks the server to interrupt that one command. `requested` and
+   * `settled` are the transport answering, not the message's outcome: the record stays the
+   * authority on what the message came to, so anything else is said as not confirmed. A Stop
+   * that lands after the delivery ended finds nothing and asks for nothing.
+   */
+  const stopDelivery = () => {
+    const active = delivery.current;
+    if (!active) return;
+    // Abort first while the slot still names this delivery, then release it: a second press in
+    // the moment before the abort lands has nothing left to name and asks for nothing.
+    endDelivery();
+    delivery.current = null;
+    const issued = active.issued;
+    // A delivery stopped while it was still finding the conversation or waiting on the lock was
+    // never dispatched, so there is nothing on the server to interrupt.
+    if (!issued) return;
+    const mine = turn.current;
+    void interruptMessage(issued.projectId, issued.threadId, issued.commandId).then(
+      (ack) => {
+        if (turn.current === mine && ack.state !== 'requested' && ack.state !== 'settled')
+          setNotice(STOP_UNCONFIRMED);
+      },
+      () => {
+        if (turn.current === mine) setNotice(STOP_UNCONFIRMED);
+      },
+    );
+  };
+
+  /**
+   * The person's route choice for the scoped thread, written to the thread so the provisioner
+   * keeps it. The saved thread answers what it now is; a refused write puts the record's answer
+   * back and says why.
+   */
+  const pickRoute = (next: Route) => {
+    const found = binding;
+    if (!found || pending) return;
+    const mine = turn.current;
+    const before = route;
+    setRoute(next);
+    void api<Conversation>(
+      `/projects/${encodeURIComponent(found.projectId)}/threads/${encodeURIComponent(found.threadId)}`,
+      'PUT',
+      { engine: next },
+    ).then(
+      (conversation) => {
+        if (turn.current === mine) setRoute(conversation.engine ?? next);
+      },
+      (error) => {
+        if (turn.current !== mine) return;
+        setRoute(before);
+        setNotice(words(error));
       },
     );
   };
@@ -338,13 +459,22 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     }
   };
 
+  // What the caption names: the recorded route, or the default a first send takes. The Route
+  // control itself is only ever a home-scope thing, and only once the thread it writes to is
+  // real. Its entries always include the route the thread is on, offered or not.
+  const effective = route ?? CONVERSATION_DEFAULT_ROUTE;
+  const routeChoices =
+    scopeId === null && binding !== null
+      ? routeOptions(effective, awsPickerState(aws).offered)
+      : null;
+
   return (
     <Diomedes
       projects={projects}
       scopeId={scopeId}
       onScope={(id) => {
         if (id === scopeId) return;
-        stop.current?.abort();
+        endDelivery();
         turn.current += 1;
         setPending(false);
         setScopeId(id);
@@ -354,7 +484,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       restriction={restriction}
       onRestriction={setRestriction}
       onSend={send}
-      onStop={() => stop.current?.abort()}
+      onStop={stopDelivery}
+      route={effective}
+      routeChoices={routeChoices}
+      onRoute={pickRoute}
       unavailable={unavailable}
       card={card}
       cardBusy={cardBusy}

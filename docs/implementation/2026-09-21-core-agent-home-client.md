@@ -1,0 +1,170 @@
+# Client implementation: Home Luna default and message-scoped Stop
+
+Status: implemented for review. Scope is the client lane of
+`2026-09-21-core-agent-home-luna-contract.md` only: the Diomedes page, its send module and its
+tests. The server and shared lanes were concurrent and are not described here beyond what the
+client depends on. Tests were authored but not run by this agent; the parent runs all commands,
+builds and browser passes.
+
+## What changed
+
+### `client/conversation-send.ts`
+
+- `DispatchIdentity` (`{ projectId, threadId, commandId }`) is the only thing a Stop may name.
+  It is issued once, inside the Web Lock section, after the abort recheck and only when the
+  pending claim was actually saved or adopted for dispatch. A claim found by the read-only
+  outcome path never produces one.
+- `sendMessage` and `resendPending` accept `onClaim`. The same-window `inFlight` join registers
+  a caller's callback only after the input is proven equal, and every registered callback is
+  told the same identity the moment it is issued. A second send with different words while one
+  is unconfirmed still refuses with `earlier()` and issues nothing.
+- `resendPending` fires `onClaim` only on the dispatch branch (the claim still pending under
+  this command). The settled-read branch issues no identity, so a Stop beside a read can never
+  reach a command.
+- The locked section re-checks `signal?.aborted` before `save`/`dispatch`: a Stop that landed
+  while this window waited on the lock writes nothing and sends nothing, and reports so with
+  `stopped()` rather than `UnconfirmedMessage`, because nothing was ever at risk.
+- `interruptMessage(projectId, threadId, commandId)` posts a strict `{}` body to
+  `POST /api/projects/:id/threads/:threadId/messages/:commandId/interrupt`. It carries no run
+  id and no engine. It never touches the pending claim: a transport acknowledgement is not a
+  settled message.
+
+### `client/console/Diomedes.tsx`
+
+- New props: `route` (the recorded route, or the default a first send takes), `routeChoices`
+  (null until a concrete thread exists), `onRoute`.
+- `routeName(route)`: `aws-bedrock` reads `AWS Bedrock (Luna)`, `codex` and `sample` read as
+  themselves, external engines read `ENGINE_NAMES`. The caption never substitutes another
+  engine for the one the thread is on.
+- `routeOptions(current, awsOffered)`: `claude-code` always; `aws-bedrock` while offered or
+  while it is the current route; any other current route appended as itself. Two entries in
+  the ordinary case, and the truth even when the current route is not sendable.
+- The instrumentation line gains a route caption (`span.dio-route`). The composer bar gains a
+  labelled `Route` combobox beside `In` and `Mode`, rendered only when `routeChoices` is
+  non-null and `disabled` while a delivery is pending.
+
+### `client/console/DiomedesHome.tsx`
+
+- `ensure` still POSTs the provisioner on every send for both scopes (`/home/conversation` or
+  `/projects/:id/conversation`): the provisioner is also where the route default lands and
+  where an unmarked pin is migrated once, so a cached binding is never consulted for it.
+  `GET /home/conversation` and state reads stay pure.
+- `route` state is read from the conversation record on every load and after every send.
+  `CONVERSATION_DEFAULT_ROUTE` supplies the caption before a thread exists. The AWS
+  availability view (`GET /ai/model-api/aws-bedrock`, `awsPickerState`) feeds only what the
+  Route control may offer; it is refreshed on each load and a failed read keeps the last answer.
+- `pickRoute` writes the person's choice through the existing thread PUT
+  (`/projects/:id/threads/:threadId`), which stamps `engineChoice: 'person'` server-side, and
+  repaints from the saved record. A refused write restores the record's route and says why.
+- `ActiveDelivery` per delivery: `{ controller, cancelled, issued }`. `deliver` checks
+  `cancelled` after `where()` resolves and before `transport`, so a Stop during the provision
+  or the lock wait never dispatches. `stopDelivery` aborts the delivery's own controller,
+  releases its slot so a second press names nothing, and POSTs `interruptMessage` only when an
+  identity was actually issued. `requested`/`settled` are left silent (the record supplies the
+  durable answer); `idle`, `superseded`, 404 or a failed call show
+  `Stop was not confirmed. Sending the message again checks what happened.` All interrupt
+  outcomes are fenced on the visit number, so a late answer cannot publish into a newer visit.
+- The Route control is offered only on the home scope and only once the thread exists:
+  `routeChoices = scopeId === null && binding !== null ? routeOptions(...) : null`.
+
+### `client/console/diomedes.css`
+
+- `.dio-route` on the instrumentation line reads in `--t2`, the line's stronger colour.
+- `.dio-field select:disabled` keeps the quiet colour while a delivery runs. The Route control
+  inherits the existing `.dio-field` select styling; no new box was drawn.
+
+## Guards and their tests
+
+Unit (`tests/conversation-send.test.ts`, appended describe "the dispatch identity a Stop may
+act on"):
+
+- Issued identity names the saved command; `interruptMessage` posts to that command's path with
+  a `{}` body (`the issued identity names the saved command...`).
+- An interrupt acknowledgement clears nothing: the claim and the window reference stay pending
+  and `lastCommand` is untouched (`an interrupt acknowledgement is not the outcome...`).
+- A 404 interrupt surfaces as refused, not stopped.
+- A pre-aborted send and a Stop that lands inside the lock before the save each write nothing
+  and send nothing (`a send asked to stop before it began...`, `a Stop that lands inside the
+  lock...`).
+- A same-window join is issued the in-flight send's identity once (`a same-window join...`).
+- A pending claim for different words refuses with no identity (`a pending claim for different
+  words...`).
+- Cross-window adoption of a pending claim issues that claim's command (`a send that adopts
+  another window's pending claim...`).
+- `resendPending` issues the claim's command when it dispatches, and none when it only reads a
+  settled record (`a resend that still owes the message...`, `a resend that finds the message
+  settled...`).
+- A resend stopped while waiting for the lock touches nothing (`a resend stopped while it
+  waited...`).
+
+Unit (`tests/diomedes-page.test.ts`, new): `routeName` and `routeOptions` cover the Luna
+caption, Claude Code named as itself, AWS offered/unavailable, and an off-list current route
+kept visible.
+
+Browser (`tests/diomedes-home.spec.ts`): the provider is now the scripted AWS boundary
+(`secretBox: testOnlySecretBox()`, `modelApiTransport: awsTransport`, AWS connected and
+spend-approved in `beforeAll`). The scripted Claude service stays installed and selected so the
+second conversation route exists and remains choosable. Two assertions changed where the
+contract superseded them: the provisioned thread now reads `aws-bedrock`, and the refusal test
+flips `aws-bedrock` off and expects `Turn AWS Bedrock (GPT-5.6 Luna) on in Settings before
+sending.` The R10c re-route case is restaged as what it now is: an unmarked pin written
+straight into the store is re-pinned by the next send's provisioner call, while a marked choice
+would be kept. Every other recovery case, the frozen R4 reproducer and the R13 closure are
+unchanged.
+
+Browser (`tests/home-luna.spec.ts`, new; `tests/fixtures/scripted-home-luna.ts`, new): the
+fixture speaks the same `scripted()` answers at the real provider boundary (the HTTPS call the
+model-API runtime makes), records every call in `seen`, and hangs on `SLOW` messages until the
+abort signal rejects. The engine service discovers nothing, so no Claude login exists to fall
+back to. Cases: Home opens on the Luna caption with no control until a thread exists, a first
+send provisions `aws-bedrock` and the provider call shows the attached credential, endpoint,
+model, tools and `store: false`; a project scope provisions the same route with no Route
+control; AWS on but unconfigured refuses by name with no fallback; an unmarked pre-upgrade pin
+migrates on the next send; a marked `claude-code` choice is kept and its refusal names Claude
+Code; the Route control PUTs the choice and `engineChoice` reads `person`; the Stop arc sends
+`SLOW`, waits for the provider call on the wire, asserts the interrupt POST names exactly the
+claimed command with an empty body, then reads the recorded outcome as `interrupted` and
+settles the pending claim through Send again.
+
+The follow-up acceptance cases, same spec, all through the real delivery path:
+
+- `a Stop while Home is still being provisioned sends nothing at all`: the provisioner's real
+  answer is held at the response edge (it ran; only its arrival is held), Stop lands while the
+  delivery still has nowhere to send, and after the response is let through there is no message
+  POST, no interrupt POST, no provider call, no saved claim, and the words are back in the box.
+- `a Stop while the send waits on the conversation lock sends nothing`: a second window holds
+  the conversation's real Web Lock name, the send is observed queued on it via
+  `navigator.locks.query()`, Stop is pressed, the hold is released, and nothing was saved, sent
+  or interrupted. This is the delivery/UI half of the lock-wait case the unit suite covers at
+  the module level.
+- `a late interrupt answer cannot paint the scope the person moved to`: the interrupt reaches
+  the real endpoint, its `idle` acknowledgement (a success that cannot confirm a stop) is held
+  until the person is on a project scope that is visibly active, and the notice it would have
+  raised stays out of that scope.
+- `a late failed interrupt cannot paint a newer visit to the same scope`: same hold, a dropped
+  answer, and home revisited through another scope, so the visit fence has moved within the
+  same conversation. The unconfirmed strip the record still owes is not the interrupt's notice.
+- `a Stop already answered names nothing again`: two presses on the same delivery faster than
+  the abort settles produce exactly one interrupt request, and once the delivery is over its
+  control is gone so a later press cannot exist.
+
+## Decisions kept
+
+- Pending-claim, retry, discard, `inFlight` join, cross-window adoption and visit-fence
+  semantics are unchanged; the new tests exist beside them, not over them.
+- The interrupt acknowledgement never clears a claim and never reports a stop; the recorded
+  outcome read remains the only confirmation.
+- Stop is offered only while a delivery is pending, and names only that delivery's issued
+  command. A Stop after resolution is a no-op.
+- No timers, retries, cancellation store, provider setup, Workbook surface or `/ask` change.
+
+## Outside-scope dependencies (owned by other lanes, not edited here)
+
+- `playwright.config.ts` `testMatch` is an explicit list. The dependency is resolved: the
+  config owner registered `home-luna.spec.ts` separately (discovery went from zero to the
+  seven, now twelve, cases). This file was never in the client lane's write set.
+- `tests/conversation-interrupt.test.ts` and the held-preparation abort case are the server
+  lane's per the contract file plan.
+- `shared/conversation.ts` (`InterruptResponse`, `InterruptState`), `shared/engines.ts`
+  (`CONVERSATION_DEFAULT_ROUTE`, `isConversationRoute`) and `Conversation.engineChoice` landed
+  from the server lane while this lane was in flight and are consumed here, not authored.
