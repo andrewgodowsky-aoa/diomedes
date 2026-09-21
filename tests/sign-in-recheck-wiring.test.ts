@@ -91,7 +91,18 @@ async function fixture(inspect: () => Promise<AdapterInspection>) {
 }
 
 describe('a finished native sign-in asks the host for one fresh inspection', () => {
-  it('reports the open window, rechecks when it closes, and shows what the recheck found', async () => {
+  it.skipIf(process.platform === 'win32')('asks for external sign-in on an unsupported console platform', async () => {
+    const inspect = vi.fn<() => Promise<AdapterInspection>>();
+    const { post, windows } = await fixture(inspect);
+    expect((await post('/ai/discover', { consent: true })).status).toBe(200);
+    const response = await post('/ai/login/claude-code', { consent: true });
+    expect(response.status).toBe(503);
+    expect(await response.text()).toContain('Run the native tool sign-in on your platform');
+    expect(windows).toEqual([]);
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it.skipIf(process.platform !== 'win32')('reports the Windows sign-in window, rechecks when it closes, and shows what the recheck found', async () => {
     const inspect = vi.fn<() => Promise<AdapterInspection>>(async () => ({
       authentication: 'signed-out',
       accountRoute: null,
@@ -113,7 +124,7 @@ describe('a finished native sign-in asks the host for one fresh inspection', () 
     expect(after.nextAction).toBe('sign-in');
   });
 
-  it('does not let a check that began before the sign-in finished be the last word', async () => {
+  it.skipIf(process.platform !== 'win32')('does not let a check that began before the Windows sign-in finished be the last word', async () => {
     // The first inspection starts while the person is still signing in, so it
     // can only ever answer signed-out. It is held open until the window closes.
     let releaseFirst: (() => void) | undefined;

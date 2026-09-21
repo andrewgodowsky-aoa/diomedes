@@ -15,6 +15,7 @@ import {
   MASKED_VALUE,
   type ChangeEntry,
   type ChangeEvidenceRef,
+  type ChangeReviewLedgerEvent,
   type ChangeReviewManifest,
   type ReviewFlag,
 } from '../shared/change-manifest.js';
@@ -791,6 +792,110 @@ describe('change-review service over HTTP', () => {
     const bytesAfter = await fs.readFile(recordPath);
     expect(bytesAfter.equals(bytesBefore)).toBe(true);
   });
+
+  /** One more run of an existing task, answering its Needs until it ends. */
+  async function runAgain(id: string, taskId: string): Promise<string> {
+    const started = await request(`/projects/${id}/work/start`, 'POST', { taskId });
+    expect(started.status).toBe(200);
+    const sessionId = started.data.id as string;
+    for (let attempt = 0; attempt < 400; attempt++) {
+      const current = await state(id);
+      if (current.sessions.find((s) => s.id === sessionId)?.state === 'done') return sessionId;
+      const need = current.needs.find((n) => n.state === 'open' && n.sessionId === sessionId);
+      if (need)
+        await request(`/projects/${id}/needs/${need.id}/resolve`, 'POST', {
+          resolution: 'go-ahead',
+          allowForTask: true,
+        });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error('Timed out waiting for the run to end.');
+  }
+  /**
+   * An ended run's record, once its own end build has landed and its queue has
+   * drained. A run's state is visible before the persist that announces it, so
+   * waiting on the recorded outcome is what proves the end build ran; serving
+   * the review then queues behind anything still building for that session.
+   */
+  const settledRecord = async (id: string, sessionId: string) => {
+    const file = path.join(temp, 'data', 'change-review', id, `${sessionId}.json`);
+    const outcome = async () => {
+      try {
+        return JSON.parse(await fs.readFile(file, 'utf8')).manifest?.outcome ?? null;
+      } catch {
+        return null; // Not written yet, or being replaced.
+      }
+    };
+    await expect.poll(outcome, { timeout: 10_000 }).toBe('completed');
+    expect((await request(`/projects/${id}/change-review/session/${sessionId}`)).status).toBe(200);
+    return fs.readFile(file);
+  };
+
+  test('a later run of the same task leaves an ended run record byte-identical', async () => {
+    const id = (await request('/projects/sample', 'POST', {})).data.id as string;
+    const task = (await request(`/projects/${id}/tasks`, 'POST', { name: 'Update the menu' })).data;
+    const first = await runAgain(id, task.id);
+    const bytesBefore = await settledRecord(id, first);
+    // The second run writes under the same task after the first one ended:
+    // none of it happened in the first run's window.
+    await runAgain(id, task.id);
+    expect((await settledRecord(id, first)).equals(bytesBefore)).toBe(true);
+  });
+
+  test('keep and undo on an earlier run still reach the task review after every run ended', async () => {
+    const id = (await request('/projects/sample', 'POST', {})).data.id as string;
+    const task = (await request(`/projects/${id}/tasks`, 'POST', { name: 'Update the menu' })).data;
+    const runs: string[] = [];
+    for (let n = 0; n < 3; n++) runs.push(await runAgain(id, task.id));
+    const firstChanges = (await state(id)).changes.filter((c) => c.sessionId === runs[0]);
+    const notes = firstChanges.find((c) => c.op === 'created')!;
+    const plan = firstChanges.find((c) => c.op === 'modified')!;
+    const ledgerTail = async (sessionId: string) =>
+      JSON.parse((await settledRecord(id, sessionId)).toString('utf8')).ledger.at(-1).event;
+    const settledIn = async (changeId: string) => {
+      // The task shows its newest run's review, which lists every write the task made.
+      const manifest = await manifestFor(id, task.id);
+      expect(manifest.subject.sessionId).toBe(runs[2]);
+      return manifest.changes.find((c) => c.changeIds.includes(changeId))?.settled;
+    };
+
+    expect((await request(`/projects/${id}/review/${plan.id}`, 'POST', { action: 'keep' })).status).toBe(200);
+    expect(await settledIn(plan.id)).toBe('kept');
+    expect(await ledgerTail(runs[0])).toBe('rebuilt-kept');
+    expect(await ledgerTail(runs[2])).toBe('rebuilt-kept');
+
+    expect((await request(`/projects/${id}/review/${notes.id}`, 'POST', { action: 'undo' })).status).toBe(200);
+    expect(await settledIn(notes.id)).toBe('undone');
+    expect(await ledgerTail(runs[0])).toBe('rebuilt-undone');
+    expect(await ledgerTail(runs[2])).toBe('rebuilt-undone');
+  });
+
+  test('runs under one task cost builds per run, never a rebuild of every earlier run', async () => {
+    const review = app.locals.changeReview;
+    const builds: string[] = [];
+    const build = review.build.bind(review);
+    review.build = (projectId: string, sessionId: string, event?: ChangeReviewLedgerEvent) => {
+      builds.push(sessionId);
+      return build(projectId, sessionId, event);
+    };
+    const id = (await request('/projects/sample', 'POST', {})).data.id as string;
+    const task = (await request(`/projects/${id}/tasks`, 'POST', { name: 'Update the menu' })).data;
+    const runs: { sessionId: string; buildsAtEnd: number }[] = [];
+    for (let n = 0; n < 5; n++) {
+      const sessionId = await runAgain(id, task.id);
+      await settledRecord(id, sessionId);
+      runs.push({ sessionId, buildsAtEnd: builds.length });
+    }
+    for (const { sessionId } of runs) await settledRecord(id, sessionId);
+    // Once a run has ended and its review has settled, the later runs of its
+    // task are outside its window: none of their writes rebuilds it.
+    for (const [index, { sessionId, buildsAtEnd }] of runs.entries())
+      expect(builds.slice(buildsAtEnd).filter((s) => s === sessionId), `run ${index}`).toEqual([]);
+    // So a run costs the same whatever came before it. Rebuilding every earlier
+    // run made each one cost five more builds than the last.
+    const cost = runs.map((run, index) => run.buildsAtEnd - (runs[index - 1]?.buildsAtEnd ?? 0));
+    expect(cost.at(-1)).toBeLessThanOrEqual(cost[0]);
+  });
 });
 
 // --- binary detection (content, never filename) ---------------------------------
@@ -1018,6 +1123,38 @@ describe('git source — modes, binary, names', () => {
       await env.cleanup();
     },
   );
+
+  test.skipIf(!gitAvailable)('same-stat edits stay visible when the real index is racy', async () => {
+    const { dir, run } = await makeRepo();
+    const file = path.join(dir, 'racy.txt');
+    const stamp = new Date(Math.floor(Date.now() / 1000 - 5) * 1000);
+    run('config', 'core.trustctime', 'false');
+    run('config', 'core.checkStat', 'minimal');
+    await fs.writeFile(file, 'v0\n');
+    await fs.utimes(file, stamp, stamp);
+    run('add', '.');
+    run('commit', '-m', 'init');
+    await fs.utimes(path.join(dir, '.git', 'index'), stamp, stamp);
+    const env = (await prepareGit(dir))!;
+    try {
+      const before = await snapshotGit(env);
+      expect(before.captured).toBe(true);
+      if (!before.captured) throw new Error(before.reason);
+      expect(before.files).toEqual([]);
+      // Same size and recorded mtime, with ctime explicitly unavailable. Git
+      // must use its racy-index content check, not trust the copied index date.
+      await fs.writeFile(file, 'v1\n');
+      await fs.utimes(file, stamp, stamp);
+      const expected = run('hash-object', '--no-filters', 'racy.txt').trim();
+      const after = await snapshotGit(env);
+      expect(after.captured).toBe(true);
+      if (!after.captured) throw new Error(after.reason);
+      expect(after.files.find((row) => row.path === 'racy.txt')?.blobSha).toBe(expected);
+      expect(diffGitSnapshots(before.files, after.files, [])[0]?.afterSha).toBe(expected);
+    } finally {
+      await env.cleanup();
+    }
+  });
 
   test.skipIf(!gitAvailable)('unusual filenames survive the real NUL parser', async () => {
     const { dir, run } = await makeRepo();

@@ -191,9 +191,10 @@ Take these to Andrew rather than choosing:
 - **Never** run `git clean`, `git stash` or `git checkout -- .` in the main checkout. Every worktree
   shares one `.git`, and other agents' uncommitted work lives there.
 - Never commit another agent's uncommitted worktree files for it.
-- **Build in an isolated checkout.** `npm run build` also packages and overwrites that checkout's
-  release directory. Never run `npm run package:desktop` in two checkouts at once, and never run
-  Playwright while another pass is verifying.
+- **Package in an isolated checkout.** `npm run build` only type-checks and builds the client.
+  `npm run package:desktop` (host target), `package:windows` and `package:mac` build and then
+  package, overwriting that checkout's release directory. Never run a package command in two
+  checkouts at once, and never run Playwright while another pass is verifying.
 - Packaging requires `Diomedes.exe` to be closed, and anything Andrew will click is packaged from
   `main` only, so every exe is a commit you can name.
 - Do not bump the version or touch the native-runtime hashes unless that is your task.

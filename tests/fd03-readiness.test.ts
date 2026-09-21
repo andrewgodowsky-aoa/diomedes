@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
@@ -170,9 +171,10 @@ describe('FD03 product knowledge integrity', () => {
     expect(resolveProductKnowledgeRoot(sourceUrl, false)).toBe(
       path.resolve(process.cwd(), 'resources/product-knowledge'),
     );
-    const bundledUrl = new URL('file:///C:/stage/server/app.mjs');
-    expect(resolveProductKnowledgeRoot(bundledUrl, true).replaceAll('\\', '/')).toBe(
-      'C:/stage/resources/product-knowledge',
+    const stage = path.resolve('test-results', 'product-knowledge-stage');
+    const bundledUrl = pathToFileURL(path.join(stage, 'server', 'app.mjs'));
+    expect(resolveProductKnowledgeRoot(bundledUrl, true)).toBe(
+      path.join(stage, 'resources', 'product-knowledge'),
     );
   });
 

@@ -2,10 +2,12 @@ import { _electron as electron, expect } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { checkPackagedRelease } from './packaged-release-check.mjs';
 
+const executablePath = path.resolve('release/Diomedes-win32-x64/Diomedes.exe');
+await checkPackagedRelease({ executablePath });
 const root = path.resolve('test-results', `desktop-${Date.now()}`);
 await fs.mkdir(root, { recursive: true });
-const executablePath = path.resolve('release/Diomedes-win32-x64/Diomedes.exe');
 const env = {
   ...process.env,
   DIOMEDES_DESKTOP_PROFILE: path.join(root, 'profile'),

@@ -361,12 +361,14 @@ export class ChangeReviewService {
 
   /**
    * Scoped invalidation: a persist rebuilds only the reviews whose evidence
-   * could have moved. A session rebuilds when its own state, its own change
-   * records or History entries scoped to it changed — and a session still
-   * live (running or awaiting review) also rebuilds on any new write in the
-   * project, because another writer's file lands in its observed folder diff.
-   * Terminal sessions are never touched by unrelated appends: their manifest
-   * froze when they ended, and serves as evidence of their own window.
+   * could have moved. A session rebuilds when its own state, a review decision
+   * on a change in its scope or History entries scoped to it changed — and a
+   * session still live (running or awaiting review) also rebuilds on any new
+   * write in the project, because another writer's file lands in its observed
+   * folder diff. Terminal sessions are never touched by later appends, even
+   * from a later run of the same task: their manifest froze when they ended,
+   * and serves as evidence of their own window. A keep or undo still reaches
+   * them, because a task's review is its newest session's frozen manifest.
    */
   private noteChange(projectId: string): void {
     if (this.closed) return;
@@ -417,13 +419,14 @@ export class ChangeReviewService {
         continue;
       }
       const stateMoved = prior.state !== session.state;
+      // A change record seen for the first time is a new write, not a decision.
       const settles = [...changes.entries()].filter(
-        ([id, nowState]) => prior.changes.get(id) !== nowState,
+        ([id, nowState]) => prior.changes.has(id) && prior.changes.get(id) !== nowState,
       );
+      const live = !TERMINAL.has(session.state as Session['state']);
       const ownHistory =
         touchedSessions.has(session.id) ||
-        (session.taskId !== null && touchedTasks.has(session.taskId));
-      const live = !TERMINAL.has(session.state as Session['state']);
+        (live && session.taskId !== null && touchedTasks.has(session.taskId));
       const affected =
         stateMoved ||
         settles.length > 0 ||

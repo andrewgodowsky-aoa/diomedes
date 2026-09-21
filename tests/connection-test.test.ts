@@ -461,7 +461,7 @@ describe('a receipt is history, never authority', () => {
     expect(fs.readFileSync(receiptFile(h), 'utf8')).toContain('"revision": 1');
   });
 
-  it('is not a verification when Diomedes could not record it', async () => {
+  it.skipIf(process.platform !== 'win32')('is not a verification when a Windows reader prevents recording it', async () => {
     const h = host();
     await settle(h);
     await h.service.testConnection(ENGINE, { consent: true, model: 'small' });
