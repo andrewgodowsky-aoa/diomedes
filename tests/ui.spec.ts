@@ -56,19 +56,22 @@ async function readPlan(page: Page): Promise<DocumentContent> {
   return response.json();
 }
 
+/** A launch lands on Diomedes. The Projects page is one click away, from there or from a project. */
+async function showProjects(page: Page) {
+  const heading = page.getByRole('heading', { name: 'Projects', exact: true });
+  const toProjects = page.getByRole('button', { name: 'Projects', exact: true }).first();
+  await expect(heading.or(toProjects).first()).toBeVisible();
+  if ((await heading.count()) === 0) await toProjects.click();
+  await expect(heading).toBeVisible();
+}
+
 async function openProject(page: Page) {
   await page.goto('/');
   const nav = page.getByRole('navigation', { name: 'Project pages', exact: true });
-  const card = page.getByRole('button', { name: /Harbor Street/ }).first();
-  // The app paints once its settings arrive and may reopen the last project then,
-  // so wait until it has settled on either the landing card or a project.
-  await expect(nav.or(card).first()).toBeVisible();
-  // The app reopens whichever project was last open, which an earlier test may
-  // have changed. Every helper here reads `projectId`, so land on that project
-  // rather than on whatever was restored.
-  if ((await nav.count()) > 0)
-    await page.getByRole('button', { name: 'Projects', exact: true }).click();
-  await card.click();
+  // Every helper here reads `projectId`, so open that project from the Projects page rather
+  // than rely on where the app landed.
+  await showProjects(page);
+  await page.getByRole('button', { name: /Harbor Street/ }).first().click();
   await expect(nav).toBeVisible();
 }
 
@@ -102,7 +105,9 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await expect(page.getByRole('heading', { name: 'Your workspace is ready' })).toBeVisible();
   await expect(page.getByText(/AI setup was skipped/)).toBeVisible();
   await page.getByRole('button', { name: 'Open Diomedes' }).click();
-  await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
+  // The app opens to Diomedes. The Projects page is where it always was, one click away.
+  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await showProjects(page);
   // The shared data folder is not guaranteed empty by the time this file runs
   // (field.spec.ts sorts first and leaves a project behind), so the empty state
   // is asserted against an intercepted empty list rather than the live folder.
@@ -121,13 +126,15 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
     });
   });
   await page.reload();
+  await showProjects(page);
   await expect(
     page.getByText(/a project for a restaurant's menus, suppliers and schedules/),
   ).toBeVisible();
   expect(emptyListServed).toBe(true);
   await page.unroute('**/api/projects');
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await showProjects(page);
   const settings: Settings = await (await page.request.get('/api/settings')).json();
   expect(settings.detail).toBe('guided');
   expect(settings.surface).toBe('console');
