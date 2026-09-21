@@ -1,0 +1,106 @@
+/* The Diomedes page: the app's own landing, a conversation rather than a
+   project chooser. Every rule is prefixed with `.console`; tokens only, no
+   colour is ever written literally here. The rail, the work column's grid,
+   the composer box, the bar and the ledger are console.css's own boxes,
+   reused by class (docs/implementation/2026-09-20-console-design-language.md,
+   decision 1); what follows is the little this page adds on top of them.
+
+   Shape and line rules from that same document: containers take --r,
+   controls and rows take --rb, and a hairline sits only between the three
+   regions, never inside one. */
+
+/* This root holds a stage and no strip of its own: whatever mounts this page
+   draws the strip above it, the way Home's `.console.home` does. */
+.console.diomedes {
+  grid-template-rows: minmax(0, 1fr);
+}
+.console .dio-screen {
+  grid-template-columns: minmax(0, 1fr) 296px;
+}
+
+/* The composer starts tall and inviting on a quiet conversation with nothing
+   in it yet, and drops to the thread composer's usual single line once there
+   is something above it to read. */
+.console.diomedes .composer.quiet textarea {
+  min-height: 72px;
+}
+.console.diomedes .bar {
+  padding: 4px 8px 4px 14px;
+  min-height: 40px;
+  gap: 6px 16px;
+}
+
+/* "In" and "Mode": the same labelled-select box the Projects page composer
+   uses, under a name of its own because this page cannot import that page's
+   stylesheet. */
+.console.diomedes .dio-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  white-space: nowrap;
+}
+/* A project name is a machine string in a fixed-width bar (decision 5). */
+.console.diomedes .dio-field select {
+  min-width: 0;
+  max-width: 32ch;
+  padding: 3px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  background-color: var(--surface);
+  color: var(--t1);
+  font: inherit;
+  text-overflow: ellipsis;
+  transition: border-color var(--quick);
+}
+.console.diomedes .dio-field select:hover {
+  border-color: color-mix(in srgb, var(--t3) 70%, transparent);
+}
+
+/* The plain sentence that replaces the composer when this conversation
+   cannot run here. It borrows the composer's own box (decision 1) rather
+   than drawing a second one. */
+.console.diomedes .dio-unavailable {
+  margin: 0;
+  padding: 11px 14px;
+  color: var(--t2);
+  font-size: var(--dm-type-body);
+  line-height: var(--dm-line-body);
+}
+
+/* One quiet line while a turn is on its way. No spinner art: it only fades
+   and settles into place the way every other view in the Console arrives
+   (motion.css's `.screen.on`), and reduced motion drops that the same way. */
+.console.diomedes .dio-pending {
+  margin: 14px 0 0;
+  animation: dm-view-in var(--dm-t-extend) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Both voices are set from the same left margin, as the approved boards draw
+   them. The person's turns are told apart by the dimmer body colour
+   console.css already gives `.turn.you`, and Diomedes' by the point
+   `.turn.dio` already draws. Nothing here names the engine that answered:
+   this screen is Diomedes speaking, not a transcript of who ran. */
+
+/* ---- the ledger: one section, Recent results ---- */
+.console.diomedes .ledger h2 {
+  margin: 0 0 4px;
+}
+/* The row's own title, not an action: console.css's `.ledger li button`
+   default (attn-coloured, for a verb like "Review") does not apply here. */
+.console.diomedes .ledger li .dio-result {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t1);
+  font-size: inherit;
+}
+
+@media (max-width: 860px) {
+  .console .dio-screen {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
