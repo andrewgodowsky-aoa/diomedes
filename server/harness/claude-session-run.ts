@@ -164,6 +164,8 @@ export class ClaudeSessionRuns {
     }
   >();
   private readonly forkLocks = new Set<string>();
+  /** One in-flight save per run and phase body, so the same record is written once. */
+  private readonly recording = new Map<string, Promise<void>>();
   private readonly closing = new Set<Promise<void>>();
   private readonly cleanupFailures: unknown[] = [];
   private readonly lifetimeMs: number;
@@ -404,10 +406,23 @@ export class ClaudeSessionRuns {
     const last = missing[missing.length - 1];
     await this.park(runId, projectId, `${last.sourceMessageId}:${last.phase}`);
   }
-  /** Saves interaction phases under this driver's own lease. The app never touches a step. */
+  /**
+   * Saves interaction phases under this driver's own lease. The app never touches a step.
+   *
+   * Two requests saving the same immutable phases are one write. The second reads the
+   * first's result instead of meeting its own step in flight, which is not a conflict but
+   * the same fact arriving twice, so identical concurrent requests converge on one record.
+   */
   async record(projectId: string, runId: string, phases: readonly InteractionPhase[]) {
     if (this.closed) throw new EngineError('SESSION_CLOSED', 'The native runtime is shutting down.');
-    await this.append(projectId, runId, phases);
+    const key = `${projectId}:${runId}:${digest(phases)}`;
+    const joined = this.recording.get(key);
+    if (joined) return joined;
+    const saving = this.append(projectId, runId, phases).finally(() => {
+      if (this.recording.get(key) === saving) this.recording.delete(key);
+    });
+    this.recording.set(key, saving);
+    return saving;
   }
   /** The phases saved for one message, in the order they were saved. A read; never a step. */
   async phases(
