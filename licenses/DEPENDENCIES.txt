@@ -1,8 +1,8 @@
 DIOMEDES BUNDLED PRODUCTION DEPENDENCIES
 ========================================
 
-Application version: 0.1.6
-package-lock.json SHA-256: 3219968f2979c6aeac208f149e779b4a8e93206ed405b7954ceacdaba5943b75
+Application version: 0.1.7
+package-lock.json SHA-256: 2e8defe771b5109af7d12a38b4e32d48727671c4c5e3681bcf04b22e5332f4b5
 Reachable installed production package paths: 141
 
 Scope: every installed package reachable through dependencies, optional dependencies,
