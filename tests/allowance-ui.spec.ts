@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import type { Project } from '../shared/types';
 import type { WorkspaceView } from '../shared/workspaces';
+import { reopenLastProject } from './fixtures/landing';
 
 /**
  * Browser proof of the two things a business owner now has in the Console:
@@ -104,6 +105,7 @@ test.afterAll(async () => {
 
 async function openPanel(page: Page) {
   await page.goto(`${baseURL}/`);
+  await reopenLastProject(page);
   await expect(page.locator('.console')).toBeVisible();
   await page.getByRole('button', { name: 'Change workspace' }).click();
   await expect(page.getByRole('heading', { name: 'Workspaces' })).toBeVisible();

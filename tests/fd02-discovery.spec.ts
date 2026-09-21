@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import type { Project } from '../shared/types';
 import type { ProspectDiscoveryRecord } from '../shared/discovery';
+import { reopenLastProject } from './fixtures/landing';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 
@@ -97,6 +98,7 @@ test('a facilitator creates, corrects, classifies and exports a prospect without
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(base);
+  await reopenLastProject(page);
   await expect(page.locator('.console')).toBeVisible();
   await openDestination(page, 'Discovery');
   await page.getByLabel('Business name', { exact: true }).fill('Harbor Workshop');
