@@ -233,6 +233,20 @@ describe('outcomeOf', () => {
     expect(outcomeOf([], none, proposed, { settled: true }).status).toBe('unresolved');
   });
 
+  it('never reads a missing decision as an answer, on a settled run or a live one', () => {
+    // Review r5's direct counterexample: no phases, no receipts and no verdict read as answered.
+    for (const settled of [true, false]) {
+      expect(outcomeOf([], none, null, { settled }).status).toBe('unresolved');
+      expect(outcomeOf([], none, { outcome: 'inert' }, { settled }).status).toBe('unresolved');
+    }
+    // With the decision recorded, the same ordinary answer is an answer.
+    expect(outcomeOf([decided], none, { outcome: 'inert' }, live).status).toBe('answered');
+    // A receipt is authoritative evidence with or without the phase that should accompany it.
+    expect(
+      outcomeOf([], { projectId: 'p', taskId: 't', sessionId: 's' }, null, { settled: true }).status,
+    ).toBe('started');
+  });
+
   it('says why nothing was proposed', () => {
     expect(
       outcomeOf([decided], none, { outcome: 'blocked', reason: 'needs-target' }, live),

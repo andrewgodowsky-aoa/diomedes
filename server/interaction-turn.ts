@@ -315,7 +315,16 @@ export function outcomeOf(
         ? 'This conversation moved on before this was started. Send it again as a new message if you still want it.'
         : 'This did not finish starting. Send the same message again to finish it.',
     };
-  if (!verdict || verdict.outcome === 'inert') return { status: 'answered' };
+  // No recorded decision is missing evidence, never a completed answer: the turn did not finish,
+  // or the process died before the first phase was saved. Every route reads it the same way.
+  if (!recorded || !verdict)
+    return {
+      status: 'unresolved',
+      message: options.settled
+        ? 'This conversation moved on before Diomedes finished with this message. Send it again as a new message if you still want it.'
+        : 'This did not finish. Send the same message again to finish it.',
+    };
+  if (verdict.outcome === 'inert') return { status: 'answered' };
   if (verdict.outcome === 'read') return { status: 'read', projectId: verdict.projectId };
   if (verdict.outcome === 'blocked')
     return {

@@ -13,6 +13,104 @@ The reviews answered are
 Nothing here is implemented. This freezes shapes and boundaries so CD-02 and
 CD-05 can be written against one contract.
 
+## Round 6: the five code defects review r5 found (2026-09-21)
+
+Astra rejected the round-5 code (`2026-09-21-core-agent-contract-review-r5.md`) on five concrete
+defects, each with a reproducer, and accepted the body binding, the terminal-write guard, the
+selection mechanism, I-11 and I-12. Her sandbox cannot run Vitest, so every reproducer was a source
+trace. Each one was pasted into `tests/interaction-seam.test.ts` and run before anything was
+changed. Four failed as traced. The fifth failed for a different reason than traced, which is
+recorded under I-17. As in round 5, **where this section and the code disagree, the code and its
+tests are the candidate.**
+
+| Finding | Closed by | Proved by |
+|---|---|---|
+| R-05 P2, a retry ignores the Mode control as it stands | I-13 | seam: three R-05 cases (crash after selection under Ask and Plan, crash after task admission) |
+| R-15 P2, cancellation between a recorded input and its admission | I-14 | seam: two R-15 cases; driver: the claim race, the opt-in claim, `assertLive` |
+| R-14 P2, a missing decision reads as answered | I-15 | seam: the R-14 missing-decision case over GET and POST, live and settled; pure: `outcomeOf` |
+| R-03 P2, a repaired projection loses its evidence | I-16 | seam: the failed-projection case with a source file, a changed file and a changed account |
+| R-10 P2, budget exhaustion never replaces the lineage | I-17 | seam: the R-10 case at the real Runtime refusal, with restart and replay |
+| R-13 P3, the home validator (O4) | the merged home lane | `tests/home-conversation.test.ts`, 14 cases |
+
+Nine guard-removal mutations cover these repairs. Each removes one guard, runs the suites named
+above and restores the file byte for byte. All nine are killed.
+
+### I-13. A command read back is held to the Mode control as it stands now
+
+Supersedes nothing in I-10; it completes it. A command keeps the restriction it was bound to,
+which is part of its body and is compared on every retry (I-8). What it may still *start* is a
+separate question, answered by the narrower of that restriction and the thread's Mode at the
+moment of the retry. `ResolvedMessage.control` carries it: for a new message it is the Mode the
+message was sent with, and for a command read back it is the thread's current Mode. `message`
+hands `control` to `settle`, exactly as `select` already handed `located.restriction`, so the two
+routes can no longer disagree. Existing receipts stay readable; narrowing stops only an admission
+that has not happened. A projection repair never writes `thread.mode`.
+
+### I-14. Cancellation is effective at the admission boundary, in the Runtime's existing order
+
+The run-cancel route cancels inside the Store lock (`server/harness/routes.ts`,
+`store.locked(() => host.runs.cancel(...))`), so the order that already exists is Store lock
+first, run queue second. Putting an admission inside the run queue would invert that order and
+could deadlock against a cancel. The admission is therefore checked where it already runs:
+
+- `InteractionHost.createTask` and `startWork` take the conversation run they come from
+  (`AdmissionSource`), and the host calls `assertLive` on it inside the Store lock, before it
+  admits anything. A cancellation through the route is either seen there or comes after the
+  admission it would have stopped. Nothing new keeps state and no second permission check exists.
+- `RunService.claim` takes `{ refuseSettled: true }` and refuses a settled run inside the run's
+  own queue, where `cancel` is decided. The conversation driver's `append` always asks. A
+  cancellation between the driver's inspection and its claim can no longer take the lease or move
+  the fence. The option is opt-in; every other caller behaves exactly as before, and a test pins
+  that.
+
+A refusal here reaches the person as 409 `RUN_SETTLED`, and the message then reads as
+`unresolved`. A task admitted before the cancellation stays, as the review requires: previously
+admitted work is not undone.
+
+### I-15. An outcome is read from what was recorded, on every route
+
+Supersedes the sentence in I-9 that lets a settled run's unsaved decision be shown from memory.
+The in-memory decision is deleted. `outcomeOf` returns `unresolved` whenever no decision phase is
+recorded, settled or live, before it looks at any verdict; receipts and refusals are still read
+first because they are authoritative with or without their phase. GET and POST now give the same
+answer for the same record. On a live run a POST repairs the first phase before it reads, so this
+changes nothing a person sees in the ordinary case.
+
+### I-16. A projection repaired later is rebuilt from the turn itself
+
+`ClaudeSessionRuns.evidence` returns the source files an answered turn carried (from its immutable
+step input) and the origin the Runtime recorded on that step. On a replay `project` uses them for
+both Turns' `sources` and for the answer's `origin`. It reads no file again and takes no model or
+account from current settings. When the Runtime recorded no origin, the repaired Turn claims only
+the model the runtime reported, and no requested model or account.
+
+### I-17. A turn a budget refused was never sent, and the refusal is recognised
+
+`RunService.step` writes the pending turn before it checks the budget, so a refused message leaves
+a turn with no attempt. `locate` now reports `dispatched`. A turn that was never dispatched is not
+an unfinished message on any lineage and does not stand in the way of the next generation. The
+lineages are searched newest first, so once the replacement holds the command it is what a retry
+or a restart finds; the refused turn stays on the old run as evidence.
+
+The review traced `retirement` as catching the refusal. It never had. `EngineService` hands a
+Runtime refusal it does not name to its callers as `RUNTIME_UNAVAILABLE` carrying the Runtime's
+words, and the matcher only looked for the Runtime's own error type. Budget replacement had never
+fired for any reason. Running the reproducer found this; reading the source had not. The matcher
+now accepts both shapes and requires the Runtime's `budget exceeded` wording.
+
+The reproducer lowers the admitted budget through the Runtime's own store to what the run has
+used, instead of sending 128 messages (144 seconds). The refusal that follows is the real one:
+`RunService` writes the pending turn, refuses it unsent and commits it, and the test asserts that
+turn's state and attempt.
+
+### What round 6 does not contain
+
+Everything I-11 lists except the home Project, which is now merged (O4). The plan-lineage hop, a
+portable handoff, conversational `control`, external sends and capability building remain
+unclaimed. No client code is part of this candidate; CD-05b is on the integration branch.
+
+---
+
 ## Round 5: the code that answers round 4 (2026-09-21)
 
 Astra rejected round 4 (`2026-09-20-core-agent-contract-review-r4.md`, blob `206a652b`) on three
@@ -50,6 +148,9 @@ asserts the project state and the run record are deep-equal before and after.
 
 ### I-9. An answered command is read first; a settled run is read and never touched
 
+> **Superseded in part by Round 6, I-15.** No decision is shown from memory. A missing decision
+> reads as `unresolved` on every route.
+
 Supersedes I-2 item 2's "then I-3 step 4 runs against that run's phases" for settled runs, and
 I-3's claim that one tail serves both paths on any run.
 
@@ -81,6 +182,9 @@ the way `onPreview` already does, and the driver removes it before an adapter se
 replaces the `decision?` callback I-3 put on `ClaudeSessionTurn`.
 
 ### I-10. Under Automatic, proposed work is shown; the person's selection starts it
+
+> **Completed by Round 6, I-13 and I-14.** A retry is held to the Mode control as it stands now,
+> and both admissions refuse when the conversation run has been cancelled.
 
 **I-4 item 4 is withdrawn.** Astra's ruling stands: package 01 names natural-language limits
 and selected modes separately, and a reviewer may not narrow that. Of the two exits Astra
@@ -685,6 +789,10 @@ audience check; work admission is not egress authority.
 
 **Owner: CD-02h**, the server lane. Round 2 said no `shared/types.ts` or
 `server/store.ts` patch was required. That was false and is deleted.
+
+> **Superseded by Round 4, I-5, and by the merged home lane (O4).** `revision` is the number `1`,
+> not a string. `shared/types.ts` and `tests/home-conversation.test.ts` are the record; a string,
+> or any other number, is normalised to no binding at all.
 
 **Returned patch, `shared/types.ts`,** into `Settings` (`:33-109`):
 

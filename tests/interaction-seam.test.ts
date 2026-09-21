@@ -9,6 +9,8 @@ import { createApp } from '../server/app';
 import { EngineService, TESTED_VERSIONS } from '../server/engines/service';
 import type { PersistentTextAdapter, TextRequest } from '../server/engines/contract';
 import type { ClaudeSessionCheckpoint } from '../server/engines/claude-session';
+import type { ClaudeSessionRuns } from '../server/harness/claude-session-run';
+import type { HarnessRun } from '../shared/harness';
 import { routeContractFor } from '../server/harness/route-contract';
 import { localHarnessPrincipal } from '../server/harness/bridge';
 import { hash, type Store } from '../server/store';
@@ -72,7 +74,7 @@ async function close() {
   server = undefined;
 }
 const store = () => app.locals.store as Store;
-const driver = () => app.locals.harness.claudeSessions;
+const driver = () => app.locals.harness.claudeSessions as ClaudeSessionRuns;
 
 /**
  * The fake model. It reads the issued identity off the last line, as the instructions tell a
@@ -517,4 +519,219 @@ test('a receipt that exists without its phase is linked after a restart, never s
     'work-input',
     'work-receipt',
   ]);
+});
+
+// ---- Round 6: the reproducers from review r5, each at the boundary it names ----
+
+const lineagesOf = () =>
+  store().state(project.id).conversations.find((item) => item.id === thread.id)!.lineages ?? [];
+const narrowTo = async (mode: 'ask' | 'plan') =>
+  api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { mode });
+
+for (const narrowed of ['ask', 'plan'] as const)
+  test(`R-05: a selection saved before a crash cannot start work once the Mode is narrowed to ${narrowed}`, async () => {
+    const proposed = await send('m-act', 'ACT order the usual');
+    if (proposed.outcome.status !== 'proposed') throw new Error('expected a proposal');
+    // The crash window the selection-before-admission order creates: the choice is saved and
+    // nothing has been admitted yet.
+    await driver().record(project.id, proposed.runId, [
+      {
+        phase: 'action-selected',
+        sourceMessageId: proposed.sourceMessageId,
+        body: {
+          sourceMessageId: proposed.sourceMessageId,
+          proposalDigest: proposed.outcome.proposalDigest,
+          projectId: project.id,
+        },
+      },
+    ]);
+    await close();
+    await open();
+    await narrowTo(narrowed);
+    expect((await select('m-act', proposed.outcome.proposalDigest)).status).toBe(409);
+    const replay = await send('m-act', 'ACT order the usual');
+    expect(replay.answerText).toBe('I can start that.');
+    expect(replay.outcome.status).toBe('not-started');
+    expect(workFor(proposed.sourceMessageId)).toEqual({ tasks: [], sessions: [] });
+    // Reading the old message back did not move the control the person narrowed.
+    expect(store().state(project.id).conversations.find((c) => c.id === thread.id)!.mode).toBe(
+      narrowed,
+    );
+    expect(dispatches).toHaveLength(1);
+  });
+
+test('R-05: narrowing after the task was admitted stops the Work start and keeps the task readable', async () => {
+  const proposed = await send('m-act', 'ACT order the usual');
+  if (proposed.outcome.status !== 'proposed') throw new Error('expected a proposal');
+  const d = driver();
+  const record = d.record.bind(d);
+  // The process dies right after the task receipt is recorded, before the Work input.
+  d.record = async (...args: Parameters<typeof record>) => {
+    if (args[2].some((phase) => phase.phase === 'work-input')) throw new Error('the process died');
+    return record(...args);
+  };
+  expect((await select('m-act', proposed.outcome.proposalDigest)).status).toBe(500);
+  d.record = record;
+  expect(workFor(proposed.sourceMessageId).tasks).toHaveLength(1);
+  await close();
+  await open();
+  await narrowTo('ask');
+  const replay = await send('m-act', 'ACT order the usual');
+  expect(replay.outcome.status).not.toBe('started');
+  const after = workFor(proposed.sourceMessageId);
+  expect(after.tasks).toHaveLength(1);
+  expect(after.sessions).toEqual([]);
+});
+
+for (const gap of ['task-input', 'work-input'] as const)
+  test(`R-15: a cancellation after ${gap} is recorded and before its admission starts nothing`, async () => {
+    const proposed = await send('m-cancel-gap', 'ACT order the usual');
+    if (proposed.outcome.status !== 'proposed') throw new Error('expected a proposal');
+    const d = driver();
+    const record = d.record.bind(d);
+    d.record = async (...args: Parameters<typeof record>) => {
+      await record(...args);
+      if (args[2].some((phase) => phase.phase === gap))
+        await app.locals.harness.runs.cancel(
+          proposed.runId,
+          'cancelled before the admission',
+          localHarnessPrincipal(project.id),
+        );
+    };
+    try {
+      const response = await select('m-cancel-gap', proposed.outcome.proposalDigest);
+      expect(response.status).toBe(409);
+      expect((await response.json()).code ?? 'RUN_SETTLED').toBe('RUN_SETTLED');
+    } finally {
+      d.record = record;
+    }
+    const work = workFor(proposed.sourceMessageId);
+    // Cancelled before the task: nothing at all. Cancelled before the Work: the task that was
+    // already admitted stays, and no Work session exists.
+    expect(work.tasks).toHaveLength(gap === 'task-input' ? 0 : 1);
+    expect(work.sessions).toEqual([]);
+    const read = await api<MessageResult>(`${messages()}/m-cancel-gap`);
+    expect(read.outcome.status).toBe('unresolved');
+  });
+
+test('R-14: a message whose decision was never recorded reads as unresolved on every route, settled or not', async () => {
+  const d = driver();
+  const original = d.request.bind(d);
+  d.request = (turn: Parameters<typeof original>[0]) =>
+    original({
+      ...turn,
+      input: {
+        ...turn.input,
+        interaction: {
+          ...turn.input.interaction!,
+          decide: () => {
+            throw new Error('the process died');
+          },
+        },
+      },
+    });
+  expect((await request(messages(), 'POST', message('m-gap', 'ACT order the usual'))).status).toBe(500);
+  d.request = original;
+  const runId = lineagesOf().at(-1)!.runId;
+  // Still live: the GET writes nothing, so the missing decision reads as unfinished.
+  const live = await api<MessageResult>(`${messages()}/m-gap`);
+  expect(live.outcome).toMatchObject({ status: 'unresolved' });
+  await app.locals.harness.runs.cancel(runId, 'moved on', localHarnessPrincipal(project.id));
+  await close();
+  await open();
+  const settled = await driver().get(project.id, runId);
+  const read = await api<MessageResult>(`${messages()}/m-gap`);
+  expect(read.outcome).toMatchObject({ status: 'unresolved' });
+  const replay = await send('m-gap', 'ACT order the usual');
+  expect(replay.answerText).toBe('I can start that.');
+  expect(replay.outcome).toEqual(read.outcome);
+  expect(await driver().get(project.id, runId)).toEqual(settled);
+  expect(workFor(replay.sourceMessageId)).toEqual({ tasks: [], sessions: [] });
+  expect(dispatches).toHaveLength(1);
+});
+
+test('R-03: a projection that failed is repaired from the turn itself, not from the files and settings as they stand now', async () => {
+  const contents = 'Flour 18.40 a sack';
+  await fs.writeFile(path.join(project.folder, 'prices.md'), contents);
+  const body = message('m-source', 'Compare the prices', {
+    sources: [{ path: 'prices.md', sha: hash(contents)! }],
+  });
+  const live = store();
+  const persist = live.persist.bind(live);
+  let failed = false;
+  live.persist = async (state: Parameters<typeof persist>[0]) => {
+    const projected = state.conversations
+      .find((item) => item.id === thread.id)
+      ?.turns.some((turn) => turn.text === 'Compare the prices');
+    if (projected && !failed) {
+      failed = true;
+      throw new Error('the disk was full');
+    }
+    return persist(state);
+  };
+  expect((await request(messages(), 'POST', body)).status).toBe(500);
+  live.persist = persist;
+  expect(turnsOf()).toEqual([]);
+  // Everything a repair could wrongly read from the present is changed before it runs.
+  await fs.writeFile(path.join(project.folder, 'prices.md'), 'Flour 99.00 a sack');
+  await live.saveSettings({
+    ...live.settings,
+    services: { ...live.settings.services, 'claude-codeAccountRoute': 'claude-code:another-account' },
+  });
+  await close();
+  await open();
+  // The person narrows the control before the repair runs. A repair must not move it back.
+  await narrowTo('plan');
+  const repaired = await api<MessageResult>(messages(), 'POST', body);
+  expect(store().state(project.id).conversations.find((c) => c.id === thread.id)!.mode).toBe(
+    'plan',
+  );
+  expect(repaired.answerText).toBe('answer:Compare the prices');
+  expect(dispatches).toHaveLength(1);
+  const turns = store().state(project.id).conversations.find((item) => item.id === thread.id)!
+    .turns;
+  expect(turns.map((turn) => turn.sources)).toEqual([['prices.md'], ['prices.md']]);
+  const run = await driver().get(project.id, repaired.runId);
+  const turnStep = run.steps.find((step) => step.intent.stepId.startsWith('turn'))!;
+  expect(turnStep.origin).toBeTruthy();
+  expect(turns[1].origin).toEqual(turnStep.origin);
+  expect(turns[1].origin!.accountRoute).toBe(accountRoute);
+});
+
+test('R-10: a lineage that runs out of budget is replaced once, and the replacement is what a retry and a restart find', async () => {
+  await send('m-budget-0', 'Hello 0');
+  await send('m-budget-1', 'Hello 1');
+  expect(lineagesOf().map((l) => [l.generation, l.retired ?? null])).toEqual([[1, null]]);
+  // The admitted budget is lowered to what this run has already used, through the Runtime's own
+  // store, so 126 more messages need not be sent. The refusal that follows is the real one:
+  // RunService writes the pending turn, refuses it unsent, and commits it.
+  const runs = app.locals.harness.runs as unknown as {
+    store: { read(id: string): Promise<HarnessRun>; write(run: HarnessRun): Promise<void> };
+  };
+  const exhausted = await runs.store.read(lineagesOf()[0].runId);
+  exhausted.budget = { ...exhausted.budget, modelCalls: exhausted.used.modelCalls };
+  await runs.store.write(exhausted);
+  const next = await send('m-budget-128', 'One more');
+  expect(next.answerText).toBe('answer:One more');
+  expect(dispatches).toHaveLength(3);
+  expect(lineagesOf().map((l) => [l.generation, l.retired ?? null])).toEqual([
+    [1, 'budget'],
+    [2, null],
+  ]);
+  expect(next.runId).toBe(lineagesOf()[1].runId);
+  // The refused turn stays on the old run as evidence, never sent.
+  const old = await driver().get(project.id, lineagesOf()[0].runId);
+  expect(old.used.modelCalls).toBe(2);
+  const refused = old.steps.find(
+    (step) => (step.intent.input as { requestId?: string } | null)?.requestId === 'm-budget-128',
+  )!;
+  expect([refused.state, refused.attempt]).toEqual(['pending', 0]);
+  await close();
+  await open();
+  const replay = await send('m-budget-128', 'One more');
+  expect(replay.runId).toBe(next.runId);
+  expect(replay.answerText).toBe('answer:One more');
+  expect((await send('m-budget-0', 'Hello 0')).answerText).toBe('answer:Hello 0');
+  expect(dispatches).toHaveLength(3);
+  expect(lineagesOf()).toHaveLength(2);
 });
