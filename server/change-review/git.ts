@@ -9,6 +9,22 @@
  * from the real one — so opportunistic refreshes can never touch the person's
  * staging state.
  *
+ * Two things follow from never writing that index back. Git compares content
+ * only for entries whose recorded stat data it cannot vouch for, and it cannot
+ * vouch for a fresh checkout, a branch switch, or anything a build touched;
+ * an ordinary `git status` repairs that in one pass by writing the refreshed
+ * index, and this source never can. So the reads here must agree with the
+ * person's Git about what that content *means* — which is why the inspection
+ * environment carries their `core.autocrlf` and `core.eol` rather than
+ * imposing its own. Forcing `autocrlf=false` behind `GIT_CONFIG_NOSYSTEM`
+ * made every CRLF working file on Windows compare unequal to its LF blob, so
+ * a baseline captured in that state and a build captured after any ordinary
+ * Git command disagreed about files nobody had edited.
+ *
+ * The subject is the project folder, not whatever repository encloses it.
+ * Every read is bounded by a pathspec, so a project living in one directory of
+ * a monorepo is neither charged for the rest of it nor told about it.
+ *
  * File content is hashed with `git hash-object --no-filters`, which never runs
  * clean filters, so a planted `.gitattributes`/`filter.*.clean` cannot turn a
  * review into code execution. `status`/`diff` may still consult repo config
@@ -97,11 +113,44 @@ export type GitProbe = GitSnapshot | GitUnavailable;
 const devNull = () => (process.platform === 'win32' ? 'NUL' : '/dev/null');
 
 /**
+ * The end-of-line configuration the person's own Git applies to this
+ * repository. It decides nothing about what is recorded — `hash-object
+ * --no-filters` hashes the bytes on disk — and everything about what counts as
+ * modified, so a review that does not share it disagrees with the shell.
+ */
+export interface EolConfig {
+  readonly autocrlf: string | null;
+  readonly eol: string | null;
+}
+
+interface GitContext {
+  readonly indexFile: string | null;
+  readonly eol: EolConfig | null;
+}
+
+/**
  * The scrubbed Git environment. Inherited env is already filtered to a safe
  * list by `engineEnvironment`; on top of it every repo-config execution hook
  * is neutralized and every write path is pointed at throwaway state.
+ *
+ * End-of-line handling is deliberately *not* neutralized. It is a view of
+ * content, not an execution path, and forcing a view of our own is what made a
+ * Windows checkout read as wholly modified: `GIT_CONFIG_NOSYSTEM` hides Git
+ * for Windows' `core.autocrlf=true`, so every CRLF working file compared
+ * unequal to its LF blob. The caller reads the person's own setting and passes
+ * it back in here.
  */
-function gitEnv(indexFile: string | null): NodeJS.ProcessEnv {
+function gitEnv(ctx: GitContext | null): NodeJS.ProcessEnv {
+  // -c config equivalent via env: no hooks, no fsmonitor, no untracked cache,
+  // no external diff drivers or textconv. These win over every config file.
+  const overrides: [string, string][] = [
+    ['core.hooksPath', devNull()],
+    ['core.fsmonitor', 'false'],
+    ['core.untrackedCache', 'false'],
+    ['diff.external', ''],
+  ];
+  if (ctx?.eol?.autocrlf) overrides.push(['core.autocrlf', ctx.eol.autocrlf]);
+  if (ctx?.eol?.eol) overrides.push(['core.eol', ctx.eol.eol]);
   const env: NodeJS.ProcessEnv = {
     ...engineEnvironment(),
     GIT_CONFIG_NOSYSTEM: '1',
@@ -110,33 +159,23 @@ function gitEnv(indexFile: string | null): NodeJS.ProcessEnv {
     GIT_TERMINAL_PROMPT: '0',
     GIT_OPTIONAL_LOCKS: '0',
     GIT_ATTR_NOSYSTEM: '1',
-    // -c config equivalent via env: no hooks, no fsmonitor, no untracked cache,
-    // no external diff drivers or textconv.
-    GIT_CONFIG_COUNT: '6',
-    GIT_CONFIG_KEY_0: 'core.hooksPath',
-    GIT_CONFIG_VALUE_0: devNull(),
-    GIT_CONFIG_KEY_1: 'core.fsmonitor',
-    GIT_CONFIG_VALUE_1: 'false',
-    GIT_CONFIG_KEY_2: 'core.untrackedCache',
-    GIT_CONFIG_VALUE_2: 'false',
-    GIT_CONFIG_KEY_3: 'diff.external',
-    GIT_CONFIG_VALUE_3: '',
-    GIT_CONFIG_KEY_4: 'core.autocrlf',
-    GIT_CONFIG_VALUE_4: 'false',
-    GIT_CONFIG_KEY_5: 'core.eol',
-    GIT_CONFIG_VALUE_5: 'native',
+    GIT_CONFIG_COUNT: String(overrides.length),
   };
-  if (indexFile) env.GIT_INDEX_FILE = indexFile;
+  overrides.forEach(([key, value], index) => {
+    env[`GIT_CONFIG_KEY_${String(index)}`] = key;
+    env[`GIT_CONFIG_VALUE_${String(index)}`] = value;
+  });
+  if (ctx?.indexFile) env.GIT_INDEX_FILE = ctx.indexFile;
   return env;
 }
 
-async function git(root: string, args: string[], indexFile: string | null, input?: string) {
+async function git(root: string, args: string[], ctx: GitContext | null, input?: string) {
   const result = await capture(
     {
       file: 'git',
       args: ['-C', root, ...args],
       cwd: root,
-      env: gitEnv(indexFile),
+      env: gitEnv(ctx),
       timeoutMs: GIT_TIMEOUT_MS,
       maxBytes: GIT_MAX_BYTES,
     },
@@ -146,13 +185,47 @@ async function git(root: string, args: string[], indexFile: string | null, input
   return result.stdout;
 }
 
+/**
+ * Read one config value the way the person's Git reads it — their system and
+ * global files included, which the inspection environment above hides.
+ * `git config --get` runs no hook, no filter and no external program, and the
+ * values read back are end-of-line settings only, so this widens nothing: the
+ * execution hooks stay pinned off wherever content is actually compared.
+ * Returns null when the key is unset or Git refuses.
+ */
+async function readConfig(root: string, key: string): Promise<string | null> {
+  try {
+    const result = await capture({
+      file: 'git',
+      args: ['-C', root, 'config', '--get', key],
+      cwd: root,
+      env: {
+        ...engineEnvironment(),
+        GIT_TERMINAL_PROMPT: '0',
+        GIT_OPTIONAL_LOCKS: '0',
+      },
+      timeoutMs: GIT_TIMEOUT_MS,
+      maxBytes: GIT_MAX_BYTES,
+    });
+    if (result.code !== 0) return null; // `--get` exits 1 when unset.
+    return result.stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+const readEolConfig = async (root: string): Promise<EolConfig> => ({
+  autocrlf: await readConfig(root, 'core.autocrlf'),
+  eol: await readConfig(root, 'core.eol'),
+});
+
 /** Read one object from the repository's own object store — bounded, read-only. */
 export async function gitBlobText(
   env: GitEnvironment,
   sha: string,
 ): Promise<string | null> {
   try {
-    return await git(env.toplevel, ['cat-file', 'blob', sha], env.indexFile);
+    return await git(env.toplevel, ['cat-file', 'blob', sha], env);
   } catch {
     return null;
   }
@@ -257,15 +330,16 @@ export function parseNumstat(output: string): Set<string> {
  */
 async function numstatBinaryPaths(env: GitEnvironment): Promise<Set<string> | null> {
   try {
+    const scope = pathspecFor(env);
     const unstaged = await git(
       env.toplevel,
-      ['diff', '--numstat', '-z', '--no-renames'],
-      env.indexFile,
+      ['diff', '--numstat', '-z', '--no-renames', ...scope],
+      env,
     );
     const staged = await git(
       env.toplevel,
-      ['diff', '--cached', '--numstat', '-z', '--no-renames'],
-      env.indexFile,
+      ['diff', '--cached', '--numstat', '-z', '--no-renames', ...scope],
+      env,
     );
     return new Set([...parseNumstat(unstaged), ...parseNumstat(staged)]);
   } catch {
@@ -291,7 +365,7 @@ async function inspectWorktreeFiles(
         let binary = binarySet?.has(file.path) ?? false;
         try {
           blobSha =
-            (await git(env.toplevel, ['hash-object', '--no-filters', '--', file.path], env.indexFile)).trim() ||
+            (await git(env.toplevel, ['hash-object', '--no-filters', '--', file.path], env)).trim() ||
             null;
         } catch {
           blobSha = null;
@@ -324,11 +398,38 @@ export function statusDigest(files: readonly GitWorktreeFile[]): string {
 export interface GitEnvironment {
   readonly dir: string;
   readonly toplevel: string;
+  /**
+   * The project folder's own path inside the repository, null when the folder
+   * is the repository root. Every read is bounded to it, so a project that
+   * lives in one directory of a large monorepo is never charged for — or told
+   * about — the rest of it.
+   */
+  readonly subdir: string | null;
   readonly head: string | null;
   readonly indexFile: string;
+  /** The person's end-of-line view, so "modified" means what it means to them. */
+  readonly eol: EolConfig | null;
   /** The repository's real index — re-read per snapshot, never written. */
   readonly realIndex: string;
   readonly cleanup: () => Promise<void>;
+}
+
+/**
+ * The pathspec that bounds a read to the project folder. `top` anchors it at
+ * the repository root whatever the working directory is, and `literal` keeps a
+ * folder named like a glob from matching anything else.
+ */
+const pathspecFor = (env: GitEnvironment): string[] =>
+  env.subdir === null ? [] : ['--', `:(top,literal)${env.subdir}`];
+
+/** Keep Git's racy-index cutoff when moving the inspection copy to temp. */
+async function copyInspectionIndex(source: string, destination: string): Promise<void> {
+  const stat = await fs.stat(source);
+  await fs.copyFile(source, destination);
+  // A new copy timestamp can make an unchanged-size edit look older than the
+  // index and suppress Git's content check. Date precision rounds down here,
+  // so the private cutoff is conservative. The real index is never written.
+  await fs.utimes(destination, stat.atime, stat.mtime);
 }
 
 /**
@@ -343,6 +444,12 @@ export async function prepareGit(root: string): Promise<GitEnvironment | null> {
   } catch {
     return null; // Not a repository.
   }
+  // Git's own answer to "where is this folder inside the repository", so no
+  // path arithmetic is done here: a short-name alias, a symlinked root or a
+  // case-different spelling cannot skew it the way comparing strings would.
+  const prefix = (await git(root, ['rev-parse', '--show-prefix'], null)).trim();
+  const subdir = prefix.replace(/\/+$/, '') || null;
+  const eol = await readEolConfig(root);
   const gitDir = (
     await git(toplevel, ['rev-parse', '--absolute-git-dir'], null)
   ).trim();
@@ -351,11 +458,11 @@ export async function prepareGit(root: string): Promise<GitEnvironment | null> {
   const indexFile = path.join(dir, 'index');
   const realIndex = path.join(gitDir, 'index');
   try {
-    await fs.copyFile(realIndex, indexFile);
+    await copyInspectionIndex(realIndex, indexFile);
   } catch {
     // No index yet (fresh init): seed the temp index from HEAD.
     try {
-      if (head) await git(toplevel, ['read-tree', 'HEAD'], indexFile);
+      if (head) await git(toplevel, ['read-tree', 'HEAD'], { indexFile, eol });
     } catch {
       /* an empty index is still a valid baseline */
     }
@@ -363,8 +470,10 @@ export async function prepareGit(root: string): Promise<GitEnvironment | null> {
   return {
     dir,
     toplevel,
+    subdir,
     head,
     indexFile,
+    eol,
     realIndex,
     cleanup: async () => {
       await fs.rm(dir, { recursive: true, force: true });
@@ -377,7 +486,7 @@ export async function snapshotGit(env: GitEnvironment): Promise<GitProbe> {
   try {
     // Refresh the private index copy so staging that happened since the last
     // snapshot is visible. A torn copy fails the read honestly below.
-    await fs.copyFile(env.realIndex, env.indexFile).catch(() => undefined);
+    await copyInspectionIndex(env.realIndex, env.indexFile).catch(() => undefined);
     const raw = await git(
       env.toplevel,
       [
@@ -386,8 +495,9 @@ export async function snapshotGit(env: GitEnvironment): Promise<GitProbe> {
         '-z',
         '--untracked-files=all',
         '--no-ahead-behind',
+        ...pathspecFor(env),
       ],
-      env.indexFile,
+      env,
     );
     const parsed = parsePorcelainV2(raw);
     const files = await inspectWorktreeFiles(env, parsed);

@@ -83,17 +83,15 @@ export class InventoryStockRepository {
       try {
         actual = parseInventoryStockDocument(JSON.parse(actualText), journal.receipt.scope);
       } catch (error) {
-        if (error instanceof ApiError)
+        if (error instanceof ApiError || error instanceof SyntaxError)
           throw new ApiError(409, 'A pending inventory effect cannot be reconciled safely.');
         throw error;
       }
       const recorded = actual.operations.find(
         (record) => record.command.operationId === journal.operationId,
       );
-      if (!recorded) {
-        await fs.unlink(journalPath);
-        continue;
-      }
+      if (!recorded)
+        throw new ApiError(409, 'A pending inventory effect cannot be reconciled safely.');
       if (inventoryDigest(recorded.receipt) !== inventoryDigest(journal.receipt))
         throw new ApiError(409, 'A pending inventory operation resolved to a different receipt.');
       await this.recordRecoveredHistory(journal);
@@ -182,13 +180,13 @@ export class InventoryStockRepository {
         const recorded = snapshot.operations.find(
           (record) => record.command.operationId === receipt.operationId,
         );
-        if (!recorded) await fs.unlink(journalPath);
-        else if (inventoryDigest(recorded.receipt) === inventoryDigest(receipt)) {
+        if (!recorded)
+          throw new ApiError(409, 'A pending inventory effect cannot be reconciled safely.');
+        if (inventoryDigest(recorded.receipt) === inventoryDigest(receipt)) {
           await this.store.persist(state);
           await fs.unlink(journalPath);
           return receipt;
         } else {
-          await fs.unlink(journalPath);
           throw new ApiError(409, 'The inventory operation resolved to a different receipt.');
         }
       }

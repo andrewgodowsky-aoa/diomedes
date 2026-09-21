@@ -1,0 +1,155 @@
+.inventory-receipts {
+  max-width: 1120px;
+  margin-inline: auto;
+  padding: 28px;
+  color: var(--text, #e3e5e7);
+}
+.inventory-receipts *,
+.inventory-demo-banner {
+  box-sizing: border-box;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.inventory-receipts h1 {
+  font-size: 30px;
+  margin: 6px 0 12px;
+}
+.inventory-receipts h2 {
+  font-size: 20px;
+  margin: 0 0 20px;
+}
+.inventory-receipts h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.inventory-receipts p {
+  line-height: 1.6;
+}
+.inventory-eyebrow {
+  font-size: 13px;
+  color: var(--muted, #a5aab1);
+}
+.inventory-toolbar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 20px 0;
+}
+.inventory-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 32px;
+}
+.inventory-columns > section {
+  border-top: 1px solid var(--line, #40434a);
+  padding-top: 22px;
+}
+.inventory-receipts button,
+.inventory-receipts input,
+.inventory-receipts select,
+.inventory-receipts textarea {
+  font: inherit;
+  font-size: 16px;
+  color: inherit;
+  background: var(--panel, #25282e);
+  border: 1px solid var(--line, #545962);
+  border-radius: 6px;
+  min-height: 44px;
+  padding: 10px 12px;
+  max-width: 100%;
+}
+.inventory-receipts button,
+.inventory-receipts summary {
+  cursor: pointer;
+}
+.inventory-receipts :focus-visible {
+  outline: 2px solid var(--accent, #abc7de);
+  outline-offset: 3px;
+}
+.inventory-receipts button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.inventory-receipts fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.inventory-receipts label {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+.inventory-receipts textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+.inventory-receipts dl {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.inventory-receipts dt {
+  color: var(--muted, #a5aab1);
+  margin-top: 12px;
+}
+.inventory-receipts dd {
+  margin: 0;
+}
+.inventory-balances {
+  margin-block: 0 24px;
+}
+.inventory-id {
+  font-size: 13px;
+  font-family: 'IBM Plex Mono', monospace;
+}
+.inventory-attempt button,
+.inventory-review button {
+  display: block;
+  margin: 12px 0;
+}
+.inventory-history {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.inventory-history > li {
+  border-bottom: 1px solid var(--line, #40434a);
+  padding-bottom: 24px;
+  margin-bottom: 24px;
+}
+.inventory-history summary {
+  min-height: 44px;
+  padding: 12px 0;
+}
+.inventory-notice {
+  border-left: 3px solid #dab677;
+  padding: 12px;
+}
+.inventory-demo-page {
+  margin: 0;
+  background: #1b1e23;
+  color: #e3e5e7;
+  font-family: 'Schibsted Grotesk', sans-serif;
+}
+.inventory-demo-banner {
+  background: #292b30;
+  color: #d5d8de;
+  padding: 16px 28px;
+  font-size: 14px;
+  line-height: 1.6;
+  border-bottom: 1px solid #454a53;
+}
+@media (max-width: 720px) {
+  .inventory-columns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+  .inventory-receipts {
+    padding: 20px 16px;
+  }
+  .inventory-demo-banner {
+    padding: 14px 16px;
+  }
+}

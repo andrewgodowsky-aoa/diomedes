@@ -1,10 +1,13 @@
 import { _electron as electron, expect } from '@playwright/test';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { checkPackagedRelease } from './packaged-release-check.mjs';
 
+const executablePath = path.resolve('release/Diomedes-win32-x64/Diomedes.exe');
+await checkPackagedRelease({ executablePath });
 const root = path.resolve('test-results', `desktop-${Date.now()}`);
 await fs.mkdir(root, { recursive: true });
-const executablePath = path.resolve('release/Diomedes-win32-x64/Diomedes.exe');
 const env = {
   ...process.env,
   DIOMEDES_DESKTOP_PROFILE: path.join(root, 'profile'),
@@ -26,6 +29,13 @@ async function api(route, method = 'GET', data) {
   return response.json();
 }
 try {
+  // Taken before the first launch, so it names the bytes this smoke drives. The
+  // release record ties the smoke to a build by this hash alone and refuses a
+  // proof without one: hashing the path afterwards would describe whatever is
+  // there by then, which after a rebuild is not what ran. Inside the try so a
+  // missing executable fails with this smoke's own one line.
+  // scripts/app-updates-desktop-smoke.mjs records exeSha256 the same way.
+  const executableSha256 = createHash('sha256').update(await fs.readFile(executablePath)).digest('hex');
   desktop = await electron.launch({ executablePath, env });
   const page = await desktop.firstWindow();
   page.setDefaultTimeout(15_000);
@@ -244,12 +254,16 @@ try {
     expect(saved.receipt).toEqual(proof.receipt);
     expect(saved.state).toBe('stopped');
   }
+  // `passed` is written here because this line is only reached by the passing
+  // path; a run that fails writes no proof at all.
   await fs.writeFile(
     'evidence/desktop-proof.json',
     JSON.stringify(
       {
         checkedAt: new Date().toISOString(),
         executablePath,
+        executableSha256,
+        passed: true,
         startup,
         taskCount: found.length,
         fontSizes: { before, after },

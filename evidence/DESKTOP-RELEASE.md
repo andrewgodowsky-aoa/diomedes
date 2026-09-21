@@ -3,8 +3,8 @@
 2026-09-05
 
 > **A dated record of the first desktop package.** The desktop release is now produced by
-> `npm run build` (its `postbuild` step) or the `npm run package:desktop` alias, and
-> smoked with `npm run test:desktop`. Since this report the repository became a Git
+> `npm run package:windows` (or `npm run package:desktop` on a Windows host); `npm run build`
+> no longer packages. It is smoked with `npm run test:desktop`. Since this report the repository became a Git
 > repository, so the "no Git repository" note below is out of date. `../README.md`
 > describes the current product.
 

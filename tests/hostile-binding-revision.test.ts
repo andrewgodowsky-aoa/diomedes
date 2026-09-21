@@ -71,6 +71,8 @@ function host() {
     textResponse(input, 'ok', TESTED_VERSIONS[engine]),
   );
   const service = new EngineService(serviceRoot, {
+    // This fixture compares a system installation with the Windows managed copy.
+    platform: 'win32',
     discover: async () => rows,
     enumerate: async () => installations,
     version: async (file: string) => {

@@ -92,10 +92,8 @@ The same rows, each with the three states above, are generated into
 is the one place these facts are collected, and it is what another repository copies
 instead of retyping this table.
 
-**The newest published build is an older version than this source tree**, and it does not
-contain the repair this tree is carrying. That file names the build, the commit it was
-made from and what has not been shown about it; the releases page is what you can
-actually download today.
+That file also names the newest build recorded here, the commit it was made from and what
+has not been shown about it; the releases page is what you can actually download today.
 
 **Found is not usable.** Checking this computer ends in one of these, and the difference
 is the whole point of the list:
@@ -355,15 +353,31 @@ verification on. The build makes no external font requests.
 npm run check          # TypeScript across client, server, shared, scripts and tests
 npm test               # vitest
 npm run test:ui        # Playwright against installed Microsoft Edge
-npm run package:desktop # alias of npm run build; postbuild packages the desktop app
+npm run build          # type-check and build the client; packages nothing, on any platform
+npm run package:desktop # build, then package the desktop app for this machine
+npm run package:windows # build, then package win32/x64 explicitly
+npm run package:mac    # build, then package darwin/arm64 (experimental; see below)
 npm run test:desktop   # smoke the packaged release/Diomedes-win32-x64/Diomedes.exe
 ```
 
-`npm run build` type-checks, builds the client, and then packages the desktop
-application through its `postbuild` step, always to the same
-`release/Diomedes-win32-x64` path. When you finish a change, run the build and
-`npm run test:desktop` so the release on disk is current and verified. Report the counts
-from your own run; a historical total is not evidence about your commit.
+`npm run build` type-checks and builds the client. It does not package, so it
+behaves the same on Windows, macOS and Linux. Packaging is its own command: on
+Windows, `npm run package:desktop` and `npm run package:windows` both write
+`release/Diomedes-win32-x64`. When you finish a change on Windows, run
+`npm run package:windows` and `npm run test:desktop` so the release on disk is
+current and verified.
+
+`npm run package:mac` is experimental and has not produced a Mac app. On any
+host it refuses until an offline Electron archive is supplied. On a **Mac** host
+it then refuses pending a decision about the packager's automatic ad-hoc
+signing. On a **Windows** host that second refusal does not apply: with the
+archive supplied and permission to create symbolic links (Developer Mode or an
+elevated shell) it will build a `.app` that nobody has launched, with Electron's
+default icon, no ASAR integrity digest and only the ad-hoc signature Electron
+ships with. Without symbolic-link permission it fails and says so. None of this
+affects `npm run build`, `npm run dev` or the tests. See
+[`docs/reference/MACOS_EXPERIMENTAL_EVIDENCE.md`](docs/reference/MACOS_EXPERIMENTAL_EVIDENCE.md)
+and [`docs/MAC_DEVELOPMENT_HANDOFF.md`](docs/MAC_DEVELOPMENT_HANDOFF.md).
 
 Browser tests use the installed Microsoft Edge with isolated data directories and ports;
 no browser is downloaded. These checks are separate because they spend real subscription

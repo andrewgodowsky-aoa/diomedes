@@ -304,6 +304,10 @@ These were found, weighed and deliberately not decided by this work.
   for a real release since it was rewritten, and `scripts/write-candidate-record.ts` does
   not yet record the desktop smoke, installer or installed-runtime gates, so the next
   release README will print those as not verified until it does.
+  *(Later that day: the record half is done. `--desktop-smoke`, `--installer-proof` and
+  `--installed-runtime` record a real outcome from a real report —
+  [`2026-09-20-release-gate-outcomes.md`](2026-09-20-release-gate-outcomes.md). The
+  asset writer's `main()` is still unexercised by a real release.)*
 - **Settings, About.** Its copy still says "Version 0.1." and describes a workbook.
 - **`installGovernance` in `server/harness/lifecycle.ts`** is not wired; if it is, it
   must early-return for the host's own test project as the other three hooks do.
@@ -328,7 +332,16 @@ These were found, weighed and deliberately not decided by this work.
   mirror that says the canonical document could not be updated. That competing authority
   is untouched here and still needs reconciling by its owner.
 
-All of this work is in source only. It is not packaged, it is not in the published 0.1.5
-installer, and it has not been run on any machine but the one it was written on. The
-integrator took the runs listed above and vouches for those; the four things at the head
-of this list need a person, a clean computer and an account.
+All of this work first shipped in the published 0.1.6 installer, built from `4a06a45`. It
+has still not been run on any machine but the one it was built on. The integrator took the
+runs listed above and vouches for those; the four things at the head of this list need a
+person, a clean computer and an account.
+
+Until 0.1.6 was cut, this paragraph said the work was in source only, was not packaged, and
+was not in the published 0.1.5 installer. Every word of that was true when it was written
+and no word of it had to change to stop being true: 0.1.5 was simply the release that
+happened to be published that day, so the sentence dated itself to a moment rather than to
+the work, and went on reading as "unshipped" after the thing shipped. A reader arriving here
+from the release would have been told the opposite of what they had just installed. The
+claim that actually earns its place is the one about the build machine, because that one is
+a statement about what has been proven and will stay false until someone proves otherwise.

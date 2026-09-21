@@ -91,5 +91,6 @@ it('keeps the committed icon identical to the drawing at every size', async () =
 it('embeds the icon when packaging Diomedes.exe', async () => {
   const script = await readText('scripts/package-desktop.mjs');
   expect(script).toContain("path.join(root, 'desktop/diomedes.ico')");
-  expect(script).toMatch(/packager\(\{[^}]*\bicon\b/);
+  // The packager is called through an injectable name so tests can substitute it.
+  expect(script).toMatch(/packageApp\(\{[^}]*\bicon\b/);
 });
