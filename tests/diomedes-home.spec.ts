@@ -844,3 +844,39 @@ test('CD05-R-10 closure: a conversation another window re-routed is mended by th
   )!;
   expect(mended.engine).toBe('claude-code');
 });
+
+test('CD05-R-07 closure: an answer that lands after the person left does not paint where they went', async ({
+  page,
+}) => {
+  const p = await reviewProject(page, 'R07e project');
+  const scope = page.getByRole('combobox', { name: 'In' });
+  // The message goes through. The transcript read that follows it is held.
+  const read = gate();
+  await page.route(
+    `**/api/projects/${p.id}/state`,
+    async (route) => {
+      const response = await route.fetch();
+      read.reached();
+      await read.held;
+      await route.fulfill({ response });
+      read.delivered();
+    },
+    { times: 1 },
+  );
+  try {
+    await say(page, 'Late R07e');
+    await read.recorded;
+    const homeRead = page.waitForResponse((r) => r.url().endsWith('/api/home/conversation'));
+    await scope.selectOption({ label: 'All projects' });
+    await homeRead;
+    await painted(page);
+    read.release();
+    await read.arrived;
+    await painted(page);
+    // The project's transcript and its answer belong to the visit that asked for them.
+    await expect(page.locator('.turn .body', { hasText: 'Late R07e' })).toHaveCount(0);
+    expect(await said(p.id, 'Late R07e')).toBe(1);
+  } finally {
+    read.release();
+  }
+});
