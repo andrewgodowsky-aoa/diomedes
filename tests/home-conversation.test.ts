@@ -12,7 +12,7 @@ import type { ClaudeSessionCheckpoint } from '../server/engines/claude-session';
 import { routeContractFor } from '../server/harness/route-contract';
 import { hash, identifier, now, type Store } from '../server/store';
 import type { MessageResult } from '../server/interaction-service';
-import type { Conversation, Project, Settings } from '../shared/types';
+import type { Conversation, Project, Settings, TaskCandidate } from '../shared/types';
 
 // The reserved workspace home Project and its one conversation, through the real app over
 // HTTP: the real Store, the real settings file, the real task and Work admission, with only
@@ -28,6 +28,7 @@ let server: Server | undefined;
 let service: EngineService;
 let base: string;
 let dispatches: TextRequest[];
+let nativeCalls: number;
 
 async function request(route: string, method = 'GET', body?: unknown) {
   return fetch(`${base}/api${route}`, {
@@ -48,6 +49,11 @@ async function open() {
     projectRoot: path.join(root, 'projects'),
     engineService: service,
     reviewerAdapter: null,
+    // No test here may reach a native worker. One that does is counted, then fails.
+    nativeGenerator: async () => {
+      nativeCalls += 1;
+      throw new Error('No native work runs in this fixture');
+    },
   });
   server = await new Promise<Server>((resolve) => {
     const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
@@ -95,6 +101,7 @@ function scripted(prompt: string) {
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-home-'));
   dispatches = [];
+  nativeCalls = 0;
   const adapter: PersistentTextAdapter<ClaudeSessionCheckpoint> = {
     id: 'claude-code',
     contract: routeContractFor('claude-code'),
@@ -461,4 +468,107 @@ test('from home an Automatic proposal naming no project needs a target, and one 
     reason: 'home-is-not-a-target',
   });
   expect(store().state(home.projectId).tasks).toEqual([]);
+});
+
+// Review r6, CD01-R-16. The two admission paths refused home, and the older direct route went
+// round both. These cases hold the whole home Project still, not only its task and session lists.
+
+/** Everything the older direct route could touch in the home Project. */
+async function homeRecords(home: Binding) {
+  const state = store().state(home.projectId);
+  const thread = state.conversations.find((item) => item.id === home.threadId)!;
+  return {
+    tasks: state.tasks.length,
+    sessions: state.sessions.length,
+    history: state.history.length,
+    plans: state.project.plans,
+    threads: state.conversations.length,
+    thread: [thread.mode, thread.engine, thread.turns.length],
+    files: (await fs.readdir(store().homeFolder())).sort(),
+  };
+}
+const direct = (projectId: string, threadId: string | undefined, patch: Record<string, unknown>) =>
+  request(`/projects/${projectId}/ask`, 'POST', {
+    ...(threadId ? { threadId } : {}),
+    route: 'sample',
+    text: 'Order plates',
+    sources: [],
+    consent: true,
+    ...patch,
+  });
+
+test('R-16: the direct route is refused in the home Project for every mode, before it touches anything', async () => {
+  const home = await provision();
+  const before = await homeRecords(home);
+  expect(before).toMatchObject({ tasks: 0, sessions: 0, thread: ['auto', 'claude-code', 0] });
+  const requests: Record<string, unknown>[] = [
+    { mode: 'build' },
+    { mode: 'fix', failing: { text: 'The order total is wrong.' } },
+    // Plan writes a file and a plans entry. Ask re-routes the thread it is given, and the home
+    // conversation only runs on Claude Code, so either would damage home without starting Work.
+    { mode: 'plan' },
+    { mode: 'ask' },
+  ];
+  for (const patch of requests)
+    for (const threadId of [home.threadId, undefined]) {
+      const response = await direct(home.projectId, threadId, patch);
+      expect([patch.mode, response.status]).toEqual([patch.mode, 409]);
+      expect(await response.text()).toContain('does not take direct requests');
+      expect(await homeRecords(home)).toEqual(before);
+    }
+  // The conversation itself is unharmed: its own route still answers.
+  expect((await send(home, 'm-after', 'Good morning')).outcome).toEqual({ status: 'answered' });
+  expect(dispatches).toHaveLength(1);
+});
+
+test('R-16: a native Build aimed at the home Project is refused before anything is sent', async () => {
+  const home = await provision();
+  await api('/settings', 'PUT', { services: { codex: true } });
+  const before = await homeRecords(home);
+  for (const mode of ['build', 'fix'])
+    for (const threadId of [home.threadId, undefined]) {
+      const response = await direct(home.projectId, threadId, {
+        route: 'codex',
+        mode,
+        ...(mode === 'fix' ? { failing: { text: 'The order total is wrong.' } } : {}),
+      });
+      expect([mode, response.status]).toEqual([mode, 409]);
+      expect(await homeRecords(home)).toEqual(before);
+    }
+  expect(nativeCalls).toBe(0);
+});
+
+test('R-16: no route makes a task in the home Project, so no Work start has one to run there', async () => {
+  const home = await provision();
+  // The one place a task is made refuses home, whoever asks.
+  expect(() =>
+    store().createTask(store().state(home.projectId), { name: 'Order plates' }),
+  ).toThrow(/not a place work runs/);
+  // A route that makes tasks through neither admission path: tasks found in a plan.
+  await fs.writeFile(path.join(store().homeFolder(), 'Plan.md'), '# Plan\n\n- Order plates\n');
+  const { found } = await api<{ found: TaskCandidate[] }>(
+    `/projects/${home.projectId}/plans/find-tasks`,
+    'POST',
+    { path: 'Plan.md' },
+  );
+  expect(found).toHaveLength(1);
+  const added = await request(`/projects/${home.projectId}/plans/add-tasks`, 'POST', {
+    path: 'Plan.md',
+    items: found,
+  });
+  expect(added.status).toBe(409);
+  expect(store().state(home.projectId).tasks).toEqual([]);
+  expect(await fs.readFile(path.join(store().homeFolder(), 'Plan.md'), 'utf8')).toBe(
+    '# Plan\n\n- Order plates\n',
+  );
+});
+
+test('R-16: an ordinary project keeps the direct route exactly as it was', async () => {
+  const mine = await realProject();
+  const response = await direct(mine.id, undefined, { mode: 'build' });
+  expect(response.status).toBe(200);
+  const state = store().state(mine.id);
+  expect([state.tasks.length, state.sessions.length]).toEqual([1, 1]);
+  expect(state.conversations.at(-1)).toMatchObject({ mode: 'build', engine: 'sample' });
+  expect(store().createTask(state, { name: 'Count the linen' }).name).toBe('Count the linen');
 });

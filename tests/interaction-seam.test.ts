@@ -735,3 +735,24 @@ test('R-10: a lineage that runs out of budget is replaced once, and the replacem
   expect(dispatches).toHaveLength(3);
   expect(lineagesOf()).toHaveLength(2);
 });
+
+test('R-16: the direct Build route cannot admit Work in the reserved home', async () => {
+  const home = await api<{ projectId: string; threadId: string }>(
+    '/home/conversation', 'POST', {},
+  );
+  const response = await request('/projects/' + home.projectId + '/ask', 'POST', {
+    threadId: home.threadId,
+    route: 'sample',
+    mode: 'build',
+    text: 'Order plates',
+    sources: [],
+    consent: true,
+  });
+  const state = store().state(home.projectId);
+  expect({
+    status: response.status,
+    tasks: state.tasks.length,
+    sessions: state.sessions.length,
+    mode: state.conversations.find((item) => item.id === home.threadId)!.mode,
+  }).toEqual({ status: 409, tasks: 0, sessions: 0, mode: 'auto' });
+});

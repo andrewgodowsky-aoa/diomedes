@@ -13,6 +13,67 @@ The reviews answered are
 Nothing here is implemented. This freezes shapes and boundaries so CD-02 and
 CD-05 can be written against one contract.
 
+## Round 7: the one defect review r6 found (2026-09-21)
+
+Astra's round-6 review (`2026-09-21-core-agent-contract-review-r6.md`) closed all five round-5
+findings and rejected the candidate on one new one. R-13 and her obligation O4 are narrowed to
+that same defect. Her sandbox could not run Vitest, so the reproducer was a source trace. It was
+pasted into `tests/interaction-seam.test.ts` unchanged and run before anything was edited, and it
+failed exactly as traced: `{ status: 200, tasks: 1, sessions: 1, mode: 'build' }`. As in rounds 5
+and 6, **where this section and the code disagree, the code and its tests are the candidate.**
+
+| Finding | Closed by | Proved by |
+|---|---|---|
+| R-16 P2, the direct route starts Work in the home Project | I-18 | seam: her R-16 case; home: four R-16 cases |
+| R-13 P2 and O4, home is never a Work target | I-18 | the same cases beside the 14 existing home cases |
+
+### I-18. No task is made in the home Project, and the direct route is refused there
+
+The home lane guarded the two admission paths, `createTaskFrom` and `admitWork`. The older direct
+route, `POST /api/projects/:id/ask`, reaches Work through neither: its sample branch makes a task
+and calls `WorkService.start`, and its native branch goes through `startCodexWork`. Guarding those
+two call sites would have repeated the mistake, a list of entrances with the next one missing. So
+the closure has two parts, and the first is the one that holds for every route.
+
+1. **`Store.createTask` makes no task in the home Project.** It is the single place a task is
+   made: every other caller in the server reaches it (the task route, plan tasks, both branches
+   of the direct route, `bridge.start` with no task, the connections service, the team service).
+   All three places a Work session is made, `WorkService.start`, `NativeWorkService.start` and
+   `bridge.start`, require a task in the same project and refuse without one. A project that can
+   hold no task can hold no Work session. The Store asks its own `isHomeProject`, which knows home
+   by its reserved folder and not by `settings.home`, as r6 required. This is one invariant at one
+   boundary. It is not a permission system and it consults nothing the Store did not already own.
+2. **The direct route refuses the home Project for every mode, before it reads or changes
+   anything.** Refusing only Build and Fix would satisfy the reproducer and leave two defects of
+   the same kind, both run and confirmed before this change. Under Plan the route writes a plan
+   file into the home folder and adds a plans entry. Under Ask, given the home thread, it sets
+   `conversation.engine` to the requested route and `conversation.mode` to `ask`; the messages
+   route then refuses every later message with "Select Claude Code for this conversation before
+   sending", and home is hidden from every screen that could change it back. The route already
+   refuses Automatic as "a conversation mode", so it was never the home conversation's entrance.
+   Reads of the home Project, its threads, `/messages`, `/select` and the outcome read are
+   untouched, and the first R-16 home case ends by sending the home conversation a message.
+
+The two existing `refuseHomeWork` calls stay. They refuse before a command is parsed, with the
+same sentence the Store now uses (`HOME_REFUSES_WORK`, exported once).
+
+Six guard-removal mutations cover this. Removing the Store guard, the direct-route guard or the
+Work route's guard is killed. Removing the task route's own guard **survives alone**: the Store
+now refuses the same request with the same words one call later, the same shape as M4 beside N7
+in round 6, which r6 read as sound. Removing it together with the Store guard is killed. Removing
+both the Store guard and the direct-route guard is killed by four cases, including the native
+Build case, which counts calls to an injected native generator and requires zero.
+
+### What round 7 does not contain
+
+- A guard on `PUT /api/projects/:id/threads/:threadId`. A raw client can still change the home
+  thread's engine or Mode through the ordinary thread update. That starts no Work and writes no
+  file, so it is outside R-16 and H2; it is recorded here because it has the same effect on the
+  conversation as the Ask case above. No screen can reach it, because home is never listed.
+- Any change to an ordinary project. The fourth R-16 home case sends the same direct Build to an
+  ordinary project and requires the task, the session and the thread exactly as before.
+- Any change to `server/work.ts`, `server/native-work.ts` or `server/harness/bridge.ts`.
+
 ## Round 6: the five code defects review r5 found (2026-09-21)
 
 Astra rejected the round-5 code (`2026-09-21-core-agent-contract-review-r5.md`) on five concrete

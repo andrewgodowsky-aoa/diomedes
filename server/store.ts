@@ -54,6 +54,9 @@ const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 /** The reserved home Project's folder under the project root, and what it is called. */
 const HOME_FOLDER = '.diomedes-home';
 const HOME_NAME = 'Diomedes';
+/** Said by every refusal to make a task or start work in the home Project. */
+export const HOME_REFUSES_WORK =
+  'The Diomedes conversation is not a place work runs. Name the project this work belongs to.';
 const HOME_THREAD_NAME = 'Diomedes';
 // Folders that never hold Diomedes documents; skipped during the documents walk.
 export const SKIPPED_FOLDERS = new Set([
@@ -1623,6 +1626,10 @@ export class Store extends EventEmitter {
     state: StoredState,
     input: { name: string; description?: string; sourceDocument?: string; owner?: Owner; from?: Task['from'] },
   ): Task {
+    // Home holds a conversation and nothing else. Every Work start needs a task in its own
+    // project and this is the one place a task is made, so refusing here is what keeps every
+    // route, present or later, from starting work there.
+    if (this.isHomeProject(state.project.id)) throw new ApiError(409, HOME_REFUSES_WORK);
     if (!input.name.trim()) throw new ApiError(400, 'Give this task a name.');
     const ids = state.tasks.map((t) => Number(t.id.slice(1))).filter(Number.isFinite);
     const task: Task = {
