@@ -332,7 +332,16 @@ These were found, weighed and deliberately not decided by this work.
   mirror that says the canonical document could not be updated. That competing authority
   is untouched here and still needs reconciling by its owner.
 
-All of this work is in source only. It is not packaged, it is not in the published 0.1.5
-installer, and it has not been run on any machine but the one it was written on. The
-integrator took the runs listed above and vouches for those; the four things at the head
-of this list need a person, a clean computer and an account.
+All of this work first shipped in the published 0.1.6 installer, built from `4a06a45`. It
+has still not been run on any machine but the one it was built on. The integrator took the
+runs listed above and vouches for those; the four things at the head of this list need a
+person, a clean computer and an account.
+
+Until 0.1.6 was cut, this paragraph said the work was in source only, was not packaged, and
+was not in the published 0.1.5 installer. Every word of that was true when it was written
+and no word of it had to change to stop being true: 0.1.5 was simply the release that
+happened to be published that day, so the sentence dated itself to a moment rather than to
+the work, and went on reading as "unshipped" after the thing shipped. A reader arriving here
+from the release would have been told the opposite of what they had just installed. The
+claim that actually earns its place is the one about the build machine, because that one is
+a statement about what has been proven and will stay false until someone proves otherwise.
