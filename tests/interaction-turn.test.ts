@@ -71,7 +71,7 @@ describe('identities', () => {
 
 describe('splitDecision', () => {
   it('reads an answer with no block as an answer', () => {
-    const split = splitDecision('  Tuesday, per prices.md.  ', SM, 'automatic');
+    const split = splitDecision('  Tuesday, per prices.md.  ', SM, 'automatic', 'When?');
     expect(split.answerText).toBe('Tuesday, per prices.md.');
     expect(split.body).toMatchObject({ block: 'absent', restriction: 'automatic', raw: null });
     expect(split.body.decision).toMatchObject({
@@ -83,7 +83,7 @@ describe('splitDecision', () => {
 
   it('takes the last block as the proposal and everything before it as the answer', () => {
     const answer = `I can start that.\n\n${block(proposal({ disposition: 'plan', operation_class: 'none' }))}\n\nMore.\n\n${block(proposal())}`;
-    const split = splitDecision(answer, SM, 'automatic');
+    const split = splitDecision(answer, SM, 'automatic', 'Order the usual');
     expect(split.body.block).toBe('parsed');
     expect(split.body.decision).toMatchObject({
       disposition: 'act',
@@ -109,7 +109,7 @@ describe('splitDecision', () => {
       'an identity with a space added': block(proposal({ source_message_id: SM + ' ' })),
     };
     for (const [name, text] of Object.entries(cases)) {
-      const split = splitDecision(`Here is the answer.\n\n${text}`, SM, 'automatic');
+      const split = splitDecision(`Here is the answer.\n\n${text}`, SM, 'automatic', 'Order');
       expect(split.body.block, name).toBe('refused');
       expect(split.body.decision, name).toMatchObject({
         disposition: 'respond',
@@ -123,15 +123,19 @@ describe('splitDecision', () => {
 
   it('refuses any proposal when the identity it was given is not one the server issues', () => {
     const forged = 'client-made-id';
-    const split = splitDecision(block(proposal({ source_message_id: forged })), forged, 'automatic');
+    const split = splitDecision(block(proposal({ source_message_id: forged })), forged, 'automatic', 'x');
     expect(split.body.block).toBe('refused');
   });
 
   it('is pure: the splitter handed to the driver gives the same body every time', () => {
-    const decide = decideWith(SM, 'plan-only');
+    const decide = decideWith(SM, 'plan-only', 'Plan the order');
     const answer = `Plan below.\n\n${block(proposal({ disposition: 'plan', operation_class: 'none' }))}`;
     expect(decide(answer)).toEqual(decide(answer));
-    expect(decide(answer).body).toMatchObject({ restriction: 'plan-only', block: 'parsed' });
+    expect(decide(answer).body).toMatchObject({
+      text: 'Plan the order',
+      restriction: 'plan-only',
+      block: 'parsed',
+    });
   });
 });
 
@@ -164,7 +168,10 @@ describe('outcomeOf', () => {
     sourceMessageId: SM,
     body: body as InteractionPhase['body'],
   });
-  const decided = phase('decision', splitDecision(`Ok.\n\n${block(proposal())}`, SM, 'automatic').body);
+  const decided = phase(
+    'decision',
+    splitDecision(`Ok.\n\n${block(proposal())}`, SM, 'automatic', 'Order the usual').body,
+  );
   const none = { projectId: null, taskId: null, sessionId: null };
   const proposed: AdmissionVerdict = {
     outcome: 'proposed',

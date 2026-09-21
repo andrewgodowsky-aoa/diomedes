@@ -79,6 +79,12 @@ const SNAKE_TO_CAMEL = new Map<string, string>(
 /** `absent`: no block, an ordinary answer. `refused`: a block that is not a valid proposal for this message. */
 export type DecisionBlock = 'absent' | 'parsed' | 'refused';
 export interface DecisionPhaseBody {
+  /**
+   * What the person typed. It is the instruction any work proposed from this message is
+   * started with, and it is read from here on every retry, so a task or a Work command made
+   * for this message always carries the same payload and reaches its own receipt.
+   */
+  text: string;
   restriction: Restriction;
   block: DecisionBlock;
   decision: InteractionDecision;
@@ -113,6 +119,7 @@ export function splitDecision(
   answer: string,
   sourceMessageId: string,
   restriction: Restriction,
+  text: string,
 ): { answerText: string; body: DecisionPhaseBody } {
   const lines = answer.split('\n');
   let open = -1;
@@ -125,7 +132,7 @@ export function splitDecision(
   if (open < 0)
     return {
       answerText: answer.trim(),
-      body: { restriction, block: 'absent', decision: fallback, raw: null },
+      body: { text, restriction, block: 'absent', decision: fallback, raw: null },
     };
   const answerText = lines.slice(0, open).join('\n').trim();
   let close = -1;
@@ -138,6 +145,7 @@ export function splitDecision(
   const refused = {
     answerText,
     body: {
+      text,
       restriction,
       block: 'refused' as const,
       decision: fallback,
@@ -166,13 +174,16 @@ export function splitDecision(
     decision.data.sourceMessageId !== sourceMessageId
   )
     return refused;
-  return { answerText, body: { restriction, block: 'parsed', decision: decision.data, raw: null } };
+  return {
+    answerText,
+    body: { text, restriction, block: 'parsed', decision: decision.data, raw: null },
+  };
 }
 
 /** The splitter the driver is handed for one message. Pure, so it gives the same body on every replay. */
-export function decideWith(sourceMessageId: string, restriction: Restriction) {
+export function decideWith(sourceMessageId: string, restriction: Restriction, text: string) {
   return (answer: string): { answerText: string; body: Json } => {
-    const split = splitDecision(answer, sourceMessageId, restriction);
+    const split = splitDecision(answer, sourceMessageId, restriction, text);
     return { answerText: split.answerText, body: split.body as unknown as Json };
   };
 }
