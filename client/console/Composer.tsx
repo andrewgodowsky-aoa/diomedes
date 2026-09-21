@@ -14,19 +14,23 @@ export const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
 export const CAPS: Record<Mode, string> = {
   ask: 'Nothing in the project changes.',
   plan: 'A plan you read before work begins.',
+  auto: 'Diomedes answers, and says when something needs doing.',
   build: 'Applied only on your go-ahead.',
   fix: 'The smallest change that clears the failure.',
 };
 const PLACEHOLDERS: Record<Mode, string> = {
   ask: 'Ask or think out loud',
   plan: 'What should the plan cover?',
+  auto: 'Ask Diomedes',
   build: 'What should be done?',
   fix: 'What went wrong?',
 };
-/** Trailing line per mode: width in px; plan draws dashed. */
+/** Trailing line per mode: width in px; plan draws dashed. `auto` is not a
+ * strip button, so its line is never drawn; the width is unused. */
 const LINE_FOR: Record<Mode, [number, boolean]> = {
   ask: [0, false],
   plan: [22, true],
+  auto: [0, false],
   build: [34, false],
   fix: [12, false],
 };

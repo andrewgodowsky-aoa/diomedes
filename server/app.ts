@@ -26,6 +26,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type {
   Conversation,
+  ConversationLineage,
   Owner,
   Page,
   ProjectState,
@@ -75,7 +76,7 @@ import { WorkControl } from './work-control.js';
 import { DesktopConnections } from './connections/desktop.js';
 import { toastConnector } from './connections/fixture.js';
 import { compiledConnectionDemoConnectors } from './connections/compiler-demo.js';
-import { digest as evidenceDigest } from './harness/policy.js';
+import { digest as evidenceDigest, HarnessError } from './harness/policy.js';
 import { mountReadinessRoutes } from './readiness/routes.js';
 import { loadShippedProductKnowledge } from './readiness/instructions.js';
 import packageInfo from '../package.json' with { type: 'json' };
@@ -89,6 +90,18 @@ import {
 } from '../shared/engines.js';
 import { EngineService } from './engines/service.js';
 import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
+import { mountInteractionRoutes } from './engines/interaction-routes.js';
+import { InteractionTurns, type InteractionHost } from './interaction-service.js';
+import {
+  commandBinding,
+  decideWith,
+  instructionsFor,
+  previewGate,
+  promptFor,
+  restrictionOf,
+  sourceMessageIdFor,
+} from './interaction-turn.js';
+import { findCommand } from './command-admission.js';
 import { claudeSessionRunId } from './harness/claude-session-run.js';
 import { baselineRedact } from './secrets.js';
 import { EngineError } from './engines/process.js';
@@ -1581,59 +1594,65 @@ export async function createApp(options: AppOptions) {
       autoUpdate: store.state(id(req)).autoUpdate,
     })),
   );
+  /**
+   * The task route's own creation path, called with the store lock held. A task proposed from
+   * a conversation is made by calling exactly this with the command id derived for that
+   * message, so the protocol check, the receipt replay and the journal entry are the ones a
+   * person's task goes through. Nothing here is duplicated elsewhere.
+   */
+  const createTaskFrom = async (projectId: string, b: Record<string, unknown>) => {
+    const state = store.state(projectId);
+    const command = parseTaskCommand(b);
+    if (command) {
+      // A replay answers before validation: the admitted task is the evidence.
+      const replay = store.taskCommand(
+        projectId,
+        command.admission.commandId,
+        command.admission.payloadDigest,
+      );
+      if (replay) return replay;
+    }
+    // The document is checked against a fresh listing on both the versioned and the
+    // unversioned path, before anything is created.
+    const requested = command ? command.input.sourceDocument : b.sourceDocument;
+    const sourceDocument = requested === undefined ? undefined : relativeName(requested);
+    if (sourceDocument !== undefined) {
+      if (sourceDocument.length > 1000)
+        throw new ApiError(400, 'Select a project document with a shorter path.');
+      const problem = taskDocumentProblem(sourceDocument, await store.listDocuments(projectId));
+      if (problem) throw new ApiError(400, problem);
+    }
+    const task = store.createTask(state, {
+      ...(command?.input ?? {
+        name: asString(b.name, 'a task name', 200),
+        description: typeof b.description === 'string' ? b.description.slice(0, 10000) : '',
+        owner: b.owner === undefined ? 'you' : choice(b.owner, owners, 'owner'),
+      }),
+      ...(sourceDocument !== undefined ? { sourceDocument } : {}),
+    });
+    const entry = store.addEntry(state, {
+      kind: 'tasks-made',
+      sentence: `You made a task: ${task.name}`,
+      taskId: task.id,
+    });
+    if (command) {
+      task.creationReceipt = {
+        protocolVersion: 1,
+        ...command.admission,
+        projectId: state.project.id,
+        taskId: task.id,
+        eventId: entry.id,
+        admittedAt: entry.time,
+        actor: 'local-client',
+        scope: 'local-prototype',
+      };
+    }
+    await store.persist(state);
+    return task;
+  };
   app.post(
     '/api/projects/:id/tasks',
-    route(async (req) => {
-      const b = body(req),
-        state = store.state(id(req));
-      const command = parseTaskCommand(b);
-      if (command) {
-        // A replay answers before validation: the admitted task is the evidence.
-        const replay = store.taskCommand(
-          id(req),
-          command.admission.commandId,
-          command.admission.payloadDigest,
-        );
-        if (replay) return replay;
-      }
-      // The document is checked against a fresh listing on both the versioned and the
-      // unversioned path, before anything is created.
-      const requested = command ? command.input.sourceDocument : b.sourceDocument;
-      const sourceDocument = requested === undefined ? undefined : relativeName(requested);
-      if (sourceDocument !== undefined) {
-        if (sourceDocument.length > 1000)
-          throw new ApiError(400, 'Select a project document with a shorter path.');
-        const problem = taskDocumentProblem(sourceDocument, await store.listDocuments(id(req)));
-        if (problem) throw new ApiError(400, problem);
-      }
-      const task = store.createTask(state, {
-        ...(command?.input ?? {
-          name: asString(b.name, 'a task name', 200),
-          description: typeof b.description === 'string' ? b.description.slice(0, 10000) : '',
-          owner: b.owner === undefined ? 'you' : choice(b.owner, owners, 'owner'),
-        }),
-        ...(sourceDocument !== undefined ? { sourceDocument } : {}),
-      });
-      const entry = store.addEntry(state, {
-        kind: 'tasks-made',
-        sentence: `You made a task: ${task.name}`,
-        taskId: task.id,
-      });
-      if (command) {
-        task.creationReceipt = {
-          protocolVersion: 1,
-          ...command.admission,
-          projectId: state.project.id,
-          taskId: task.id,
-          eventId: entry.id,
-          admittedAt: entry.time,
-          actor: 'local-client',
-          scope: 'local-prototype',
-        };
-      }
-      await store.persist(state);
-      return task;
-    }),
+    route(async (req) => createTaskFrom(id(req), body(req))),
   );
   app.put(
     '/api/projects/:id/tasks/auto',
@@ -2470,6 +2489,320 @@ export async function createApp(options: AppOptions) {
       });
     },
   });
+  // The Diomedes conversation. `InteractionTurns` owns the sequence; what follows is only what
+  // the Store and the existing admission paths supply to it. Each method takes and releases
+  // its own lock, and none of them holds one while a provider runs.
+  const interactionHost: InteractionHost = {
+    resolve: (projectId, threadId, command, options) =>
+      store.locked(async () => {
+        const driver = engines.nativeSessions;
+        if (!driver) throw new ApiError(503, 'The native conversation runtime is unavailable.');
+        // Clone first, as the projection does: a failed persist must leave nothing half admitted.
+        const state = structuredClone(store.state(projectId));
+        const thread = state.conversations.find((item) => item.id === threadId);
+        if (!thread) throw new ApiError(404, 'This thread was not found.');
+        const sourceMessageId = sourceMessageIdFor(projectId, threadId, command.commandId);
+        const restriction = restrictionOf(command.mode);
+        const lineages = thread.lineages ?? [];
+        const request = {
+          projectId,
+          threadId,
+          requestId: command.commandId,
+          prompt: promptFor(command.mode, command.text, sourceMessageId),
+          instructions: instructionsFor(command.mode, MODES[command.mode].instructions),
+          // From the parsed command alone, before any setting or file is read, so a retry is
+          // compared with what was sent even after either has changed.
+          binding: commandBinding('message', command),
+          interaction: {
+            sourceMessageId,
+            decide: decideWith(sourceMessageId, restriction, command.text),
+          },
+        };
+        const resolved = { projectId, threadId, commandId: command.commandId, sourceMessageId };
+        // A command this thread already holds is found first, through every lineage it ever
+        // had, retired ones included, and before the engine, the model or a file is looked at.
+        const located = await driver.locate(
+          projectId,
+          [...lineages].reverse().map((lineage) => lineage.runId),
+          command.commandId,
+        );
+        if (located?.answered)
+          return {
+            ...resolved,
+            restriction,
+            runId: located.runId,
+            action: 'follow-up' as const,
+            replay: true,
+            text: command.text,
+            mode: command.mode,
+            // Nothing is generated, so nothing here is sent anywhere: no file is read again
+            // and no model is chosen. The driver compares the binding and reads the record.
+            input: { ...request, documents: [], model: '', accountRoute: '' },
+          };
+        if (
+          located &&
+          (located.settled || lineages.find((lineage) => lineage.runId === located.runId)?.retired)
+        )
+          return { unfinished: true as const, runId: located.runId, sourceMessageId };
+        if (selectedEngine(store.settings, state.project, thread) !== 'claude-code')
+          throw new ApiError(409, 'Select Claude Code for this conversation before sending.');
+        if (store.settings.services?.['claude-code'] !== true)
+          throw new ApiError(409, 'Turn Claude Code on in Settings before sending.');
+        const accountRoute = store.settings.services?.['claude-codeAccountRoute'];
+        const selection = nativeChoice('claude-code', projectId, thread);
+        if (!selection.model || typeof accountRoute !== 'string')
+          throw new ApiError(409, 'Select the Claude account and model in Settings first.');
+        const paths = new Set<string>();
+        const documents = [];
+        for (const source of command.sources) {
+          const name = relativeName(source.path);
+          if (paths.has(name.toLowerCase()))
+            throw new ApiError(400, 'Choose each source file once.');
+          paths.add(name.toLowerCase());
+          const document = await store.readDocument(projectId, name);
+          if (document.sha !== source.sha)
+            throw new ApiError(409, `${name} changed. Choose its current version before sending.`);
+          documents.push({ path: name, text: document.text });
+        }
+        if (
+          documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0) >
+          128_000
+        )
+          throw new ApiError(413, 'Choose less than 128 KB of source text for this request.');
+        // One current lineage per mode. Retiring one and admitting its replacement are a single
+        // mutation, and the next generation counts every entry the thread ever had.
+        let current: ConversationLineage | undefined = lineages
+          .filter((lineage) => lineage.mode === command.mode && !lineage.retired)
+          .sort((a, b) => b.generation - a.generation)[0];
+        let changed = false;
+        if (current && options.replace && !located) {
+          current.retired = options.replace;
+          current = undefined;
+          changed = true;
+        }
+        if (!current) {
+          const generation = 1 + Math.max(0, ...lineages.map((lineage) => lineage.generation));
+          current = {
+            mode: command.mode,
+            generation,
+            runId: claudeSessionRunId(
+              projectId,
+              `lineage.${evidenceDigest({ threadId, mode: command.mode, generation }).slice(0, 40)}`,
+            ),
+          };
+          thread.lineages = [...lineages, current];
+          changed = true;
+        }
+        if (changed) await store.persist(state);
+        const runId = current.runId;
+        const known = await driver.status(projectId, runId).catch((error: unknown) => {
+          if (error instanceof HarnessError && error.code === 'unknown_run') return null;
+          throw error;
+        });
+        const action = !known
+          ? ('start' as const)
+          : known.connected
+            ? ('follow-up' as const)
+            : known.nativeSession
+              ? ('resume' as const)
+              : ('start' as const);
+        // One resolved identity: progress, execution and projection all name the run that ran.
+        const progress = (kind: 'started' | 'delta' | 'ended', frame?: TransientPreview) =>
+          store.emit('engine-text', {
+            projectId,
+            threadId,
+            requestId: command.commandId,
+            runId,
+            kind,
+            ...(frame
+              ? {
+                  stepId: frame.stepId,
+                  attempt: frame.attempt,
+                  fence: frame.fence,
+                  seq: frame.seq,
+                  text: frame.text,
+                }
+              : {}),
+          });
+        progress('started');
+        let ended = false;
+        options.whenDone?.(() => {
+          if (!ended) {
+            ended = true;
+            progress('ended');
+          }
+        });
+        // Frames keep their dense sequence; only their text is held back, so the decision
+        // block never reaches a person's screen while the answer streams.
+        const gate = command.mode === 'auto' ? previewGate() : (text: string) => text;
+        return {
+          ...resolved,
+          restriction,
+          runId,
+          action,
+          replay: false,
+          text: command.text,
+          mode: command.mode,
+          input: {
+            ...request,
+            documents,
+            model: selection.model,
+            accountRoute,
+            signal: options.signal,
+            onPreview: (frame: TransientPreview) =>
+              progress('delta', { ...frame, text: gate(frame.text) }),
+          },
+        };
+      }),
+    locate: (projectId, threadId, commandId) =>
+      store.locked(async () => {
+        const driver = engines.nativeSessions;
+        if (!driver) throw new ApiError(503, 'The native conversation runtime is unavailable.');
+        const thread = store
+          .state(projectId)
+          .conversations.find((item) => item.id === threadId);
+        if (!thread) throw new ApiError(404, 'This thread was not found.');
+        const located = await driver.locate(
+          projectId,
+          [...(thread.lineages ?? [])].reverse().map((lineage) => lineage.runId),
+          commandId,
+        );
+        if (!located) return null;
+        const mode = thread.mode;
+        return {
+          ...located,
+          sourceMessageId: sourceMessageIdFor(projectId, threadId, commandId),
+          // The Mode control as it stands now. A thread on a work mode is not a conversation
+          // that may start anything from here, so it reads as the narrowest limit.
+          restriction: restrictionOf(mode === 'auto' || mode === 'plan' ? mode : 'ask'),
+        };
+      }),
+    project: (resolved, result) =>
+      store.locked(async () => {
+        const state = structuredClone(store.state(resolved.projectId));
+        const thread = state.conversations.find((item) => item.id === resolved.threadId);
+        if (!thread)
+          throw new ApiError(
+            404,
+            'The response is recorded in the runtime, but its thread is missing.',
+          );
+        const identity = hash(JSON.stringify([result.runId, resolved.commandId]))!;
+        const userId = `Uclaude-${identity.slice(0, 32)}`;
+        const assistantId = `Aclaude-${identity.slice(0, 32)}`;
+        const priorUser = thread.turns.find((turn) => turn.id === userId);
+        const priorAssistant = thread.turns.find((turn) => turn.id === assistantId);
+        if (priorUser || priorAssistant) {
+          if (priorUser?.text !== resolved.text || priorAssistant?.text !== result.text)
+            throw new ApiError(
+              409,
+              'The recorded conversation projection conflicts with this native response.',
+            );
+          return;
+        }
+        const at = now();
+        const sources = resolved.input.documents.map((document) => document.path);
+        thread.turns.push(
+          {
+            id: userId,
+            role: 'you',
+            mode: resolved.mode,
+            // What the person typed. The identity line the model was given is never shown.
+            text: resolved.text,
+            at,
+            sources,
+            route: 'claude-code',
+          },
+          {
+            id: assistantId,
+            role: 'assistant',
+            mode: resolved.mode,
+            // The answer without its decision block. The whole answer stays in the run.
+            text: result.text,
+            at,
+            sources,
+            route: 'claude-code',
+            helper: {
+              engine: 'claude-code',
+              model: result.model,
+              version: result.version,
+              verified: true,
+            },
+            origin: directOrigin({
+              engine: 'claude-code',
+              requestedModel: resolved.input.model || result.model,
+              reportedModel: result.model,
+              version: result.version,
+              accountRoute:
+                resolved.input.accountRoute ||
+                String(store.settings.services?.['claude-codeAccountRoute'] ?? ''),
+              executorId: 'claude-code',
+            }),
+          },
+        );
+        thread.helper = { engine: 'claude-code', model: result.model };
+        thread.mode = resolved.mode;
+        touchThread(thread, at, state.tasks);
+        await store.persist(state);
+      }),
+    admissionContext: async () => ({
+      // The reserved home Project is provisioned by CD-02h O4. Until it is, no project is home.
+      homeProjectId: null,
+      targetableProjectIds: (await store.projects()).map((project) => project.id),
+    }),
+    receipts: (projectId, ids) =>
+      store.locked(async () => {
+        const state = store.state(projectId);
+        const task = findCommand(state, ids.taskCommandId);
+        const work = findCommand(state, ids.workCommandId);
+        return {
+          projectId,
+          taskId: task?.type === 'task.create' ? task.subject.id : null,
+          sessionId: work?.type === 'work.start' ? work.subject.id : null,
+        };
+      }),
+    createTask: (projectId, command) =>
+      store.locked(async () => {
+        const task = await createTaskFrom(projectId, {
+          protocolVersion: 1,
+          commandId: command.commandId,
+          name: command.name,
+          description: command.description,
+          owner: 'diomedes-with-ok',
+        });
+        return { taskId: task.id };
+      }),
+    startWork: (projectId, command) =>
+      store.locked(async () => {
+        const session = (await admitWork(
+          projectId,
+          {
+            protocolVersion: 1,
+            commandId: command.commandId,
+            taskId: command.taskId,
+            // The target project's own engine, as a person's Start there would use.
+            route: selectedEngine(store.settings, store.state(projectId).project, null),
+            instruction: command.instruction,
+            sources: [],
+            // The person's selection of this exact proposal carried this consent.
+            consent: true,
+          },
+          undefined,
+        )) as { id: string };
+        return { sessionId: session.id };
+      }),
+  };
+  mountInteractionRoutes(app, new InteractionTurns(engines, interactionHost), {
+    authorize: async (req) => {
+      store.state(String(req.params.id));
+    },
+    context: (req) => ({
+      signal: req.res ? connectionSignal(req.res) : undefined,
+      whenDone: (end) => {
+        req.res?.once('finish', end);
+        req.res?.once('close', end);
+      },
+    }),
+  });
   const codexHelper = (result: {
     model?: string;
     version?: string;
@@ -2652,6 +2985,11 @@ export async function createApp(options: AppOptions) {
             : choice(b.route, ROUTES, 'service');
       const parsedMode = modeOf(b.mode);
       if (!parsedMode) throw new ApiError(400, 'Choose a valid mode.');
+      if (parsedMode === 'auto')
+        throw new ApiError(
+          409,
+          'Automatic is a conversation mode. Direct execution does not accept it.',
+        );
       const mode = parsedMode;
       const attached =
         b.attachedTo === undefined ? { kind: 'project', ref: projectId } : plain(b.attachedTo);
