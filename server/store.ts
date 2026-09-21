@@ -3,6 +3,7 @@ import { validateTaskReceipts } from './task-admission.js';
 import { ScopeGrants, validateScopeGrants } from './trust/scope-grants.js';
 import { validateAgentResolutions } from './agents.js';
 import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/attribution.js';
+import { diomedesThread } from '../shared/diomedes-thread.js';
 import { HOST_TEST_PROJECT } from '../shared/engines.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
 import fs from 'node:fs/promises';
@@ -58,6 +59,11 @@ const HOME_NAME = 'Diomedes';
 export const HOME_REFUSES_WORK =
   'The Diomedes conversation is not a place work runs. Name the project this work belongs to.';
 const HOME_THREAD_NAME = 'Diomedes';
+/** What a project's own Diomedes conversation is called: the same name, in the project's own list. */
+const PROJECT_THREAD_NAME = 'Diomedes';
+/** Said when a project conversation is asked for in the reserved home Project, which is not one. */
+const HOME_HAS_ITS_OWN_PROVISIONER =
+  'The conversation across all projects has its own provisioner. Ask for it there.';
 // Folders that never hold Diomedes documents; skipped during the documents walk.
 export const SKIPPED_FOLDERS = new Set([
   'node_modules',
@@ -893,6 +899,57 @@ export class Store extends EventEmitter {
         home: { projectId: project.id, threadId: thread.id, revision: 1 },
       });
       return { projectId: project.id, threadId: thread.id };
+    });
+  }
+  /**
+   * A project's own Diomedes conversation: the thread `diomedesThread` picks,
+   * adopted when it is already there and made once when it is not. Two windows
+   * sending their first message in a fresh project both arrive here, and one
+   * locked sequence is what makes that one conversation rather than two.
+   *
+   * It takes the lock itself, as `provisionHome` does, so call it from a route
+   * that is not already holding it. It writes only when it changed something: a
+   * call that finds the conversation already pinned persists nothing at all.
+   *
+   * The reserved home Project is refused. Work never runs there and its own
+   * conversation is `provisionHome`'s, not a project conversation.
+   */
+  async provisionProjectConversation(
+    projectId: string,
+  ): Promise<{ projectId: string; threadId: string }> {
+    return this.locked(async () => {
+      const state = this.state(projectId);
+      if (this.isHomeProject(projectId)) throw new ApiError(409, HOME_HAS_ITS_OWN_PROVISIONER);
+      const found = diomedesThread(state.conversations);
+      if (!found) {
+        const stamped = now();
+        const thread: Conversation = {
+          id: identifier('C'),
+          attachedTo: { kind: 'project', ref: projectId },
+          turns: [],
+          name: PROJECT_THREAD_NAME,
+          createdAt: stamped,
+          updatedAt: stamped,
+          taskId: null,
+          helper: null,
+          permission: 'show-first',
+          mode: 'auto',
+          // Diomedes talks through Claude Code whatever the project's own work
+          // runs on, and the work it starts still runs on the project's AI.
+          engine: 'claude-code',
+        };
+        state.conversations.push(thread);
+        await this.persist(state);
+        return { projectId, threadId: thread.id };
+      }
+      // Exactly what the thread update route does for this engine and nothing
+      // more: the thread's name, Mode, permission and helper choice stay its
+      // own, and no other thread in the project is touched.
+      if (found.engine !== 'claude-code') {
+        found.engine = 'claude-code';
+        await this.persist(state);
+      }
+      return { projectId, threadId: found.id };
     });
   }
   async saveSettings(input: Settings) {
