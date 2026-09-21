@@ -14,7 +14,7 @@ import { EngineError } from './engines/process.js';
 import type { EngineService } from './engines/service.js';
 import { isModelApiRoute, type ModelApiRoute } from '../shared/model-api.js';
 import { ApiError } from './paths.js';
-import type { MessageResult } from '../shared/conversation.js';
+import type { InterruptResponse, MessageResult } from '../shared/conversation.js';
 import type { InteractionDecision } from '../shared/interaction.js';
 import {
   admitInteraction,
@@ -148,6 +148,19 @@ export interface ConversationDriver {
     runId: string,
     commandId: string,
   ): Promise<{ answered: boolean; interrupted: boolean } | null>;
+  /**
+   * Signals the active turn of this exact command on this run to stop. The run's
+   * own project check happens inside; the acknowledgement is transport-level:
+   * `requested` means the run's active entry was this command's and its signal
+   * fired, `idle` that nothing is running for it, `superseded` that its active
+   * command is a different one. None of the three is durable proof; the
+   * recorded turn result stays the authority.
+   */
+  interruptCommand(
+    projectId: string,
+    runId: string,
+    commandId: string,
+  ): Promise<{ state: 'requested' | 'idle' | 'superseded' }>;
 }
 
 /** What the host supplies. Every method that touches the Store takes and releases its own lock. */
@@ -253,7 +266,7 @@ export class InteractionTurns {
     private readonly host: InteractionHost,
   ) {}
 
-  /** The driver that owns a run. Model-API conversation runs are named `model-…`. */
+  /** The driver that owns a run. Model-API conversation runs are named `model-...`. */
   private driver(runId?: string): ConversationDriver {
     if (runId?.startsWith('model-')) {
       if (!this.engines.modelSessions)
@@ -465,6 +478,30 @@ export class InteractionTurns {
       interrupted: turn?.interrupted ?? false,
       outcome: outcome.outcome,
     };
+  }
+
+  /**
+   * A Stop press on one message. The command's own recorded turn result is the
+   * authority: when it exists the answer is `settled`, whatever state the run is
+   * in. Otherwise the driver that owns the command's run, found by run id and
+   * never by the thread's current route or anything a client sent, is asked to
+   * signal it, and its acknowledgement is returned as given: `requested` is not
+   * proof the turn durably stopped. No durable command, no target: a command
+   * that never reached a recorded turn is not found, which is truthful at that
+   * instant and no promise it will never run.
+   */
+  async interrupt(
+    projectId: string,
+    threadId: string,
+    commandId: string,
+  ): Promise<InterruptResponse> {
+    const located = await this.host.locate(projectId, threadId, commandId);
+    if (!located) throw new ApiError(404, 'This message was not found.');
+    const driver = this.driver(located.runId);
+    const turn = await driver.turnResult(projectId, located.runId, commandId);
+    if (turn) return { commandId, runId: located.runId, state: 'settled' };
+    const ack = await driver.interruptCommand(projectId, located.runId, commandId);
+    return { commandId, runId: located.runId, state: ack.state };
   }
 
   private async read(

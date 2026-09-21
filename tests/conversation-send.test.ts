@@ -690,3 +690,273 @@ test('CD05-R-06: another window retries the pending command', async () => {
   // Candidate sends uuid-2 here, after two attempts with uuid-1 in the first window.
   expect(sent(2)).toEqual(original);
 });
+
+// The identity a Stop may act on: it is issued only by the locked section that saved or adopted
+// the claim, and the interrupt asks for that command and no other. Nothing else -- not a stored
+// record a send merely found, not a read that dispatched nothing -- may hand Stop a command.
+describe('the dispatch identity a Stop may act on', () => {
+  /** A second window: this browser's local storage and locks, a new session store and module. */
+  const newWindow = async () => {
+    vi.stubGlobal('sessionStorage', makeStorage());
+    vi.resetModules();
+    return import('../client/conversation-send.js');
+  };
+
+  test('the issued identity names the saved command, and the interrupt posts for it alone', async () => {
+    let issued: { projectId: string; threadId: string; commandId: string } | null = null;
+    fetchMock.mockImplementationOnce(answered);
+    await mod.sendMessage(PROJECT, THREAD, input(), undefined, (identity) => {
+      issued = identity;
+    });
+    expect(issued).toEqual({ projectId: PROJECT, threadId: THREAD, commandId: 'uuid-1' });
+    fetchMock.mockReset().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ commandId: 'uuid-1', runId: 'run-1', state: 'requested' }),
+    });
+    const ack = await mod.interruptMessage(PROJECT, THREAD, issued!.commandId);
+    expect(ack).toMatchObject({ commandId: 'uuid-1', runId: 'run-1', state: 'requested' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`/api/projects/${PROJECT}/threads/${THREAD}/messages/uuid-1/interrupt`);
+    expect(init.method).toBe('POST');
+    // No runId, no engine, nothing else: the path names the whole request.
+    expect(JSON.parse(init.body)).toEqual({});
+  });
+
+  test('an interrupt acknowledgement is not the outcome: the pending claim stays pending', async () => {
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    fetchMock.mockReset().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ commandId: 'uuid-1', runId: 'run-1', state: 'requested' }),
+    });
+    await mod.interruptMessage(PROJECT, THREAD, 'uuid-1');
+    // `requested` acknowledged a transport. The claim is not cleared and nothing is confirmed:
+    // the recorded outcome stays the only answer about what the message came to.
+    expect(JSON.parse(local.getItem(CLAIM)!).commandId).toBe('uuid-1');
+    expect(JSON.parse(session.getItem(PENDING)!).commandId).toBe('uuid-1');
+    expect(mod.lastCommand(PROJECT, THREAD)).toBeNull();
+  });
+
+  test('an interrupt for a command the thread never held is refused, not reported stopped', async () => {
+    fetchMock.mockResolvedValueOnce(refused(404));
+    await expect(mod.interruptMessage(PROJECT, THREAD, 'cmd-unknown')).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+
+  test('a send asked to stop before it began saves and sends nothing', async () => {
+    const stop = new AbortController();
+    stop.abort();
+    await expect(mod.sendMessage(PROJECT, THREAD, input(), stop.signal)).rejects.toThrow(
+      /still sending/,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(session.getItem(PENDING)).toBeNull();
+    expect(local.getItem(CLAIM)).toBeNull();
+  });
+
+  test('a Stop that lands inside the lock, before the save, saves and sends nothing', async () => {
+    const stop = new AbortController();
+    const read = local.getItem;
+    local.getItem = (key: string) => {
+      const value = read(key);
+      // The abort lands after the claim was read but before the send could save or dispatch.
+      if (key === CLAIM) stop.abort();
+      return value;
+    };
+    await expect(mod.sendMessage(PROJECT, THREAD, input(), stop.signal)).rejects.toThrow(
+      /Stopped/,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(local.getItem(CLAIM)).toBeNull();
+    expect(session.getItem(PENDING)).toBeNull();
+  });
+
+  test("a same-window join is issued the in-flight send's identity, not a new command", async () => {
+    let release!: () => void;
+    fetchMock.mockImplementationOnce(
+      () => new Promise((resolve) => (release = () => resolve(answered()))),
+    );
+    const claims: (string | null)[] = [null, null];
+    const first = mod.sendMessage(PROJECT, THREAD, input(), undefined, (identity) => {
+      claims[0] = identity.commandId;
+    });
+    const second = mod.sendMessage(PROJECT, THREAD, input(), undefined, (identity) => {
+      claims[1] = identity.commandId;
+    });
+    await settle();
+    expect(claims).toEqual(['uuid-1', 'uuid-1']);
+    release();
+    expect(await second).toBe(await first);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("a same-window join after the identity was issued is handed it, not asked to wait", async () => {
+    let reached!: () => void;
+    let release: () => void = () => undefined;
+    const arrived = new Promise<void>((resolve) => (reached = resolve));
+    fetchMock.mockImplementationOnce(async () => {
+      reached();
+      await new Promise<void>((resolve) => (release = resolve));
+      return answered();
+    });
+    const calls: string[][] = [[], []];
+    const first = mod.sendMessage(PROJECT, THREAD, input(), undefined, (identity) => {
+      calls[0].push(identity.commandId);
+    });
+    // The POST on the wire is the proof the locked section already issued this send's
+    // identity. A join now meets a flight whose claim is already set, and takes it rather
+    // than queueing behind an issuance that already happened.
+    await arrived;
+    const second = mod.sendMessage(PROJECT, THREAD, input(), undefined, (identity) => {
+      calls[1].push(identity.commandId);
+    });
+    try {
+      await settle();
+      // Each callback ran exactly once with the issued command: the sender's at issuance, the
+      // late join's the moment it joined.
+      expect(calls).toEqual([['uuid-1'], ['uuid-1']]);
+      release();
+      // Both callers were told the same command once, share the one result, and one POST ran.
+      expect(await second).toBe(await first);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      // Whatever the assertions said, the held request is let through and both sends drain.
+      release();
+      await Promise.allSettled([first, second]);
+    }
+  });
+
+  test('a pending claim for different words issues no identity and sends nothing', async () => {
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    fetchMock.mockReset();
+    let issued: unknown = null;
+    await expect(
+      mod.sendMessage(PROJECT, THREAD, input('Order double'), undefined, (identity) => {
+        issued = identity;
+      }),
+    ).rejects.toThrow(/never confirmed/);
+    expect(issued).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("a send that adopts another window's pending claim is issued that command", async () => {
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    const secondWindow = await newWindow();
+    fetchMock.mockReset().mockImplementationOnce(answered);
+    let issued: { projectId: string; threadId: string; commandId: string } | null = null;
+    await secondWindow.sendMessage(PROJECT, THREAD, input(), undefined, (identity) => {
+      issued = identity;
+    });
+    expect(issued).toEqual({ projectId: PROJECT, threadId: THREAD, commandId: 'uuid-1' });
+    expect(sent(0).commandId).toBe('uuid-1');
+  });
+
+  test("a resend that still owes the message dispatches under the claim's command and issues it", async () => {
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    fetchMock.mockReset().mockImplementationOnce(answered);
+    let issued: { projectId: string; threadId: string; commandId: string } | null = null;
+    await mod.resendPending(PROJECT, THREAD, 'uuid-1', undefined, (identity) => {
+      issued = identity;
+    });
+    expect(issued).toEqual({ projectId: PROJECT, threadId: THREAD, commandId: 'uuid-1' });
+    expect(sent(0).commandId).toBe('uuid-1');
+  });
+
+  test('a resend that finds the message settled reads it and issues no identity', async () => {
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    local.removeItem(CLAIM);
+    fetchMock.mockReset().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        runId: 'run-1',
+        commandId: 'uuid-1',
+        sourceMessageId: 'sm.' + 'a'.repeat(32),
+        answerText: 'Answered there.',
+        interrupted: false,
+        outcome: { status: 'answered' },
+      }),
+    });
+    let issued: unknown = null;
+    const result = await mod.resendPending(PROJECT, THREAD, 'uuid-1', undefined, (identity) => {
+      issued = identity;
+    });
+    expect(result.answerText).toBe('Answered there.');
+    // The read dispatched nothing, so there is no command a Stop could act on.
+    expect(issued).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].method).toBe('GET');
+  });
+
+  test('a resend stopped while it waited for the lock reads and sends nothing', async () => {
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    fetchMock.mockReset();
+    const locks = (navigator as unknown as { locks: ReturnType<typeof makeLocks> }).locks;
+    let releaseLock!: () => void;
+    const held = new Promise<void>((resolve) => (releaseLock = resolve));
+    const done = locks.request(LOCK, {}, async () => held);
+    const stop = new AbortController();
+    const resend = mod.resendPending(PROJECT, THREAD, 'uuid-1', stop.signal);
+    stop.abort();
+    await expect(resend).rejects.toThrow(/still sending/);
+    releaseLock();
+    await done;
+    expect(fetchMock).not.toHaveBeenCalled();
+    // The claim was never touched: the message stays pending, still recoverable.
+    expect(JSON.parse(local.getItem(CLAIM)!).commandId).toBe('uuid-1');
+  });
+
+  test('a resend stopped as the lock is granted reads and sends nothing', async () => {
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    fetchMock.mockReset();
+    const stop = new AbortController();
+    // A modeled boundary, not a real Web Lock: this lock manager grants the request and aborts
+    // the caller's signal in the same instant it invokes the callback. The wait itself was
+    // never refused, so only the resend's own check at the callback's entry can end it here.
+    vi.stubGlobal('navigator', {
+      locks: {
+        async request(_name: string, _options: { signal?: AbortSignal }, callback: () => unknown) {
+          stop.abort();
+          return callback();
+        },
+      },
+    });
+    const claimBefore = local.getItem(CLAIM);
+    const referenceBefore = session.getItem(PENDING);
+    let issued: unknown = null;
+    await expect(
+      mod.resendPending(PROJECT, THREAD, 'uuid-1', stop.signal, (identity) => {
+        issued = identity;
+      }),
+    ).rejects.toThrow(/Stopped/);
+    // No read ran, nothing was posted, no identity exists a Stop could name - and the shared
+    // claim and this window's own reference are byte-for-byte what they were before the call.
+    expect(issued).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(local.getItem(CLAIM)).toBe(claimBefore);
+    expect(session.getItem(PENDING)).toBe(referenceBefore);
+  });
+});

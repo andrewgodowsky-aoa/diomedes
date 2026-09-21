@@ -594,6 +594,29 @@ export class ModelSessionRuns {
     return decided.result;
   }
 
+  /**
+   * Signals the active turn of this exact command to stop. The run is validated through the
+   * same `get` every read uses, so a Stop for a run this project does not own is refused
+   * before anything is signalled. The entry is then compared and signalled in one
+   * synchronous block: a Stop naming an older command answers `superseded` and can never
+   * reach the turn that replaced it. `requested` is a transport acknowledgement only; what
+   * the turn itself recorded stays the authority, read through `turnResult` and the outcome
+   * read.
+   */
+  async interruptCommand(
+    projectId: string,
+    runId: string,
+    commandId: string,
+  ): Promise<{ state: 'requested' | 'idle' | 'superseded' }> {
+    await this.get(projectId, runId);
+    const active = this.active.get(runId);
+    if (!active) return { state: 'idle' };
+    if (active.commandId !== commandId) return { state: 'superseded' };
+    active.controller.abort();
+    await active.promise.catch(() => undefined);
+    return { state: 'requested' };
+  }
+
   async control(projectId: string, runId: string, commandId: string, command: 'interrupt' | 'close') {
     const run = await this.get(projectId, runId);
     const active = this.active.get(runId);

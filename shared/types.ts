@@ -439,6 +439,13 @@ export interface ConversationLineage {
 }
 export interface Conversation {
   engine?: Route;
+  /**
+   * Present only when the person picked `engine` themselves through the thread's
+   * update route. Absent means the route was provisioned, not chosen, so a
+   * provisioner may re-pin it to the conversation's current default; a marked
+   * choice is preserved across provisioning and restart.
+   */
+  engineChoice?: 'person';
   id: string;
   attachedTo: { kind: 'project' | 'document' | 'plan' | 'task' | 'review'; ref: string };
   turns: Turn[];

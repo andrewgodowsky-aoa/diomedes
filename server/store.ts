@@ -4,7 +4,7 @@ import { ScopeGrants, validateScopeGrants } from './trust/scope-grants.js';
 import { validateAgentResolutions } from './agents.js';
 import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/attribution.js';
 import { diomedesThread } from '../shared/diomedes-thread.js';
-import { HOST_TEST_PROJECT } from '../shared/engines.js';
+import { CONVERSATION_DEFAULT_ROUTE, HOST_TEST_PROJECT } from '../shared/engines.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -857,7 +857,23 @@ export class Store extends EventEmitter {
   async provisionHome(): Promise<{ projectId: string; threadId: string }> {
     return this.locked(async () => {
       const bound = this.homeBinding();
-      if (bound) return bound;
+      if (bound) {
+        // The same call is also the migration: a bound home whose designated
+        // thread was never deliberately routed is re-pinned to the conversation
+        // default inside this same lock, and only a real change is written. A
+        // route the person picked survives untouched.
+        const state = this.state(bound.projectId);
+        const thread = this.designatedThread(state);
+        if (
+          thread &&
+          thread.engineChoice !== 'person' &&
+          thread.engine !== CONVERSATION_DEFAULT_ROUTE
+        ) {
+          thread.engine = CONVERSATION_DEFAULT_ROUTE;
+          await this.persist(state);
+        }
+        return bound;
+      }
       let project = this.homeProject();
       if (!project) {
         try {
@@ -872,6 +888,7 @@ export class Store extends EventEmitter {
       }
       const state = this.state(project.id);
       let thread = this.designatedThread(state);
+      let changed = false;
       if (!thread) {
         const stamped = now();
         thread = {
@@ -885,12 +902,19 @@ export class Store extends EventEmitter {
           helper: null,
           permission: 'show-first',
           mode: 'auto',
-          // Diomedes' own conversation answers without anyone configuring it.
-          engine: 'claude-code',
+          // Diomedes' own conversation answers on the model-API default without
+          // anyone configuring a thread.
+          engine: CONVERSATION_DEFAULT_ROUTE,
         };
         state.conversations.push(thread);
-        await this.persist(state);
+        changed = true;
+      } else if (thread.engineChoice !== 'person' && thread.engine !== CONVERSATION_DEFAULT_ROUTE) {
+        // A thread adopted from before the choice marker existed follows the
+        // default; one a person routed themselves is left alone.
+        thread.engine = CONVERSATION_DEFAULT_ROUTE;
+        changed = true;
       }
+      if (changed) await this.persist(state);
       await this.saveSettings({
         ...this.settings,
         // Home is not a project a person has open: it is hidden from the
@@ -934,19 +958,21 @@ export class Store extends EventEmitter {
           helper: null,
           permission: 'show-first',
           mode: 'auto',
-          // Diomedes talks through Claude Code whatever the project's own work
-          // runs on, and the work it starts still runs on the project's AI.
-          engine: 'claude-code',
+          // The conversation runs on the model-API default whatever the
+          // project's own work runs on, and the work it starts still runs on
+          // the project's AI.
+          engine: CONVERSATION_DEFAULT_ROUTE,
         };
         state.conversations.push(thread);
         await this.persist(state);
         return { projectId, threadId: thread.id };
       }
-      // Exactly what the thread update route does for this engine and nothing
-      // more: the thread's name, Mode, permission and helper choice stay its
-      // own, and no other thread in the project is touched.
-      if (found.engine !== 'claude-code') {
-        found.engine = 'claude-code';
+      // The thread's name, Mode, permission and helper choice stay its own, and
+      // no other thread in the project is touched. A route the person picked
+      // through the thread update (`engineChoice`) is preserved; a thread that
+      // was never deliberately routed is re-pinned to the conversation default.
+      if (found.engineChoice !== 'person' && found.engine !== CONVERSATION_DEFAULT_ROUTE) {
+        found.engine = CONVERSATION_DEFAULT_ROUTE;
         await this.persist(state);
       }
       return { projectId, threadId: found.id };

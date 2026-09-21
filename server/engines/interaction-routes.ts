@@ -104,4 +104,14 @@ export function mountInteractionRoutes(
     `${base}/:commandId`,
     route((req) => turns.outcome(String(req.params.id), String(req.params.threadId), command(req))),
   );
+  app.post(
+    `${base}/:commandId/interrupt`,
+    route(async (req) => {
+      // Stop names the command in its path and nothing else: no engine, no run
+      // id and no fields. Any body at all is a mistake, refused before lookup.
+      const body = z.strictObject({}).safeParse(req.body ?? {});
+      if (!body.success) throw new ApiError(400, 'A stop request takes no body.');
+      return turns.interrupt(String(req.params.id), String(req.params.threadId), command(req));
+    }),
+  );
 }

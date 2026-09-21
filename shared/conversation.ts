@@ -56,9 +56,27 @@ export interface MessageRequest {
   consent: true;
 }
 
-/** `POST …/messages/:commandId/select`. Bound to the proposal that was shown and to its project. */
+/** `POST .../messages/:commandId/select`. Bound to the proposal that was shown and to its project. */
 export interface SelectionRequest {
   proposalDigest: string;
   projectId: string;
   consent: true;
+}
+
+/**
+ * What a message-scoped Stop answers. `settled` comes only from the command's
+ * own recorded turn result, never from the run being terminal. The other three
+ * are the owning driver's acknowledgement: `requested` means the active entry
+ * was this command's and its signal fired (a transport acknowledgement, not
+ * proof the turn durably stopped), `idle` that nothing is running for the run,
+ * `superseded` that its active command is a different one. The durable answer
+ * is still read from the outcome.
+ */
+export type InterruptState = 'requested' | 'settled' | 'idle' | 'superseded';
+
+/** `POST .../messages/:commandId/interrupt`. Strict empty body; the path names everything. */
+export interface InterruptResponse {
+  commandId: string;
+  runId: string | null;
+  state: InterruptState;
 }
