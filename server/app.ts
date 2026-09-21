@@ -2934,14 +2934,21 @@ export async function createApp(options: AppOptions) {
           ? store.taskCommand(projectId, ids.taskCommandId, expected)
           : undefined;
         if (!expected) assertReplay(findCommand(state, ids.taskCommandId), 'task.create');
-        // The Work command is compared only once its own input phase has pinned what it
-        // names. Until then this message has nothing to recognise, so nothing is trusted.
+        // The Work command is recognised only once its own input phase has pinned what it
+        // names. A session under that id holding anything else is other work, so it is not
+        // this message's receipt; the Work admission refuses it there, in its own words,
+        // and the refusal it records stays readable.
         const started = intent?.work && conversationWorkDigest(ids.workCommandId, intent.work);
-        const work = started
-          ? store.workCommand(projectId, ids.workCommandId, started)
-          : undefined;
-        if (!started) assertReplay(findCommand(state, ids.workCommandId), 'work.start');
-        return { projectId, taskId: task?.id ?? null, sessionId: work?.id ?? null };
+        const work = findCommand(state, ids.workCommandId);
+        assertReplay(work, 'work.start');
+        return {
+          projectId,
+          taskId: task?.id ?? null,
+          sessionId:
+            work?.type === 'work.start' && started && work.digest === started
+              ? work.subject.id
+              : null,
+        };
       }),
     workRoute: async (projectId) =>
       // The target project's own engine, as a person's Start there would use.
