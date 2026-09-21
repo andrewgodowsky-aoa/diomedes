@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, safeStorage, shell } from 'electron';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -13,6 +13,18 @@ import {
 } from './app-updates.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
+/**
+ * OS-protected storage for model-API credentials (server/connection-secrets.ts): DPAPI on
+ * Windows, the Keychain on macOS. The same rule as the account session's storage: no
+ * encryption, or Linux's plaintext backend, means no credential can be saved at all.
+ */
+const secretBox = {
+  kind: 'electron-safe-storage',
+  available: () =>
+    safeStorage.isEncryptionAvailable() && safeStorage.getSelectedStorageBackend?.() !== 'basic_text',
+  seal: (plain) => safeStorage.encryptString(plain),
+  open: (sealed) => safeStorage.decryptString(sealed),
+};
 // Only explicit setup reference links may leave the app. This does not grant
 // arbitrary model output or project documents permission to open local URLs.
 function openSetupReference(destination) {
@@ -236,6 +248,7 @@ if (!app.requestSingleInstanceLock()) {
         port,
         clientPort: port,
         updateOverrides: updates,
+        secretBox,
       });
       serveClient(service, path.join(root, 'dist'));
       server.on('request', service);

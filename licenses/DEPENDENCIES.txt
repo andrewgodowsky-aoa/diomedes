@@ -1,13 +1,41 @@
 DIOMEDES BUNDLED PRODUCTION DEPENDENCIES
 ========================================
 
-Application version: 0.1.5
-package-lock.json SHA-256: 81706f074f425ee3f63a555cb563482cba2eed36c0d9e9c641b7c36ff8e59f46
-Reachable installed production package paths: 132
+Application version: 0.1.6
+package-lock.json SHA-256: 3219968f2979c6aeac208f149e779b4a8e93206ed405b7954ceacdaba5943b75
+Reachable installed production package paths: 141
 
 Scope: every installed package reachable through dependencies, optional dependencies,
 and required installed peer dependencies from the package-lock root. This conservative
 inventory can include code removed by Vite or esbuild tree shaking.
+
+@ai-sdk/gateway@4.0.87
+  lock path: node_modules/@ai-sdk/gateway
+  declared license: Apache-2.0
+  source: https://registry.npmjs.org/@ai-sdk/gateway/-/gateway-4.0.87.tgz
+  package-lock integrity: sha512-6wJmX/D5OO7tvDJbtFdXdBuRt8AkCnW+FLK+W35UHe/tHgolAa4hclXtJcMSYnlTDy/t5DNRgdesVaoMXtwzow==
+  notice files: LICENSE:b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17ae7a267715269bd5529
+
+@ai-sdk/openai@4.0.71
+  lock path: node_modules/@ai-sdk/openai
+  declared license: Apache-2.0
+  source: https://registry.npmjs.org/@ai-sdk/openai/-/openai-4.0.71.tgz
+  package-lock integrity: sha512-w8FuHr1bD/bP/8SIgcaJKUyePE4ke9s7+Ew2ed/9i5mDoFXEfyVUyFX8R0wQ3YfcdMKmTs8ct/f6XJsXsnPVsQ==
+  notice files: LICENSE:b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17ae7a267715269bd5529
+
+@ai-sdk/provider@4.0.17
+  lock path: node_modules/@ai-sdk/provider
+  declared license: Apache-2.0
+  source: https://registry.npmjs.org/@ai-sdk/provider/-/provider-4.0.17.tgz
+  package-lock integrity: sha512-VYMBxIQdcHqbIf1j+YZlI9Ati6LZ4wJe0GGd4z4a5H/KxTggjeOiyaVYTnfF7LHZK5jMQ+rofmzz4QPqf++NUw==
+  notice files: LICENSE:b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17ae7a267715269bd5529
+
+@ai-sdk/provider-utils@5.0.45
+  lock path: node_modules/@ai-sdk/provider-utils
+  declared license: Apache-2.0
+  source: https://registry.npmjs.org/@ai-sdk/provider-utils/-/provider-utils-5.0.45.tgz
+  package-lock integrity: sha512-gLuaCups8OCIRz3eO6WWz5op7VLYNNtFzyH0sWUr0FE9v7cTxR0qxDpQdrKnGcql+9WWttobjnZsJVsuEbsPQQ==
+  notice files: MISSING
 
 @electron-internal/extract-zip@1.0.5
   lock path: node_modules/@electron-internal/extract-zip
@@ -69,12 +97,33 @@ inventory can include code removed by Vite or esbuild tree shaking.
   package-lock integrity: sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==
   notice files: LICENSE:5e13dbbc1d120fc2a03cecde7c91424ae2d7de11b63d58ded2f4431e261ee50d
 
+@standard-schema/spec@1.1.0
+  lock path: node_modules/@standard-schema/spec
+  declared license: MIT
+  source: https://registry.npmjs.org/@standard-schema/spec/-/spec-1.1.0.tgz
+  package-lock integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==
+  notice files: LICENSE:653b779005a3a4d64a7288c940f7b9a0e8f0b1e0375f6aa6af9473caf131e564
+
 @types/node@24.13.3
   lock path: node_modules/electron/node_modules/@types/node
   declared license: MIT
   source: https://registry.npmjs.org/@types/node/-/node-24.13.3.tgz
   package-lock integrity: sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==
   notice files: LICENSE:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
+
+@vercel/oidc@3.2.0
+  lock path: node_modules/@vercel/oidc
+  declared license: Apache-2.0
+  source: https://registry.npmjs.org/@vercel/oidc/-/oidc-3.2.0.tgz
+  package-lock integrity: sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug==
+  notice files: LICENSE:b070d77bfb2c52a1dd6996de0ce5f64c49a0ca55c889b163a963ddf5cb001ee2
+
+@workflow/serde@4.1.0
+  lock path: node_modules/@workflow/serde
+  declared license: Apache-2.0
+  source: https://registry.npmjs.org/@workflow/serde/-/serde-4.1.0.tgz
+  package-lock integrity: sha512-pav4F2BoirECWR7Nf1TKt+2eETcBj7jj4cBefQ8VXQCA6NPkaKeLfj/zMgi+3zYV5ZIBT4GuUiphsj0/b9hPQQ==
+  notice files: LICENSE.md:39248a57eaac37e120c65bae851c6382bf722fc87c3452bf6a245caef96db739
 
 @workos-inc/node@10.13.0
   lock path: node_modules/@workos-inc/node
@@ -103,6 +152,13 @@ accepts@2.0.0
   source: https://registry.npmjs.org/accepts/-/accepts-2.0.0.tgz
   package-lock integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==
   notice files: LICENSE:71f83c4c0621102a56d9853812777b85751bce7e9726f686f5b056c1f8a4b0e6
+
+ai@7.0.107
+  lock path: node_modules/ai
+  declared license: Apache-2.0
+  source: https://registry.npmjs.org/ai/-/ai-7.0.107.tgz
+  package-lock integrity: sha512-PVYQ3W9kR8oYiGQxbg4aFIlhQzKskZm8UV+4E0zB2uKOzFr8ju3bXQncOOZtLsOgJY8vdpgyu3cXtomsfcdQYg==
+  notice files: LICENSE:b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17ae7a267715269bd5529
 
 ajv@8.20.0
   lock path: node_modules/ajv
@@ -516,6 +572,13 @@ jose@6.2.12
   source: https://registry.npmjs.org/jose/-/jose-6.2.12.tgz
   package-lock integrity: sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==
   notice files: LICENSE.md:8078b0829d6c3e9ecde2f003e1966e4cad3efc6e7a640efbab0313cc166b1af1
+
+json-schema@0.4.0
+  lock path: node_modules/json-schema
+  declared license: (AFL-2.1 OR BSD-3-Clause)
+  source: https://registry.npmjs.org/json-schema/-/json-schema-0.4.0.tgz
+  package-lock integrity: sha512-es94M3nTIfsEPisRafak+HDLfHXnKBhV3vU5eqPcS3flIWqcxJWgXHXiey3YrpaNsanY5ei1VoYEbOzijuq9BA==
+  notice files: LICENSE:4e053c510d6f3e4724213a292c65142df68d069c40f558582bc4270914e16f77
 
 json-schema-traverse@1.0.0
   lock path: node_modules/json-schema-traverse

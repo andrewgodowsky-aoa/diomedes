@@ -24,6 +24,8 @@ import {
   validateClaudeNativeCheckpoint,
 } from './claude-session-run.js';
 import { ENGINE_TEXT_TURN, TextRouteRuntime, textDispatchAuthorizer } from './text-route.js';
+import { MODEL_SESSION_CAPABILITIES, ModelSessionRuns, modelApiDispatchAuthorizer } from './model-session-run.js';
+import { AWS_BEDROCK_ROUTE } from '../engines/aws-bedrock.js';
 
 export const HARNESS_POLICY_VERSION = 'diomedes-host-policy-v1';
 
@@ -359,6 +361,10 @@ export function createHarnessHost({
     () => store.settings.services,
     [ENGINE_TEXT_TURN.id, CLAUDE_SESSION_CAPABILITY.id],
   );
+  // Model-API conversation runs: the route must be on and the run's account route still selected.
+  const modelAuthorize = modelApiDispatchAuthorizer(() => store.settings.services);
+  const modelRun = (capabilityId: string) =>
+    (MODEL_SESSION_CAPABILITIES as readonly string[]).includes(capabilityId);
   const runs: HostRunService = new HostRunService(files, {
     clock: Date.now,
     policyVersion: HARNESS_POLICY_VERSION,
@@ -371,6 +377,7 @@ export function createHarnessHost({
         run.capabilityId === CLAUDE_SESSION_CAPABILITY.id
       )
         return textAuthorize(run, intent, phase);
+      if (modelRun(run.capabilityId)) return modelAuthorize(run, intent, phase);
       return codex.authorize(runId, intent, principal, phase);
     },
   });
@@ -398,6 +405,7 @@ export function createHarnessHost({
     leaseMs: textLeaseMs,
   });
   const claudeSessions = new ClaudeSessionRuns(runs);
+  const modelSessions = new ModelSessionRuns(runs, AWS_BEDROCK_ROUTE);
   const bridge = new HarnessBridge(store, runs, tools, adapter, redact, HOST_TEST_PROJECT, codex);
   const observers = new Set<{ runId: string; changed: () => void; closed: () => void }>();
   let closed = false;
@@ -467,6 +475,7 @@ export function createHarnessHost({
     codex,
     textRoute,
     claudeSessions,
+    modelSessions,
     /** Host-only until authenticated client admission is supplied by Trust.
      * Reuses the same command parser, collision check, receipt and Store lock. */
     startCodexReport(
@@ -546,12 +555,15 @@ export function createHarnessHost({
         const saved = await savedRuns(project.id);
         await bridge.recover(
           project.id,
-          saved.filter((run) => run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id),
+          saved.filter(
+            (run) => run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id && !modelRun(run.capabilityId),
+          ),
         );
         // Text-route runs are not the bridge's sessions; the runtime's own
         // recovery invalidates dead leases and parks in-flight dispatches.
         for (const run of saved) await textRoute.recover(run.id, run);
         for (const run of saved) await claudeSessions.recover(run);
+        for (const run of saved) await modelSessions.recover(run);
       }
       // A host run has no Session and no Task, so the bridge has nothing to
       // recover for it. The runtime still invalidates its dead lease and parks
@@ -564,6 +576,7 @@ export function createHarnessHost({
       for (const observer of observers) observer.closed();
       observers.clear();
       await claudeSessions.closeAll();
+      await modelSessions.closeAll();
       await bridge.close();
     },
   };

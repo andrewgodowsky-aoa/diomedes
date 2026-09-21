@@ -29,7 +29,8 @@ export type Mode = 'ask' | 'plan' | 'auto' | 'build' | 'fix';
 export type TaskState = 'todo' | 'working' | 'waiting' | 'done';
 export type Owner = 'you' | 'diomedes' | 'diomedes-with-ok';
 export type ExternalEngine = 'claude-code' | 'opencode' | 'oh-my-pi' | 'cursor' | 'devin';
-export type Route = 'sample' | 'codex' | ExternalEngine;
+/** A model-API route (`shared/model-api.ts`): a provider API on the company's own credential. */
+export type Route = 'sample' | 'codex' | ExternalEngine | import('./model-api.js').ModelApiRoute;
 export interface Settings {
   version: 1;
   detail: Detail;

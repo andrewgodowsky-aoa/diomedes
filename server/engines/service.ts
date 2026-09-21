@@ -40,10 +40,29 @@ import type {
   TextRequest,
   TextResponse,
 } from './contract.js';
+import { contextMessage } from './contract.js';
 import type { ClaudeSessionCheckpoint } from './claude-session.js';
 import { ClaudeSessionRuns, type ClaudeSessionTurn } from '../harness/claude-session-run.js';
 import { HarnessError } from '../harness/policy.js';
 import { TEXT_DISPATCH_STEP, textRunId, type TextDispatch } from '../harness/text-route.js';
+import { digest } from '../harness/policy.js';
+import {
+  AWS_BEDROCK_ROUTE,
+  AWS_BEDROCK_SDK,
+  AWS_LUNA_RATE_CARD,
+  ModelApiError,
+  WORK_LIMITS,
+  awsAccountRoute,
+  respondOnce,
+  type AwsConnection,
+  type AwsConnections,
+} from './aws-bedrock.js';
+import { createAwsModelAdapter } from '../harness/aws-model-adapter.js';
+import type { ModelTranscripts } from '../harness/model-transcripts.js';
+import type { ModelSessionAdmission, ModelSessionRuns, ModelSessionTurn } from '../harness/model-session-run.js';
+import type { ConnectionSecrets } from '../connection-secrets.js';
+import type { SpendExposure } from '../spend-exposure.js';
+import type { ModelApiRoute } from '../../shared/model-api.js';
 
 function recordShimError(error: unknown): boolean {
   return (
@@ -334,6 +353,10 @@ export class EngineService {
   dispatch?: TextDispatch;
   /** Explicit native-session route; attaching this does not change generate(). */
   nativeSessions?: ClaudeSessionRuns;
+  /** The model-API conversation driver (CD-01 Decision 5's second driver). The app attaches it. */
+  modelSessions?: ModelSessionRuns;
+  /** Connection record, protected credential, spend ledger and private transcripts for model-API routes. */
+  modelApi?: ModelApiServices;
   constructor(
     readonly root: string,
     deps: Partial<EngineServiceDeps> = {},
@@ -1705,9 +1728,196 @@ export class EngineService {
       throw seamError(error);
     }
   }
+  /**
+   * Admission for a model-API route, read fresh each time: the route is switched on, the saved
+   * connection is the one Settings selects, the requested model is the connection's, the
+   * credential is present and unexpired, and the spend ledger has an approved cap. Nothing here
+   * reads the credential into a record; the adapter opens it inside the dispatch step.
+   */
+  async admitModelApi(
+    route: ModelApiRoute,
+    input: Pick<TextRequest, 'model' | 'accountRoute'>,
+  ): Promise<ModelSessionAdmission> {
+    const api = this.modelApi;
+    if (route !== AWS_BEDROCK_ROUTE || !api)
+      throw new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
+    const connection = await api.connections.read();
+    if (!connection) throw new EngineError('ROUTE_REFUSED', 'Connect AWS Bedrock in AI setup before sending.', true);
+    if (awsAccountRoute(connection) !== input.accountRoute)
+      throw new EngineError('ACCOUNT_CHANGED', 'The AWS connection changed. Select it again before sending.');
+    if (connection.modelId !== input.model)
+      throw new EngineError('ROUTE_REFUSED', `This AWS connection serves ${connection.modelId}, not ${input.model}.`, true);
+    if (connection.credential.expiresAt && Date.parse(connection.credential.expiresAt) <= Date.now() + 60_000)
+      throw new EngineError('ROUTE_REFUSED', 'The saved AWS key has expired. Enter a new key in AI setup.', true);
+    if (!api.secrets.available())
+      throw new EngineError('ROUTE_REFUSED', 'Protected credential storage is not available in this process.', true);
+    if (!api.exposure.allowance(connection.id) || api.exposure.summary(connection.id).availableMicroUsd <= 0)
+      throw new EngineError(
+        'SPEND_LIMIT',
+        'The approved AWS spend limit has no room left. Nothing was sent. The owner can review usage and approve more in AI setup.',
+        true,
+      );
+    return {
+      route: AWS_BEDROCK_ROUTE,
+      connectionId: connection.id,
+      revision: connection.revision,
+      model: connection.modelId,
+      accountRoute: awsAccountRoute(connection),
+    };
+  }
+  private async openModelApi(admission: ModelSessionAdmission): Promise<{ connection: AwsConnection; secret: string }> {
+    const api = this.modelApi!;
+    const connection = await api.connections.read();
+    if (!connection || connection.id !== admission.connectionId || connection.revision !== admission.revision)
+      throw new EngineError('ACCOUNT_CHANGED', 'The AWS connection changed after this message was admitted. Nothing was sent.');
+    return { connection, secret: await api.secrets.get(connection.id) };
+  }
+  /** One conversation message on a model-API route, through the model-session driver. */
+  async modelSession(route: ModelApiRoute, mode: ModelSessionTurn['mode'], runId: string, input: TextRequest) {
+    const driver = this.modelSessions;
+    const api = this.modelApi;
+    if (!driver || !api)
+      throw new EngineError('RUNTIME_UNAVAILABLE', 'The model-API conversation runtime is not attached.', true);
+    if (input.onDelta) throw new EngineError('PREVIEW_CONTRACT', 'This route has no preview channel.');
+    try {
+      return await driver.request({
+        mode,
+        runId,
+        input,
+        admit: () => this.admitModelApi(route, input),
+        adapter: async (admission, instructions, stop) => {
+          const { connection, secret } = await this.openModelApi(admission);
+          const adapter = createAwsModelAdapter({
+            connection,
+            secret,
+            card: AWS_LUNA_RATE_CARD,
+            exposure: api.exposure,
+            transcripts: api.transcripts,
+            instructions,
+            effort: effortOf(input.effort),
+            transport: api.transport,
+          });
+          return {
+            ...adapter,
+            complete: (request, signal) => adapter.complete(request, AbortSignal.any([signal, stop])),
+          };
+        },
+      });
+    } catch (error) {
+      throw seamError(modelApiError(error));
+    }
+  }
+  /**
+   * One Work text turn on a model-API route: the same fenced text-route run every external engine
+   * uses (admission step, one external dispatch step, never resent), with the AWS exchange as the
+   * transport. No tools are offered; the result is the text a Work proposal is parsed from.
+   */
+  async generateModelApi(route: ModelApiRoute, input: TextRequest): Promise<TextResponse & { runId: string }> {
+    const key = `${input.projectId}:${input.threadId}`;
+    if (this.running.has(key))
+      throw new EngineError('REQUEST_ACTIVE', 'This thread already has a request in progress. Wait for it or cancel it.');
+    const dispatch = this.dispatch;
+    const api = this.modelApi;
+    if (!dispatch || !api)
+      throw new EngineError('RUNTIME_UNAVAILABLE', 'The harness runtime seam is not attached to this service.', true);
+    const controller = new AbortController();
+    this.running.set(key, controller);
+    const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
+    try {
+      const runId = textRunId(input.projectId, input.requestId);
+      const intent = {
+        engine: route,
+        projectId: input.projectId,
+        threadId: input.threadId,
+        requestId: input.requestId,
+        model: input.model,
+        accountRoute: input.accountRoute,
+        prompt: input.prompt,
+        instructions: input.instructions,
+        documents: input.documents,
+        effort: input.effort ?? null,
+      };
+      const outcome = await dispatch<ModelSessionAdmission, TextResponse>({
+        runId,
+        intent,
+        signal,
+        admit: () => this.admitModelApi(route, input),
+        send: async (context, admission) => {
+          const { connection, secret } = await this.openModelApi(admission);
+          const result = await respondOnce({
+            connection,
+            secret,
+            card: AWS_LUNA_RATE_CARD,
+            exposure: api.exposure,
+            attempt: { runId, stepId: TEXT_DISPATCH_STEP, attempt: context.attempt, requestDigest: digest(intent) },
+            instructions: input.instructions,
+            messages: [{ role: 'user', content: contextMessage(input) }],
+            tools: [],
+            effort: effortOf(input.effort),
+            limits: WORK_LIMITS,
+            signal: AbortSignal.any([signal, context.signal]),
+            transport: api.transport,
+          });
+          if (result.outcome.kind !== 'final')
+            throw new ModelApiError('aws_unexpected_tool', 'The model asked for a tool where none was offered.', true);
+          context.reportOrigin?.({
+            protocolVersion: 1,
+            mode: 'direct',
+            engine: { id: route, version: AWS_BEDROCK_SDK },
+            model: {
+              requested: input.model,
+              reported: result.reportedModel,
+              source: result.reportedModel ? 'runtime' : 'not-recorded',
+            },
+            accountRoute: input.accountRoute,
+          });
+          return {
+            text: result.outcome.text,
+            // Only the provider's own report. Work marks a model verified when this is non-empty,
+            // so the requested model never stands in for one AWS did not report.
+            model: result.reportedModel ?? '',
+            version: AWS_BEDROCK_SDK,
+            threadId: input.threadId,
+            projectId: input.projectId,
+            requestId: input.requestId,
+          };
+        },
+      });
+      return { ...outcome.result, runId: outcome.run.id };
+    } catch (error) {
+      throw seamError(modelApiError(error));
+    } finally {
+      controller.abort();
+      this.running.delete(key);
+    }
+  }
   close() {
     for (const controller of this.running.values()) controller.abort();
   }
+}
+
+
+/** What a model-API route needs from the app: its record, its protected credential, its ledgers. */
+export interface ModelApiServices {
+  connections: AwsConnections;
+  secrets: ConnectionSecrets;
+  exposure: SpendExposure;
+  transcripts: ModelTranscripts;
+  /** Tests substitute the network here, below the SDK. Production leaves it unset. */
+  transport?: typeof globalThis.fetch;
+}
+
+const effortOf = (effort: string | undefined): 'low' | 'medium' | 'high' =>
+  effort === 'medium' || effort === 'high' ? effort : 'low';
+
+/** A model-API failure in the service's vocabulary. What is known about the send decides the code. */
+function modelApiError(error: unknown): unknown {
+  if (!(error instanceof ModelApiError)) return error;
+  if (!error.dispatched)
+    return new EngineError(error.code === 'aws_spend_refused' ? 'SPEND_LIMIT' : 'ROUTE_REFUSED', error.message, true);
+  if (error.evidence.reservation?.state === 'uncertain')
+    return new EngineError('DISPATCH_UNCERTAIN', error.message, true);
+  return new EngineError('PROVIDER_ERROR', error.message, true);
 }
 
 /** The durable admission record — what the admission step is allowed to persist. */

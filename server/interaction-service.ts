@@ -12,6 +12,7 @@ import { HarnessError } from './harness/policy.js';
 import type { TextRequest } from './engines/contract.js';
 import { EngineError } from './engines/process.js';
 import type { EngineService } from './engines/service.js';
+import { isModelApiRoute, type ModelApiRoute } from '../shared/model-api.js';
 import { ApiError } from './paths.js';
 import type { MessageResult } from '../shared/conversation.js';
 import type { InteractionDecision } from '../shared/interaction.js';
@@ -56,6 +57,8 @@ export interface ResolvedMessage {
   restriction: Restriction;
   /** The one run this message lives on. Progress, execution and projection all name it. */
   runId: string;
+  /** The route that answers it. Absent means the native Claude session, as before. */
+  route?: 'claude-code' | ModelApiRoute;
   action: TurnAction;
   /** True when this command was already answered: the record is read back and nothing is generated. */
   replay: boolean;
@@ -243,14 +246,34 @@ function retirement(error: unknown): LineageRetirement | null {
 
 export class InteractionTurns {
   constructor(
-    private readonly engines: Pick<EngineService, 'claudeSession' | 'nativeSessions'>,
+    private readonly engines: Pick<
+      EngineService,
+      'claudeSession' | 'nativeSessions' | 'modelSession' | 'modelSessions'
+    >,
     private readonly host: InteractionHost,
   ) {}
 
-  private driver(): ConversationDriver {
+  /** The driver that owns a run. Model-API conversation runs are named `model-…`. */
+  private driver(runId?: string): ConversationDriver {
+    if (runId?.startsWith('model-')) {
+      if (!this.engines.modelSessions)
+        throw new ApiError(503, 'The model-API conversation runtime is unavailable.');
+      return this.engines.modelSessions;
+    }
     if (!this.engines.nativeSessions)
       throw new ApiError(503, 'The native conversation runtime is unavailable.');
     return this.engines.nativeSessions;
+  }
+
+  /** One turn on the route the host resolved. Nothing else chooses a driver. */
+  private turn(resolved: ResolvedMessage) {
+    const route = resolved.route ?? 'claude-code';
+    if (isModelApiRoute(route)) {
+      if (resolved.action === 'fork')
+        throw new ApiError(409, 'This conversation route does not support forking.');
+      return this.engines.modelSession(route, resolved.action, resolved.runId, resolved.input);
+    }
+    return this.engines.claudeSession(resolved.action, resolved.runId, resolved.input);
   }
 
   async message(
@@ -272,7 +295,7 @@ export class InteractionTurns {
       };
     let result;
     try {
-      result = await this.engines.claudeSession(resolved.action, resolved.runId, resolved.input);
+      result = await this.turn(resolved);
     } catch (error) {
       // A guard that refuses a NEW message is what triggers the next generation. It is never
       // bypassed, it never fires for a replay, and it is answered at most once per message.
@@ -284,7 +307,7 @@ export class InteractionTurns {
       });
       if ('unfinished' in next) throw error;
       resolved = next;
-      result = await this.engines.claudeSession(resolved.action, resolved.runId, resolved.input);
+      result = await this.turn(resolved);
     }
     if (result.response)
       await this.host.project(resolved, {
@@ -324,9 +347,9 @@ export class InteractionTurns {
     commandId: string,
     chosen: { proposalDigest: string; projectId: string },
   ): Promise<MessageResult> {
-    const driver = this.driver();
     const located = await this.host.locate(projectId, threadId, commandId);
     if (!located?.answered) throw new ApiError(404, 'This message was not found.');
+    const driver = this.driver(located.runId);
     const phases = await driver.phases(projectId, located.runId, located.sourceMessageId);
     const recorded = decisionOf(phases);
     if (!recorded || recorded.block !== 'parsed')
@@ -424,7 +447,7 @@ export class InteractionTurns {
     // Read from what the turn itself saved, not from the fact that its step succeeded: an
     // interruption the provider acknowledged succeeds with no answer, and a person polling
     // this message must be told that, not that nothing happened.
-    const turn = await this.driver().turnResult(projectId, located.runId, commandId);
+    const turn = await this.driver(located.runId).turnResult(projectId, located.runId, commandId);
     const outcome = await this.read(
       {
         projectId,
@@ -448,7 +471,7 @@ export class InteractionTurns {
     message: { projectId: string; runId: string; sourceMessageId: string; restriction: Restriction },
     settled: boolean,
   ) {
-    const phases = await this.driver().phases(
+    const phases = await this.driver(message.runId).phases(
       message.projectId,
       message.runId,
       message.sourceMessageId,
@@ -507,7 +530,7 @@ export class InteractionTurns {
       restriction: Restriction;
     },
   ): Promise<InteractionOutcome> {
-    const driver = this.driver();
+    const driver = this.driver(message.runId);
     const located = await driver.locate(message.projectId, [message.runId], message.commandId);
     const settled = located?.settled ?? false;
     const first = await this.read(message, settled);

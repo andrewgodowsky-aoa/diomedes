@@ -119,6 +119,13 @@ import {
 } from './interaction-turn.js';
 import { assertReplay, findCommand } from './command-admission.js';
 import { claudeSessionRunId } from './harness/claude-session-run.js';
+import { modelSessionRunId } from './harness/model-session-run.js';
+import { FileModelTranscripts } from './harness/model-transcripts.js';
+import { AWS_BEDROCK_ROUTE, AwsConnections } from './engines/aws-bedrock.js';
+import { mountModelApiRoutes } from './engines/model-api-routes.js';
+import { ConnectionSecrets, type SecretBox } from './connection-secrets.js';
+import { SpendExposure } from './spend-exposure.js';
+import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_ROUTES } from '../shared/model-api.js';
 import { baselineRedact } from './secrets.js';
 import { EngineError } from './engines/process.js';
 import { selectedEngine, selectedModel } from '../shared/ai-selection.js';
@@ -145,6 +152,13 @@ interface AppOptions {
   harnessAuthority?: ResolveHarnessAuthority;
   /** Lease TTL for external text-turn runs; tests shorten it to exercise takeover. */
   harnessTextLeaseMs?: number;
+  /**
+   * OS-protected sealing for model-API credentials. The desktop shell passes Electron's
+   * safeStorage; without it no credential can be saved and setup says so.
+   */
+  secretBox?: SecretBox | null;
+  /** Tests replace the network below the SDK here. Production leaves it unset. */
+  modelApiTransport?: typeof globalThis.fetch;
   updateOverrides?: {
     platform?: string;
     packaged?: boolean;
@@ -400,7 +414,7 @@ function validateSettings(current: Settings, body: unknown): Settings {
         continue;
       }
       if (
-        ['codex', ...EXTERNAL_ENGINES].some(
+        ['codex', ...EXTERNAL_ENGINES, ...MODEL_API_ROUTES].some(
           (engine) =>
             key === `${engine}Model` ||
             key === `${engine}Effort` ||
@@ -629,6 +643,21 @@ export async function createApp(options: AppOptions) {
     store,
     options.nativeGenerator ??
       (async (input) => {
+        if (isModelApiRoute(input.engine)) {
+          if (!input.projectId || !input.threadId || !input.requestId || !input.model)
+            throw new ApiError(409, 'Select a model and thread before requesting work.');
+          if (typeof input.accountRoute !== 'string')
+            throw new ApiError(409, 'Connect this route in AI setup first.');
+          return engines.generateModelApi(input.engine, {
+            ...input,
+            projectId: input.projectId,
+            threadId: input.threadId,
+            requestId: input.requestId,
+            model: input.model,
+            instructions: input.instructions ?? '',
+            accountRoute: input.accountRoute,
+          });
+        }
         if (!isExternalEngine(input.engine)) return askCodex(input);
         if (!input.projectId || !input.threadId || !input.requestId || !input.model)
           throw new ApiError(409, 'Select a model and thread before requesting work.');
@@ -659,6 +688,16 @@ export async function createApp(options: AppOptions) {
   // the provider transport inside the fenced dispatch step.
   engines.dispatch = harness.textRoute.request;
   engines.nativeSessions = harness.claudeSessions;
+  engines.modelSessions = harness.modelSessions;
+  const exposure = new SpendExposure(store.dataDir);
+  await exposure.init();
+  engines.modelApi = {
+    connections: new AwsConnections(store.dataDir),
+    secrets: new ConnectionSecrets(store.dataDir, options.secretBox ?? null),
+    exposure,
+    transcripts: new FileModelTranscripts(path.join(store.dataDir, 'model-transcripts'), AWS_BEDROCK_ROUTE),
+    transport: options.modelApiTransport,
+  };
   await harness.init();
   const connections = new DesktopConnections(store, harness);
   const app = express();
@@ -2639,11 +2678,27 @@ export async function createApp(options: AppOptions) {
   // The Diomedes conversation. `InteractionTurns` owns the sequence; what follows is only what
   // the Store and the existing admission paths supply to it. Each method takes and releases
   // its own lock, and none of them holds one while a provider runs.
+  /** The driver that owns a conversation run. Model-API runs are named `model-…`. */
+  const conversationDriver = (runId: string) => {
+    const driver = runId.startsWith('model-') ? engines.modelSessions : engines.nativeSessions;
+    if (!driver) throw new ApiError(503, 'The conversation runtime is unavailable.');
+    return driver;
+  };
+  /** `locate` across a thread's lineages, each on its own driver, newest first. */
+  const conversationLocator =
+    () => async (projectId: string, runIds: readonly string[], commandId: string) => {
+      for (const runId of runIds) {
+        const found = await conversationDriver(runId).locate(projectId, [runId], commandId);
+        if (found) return found;
+      }
+      return null;
+    };
   const interactionHost: InteractionHost = {
     resolve: (projectId, threadId, command, options) =>
       store.locked(async () => {
         const driver = engines.nativeSessions;
         if (!driver) throw new ApiError(503, 'The native conversation runtime is unavailable.');
+        const locateAny = conversationLocator();
         // Clone first, as the projection does: a failed persist must leave nothing half admitted.
         const state = structuredClone(store.state(projectId));
         const thread = state.conversations.find((item) => item.id === threadId);
@@ -2668,7 +2723,7 @@ export async function createApp(options: AppOptions) {
         const resolved = { projectId, threadId, commandId: command.commandId, sourceMessageId };
         // A command this thread already holds is found first, through every lineage it ever
         // had, retired ones included, and before the engine, the model or a file is looked at.
-        const located = await driver.locate(
+        const located = await locateAny(
           projectId,
           [...lineages].reverse().map((lineage) => lineage.runId),
           command.commandId,
@@ -2684,6 +2739,7 @@ export async function createApp(options: AppOptions) {
               thread.mode === 'auto' || thread.mode === 'plan' ? thread.mode : 'ask',
             ),
             runId: located.runId,
+            route: located.runId.startsWith('model-') ? AWS_BEDROCK_ROUTE : ('claude-code' as const),
             action: 'follow-up' as const,
             replay: true,
             text: command.text,
@@ -2700,14 +2756,25 @@ export async function createApp(options: AppOptions) {
           (sent.settled || lineages.find((lineage) => lineage.runId === sent.runId)?.retired)
         )
           return { unfinished: true as const, runId: sent.runId, sourceMessageId };
-        if (selectedEngine(store.settings, state.project, thread) !== 'claude-code')
-          throw new ApiError(409, 'Select Claude Code for this conversation before sending.');
-        if (store.settings.services?.['claude-code'] !== true)
-          throw new ApiError(409, 'Turn Claude Code on in Settings before sending.');
-        const accountRoute = store.settings.services?.['claude-codeAccountRoute'];
-        const selection = nativeChoice('claude-code', projectId, thread);
-        if (!selection.model || typeof accountRoute !== 'string')
-          throw new ApiError(409, 'Select the Claude account and model in Settings first.');
+        // CD-01 Decision 5: a conversation runs on the native Claude session or on a
+        // model-API route through its own driver. Any other route is refused here, by name.
+        const conversationRoute = selectedEngine(store.settings, state.project, thread);
+        if (conversationRoute !== 'claude-code' && !isModelApiRoute(conversationRoute))
+          throw new ApiError(
+            409,
+            'Select Claude Code or AWS Bedrock for this conversation before sending.',
+          );
+        const routeName =
+          conversationRoute === 'claude-code' ? 'Claude Code' : MODEL_API_NAMES[conversationRoute];
+        if (store.settings.services?.[conversationRoute] !== true)
+          throw new ApiError(409, `Turn ${routeName} on in Settings before sending.`);
+        const accountRoute = store.settings.services?.[`${conversationRoute}AccountRoute`];
+        const selection =
+          conversationRoute === 'claude-code'
+            ? nativeChoice('claude-code', projectId, thread)
+            : { model: store.settings.services?.[`${conversationRoute}Model`] };
+        if (typeof selection.model !== 'string' || !selection.model || typeof accountRoute !== 'string')
+          throw new ApiError(409, `Connect ${routeName} and choose its model in AI setup first.`);
         const paths = new Set<string>();
         const documents = [];
         for (const source of command.sources) {
@@ -2731,6 +2798,14 @@ export async function createApp(options: AppOptions) {
           .filter((lineage) => lineage.mode === command.mode && !lineage.retired)
           .sort((a, b) => b.generation - a.generation)[0];
         let changed = false;
+        // A lineage belongs to one route. Choosing another route starts the next generation;
+        // the earlier run stays as evidence under its own driver.
+        const modelRoute = isModelApiRoute(conversationRoute);
+        if (current && !sent && current.runId.startsWith('model-') !== modelRoute) {
+          current.retired = 'scope-change';
+          current = undefined;
+          changed = true;
+        }
         // The lineages are searched newest first, so once the replacement holds this command
         // it is the one a retry or a restart finds, and the refused turn stays as evidence.
         if (current && options.replace && !sent) {
@@ -2743,7 +2818,7 @@ export async function createApp(options: AppOptions) {
           current = {
             mode: command.mode,
             generation,
-            runId: claudeSessionRunId(
+            runId: (modelRoute ? modelSessionRunId : claudeSessionRunId)(
               projectId,
               `lineage.${evidenceDigest({ threadId, mode: command.mode, generation }).slice(0, 40)}`,
             ),
@@ -2753,7 +2828,9 @@ export async function createApp(options: AppOptions) {
         }
         if (changed) await store.persist(state);
         const runId = current.runId;
-        const known = await driver.status(projectId, runId).catch((error: unknown) => {
+        const lineageDriver = runId.startsWith('model-') ? engines.modelSessions : driver;
+        if (!lineageDriver) throw new ApiError(503, 'The conversation runtime is unavailable.');
+        const known = await lineageDriver.status(projectId, runId).catch((error: unknown) => {
           if (error instanceof HarnessError && error.code === 'unknown_run') return null;
           throw error;
         });
@@ -2798,6 +2875,7 @@ export async function createApp(options: AppOptions) {
           restriction,
           control: restriction,
           runId,
+          route: modelRoute ? conversationRoute : ('claude-code' as const),
           action,
           replay: false,
           text: command.text,
@@ -2805,7 +2883,7 @@ export async function createApp(options: AppOptions) {
           input: {
             ...request,
             documents,
-            model: selection.model,
+            model: selection.model as string,
             accountRoute,
             signal: options.signal,
             onPreview: (frame: TransientPreview) =>
@@ -2821,7 +2899,7 @@ export async function createApp(options: AppOptions) {
           .state(projectId)
           .conversations.find((item) => item.id === threadId);
         if (!thread) throw new ApiError(404, 'This thread was not found.');
-        const located = await driver.locate(
+        const located = await conversationLocator()(
           projectId,
           [...(thread.lineages ?? [])].reverse().map((lineage) => lineage.runId),
           commandId,
@@ -2861,8 +2939,12 @@ export async function createApp(options: AppOptions) {
         const at = now();
         // A projection repaired after the fact is rebuilt from what the turn itself recorded.
         // The files are not read again and no current setting stands in for a past one.
-        const recorded = resolved.replay
-          ? await engines.nativeSessions!.evidence(
+        const answeredBy = resolved.route ?? 'claude-code';
+        // A model-API answer is always projected from its recorded origin: the requested model,
+        // the model AWS reported (or none) and the account route, exactly as the turn saved them.
+        const modelAnswer = result.runId.startsWith('model-');
+        const recorded = resolved.replay || modelAnswer
+          ? await (modelAnswer ? engines.modelSessions! : engines.nativeSessions!).evidence(
               resolved.projectId,
               result.runId,
               resolved.commandId,
@@ -2879,7 +2961,7 @@ export async function createApp(options: AppOptions) {
             text: resolved.text,
             at,
             sources,
-            route: 'claude-code',
+            route: answeredBy,
           },
           {
             id: assistantId,
@@ -2889,34 +2971,34 @@ export async function createApp(options: AppOptions) {
             text: result.text,
             at,
             sources,
-            route: 'claude-code',
+            route: answeredBy,
             helper: {
-              engine: 'claude-code',
+              engine: answeredBy,
               model: result.model,
               version: result.version,
-              verified: true,
+              verified: modelAnswer ? recorded?.origin?.model.source === 'runtime' : true,
             },
             origin: recorded
               ? (recorded.origin ??
                 // Nothing was recorded, so nothing is claimed: the model the runtime reported
                 // and no requested model or account.
                 directOrigin({
-                  engine: 'claude-code',
+                  engine: answeredBy,
                   reportedModel: result.model,
                   version: result.version,
-                  executorId: 'claude-code',
+                  executorId: answeredBy,
                 }))
               : directOrigin({
-                  engine: 'claude-code',
+                  engine: answeredBy,
                   requestedModel: resolved.input.model,
                   reportedModel: result.model,
                   version: result.version,
                   accountRoute: resolved.input.accountRoute,
-                  executorId: 'claude-code',
+                  executorId: answeredBy,
                 }),
           },
         );
-        thread.helper = { engine: 'claude-code', model: result.model };
+        thread.helper = { engine: answeredBy, model: result.model };
         // A repair never moves the Mode control: the person may have narrowed it since.
         if (!resolved.replay) thread.mode = resolved.mode;
         touchThread(thread, at, state.tasks);
@@ -2955,7 +3037,7 @@ export async function createApp(options: AppOptions) {
       selectedEngine(store.settings, store.state(projectId).project, null),
     createTask: (projectId, command, source) =>
       store.locked(async () => {
-        const driver = engines.nativeSessions!;
+        const driver = conversationDriver(source.runId);
         await driver.assertLive(source.projectId, source.runId);
         await admitChild(projectId, command, source, 'task');
         return driver.fenced(source.projectId, source.runId, async () => ({
@@ -2972,7 +3054,7 @@ export async function createApp(options: AppOptions) {
       }),
     startWork: (projectId, command, source) =>
       store.locked(async () => {
-        const driver = engines.nativeSessions!;
+        const driver = conversationDriver(source.runId);
         await driver.assertLive(source.projectId, source.runId);
         await admitChild(projectId, command, source, 'work');
         const session = (await admitWork(
@@ -3012,6 +3094,7 @@ export async function createApp(options: AppOptions) {
     // The provisioner takes the Store lock itself: its steps are one mutation.
     route(async () => store.provisionHome(), false),
   );
+  mountModelApiRoutes(app, { store, engines });
   mountInteractionRoutes(app, new InteractionTurns(engines, interactionHost), {
     authorize: async (req) => {
       store.state(String(req.params.id));
@@ -3204,6 +3287,11 @@ export async function createApp(options: AppOptions) {
                 store.state(projectId).conversations.find((c) => c.id === b.threadId),
               )
             : choice(b.route, ROUTES, 'service');
+      if (isModelApiRoute(serviceRoute))
+        throw new ApiError(
+          409,
+          `${MODEL_API_NAMES[serviceRoute]} answers through the conversation. Send your message there.`,
+        );
       // Home is reached through its messages route alone. This direct route would start work
       // there, write a plan into it, or re-route the one thread that has to stay on Claude
       // Code, so it is refused for every mode before anything is changed, any source file is
