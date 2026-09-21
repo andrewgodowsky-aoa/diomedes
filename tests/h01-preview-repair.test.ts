@@ -11,8 +11,14 @@ import { fixtureTextDispatch, textResponse } from './h01-fixture';
 
 const roots: string[] = [];
 afterEach(async () => {
-  for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
+  for (const root of roots.splice(0))
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
+
+// generate() makes several durable writes before its first preview frame. That is
+// 60 to 80 ms on a quiet machine and has overrun vi.waitFor's default 1000 ms on a
+// loaded CI runner, so these waits carry their own budget. What they assert is unchanged.
+const PATIENT = { timeout: 10_000, interval: 20 };
 
 async function heldRequest() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'h01-preview-repair-'));
@@ -46,7 +52,7 @@ async function heldRequest() {
     accountRoute: 'fixture:account', onPreview: frame => frames.push(frame),
   });
   const settled = job.then(value => ({ value }), error => ({ error }));
-  await vi.waitFor(() => expect(frames.map(frame => frame.text)).toEqual(['current']));
+  await vi.waitFor(() => expect(frames.map(frame => frame.text)).toEqual(['current']), PATIENT);
   const run = await runtime.runs.get('preview-project-preview-request');
   return { ...runtime, frames, run, input: input!, finish, settled };
 }
@@ -57,7 +63,7 @@ describe('preview publication follows the current durable lease', () => {
     try {
       await f.runs.claim(f.run.id, f.run.owner!, 1);
       const expiry = (await f.runs.get(f.run.id)).leaseExpiresAt!;
-      await vi.waitFor(() => expect(Date.now()).toBeGreaterThan(expiry));
+      await vi.waitFor(() => expect(Date.now()).toBeGreaterThan(expiry), PATIENT);
       f.input.onDelta?.('expired');
     } finally { f.finish(); await f.settled; }
     expect(f.frames.map(frame => frame.text)).toEqual(['current']);
