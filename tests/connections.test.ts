@@ -33,7 +33,9 @@ import {
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
-  while (cleanup.length) await cleanup.pop()!();
+  // Taken before the first await: a hook that outlives its timeout must not go
+  // on to run the cleanups the next test pushes.
+  for (const done of cleanup.splice(0).reverse()) await done();
 });
 const startTime = Date.parse('2026-09-09T08:00:00.000Z');
 const all = { resources: TOAST_RESOURCES.map((resource) => resource.id), itemIds: TOAST_ITEMS };

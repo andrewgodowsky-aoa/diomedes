@@ -30,7 +30,9 @@ import { ConnectionsService } from '../server/connections/service.js';
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
-  while (cleanup.length > 0) await cleanup.pop()?.();
+  // Taken before the first await: a hook that outlives its timeout must not go
+  // on to run the cleanups the next test pushes.
+  for (const done of cleanup.splice(0).reverse()) await done();
 });
 
 function record(value: unknown): Record<string, unknown> {

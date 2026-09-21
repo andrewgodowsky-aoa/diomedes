@@ -55,12 +55,15 @@ describe('mobile receipt workflow over durable stock', () => {
     url = `http://127.0.0.1:${address.port}/api/inventory`;
   });
   afterEach(async () => {
-    if (server)
+    // Taken off the shared bindings before the first await, so a teardown that
+    // outlives its hook can neither close nor clear the next test's server.
+    const closingServer = server, closingFixture = fixture, closingRoot = root;
+    if (closingServer)
       await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
+        closingServer.close((error) => (error ? reject(error) : resolve())),
       );
-    if (fixture) await fixture.close();
-    if (root) await fs.rm(root, { recursive: true, force: true });
+    if (closingFixture) await closingFixture.close();
+    if (closingRoot) await fs.rm(closingRoot, { recursive: true, force: true });
   });
 
   test('reads actual stock, preserves unknown quantities and does not invent physical counts', async () => {

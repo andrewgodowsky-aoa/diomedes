@@ -24,7 +24,11 @@ async function launch() {
   origin = `http://127.0.0.1:${address.port}`;
 }
 async function close() {
-  await app.locals.close(); await new Promise<void>((resolve) => server.close(() => resolve()));
+  // Held before the first await: a hook that outlives its timeout keeps running,
+  // and by then these bindings belong to the next test.
+  const closingApp = app, closingServer = server;
+  try { await closingApp.locals.close(); }
+  finally { await new Promise<void>((resolve) => closingServer.close(() => resolve())); }
 }
 beforeEach(async () => {
   process.env.DIOMEDES_TEST_MODE = '1'; disablePrototypeAuthority();

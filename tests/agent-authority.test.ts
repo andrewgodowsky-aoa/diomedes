@@ -120,9 +120,17 @@ beforeEach(async () => {
   await request('/settings', 'PUT', { services: { codex: true } });
 });
 afterEach(async () => {
-  await app.locals.close();
-  server.closeAllConnections();
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+  // Held before the first await: a hook that outlives its timeout keeps running,
+  // and by then these bindings belong to the next test.
+  const closingApp = app, closingServer = server;
+  try {
+    await closingApp?.locals.close();
+  } finally {
+    if (closingServer) {
+      closingServer.closeAllConnections();
+      await new Promise<void>((resolve) => closingServer.close(() => resolve()));
+    }
+  }
   vi.restoreAllMocks();
 });
 

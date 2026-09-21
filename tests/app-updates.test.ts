@@ -905,15 +905,21 @@ describe('update routes through the local service', () => {
   }
 
   afterEach(async () => {
-    if (application) await application.locals.close();
-    if (server) {
-      server.closeAllConnections();
-      await new Promise<void>((resolve, reject) =>
-        server!.close((error) => (error ? reject(error) : resolve())),
-      );
-    }
+    // Taken off the shared bindings before the first await, so a teardown that
+    // outlives its hook can neither close nor clear the next test's server.
+    const closingApp = application, closingServer = server;
     application = undefined;
     server = undefined;
+    try {
+      if (closingApp) await closingApp.locals.close();
+    } finally {
+      if (closingServer) {
+        closingServer.closeAllConnections();
+        await new Promise<void>((resolve, reject) =>
+          closingServer.close((error) => (error ? reject(error) : resolve())),
+        );
+      }
+    }
   });
 
   it('runs the explicit check, download and install flow', async () => {

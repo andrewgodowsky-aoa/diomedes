@@ -73,10 +73,16 @@ async function open() {
 
 async function close() {
   if (!server) return;
-  await host.close();
-  server.closeAllConnections();
-  await new Promise<void>((resolve, reject) => server!.close(error => error ? reject(error) : resolve()));
+  // Taken off the shared bindings before the first await, so a teardown that
+  // outlives its hook can neither close nor clear the next test's server.
+  const closingHost = host, closingServer = server;
   server = undefined;
+  try {
+    await closingHost.close();
+  } finally {
+    closingServer.closeAllConnections();
+    await new Promise<void>((resolve, reject) => closingServer.close(error => error ? reject(error) : resolve()));
+  }
 }
 
 const endpoint = (runId = 'recovery', project = projectId) =>

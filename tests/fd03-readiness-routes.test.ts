@@ -30,12 +30,20 @@ beforeEach(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/readiness`;
 });
 afterEach(async () => {
-  await app.locals.close();
-  server.closeAllConnections();
-  await new Promise<void>((resolve, reject) =>
-    server.close((error) => (error ? reject(error) : resolve())),
-  );
-  await fs.rm(root, { recursive: true, force: true });
+  // Held before the first await: a hook that outlives its timeout keeps running,
+  // and by then these bindings belong to the next test.
+  const closingApp = app, closingServer = server, closingRoot = root;
+  try {
+    await closingApp?.locals.close();
+  } finally {
+    if (closingServer) {
+      closingServer.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        closingServer.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  }
+  await fs.rm(closingRoot, { recursive: true, force: true });
 });
 
 test('mounted readiness uses cached facts and cannot self-certify shipped knowledge', async () => {

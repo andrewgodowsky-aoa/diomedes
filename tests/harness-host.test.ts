@@ -34,12 +34,18 @@ async function open() {
 }
 async function close() {
   if (!server) return;
-  await app.locals.close();
-  server.closeAllConnections();
-  await new Promise<void>((resolve, reject) =>
-    server!.close((error) => (error ? reject(error) : resolve())),
-  );
+  // Taken off the shared bindings before the first await, so a teardown that
+  // outlives its hook can neither close nor clear the next test's server.
+  const closingApp = app, closingServer = server;
   server = undefined;
+  try {
+    await closingApp.locals.close();
+  } finally {
+    closingServer.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      closingServer.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
 }
 async function request<T>(
   route: string,
