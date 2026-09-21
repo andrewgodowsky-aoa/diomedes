@@ -10,8 +10,14 @@ import {
   selectedSpineId,
   spineItems,
   visibleResults,
+  diomedesThread,
+  modeFor,
+  outcomeCard,
+  restrictionFor,
   type DiomedesResult,
 } from '../client/console/diomedes-view';
+import type { InteractionOutcome } from '../shared/conversation';
+import type { Conversation } from '../shared/types';
 
 // This file imports only the pure view-model, the way tests/console-activity
 // .test.ts imports only client/console/activity: this repository has no
@@ -238,5 +244,123 @@ describe('paragraphs', () => {
   it('gives nothing for text with nothing in it, so no empty paragraph is drawn', () => {
     expect(paragraphs('')).toEqual([]);
     expect(paragraphs(' \n\n ')).toEqual([]);
+  });
+});
+
+describe('which thread a project talks to Diomedes on', () => {
+  const thread = (patch: Partial<Conversation>): Conversation => ({
+    id: 'C1',
+    attachedTo: { kind: 'project', ref: 'p1' },
+    turns: [],
+    mode: 'ask',
+    createdAt: '2026-09-01T00:00:00.000Z',
+    ...patch,
+  });
+  const lineage = [{ mode: 'auto' as const, generation: 1, runId: 'r1' }];
+
+  it('is none until one exists, so the page creates it on the first send and never before', () => {
+    expect(diomedesThread([])).toBeNull();
+    // An ordinary Console thread is not the Diomedes conversation, however old it is.
+    expect(diomedesThread([thread({ id: 'C0', mode: 'ask' })])).toBeNull();
+    expect(diomedesThread([thread({ id: 'C0', mode: 'build' })])).toBeNull();
+  });
+
+  it('adopts a thread made for it that never sent, so a crash before the first send leaves one', () => {
+    expect(diomedesThread([thread({ id: 'C2', mode: 'auto' })])?.id).toBe('C2');
+  });
+
+  it('keeps the same thread after its Mode is narrowed, because it has spoken', () => {
+    expect(diomedesThread([thread({ id: 'C3', mode: 'ask', lineages: lineage })])?.id).toBe('C3');
+  });
+
+  it('is the oldest that qualifies, ties broken by id, whatever order they load in', () => {
+    const a = thread({ id: 'Cb', mode: 'auto', createdAt: '2026-09-02T00:00:00.000Z' });
+    const b = thread({ id: 'Ca', mode: 'auto', createdAt: '2026-09-02T00:00:00.000Z' });
+    const c = thread({ id: 'Cz', mode: 'auto', createdAt: '2026-09-01T00:00:00.000Z' });
+    expect(diomedesThread([a, b])?.id).toBe('Ca');
+    expect(diomedesThread([b, a, c])?.id).toBe('Cz');
+    expect(diomedesThread([c, a, b])?.id).toBe('Cz');
+  });
+
+  it('never adopts a thread that belongs to a task, a document or a review', () => {
+    expect(
+      diomedesThread([
+        thread({ id: 'Ct', mode: 'auto', taskId: 't1' }),
+        thread({ id: 'Cd', mode: 'auto', attachedTo: { kind: 'document', ref: 'a.md' } }),
+        thread({ id: 'Cr', lineages: lineage, attachedTo: { kind: 'review', ref: 'x' } }),
+      ]),
+    ).toBeNull();
+  });
+});
+
+describe('the Mode control and the server Mode', () => {
+  it('maps each control to a conversation Mode and never to a work mode', () => {
+    expect(RESTRICTIONS.map((r) => modeFor(r.id))).toEqual(['auto', 'ask', 'plan']);
+  });
+  it('reads a saved Mode back, and a work mode or a missing one as the default', () => {
+    expect(restrictionFor('ask')).toBe('answer-only');
+    expect(restrictionFor('plan')).toBe('plan-only');
+    expect(restrictionFor('auto')).toBe('automatic');
+    expect(restrictionFor('build')).toBe('automatic');
+    expect(restrictionFor(undefined)).toBe('automatic');
+  });
+});
+
+describe('what one outcome reads as', () => {
+  const projects = [projectFixture({ id: 'p1', name: 'Harbor Street Bakery' })];
+  const proposed: InteractionOutcome = {
+    status: 'proposed',
+    projectId: 'p1',
+    operationClass: 'write_internal',
+    proposalDigest: 'd'.repeat(64),
+    summary: 'Order the usual from the supplier.',
+  };
+
+  it('shows nothing when the answer is all there is', () => {
+    expect(outcomeCard(null, projects)).toBeNull();
+    expect(outcomeCard({ status: 'answered' }, projects)).toBeNull();
+    expect(outcomeCard({ status: 'read', projectId: 'p1' }, projects)).toBeNull();
+  });
+
+  it('offers Start only for a proposal, names the project, and promises nothing is written yet', () => {
+    const card = outcomeCard(proposed, projects)!;
+    expect(card.action).toEqual({ kind: 'start', label: 'Start' });
+    expect(card.title).toBe('Diomedes can start this in Harbor Street Bakery');
+    expect(card.body).toContain('Order the usual from the supplier.');
+    expect(card.body).toContain('Nothing is written until you say go ahead.');
+  });
+
+  it('says started only when work started, and offers the way to it', () => {
+    const card = outcomeCard(
+      { status: 'started', projectId: 'p1', taskId: 't', sessionId: 's' },
+      projects,
+    )!;
+    expect(card.title).toBe('Started in Harbor Street Bakery');
+    expect(card.action).toEqual({ kind: 'open', label: 'Open the work' });
+  });
+
+  it('never offers an action for what did not start, and says why in the server sentence', () => {
+    const blocked = outcomeCard(
+      { status: 'not-started', reason: 'needs-target', message: 'Say which project.', taskId: null },
+      projects,
+    )!;
+    const refused = outcomeCard(
+      { status: 'not-started', reason: 'refused', message: 'Busy.', taskId: 't' },
+      projects,
+    )!;
+    const unresolved = outcomeCard({ status: 'unresolved', message: 'Send it again.' }, projects)!;
+    expect([blocked.action, refused.action, unresolved.action]).toEqual([null, null, null]);
+    expect([blocked.body, refused.body, unresolved.body]).toEqual([
+      'Say which project.',
+      'Busy.',
+      'Send it again.',
+    ]);
+    expect([blocked.tone, refused.tone, unresolved.tone]).toEqual(['attn', 'fail', 'attn']);
+  });
+
+  it('names no project it cannot find rather than showing an id', () => {
+    expect(outcomeCard({ ...proposed, projectId: 'gone' }, projects)!.title).toBe(
+      'Diomedes can start this in a project',
+    );
   });
 });

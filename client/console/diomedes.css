@@ -78,6 +78,75 @@
   animation: dm-view-in var(--dm-t-extend) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* What the last message led to, beyond its answer. One flat box on the
+   composer's own border, with a state rule down its left edge in the
+   colours the Console's points already speak. It sits in the transcript,
+   under the answer it belongs to, and there is never more than one. */
+.console.diomedes .dio-card {
+  margin: 14px 0 0;
+  padding: 11px 14px;
+  border: 1px solid var(--hair-2);
+  border-left: 2px solid var(--t3);
+  border-radius: var(--rb);
+  background-color: var(--surface);
+  animation: dm-view-in var(--dm-t-extend) cubic-bezier(0.16, 1, 0.3, 1);
+}
+.console.diomedes .dio-card.offer,
+.console.diomedes .dio-card.attn {
+  border-left-color: var(--attn);
+}
+.console.diomedes .dio-card.live {
+  border-left-color: var(--light);
+}
+.console.diomedes .dio-card.fail {
+  border-left-color: var(--fail);
+}
+.console.diomedes .dio-card b {
+  display: block;
+  color: var(--t1);
+  font-size: var(--dm-type-body);
+  font-weight: 600;
+}
+.console.diomedes .dio-card p {
+  margin: 4px 0 0;
+  color: var(--t2);
+  font-size: var(--dm-type-body);
+  line-height: var(--dm-line-body);
+}
+.console.diomedes .dio-card .send {
+  margin-top: 10px;
+}
+
+/* The two strips above the composer. A notice is one sentence; the
+   unconfirmed message quotes what was sent and offers the only two honest
+   choices. Neither draws a second composer. */
+.console.diomedes .dio-notice,
+.console.diomedes .dio-unconfirmed {
+  margin: 0 0 8px;
+  padding: 9px 14px;
+  border: 1px solid var(--hair-2);
+  border-left: 2px solid var(--attn);
+  border-radius: var(--rb);
+  color: var(--t2);
+  font-size: var(--dm-type-body);
+  line-height: var(--dm-line-body);
+}
+.console.diomedes .dio-unconfirmed p {
+  margin: 0;
+}
+.console.diomedes .dio-unconfirmed .dio-quote {
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--t1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console.diomedes .dio-unconfirmed .dio-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 /* Both voices are set from the same left margin, as the approved boards draw
    them. The person's turns are told apart by the dimmer body colour
    console.css already gives `.turn.you`, and Diomedes' by the point

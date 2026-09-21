@@ -14,6 +14,7 @@ import {
   spineItems,
   visibleResults,
   type DiomedesResult,
+  type OutcomeCard,
   type Restriction,
 } from './diomedes-view';
 import './console.css';
@@ -36,6 +37,16 @@ export interface DiomedesPageProps {
   onStop(): void;
   /** Why the conversation cannot run here, in plain words, or null when it can. */
   unavailable: string | null;
+  /** What the last message led to, beyond its answer. Null when the answer is all there is. */
+  card: OutcomeCard | null;
+  cardBusy: boolean;
+  onCardAction(): void;
+  /** A message this conversation sent and never had confirmed, offered back, or null. */
+  unconfirmed: string | null;
+  onResend(): void;
+  onDiscard(): void;
+  /** One plain sentence about the last thing that went wrong, or null. */
+  notice: string | null;
   results: DiomedesResult[];
   onOpenResult(id: string): void;
   destinations: EverythingItem[];
@@ -89,6 +100,13 @@ export function Diomedes({
   onSend,
   onStop,
   unavailable,
+  card,
+  cardBusy,
+  onCardAction,
+  unconfirmed,
+  onResend,
+  onDiscard,
+  notice,
   results,
   onOpenResult,
   destinations,
@@ -99,9 +117,11 @@ export function Diomedes({
   onNewProject,
 }: DiomedesPageProps) {
   const [text, setText] = useState('');
-  const ready = canSend(text, pending, unavailable);
+  // One unconfirmed message at a time: it is resolved before anything new is sent.
+  const blocked = unconfirmed !== null ? 'An earlier message is waiting.' : unavailable;
+  const ready = canSend(text, pending, blocked);
   const submit = () => {
-    if (!canSend(text, pending, unavailable)) return;
+    if (!canSend(text, pending, blocked)) return;
     onSend(text);
     setText('');
   };
@@ -155,6 +175,24 @@ export function Diomedes({
                     </div>
                   </div>
                 ))}
+                {card && !pending && (
+                  <div className={`dio-card ${card.tone}`} role="group" aria-label={card.title}>
+                    <b>{card.title}</b>
+                    <p>{card.body}</p>
+                    {card.action && (
+                      <button
+                        type="button"
+                        className="send ready"
+                        aria-disabled={cardBusy || undefined}
+                        onClick={() => {
+                          if (!cardBusy) onCardAction();
+                        }}
+                      >
+                        {cardBusy ? 'Starting' : card.action.label}
+                      </button>
+                    )}
+                  </div>
+                )}
                 {pending && (
                   <p className="mono dio-pending" role="status">
                     Working
@@ -164,6 +202,30 @@ export function Diomedes({
             </div>
 
             <div className="col compose">
+              {notice !== null && (
+                <p className="dio-notice" role="alert">
+                  {notice}
+                </p>
+              )}
+              {unconfirmed !== null && !pending && (
+                <div className="dio-unconfirmed" role="group" aria-label="A message that was not confirmed">
+                  <p>
+                    Diomedes could not confirm your last message. Sending it again checks what
+                    happened and never asks twice.
+                  </p>
+                  <p className="dio-quote" title={unconfirmed}>
+                    {unconfirmed}
+                  </p>
+                  <div className="dio-row">
+                    <button type="button" className="send ready" onClick={onResend}>
+                      Send again
+                    </button>
+                    <button type="button" className="send" onClick={onDiscard}>
+                      Discard
+                    </button>
+                  </div>
+                </div>
+              )}
               {unavailable !== null ? (
                 <p className="composer dio-unavailable">{unavailable}</p>
               ) : (

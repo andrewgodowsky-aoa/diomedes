@@ -1,4 +1,5 @@
-import type { Project } from '../../shared/types';
+import type { ConversationMode, InteractionOutcome } from '../../shared/conversation';
+import type { Conversation, Project } from '../../shared/types';
 import type { RailItem } from './Rail';
 
 /**
@@ -176,4 +177,89 @@ export function visibleResults(
   limit = 5,
 ): DiomedesResult[] {
   return results.slice(0, limit);
+}
+
+const MODE_FOR: Record<Restriction, ConversationMode> = {
+  automatic: 'auto',
+  'answer-only': 'ask',
+  'plan-only': 'plan',
+};
+/** The Mode control as the server names it. The page never sends a work mode. */
+export function modeFor(restriction: Restriction): ConversationMode {
+  return MODE_FOR[restriction];
+}
+/** A thread's saved Mode as this page's control. A thread on a work mode reads as the default. */
+export function restrictionFor(mode: string | undefined): Restriction {
+  return mode === 'ask' ? 'answer-only' : mode === 'plan' ? 'plan-only' : 'automatic';
+}
+
+/**
+ * The thread a project's own Diomedes conversation lives on, or null when there is none yet.
+ *
+ * The same rule the home conversation uses, for the same reason: the oldest qualifying thread,
+ * ties broken by id, so every window and every restart agree on one. A thread qualifies when it
+ * belongs to the project itself (not to a task, a document or a review) and either has spoken
+ * through the conversation routes (it has lineages) or was made for them (its Mode is Automatic,
+ * which only this page creates). Adopting before creating is what keeps a crash between making
+ * the thread and sending the first message from leaving two.
+ */
+export function diomedesThread(conversations: readonly Conversation[]): Conversation | null {
+  const mine = conversations.filter(
+    (thread) =>
+      thread.attachedTo.kind === 'project' &&
+      !thread.taskId &&
+      ((thread.lineages?.length ?? 0) > 0 || thread.mode === 'auto'),
+  );
+  mine.sort(
+    (a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? '') || a.id.localeCompare(b.id),
+  );
+  return mine[0] ?? null;
+}
+
+/** What the page shows under the last answer. Null when the answer is all there is to show. */
+export interface OutcomeCard {
+  tone: 'offer' | 'live' | 'attn' | 'fail';
+  title: string;
+  body: string;
+  /** `start` selects this proposal; `open` goes to the work that did start. */
+  action: { kind: 'start'; label: string } | { kind: 'open'; label: string } | null;
+}
+
+const OPERATION: Record<'prepare_artifact' | 'write_internal', string> = {
+  prepare_artifact: 'Diomedes will prepare this for you to review.',
+  write_internal: 'Diomedes will propose the changes. Nothing is written until you say go ahead.',
+};
+
+/**
+ * One outcome in plain words. Only `proposed` offers Start, and only `started` says anything
+ * started: every other state says what did not happen, in the server's own sentence.
+ */
+export function outcomeCard(
+  outcome: InteractionOutcome | null,
+  projects: readonly Project[],
+): OutcomeCard | null {
+  if (!outcome || outcome.status === 'answered' || outcome.status === 'read') return null;
+  const nameOf = (id: string) => projects.find((p) => p.id === id)?.name ?? 'a project';
+  if (outcome.status === 'proposed')
+    return {
+      tone: 'offer',
+      title: `Diomedes can start this in ${nameOf(outcome.projectId)}`,
+      body: `${outcome.summary} ${OPERATION[outcome.operationClass]}`.trim(),
+      action: { kind: 'start', label: 'Start' },
+    };
+  if (outcome.status === 'started')
+    return {
+      tone: 'live',
+      title: `Started in ${nameOf(outcome.projectId)}`,
+      body: 'The work is running in that project, where you can follow and review it.',
+      action: { kind: 'open', label: 'Open the work' },
+    };
+  if (outcome.status === 'unresolved')
+    return { tone: 'attn', title: 'This did not finish', body: outcome.message, action: null };
+  return {
+    tone: outcome.reason === 'refused' ? 'fail' : 'attn',
+    title: 'Nothing was started',
+    body: outcome.message,
+    action: null,
+  };
 }
