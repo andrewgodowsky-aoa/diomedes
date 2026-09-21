@@ -62,6 +62,13 @@ export interface ResolvedMessage {
   /** What the person typed, for projection. The prompt may carry more than this. */
   text: string;
   mode: ConversationMode;
+  /**
+   * The Mode control as it stands now, which is what admission is held to. For a new message
+   * it is the Mode the message was sent with. For a command read back later it is the thread's
+   * current Mode: `restriction` stays what the command was bound to and is never widened by
+   * this, only narrowed.
+   */
+  control: Restriction;
 }
 /** A command whose turn never finished on a lineage that has since been retired or settled. */
 export interface UnfinishedElsewhere {
@@ -77,6 +84,12 @@ export interface LocatedMessage {
   settled: boolean;
   /** From the conversation's Mode control as it stands now. */
   restriction: Restriction;
+}
+
+/** The conversation run an admission comes from. */
+export interface AdmissionSource {
+  projectId: string;
+  runId: string;
 }
 
 /** What the host supplies. Every method that touches the Store takes and releases its own lock. */
@@ -104,13 +117,20 @@ export interface InteractionHost {
     projectId: string,
     ids: { taskCommandId: string; workCommandId: string },
   ): Promise<Receipts>;
+  /**
+   * Both admissions name the conversation run they come from. The host refuses, inside the
+   * Store lock and before it admits anything, when that run is settled: a cancellation that
+   * lands after the input phase was recorded still stops the admission it precedes.
+   */
   createTask(
     projectId: string,
     command: { commandId: string; name: string; description: string },
+    source: AdmissionSource,
   ): Promise<{ taskId: string }>;
   startWork(
     projectId: string,
     command: { commandId: string; taskId: string; instruction: string },
+    source: AdmissionSource,
   ): Promise<{ sessionId: string }>;
 }
 
@@ -127,8 +147,14 @@ const MOVED_ON =
 function retirement(error: unknown): LineageRetirement | null {
   if (error instanceof EngineError && error.code === 'SESSION_MISMATCH') return 'scope-change';
   if (error instanceof EngineError && error.code === 'RECONCILE_REQUIRED') return 'terminated';
-  if (error instanceof HarnessError && error.code === 'blocked' && /budget/.test(error.message))
-    return 'budget';
+  // The Runtime refuses with `blocked: budget exceeded`. The engine service hands every Runtime
+  // refusal it does not name to its callers as RUNTIME_UNAVAILABLE with the Runtime's own words,
+  // so that is the shape that arrives here. The turn was written and never sent.
+  if (
+    (error instanceof HarnessError && error.code === 'blocked') ||
+    (error instanceof EngineError && error.code === 'RUNTIME_UNAVAILABLE')
+  )
+    return /^budget exceeded/.test(error.message) ? 'budget' : null;
   return null;
 }
 
@@ -184,26 +210,15 @@ export class InteractionTurns {
         model: result.response.model,
         version: result.response.version,
       });
-    // Shown only when the first phase was never saved, which is a settled run whose process
-    // died right after the answer. It is computed in memory and written nowhere.
-    const unsaved = result.response
-      ? splitDecision(
-          result.response.text,
-          resolved.sourceMessageId,
-          resolved.restriction,
-          resolved.text,
-        ).body
-      : null;
-    const outcome = await this.settle(
-      {
-        projectId,
-        commandId: command.commandId,
-        runId: resolved.runId,
-        sourceMessageId: resolved.sourceMessageId,
-        restriction: resolved.restriction,
-      },
-      unsaved,
-    );
+    // The outcome is read from what was recorded and from nothing else. A decision that was
+    // never saved is not rebuilt in memory: the message reads as unresolved on every route.
+    const outcome = await this.settle({
+      projectId,
+      commandId: command.commandId,
+      runId: resolved.runId,
+      sourceMessageId: resolved.sourceMessageId,
+      restriction: resolved.control,
+    });
     return {
       runId: resolved.runId,
       commandId: command.commandId,
@@ -254,16 +269,13 @@ export class InteractionTurns {
     await driver.record(projectId, located.runId, [
       { phase: 'action-selected', sourceMessageId: located.sourceMessageId, body: { ...selection } },
     ]);
-    const outcome = await this.settle(
-      {
-        projectId,
-        commandId,
-        runId: located.runId,
-        sourceMessageId: located.sourceMessageId,
-        restriction: located.restriction,
-      },
-      null,
-    );
+    const outcome = await this.settle({
+      projectId,
+      commandId,
+      runId: located.runId,
+      sourceMessageId: located.sourceMessageId,
+      restriction: located.restriction,
+    });
     return {
       runId: located.runId,
       commandId,
@@ -285,7 +297,6 @@ export class InteractionTurns {
         sourceMessageId: located.sourceMessageId,
         restriction: located.restriction,
       },
-      null,
       located.settled,
     );
     return {
@@ -300,7 +311,6 @@ export class InteractionTurns {
 
   private async read(
     message: { projectId: string; runId: string; sourceMessageId: string; restriction: Restriction },
-    unsaved: DecisionPhaseBody | null,
     settled: boolean,
   ) {
     const phases = await this.driver().phases(
@@ -308,7 +318,7 @@ export class InteractionTurns {
       message.runId,
       message.sourceMessageId,
     );
-    const body = decisionOf(phases) ?? unsaved;
+    const body = decisionOf(phases);
     const verdict = body
       ? admitInteraction({
           decision: body.decision,
@@ -347,12 +357,12 @@ export class InteractionTurns {
       sourceMessageId: string;
       restriction: Restriction;
     },
-    unsaved: DecisionPhaseBody | null,
   ): Promise<InteractionOutcome> {
     const driver = this.driver();
     const located = await driver.locate(message.projectId, [message.runId], message.commandId);
     const settled = located?.settled ?? false;
-    const first = await this.read(message, unsaved, settled);
+    const first = await this.read(message, settled);
+    const source: AdmissionSource = { projectId: message.projectId, runId: message.runId };
     const done = first.phases.some(
       (phase) => phase.phase === 'task-refused' || phase.phase === 'work-refused',
     );
@@ -381,17 +391,17 @@ export class InteractionTurns {
     if (!taskId)
       try {
         taskId = (
-          await this.host.createTask(verdict.projectId, {
-            commandId: verdict.taskCommandId,
-            name,
-            description: instruction,
-          })
+          await this.host.createTask(
+            verdict.projectId,
+            { commandId: verdict.taskCommandId, name, description: instruction },
+            source,
+          )
         ).taskId;
       } catch (error) {
         const refused = refusal(error);
         if (!refused) throw error;
         await record('task-refused', refused);
-        return (await this.read(message, unsaved, false)).outcome;
+        return (await this.read(message, false)).outcome;
       }
     await record('task-receipt', { taskId });
     await record('work-input', {
@@ -400,17 +410,17 @@ export class InteractionTurns {
       taskId,
     });
     try {
-      const started = await this.host.startWork(verdict.projectId, {
-        commandId: verdict.workCommandId,
-        taskId,
-        instruction,
-      });
+      const started = await this.host.startWork(
+        verdict.projectId,
+        { commandId: verdict.workCommandId, taskId, instruction },
+        source,
+      );
       await record('work-receipt', { sessionId: started.sessionId });
     } catch (error) {
       const refused = refusal(error);
       if (!refused) throw error;
       await record('work-refused', refused);
     }
-    return (await this.read(message, unsaved, false)).outcome;
+    return (await this.read(message, false)).outcome;
   }
 }

@@ -531,11 +531,26 @@ export class RunService {
   }
 
   /** Take or renew the run's lease. A live lease held by someone else is refused. */
-  async claim(runId: string, owner: string, ttlMs = 60_000): Promise<number> {
+  /**
+   * `refuseSettled` makes the claim conditional on the run still being live, decided inside
+   * this run's own queue, where `cancel` is decided too. A caller that inspected the run and
+   * then claims it cannot have a cancellation land between the two and still take the lease.
+   */
+  async claim(
+    runId: string,
+    owner: string,
+    ttlMs = 60_000,
+    options: { refuseSettled?: boolean } = {},
+  ): Promise<number> {
     if (!owner || typeof owner !== 'string' || units(ttlMs, 'Lease TTL') === 0)
       throw new HarnessError('invalid_lease', 'An owner and a positive TTL are required.');
     return this.serialize(runId, async () => {
       const run = await this.load(runId);
+      if (
+        options.refuseSettled &&
+        ['completed', 'cancelled', 'failed', 'reconcile_required'].includes(run.state)
+      )
+        throw new HarnessError('run_settled', 'This run is settled and cannot be claimed.');
       const live = (run.leaseExpiresAt ?? 0) > this.clock();
       if (run.owner && run.owner !== owner && live)
         throw new HarnessError('lease_busy', 'lease busy');

@@ -359,11 +359,13 @@ test('locate finds the run that holds a command through every lineage, settled o
     runId: 'native',
     answered: true,
     settled: true,
+    dispatched: true,
   });
   expect(await f.driver.locate('p', lineages, 'two')).toEqual({
     runId: 'native-2',
     answered: true,
     settled: false,
+    dispatched: true,
   });
   expect(await f.driver.locate('p', lineages, 'three')).toBeNull();
   // Another project's run is not found through this project.
@@ -388,5 +390,50 @@ test('a turn saved before bindings existed is compared by what it did save', asy
     code: 'intent_mismatch',
   });
   expect(f.sent()).toBe(1);
+  await f.driver.closeAll();
+});
+
+test('R-15: a cancellation that lands between the inspection and the claim is refused inside the claim, and the run is untouched', async () => {
+  const f = await fixture();
+  await f.driver.request(f.turn('start', 'one'));
+  const claim = f.runs.claim.bind(f.runs);
+  // The driver has already read the run as live. The cancellation wins the race to the run's
+  // own queue, so the claim that follows must see it there.
+  f.runs.claim = async (...args: Parameters<typeof claim>) => {
+    f.runs.claim = claim;
+    await f.runs.cancel('native', 'cancelled in the gap', principal);
+    return claim(...args);
+  };
+  const before = (await f.runs.get('native')).fence;
+  const late: InteractionPhase = { phase: 'task-input', sourceMessageId: SM, body: { a: 1 } };
+  await expect(f.driver.record('p', 'native', [late])).rejects.toMatchObject({
+    code: 'RUN_SETTLED',
+  });
+  const after = await f.runs.get('native');
+  expect(after.state).toBe('cancelled');
+  expect(after.fence).toBe(before);
+  expect(await f.driver.phases('p', 'native', SM)).toHaveLength(1);
+  await f.driver.closeAll();
+});
+
+test('only a claim that asks is refused on a settled run, so no other caller changed', async () => {
+  const f = await fixture();
+  await f.driver.request(f.turn('start', 'one'));
+  await f.runs.cancel('native', 'done', principal);
+  // The same owner both times, so the two claims differ only in asking.
+  const owner = (f.driver as unknown as { owner: string }).owner;
+  await expect(
+    f.runs.claim('native', owner, 1000, { refuseSettled: true }),
+  ).rejects.toMatchObject({ code: 'run_settled' });
+  await expect(f.runs.claim('native', owner, 1000)).resolves.toBeGreaterThan(0);
+  await f.driver.closeAll();
+});
+
+test('assertLive refuses a settled conversation run and passes a live one', async () => {
+  const f = await fixture();
+  await f.driver.request(f.turn('start', 'one'));
+  await expect(f.driver.assertLive('p', 'native')).resolves.toBeUndefined();
+  await f.runs.cancel('native', 'moved on', principal);
+  await expect(f.driver.assertLive('p', 'native')).rejects.toMatchObject({ code: 'RUN_SETTLED' });
   await f.driver.closeAll();
 });

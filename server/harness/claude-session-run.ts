@@ -397,7 +397,8 @@ export class ClaudeSessionRuns {
       );
     // After a restart this driver is a new owner. Startup recovery released the old lease, so
     // the claim succeeds; a lease another live process still holds is refused, as it should be.
-    await this.runs.claim(runId, this.owner, 35 * 60_000);
+    // A cancellation that lands after the check above is refused inside the claim itself.
+    await this.claimLive(runId);
     await this.resolveWaits(runId, projectId);
     await this.write(runId, projectId, missing);
     const last = missing[missing.length - 1];
@@ -435,7 +436,7 @@ export class ClaudeSessionRuns {
     projectId: string,
     runIds: readonly string[],
     commandId: string,
-  ): Promise<{ runId: string; answered: boolean; settled: boolean } | null> {
+  ): Promise<{ runId: string; answered: boolean; settled: boolean; dispatched: boolean } | null> {
     const turnId = stepKey('turn', commandId);
     for (const runId of runIds) {
       let run: HarnessRun;
@@ -446,9 +447,55 @@ export class ClaudeSessionRuns {
         throw error;
       }
       const turn = run.steps.find((step) => step.intent.stepId === turnId);
-      if (turn) return { runId, answered: turn.state === 'succeeded', settled: terminal(run) };
+      // A turn a budget refused was written and never sent: it has no attempt. Nothing was
+      // asked of a model, so it is not an unfinished message anywhere.
+      if (turn)
+        return {
+          runId,
+          answered: turn.state === 'succeeded',
+          settled: terminal(run),
+          dispatched: turn.attempt > 0,
+        };
     }
     return null;
+  }
+  private async claimLive(runId: string) {
+    try {
+      await this.runs.claim(runId, this.owner, 35 * 60_000, { refuseSettled: true });
+    } catch (error) {
+      if (error instanceof HarnessError && error.code === 'run_settled')
+        throw new EngineError(
+          'RUN_SETTLED',
+          'This conversation run is settled. Nothing more can be recorded on it.',
+        );
+      throw error;
+    }
+  }
+  /**
+   * Refuses when the conversation run is settled. The admission boundary calls this inside the
+   * Store lock, which is the lock the run-cancel route holds while it cancels, so a cancellation
+   * is either seen here or comes after the admission it would have stopped.
+   */
+  async assertLive(projectId: string, runId: string) {
+    if (terminal(await this.get(projectId, runId)))
+      throw new EngineError(
+        'RUN_SETTLED',
+        'This conversation moved on before this was started. Nothing was started.',
+      );
+  }
+  /**
+   * What one answered message was sent with, read from its immutable turn: the source files
+   * it carried and the origin the Runtime recorded. A projection repaired later is rebuilt
+   * from this, never from the files and settings as they stand now.
+   */
+  async evidence(projectId: string, runId: string, commandId: string) {
+    const run = await this.get(projectId, runId);
+    const turn = run.steps.find((step) => step.intent.stepId === stepKey('turn', commandId));
+    const saved = turn?.intent.input as { documents?: { path: string }[] } | undefined;
+    return {
+      sources: (saved?.documents ?? []).map((document) => document.path),
+      origin: turn?.origin ?? null,
+    };
   }
   private async resolveWaits(runId: string, projectId: string) {
     const run = await this.get(projectId, runId);

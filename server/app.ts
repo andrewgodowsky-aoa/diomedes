@@ -2530,6 +2530,12 @@ export async function createApp(options: AppOptions) {
           return {
             ...resolved,
             restriction,
+            // The command keeps the restriction it was bound to. What it may still start is
+            // held to the thread's Mode now, so narrowing the control stops an admission
+            // that has not happened yet, on a retry exactly as on a selection.
+            control: restrictionOf(
+              thread.mode === 'auto' || thread.mode === 'plan' ? thread.mode : 'ask',
+            ),
             runId: located.runId,
             action: 'follow-up' as const,
             replay: true,
@@ -2539,11 +2545,14 @@ export async function createApp(options: AppOptions) {
             // and no model is chosen. The driver compares the binding and reads the record.
             input: { ...request, documents: [], model: '', accountRoute: '' },
           };
+        // A turn a budget refused was written and never sent. Nothing was asked of a model, so
+        // it is not an unfinished message, and it never stands in the way of a new lineage.
+        const sent = located?.dispatched ? located : null;
         if (
-          located &&
-          (located.settled || lineages.find((lineage) => lineage.runId === located.runId)?.retired)
+          sent &&
+          (sent.settled || lineages.find((lineage) => lineage.runId === sent.runId)?.retired)
         )
-          return { unfinished: true as const, runId: located.runId, sourceMessageId };
+          return { unfinished: true as const, runId: sent.runId, sourceMessageId };
         if (selectedEngine(store.settings, state.project, thread) !== 'claude-code')
           throw new ApiError(409, 'Select Claude Code for this conversation before sending.');
         if (store.settings.services?.['claude-code'] !== true)
@@ -2575,7 +2584,9 @@ export async function createApp(options: AppOptions) {
           .filter((lineage) => lineage.mode === command.mode && !lineage.retired)
           .sort((a, b) => b.generation - a.generation)[0];
         let changed = false;
-        if (current && options.replace && !located) {
+        // The lineages are searched newest first, so once the replacement holds this command
+        // it is the one a retry or a restart finds, and the refused turn stays as evidence.
+        if (current && options.replace && !sent) {
           current.retired = options.replace;
           current = undefined;
           changed = true;
@@ -2638,6 +2649,7 @@ export async function createApp(options: AppOptions) {
         return {
           ...resolved,
           restriction,
+          control: restriction,
           runId,
           action,
           replay: false,
@@ -2700,7 +2712,17 @@ export async function createApp(options: AppOptions) {
           return;
         }
         const at = now();
-        const sources = resolved.input.documents.map((document) => document.path);
+        // A projection repaired after the fact is rebuilt from what the turn itself recorded.
+        // The files are not read again and no current setting stands in for a past one.
+        const recorded = resolved.replay
+          ? await engines.nativeSessions!.evidence(
+              resolved.projectId,
+              result.runId,
+              resolved.commandId,
+            )
+          : null;
+        const sources =
+          recorded?.sources ?? resolved.input.documents.map((document) => document.path);
         thread.turns.push(
           {
             id: userId,
@@ -2727,20 +2749,29 @@ export async function createApp(options: AppOptions) {
               version: result.version,
               verified: true,
             },
-            origin: directOrigin({
-              engine: 'claude-code',
-              requestedModel: resolved.input.model || result.model,
-              reportedModel: result.model,
-              version: result.version,
-              accountRoute:
-                resolved.input.accountRoute ||
-                String(store.settings.services?.['claude-codeAccountRoute'] ?? ''),
-              executorId: 'claude-code',
-            }),
+            origin: recorded
+              ? (recorded.origin ??
+                // Nothing was recorded, so nothing is claimed: the model the runtime reported
+                // and no requested model or account.
+                directOrigin({
+                  engine: 'claude-code',
+                  reportedModel: result.model,
+                  version: result.version,
+                  executorId: 'claude-code',
+                }))
+              : directOrigin({
+                  engine: 'claude-code',
+                  requestedModel: resolved.input.model,
+                  reportedModel: result.model,
+                  version: result.version,
+                  accountRoute: resolved.input.accountRoute,
+                  executorId: 'claude-code',
+                }),
           },
         );
         thread.helper = { engine: 'claude-code', model: result.model };
-        thread.mode = resolved.mode;
+        // A repair never moves the Mode control: the person may have narrowed it since.
+        if (!resolved.replay) thread.mode = resolved.mode;
         touchThread(thread, at, state.tasks);
         await store.persist(state);
       }),
@@ -2760,8 +2791,9 @@ export async function createApp(options: AppOptions) {
           sessionId: work?.type === 'work.start' ? work.subject.id : null,
         };
       }),
-    createTask: (projectId, command) =>
+    createTask: (projectId, command, source) =>
       store.locked(async () => {
+        await engines.nativeSessions!.assertLive(source.projectId, source.runId);
         const task = await createTaskFrom(projectId, {
           protocolVersion: 1,
           commandId: command.commandId,
@@ -2771,8 +2803,9 @@ export async function createApp(options: AppOptions) {
         });
         return { taskId: task.id };
       }),
-    startWork: (projectId, command) =>
+    startWork: (projectId, command, source) =>
       store.locked(async () => {
+        await engines.nativeSessions!.assertLive(source.projectId, source.runId);
         const session = (await admitWork(
           projectId,
           {
