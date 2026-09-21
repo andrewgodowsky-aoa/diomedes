@@ -28,6 +28,8 @@ import {
 } from './components';
 import { Shell } from './console/Shell';
 import { Home, type HomeDestination } from './console/Home';
+import { DiomedesHome } from './console/DiomedesHome';
+import type { EverythingItem } from './console/Everything';
 import { TopStrip } from './console/TopStrip';
 import { DesignCenter } from './console/DesignCenter';
 import { MarkGlyph } from './console/Mark';
@@ -44,6 +46,16 @@ import { TextureLayer } from './console/theme-artwork';
 import { resolveAppearance } from '../shared/theme-pack/resolve';
 import type { ThemePackV1 } from '../shared/theme-pack/types';
 import { useWake } from './console/useWake';
+
+const PLACE_KEY = 'diomedes.window.place';
+/** The project this window was showing before a reload, or null. */
+function keptPlace(): string | null {
+  try {
+    return sessionStorage.getItem(PLACE_KEY);
+  } catch {
+    return null;
+  }
+}
 
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -97,6 +109,18 @@ export function App() {
     n: number;
   } | null>(null);
   const [query, setQuery] = useState('');
+  // With no project open the app shows Diomedes. The Projects page is one click away and is
+  // where the Projects crumb leads; a launch never lands on it.
+  const [landing, setLanding] = useState<'diomedes' | 'projects'>('diomedes');
+  const [diomedesPins, setDiomedesPins] = useState<string[]>(() => {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem('diomedes.rail.pins') ?? 'null');
+      if (Array.isArray(saved)) return saved.filter((id): id is string => typeof id === 'string');
+    } catch {
+      // Unreadable pins fall back to the defaults.
+    }
+    return ['projects', 'new-project', 'automations'];
+  });
   const [landingText, setLandingText] = useState('');
   const [landingProjectId, setLandingProjectId] = useState<string | null>(null);
   // The custom theme on the document, and the one sentence that explains a
@@ -184,6 +208,17 @@ export function App() {
       setBusy(false);
     }
   }
+  // This window's place, remembered for a reload only. Session storage ends with the window,
+  // so the next launch opens to Diomedes again. It holds an id and nothing about the project.
+  useEffect(() => {
+    if (!initialLoaded) return;
+    try {
+      if (selected) sessionStorage.setItem(PLACE_KEY, selected);
+      else sessionStorage.removeItem(PLACE_KEY);
+    } catch {
+      // Storage can be refused. The window then opens to Diomedes after a reload too.
+    }
+  }, [initialLoaded, selected]);
   const loadInitial = useCallback(async () => {
     try {
       const [s, p] = await Promise.all([
@@ -194,12 +229,17 @@ export function App() {
       setProjects(p.projects);
       setInitialLoaded(true);
       setOnline(true);
-      const id = s.openProjects.at(-1);
-      if (id && p.projects.some((x) => x.id === id)) {
-        setSelected(id);
-        const restored = s.lastPage[id];
-        // A page the Workbook rail no longer offers — Connections is Console-only — would
-        // otherwise restore as an empty reading pane.
+      // The project last open is navigation context, not the launch destination: it stays in
+      // `openProjects`, first on the spine and one click away. A launch lands on Diomedes,
+      // for a returning person too (core agent contract, decision 3). A reload is not a
+      // launch: the window keeps the place it was showing, so refreshing mid-work, or the
+      // app restarting its page, never throws a person out of their project.
+      const kept = keptPlace();
+      if (kept && p.projects.some((project) => project.id === kept)) {
+        setSelected(kept);
+        // The page too, as the old restore did. A page the rail no longer offers would
+        // otherwise come back as an empty pane.
+        const restored = s.lastPage[kept];
         setPage(restored && (pages as readonly Page[]).includes(restored) ? restored : 'home');
       }
       void refreshIntegrations();
@@ -562,7 +602,8 @@ export function App() {
       updates: 'App updates',
       about: 'About',
     };
-    if (destination === 'new-project') setProjectDialog('new');
+    if (destination === 'diomedes') setLanding('diomedes');
+    else if (destination === 'new-project') setProjectDialog('new');
     else if (destination === 'open-folder') setProjectDialog('open');
     else if (destination === 'sample') void sampleProject();
     else if (destination === 'find') setSearch(true);
@@ -571,6 +612,42 @@ export function App() {
       setShowSettings(true);
     }
   };
+
+  // What the Diomedes page's rail and flyout can open. Every place the Projects page reaches is
+  // still reachable from here, and the Projects page itself is the first of them.
+  const diomedesDestinations: EverythingItem[] = [
+    { id: 'projects', label: 'Projects', hint: 'Every project, what each is doing, and what needs you.' },
+    { id: 'new-project', label: 'New project', hint: 'Start from an empty folder.' },
+    { id: 'open-folder', label: 'Open a folder', hint: 'Make a project of documents you already have.' },
+    { id: 'find', label: 'Find a project', hint: 'Search every project by name.', badge: 'Ctrl K' },
+    {
+      id: 'automations',
+      label: 'Automations',
+      hint: 'Work that runs on its own, on a schedule or when something happens.',
+      unavailableReason:
+        'Nothing is built behind this yet. It opens once there is real work for it to run.',
+      reserved: true,
+    },
+    { id: 'engines', label: 'AI engines', hint: 'Which engines are installed, signed in, and switched on.' },
+    { id: 'appearance', label: 'Appearance', hint: 'Colour scheme, text size and motion.' },
+    { id: 'design-center', label: 'Design Center', hint: 'Make and apply a theme of your own.' },
+    {
+      id: 'permissions',
+      label: 'Permissions',
+      hint: 'What Diomedes may do on its own, and what always asks first.',
+    },
+    { id: 'detail', label: 'Interface detail', hint: 'How much each change spells out.' },
+    { id: 'updates', label: 'App updates', hint: 'The version you run, and what is newer.' },
+    { id: 'about', label: 'About', hint: 'Version, licences and where your data lives.' },
+  ];
+  const diomedesGroups = [
+    { heading: 'Projects', ids: ['projects', 'new-project', 'open-folder', 'find'] },
+    {
+      heading: 'Diomedes',
+      ids: ['engines', 'appearance', 'design-center', 'permissions', 'detail', 'updates', 'about'],
+    },
+    { heading: 'Not ready yet', ids: ['automations'] },
+  ];
 
   const loaded = settings !== null && initialLoaded;
   const reduced =
@@ -630,18 +707,20 @@ export function App() {
                   onClick={() => {
                     setSelected(null);
                     setShowSettings(false);
+                    setLanding('diomedes');
                   }}
-                  aria-label="Diomedes projects"
+                  aria-label="Diomedes"
                 >
                   <MarkGlyph size={18} />
                   <Brand />
                 </button>
                 <nav className="project-tabs" aria-label="Open projects">
                   <button
-                    className={`project-tab ${!selected && !showSettings ? 'active' : ''}`}
+                    className={`project-tab ${!selected && !showSettings && landing === 'projects' ? 'active' : ''}`}
                     onClick={() => {
                       setSelected(null);
                       setShowSettings(false);
+                      setLanding('projects');
                     }}
                   >
                     Projects
@@ -735,6 +814,7 @@ export function App() {
                   onShowProjects={() => {
                     setSelected(null);
                     setShowSettings(false);
+                    setLanding('projects');
                   }}
                   onOpenProject={openProject}
                   onToggleSettings={() => setShowSettings(!showSettings)}
@@ -821,6 +901,7 @@ export function App() {
                   onShowProjects={() => {
                     setSelected(null);
                     setShowSettings(false);
+                    setLanding('projects');
                   }}
                   onOpenSettings={() => setShowSettings(true)}
                   report={report}
@@ -843,6 +924,35 @@ export function App() {
                   saveSettings={saveSettings}
                   report={report}
                   online={online}
+                />
+              ) : landing === 'diomedes' ? (
+                <DiomedesHome
+                  projects={byRecency}
+                  results={[]}
+                  onOpenResult={() => undefined}
+                  destinations={diomedesDestinations}
+                  groups={diomedesGroups}
+                  pinned={diomedesPins}
+                  onTogglePin={(id) => {
+                    const next = diomedesPins.includes(id)
+                      ? diomedesPins.filter((item) => item !== id)
+                      : [...diomedesPins, id];
+                    setDiomedesPins(next);
+                    try {
+                      localStorage.setItem('diomedes.rail.pins', JSON.stringify(next));
+                    } catch {
+                      // Storage is unavailable; the pins hold for this visit.
+                    }
+                  }}
+                  onDestination={(id) => {
+                    if (id === 'projects') setLanding('projects');
+                    else if (id !== 'automations') goFromHome(id as HomeDestination);
+                  }}
+                  onNewProject={() => goFromHome('new-project')}
+                  onOpenWork={(projectId) => {
+                    const target = projects.find((p) => p.id === projectId);
+                    if (target) openProject(target);
+                  }}
                 />
               ) : (
                 <Home

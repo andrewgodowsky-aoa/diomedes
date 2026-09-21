@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Change, DocumentContent, Project, ProjectState, Settings } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -56,19 +57,22 @@ async function readPlan(page: Page): Promise<DocumentContent> {
   return response.json();
 }
 
+/** A launch lands on Diomedes. The Projects page is one click away, from there or from a project. */
+async function showProjects(page: Page) {
+  const heading = page.getByRole('heading', { name: 'Projects', exact: true });
+  const toProjects = page.getByRole('button', { name: 'Projects', exact: true }).first();
+  await expect(heading.or(toProjects).first()).toBeVisible();
+  if ((await heading.count()) === 0) await toProjects.click();
+  await expect(heading).toBeVisible();
+}
+
 async function openProject(page: Page) {
   await page.goto('/');
   const nav = page.getByRole('navigation', { name: 'Project pages', exact: true });
-  const card = page.getByRole('button', { name: /Harbor Street/ }).first();
-  // The app paints once its settings arrive and may reopen the last project then,
-  // so wait until it has settled on either the landing card or a project.
-  await expect(nav.or(card).first()).toBeVisible();
-  // The app reopens whichever project was last open, which an earlier test may
-  // have changed. Every helper here reads `projectId`, so land on that project
-  // rather than on whatever was restored.
-  if ((await nav.count()) > 0)
-    await page.getByRole('button', { name: 'Projects', exact: true }).click();
-  await card.click();
+  // Every helper here reads `projectId`, so open that project from the Projects page rather
+  // than rely on where the app landed.
+  await showProjects(page);
+  await page.getByRole('button', { name: /Harbor Street/ }).first().click();
   await expect(nav).toBeVisible();
 }
 
@@ -102,7 +106,9 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await expect(page.getByRole('heading', { name: 'Your workspace is ready' })).toBeVisible();
   await expect(page.getByText(/AI setup was skipped/)).toBeVisible();
   await page.getByRole('button', { name: 'Open Diomedes' }).click();
-  await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
+  // The app opens to Diomedes. The Projects page is where it always was, one click away.
+  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await showProjects(page);
   // The shared data folder is not guaranteed empty by the time this file runs
   // (field.spec.ts sorts first and leaves a project behind), so the empty state
   // is asserted against an intercepted empty list rather than the live folder.
@@ -121,13 +127,15 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
     });
   });
   await page.reload();
+  await showProjects(page);
   await expect(
     page.getByText(/a project for a restaurant's menus, suppliers and schedules/),
   ).toBeVisible();
   expect(emptyListServed).toBe(true);
   await page.unroute('**/api/projects');
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await showProjects(page);
   const settings: Settings = await (await page.request.get('/api/settings')).json();
   expect(settings.detail).toBe('guided');
   expect(settings.surface).toBe('console');
@@ -155,6 +163,8 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
     page.getByRole('heading', { name: 'Your workspace is ready', exact: true }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Open Diomedes' }).click();
+  // First run now ends on the Diomedes page too; the Projects page is one click away.
+  await showProjects(page);
   await page.getByRole('button', { name: /^Try the sample project/ }).click();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
@@ -199,7 +209,7 @@ test('F04, F06: sample project opens and a plan edit survives reload with Histor
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
   // The first-run test already opened the sample project; reuse it rather than creating a second one.
-  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await showProjects(page);
   const existing = page.getByRole('button', { name: /^Harbor Street restaurants/ }).first();
   if (await existing.count()) await existing.click();
   else await page.getByRole('button', { name: /^Try the sample project/ }).click();
@@ -760,6 +770,13 @@ test('Draft recovery: Settings, reload and same-named files in separate projects
   await page.goto('/');
   const editor = page.getByRole('textbox', { name: 'Document content' });
   const tabs = page.getByRole('navigation', { name: 'Open projects' });
+  // Land in project A specifically (not just "the last tab": `shownProjects`
+  // follows `/api/projects` creation order, not `openProjects`, so it is not
+  // safe to assume which tab is last). Opening a project always lands on its
+  // Home page — `lastPage` is only replayed by the retired auto-reopen-on-launch
+  // path — so the Plan page it left saved is reached explicitly too.
+  await tabs.getByRole('button', { name: first.name, exact: true }).click();
+  await navigate(page, 'Plan');
   const draftA = `${originalA}\nUnsaved writing that belongs only to project A.\n`;
   const draftB = `${originalB}\nA separate unsaved draft that belongs only to project B.\n`;
   await page.getByRole('button', { name: 'Edit document', exact: true }).click();
@@ -1024,13 +1041,17 @@ test('Landing: ask box carries a draft into the chosen project', async ({ page }
   );
   const latest = sorted[0];
   await page.goto('/');
-  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await showProjects(page);
   await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
   const startHere = page.getByRole('region', { name: 'Start here' });
   await expect(startHere).toBeVisible();
   await expect(startHere.getByRole('heading', { name: 'What do you want to do?' })).toBeVisible();
   const projectSelect = page.getByLabel('In project');
   await expect(projectSelect).toBeVisible();
+  // Nothing is inferred from recency any more (review condition H3): the ask box sends nowhere
+  // until the person says where.
+  await expect(projectSelect).toHaveValue('');
+  await projectSelect.selectOption(latest.id);
   await expect(projectSelect).toHaveValue(latest.id);
   const askText = 'Which suppliers are late?';
   await startHere.getByRole('textbox').fill(askText);
@@ -1176,6 +1197,7 @@ test('Modes: the Workbook composer shows four modes and Fix needs what is failin
   });
   expect(setup.ok()).toBe(true);
   await page.goto('/');
+  await reopenLastProject(page);
   await expect(page.getByRole('navigation', { name: 'Project pages', exact: true })).toBeVisible();
   await navigate(page, 'Ask');
   const composer = page.getByRole('region', { name: 'Ask box', exact: true });
@@ -1272,6 +1294,7 @@ test('Usage: navigation preserves a concurrent engine setting while refresh is d
   });
   expect(setup.ok()).toBe(true);
   await page.goto('/');
+  await reopenLastProject(page);
   await expect(page.getByRole('navigation', { name: 'Project pages', exact: true })).toBeVisible();
   let releaseRefresh!: () => void;
   const refreshReleased = new Promise<void>((resolve) => {

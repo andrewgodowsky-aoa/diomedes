@@ -3,7 +3,8 @@ import { validateTaskReceipts } from './task-admission.js';
 import { ScopeGrants, validateScopeGrants } from './trust/scope-grants.js';
 import { validateAgentResolutions } from './agents.js';
 import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/attribution.js';
-import { HOST_TEST_PROJECT } from '../shared/engines.js';
+import { diomedesThread } from '../shared/diomedes-thread.js';
+import { CONVERSATION_DEFAULT_ROUTE, HOST_TEST_PROJECT } from '../shared/engines.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -51,6 +52,18 @@ export const hash = contentHash;
 export const identifier = (prefix = '') => prefix + randomBytes(6).toString('hex');
 /** One plain folder name: what a saved project id has to be before it meets a path. */
 const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+/** The reserved home Project's folder under the project root, and what it is called. */
+const HOME_FOLDER = '.diomedes-home';
+const HOME_NAME = 'Diomedes';
+/** Said by every refusal to make a task or start work in the home Project. */
+export const HOME_REFUSES_WORK =
+  'The Diomedes conversation is not a place work runs. Name the project this work belongs to.';
+const HOME_THREAD_NAME = 'Diomedes';
+/** What a project's own Diomedes conversation is called: the same name, in the project's own list. */
+const PROJECT_THREAD_NAME = 'Diomedes';
+/** Said when a project conversation is asked for in the reserved home Project, which is not one. */
+const HOME_HAS_ITS_OWN_PROVISIONER =
+  'The conversation across all projects has its own provisioner. Ask for it there.';
 // Folders that never hold Diomedes documents; skipped during the documents walk.
 export const SKIPPED_FOLDERS = new Set([
   'node_modules',
@@ -101,7 +114,9 @@ export function migrateConversation(
     const last = [...(conversation.turns ?? [])].reverse().find((t) => t.mode);
     const raw = (last?.mode as unknown) === 'work' ? 'build' : last?.mode;
     conversation.mode =
-      raw === 'ask' || raw === 'plan' || raw === 'build' || raw === 'fix' ? raw : 'ask';
+      raw === 'ask' || raw === 'plan' || raw === 'auto' || raw === 'build' || raw === 'fix'
+        ? raw
+        : 'ask';
   }
   if (conversation.createdAt === undefined) {
     conversation.createdAt = conversation.turns[0]?.at ?? loadTime;
@@ -165,6 +180,22 @@ export function migrateSettings(
   else if ((settings.surface as string) === 'book') settings.surface = 'workbook';
   else if ((settings.surface as string) === 'desk' || (settings.surface as string) === 'technical')
     settings.surface = 'console';
+  // The home binding points at two records, and this runs before either of them
+  // is loaded, so only its shape can be judged here: anything that is not the
+  // one shape the server writes becomes no binding at all. Whether the records
+  // it names are really the home Project and its designated thread is decided
+  // later, by `Store.homeBinding`, on every use.
+  const home = settings.home as
+    | { projectId?: unknown; threadId?: unknown; revision?: unknown }
+    | null
+    | undefined;
+  settings.home =
+    home &&
+    typeof home.projectId === 'string' &&
+    typeof home.threadId === 'string' &&
+    home.revision === 1
+      ? { projectId: home.projectId, threadId: home.threadId, revision: 1 }
+      : null;
 }
 
 export const emptyTeam = (): TeamState => ({ members: [], messages: [], runs: [] });
@@ -213,6 +244,10 @@ export const defaults = (): Settings => ({
   // Personal until an explicit switch through the workspace service, which is
   // the only writer: `validateSettings` keeps the stored value on every PUT.
   activeWorkspace: { kind: 'personal' },
+  // No home until the first message on Diomedes' own conversation provisions
+  // one. Listed here so the key is known to `validateSettings`, which reads
+  // these defaults to decide whether a settings key exists at all.
+  home: null,
   services: { codex: false },
 });
 
@@ -768,6 +803,180 @@ export class Store extends EventEmitter {
     this.settings.openProjects.push(project.id);
     await this.saveSettings(this.settings);
     return project;
+  }
+  /**
+   * Where the reserved home Project lives. The home Project is recognised by
+   * this folder and never by its name or by the settings pointer, so a renamed
+   * project is still home and a pointer at anything else is still not.
+   */
+  homeFolder() {
+    return path.join(this.projectRoot, HOME_FOLDER);
+  }
+  private homeProject() {
+    const reserved = this.homeFolder().toLowerCase();
+    return this.registry.find((item) => path.resolve(item.folder).toLowerCase() === reserved);
+  }
+  /** The oldest Conversation by `createdAt`, ties broken by `id`: the designated home thread. */
+  private designatedThread(state: StoredState) {
+    return [...state.conversations].sort(
+      (a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? '') || a.id.localeCompare(b.id),
+    )[0];
+  }
+  /** Whether this project is the reserved home. Work never runs here and it is never listed. */
+  isHomeProject(projectId: string) {
+    return this.homeProject()?.id === projectId;
+  }
+  /**
+   * The saved home binding, checked against the records rather than trusted.
+   *
+   * It is valid only when the project it names is the reserved home Project and
+   * the thread it names is that project's designated thread. Anything else
+   * reads as no home at all, and provisioning re-establishes it by adoption.
+   * This is a read: it provisions nothing, so startup creates no home.
+   */
+  homeBinding(): { projectId: string; threadId: string } | null {
+    const saved = this.settings.home;
+    if (!saved) return null;
+    const project = this.homeProject();
+    if (!project || project.id !== saved.projectId) return null;
+    const state = this.states.get(project.id);
+    if (!state) return null;
+    const thread = this.designatedThread(state);
+    if (!thread || thread.id !== saved.threadId) return null;
+    return { projectId: saved.projectId, threadId: saved.threadId };
+  }
+  /**
+   * The reserved home Project and its one conversation, made on the first
+   * message and never at startup. Each step adopts before it creates and the
+   * binding is written last, so a crash at any boundary is repaired by running
+   * these same steps again and no second home ever appears.
+   *
+   * It takes the lock itself, because the whole sequence has to be one
+   * mutation; call it from a route that is not already holding the lock.
+   */
+  async provisionHome(): Promise<{ projectId: string; threadId: string }> {
+    return this.locked(async () => {
+      const bound = this.homeBinding();
+      if (bound) {
+        // The same call is also the migration: a bound home whose designated
+        // thread was never deliberately routed is re-pinned to the conversation
+        // default inside this same lock, and only a real change is written. A
+        // route the person picked survives untouched.
+        const state = this.state(bound.projectId);
+        const thread = this.designatedThread(state);
+        if (
+          thread &&
+          thread.engineChoice !== 'person' &&
+          thread.engine !== CONVERSATION_DEFAULT_ROUTE
+        ) {
+          thread.engine = CONVERSATION_DEFAULT_ROUTE;
+          await this.persist(state);
+        }
+        return bound;
+      }
+      let project = this.homeProject();
+      if (!project) {
+        try {
+          project = await this.createProject(HOME_NAME, this.homeFolder());
+        } catch (error) {
+          // The folder is registered already: something got there first, and
+          // its project is the home to adopt rather than a failure to report.
+          if (!(error instanceof ApiError) || error.status !== 409) throw error;
+          project = this.homeProject();
+          if (!project) throw error;
+        }
+      }
+      const state = this.state(project.id);
+      let thread = this.designatedThread(state);
+      let changed = false;
+      if (!thread) {
+        const stamped = now();
+        thread = {
+          id: identifier('C'),
+          attachedTo: { kind: 'project', ref: project.id },
+          turns: [],
+          name: HOME_THREAD_NAME,
+          createdAt: stamped,
+          updatedAt: stamped,
+          taskId: null,
+          helper: null,
+          permission: 'show-first',
+          mode: 'auto',
+          // Diomedes' own conversation answers on the model-API default without
+          // anyone configuring a thread.
+          engine: CONVERSATION_DEFAULT_ROUTE,
+        };
+        state.conversations.push(thread);
+        changed = true;
+      } else if (thread.engineChoice !== 'person' && thread.engine !== CONVERSATION_DEFAULT_ROUTE) {
+        // A thread adopted from before the choice marker existed follows the
+        // default; one a person routed themselves is left alone.
+        thread.engine = CONVERSATION_DEFAULT_ROUTE;
+        changed = true;
+      }
+      if (changed) await this.persist(state);
+      await this.saveSettings({
+        ...this.settings,
+        // Home is not a project a person has open: it is hidden from the
+        // listing, so a restored id naming it would restore nothing.
+        openProjects: this.settings.openProjects.filter((id) => id !== project.id),
+        home: { projectId: project.id, threadId: thread.id, revision: 1 },
+      });
+      return { projectId: project.id, threadId: thread.id };
+    });
+  }
+  /**
+   * A project's own Diomedes conversation: the thread `diomedesThread` picks,
+   * adopted when it is already there and made once when it is not. Two windows
+   * sending their first message in a fresh project both arrive here, and one
+   * locked sequence is what makes that one conversation rather than two.
+   *
+   * It takes the lock itself, as `provisionHome` does, so call it from a route
+   * that is not already holding it. It writes only when it changed something: a
+   * call that finds the conversation already pinned persists nothing at all.
+   *
+   * The reserved home Project is refused. Work never runs there and its own
+   * conversation is `provisionHome`'s, not a project conversation.
+   */
+  async provisionProjectConversation(
+    projectId: string,
+  ): Promise<{ projectId: string; threadId: string }> {
+    return this.locked(async () => {
+      const state = this.state(projectId);
+      if (this.isHomeProject(projectId)) throw new ApiError(409, HOME_HAS_ITS_OWN_PROVISIONER);
+      const found = diomedesThread(state.conversations);
+      if (!found) {
+        const stamped = now();
+        const thread: Conversation = {
+          id: identifier('C'),
+          attachedTo: { kind: 'project', ref: projectId },
+          turns: [],
+          name: PROJECT_THREAD_NAME,
+          createdAt: stamped,
+          updatedAt: stamped,
+          taskId: null,
+          helper: null,
+          permission: 'show-first',
+          mode: 'auto',
+          // The conversation runs on the model-API default whatever the
+          // project's own work runs on, and the work it starts still runs on
+          // the project's AI.
+          engine: CONVERSATION_DEFAULT_ROUTE,
+        };
+        state.conversations.push(thread);
+        await this.persist(state);
+        return { projectId, threadId: thread.id };
+      }
+      // The thread's name, Mode, permission and helper choice stay its own, and
+      // no other thread in the project is touched. A route the person picked
+      // through the thread update (`engineChoice`) is preserved; a thread that
+      // was never deliberately routed is re-pinned to the conversation default.
+      if (found.engineChoice !== 'person' && found.engine !== CONVERSATION_DEFAULT_ROUTE) {
+        found.engine = CONVERSATION_DEFAULT_ROUTE;
+        await this.persist(state);
+      }
+      return { projectId, threadId: found.id };
+    });
   }
   async saveSettings(input: Settings) {
     this.settings = structuredClone(input);
@@ -1500,6 +1709,10 @@ export class Store extends EventEmitter {
     state: StoredState,
     input: { name: string; description?: string; sourceDocument?: string; owner?: Owner; from?: Task['from'] },
   ): Task {
+    // Home holds a conversation and nothing else. Every Work start needs a task in its own
+    // project and this is the one place a task is made, so refusing here is what keeps every
+    // route, present or later, from starting work there.
+    if (this.isHomeProject(state.project.id)) throw new ApiError(409, HOME_REFUSES_WORK);
     if (!input.name.trim()) throw new ApiError(400, 'Give this task a name.');
     const ids = state.tasks.map((t) => Number(t.id.slice(1))).filter(Number.isFinite);
     const task: Task = {

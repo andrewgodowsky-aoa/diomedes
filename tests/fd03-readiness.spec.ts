@@ -7,6 +7,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import type { Project } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 
@@ -117,6 +118,7 @@ test('readiness shows independent unknown proof and refreshes saved status with 
   });
 
   await page.goto(base);
+  await reopenLastProject(page);
   await openDestination(page, 'Readiness');
   await page
     .getByRole('navigation', { name: 'Open projects' })

@@ -6,6 +6,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import type { Project, ProjectState, TaskCandidate } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 /**
  * Deterministic browser proof for `Approve for me` using the real built UI and
@@ -226,6 +227,7 @@ test('the four choices are offered honestly, and Full access says why it is not'
   const taskName = 'Reviewer choice task';
   await makeTaskProject(taskName);
   await page.goto(baseURL);
+  await reopenLastProject(page);
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   await startFromBoard(page, taskName);
   await openThread(page, taskName);
@@ -289,6 +291,7 @@ test('an eligible change set is applied after a reviewer approval, recorded as a
   const taskName = 'Reviewer approve task';
   const { project } = await makeTaskProject(taskName);
   await page.goto(baseURL);
+  await reopenLastProject(page);
   await startFromBoard(page, taskName);
   await openThread(page, taskName);
   const need = page.getByRole('region', { name: 'Needs your OK' });
@@ -380,6 +383,7 @@ test('a reviewer that asks for you leaves the change set as Needs you, and you c
     reviewer: { requestedModel: 'fixture-reviewer-a', maxReviews: 5 },
   });
   await page.goto(baseURL);
+  await reopenLastProject(page);
   await startFromBoard(page, taskName);
   await openThread(page, taskName);
   const need = page.getByRole('region', { name: 'Needs your OK' });
@@ -454,6 +458,7 @@ test('an unavailable reviewer falls back to you, and an off connection makes the
     reviewer: { requestedModel: null, maxReviews: 5 },
   });
   await page.goto(baseURL);
+  await reopenLastProject(page);
   await startFromBoard(page, taskName);
   await openThread(page, taskName);
   const need = page.getByRole('region', { name: 'Needs your OK' });

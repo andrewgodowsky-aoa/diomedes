@@ -109,8 +109,9 @@ export interface AgentDefinition {
   readonly origin: 'built-in' | 'user' | 'project';
   /** Where this definition came from, for provenance. */
   readonly source: string;
-  /** Which interaction relationships this Agent fits. */
-  readonly modes: readonly Mode[];
+  /** Which interaction relationships this Agent fits. `auto` is a conversation
+   * mode, never a worker mode, so it is never a member here. */
+  readonly modes: readonly Exclude<Mode, 'auto'>[];
   /** Worker framing, carried by the existing instruction channel. Guidance only. */
   readonly role: string;
   readonly requires: readonly AgentRequirement[];
@@ -150,7 +151,7 @@ const agent = (
   ...input,
 });
 
-const ALL_MODES: readonly Mode[] = ['ask', 'plan', 'build', 'fix'];
+const ALL_MODES: readonly Exclude<Mode, 'auto'>[] = ['ask', 'plan', 'build', 'fix'];
 const READ_ONLY: readonly AgentRequirement[] = ['no-secret-access'];
 /**
  * What a worker that proposes changes needs from the route: a recorded writer
@@ -293,8 +294,11 @@ export const AUTO_AGENT = 'auto';
  * The Auto foundation: a deterministic mode mapping, recorded as an automatic
  * selection. It is not a router and does not read the request text; a later
  * router replaces this function without changing the provenance contract.
+ *
+ * `auto` is a conversation mode, not a work mode, so it has no entry here: the
+ * Automatic conversation mode never selects a worker by virtue of being a mode.
  */
-export const AUTO_BY_MODE: Record<Mode, string> = {
+export const AUTO_BY_MODE: Record<Exclude<Mode, 'auto'>, string> = {
   ask: 'diomedes.researcher',
   plan: 'diomedes.architect',
   build: 'diomedes.builder',

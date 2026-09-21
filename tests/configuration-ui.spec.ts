@@ -8,6 +8,7 @@ import { createApp } from '../server/app';
 import type { BusinessSetupView } from '../shared/business-setup';
 import type { Project } from '../shared/types';
 import type { WorkspaceView } from '../shared/workspaces';
+import { reopenLastProject } from './fixtures/landing';
 
 /**
  * Browser proof of the screen between a finished questionnaire and a setup
@@ -138,6 +139,7 @@ test.afterAll(async () => {
 
 async function openReview(page: Page) {
   await page.goto(`${baseURL}/`);
+  await reopenLastProject(page);
   await expect(page.locator('.console')).toBeVisible();
   await page.getByRole('button', { name: 'Change workspace' }).click();
   const panel = page.getByRole('dialog');

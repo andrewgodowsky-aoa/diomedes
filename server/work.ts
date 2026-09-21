@@ -29,7 +29,17 @@ export class WorkService {
   }
   async start(
     projectId: string, taskId: string, instruction = '', demo = false,
-    options: { permission?: ThreadPermission; admission?: WorkAdmission } = {},
+    options: {
+      permission?: ThreadPermission;
+      admission?: WorkAdmission;
+      /**
+       * Runs the durable admission inside the caller's own ordering guard. A conversation
+       * passes the guard that holds its source run's queue, so a cancellation there is
+       * ordered against this commit rather than racing it. The listing, the snapshot and
+       * the baseline above stay outside it. A person's own Start passes none.
+       */
+      commit?: <T>(step: () => Promise<T>) => Promise<T>;
+    } = {},
   ) {
     const state = this.store.state(projectId);
     if (
@@ -82,21 +92,31 @@ export class WorkService {
     try {
       await this.store.snapshot(projectId, null, session.id);
       await this.changeReview?.runStarted(projectId, session.id, taskId);
-      const fresh = this.store.state(projectId);
-      fresh.sessions.push(session);
-      this.store.recordWorkAdmission(projectId, session, options.admission);
-      task.sessionIds.push(session.id);
-      task.reason = null;
-      if (this.store.settings.permissions.changingFiles) await this.need(run, 'start');
-      else {
-        session.state = 'working';
-        this.store.moveTask(fresh, task, 'working', 'diomedes');
-        this.log(session, 'Read the plan and the task.');
-        run.stage = 'read';
-        await this.store.persist(fresh);
-        this.schedule(run);
-      }
-      return this.session(run);
+      const commit = options.commit ?? (<T>(step: () => Promise<T>) => step());
+      return await commit(async () => {
+        const fresh = this.store.state(projectId);
+        // The prepared scope, read again where the commit is ordered: the task and the
+        // one working session are what the checks above read, and the awaits since could
+        // have moved either.
+        const current = fresh.tasks.find((t) => t.id === taskId);
+        if (!current) throw new ApiError(404, 'This task was not found.');
+        if (fresh.sessions.some((s) => ['queued', 'working', 'waiting'].includes(s.state)))
+          throw new ApiError(409, 'This project already has work in progress.');
+        fresh.sessions.push(session);
+        this.store.recordWorkAdmission(projectId, session, options.admission);
+        current.sessionIds.push(session.id);
+        current.reason = null;
+        if (this.store.settings.permissions.changingFiles) await this.need(run, 'start');
+        else {
+          session.state = 'working';
+          this.store.moveTask(fresh, current, 'working', 'diomedes');
+          this.log(session, 'Read the plan and the task.');
+          run.stage = 'read';
+          await this.store.persist(fresh);
+          this.schedule(run);
+        }
+        return this.session(run);
+      });
     } catch (error) {
       this.runs.delete(projectId);
       throw error;

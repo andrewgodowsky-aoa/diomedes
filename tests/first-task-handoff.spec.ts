@@ -14,6 +14,7 @@ import type {
   Project,
   ProjectState,
 } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 /**
  * From a connection test that succeeded to a composer the person writes their
@@ -252,6 +253,7 @@ test('A verified route carries the person to a composer, chooses itself for the 
   const generated = calls.length;
   try {
     await page.goto(baseURL);
+    await reopenLastProject(page);
     await expect(page.locator('.console')).toBeVisible();
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page.getByRole('button', { name: 'Engines', exact: true }).click();
@@ -395,6 +397,7 @@ test('A route whose saved model moved between the offer and the Console chooses 
   );
   try {
     await page.goto(baseURL);
+    await reopenLastProject(page);
     await expect(page.locator('.console')).toBeVisible();
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page.getByRole('button', { name: 'Engines', exact: true }).click();

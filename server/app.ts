@@ -26,6 +26,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type {
   Conversation,
+  ConversationLineage,
   Owner,
   Page,
   ProjectState,
@@ -44,7 +45,16 @@ import {
   CAPABILITY_PACKS,
   isCapabilityPackId,
 } from '../shared/capability-packs.js';
-import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText } from './store.js';
+import {
+  defaults,
+  findTasks,
+  hash,
+  HOME_REFUSES_WORK,
+  identifier,
+  now,
+  Store,
+  threadNameFromText,
+} from './store.js';
 import { buildSupportBundle, renderSupportBundle } from './support-bundle.js';
 import { currentBuildIdentity } from './build-identity.js';
 import { WorkService } from './work.js';
@@ -75,7 +85,7 @@ import { WorkControl } from './work-control.js';
 import { DesktopConnections } from './connections/desktop.js';
 import { toastConnector } from './connections/fixture.js';
 import { compiledConnectionDemoConnectors } from './connections/compiler-demo.js';
-import { digest as evidenceDigest } from './harness/policy.js';
+import { digest as evidenceDigest, HarnessError } from './harness/policy.js';
 import { mountReadinessRoutes } from './readiness/routes.js';
 import { loadShippedProductKnowledge } from './readiness/instructions.js';
 import packageInfo from '../package.json' with { type: 'json' };
@@ -84,15 +94,43 @@ import {
   ENGINE_NAMES,
   isExternalEngine,
   isRoute,
+  isConversationRoute,
   ROUTES,
   type EngineConnection,
 } from '../shared/engines.js';
 import { EngineService } from './engines/service.js';
 import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
+import { mountInteractionRoutes } from './engines/interaction-routes.js';
+import {
+  InteractionTurns,
+  narrower,
+  type AdmissionSource,
+  type InteractionHost,
+} from './interaction-service.js';
+import { admitInteraction } from './interaction-admission.js';
+import {
+  blockedMessage,
+  commandBinding,
+  decideWith,
+  instructionsFor,
+  previewGate,
+  promptFor,
+  restrictionOf,
+  sourceMessageIdFor,
+} from './interaction-turn.js';
+import { assertReplay, findCommand } from './command-admission.js';
 import { claudeSessionRunId } from './harness/claude-session-run.js';
+import { modelSessionRunId } from './harness/model-session-run.js';
+import { FileModelTranscripts } from './harness/model-transcripts.js';
+import { AWS_BEDROCK_ROUTE, AwsConnections } from './engines/aws-bedrock.js';
+import { mountModelApiRoutes } from './engines/model-api-routes.js';
+import { ConnectionSecrets, type SecretBox } from './connection-secrets.js';
+import { SpendExposure } from './spend-exposure.js';
+import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_ROUTES } from '../shared/model-api.js';
 import { baselineRedact } from './secrets.js';
 import { EngineError } from './engines/process.js';
 import { selectedEngine, selectedModel } from '../shared/ai-selection.js';
+import { projectedTurnIds, turnIdentityText } from '../shared/conversation-turn-id.js';
 import { AppUpdateService, mountAppUpdateRoutes, type UpdateTransport } from './app-updates.js';
 import { EngineInstaller } from './engines/install.js';
 import { NativeLogin } from './engines/login.js';
@@ -116,6 +154,13 @@ interface AppOptions {
   harnessAuthority?: ResolveHarnessAuthority;
   /** Lease TTL for external text-turn runs; tests shorten it to exercise takeover. */
   harnessTextLeaseMs?: number;
+  /**
+   * OS-protected sealing for model-API credentials. The desktop shell passes Electron's
+   * safeStorage; without it no credential can be saved and setup says so.
+   */
+  secretBox?: SecretBox | null;
+  /** Tests replace the network below the SDK here. Production leaves it unset. */
+  modelApiTransport?: typeof globalThis.fetch;
   updateOverrides?: {
     platform?: string;
     packaged?: boolean;
@@ -216,11 +261,13 @@ function validateSettings(current: Settings, body: unknown): Settings {
   const result = structuredClone(current);
   for (const key of Object.keys(supplied))
     if (!Object.hasOwn(defaults(), key)) throw new ApiError(400, `Unknown setting: ${key}`);
-  // `activeWorkspace` is deliberately absent from every branch below. The clone
-  // above keeps whatever is stored, so a client that echoes the whole settings
-  // object back cannot move itself into a business workspace: only
-  // POST /api/workspace/switch writes it, and only after checking membership.
-  // Do not add a branch here that reads `supplied.activeWorkspace`.
+  // `activeWorkspace` and `home` are deliberately absent from every branch
+  // below. The clone above keeps whatever is stored, so a client that echoes
+  // the whole settings object back cannot move itself into a business
+  // workspace, and cannot rebind Diomedes' own conversation: only
+  // POST /api/workspace/switch writes the first, after checking membership, and
+  // only the home provisioner writes the second. Do not add a branch here that
+  // reads `supplied.activeWorkspace` or `supplied.home`.
   if (supplied.version !== undefined && supplied.version !== 1)
     throw new ApiError(400, 'This settings version is unsupported.');
   if (supplied.detail !== undefined)
@@ -369,7 +416,7 @@ function validateSettings(current: Settings, body: unknown): Settings {
         continue;
       }
       if (
-        ['codex', ...EXTERNAL_ENGINES].some(
+        ['codex', ...EXTERNAL_ENGINES, ...MODEL_API_ROUTES].some(
           (engine) =>
             key === `${engine}Model` ||
             key === `${engine}Effort` ||
@@ -598,6 +645,21 @@ export async function createApp(options: AppOptions) {
     store,
     options.nativeGenerator ??
       (async (input) => {
+        if (isModelApiRoute(input.engine)) {
+          if (!input.projectId || !input.threadId || !input.requestId || !input.model)
+            throw new ApiError(409, 'Select a model and thread before requesting work.');
+          if (typeof input.accountRoute !== 'string')
+            throw new ApiError(409, 'Connect this route in AI setup first.');
+          return engines.generateModelApi(input.engine, {
+            ...input,
+            projectId: input.projectId,
+            threadId: input.threadId,
+            requestId: input.requestId,
+            model: input.model,
+            instructions: input.instructions ?? '',
+            accountRoute: input.accountRoute,
+          });
+        }
         if (!isExternalEngine(input.engine)) return askCodex(input);
         if (!input.projectId || !input.threadId || !input.requestId || !input.model)
           throw new ApiError(409, 'Select a model and thread before requesting work.');
@@ -628,6 +690,16 @@ export async function createApp(options: AppOptions) {
   // the provider transport inside the fenced dispatch step.
   engines.dispatch = harness.textRoute.request;
   engines.nativeSessions = harness.claudeSessions;
+  engines.modelSessions = harness.modelSessions;
+  const exposure = new SpendExposure(store.dataDir);
+  await exposure.init();
+  engines.modelApi = {
+    connections: new AwsConnections(store.dataDir),
+    secrets: new ConnectionSecrets(store.dataDir, options.secretBox ?? null),
+    exposure,
+    transcripts: new FileModelTranscripts(path.join(store.dataDir, 'model-transcripts'), AWS_BEDROCK_ROUTE),
+    transport: options.modelApiTransport,
+  };
   await harness.init();
   const connections = new DesktopConnections(store, harness);
   const app = express();
@@ -1260,7 +1332,13 @@ export async function createApp(options: AppOptions) {
   );
   app.get(
     '/api/projects',
-    route(async () => ({ projects: await store.projects() })),
+    // The reserved home Project is not one of the person's projects and is
+    // never listed. The filter lives here and never in `Store.projects()`,
+    // which startup recovery enumerates to recover saved runs, home
+    // conversations included.
+    route(async () => ({
+      projects: (await store.projects()).filter((project) => !store.isHomeProject(project.id)),
+    })),
   );
   app.post(
     '/api/projects/sample',
@@ -1581,59 +1659,74 @@ export async function createApp(options: AppOptions) {
       autoUpdate: store.state(id(req)).autoUpdate,
     })),
   );
+  /**
+   * Home is a conversation container, never a work destination. Both admission paths say so
+   * before they read a command. What holds for every route is `Store.createTask`, which makes
+   * no task there: review r6 found the direct route going round these two.
+   */
+  const refuseHomeWork = (projectId: string) => {
+    if (store.isHomeProject(projectId)) throw new ApiError(409, HOME_REFUSES_WORK);
+  };
+  /**
+   * The task route's own creation path, called with the store lock held. A task proposed from
+   * a conversation is made by calling exactly this with the command id derived for that
+   * message, so the protocol check, the receipt replay and the journal entry are the ones a
+   * person's task goes through. Nothing here is duplicated elsewhere.
+   */
+  const createTaskFrom = async (projectId: string, b: Record<string, unknown>) => {
+    refuseHomeWork(projectId);
+    const state = store.state(projectId);
+    const command = parseTaskCommand(b);
+    if (command) {
+      // A replay answers before validation: the admitted task is the evidence.
+      const replay = store.taskCommand(
+        projectId,
+        command.admission.commandId,
+        command.admission.payloadDigest,
+      );
+      if (replay) return replay;
+    }
+    // The document is checked against a fresh listing on both the versioned and the
+    // unversioned path, before anything is created.
+    const requested = command ? command.input.sourceDocument : b.sourceDocument;
+    const sourceDocument = requested === undefined ? undefined : relativeName(requested);
+    if (sourceDocument !== undefined) {
+      if (sourceDocument.length > 1000)
+        throw new ApiError(400, 'Select a project document with a shorter path.');
+      const problem = taskDocumentProblem(sourceDocument, await store.listDocuments(projectId));
+      if (problem) throw new ApiError(400, problem);
+    }
+    const task = store.createTask(state, {
+      ...(command?.input ?? {
+        name: asString(b.name, 'a task name', 200),
+        description: typeof b.description === 'string' ? b.description.slice(0, 10000) : '',
+        owner: b.owner === undefined ? 'you' : choice(b.owner, owners, 'owner'),
+      }),
+      ...(sourceDocument !== undefined ? { sourceDocument } : {}),
+    });
+    const entry = store.addEntry(state, {
+      kind: 'tasks-made',
+      sentence: `You made a task: ${task.name}`,
+      taskId: task.id,
+    });
+    if (command) {
+      task.creationReceipt = {
+        protocolVersion: 1,
+        ...command.admission,
+        projectId: state.project.id,
+        taskId: task.id,
+        eventId: entry.id,
+        admittedAt: entry.time,
+        actor: 'local-client',
+        scope: 'local-prototype',
+      };
+    }
+    await store.persist(state);
+    return task;
+  };
   app.post(
     '/api/projects/:id/tasks',
-    route(async (req) => {
-      const b = body(req),
-        state = store.state(id(req));
-      const command = parseTaskCommand(b);
-      if (command) {
-        // A replay answers before validation: the admitted task is the evidence.
-        const replay = store.taskCommand(
-          id(req),
-          command.admission.commandId,
-          command.admission.payloadDigest,
-        );
-        if (replay) return replay;
-      }
-      // The document is checked against a fresh listing on both the versioned and the
-      // unversioned path, before anything is created.
-      const requested = command ? command.input.sourceDocument : b.sourceDocument;
-      const sourceDocument = requested === undefined ? undefined : relativeName(requested);
-      if (sourceDocument !== undefined) {
-        if (sourceDocument.length > 1000)
-          throw new ApiError(400, 'Select a project document with a shorter path.');
-        const problem = taskDocumentProblem(sourceDocument, await store.listDocuments(id(req)));
-        if (problem) throw new ApiError(400, problem);
-      }
-      const task = store.createTask(state, {
-        ...(command?.input ?? {
-          name: asString(b.name, 'a task name', 200),
-          description: typeof b.description === 'string' ? b.description.slice(0, 10000) : '',
-          owner: b.owner === undefined ? 'you' : choice(b.owner, owners, 'owner'),
-        }),
-        ...(sourceDocument !== undefined ? { sourceDocument } : {}),
-      });
-      const entry = store.addEntry(state, {
-        kind: 'tasks-made',
-        sentence: `You made a task: ${task.name}`,
-        taskId: task.id,
-      });
-      if (command) {
-        task.creationReceipt = {
-          protocolVersion: 1,
-          ...command.admission,
-          projectId: state.project.id,
-          taskId: task.id,
-          eventId: entry.id,
-          admittedAt: entry.time,
-          actor: 'local-client',
-          scope: 'local-prototype',
-        };
-      }
-      await store.persist(state);
-      return task;
-    }),
+    route(async (req) => createTaskFrom(id(req), body(req))),
   );
   app.put(
     '/api/projects/:id/tasks/auto',
@@ -1769,7 +1862,14 @@ export async function createApp(options: AppOptions) {
     projectId: string,
     supplied: Record<string, unknown>,
     port: number | undefined,
+    /**
+     * The caller's ordering guard for the durable admission alone, where one supplied it.
+     * The conversation passes the guard that holds its own source run; a person's Start
+     * passes none and the two Work paths run exactly as they did.
+     */
+    commit?: <T>(step: () => Promise<T>) => Promise<T>,
   ) => {
+    refuseHomeWork(projectId);
     if (isUpdateClosing())
       throw new ApiError(409, 'The app update is accepted. New work pauses until restart.');
     if (supplied.capabilityId !== undefined) {
@@ -1860,6 +1960,7 @@ export async function createApp(options: AppOptions) {
         team,
         permission: threadPermission,
         admission: command?.admission,
+        commit,
       });
     }
     return work.start(
@@ -1867,7 +1968,7 @@ export async function createApp(options: AppOptions) {
       taskId,
       typeof b.instruction === 'string' ? b.instruction : '',
       b.demo === 'fault',
-      { permission: threadPermission, admission: command?.admission },
+      { permission: threadPermission, admission: command?.admission, commit },
     );
   };
   /**
@@ -2251,6 +2352,15 @@ export async function createApp(options: AppOptions) {
         b.engine === undefined
       )
         throw new ApiError(400, 'Provide a thread name, permission mode, mode or helper choice.');
+      // The home conversation runs on the routes a Diomedes conversation supports: Claude
+      // Code or a model-API route. Anything else is refused before any field is touched, so a
+      // request that also renames or narrows the Mode leaves nothing half applied. Its name,
+      // Mode and permission stay its own. The same predicate guards the send path.
+      if (b.engine !== undefined && store.isHomeProject(id(req)) && !isConversationRoute(b.engine))
+        throw new ApiError(
+          409,
+          'The Diomedes conversation runs on Claude Code or AWS Bedrock. Its engine cannot be changed to that.',
+        );
       if (b.name !== undefined) {
         if (typeof b.name !== 'string' || !b.name.trim() || b.name.trim().length > 120)
           throw new ApiError(400, 'Give this thread a name of up to 120 characters.');
@@ -2267,7 +2377,12 @@ export async function createApp(options: AppOptions) {
           ? selectedEngine(store.settings, state.project, conversation)
           : choice(b.engine, ROUTES, 'engine');
       if (b.requested !== undefined) conversation.requested = parseRequested(b.requested, engine);
-      if (b.engine !== undefined) conversation.engine = engine;
+      if (b.engine !== undefined) {
+        conversation.engine = engine;
+        // A route the person picked is marked theirs: the conversation provisioners
+        // re-pin only threads that were never deliberately routed.
+        conversation.engineChoice = 'person';
+      }
       await store.persist(state);
       return conversation;
     }),
@@ -2413,9 +2528,9 @@ export async function createApp(options: AppOptions) {
             404,
             'The response is recorded in the runtime, but its thread is missing.',
           );
-        const identity = hash(JSON.stringify([result.runId, input.requestId]))!;
-        const userId = `Uclaude-${identity.slice(0, 32)}`;
-        const assistantId = `Aclaude-${identity.slice(0, 32)}`;
+        const { user: userId, assistant: assistantId } = projectedTurnIds(
+          hash(turnIdentityText(result.runId, input.requestId))!,
+        );
         const priorUser = thread.turns.find((turn) => turn.id === userId);
         const priorAssistant = thread.turns.find((turn) => turn.id === assistantId);
         if (priorUser || priorAssistant) {
@@ -2469,6 +2584,549 @@ export async function createApp(options: AppOptions) {
         await store.persist(state);
       });
     },
+  });
+  /**
+   * The digest the task route would give this message's own task command. A message too long
+   * for a task description has no valid command at all, so it has no receipt to trust either
+   * and its own admission refuses it below in the route's own words.
+   */
+  const conversationTaskDigest = (
+    commandId: string,
+    task: { name: string; description: string },
+  ) => {
+    try {
+      return parseTaskCommand({
+        protocolVersion: 1,
+        commandId,
+        owner: 'diomedes-with-ok',
+        ...task,
+      })!.admission.payloadDigest;
+    } catch {
+      return null;
+    }
+  };
+  /** The same, for the Work command, from the route and task its own input phase pinned. */
+  const conversationWorkDigest = (
+    commandId: string,
+    work: { taskId: string; route: string; instruction: string },
+  ) => {
+    try {
+      return parseWorkCommand({
+        protocolVersion: 1,
+        commandId,
+        taskId: work.taskId,
+        route: work.route,
+        instruction: work.instruction,
+        sources: [],
+        consent: true,
+      })!.admission.payloadDigest;
+    } catch {
+      return null;
+    }
+  };
+  /**
+   * The projects a conversation may target, read per turn. Only a valid binding counts:
+   * before the first message there is no home, so no project is one and every project is
+   * targetable.
+   */
+  const admissionContext = async () => {
+    const home = store.homeBinding();
+    return {
+      homeProjectId: home?.projectId ?? null,
+      targetableProjectIds: (await store.projects())
+        .map((project) => project.id)
+        .filter((id) => id !== home?.projectId),
+    };
+  };
+  /**
+   * What every child admission is held to, read here rather than sampled before the awaits
+   * that precede it: the thread, this message's own lineage, the Mode control as it stands
+   * now intersected with what the message was bound to, and the person's saved choice of
+   * this exact proposal. A narrowing, a retirement or a changed target between the answer
+   * and this commit refuses the new child. A child that already committed is not revisited.
+   */
+  const admitChild = async (
+    projectId: string,
+    command: { commandId: string },
+    source: AdmissionSource,
+    family: 'task' | 'work',
+  ) => {
+    const thread = store
+      .state(source.projectId)
+      .conversations.find((item) => item.id === source.threadId);
+    if (!thread) throw new ApiError(404, 'This thread was not found.');
+    const lineage = (thread.lineages ?? []).find((item) => item.runId === source.runId);
+    if (!lineage || lineage.retired)
+      throw new ApiError(409, 'This conversation moved on before this was started.', {
+        code: 'conversation_settled',
+      });
+    const verdict = admitInteraction({
+      decision: source.decision,
+      restriction: narrower(
+        source.restriction,
+        restrictionOf(thread.mode === 'auto' || thread.mode === 'plan' ? thread.mode : 'ask'),
+      ),
+      conversationProjectId: source.projectId,
+      ...(await admissionContext()),
+      selection: source.selection,
+    });
+    if (verdict.outcome === 'blocked')
+      throw new ApiError(409, blockedMessage(verdict.reason), { code: verdict.reason });
+    if (
+      verdict.outcome !== 'escalate' ||
+      verdict.projectId !== projectId ||
+      verdict.projectId !== source.targetProjectId ||
+      verdict.proposalDigest !== source.proposalDigest ||
+      (family === 'task' ? verdict.taskCommandId : verdict.workCommandId) !== command.commandId
+    )
+      throw new ApiError(409, 'This message can no longer start that work. Nothing was started.', {
+        code: 'not_startable',
+      });
+  };
+  // The Diomedes conversation. `InteractionTurns` owns the sequence; what follows is only what
+  // the Store and the existing admission paths supply to it. Each method takes and releases
+  // its own lock, and none of them holds one while a provider runs.
+  /** The driver that owns a conversation run. Model-API runs are named `model-...`. */
+  const conversationDriver = (runId: string) => {
+    const driver = runId.startsWith('model-') ? engines.modelSessions : engines.nativeSessions;
+    if (!driver) throw new ApiError(503, 'The conversation runtime is unavailable.');
+    return driver;
+  };
+  /** `locate` across a thread's lineages, each on its own driver, newest first. */
+  const conversationLocator =
+    () => async (projectId: string, runIds: readonly string[], commandId: string) => {
+      for (const runId of runIds) {
+        const found = await conversationDriver(runId).locate(projectId, [runId], commandId);
+        if (found) return found;
+      }
+      return null;
+    };
+  const interactionHost: InteractionHost = {
+    resolve: (projectId, threadId, command, options) =>
+      store.locked(async () => {
+        const driver = engines.nativeSessions;
+        if (!driver) throw new ApiError(503, 'The native conversation runtime is unavailable.');
+        const locateAny = conversationLocator();
+        // Clone first, as the projection does: a failed persist must leave nothing half admitted.
+        const state = structuredClone(store.state(projectId));
+        const thread = state.conversations.find((item) => item.id === threadId);
+        if (!thread) throw new ApiError(404, 'This thread was not found.');
+        const sourceMessageId = sourceMessageIdFor(projectId, threadId, command.commandId);
+        const restriction = restrictionOf(command.mode);
+        const lineages = thread.lineages ?? [];
+        const request = {
+          projectId,
+          threadId,
+          requestId: command.commandId,
+          prompt: promptFor(command.mode, command.text, sourceMessageId),
+          instructions: instructionsFor(command.mode, MODES[command.mode].instructions),
+          // From the parsed command alone, before any setting or file is read, so a retry is
+          // compared with what was sent even after either has changed.
+          binding: commandBinding('message', command),
+          interaction: {
+            sourceMessageId,
+            decide: decideWith(sourceMessageId, restriction, command.text),
+          },
+        };
+        const resolved = { projectId, threadId, commandId: command.commandId, sourceMessageId };
+        // A command this thread already holds is found first, through every lineage it ever
+        // had, retired ones included, and before the engine, the model or a file is looked at.
+        const located = await locateAny(
+          projectId,
+          [...lineages].reverse().map((lineage) => lineage.runId),
+          command.commandId,
+        );
+        if (located?.answered)
+          return {
+            ...resolved,
+            restriction,
+            // The command keeps the restriction it was bound to. What it may still start is
+            // held to the thread's Mode now, so narrowing the control stops an admission
+            // that has not happened yet, on a retry exactly as on a selection.
+            control: restrictionOf(
+              thread.mode === 'auto' || thread.mode === 'plan' ? thread.mode : 'ask',
+            ),
+            runId: located.runId,
+            route: located.runId.startsWith('model-') ? AWS_BEDROCK_ROUTE : ('claude-code' as const),
+            action: 'follow-up' as const,
+            replay: true,
+            text: command.text,
+            mode: command.mode,
+            // Nothing is generated, so nothing here is sent anywhere: no file is read again
+            // and no model is chosen. The driver compares the binding and reads the record.
+            input: { ...request, documents: [], model: '', accountRoute: '' },
+          };
+        // A turn a budget refused was written and never sent. Nothing was asked of a model, so
+        // it is not an unfinished message, and it never stands in the way of a new lineage.
+        const sent = located?.dispatched ? located : null;
+        if (
+          sent &&
+          (sent.settled || lineages.find((lineage) => lineage.runId === sent.runId)?.retired)
+        )
+          return { unfinished: true as const, runId: sent.runId, sourceMessageId };
+        // CD-01 Decision 5: a conversation runs on the native Claude session or on a
+        // model-API route through its own driver. Any other route is refused here, by
+        // name, through the same predicate the thread update guards with.
+        const conversationRoute = selectedEngine(store.settings, state.project, thread);
+        if (!isConversationRoute(conversationRoute))
+          throw new ApiError(
+            409,
+            'Select Claude Code or AWS Bedrock for this conversation before sending.',
+          );
+        const routeName =
+          conversationRoute === 'claude-code' ? 'Claude Code' : MODEL_API_NAMES[conversationRoute];
+        if (store.settings.services?.[conversationRoute] !== true)
+          throw new ApiError(409, `Turn ${routeName} on in Settings before sending.`);
+        const accountRoute = store.settings.services?.[`${conversationRoute}AccountRoute`];
+        const selection =
+          conversationRoute === 'claude-code'
+            ? nativeChoice('claude-code', projectId, thread)
+            : { model: store.settings.services?.[`${conversationRoute}Model`] };
+        if (typeof selection.model !== 'string' || !selection.model || typeof accountRoute !== 'string')
+          throw new ApiError(409, `Connect ${routeName} and choose its model in AI setup first.`);
+        const paths = new Set<string>();
+        const documents = [];
+        for (const source of command.sources) {
+          const name = relativeName(source.path);
+          if (paths.has(name.toLowerCase()))
+            throw new ApiError(400, 'Choose each source file once.');
+          paths.add(name.toLowerCase());
+          const document = await store.readDocument(projectId, name);
+          if (document.sha !== source.sha)
+            throw new ApiError(409, `${name} changed. Choose its current version before sending.`);
+          documents.push({ path: name, text: document.text });
+        }
+        if (
+          documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0) >
+          128_000
+        )
+          throw new ApiError(413, 'Choose less than 128 KB of source text for this request.');
+        // One current lineage per mode. Retiring one and admitting its replacement are a single
+        // mutation, and the next generation counts every entry the thread ever had.
+        let current: ConversationLineage | undefined = lineages
+          .filter((lineage) => lineage.mode === command.mode && !lineage.retired)
+          .sort((a, b) => b.generation - a.generation)[0];
+        let changed = false;
+        // A lineage belongs to one route. Choosing another route starts the next generation;
+        // the earlier run stays as evidence under its own driver.
+        const modelRoute = isModelApiRoute(conversationRoute);
+        if (current && !sent && current.runId.startsWith('model-') !== modelRoute) {
+          current.retired = 'scope-change';
+          current = undefined;
+          changed = true;
+        }
+        // The lineages are searched newest first, so once the replacement holds this command
+        // it is the one a retry or a restart finds, and the refused turn stays as evidence.
+        if (current && options.replace && !sent) {
+          current.retired = options.replace;
+          current = undefined;
+          changed = true;
+        }
+        if (!current) {
+          const generation = 1 + Math.max(0, ...lineages.map((lineage) => lineage.generation));
+          current = {
+            mode: command.mode,
+            generation,
+            runId: (modelRoute ? modelSessionRunId : claudeSessionRunId)(
+              projectId,
+              `lineage.${evidenceDigest({ threadId, mode: command.mode, generation }).slice(0, 40)}`,
+            ),
+          };
+          thread.lineages = [...lineages, current];
+          changed = true;
+        }
+        if (changed) await store.persist(state);
+        const runId = current.runId;
+        const lineageDriver = runId.startsWith('model-') ? engines.modelSessions : driver;
+        if (!lineageDriver) throw new ApiError(503, 'The conversation runtime is unavailable.');
+        const known = await lineageDriver.status(projectId, runId).catch((error: unknown) => {
+          if (error instanceof HarnessError && error.code === 'unknown_run') return null;
+          throw error;
+        });
+        const action = !known
+          ? ('start' as const)
+          : known.connected
+            ? ('follow-up' as const)
+            : known.nativeSession
+              ? ('resume' as const)
+              : ('start' as const);
+        // One resolved identity: progress, execution and projection all name the run that ran.
+        const progress = (kind: 'started' | 'delta' | 'ended', frame?: TransientPreview) =>
+          store.emit('engine-text', {
+            projectId,
+            threadId,
+            requestId: command.commandId,
+            runId,
+            kind,
+            ...(frame
+              ? {
+                  stepId: frame.stepId,
+                  attempt: frame.attempt,
+                  fence: frame.fence,
+                  seq: frame.seq,
+                  text: frame.text,
+                }
+              : {}),
+          });
+        progress('started');
+        let ended = false;
+        options.whenDone?.(() => {
+          if (!ended) {
+            ended = true;
+            progress('ended');
+          }
+        });
+        // Frames keep their dense sequence; only their text is held back, so the decision
+        // block never reaches a person's screen while the answer streams.
+        const gate = command.mode === 'auto' ? previewGate() : (text: string) => text;
+        return {
+          ...resolved,
+          restriction,
+          control: restriction,
+          runId,
+          route: modelRoute ? conversationRoute : ('claude-code' as const),
+          action,
+          replay: false,
+          text: command.text,
+          mode: command.mode,
+          input: {
+            ...request,
+            documents,
+            model: selection.model as string,
+            accountRoute,
+            signal: options.signal,
+            onPreview: (frame: TransientPreview) =>
+              progress('delta', { ...frame, text: gate(frame.text) }),
+          },
+        };
+      }),
+    locate: (projectId, threadId, commandId) =>
+      store.locked(async () => {
+        const driver = engines.nativeSessions;
+        if (!driver) throw new ApiError(503, 'The native conversation runtime is unavailable.');
+        const thread = store
+          .state(projectId)
+          .conversations.find((item) => item.id === threadId);
+        if (!thread) throw new ApiError(404, 'This thread was not found.');
+        const located = await conversationLocator()(
+          projectId,
+          [...(thread.lineages ?? [])].reverse().map((lineage) => lineage.runId),
+          commandId,
+        );
+        if (!located) return null;
+        const mode = thread.mode;
+        return {
+          ...located,
+          sourceMessageId: sourceMessageIdFor(projectId, threadId, commandId),
+          // The Mode control as it stands now. A thread on a work mode is not a conversation
+          // that may start anything from here, so it reads as the narrowest limit.
+          restriction: restrictionOf(mode === 'auto' || mode === 'plan' ? mode : 'ask'),
+        };
+      }),
+    project: (resolved, result) =>
+      store.locked(async () => {
+        const state = structuredClone(store.state(resolved.projectId));
+        const thread = state.conversations.find((item) => item.id === resolved.threadId);
+        if (!thread)
+          throw new ApiError(
+            404,
+            'The response is recorded in the runtime, but its thread is missing.',
+          );
+        const { user: userId, assistant: assistantId } = projectedTurnIds(
+          hash(turnIdentityText(result.runId, resolved.commandId))!,
+        );
+        const priorUser = thread.turns.find((turn) => turn.id === userId);
+        const priorAssistant = thread.turns.find((turn) => turn.id === assistantId);
+        if (priorUser || priorAssistant) {
+          if (priorUser?.text !== resolved.text || priorAssistant?.text !== result.text)
+            throw new ApiError(
+              409,
+              'The recorded conversation projection conflicts with this native response.',
+            );
+          return;
+        }
+        const at = now();
+        // A projection repaired after the fact is rebuilt from what the turn itself recorded.
+        // The files are not read again and no current setting stands in for a past one.
+        const answeredBy = resolved.route ?? 'claude-code';
+        // A model-API answer is always projected from its recorded origin: the requested model,
+        // the model AWS reported (or none) and the account route, exactly as the turn saved them.
+        const modelAnswer = result.runId.startsWith('model-');
+        const recorded = resolved.replay || modelAnswer
+          ? await (modelAnswer ? engines.modelSessions! : engines.nativeSessions!).evidence(
+              resolved.projectId,
+              result.runId,
+              resolved.commandId,
+            )
+          : null;
+        const sources =
+          recorded?.sources ?? resolved.input.documents.map((document) => document.path);
+        thread.turns.push(
+          {
+            id: userId,
+            role: 'you',
+            mode: resolved.mode,
+            // What the person typed. The identity line the model was given is never shown.
+            text: resolved.text,
+            at,
+            sources,
+            route: answeredBy,
+          },
+          {
+            id: assistantId,
+            role: 'assistant',
+            mode: resolved.mode,
+            // The answer without its decision block. The whole answer stays in the run.
+            text: result.text,
+            at,
+            sources,
+            route: answeredBy,
+            helper: {
+              engine: answeredBy,
+              model: result.model,
+              version: result.version,
+              verified: modelAnswer ? recorded?.origin?.model.source === 'runtime' : true,
+            },
+            origin: recorded
+              ? (recorded.origin ??
+                // Nothing was recorded, so nothing is claimed: the model the runtime reported
+                // and no requested model or account.
+                directOrigin({
+                  engine: answeredBy,
+                  reportedModel: result.model,
+                  version: result.version,
+                  executorId: answeredBy,
+                }))
+              : directOrigin({
+                  engine: answeredBy,
+                  requestedModel: resolved.input.model,
+                  reportedModel: result.model,
+                  version: result.version,
+                  accountRoute: resolved.input.accountRoute,
+                  executorId: answeredBy,
+                }),
+          },
+        );
+        thread.helper = { engine: answeredBy, model: result.model };
+        // A repair never moves the Mode control: the person may have narrowed it since.
+        if (!resolved.replay) thread.mode = resolved.mode;
+        touchThread(thread, at, state.tasks);
+        await store.persist(state);
+      }),
+    admissionContext,
+    receipts: (projectId, ids, intent) =>
+      store.locked(async () => {
+        const state = store.state(projectId);
+        // A derived command id another request bound to different work is a conflict, not
+        // this message's child. The parser, the digest and the replay refusal a person's own
+        // task goes through decide that, so nothing foreign is read back as a start here.
+        const expected = intent && conversationTaskDigest(ids.taskCommandId, intent.task);
+        const task = expected
+          ? store.taskCommand(projectId, ids.taskCommandId, expected)
+          : undefined;
+        if (!expected) assertReplay(findCommand(state, ids.taskCommandId), 'task.create');
+        // The Work command is recognised only once its own input phase has pinned what it
+        // names. A session under that id holding anything else is other work, so it is not
+        // this message's receipt; the Work admission refuses it there, in its own words,
+        // and the refusal it records stays readable.
+        const started = intent?.work && conversationWorkDigest(ids.workCommandId, intent.work);
+        const work = findCommand(state, ids.workCommandId);
+        assertReplay(work, 'work.start');
+        return {
+          projectId,
+          taskId: task?.id ?? null,
+          sessionId:
+            work?.type === 'work.start' && started && work.digest === started
+              ? work.subject.id
+              : null,
+        };
+      }),
+    workRoute: async (projectId) =>
+      // The target project's own engine, as a person's Start there would use.
+      selectedEngine(store.settings, store.state(projectId).project, null),
+    createTask: (projectId, command, source) =>
+      store.locked(async () => {
+        const driver = conversationDriver(source.runId);
+        await driver.assertLive(source.projectId, source.runId);
+        await admitChild(projectId, command, source, 'task');
+        return driver.fenced(source.projectId, source.runId, async () => ({
+          taskId: (
+            await createTaskFrom(projectId, {
+              protocolVersion: 1,
+              commandId: command.commandId,
+              name: command.name,
+              description: command.description,
+              owner: 'diomedes-with-ok',
+            })
+          ).id,
+        }));
+      }),
+    startWork: (projectId, command, source) =>
+      store.locked(async () => {
+        const driver = conversationDriver(source.runId);
+        await driver.assertLive(source.projectId, source.runId);
+        await admitChild(projectId, command, source, 'work');
+        const session = (await admitWork(
+          projectId,
+          {
+            protocolVersion: 1,
+            commandId: command.commandId,
+            taskId: command.taskId,
+            // The route this message's own Work input pinned, not the setting as it stands.
+            route: command.route,
+            instruction: command.instruction,
+            sources: [],
+            // The person's selection of this exact proposal carried this consent.
+            consent: true,
+          },
+          undefined,
+          // Only the durable admission is ordered against this conversation's own Runtime
+          // transitions; the preparation the Work path does first stays outside that queue.
+          (step) => driver.fenced(source.projectId, source.runId, step),
+        )) as { id: string };
+        return { sessionId: session.id };
+      }),
+  };
+  /**
+   * Where Diomedes' own conversation lives: the reserved home Project and its
+   * one thread. The read answers null until a binding is both saved and valid,
+   * and creates nothing, so opening the app provisions no home. The page posts
+   * here when the person sends their first message, and that is the only thing
+   * that ever makes one.
+   */
+  app.get(
+    '/api/home/conversation',
+    route(async () => store.homeBinding()),
+  );
+  app.post(
+    '/api/home/conversation',
+    // The provisioner takes the Store lock itself: its steps are one mutation.
+    route(async () => store.provisionHome(), false),
+  );
+  /**
+   * Where a project's own Diomedes conversation lives. There is no read here on
+   * purpose: a page that wants to know reads the project's state and applies
+   * `diomedesThread`, which creates and repairs nothing. This POST is the only
+   * thing that adopts or makes one, and it does both in one locked sequence, so
+   * two windows sending their first message at once land on one thread rather
+   * than each on its own. The body is ignored; the project is the whole request.
+   */
+  app.post(
+    '/api/projects/:id/conversation',
+    route(async (req) => store.provisionProjectConversation(id(req)), false),
+  );
+  mountModelApiRoutes(app, { store, engines });
+  mountInteractionRoutes(app, new InteractionTurns(engines, interactionHost), {
+    authorize: async (req) => {
+      store.state(String(req.params.id));
+    },
+    context: (req) => ({
+      signal: req.res ? connectionSignal(req.res) : undefined,
+      whenDone: (end) => {
+        req.res?.once('finish', end);
+        req.res?.once('close', end);
+      },
+    }),
   });
   const codexHelper = (result: {
     model?: string;
@@ -2650,8 +3308,27 @@ export async function createApp(options: AppOptions) {
                 store.state(projectId).conversations.find((c) => c.id === b.threadId),
               )
             : choice(b.route, ROUTES, 'service');
+      if (isModelApiRoute(serviceRoute))
+        throw new ApiError(
+          409,
+          `${MODEL_API_NAMES[serviceRoute]} answers through the conversation. Send your message there.`,
+        );
+      // Home is reached through its messages route alone. This direct route would start work
+      // there, write a plan into it, or re-route the one thread that has to stay on Claude
+      // Code, so it is refused for every mode before anything is changed, any source file is
+      // read or anything is sent.
+      if (store.isHomeProject(projectId))
+        throw new ApiError(
+          409,
+          'The Diomedes conversation does not take direct requests. Send it a message, or name the project this belongs to.',
+        );
       const parsedMode = modeOf(b.mode);
       if (!parsedMode) throw new ApiError(400, 'Choose a valid mode.');
+      if (parsedMode === 'auto')
+        throw new ApiError(
+          409,
+          'Automatic is a conversation mode. Direct execution does not accept it.',
+        );
       const mode = parsedMode;
       const attached =
         b.attachedTo === undefined ? { kind: 'project', ref: projectId } : plain(b.attachedTo);

@@ -249,7 +249,7 @@ describe('the Agent registry', () => {
 describe('resolution records authority and never confers it', () => {
   const registry = () => new AgentRegistry(temp);
   test('Auto resolves deterministically by mode and is recorded as automatic', async () => {
-    for (const mode of ['ask', 'plan', 'build', 'fix'] as Mode[]) {
+    for (const mode of ['ask', 'plan', 'build', 'fix'] as Exclude<Mode, 'auto'>[]) {
       const resolution = await registry().resolve({
         requestedAgentId: AUTO_AGENT,
         mode,

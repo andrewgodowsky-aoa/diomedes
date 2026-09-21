@@ -12,6 +12,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import fsp from 'node:fs/promises';
 import type { Project, Settings } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -140,13 +141,8 @@ async function openConsole(page: Page) {
   });
   expect(opened.ok()).toBe(true);
   await page.goto('/');
-  const root = page.locator('.console');
-  const card = page.getByRole('button', { name: PROJECT_NAME }).first();
-  await expect(root.or(card).first()).toBeVisible();
-  if ((await root.count()) === 0) {
-    await card.click();
-    await expect(root).toBeVisible();
-  }
+  await reopenLastProject(page);
+  await expect(page.locator('.console')).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
 }
 

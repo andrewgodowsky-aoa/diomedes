@@ -1,0 +1,230 @@
+/* The Diomedes page: the app's own landing, a conversation rather than a
+   project chooser. Every rule is prefixed with `.console`; tokens only, no
+   colour is ever written literally here. The rail, the work column's grid,
+   the composer box, the bar and the ledger are console.css's own boxes,
+   reused by class (docs/implementation/2026-09-20-console-design-language.md,
+   decision 1); what follows is the little this page adds on top of them.
+
+   Shape and line rules from that same document: containers take --r,
+   controls and rows take --rb, and a hairline sits only between the three
+   regions, never inside one. */
+
+/* This root holds a stage and no strip of its own: whatever mounts this page
+   draws the strip above it, the way Home's `.console.home` does. */
+.console.diomedes {
+  grid-template-rows: minmax(0, 1fr);
+}
+.console.diomedes .dio-screen {
+  grid-template-columns: minmax(0, 1fr) 296px;
+}
+
+/* The route the conversation's messages take, on the same instrumentation line: a fact about
+   this thread, so it reads in the line's stronger colour the way `.instr b` marks one. */
+.console.diomedes .dio-route {
+  color: var(--t2);
+}
+
+/* The composer starts tall and inviting on a quiet conversation with nothing
+   in it yet, and drops to the thread composer's usual single line once there
+   is something above it to read. */
+.console.diomedes .composer.quiet textarea {
+  min-height: 72px;
+}
+.console.diomedes .bar {
+  padding: 4px 8px 4px 14px;
+  min-height: 40px;
+  gap: 6px 16px;
+}
+
+/* "In" and "Mode": the same labelled-select box the Projects page composer
+   uses, under a name of its own because this page cannot import that page's
+   stylesheet. */
+.console.diomedes .dio-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  white-space: nowrap;
+}
+/* A project name is a machine string in a fixed-width bar (decision 5). */
+.console.diomedes .dio-field select {
+  min-width: 0;
+  max-width: 32ch;
+  padding: 3px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  background-color: var(--surface);
+  color: var(--t1);
+  font: inherit;
+  text-overflow: ellipsis;
+  transition: border-color var(--quick);
+}
+.console.diomedes .dio-field select:hover {
+  border-color: color-mix(in srgb, var(--t3) 70%, transparent);
+}
+/* The Route control is disabled while its delivery runs: the choice a send takes is the route
+   it started on, and a select that cannot be changed keeps the quiet colour rather than the
+   interactive one. */
+.console.diomedes .dio-field select:disabled {
+  color: var(--t3);
+}
+
+/* The plain sentence that replaces the composer when this conversation
+   cannot run here. It borrows the composer's own box (decision 1) rather
+   than drawing a second one. */
+.console.diomedes .dio-unavailable {
+  margin: 0;
+  padding: 11px 14px;
+  color: var(--t2);
+  font-size: var(--dm-type-body);
+  line-height: var(--dm-line-body);
+}
+
+/* One quiet line while a turn is on its way. No spinner art: it only fades
+   and settles into place the way every other view in the Console arrives
+   (motion.css's `.screen.on`), and reduced motion drops that the same way. */
+.console.diomedes .dio-pending {
+  margin: 14px 0 0;
+  animation: dm-view-in var(--dm-t-extend) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* What the last message led to, beyond its answer. One flat box on the
+   composer's own border, with a state rule down its left edge in the
+   colours the Console's points already speak. It sits in the transcript,
+   under the answer it belongs to, and there is never more than one. */
+.console.diomedes .dio-card {
+  margin: 14px 0 0;
+  padding: 11px 14px;
+  border: 1px solid var(--hair-2);
+  border-left: 2px solid var(--t3);
+  border-radius: var(--rb);
+  background-color: var(--surface);
+  animation: dm-view-in var(--dm-t-extend) cubic-bezier(0.16, 1, 0.3, 1);
+}
+.console.diomedes .dio-card.offer,
+.console.diomedes .dio-card.attn {
+  border-left-color: var(--attn);
+}
+.console.diomedes .dio-card.live {
+  border-left-color: var(--light);
+}
+.console.diomedes .dio-card.fail {
+  border-left-color: var(--fail);
+}
+.console.diomedes .dio-card b {
+  display: block;
+  color: var(--t1);
+  font-size: var(--dm-type-body);
+  font-weight: 600;
+}
+.console.diomedes .dio-card p {
+  margin: 4px 0 0;
+  color: var(--t2);
+  font-size: var(--dm-type-body);
+  line-height: var(--dm-line-body);
+}
+.console.diomedes .dio-card .send {
+  margin-top: 10px;
+}
+
+/* The two strips above the composer. A notice is one sentence; the
+   unconfirmed message quotes what was sent and offers the only two honest
+   choices. Neither draws a second composer. */
+.console.diomedes .dio-notice,
+.console.diomedes .dio-unconfirmed {
+  margin: 0 0 8px;
+  padding: 9px 14px;
+  border: 1px solid var(--hair-2);
+  border-left: 2px solid var(--attn);
+  border-radius: var(--rb);
+  color: var(--t2);
+  font-size: var(--dm-type-body);
+  line-height: var(--dm-line-body);
+}
+.console.diomedes .dio-unconfirmed p {
+  margin: 0;
+}
+.console.diomedes .dio-unconfirmed .dio-quote {
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--t1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console.diomedes .dio-unconfirmed .dio-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+/* A read that failed after a message went through. The message is not offered back: only the
+   read is owed, so the one control reads again. */
+.console.diomedes .dio-reread {
+  margin: 0 0 8px;
+}
+
+/* Both voices are set from the same left margin, as the approved boards draw
+   them. The person's turns are told apart by the dimmer body colour
+   console.css already gives `.turn.you`, and Diomedes' by the point
+   `.turn.dio` already draws. Nothing here names the engine that answered:
+   this screen is Diomedes speaking, not a transcript of who ran. */
+
+/* ---- the ledger: one section, Recent results ---- */
+.console.diomedes .ledger h2 {
+  margin: 0 0 4px;
+}
+/* The row's own title, not an action: console.css's `.ledger li button`
+   default (attn-coloured, for a verb like "Review") does not apply here. */
+.console.diomedes .ledger li .dio-result {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t1);
+  font-size: inherit;
+}
+
+/* ---- narrow ----
+   console.css takes every ledger off the screen below two widths: the app
+   container at 1100px and the window at 860px. That is right for a thread,
+   whose ledger repeats what the thread already shows. Here the ledger is the
+   only place a result can be opened from, so it moves under the conversation
+   instead of going away, keeps its own scroll, and stays after the composer
+   in the tab order. With nothing to show it draws nothing at all, the same
+   as it does when it is wide: no strip, no line, no placeholder sentence.
+
+   The two blocks are the same on purpose. A window width and a container
+   width cannot share one condition, and either one alone hides the ledger. */
+@container app (max-width: 1100px) {
+  .console.diomedes .dio-screen {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .console.diomedes .ledger {
+    display: block;
+    max-height: 176px;
+    padding: 12px 16px;
+    border-left: 0;
+    border-top: 1px solid var(--hair);
+  }
+  .console.diomedes .ledger:empty {
+    display: none;
+  }
+}
+@media (max-width: 860px) {
+  .console.diomedes .dio-screen {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .console.diomedes .ledger {
+    display: block;
+    max-height: 176px;
+    padding: 12px 16px;
+    border-left: 0;
+    border-top: 1px solid var(--hair);
+  }
+  .console.diomedes .ledger:empty {
+    display: none;
+  }
+}

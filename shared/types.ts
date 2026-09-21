@@ -25,11 +25,12 @@ export type Page =
   | 'documents'
   | 'history'
   | 'connections';
-export type Mode = 'ask' | 'plan' | 'build' | 'fix';
+export type Mode = 'ask' | 'plan' | 'auto' | 'build' | 'fix';
 export type TaskState = 'todo' | 'working' | 'waiting' | 'done';
 export type Owner = 'you' | 'diomedes' | 'diomedes-with-ok';
 export type ExternalEngine = 'claude-code' | 'opencode' | 'oh-my-pi' | 'cursor' | 'devin';
-export type Route = 'sample' | 'codex' | ExternalEngine;
+/** A model-API route (`shared/model-api.ts`): a provider API on the company's own credential. */
+export type Route = 'sample' | 'codex' | ExternalEngine | import('./model-api.js').ModelApiRoute;
 export interface Settings {
   version: 1;
   detail: Detail;
@@ -99,6 +100,19 @@ export interface Settings {
    * membership behind it is real and still active.
    */
   activeWorkspace?: WorkspaceRef;
+  /**
+   * The reserved home conversation container: the Project and thread Diomedes'
+   * own conversation runs in. Absent on settings written before this field
+   * existed, and null until the first message on that conversation provisions
+   * it. The server never provisions it at startup.
+   *
+   * Like `activeWorkspace` it is not writable through `PUT /api/settings`: the
+   * server is the only writer. It is a pointer rather than the records, so it
+   * is a claim and not evidence: every use re-checks that the project it names
+   * is the reserved home Project and the thread it names is that project's
+   * designated home thread, and re-establishes it by adoption when it is not.
+   */
+  home?: { projectId: string; threadId: string; revision: 1 } | null;
   /**
    * Which helpers are switched on, by engine id; only engines whose adapter is
    * ready can be on. A few keys are choices rather than switches, and hold a
@@ -410,8 +424,28 @@ export interface Turn {
   };
 }
 /** A thread: a named conversation that belongs to a project and, optionally, to a task. */
+/**
+ * One native conversation run a thread has used. A thread keeps one current lineage per
+ * conversation mode; a new one is admitted, with the next generation, when the current one can
+ * no longer take a message. Retired lineages stay, so a message answered on one is still found.
+ */
+export interface ConversationLineage {
+  mode: 'ask' | 'plan' | 'auto';
+  /** Counts every lineage the thread ever had, retired ones included. Starts at 1. */
+  generation: number;
+  runId: string;
+  /** Absent means current. The guard that refused a new message names the reason. */
+  retired?: 'scope-change' | 'terminated' | 'budget';
+}
 export interface Conversation {
   engine?: Route;
+  /**
+   * Present only when the person picked `engine` themselves through the thread's
+   * update route. Absent means the route was provisioned, not chosen, so a
+   * provisioner may re-pin it to the conversation's current default; a marked
+   * choice is preserved across provisioning and restart.
+   */
+  engineChoice?: 'person';
   id: string;
   attachedTo: { kind: 'project' | 'document' | 'plan' | 'task' | 'review'; ref: string };
   turns: Turn[];
@@ -437,6 +471,8 @@ export interface Conversation {
   requested?: { model: string | null; effort: string | null; agent?: string | null } | null;
   /** The thread's current mode. State written before modes lacks it; the store fills it on load. */
   mode: Mode;
+  /** Native conversation lineages, oldest first. Missing on state written before this field. */
+  lineages?: ConversationLineage[];
 }
 
 /** One model an engine offers, with the reasoning ladder that model supports. */

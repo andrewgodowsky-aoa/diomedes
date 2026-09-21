@@ -6,6 +6,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import type { Conversation, Project, TaskCandidate } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 /**
  * Browser proof that Agent and Model are two independent choices in the main
@@ -171,6 +172,7 @@ const thread = async (): Promise<Conversation> => {
 
 async function open(page: Page) {
   await page.goto(`${baseURL}/`);
+  await reopenLastProject(page);
   await expect(page.locator('.console')).toBeVisible();
   await expect(agentButton(page)).toBeVisible();
 }

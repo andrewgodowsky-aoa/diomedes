@@ -1,4 +1,5 @@
 import type { EngineModel, ExternalEngine, Route } from './types.js';
+import { isModelApiRoute, MODEL_API_ROUTES, type ModelApiRoute } from './model-api.js';
 import type {
   Candidate,
   CandidateSource,
@@ -16,12 +17,28 @@ export const EXTERNAL_ENGINES = ['claude-code', 'opencode', 'oh-my-pi', 'cursor'
  * registry row that names this one.
  */
 export const HOST_TEST_PROJECT = 'diomedes-host-tests';
-export const ROUTES = ['sample', 'codex', ...EXTERNAL_ENGINES] as const;
+export const ROUTES = ['sample', 'codex', ...EXTERNAL_ENGINES, ...MODEL_API_ROUTES] as const;
 export function isExternalEngine(value: unknown): value is ExternalEngine {
   return EXTERNAL_ENGINES.some((id) => id === value);
 }
 export function isRoute(value: unknown): value is Route {
   return ROUTES.some((id) => id === value);
+}
+/**
+ * The route a Diomedes conversation is provisioned on when nobody chose one. A
+ * typed literal, not the server-owned `AWS_BEDROCK_ROUTE`, because shared code
+ * must not import a server module; a test asserts the two spellings agree.
+ * Used only by the two conversation provisioners.
+ */
+export const CONVERSATION_DEFAULT_ROUTE: Route = 'aws-bedrock';
+/**
+ * What a Diomedes conversation may run on: the native Claude Code session or a
+ * model-API route. The Home thread update and the send path share this one
+ * predicate so the two can never disagree about which routes a conversation
+ * accepts.
+ */
+export function isConversationRoute(value: unknown): value is 'claude-code' | ModelApiRoute {
+  return value === 'claude-code' || isModelApiRoute(value);
 }
 export const ENGINE_NAMES: Record<ExternalEngine, string> = {
   'claude-code': 'Claude Code',

@@ -39,6 +39,7 @@ const EXAMPLES = {
 
 /** Where the Projects page can take a person, beyond opening a project. */
 export type HomeDestination =
+  | 'diomedes'
   | 'new-project'
   | 'open-folder'
   | 'sample'
@@ -51,7 +52,13 @@ export type HomeDestination =
   | 'updates'
   | 'about';
 
-const DEFAULT_PINS: HomeDestination[] = ['new-project', 'open-folder', 'engines', 'appearance'];
+const DEFAULT_PINS: HomeDestination[] = [
+  'diomedes',
+  'new-project',
+  'open-folder',
+  'engines',
+  'appearance',
+];
 const PINS_KEY = 'home.rail.pins';
 
 // The same reason Shell keeps its pins in localStorage: a new settings key is a
@@ -139,7 +146,9 @@ export function Home({
     }
   };
   const work = settings.onboarding.work ?? 'mix';
-  const target = byRecency.find((p) => p.id === targetId) ?? byRecency[0];
+  // The person's own choice and nothing else. The project last opened is never assumed to be
+  // where something should happen (core agent contract, condition H3).
+  const target = byRecency.find((p) => p.id === targetId);
   // The mode travels with the ask and lands on the thread it opens in.
   const [mode, setMode] = useState<Mode>('ask');
   const send = () => {
@@ -170,6 +179,7 @@ export function Home({
   });
 
   const destinations: EverythingItem[] = [
+    { id: 'diomedes', label: 'Diomedes', hint: 'Talk to Diomedes about any project, or all of them.' },
     { id: 'new-project', label: 'New project', hint: 'Start from an empty folder.' },
     {
       id: 'open-folder',
@@ -210,7 +220,7 @@ export function Home({
     { heading: 'Projects', ids: ['new-project', 'open-folder', 'sample', 'find'] },
     {
       heading: 'Diomedes',
-      ids: ['engines', 'appearance', 'design-center', 'permissions', 'detail', 'updates', 'about'],
+      ids: ['diomedes', 'engines', 'appearance', 'design-center', 'permissions', 'detail', 'updates', 'about'],
     },
   ];
 
@@ -311,6 +321,11 @@ export function Home({
                             value={target?.id ?? ''}
                             onChange={(e) => onTarget(e.target.value)}
                           >
+                            {!target && (
+                              <option value="" disabled>
+                                Choose a project
+                              </option>
+                            )}
                             {byRecency.map((p) => (
                               <option key={p.id} value={p.id}>
                                 {p.name}
@@ -320,8 +335,8 @@ export function Home({
                         </label>
                         <button
                           type="button"
-                          className={`send${text.trim() ? ' ready' : ''}`}
-                          disabled={!text.trim()}
+                          className={`send${text.trim() && target ? ' ready' : ''}`}
+                          disabled={!text.trim() || !target}
                           onClick={send}
                         >
                           Send

@@ -75,11 +75,59 @@ export interface ClaudeSessionTurnResult {
   response: TextResponse | null;
   interrupted: boolean;
   nativeSession: NativeSessionRef | null;
+  /**
+   * The answer with its decision block removed, for a conversation message. Derived from
+   * `response.text` each time it is returned and never saved: the saved turn keeps the whole
+   * answer as evidence.
+   */
+  answerText?: string;
+}
+/**
+ * What happened to one conversation message after its answer, in the order it can happen.
+ * `action-selected` is the person choosing to start what Diomedes proposed; the two `refused`
+ * phases are final, so a refused message is reported on replay and never tried again.
+ */
+export type InteractionPhaseName =
+  | 'decision'
+  | 'action-selected'
+  | 'task-input'
+  | 'task-receipt'
+  | 'task-refused'
+  | 'work-input'
+  | 'work-receipt'
+  | 'work-refused';
+/** Pure data. The driver saves each as one immutable, pure, zero-cost, local step. */
+export interface InteractionPhase {
+  phase: InteractionPhaseName;
+  sourceMessageId: string;
+  body: Json;
 }
 export const claudeSessionRunId = (projectId: string, commandId: string) =>
   `claude-${digest({ projectId, commandId })}`;
 const stepKey = (prefix: string, commandId: string) =>
   `${prefix}:${digest(commandId).slice(0, 40)}`;
+const PHASE_PREFIX = 'phase.';
+/** A `transform` step charges neither the model nor the tool counter, and costs no units. */
+const phaseDefinition = (phase: InteractionPhase): StepDefinition => ({
+  id: stepKey(`${PHASE_PREFIX}${phase.phase}`, phase.sourceMessageId),
+  version: '1',
+  kind: 'transform',
+  effect: 'pure',
+  name: `Interaction ${phase.phase}`,
+  input: { phase: phase.phase, sourceMessageId: phase.sourceMessageId, body: phase.body },
+  cost: 0,
+  // Pure, so an attempt a crash left running is simply made again.
+  maxAttempts: 3,
+  destination: 'local',
+});
+/** What a turn saved about the message it answered. `binding` is missing on turns saved before it existed. */
+type SavedTurn = {
+  prompt?: Json;
+  documents?: Json;
+  mode?: Json;
+  sourceRunId?: Json;
+  binding?: Json;
+} | null;
 const scope = (input: TextRequest): Json => ({
   engine: 'claude-code',
   projectId: input.projectId,
@@ -195,6 +243,7 @@ export class ClaudeSessionRuns {
       requestId: request.input.requestId,
       mode: request.mode,
       sourceRunId: request.sourceRunId ?? null,
+      binding: request.input.binding ?? null,
     });
     const pending = this.active.get(request.runId);
     if (pending) {
@@ -241,6 +290,270 @@ export class ClaudeSessionRuns {
     });
     return promise;
   }
+  /** The person's text and the first phase, from a committed answer. Pure; nothing is written here. */
+  private decide(
+    request: ClaudeSessionTurn,
+    result: ClaudeSessionTurnResult,
+  ): { result: ClaudeSessionTurnResult; phase: InteractionPhase | null } {
+    const interaction = request.input.interaction;
+    if (!interaction || !result.response) return { result, phase: null };
+    const split = interaction.decide(result.response.text);
+    return {
+      result: { ...result, answerText: split.answerText },
+      phase: {
+        phase: 'decision',
+        sourceMessageId: interaction.sourceMessageId,
+        body: split.body,
+      },
+    };
+  }
+  /**
+   * Reads back the answer a command already has. It never calls `step`, so it charges nothing
+   * and cannot be refused for being cancelled, and it never claims a settled run, which would
+   * move that run's fence for no reason.
+   *
+   * The request is compared with what was saved before the answer is returned. The model and
+   * the account route are left out of that comparison on purpose: a read reaches no provider,
+   * and a person who changed model since must still be able to read what was said. A request
+   * that would generate anything still goes through the scope check in `drive`.
+   */
+  private async replay(
+    run: HarnessRun,
+    turn: HarnessRun['steps'][number],
+    request: ClaudeSessionTurn,
+  ): Promise<ClaudeSessionTurnResult> {
+    const { input } = request;
+    const saved = turn.intent.input as SavedTurn;
+    const same =
+      saved?.binding !== undefined
+        ? saved.binding === input.binding
+        : digest({
+            prompt: saved?.prompt ?? null,
+            documents: saved?.documents ?? null,
+            mode: saved?.mode ?? null,
+            sourceRunId: saved?.sourceRunId ?? null,
+            instructions: (run.input as { instructions?: Json } | null)?.instructions ?? null,
+          }) ===
+          digest({
+            prompt: input.prompt,
+            documents: input.documents,
+            mode: request.mode,
+            sourceRunId: request.sourceRunId ?? null,
+            instructions: input.instructions,
+          });
+    // The same refusal, under the same code, that `RunService` gives a changed intent. This read
+    // stands in for the `step` call that used to reach that guard, so it must not answer less.
+    if (!same)
+      throw new HarnessError(
+        'intent_mismatch',
+        'This command was already used for a different message. Send this one as a new message.',
+      );
+    const decided = this.decide(
+      request,
+      structuredClone(turn.output) as unknown as ClaudeSessionTurnResult,
+    );
+    // A replay returns exactly what the first request returned, so nothing here marks it as a
+    // replay. A settled run is read and left alone: not claimed, not written, not charged. A
+    // live one gets the first phase a crash may have left unwritten.
+    if (decided.phase && !terminal(run))
+      await this.append(input.projectId, run.id, [decided.phase]);
+    return decided.result;
+  }
+  /** Assumes the lease is held and no wait is open, as it is inside `drive`. */
+  private async write(runId: string, projectId: string, phases: readonly InteractionPhase[]) {
+    for (const phase of phases)
+      await this.runs.step(
+        runId,
+        this.owner,
+        phaseDefinition(phase),
+        () => ({ recorded: true }),
+        localHarnessPrincipal(projectId),
+      );
+  }
+  /**
+   * Saves the phases that are not saved yet. A phase already saved with the same body is left
+   * alone, so reaching here twice writes once; the same phase with a different body is refused.
+   * When nothing is missing the run is not claimed, woken or parked. A settled run is never
+   * written to: the caller reports what the record already says.
+   */
+  private async append(projectId: string, runId: string, phases: readonly InteractionPhase[]) {
+    const run = await this.get(projectId, runId);
+    const missing = phases.filter((phase) => {
+      const definition = phaseDefinition(phase);
+      const existing = run.steps.find((step) => step.intent.stepId === definition.id);
+      if (existing?.state !== 'succeeded') return true;
+      if (digest(existing.intent.input) !== digest(definition.input ?? null))
+        throw new HarnessError(
+          'intent_mismatch',
+          'This interaction phase is already recorded with different contents.',
+        );
+      return false;
+    });
+    if (!missing.length) return;
+    if (terminal(run))
+      throw new EngineError(
+        'RUN_SETTLED',
+        'This conversation run is settled. Nothing more can be recorded on it.',
+      );
+    // After a restart this driver is a new owner. Startup recovery released the old lease, so
+    // the claim succeeds; a lease another live process still holds is refused, as it should be.
+    // A cancellation that lands after the check above is refused inside the claim itself.
+    await this.claimLive(runId);
+    await this.resolveWaits(runId, projectId);
+    await this.write(runId, projectId, missing);
+    const last = missing[missing.length - 1];
+    await this.park(runId, projectId, `${last.sourceMessageId}:${last.phase}`);
+  }
+  /**
+   * Saves interaction phases under this driver's own lease. The app never touches a step.
+   *
+   * Two requests saving the same immutable phases are one write. The second reads the
+   * first's result instead of meeting its own step in flight, which is not a conflict but
+   * the same fact arriving twice, so identical concurrent requests converge on one record.
+   */
+  async record(projectId: string, runId: string, phases: readonly InteractionPhase[]) {
+    if (this.closed) throw new EngineError('SESSION_CLOSED', 'The native runtime is shutting down.');
+    return this.runs.join(`phases:${projectId}:${runId}:${digest(phases)}`, () =>
+      this.append(projectId, runId, phases),
+    );
+  }
+  /** The phases saved for one message, in the order they were saved. A read; never a step. */
+  async phases(
+    projectId: string,
+    runId: string,
+    sourceMessageId: string,
+  ): Promise<InteractionPhase[]> {
+    const run = await this.get(projectId, runId);
+    return run.steps
+      .filter(
+        (step) =>
+          step.state === 'succeeded' &&
+          step.intent.kind === 'transform' &&
+          step.intent.stepId.startsWith(PHASE_PREFIX),
+      )
+      .map((step) => step.intent.input as unknown as InteractionPhase)
+      .filter((phase) => phase.sourceMessageId === sourceMessageId)
+      .map((phase) => structuredClone(phase));
+  }
+  /**
+   * Which of these runs already holds this command, looking at the newest first. The caller
+   * passes every lineage a thread ever had, retired ones included: a message answered before
+   * the conversation moved on is still answered. A read; nothing is claimed.
+   */
+  async locate(
+    projectId: string,
+    runIds: readonly string[],
+    commandId: string,
+  ): Promise<{ runId: string; answered: boolean; settled: boolean; dispatched: boolean } | null> {
+    const turnId = stepKey('turn', commandId);
+    for (const runId of runIds) {
+      let run: HarnessRun;
+      try {
+        run = await this.get(projectId, runId);
+      } catch (error) {
+        if (error instanceof HarnessError && error.code === 'unknown_run') continue;
+        throw error;
+      }
+      const turn = run.steps.find((step) => step.intent.stepId === turnId);
+      // A turn a budget refused was written and never sent: it has no attempt. Nothing was
+      // asked of a model, so it is not an unfinished message anywhere.
+      if (turn)
+        return {
+          runId,
+          answered: turn.state === 'succeeded',
+          settled: terminal(run),
+          dispatched: turn.attempt > 0,
+        };
+    }
+    return null;
+  }
+  private async claimLive(runId: string) {
+    try {
+      await this.runs.claim(runId, this.owner, 35 * 60_000, { refuseSettled: true });
+    } catch (error) {
+      if (error instanceof HarnessError && error.code === 'run_settled')
+        throw new EngineError(
+          'RUN_SETTLED',
+          'This conversation run is settled. Nothing more can be recorded on it.',
+        );
+      throw error;
+    }
+  }
+  /**
+   * Commits a child of this conversation inside the run's own writer queue, refusing first a
+   * run that is already settled. The Runtime's own terminal transitions take that same queue,
+   * so a cancellation, a failed model step or a denial is ordered either before this refusal
+   * or after the commit it protects. Process-local ordering, not crash recovery: a child that
+   * did commit is found again by its durable receipt.
+   *
+   * The commit must not record, claim or step this run, and must await no provider, no person
+   * and no background work.
+   */
+  async fenced<T>(projectId: string, runId: string, commit: () => Promise<T>): Promise<T> {
+    try {
+      return await this.runs.fence(runId, localHarnessPrincipal(projectId), async (run) => {
+        if (run.projectId !== projectId || run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id)
+          throw new HarnessError(
+            'unknown_run',
+            'This native conversation was not found in this project.',
+          );
+        return commit();
+      });
+    } catch (error) {
+      if (error instanceof HarnessError && error.code === 'run_settled')
+        throw new EngineError(
+          'RUN_SETTLED',
+          'This conversation moved on before this was started. Nothing was started.',
+        );
+      throw error;
+    }
+  }
+  /**
+   * Refuses when the conversation run is settled. The admission boundary calls this inside the
+   * Store lock, which is the lock the run-cancel route holds while it cancels, so a cancellation
+   * is either seen here or comes after the admission it would have stopped.
+   */
+  async assertLive(projectId: string, runId: string) {
+    if (terminal(await this.get(projectId, runId)))
+      throw new EngineError(
+        'RUN_SETTLED',
+        'This conversation moved on before this was started. Nothing was started.',
+      );
+  }
+  /**
+   * What the Runtime durably saved for one command's turn. A step that succeeded carrying no
+   * response is an interruption the person asked for and the provider acknowledged, not a
+   * completed answer, so a later read of that message must not report it as answered either.
+   * A turn still running, or one that never finished, has saved nothing to read.
+   */
+  async turnResult(
+    projectId: string,
+    runId: string,
+    commandId: string,
+  ): Promise<{ answered: boolean; interrupted: boolean } | null> {
+    const run = await this.get(projectId, runId);
+    const turn = run.steps.find((step) => step.intent.stepId === stepKey('turn', commandId));
+    if (!turn || turn.state !== 'succeeded') return null;
+    const saved = turn.output as { response?: unknown; interrupted?: unknown } | null;
+    return {
+      answered: saved?.response !== null && saved?.response !== undefined,
+      interrupted: saved?.interrupted === true,
+    };
+  }
+  /**
+   * What one answered message was sent with, read from its immutable turn: the source files
+   * it carried and the origin the Runtime recorded. A projection repaired later is rebuilt
+   * from this, never from the files and settings as they stand now.
+   */
+  async evidence(projectId: string, runId: string, commandId: string) {
+    const run = await this.get(projectId, runId);
+    const turn = run.steps.find((step) => step.intent.stepId === stepKey('turn', commandId));
+    const saved = turn?.intent.input as { documents?: { path: string }[] } | undefined;
+    return {
+      sources: (saved?.documents ?? []).map((document) => document.path),
+      origin: turn?.origin ?? null,
+    };
+  }
   private async resolveWaits(runId: string, projectId: string) {
     const run = await this.get(projectId, runId);
     for (const step of run.steps.filter((s) => s.state === 'waiting_event'))
@@ -282,6 +595,12 @@ export class ClaudeSessionRuns {
     } catch (error) {
       if (!(error instanceof HarnessError && error.code === 'unknown_run')) throw error;
     }
+    const turnId = stepKey('turn', input.requestId);
+    // A command this run has already answered is read back before anything below can refuse
+    // it. The answer is a record, not new work: a settled run, a changed model and a closed
+    // process have no bearing on what was already said.
+    const answered = run?.steps.find((step) => step.intent.stepId === turnId);
+    if (run && answered?.state === 'succeeded') return this.replay(run, answered, request);
     let restore: ClaudeSessionCheckpoint | undefined;
     if (!run && request.mode === 'start') {
       run = await this.runs.start({
@@ -326,7 +645,12 @@ export class ClaudeSessionRuns {
     if (digest(run.input) !== digest(scope(input)))
       throw new EngineError('SESSION_MISMATCH', 'The native conversation scope changed.');
     await this.runs.claim(runId, this.owner, 35 * 60_000);
-    const turnId = stepKey('turn', input.requestId);
+    // An unfinished turn saved before bindings existed keeps the shape it was saved with, or
+    // finishing it would be refused as a changed intent.
+    const unfinished = run.steps.find((step) => step.intent.stepId === turnId);
+    const bound =
+      input.binding !== undefined &&
+      !(unfinished && (unfinished.intent.input as SavedTurn)?.binding === undefined);
     const turnDefinition: StepDefinition = {
       id: turnId,
       version: '1',
@@ -340,22 +664,14 @@ export class ClaudeSessionRuns {
         documents: input.documents,
         mode: request.mode,
         sourceRunId: request.sourceRunId ?? null,
+        ...(bound ? { binding: input.binding! } : {}),
       },
       destination: 'external',
       cost: 1,
       maxAttempts: 1,
     };
-    const previous = run.steps.find((step) => step.intent.stepId === turnId);
-    if (previous?.state === 'succeeded')
-      return this.runs.step(
-        runId,
-        this.owner,
-        turnDefinition,
-        () => {
-          throw new Error('A completed turn must replay.');
-        },
-        principal,
-      );
+    // What an adapter is given. The conversation identity is the host's and stays here.
+    const wire: TextRequest = { ...input, binding: undefined, interaction: undefined };
     if (request.mode === 'fork') {
       const pinned = run.steps.find(
         (step) => step.intent.stepId === 'fork:source',
@@ -451,7 +767,7 @@ export class ClaudeSessionRuns {
             let owned: Connection | undefined;
             const session = await request.open(
               admission,
-              { ...input, signal: undefined, onDelta: undefined, onPreview: undefined },
+              { ...wire, signal: undefined, onDelta: undefined, onPreview: undefined },
               {
                 observedVersion: admission.version,
                 restore,
@@ -495,7 +811,7 @@ export class ClaudeSessionRuns {
             let interrupted = false;
             try {
               result = await connection.session.turn({
-                ...input,
+                ...wire,
                 signal: AbortSignal.any([context.signal, ...(input.signal ? [input.signal] : [])]),
                 onDelta: preview?.onDelta,
               });
@@ -551,8 +867,37 @@ export class ClaudeSessionRuns {
       if (connection) await this.dispose(runId, connection, error);
       throw error;
     }
+    // The first phase is written here, in the tail a replayed command also reaches, and before
+    // the run parks: a crash between the answer and this line is repaired by the next request
+    // for the same command, which reads the answer back and arrives here again.
+    const decided = this.decide(request, response);
+    if (decided.phase) await this.write(runId, input.projectId, [decided.phase]);
     await this.park(runId, input.projectId, input.requestId);
-    return response;
+    return decided.result;
+  }
+  /**
+   * Signals the active turn of this exact command to stop. The run is validated through the
+   * same `get` every read uses, so a Stop for a run this project does not own is refused
+   * before anything is signalled. The entry is then compared and signalled in one
+   * synchronous block: a Stop naming an older command answers `superseded` and can never
+   * reach the turn that replaced it. This controller already feeds the admitted turn input
+   * through the existing signal merge, so no `session.interrupt()` call is made and the
+   * durable `control` receipt path is untouched. `requested` is a transport
+   * acknowledgement only; what the turn itself recorded stays the authority, read through
+   * `turnResult` and the outcome read.
+   */
+  async interruptCommand(
+    projectId: string,
+    runId: string,
+    commandId: string,
+  ): Promise<{ state: 'requested' | 'idle' | 'superseded' }> {
+    await this.get(projectId, runId);
+    const active = this.active.get(runId);
+    if (!active) return { state: 'idle' };
+    if (active.commandId !== commandId) return { state: 'superseded' };
+    active.controller.abort();
+    await active.promise.catch(() => undefined);
+    return { state: 'requested' };
   }
   async control(
     projectId: string,

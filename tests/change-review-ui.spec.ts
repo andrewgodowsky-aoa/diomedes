@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Need, Project, ProjectState, Session, Settings, Task } from '../shared/types';
 import type { ChangeReviewManifest } from '../shared/change-manifest';
+import { reopenLastProject } from './fixtures/landing';
 
 /**
  * Automatic Change Review in the Console: a real sample run produces recorded
@@ -135,13 +136,8 @@ async function openConsole(page: Page) {
   });
   expect(opened.ok()).toBe(true);
   await page.goto('/');
-  const root = page.locator('.console');
-  const card = page.getByRole('button', { name: /Change review proof/ }).first();
-  await expect(root.or(card).first()).toBeVisible();
-  if ((await root.count()) === 0) {
-    await card.click();
-    await expect(root).toBeVisible();
-  }
+  await reopenLastProject(page);
+  await expect(page.locator('.console')).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
 }
 

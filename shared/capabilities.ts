@@ -406,6 +406,72 @@ export const ROUTE_CAPABILITIES: Record<string, RouteCapabilities> = {
     uncertaintyAfterDispatch:
       'The native process can have unseen effects, and provider work may finish or consume usage after Stop. Devin ACP authenticates per process; sign-in state is never assumed from the native CLI. ACP has no no-tools advertisement; a successful text fixture is not production containment proof.',
   },
+  'aws-bedrock': {
+    routeId: 'aws-bedrock',
+    name: 'AWS Bedrock, GPT-5.6 Luna, company AWS account',
+    storeOnlyWrites: fact(
+      'yes',
+      'diomedes-enforced',
+      'server/engines/aws-bedrock.ts returns bounded text or one descriptor-only tool call; conversation tools are the two read tools over attached text (server/harness/capabilities/conversation-sources.ts); Work proposals use Store.writeRecorded (server/native-work.ts, tests/aws-conversation-seam.test.ts).',
+    ),
+    spawnsProcesses: fact(
+      'no',
+      'diomedes-enforced',
+      'The route is one HTTPS request from the Diomedes process per model step (server/engines/aws-bedrock.ts respondOnce). No engine, CLI or helper process is started.',
+    ),
+    runsShellCommands: fact(
+      'no',
+      'diomedes-enforced',
+      'Tools reach the SDK as descriptors with no execute function; only NativeAgent runs registered tools through RunService, and the turn registry holds list_sources and read_source only (server/harness/aws-model-adapter.ts, tests/aws-model-adapter.test.ts).',
+    ),
+    arbitraryFilesystem: fact(
+      'no',
+      'diomedes-enforced',
+      'The model reads only the text of files attached to the message, through read_source over an in-memory copy; Work sees only the selected documents (server/harness/model-session-run.ts, server/native-work.ts).',
+    ),
+    network: fact(
+      'yes',
+      'diomedes-enforced',
+      'One POST per call to the approved runtime origin and path, redirects refused, the credential attached only there (guardedResponsesFetch in server/engines/aws-bedrock.ts, tests/aws-bedrock-transport.test.ts). No provider-hosted tools are offered.',
+    ),
+    receivesSecrets: fact(
+      'no',
+      'diomedes-enforced',
+      'The model never receives the credential: the SDK holds a placeholder, the guarded transport attaches the key after its checks, and error text is scrubbed (server/engines/aws-bedrock.ts, server/connection-secrets.ts).',
+    ),
+    preExecutionInterception: fact(
+      'yes',
+      'diomedes-enforced',
+      'Each tool call is validated by the registry and run as a RunService step before the next exchange; batches, program-driven calls and provider-hosted tools are refused before any effect (classifyEnvelope in server/engines/aws-bedrock.ts). Writes happen only through exact Store review.',
+    ),
+    revocationStopsFutureEffects: fact(
+      'unknown',
+      'not-measured',
+      'Switching the route off or changing the connection refuses the next model dispatch and an in-flight result (modelApiDispatchAuthorizer, tests/aws-model-adapter.test.ts). Revoking a scope grant during an AWS Work call has not been measured.',
+    ),
+    effectProof: fact(
+      'yes',
+      'diomedes-enforced',
+      'server/store.ts records before/after content and History for applied proposals; every model call and tool step is a RunService step, and every paid call a spend-ledger hold (server/spend-exposure.ts).',
+    ),
+    osSandbox: fact(
+      'no',
+      'not-implemented',
+      'No process is started, so no OS sandbox applies. The route is bounded by the tool registry and the recorded writer, not by an environment Diomedes owns.',
+    ),
+    disposableEnvironment: fact(
+      'no',
+      'not-implemented',
+      'There is no environment provider (server/trust/environments.ts); nothing about this route runs in a restorable environment.',
+    ),
+    hostRootBoundary: fact(
+      'no',
+      'not-implemented',
+      'server/paths.ts guards Diomedes writes. The route has no host process to confine; its reach is the attached text and the recorded writer.',
+    ),
+    uncertaintyAfterDispatch:
+      'AWS may finish processing and bill a request after Stop or a lost response. Such a call is held as uncertain in the spend ledger until the owner records its cost or writes it off. Whether promotional credit covers a call is not decided by Diomedes.',
+  },
   'harness-runtime': {
     routeId: 'harness-runtime',
     name: 'Diomedes Runtime harness',
