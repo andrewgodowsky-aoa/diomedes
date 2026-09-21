@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Everything, type EverythingItem } from './Everything';
 
 export interface RailItem {
@@ -68,6 +68,10 @@ export function Rail({
   // A pinned id that names nothing is skipped rather than drawn empty: pins
   // outlive the build that wrote them, and a destination can be withdrawn.
   const shown = pinned.map((id) => byId.get(id)).filter((item): item is EverythingItem => !!item);
+  // The pinned entry whose reason is showing. A pin that cannot open is never
+  // silently inert: pressing it says why, in the place the person pressed.
+  const [why, setWhy] = useState<string | null>(null);
+  const reasonId = useId();
   return (
     <nav className="rail" aria-label={navLabel ?? 'Threads and views'}>
       {top}
@@ -101,18 +105,41 @@ export function Rail({
         ))}
       </ul>
       <div className="foot">
-        {shown.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={currentId === item.id ? 'on' : ''}
-            aria-current={currentId === item.id ? 'true' : undefined}
-            onClick={() => onDestination(item.id)}
-          >
-            {item.label}
-            {item.badge && <span className="mono">{item.badge}</span>}
-          </button>
-        ))}
+        {shown.map((item) =>
+          item.unavailableReason ? (
+            // A place held for work that is not built yet. It keeps its position
+            // so wiring it up later moves nothing, stays in the tab order so its
+            // reason can be read, and never reaches `onDestination`.
+            <button
+              key={item.id}
+              type="button"
+              className="held"
+              aria-disabled="true"
+              aria-describedby={why === item.id ? `${reasonId}-${item.id}` : undefined}
+              title={item.unavailableReason}
+              onClick={() => setWhy(why === item.id ? null : item.id)}
+            >
+              <span className="lbl">{item.label}</span>
+              <span className="mono">Not ready</span>
+              {why === item.id && (
+                <small id={`${reasonId}-${item.id}`} role="status">
+                  {item.unavailableReason}
+                </small>
+              )}
+            </button>
+          ) : (
+            <button
+              key={item.id}
+              type="button"
+              className={currentId === item.id ? 'on' : ''}
+              aria-current={currentId === item.id ? 'true' : undefined}
+              onClick={() => onDestination(item.id)}
+            >
+              {item.label}
+              {item.badge && <span className="mono">{item.badge}</span>}
+            </button>
+          ),
+        )}
         <Everything
           items={destinations}
           pinned={pinned}

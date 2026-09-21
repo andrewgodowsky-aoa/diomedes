@@ -14,6 +14,10 @@ export interface EverythingItem {
    *  `unavailableReason` in shared/permissions.ts and shared/managed-usage.ts, which is
    *  the same idea already shipped: two names for one concept is how drift starts. */
   unavailableReason?: string;
+  /** A place kept in the sidebar for a destination that is not built yet, so switching it
+   *  on later needs no redesign. It may be pinned although it cannot open. Meaningless on
+   *  a destination that can. */
+  reserved?: boolean;
 }
 
 export interface EverythingProps {
@@ -35,6 +39,24 @@ const NOT_READY = 'Not ready yet';
 const PANEL_WIDTH = 340;
 const GAP = 6;
 const EDGE = 16;
+/** Long enough that crossing the foot on the way elsewhere opens nothing. */
+const HOVER_OPEN_MS = 120;
+/** Long enough to cross the gap between the trigger and the panel without losing it. */
+const HOVER_CLOSE_MS = 260;
+
+/** What opened the panel. A pointer that wandered in may wander out; a click or a key is a decision. */
+export type OpenedBy = 'pointer' | 'intent';
+
+/**
+ * What a click on the trigger does. A click on a panel the pointer opened
+ * confirms it rather than toggling it shut: a click moves the pointer onto the
+ * trigger first, so on a slow machine the hover can win the race, and the
+ * person would watch the panel they asked for close under their hand.
+ */
+export function triggerClick(open: boolean, by: OpenedBy): 'open' | 'keep' | 'close' {
+  if (!open) return 'open';
+  return by === 'pointer' ? 'keep' : 'close';
+}
 
 type Part = 'row' | 'pin';
 interface Section {
@@ -137,6 +159,14 @@ function place(trigger: HTMLElement): CSSProperties {
  * caveat beside every claim was noise; here, a control that does nothing when
  * clicked is a defect, and one that states why it cannot act yet is correct.
  *
+ * The one exception to "no pin" is a `reserved` destination: a place the owner
+ * wants held in the sidebar before the work behind it exists, so that wiring it
+ * up later moves nothing. The rail draws it inert and says why when pressed.
+ *
+ * It opens on hover as well as on a click or a key. A panel the pointer opened
+ * takes no focus and closes when the pointer leaves; one opened on purpose
+ * behaves as it always did. Touch has no hover and is unchanged.
+ *
  * Presentation only. It holds no list of its own and remembers nothing: the
  * caller owns `items`, `pinned` and where a row goes.
  */
@@ -157,6 +187,9 @@ export function Everything({
   const [said, setSaid] = useState<{ text: string; seq: number }>({ text: '', seq: 0 });
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const by = useRef<OpenedBy>('intent');
+  const opening = useRef<number | null>(null);
+  const closing = useRef<number | null>(null);
   const cells = useRef(new Map<string, HTMLButtonElement>());
   const headingId = useId();
 
@@ -178,14 +211,59 @@ export function Everything({
   }, [open]);
 
   // Opening puts the keyboard on the destination showing now, or on the first
-  // row when it is not in the list.
-  useEffect(() => {
-    if (!open) return;
+  // row when it is not in the list. A panel the pointer opened gets the tab stop
+  // but not the focus: hovering must never move a person's caret.
+  function enter(focus: boolean) {
     const wanted = currentId && rows.some((row) => row.id === currentId) ? currentId : rows[0]?.id;
     if (!wanted) return;
     setActive(wanted);
-    cells.current.get(`${wanted}:row`)?.focus();
+    if (focus) cells.current.get(`${wanted}:row`)?.focus();
+  }
+  useEffect(() => {
+    if (open) enter(by.current === 'intent');
   }, [open]);
+
+  function cancel(timer: { current: number | null }) {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = null;
+  }
+  useEffect(
+    () => () => {
+      cancel(opening);
+      cancel(closing);
+    },
+    [],
+  );
+
+  function onTrigger() {
+    cancel(opening);
+    cancel(closing);
+    const outcome = triggerClick(open, by.current);
+    by.current = 'intent';
+    if (outcome === 'keep') enter(true);
+    else setOpen(outcome === 'open');
+  }
+
+  function onPointerEnter(event: React.PointerEvent) {
+    if (event.pointerType !== 'mouse') return;
+    cancel(closing);
+    if (open || opening.current !== null) return;
+    opening.current = window.setTimeout(() => {
+      opening.current = null;
+      by.current = 'pointer';
+      setOpen(true);
+    }, HOVER_OPEN_MS);
+  }
+
+  function onPointerLeave(event: React.PointerEvent) {
+    if (event.pointerType !== 'mouse') return;
+    cancel(opening);
+    if (!open || by.current !== 'pointer') return;
+    closing.current = window.setTimeout(() => {
+      closing.current = null;
+      setOpen(false);
+    }, HOVER_CLOSE_MS);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -284,7 +362,7 @@ export function Everything({
     // dead entry in somebody's sidebar. One that is already pinned keeps the
     // control, or a destination pinned before it stalled could never be taken
     // back out from here.
-    const pinnable = !unavailable || isPinned;
+    const pinnable = !unavailable || isPinned || !!item.reserved;
     return (
       <div className="ev-row" role="none" key={item.id}>
         <button
@@ -336,14 +414,19 @@ export function Everything({
   }
 
   return (
-    <div className="everything" ref={root}>
+    <div
+      className="everything"
+      ref={root}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+    >
       <button
         type="button"
         ref={trigger}
         className={`ev-trigger${open ? ' on' : ''}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={onTrigger}
       >
         Everything
       </button>
@@ -354,6 +437,13 @@ export function Everything({
           aria-label="Everything"
           style={box ?? undefined}
           onKeyDown={onKeyDown}
+          // Pressing anything in here is a decision: the panel stops following
+          // the pointer, so pinning three destinations does not end when the
+          // hand drifts off the edge.
+          onPointerDown={() => {
+            by.current = 'intent';
+            cancel(closing);
+          }}
           // Tab out of the last control closes the panel rather than leaving it
           // open behind the person. Focus is never pulled back here: that would
           // be a trap.

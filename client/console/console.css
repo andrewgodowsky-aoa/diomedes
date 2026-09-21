@@ -339,6 +339,38 @@ html[data-surface='console'] body {
 .console .rail .foot > button .mono {
   margin-left: auto;
 }
+/* A place held for work that is not built yet. It reads as present and quiet:
+   dimmer than a live entry, never greyed into looking broken, and it does not
+   light on hover because pressing it goes nowhere. Its reason wraps beneath. */
+.console .rail .foot > button.held {
+  flex-wrap: wrap;
+  column-gap: 6px;
+  color: var(--t3);
+  cursor: default;
+}
+.console .rail .foot > button.held:hover {
+  background: none;
+  color: var(--t3);
+}
+/* The label and its state stay on one row at every rail width. A wrapping row
+   breaks on the label's full width, not its shrunk one, so the label is given
+   no basis and grows into what the state leaves. Only the reason wraps. */
+.console .rail .foot > button.held .lbl {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .rail .foot > button.held .mono {
+  flex: none;
+}
+.console .rail .foot > button.held small {
+  flex-basis: 100%;
+  color: var(--t2);
+  line-height: 1.45;
+  white-space: normal;
+}
 .console .rail .foot {
   margin-top: auto;
   padding: 10px 8px 12px;

@@ -1165,7 +1165,10 @@ export function Shell({
    *
    * - Automations has no built item behind it. The button exists, the work it
    *   would run does not, and wiring the button to nothing would be worse than
-   *   saying so (owner decision, 2026-09-19).
+   *   saying so (owner decision, 2026-09-19). It is `reserved`: the owner wants
+   *   its place in the sidebar held now, so that switching it on later needs no
+   *   redesign (owner decision, 2026-09-20). It may be pinned and still opens
+   *   nothing.
    * - Connections runs against three hardcoded example locations, which its own
    *   heading calls synthetic data. It is real code and a real demo; it is not
    *   a connection to anything this person owns, and presenting it as one would
@@ -1218,6 +1221,7 @@ export function Shell({
       hint: 'Work that runs on its own, on a schedule or when something happens.',
       unavailableReason:
         'Nothing is built behind this yet. It opens once there is real work for it to run.',
+      reserved: true,
     },
     {
       id: 'connections',
