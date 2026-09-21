@@ -1024,3 +1024,80 @@ for (const action of ['Discard', 'Send again'] as const) {
     }
   });
 }
+
+// CD-05.R-4's reproducer, pasted unchanged from
+// docs/implementation/2026-09-21-core-agent-client-review-r4.md.
+test('CD05-R-12: a queued Discard cannot reload a scope the person left', async ({
+  page,
+  context,
+}) => {
+  const b = await reviewProject(page, 'R12 B');
+  const a = await reviewProject(page, 'R12 A');
+  const text = 'Uncertain R12 A';
+  const pattern = '**/api/projects/*/threads/*/messages';
+  await page.route(pattern, async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    await route.fetch();
+    await route.abort('failed');
+  });
+  await say(page, text);
+  await expect(strip(page)).toContainText(text);
+  await page.unroute(pattern);
+  const state = await api<ProjectState>(`/projects/${a.id}/state`);
+  const thread = state.conversations.find((item) => item.name === 'Diomedes')!;
+  const suffix = `${encodeURIComponent(a.id)}|${encodeURIComponent(thread.id)}`;
+  const lock = `diomedes.conversation.send.${suffix}`;
+  const claim = `diomedes.conversation.claim.${suffix}`;
+  const other = await context.newPage();
+  try {
+    await open(other);
+    await other.evaluate(async (name) => {
+      const holder = window as typeof window & { releaseR12?: () => void };
+      await new Promise<void>((acquired, reject) => {
+        void navigator.locks.request(name, async () => {
+          await new Promise<void>((release) => {
+            holder.releaseR12 = release;
+            acquired();
+          });
+        }).catch(reject);
+      });
+    }, lock);
+    await strip(page).getByRole('button', { name: 'Discard', exact: true }).click();
+    await expect.poll(() => other.evaluate(async (name) => {
+      const snapshot = await navigator.locks.query();
+      return snapshot.pending?.some((entry) => entry.name === name) ?? false;
+    }, lock)).toBe(true);
+
+    await page.getByRole('combobox', { name: 'In' }).selectOption(b.id);
+    await expect(answers(page).last()).toHaveText('You said: Warm R12 B');
+    await painted(page);
+    const obsoleteReads: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'GET' &&
+          request.url().endsWith(`/projects/${a.id}/state`)) {
+        obsoleteReads.push(request.url());
+      }
+    });
+
+    await other.evaluate(() => {
+      (window as typeof window & { releaseR12?: () => void }).releaseR12?.();
+    });
+    // A barrier behind Discard, followed by rendering turns for its continuation.
+    await page.evaluate(async (name) => {
+      await navigator.locks.request(name, async () => undefined);
+    }, lock);
+    await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), claim))
+      .toBeNull();
+    await painted(page);
+
+    // Candidate starts load(A) here even though the person is now in B.
+    expect(obsoleteReads).toEqual([]);
+    await expect(page.getByRole('combobox', { name: 'In' })).toHaveValue(b.id);
+    await expect(answers(page).last()).toHaveText('You said: Warm R12 B');
+  } finally {
+    await other.evaluate(() => {
+      (window as typeof window & { releaseR12?: () => void }).releaseR12?.();
+    }).catch(() => undefined);
+    await other.close();
+  }
+});
