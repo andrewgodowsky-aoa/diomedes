@@ -213,12 +213,21 @@ Take these to Andrew rather than choosing:
   first (on a junction `rmdir` removes the link, never the target), confirm the shared install is
   still there, and only then let Git near the folder.
 - `npx tsx scripts/worktree-sweep.ts` reports every worktree as landed, dirty, unlanded or claimed
-  and changes nothing. Adding `--sweep` also removes the landed ones, in that order, and aborts if
-  the shared install ever stops being intact. Run the report weekly. It will not remove a worktree
-  that is dirty, that has commits of its own, that is locked, or that a live agent holds a
-  coordination claim on.
+  and changes nothing — it takes no optional Git locks, so it never contends with a session using
+  a tree it reads. Adding `--sweep` also removes the landed ones, in that order, and aborts if the
+  shared install ever stops being intact. Run the report weekly. It will not remove a worktree
+  that is dirty, that has commits of its own, that is locked, that a live agent holds a
+  coordination claim on, that is named in `external-claims/`, or whose index, HEAD or reflog Git
+  wrote in the last 24 hours.
 - `git worktree lock --reason "<who and why>"` is how you keep a sweep off a worktree you are still
   using. The sweep honours it and so must anyone cleaning up by hand.
+- **A session that does not use the coordination tool is invisible to it.** An Astra or Devin
+  thread launched from its own desktop app holds no claim, so a clean worktree at `origin/main`
+  looks abandoned even while that thread is reading it. The sweep's day of grace covers only a
+  tree Git has touched recently; a session that reads for longer must lock its worktree or be
+  recorded in `external-claims/`. The sweep honours an external record without checking whether
+  its session is still running — nothing in those records can be checked — so clear a finished
+  record by hand when its work is done.
 
 ### Unified execution program (from 2026-09-13)
 

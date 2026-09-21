@@ -11,8 +11,11 @@
  * and its HEAD is an ancestor of `origin/main` — then the checkout is the only
  * thing that disappears, because every commit is already on the branch nobody
  * can lose. Anything else is reported and left alone: uncommitted work, a
- * branch with commits of its own, a worktree another agent holds a
- * coordination claim on, and the main checkout itself.
+ * branch with commits of its own, a `git worktree lock`ed tree, a worktree a
+ * live agent holds a coordination claim on, one named in `external-claims/`
+ * by a session that runs outside the tool, one Git has touched in the last
+ * day, and the main checkout itself. The report takes no optional Git locks,
+ * so reading a tree another session is using never contends with it.
  *
  * ## The junction hazard
  *
@@ -46,8 +49,13 @@ const MAIN_CHECKOUT = path.resolve(REPO);
 const CANARY = path.join(MAIN_CHECKOUT, 'node_modules', 'vitest');
 const SWEEP = process.argv.includes('--sweep');
 
+// Without this, the report's `git status` refreshes and rewrites the index of
+// every worktree it reads, taking `index.lock` in trees other sessions are
+// using. Removal still takes the locks it needs; only optional ones are off.
+const GIT_ENV = { ...process.env, GIT_OPTIONAL_LOCKS: '0' };
+
 const git = (args: string[], cwd = MAIN_CHECKOUT): string =>
-  execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim();
+  execFileSync('git', args, { cwd, env: GIT_ENV, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim();
 
 const tryGit = (args: string[], cwd = MAIN_CHECKOUT): string | null => {
   try {
@@ -125,17 +133,107 @@ function claimedWorktrees(): Set<string> {
   return held;
 }
 
+/**
+ * Worktrees named anywhere in the coordination root's `external-claims/`.
+ *
+ * Those files record sessions that never went through the tool — an Astra or
+ * Devin thread launched from its own desktop app — so they have no schema to
+ * rely on: owners are prose, process ids sit inside sentences, and a worktree
+ * path may carry a parenthetical. Nothing in them can be checked for liveness.
+ * So they are read leniently (every string anywhere in the file) and honoured
+ * unconditionally: a worktree named there is kept, however old the record.
+ * Over-protecting costs one stale checkout; under-protecting deletes a live
+ * session's working tree. Clearing a finished record is a person's call.
+ */
+export function indexRecordStrings(
+  records: readonly { readonly file: string; readonly json: unknown }[],
+): Map<string, string> {
+  // Every string in every record, lowercased with forward slashes -> its file.
+  const index = new Map<string, string>();
+  const collect = (value: unknown, file: string): void => {
+    if (typeof value === 'string') index.set(value.replace(/\\/g, '/').toLowerCase(), file);
+    else if (Array.isArray(value)) for (const v of value) collect(v, file);
+    else if (value && typeof value === 'object') for (const v of Object.values(value)) collect(v, file);
+  };
+  for (const { file, json } of records) collect(json, file);
+  return index;
+}
+
+function externallyRecorded(): Map<string, string> {
+  const root = path.join(REPO, '.git', 'diomedes-coordination');
+  if (!fs.existsSync(root)) return new Map();
+  const records: { file: string; json: unknown }[] = [];
+  for (const program of fs.readdirSync(root)) {
+    const dir = path.join(root, program, 'external-claims');
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir)) {
+      if (!name.endsWith('.json')) continue;
+      try {
+        records.push({ file: name, json: JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')) });
+      } catch {
+        /* an unreadable record protects nothing it cannot name */
+      }
+    }
+  }
+  return indexRecordStrings(records);
+}
+
+/**
+ * Whether a worktree directory is named in any external record. A match must
+ * end at a path boundary, so `…/wt/foo` never claims `…/wt/foobar` or
+ * `…/wt/foo.old` — but a full stop ending a sentence of prose is a boundary.
+ */
+export function externalRecordFor(dir: string, records: Map<string, string>): string | null {
+  const needle = dir.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  for (const [text, file] of records) {
+    let at = text.indexOf(needle);
+    while (at !== -1) {
+      if (!/^\.?[a-z0-9_-]/.test(text.slice(at + needle.length))) return file;
+      at = text.indexOf(needle, at + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * A day's grace. A worktree Git has touched inside it may belong to a session
+ * that never locked it or recorded itself — a comparison checkout made minutes
+ * earlier sits clean at `origin/main` and so reads as landed. The sweep is a
+ * weekly backstop; keeping a landed tree one more day costs nothing.
+ */
+const GRACE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How long ago the most recent of `mtimesMs` was, when that is inside the
+ * grace window; null when it is not, or when there is nothing to judge by. A
+ * time in the future counts as now: a skewed clock must not unprotect a tree.
+ */
+export function touchedWithin(mtimesMs: readonly number[], nowMs: number, graceMs: number): number | null {
+  if (mtimesMs.length === 0) return null;
+  const age = nowMs - Math.max(...mtimesMs);
+  return age < graceMs ? Math.max(0, age) : null;
+}
+
+/** When Git last wrote this worktree's index, HEAD or HEAD reflog. */
+function gitTouches(dir: string): number[] {
+  const gitDir = tryGit(['rev-parse', '--absolute-git-dir'], dir);
+  if (gitDir === null) return [];
+  const times: number[] = [];
+  for (const file of ['index', 'HEAD', path.join('logs', 'HEAD')]) {
+    try {
+      times.push(fs.statSync(path.join(gitDir, file)).mtimeMs);
+    } catch {
+      /* absent — a fresh worktree may have no reflog yet */
+    }
+  }
+  return times;
+}
+
 /** Detach every reparse point under a worktree. Never touches a target. */
 function detachLinks(root: string): number {
   let detached = 0;
+  // Called only on entries lstat reports as links; junctions report so too.
   const unlink = (p: string): void => {
-    try {
-      if (fs.lstatSync(p).isSymbolicLink() || (fs.lstatSync(p).mode & 0) !== 0) {
-        /* fall through to the rmdir below */
-      }
-    } catch {
-      return;
-    }
     try {
       fs.rmdirSync(p); // On a junction this removes the link only.
       detached += 1;
@@ -180,68 +278,87 @@ function assertSharedInstallIntact(): void {
     );
 }
 
-const held = claimedWorktrees();
-const worktrees = listWorktrees();
-const mainSha = git(['rev-parse', 'origin/main']);
+function main(): void {
+  const held = claimedWorktrees();
+  const external = externallyRecorded();
+  const worktrees = listWorktrees();
+  const mainSha = git(['rev-parse', 'origin/main']);
 
-const landed: Worktree[] = [];
-const keep: { wt: Worktree; why: string }[] = [];
+  const landed: Worktree[] = [];
+  const keep: { wt: Worktree; why: string }[] = [];
 
-for (const wt of worktrees) {
-  if (path.resolve(wt.dir).toLowerCase() === MAIN_CHECKOUT.toLowerCase()) {
-    keep.push({ wt, why: 'the main checkout' });
-    continue;
+  for (const wt of worktrees) {
+    if (path.resolve(wt.dir).toLowerCase() === MAIN_CHECKOUT.toLowerCase()) {
+      keep.push({ wt, why: 'the main checkout' });
+      continue;
+    }
+    if (!fs.existsSync(wt.dir)) {
+      keep.push({ wt, why: 'directory is gone — run `git worktree prune`' });
+      continue;
+    }
+    if (wt.locked !== null) {
+      keep.push({ wt, why: `locked: ${wt.locked}` });
+      continue;
+    }
+    if (held.has(path.resolve(wt.dir).toLowerCase())) {
+      keep.push({ wt, why: 'a live agent holds a coordination claim on it' });
+      continue;
+    }
+    const recorded = externalRecordFor(wt.dir, external);
+    if (recorded !== null) {
+      keep.push({ wt, why: `named in external-claims/${recorded} (a session outside the tool)` });
+      continue;
+    }
+    const dirty = (tryGit(['status', '--porcelain'], wt.dir) ?? 'unreadable').split('\n').filter(Boolean);
+    if (dirty.length > 0) {
+      keep.push({ wt, why: `${String(dirty.length)} uncommitted change(s)` });
+      continue;
+    }
+    const isLanded = tryGit(['merge-base', '--is-ancestor', wt.head, mainSha]) !== null;
+    if (!isLanded) {
+      const ahead = tryGit(['rev-list', '--count', `${mainSha}..${wt.head}`]) ?? '?';
+      keep.push({ wt, why: `${ahead} commit(s) not on origin/main` });
+      continue;
+    }
+    const age = touchedWithin(gitTouches(wt.dir), Date.now(), GRACE_MS);
+    if (age !== null) {
+      const minutes = Math.round(age / 60_000);
+      keep.push({ wt, why: `landed, but Git touched it ${String(minutes)} min ago — a session may be in it` });
+      continue;
+    }
+    landed.push(wt);
   }
-  if (!fs.existsSync(wt.dir)) {
-    keep.push({ wt, why: 'directory is gone — run `git worktree prune`' });
-    continue;
-  }
-  if (wt.locked !== null) {
-    keep.push({ wt, why: `locked: ${wt.locked}` });
-    continue;
-  }
-  if (held.has(path.resolve(wt.dir).toLowerCase())) {
-    keep.push({ wt, why: 'a live agent holds a coordination claim on it' });
-    continue;
-  }
-  const dirty = (tryGit(['status', '--porcelain'], wt.dir) ?? 'unreadable').split('\n').filter(Boolean);
-  if (dirty.length > 0) {
-    keep.push({ wt, why: `${String(dirty.length)} uncommitted change(s)` });
-    continue;
-  }
-  const isLanded = tryGit(['merge-base', '--is-ancestor', wt.head, mainSha]) !== null;
-  if (!isLanded) {
-    const ahead = tryGit(['rev-list', '--count', `${mainSha}..${wt.head}`]) ?? '?';
-    keep.push({ wt, why: `${ahead} commit(s) not on origin/main` });
-    continue;
-  }
-  landed.push(wt);
-}
 
-console.log(`${String(worktrees.length)} worktrees against origin/main ${mainSha.slice(0, 8)}\n`);
-console.log(`landed, removable : ${String(landed.length)}`);
-for (const wt of landed) console.log(`  ${wt.branch ?? '(detached)'}  ${wt.dir}`);
-console.log(`\nkept              : ${String(keep.length)}`);
-for (const { wt, why } of keep) console.log(`  ${(wt.branch ?? '(detached)').padEnd(52)} ${why}`);
+  console.log(`${String(worktrees.length)} worktrees against origin/main ${mainSha.slice(0, 8)}\n`);
+  console.log(`landed, removable : ${String(landed.length)}`);
+  for (const wt of landed) console.log(`  ${wt.branch ?? '(detached)'}  ${wt.dir}`);
+  console.log(`\nkept              : ${String(keep.length)}`);
+  for (const { wt, why } of keep) console.log(`  ${(wt.branch ?? '(detached)').padEnd(52)} ${why}`);
 
-if (!SWEEP) {
-  console.log('\nReport only. Pass --sweep to remove the landed ones.');
-  process.exit(0);
-}
+  if (!SWEEP) {
+    console.log('\nReport only. Pass --sweep to remove the landed ones.');
+    return;
+  }
 
-assertSharedInstallIntact();
-let removed = 0;
-for (const wt of landed) {
-  detachLinks(wt.dir);
-  const nm = path.join(wt.dir, 'node_modules');
-  if (fs.existsSync(nm) && fs.lstatSync(nm).isSymbolicLink())
-    throw new Error(`ABORT: ${nm} is still a link after detaching. Not running git against it.`);
   assertSharedInstallIntact();
-  git(['worktree', 'remove', '--force', wt.dir]);
+  let removed = 0;
+  for (const wt of landed) {
+    detachLinks(wt.dir);
+    const nm = path.join(wt.dir, 'node_modules');
+    if (fs.existsSync(nm) && fs.lstatSync(nm).isSymbolicLink())
+      throw new Error(`ABORT: ${nm} is still a link after detaching. Not running git against it.`);
+    assertSharedInstallIntact();
+    git(['worktree', 'remove', '--force', wt.dir]);
+    assertSharedInstallIntact();
+    if (wt.branch) tryGit(['branch', '-d', wt.branch]); // -d, never -D: refuses unmerged.
+    removed += 1;
+  }
+  git(['worktree', 'prune']);
   assertSharedInstallIntact();
-  if (wt.branch) tryGit(['branch', '-d', wt.branch]); // -d, never -D: refuses unmerged.
-  removed += 1;
+  console.log(`\nremoved ${String(removed)}; shared install intact.`);
 }
-git(['worktree', 'prune']);
-assertSharedInstallIntact();
-console.log(`\nremoved ${String(removed)}; shared install intact.`);
+
+// Run only when executed directly, never when a test imports the helpers.
+// The file name is compared rather than the full path: on Windows a short
+// (8.3) and a long spelling of the same path compare unequal.
+if (path.basename(process.argv[1] ?? '') === 'worktree-sweep.ts') main();
