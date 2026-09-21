@@ -268,7 +268,10 @@ test('the page holds together on a narrow screen', async ({ page }) => {
 });
 
 test('a message the server refuses stays in the box', async ({ page }) => {
-  await api('/settings', 'PUT', { services: { 'claude-code': false } });
+  // The server replaces `services` whole, so the switch is flipped inside the full map and the
+  // full map is put back. A partial map would drop the account route and refuse every later send.
+  const { services } = await api<{ services: Record<string, boolean | string> }>('/settings');
+  await api('/settings', 'PUT', { services: { ...services, 'claude-code': false } });
   try {
     await open(page);
     await say(page, 'Are you there?');
@@ -278,7 +281,7 @@ test('a message the server refuses stays in the box', async ({ page }) => {
     await expect(composer(page)).toHaveValue('Are you there?');
     await expect(page.locator('.dio-card')).toHaveCount(0);
   } finally {
-    await api('/settings', 'PUT', { services: { 'claude-code': true } });
+    await api('/settings', 'PUT', { services });
   }
 });
 
