@@ -198,6 +198,28 @@ Take these to Andrew rather than choosing:
   `main` only, so every exe is a commit you can name.
 - Do not bump the version or touch the native-runtime hashes unless that is your task.
 
+### Retiring a worktree
+
+- **A lane removes its own worktree when its pull request merges.** Left to accumulate they hide
+  the lanes that are still live: on 2026-09-20 there were 180, of which 49 were landed work nobody
+  had cleared and 110 held nothing but a `chore(wip)` sweep commit.
+- Removing a worktree never loses committed work — the branch keeps every commit — so the only
+  thing to protect first is uncommitted state. Commit it, or say plainly that it is being discarded.
+- **`git worktree remove` follows a junction.** Worktrees here junction `node_modules` (and
+  `services/control-plane/node_modules`) to the main checkout's, and Playwright leaves more under
+  `test-results/`. Measured 2026-09-20: `git worktree remove --force` deletes *through* an attached
+  junction and empties the target, while pwsh's `Remove-Item -Recurse` does not. One careless
+  removal empties the shared install for every other worktree at once. Detach every reparse point
+  first (on a junction `rmdir` removes the link, never the target), confirm the shared install is
+  still there, and only then let Git near the folder.
+- `npx tsx scripts/worktree-sweep.ts` reports every worktree as landed, dirty, unlanded or claimed
+  and changes nothing. Adding `--sweep` also removes the landed ones, in that order, and aborts if
+  the shared install ever stops being intact. Run the report weekly. It will not remove a worktree
+  that is dirty, that has commits of its own, that is locked, or that a live agent holds a
+  coordination claim on.
+- `git worktree lock --reason "<who and why>"` is how you keep a sweep off a worktree you are still
+  using. The sweep honours it and so must anyone cleaning up by hand.
+
 ### Unified execution program (from 2026-09-13)
 
 - The coordination root is `<git common dir>/diomedes-coordination/unified-20260913/` (for this
