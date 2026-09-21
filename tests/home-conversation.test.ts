@@ -406,6 +406,8 @@ test('a crash after the binding was saved leaves exactly one home', async () => 
 test('the home Project is never listed, and is still enumerated for recovery after a restart', async () => {
   const home = await provision();
   const mine = await realProject();
+  // The conversation uses Claude Code without the person configuring a thread.
+  expect(threadsOf(home.projectId)[0]).toMatchObject({ engine: 'claude-code', mode: 'auto' });
   expect((await listed()).map((project) => project.id)).toEqual([mine.id]);
   // The filter is the route's, not the store's: startup recovery reads this enumeration.
   expect((await store().projects()).map((project) => project.id)).toContain(home.projectId);
