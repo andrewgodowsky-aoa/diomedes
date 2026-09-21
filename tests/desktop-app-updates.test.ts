@@ -212,6 +212,10 @@ describe('desktop shell facts and marker ownership', () => {
     );
     expect(appUpdates.installedRootFrom('C:\\Apps\\Diomedes-win32-x64\\Diomedes.exe')).toBeNull();
     expect(appUpdates.installedRootFrom('C:\\Apps\\Diomedes\\app\\Other.exe')).toBeNull();
+    // A Mac bundle is never a Windows installation.
+    expect(
+      appUpdates.installedRootFrom('/Applications/Diomedes.app/Contents/MacOS/Diomedes'),
+    ).toBeNull();
   });
 });
 

@@ -71,6 +71,7 @@ export interface FileIdentity {
   sha256: string;
 }
 export interface EngineServiceDeps {
+  platform: NodeJS.Platform;
   discover(scope?: DiscoveryScope): Promise<IntegrationStatus[]>;
   /**
    * Every installation this computer offers, not the first one per engine. A
@@ -315,6 +316,7 @@ export class EngineService {
   private checks = new Map<ExternalEngine, Promise<EngineConnection>>();
   /** One test per route at a time: a second one is refused, never queued. */
   private tests = new Map<ExternalEngine, Promise<ConnectionReceipt>>();
+  private discoveryDisclosure = new Map<ExternalEngine, string[]>();
   private readonly nativeDiscovery: boolean;
   private running = new Map<string, AbortController>();
   private readonly bindings: BindingStore;
@@ -340,6 +342,7 @@ export class EngineService {
   ) {
     this.nativeDiscovery = !deps.discover;
     this.deps = {
+      platform: process.platform,
       discover: async () => (await createDiscovery().discover()).engines,
       version: async (file, signal) => {
         const command =
@@ -493,14 +496,14 @@ export class EngineService {
       enumerated
         .filter((row) => row.engine === engine)
         .map((row) => ({ file: row.path, source: 'system' as const, context: row.context }));
-    // The private copy is always examined, not only when nothing else was found.
-    try {
+    // Managed artifacts are pinned Windows executables, never Mac installations.
+    if (this.deps.platform === 'win32') try {
       const file = managedBinary(this.root, engine);
       await fs.access(file);
       wanted.push({
         file,
         source: 'managed',
-        context: installationContext(file, process.platform),
+        context: installationContext(file, this.deps.platform),
       });
     } catch {
       // No private copy, or this engine has none. Neither hides the rest.
@@ -655,16 +658,21 @@ export class EngineService {
             .map((row) => ({
               engine: row.id,
               path: row.location!,
-              context: installationContext(row.location!, process.platform),
+              context: installationContext(row.location!, this.deps.platform),
             }));
     } catch (error) {
       discovered = false;
       for (const engine of engines) this.record(engine, error, 'discovery');
     }
     for (const engine of engines) {
+      this.discoveryDisclosure.set(engine, found.find((row) => row.id === engine)?.disclosure.filter((line) => line.startsWith('Discovery: ')) ?? []);
       try {
         const inventory = await this.inventory(engine, enumerated);
         const hit = found.find((row) => row.id === engine && row.found);
+        if (!hit && inventory.some((row) => row.source === 'managed' && row.integrity === 'verified' && row.protocol === 'passed'))
+          this.discoveryDisclosure.set(engine, [
+            'Discovery: observed on win32 via managed-installation; pinned artifact verified and version probed.',
+          ]);
         this.scanned.set(engine, {
           inventory,
           observed: hit
@@ -1407,6 +1415,7 @@ export class EngineService {
       location: value.location,
       capabilities: ready ? ['ask', 'plan', 'work-proposals'] : [],
       disclosure: [
+        ...(this.discoveryDisclosure.get(engine) ?? []),
         'Selected text is sent to the chosen service using its native account route.',
         engine === 'cursor'
           ? 'Cursor denies tools through native permissions and stops on tool events; this is not an operating-system sandbox.'

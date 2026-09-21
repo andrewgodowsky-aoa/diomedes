@@ -39,6 +39,8 @@ export interface DiscoveryDeps {
 export interface DiscoveryResult {
   engines: IntegrationStatus[];
   codexInstalledVersion?: string;
+  /** Installed Codex is an observation, never a replacement for the proven bundled route. */
+  codex?: IntegrationStatus;
 }
 
 /**
@@ -99,6 +101,17 @@ function spawnCapture(file: string, args: string[]): Promise<SpawnCapture> {
         shell: false,
         windowsHide: true,
         windowsVerbatimArguments: command.verbatim,
+        detached: process.platform !== 'win32',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        // Version and login-shell lookups have no reason to inherit provider
+        // keys, Node injection options, or arbitrary application variables.
+        env: Object.fromEntries(
+          Object.entries(process.env).filter(([key]) =>
+            /^(PATH|PATHEXT|SYSTEMROOT|WINDIR|USERPROFILE|HOME|HOMEDRIVE|HOMEPATH|APPDATA|LOCALAPPDATA|TEMP|TMP|TMPDIR|COMSPEC|PROGRAMFILES|PROGRAMFILES\(X86\)|PROGRAMDATA)$/i.test(
+              key,
+            ),
+          ),
+        ),
       });
     } catch {
       finish(null);
@@ -120,7 +133,7 @@ function spawnCapture(file: string, args: string[]): Promise<SpawnCapture> {
         return;
       }
       try {
-        child.kill('SIGKILL');
+        if (child.pid) process.kill(-child.pid, 'SIGKILL');
       } catch {
         // The process is already gone; the close handler settles below.
       }
@@ -150,7 +163,7 @@ export function defaultDiscoveryDeps(): DiscoveryDeps {
     platform: process.platform,
     env: process.env,
     which: async (name) => {
-      const resolver = deps.platform === 'win32' ? 'where.exe' : 'which';
+      const resolver = deps.platform === 'win32' ? 'where.exe' : '/usr/bin/which';
       const result = await spawnCapture(resolver, [name]);
       if (result.timedOut || result.code !== 0) return [];
       return result.stdout
@@ -169,8 +182,11 @@ export function defaultDiscoveryDeps(): DiscoveryDeps {
     },
     exists: async (candidate) => {
       try {
-        await fs.access(candidate);
-        return true;
+        await fs.access(
+          candidate,
+          process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK,
+        );
+        return (await fs.stat(candidate)).isFile();
       } catch {
         return false;
       }
@@ -181,6 +197,22 @@ export function defaultDiscoveryDeps(): DiscoveryDeps {
 }
 
 function knownFolders(deps: DiscoveryDeps): string[] {
+  if (deps.platform !== 'win32') {
+    const home = deps.env.HOME;
+    return [
+      ...(deps.platform === 'darwin'
+        ? ['/opt/homebrew/bin', '/usr/local/bin']
+        : ['/usr/local/bin', '/usr/bin']),
+      ...(home && path.posix.isAbsolute(home)
+        ? [
+            path.posix.join(home, '.local', 'bin'),
+            path.posix.join(home, '.bun', 'bin'),
+            path.posix.join(home, '.opencode', 'bin'),
+            path.posix.join(home, '.npm-global', 'bin'),
+          ]
+        : []),
+    ];
+  }
   const folders: string[] = [];
   const localAppData = deps.env.LOCALAPPDATA;
   if (localAppData) folders.push(path.join(localAppData, 'Programs', 'OpenAI', 'Codex', 'bin'));
@@ -218,26 +250,117 @@ function rankHits(lines: string[]): string[] {
   return [...hits].sort((a, b) => rank(a) - rank(b));
 }
 
-async function resolveBinary(name: string, deps: DiscoveryDeps): Promise<string | undefined> {
+interface BinaryResolution {
+  file?: string;
+  method:
+    | 'path'
+    | 'explicit-location'
+    | 'login-shell'
+    | 'loopback'
+    | 'path/explicit-location/login-shell'
+    | 'path/explicit-location'
+    | 'unsupported';
+}
+
+function posixExecutable(candidate: string): boolean {
+  // command -v may print an alias, a function, noise from shell startup, or
+  // multiple lines. Only one absolute filename can cross the spawn boundary.
+  return (
+    path.posix.isAbsolute(candidate) &&
+    !/[\x00-\x1f\x7f\\]/.test(candidate) &&
+    !/\.(exe|cmd|bat)$/i.test(candidate)
+  );
+}
+
+async function resolveBinary(name: string, deps: DiscoveryDeps): Promise<BinaryResolution> {
+  if (!['win32', 'darwin', 'linux'].includes(deps.platform)) return { method: 'unsupported' };
   let candidates: string[] = [];
   try {
     candidates = await deps.which(name);
   } catch {
     candidates = [];
   }
-  const hit = rankHits(candidates)[0];
-  if (hit) return hit;
-  for (const folder of knownFolders(deps)) {
-    for (const suffix of ['.exe', '.cmd', '']) {
-      const candidate = path.join(folder, `${name}${suffix}`);
+  const hits = candidates.map((line) => line.trim()).filter((line) => line.length > 0);
+  // `where` lists an extension-less shim before its .cmd twin; prefer what Node can run.
+  const rank = (candidate: string) =>
+    /\.exe$/i.test(candidate) ? 0 : /\.(cmd|bat)$/i.test(candidate) ? 1 : 2;
+  const hit = [...hits].sort((a, b) => rank(a) - rank(b))[0];
+  if (deps.platform === 'win32' && hit) return { file: hit, method: 'path' };
+  if (deps.platform !== 'win32') {
+    for (const candidate of hits) {
       try {
-        if (await deps.exists(candidate)) return candidate;
+        if (posixExecutable(candidate) && (await deps.exists(candidate)))
+          return { file: candidate, method: 'path' };
+      } catch {
+        // An inaccessible PATH candidate is not an observation; try the next.
+      }
+    }
+  }
+  const join = deps.platform === 'win32' ? path.join : path.posix.join;
+  for (const folder of knownFolders(deps)) {
+    for (const suffix of deps.platform === 'win32' ? ['.exe', '.cmd', ''] : ['']) {
+      const candidate = join(folder, `${name}${suffix}`);
+      try {
+        if (await deps.exists(candidate)) return { file: candidate, method: 'explicit-location' };
       } catch {
         // A failed existence check is not evidence; keep looking.
       }
     }
   }
-  return undefined;
+  if (deps.platform === 'darwin') {
+    // Finder does not inherit a terminal's PATH. The shell and command are
+    // fixed; the executable name is positional data from the static roster.
+    // Never run SHELL as a command string or evaluate its captured output.
+    const shell = deps.env.SHELL === '/bin/bash' ? '/bin/bash' : '/bin/zsh';
+    try {
+      const probe = await deps.run(shell, [
+        '-lc',
+        'command -v -- "$1"',
+        'diomedes-discovery',
+        name,
+      ]);
+      const candidate = probe.stdout.trim();
+      if (
+        !probe.timedOut &&
+        probe.code === 0 &&
+        posixExecutable(candidate) &&
+        (await deps.exists(candidate))
+      )
+        return { file: candidate, method: 'login-shell' };
+    } catch {
+      // Failure means this probe did not observe a usable executable.
+    }
+    return { method: 'path/explicit-location/login-shell' };
+  }
+  return { method: 'path/explicit-location' };
+}
+
+function withDiscovery(
+  entry: IntegrationStatus,
+  deps: DiscoveryDeps,
+  resolution: BinaryResolution,
+): IntegrationStatus {
+  const state =
+    resolution.method === 'unsupported' ? 'unsupported' : entry.found ? 'observed' : 'absent';
+  return {
+    ...entry,
+    ...(state === 'unsupported'
+      ? {
+          status: 'Unsupported platform',
+          detail: `${entry.name} discovery is unsupported on this platform.`,
+        }
+      : {}),
+    ...(!entry.found &&
+    state === 'absent' &&
+    deps.platform === 'darwin' &&
+    resolution.method !== 'loopback'
+      ? { detail: `${entry.name} was not observed in the checked locations on this computer.` }
+      : {}),
+    disclosure: [
+      ...entry.disclosure,
+      `Discovery: ${state} on ${deps.platform} via ${resolution.method}. Installation does not establish route readiness.`,
+    ],
+  };
 }
 
 /**
@@ -322,6 +445,7 @@ async function enumerateBinary(name: string, deps: DiscoveryDeps): Promise<strin
       if (UNQUOTABLE.test(candidate)) return;
       if (isShim(candidate) && SHELL_SENSITIVE.test(candidate)) return;
     }
+    if (deps.platform !== 'win32' && !posixExecutable(candidate)) return;
     const key = deps.platform === 'win32' ? candidate.toLowerCase() : candidate;
     if (seen.has(key)) return;
     seen.add(key);
@@ -333,17 +457,24 @@ async function enumerateBinary(name: string, deps: DiscoveryDeps): Promise<strin
   } catch {
     hits = [];
   }
-  for (const hit of rankHits(hits)) add(hit);
+  for (const hit of rankHits(hits)) {
+    if (deps.platform === 'win32' || (await deps.exists(hit))) add(hit);
+  }
   const folders = [...knownFolders(deps), ...(await userPathFolders(deps))];
   for (const folder of folders)
-    for (const suffix of ['.exe', '.cmd', '']) {
-      const candidate = path.join(folder, `${name}${suffix}`);
+    for (const suffix of deps.platform === 'win32' ? ['.exe', '.cmd', ''] : ['']) {
+      const join = deps.platform === 'win32' ? path.join : path.posix.join;
+      const candidate = join(folder, `${name}${suffix}`);
       try {
         if (await deps.exists(candidate)) add(candidate);
       } catch {
         // A failed existence check is not evidence; keep looking.
       }
     }
+  if (deps.platform === 'darwin') {
+    const resolved = await resolveBinary(name, deps);
+    if (resolved.file) add(resolved.file);
+  }
   return found;
 }
 
@@ -521,29 +652,38 @@ export function pendingDiscovery(): DiscoveryResult {
 }
 
 async function probeBinary(spec: BinarySpec, deps: DiscoveryDeps): Promise<IntegrationStatus> {
-  const resolved = await resolveBinary(spec.binary, deps);
-  if (!resolved) return notFoundEntry(spec);
+  const resolution = await resolveBinary(spec.binary, deps);
+  const resolved = resolution.file;
+  if (!resolved) return withDiscovery(notFoundEntry(spec), deps, resolution);
   if (spec.probeVersion === false)
-    return {
-      ...notFoundEntry(spec),
-      found: true,
-      status: 'Installed',
-      detail: `${spec.name} is installed. Diomedes does not use it.`,
-      location: resolved,
-    };
+    return withDiscovery(
+      {
+        ...notFoundEntry(spec),
+        found: true,
+        status: 'Installed',
+        detail: `${spec.name} is installed. Diomedes does not use it.`,
+        location: resolved,
+      },
+      deps,
+      resolution,
+    );
   let version: string | undefined;
   try {
     const result = await deps.run(resolved, ['--version']);
-    if (!result.timedOut) version = parseVersion(result.stdout, result.stderr);
+    if (!result.timedOut && result.code === 0) version = parseVersion(result.stdout, result.stderr);
   } catch {
     version = undefined;
   }
-  if (!version) return unreadableEntry(spec, resolved);
+  if (!version) return withDiscovery(unreadableEntry(spec, resolved), deps, resolution);
   const detail =
     spec.adapter === 'planned'
       ? `${spec.name} ${version} is installed. Diomedes cannot run it yet.`
       : `${spec.name} ${version} is installed. Diomedes does not use it.`;
-  return versionedEntry(spec, resolved, version, 'Installed', detail);
+  return withDiscovery(
+    versionedEntry(spec, resolved, version, 'Installed', detail),
+    deps,
+    resolution,
+  );
 }
 
 /** The headers already answered; the body is never read, only released. */
@@ -578,25 +718,31 @@ async function probeHermes(deps: DiscoveryDeps): Promise<IntegrationStatus> {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     await drainCapped(response);
-    return {
-      ...base,
-      found: true,
-      status: 'Running',
-      detail: 'Hermes is running on this computer. Diomedes does not use it.',
-    };
+    return withDiscovery(
+      {
+        ...base,
+        found: true,
+        status: 'Running',
+        detail: 'Hermes is running on this computer. Diomedes does not use it.',
+      },
+      deps,
+      { method: 'loopback' },
+    );
   } catch {
-    return base;
+    return withDiscovery(base, deps, { method: 'loopback' });
   }
 }
 
 async function probeOllama(deps: DiscoveryDeps): Promise<IntegrationStatus> {
   const spec = OLLAMA_SPEC;
-  const resolved = await resolveBinary(spec.binary, deps);
+  const resolution = await resolveBinary(spec.binary, deps);
+  const resolved = resolution.file;
   let version: string | undefined;
   if (resolved) {
     try {
       const result = await deps.run(resolved, ['--version']);
-      if (!result.timedOut) version = parseVersion(result.stdout, result.stderr);
+      if (!result.timedOut && result.code === 0)
+        version = parseVersion(result.stdout, result.stderr);
     } catch {
       version = undefined;
     }
@@ -614,36 +760,30 @@ async function probeOllama(deps: DiscoveryDeps): Promise<IntegrationStatus> {
   } catch {
     running = false;
   }
-  if (!resolved && !running) return notFoundEntry(spec);
+  const observed = (entry: IntegrationStatus) =>
+    withDiscovery(entry, deps, !resolved && running ? { method: 'loopback' } : resolution);
+  if (!resolved && !running) return observed(notFoundEntry(spec));
   const location = resolved ?? OLLAMA_TAGS_URL;
-  if (!version) return unreadableEntry(spec, location, running);
+  if (!version) return observed(unreadableEntry(spec, location, running));
   if (running)
-    return versionedEntry(
+    return observed(
+      versionedEntry(
+        spec,
+        location,
+        version,
+        'Running',
+        `Ollama ${version} is running. Diomedes does not use it.`,
+      ),
+    );
+  return observed(
+    versionedEntry(
       spec,
       location,
       version,
-      'Running',
-      `Ollama ${version} is running. Diomedes does not use it.`,
-    );
-  return versionedEntry(
-    spec,
-    location,
-    version,
-    'Installed',
-    `Ollama ${version} is installed but not running. Diomedes does not use it.`,
+      'Installed',
+      `Ollama ${version} is installed but not running. Diomedes does not use it.`,
+    ),
   );
-}
-
-async function probeCodexVersion(deps: DiscoveryDeps): Promise<string | undefined> {
-  const resolved = await resolveBinary('codex', deps);
-  if (!resolved) return undefined;
-  try {
-    const result = await deps.run(resolved, ['--version']);
-    if (result.timedOut) return undefined;
-    return parseVersion(result.stdout, result.stderr);
-  } catch {
-    return undefined;
-  }
 }
 
 const OLLAMA_SPEC: BinarySpec = {
@@ -719,8 +859,18 @@ export function createDiscovery(overrides: Partial<DiscoveryDeps> = {}): {
         engines.push(await probeBinary(spec, deps).catch(() => notFoundEntry(spec)));
       engines.push(await probeHermes(deps).catch(() => hermesDownEntry()));
       engines.push(await probeOllama(deps).catch(() => notFoundEntry(OLLAMA_SPEC)));
-      const codexInstalledVersion = await probeCodexVersion(deps).catch(() => undefined);
-      return { engines, codexInstalledVersion };
+      const codex = await probeBinary(
+        {
+          id: 'codex',
+          name: 'Codex',
+          binary: 'codex',
+          kind: 'online',
+          signIn: 'unknown',
+          adapter: 'none',
+        },
+        deps,
+      );
+      return { engines, codexInstalledVersion: codex.installedVersion, codex };
     } catch {
       return emptyDiscovery();
     }

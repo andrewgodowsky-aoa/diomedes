@@ -1,4 +1,5 @@
-// Desktop-shell side of the bounded application-update flow.
+// Desktop-shell side of the bounded application-update flow, and the shell's
+// pure platform decisions (see "Platform shell decisions" below).
 //
 // The local service (server/app-updates.ts, bundled into server/app.mjs)
 // owns the fixed official release channel, the verified release record and
@@ -74,10 +75,14 @@ export async function sha256File(filePath) {
  */
 export function installedRootFrom(execPath) {
   if (typeof execPath !== 'string' || !execPath) return null;
-  if (path.basename(execPath).toLowerCase() !== UPDATE_EXECUTABLE_NAME.toLowerCase()) return null;
-  const appDir = path.dirname(execPath);
-  if (path.basename(appDir).toLowerCase() !== 'app') return null;
-  return path.dirname(appDir);
+  // INSTALLDIR/app/Diomedes.exe is the Windows installer's layout, so the path
+  // is read with Windows rules whatever host runs this. The host's own rules
+  // see no separator in `C:\...` on macOS and return null for every input.
+  const win = path.win32;
+  if (win.basename(execPath).toLowerCase() !== UPDATE_EXECUTABLE_NAME.toLowerCase()) return null;
+  const appDir = win.dirname(execPath);
+  if (win.basename(appDir).toLowerCase() !== 'app') return null;
+  return win.dirname(appDir);
 }
 
 /** True only when INSTALLDIR carries this product's exact ownership marker. */
@@ -312,6 +317,155 @@ export async function updateShellConfig(options = {}) {
         }),
     },
   };
+}
+
+// --------------------------------------------------------------------------
+// Platform shell decisions
+//
+// Every branch the desktop shell takes on the operating system, as pure
+// functions of an injected `platform`, so they can be exercised on Windows
+// without starting Electron. They live in this module rather than a new
+// desktop/platform-shell.mjs because scripts/package-desktop.mjs copies exactly
+// main.mjs, app-updates.mjs and update-helper.mjs into the packaged app: a new
+// desktop/*.mjs file would not be packaged, and main.mjs cannot be imported by
+// a test because importing it constructs the Electron application.
+//
+// Windows behaviour is unchanged. Each function answers today's value for
+// win32, and the operating-system discriminant stays separate from the
+// architecture discriminant, which no function here reads.
+// --------------------------------------------------------------------------
+
+/**
+ * Closing the last window quits Diomedes everywhere except macOS, where an
+ * application conventionally stays in the Dock until it is told to quit.
+ * Staying open is not background automation: the local service keeps running
+ * only so the same app can reopen its window, and Quit still shuts it down.
+ */
+export function shouldQuitWhenAllWindowsClosed(platform) {
+  return platform !== 'darwin';
+}
+
+/**
+ * A Dock activation reopens the main window on macOS, and only when no window
+ * is open, so activating an app that already has one never opens a second.
+ */
+export function shouldReopenMainWindow(platform, openWindowCount) {
+  return platform === 'darwin' && openWindowCount === 0;
+}
+
+/**
+ * The window's title bar options. macOS draws its own traffic lights, and
+ * `titleBarOverlay` is a Windows/Linux concept, so the inset style is the whole
+ * answer there and no overlay key is passed at all. Windows keeps the exact
+ * hidden title bar and overlay literal it has always had.
+ */
+export function titleBarWindowOptions(platform) {
+  if (platform === 'darwin') return { titleBarStyle: 'hiddenInset' };
+  return {
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#121417', symbolColor: '#e6e9ed', height: 40 },
+  };
+}
+
+/** `setTitleBarOverlay` exists for the overlay platforms only. */
+export function supportsTitleBarOverlay(platform) {
+  return platform !== 'darwin';
+}
+
+/**
+ * The application menu template. Windows and Linux keep today's File/Edit/View
+ * menu exactly. macOS puts the application menu first and adds the Window role
+ * menu, so the standard Cmd shortcuts reach text fields and the window, and its
+ * Quit lives in the application menu instead of a Quit-only File menu. Every
+ * existing custom item and its handler is preserved on both.
+ */
+export function applicationMenuTemplate(platform, actions = {}) {
+  const interfaceScale = actions.interfaceScale ?? (() => {});
+  const edit = {
+    label: 'Edit',
+    submenu: [
+      { role: 'undo' },
+      { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' },
+      { role: 'copy' },
+      { role: 'paste' },
+      { role: 'selectAll' },
+    ],
+  };
+  const view = {
+    label: 'View',
+    submenu: [
+      { label: 'Increase interface size', click: () => interfaceScale('increase') },
+      { label: 'Decrease interface size', click: () => interfaceScale('decrease') },
+      { label: 'Reset interface size (100%)', click: () => interfaceScale('reset') },
+      { type: 'separator' },
+      { role: 'togglefullscreen' },
+    ],
+  };
+  if (platform === 'darwin')
+    return [
+      {
+        label: 'Diomedes',
+        submenu: [
+          { role: 'about' },
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' },
+        ],
+      },
+      edit,
+      view,
+      {
+        role: 'window',
+        submenu: [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }],
+      },
+    ];
+  return [{ label: 'File', submenu: [{ role: 'quit' }] }, edit, view];
+}
+
+/**
+ * Setup references that are not downloads. These explain an engine's own
+ * authentication and open its official pages; they carry no artefact.
+ */
+const SETUP_REFERENCES = [
+  'https://github.com/can1357/oh-my-pi/blob/v18.0.6/docs/models.md#auth-and-api-key-resolution-order',
+  'https://platform.openai.com/api-keys',
+  // Official Diomedes release notes, opened from Settings > App updates.
+  'https://github.com/andrewgodowsky-aoa/diomedes/releases',
+  // The local Website Studio, opened from the Design Center's Website target.
+  // Loopback by address and listed explicitly: the allowlist is the whole
+  // mechanism, so a studio on this computer is named here or it does not open.
+  // Byte-identical to WEBSITE_STUDIO_URL in server/website-studio.ts.
+  'http://127.0.0.1:4400/',
+];
+
+/** The pinned official Windows x64 engine artefacts, reviewed 2026-09-10. */
+const WINDOWS_ENGINE_SETUP_DOWNLOADS = [
+  'https://downloads.claude.ai/claude-code-releases/2.1.252/win32-x64/claude.exe',
+  'https://github.com/anomalyco/opencode/releases/download/v1.18.4/opencode-windows-x64-baseline.zip',
+  'https://github.com/can1357/oh-my-pi/releases/download/v18.0.6/omp-windows-x64.exe',
+];
+
+/**
+ * The downloadable engine setup artefacts for a platform. These three files are
+ * Windows x64 executables, so `win32` is the discriminant and every other
+ * platform gets none. No macOS download is invented here: with no artefact to
+ * offer, setup falls back to installing the vendor's own official release and
+ * letting the existing disclosed discovery check find it (server/discovery.ts).
+ */
+export function engineSetupDownloads(platform) {
+  return platform === 'win32' ? [...WINDOWS_ENGINE_SETUP_DOWNLOADS] : [];
+}
+
+/** Every reference the shell may open externally on this platform. */
+export function setupReferenceLinks(platform) {
+  return [...SETUP_REFERENCES, ...engineSetupDownloads(platform)];
 }
 
 /**
