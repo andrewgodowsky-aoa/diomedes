@@ -127,6 +127,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   // another, finds the number moved and is dropped. Leaving a scope and coming back is a new
   // visit: the scope's id alone could not tell the two apart.
   const turn = useRef(0);
+  // Route presses are numbered within a visit: two choices can share one visit, and only the
+  // latest one's answer may repaint the control or restore what was there before it. The visit
+  // fence alone cannot tell them apart.
+  const routePick = useRef(0);
   const lastRef = useRef(last);
   lastRef.current = last;
 
@@ -272,6 +276,13 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       // hands the text back; after the visit has moved on, nothing is put back in a box that
       // now speaks to somewhere else.
       if (current.cancelled) return !owns();
+      // The provisioner is also where an unmarked pin is migrated, on this very call: the
+      // caption the pending message waits under is read from the concrete thread it answered,
+      // not from the record the last visit read. A marked choice is untouched either way; the
+      // thread is the authority. A failed read blocks nothing - the send still proceeds and the
+      // outcome read afterwards still refreshes it.
+      const provisioned = await thread(found).catch(() => null);
+      if (owns() && !current.cancelled && provisioned) setRoute(provisioned.engine ?? null);
       const result = await transport(found, current.controller.signal, (identity) => {
         current.issued = identity;
       });
@@ -407,7 +418,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const pickRoute = (next: Route) => {
     const found = binding;
     if (!found || pending) return;
-    const mine = turn.current;
+    const visit = turn.current;
+    const mine = ++routePick.current;
     const before = route;
     setRoute(next);
     void api<Conversation>(
@@ -416,10 +428,13 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       { engine: next },
     ).then(
       (conversation) => {
-        if (turn.current === mine) setRoute(conversation.engine ?? next);
+        // A choice another press superseded is not this control's to repaint: its own saved
+        // answer already spoke, or its own refusal is already owed.
+        if (turn.current === visit && routePick.current === mine)
+          setRoute(conversation.engine ?? next);
       },
       (error) => {
-        if (turn.current !== mine) return;
+        if (turn.current !== visit || routePick.current !== mine) return;
         setRoute(before);
         setNotice(words(error));
       },

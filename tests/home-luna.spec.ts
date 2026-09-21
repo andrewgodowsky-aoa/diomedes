@@ -402,9 +402,29 @@ test('Stop names only this message\'s command, and the record says what it came 
   await expect(strip).toBeVisible();
   await expect(strip).toContainText('SLOW hold this');
   // Send again sends that same command: the server answers it from its record rather than
-  // running it again, and the strip resolves.
+  // running it again. The strip hides when the resend starts, not when it finishes, so the
+  // replay of this exact command is awaited and read before the claim is asked about.
+  const replay = page.waitForResponse((response) => {
+    if (!messagePost(response.request())) return false;
+    if (!response.url().includes(`/threads/${bound!.threadId}/`)) return false;
+    try {
+      const posted = response.request().postDataJSON() as { commandId?: string };
+      return posted.commandId === commandId;
+    } catch {
+      return false;
+    }
+  });
+  const callsAtReplay = seen.length;
   await strip.getByRole('button', { name: 'Send again' }).click();
+  const replayed = await replay;
+  expect(replayed.ok()).toBe(true);
+  const replayResult = (await replayed.json()) as { commandId: string; interrupted: boolean };
+  // The replay is the command's own durable record: same command, still interrupted, and the
+  // provider was never asked again.
+  expect([replayResult.commandId, replayResult.interrupted]).toEqual([commandId, true]);
+  expect(seen.length).toBe(callsAtReplay);
   await expect(strip).toHaveCount(0);
+  await expect(page.locator('.dio-pending')).toHaveCount(0);
   await expect(page.getByRole('alert')).toHaveCount(0);
   expect(await claimedCommand(page)).toBeNull();
 });
@@ -603,6 +623,57 @@ test('a late failed interrupt cannot paint a newer visit to the same scope', asy
   } finally {
     ack.release();
     await page.unroute('**/api/projects/*/threads/*/messages/*/interrupt', holdAck);
+  }
+});
+
+test('a superseded route choice that fails cannot restore what it replaced', async ({ page }) => {
+  const bound = await home();
+  expect(bound).not.toBeNull();
+  await open(page);
+  const route = routeControl(page);
+  await expect(route).toHaveValue('aws-bedrock');
+  // The older choice's write commits on the server but its response is held until the newer
+  // choice has been saved; the older response then arrives as a failure. A failure a newer
+  // press superseded is not the current choice's to answer for.
+  const first = gate();
+  let puts = 0;
+  const holdFirstPut = async (r: Route) => {
+    if (r.request().method() !== 'PUT') return r.continue();
+    puts += 1;
+    if (puts > 1) return r.continue();
+    await r.fetch();
+    first.reached();
+    await first.held;
+    await r.abort('failed');
+    first.delivered();
+  };
+  const pattern = `**/api/projects/${bound!.projectId}/threads/${bound!.threadId}`;
+  // The first PUT's answer is never a response, so the first response to arrive is the newer
+  // choice's own.
+  const secondPut = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/threads/${bound!.threadId}`) &&
+      response.request().method() === 'PUT',
+  );
+  await page.route(pattern, holdFirstPut);
+  try {
+    await route.selectOption('claude-code');
+    await expect(route).toHaveValue('claude-code');
+    await first.recorded;
+    await route.selectOption('aws-bedrock');
+    await secondPut;
+    await expect(route).toHaveValue('aws-bedrock');
+    expect((await homeThread())?.engine).toBe('aws-bedrock');
+    first.release();
+    await first.arrived;
+    await painted(page);
+    // The failed older write neither repaints what it replaced nor complains into a choice the
+    // person no longer stands on.
+    await expect(route).toHaveValue('aws-bedrock');
+    await expect(page.locator('.dio-notice')).toHaveCount(0);
+  } finally {
+    first.release();
+    await page.unroute(pattern, holdFirstPut);
   }
 });
 

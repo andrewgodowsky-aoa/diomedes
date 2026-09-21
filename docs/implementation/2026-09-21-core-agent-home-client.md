@@ -158,6 +158,32 @@ number. Corrected to `requestAnimationFrame(() => resolve())`, keeping the two-f
 and every assertion. No rerun of tsc or of the suite has been executed by this lane; the
 review's HSR-1 finding belongs to another author's fixture and is untouched here.
 
+Browser review R1 of candidate `edbe2b041ddc3b005c2f6e840f94d915cf2ae2b4`
+(`2026-09-21-core-agent-home-browser-review-r1.md`) ran three reproducers red; repaired as
+follows. No rerun is claimed by this lane - the parent re-executes the unchanged reproducers
+and removes each guard to verify red/restoration/green.
+
+- HLR-01 (older route response repaints a newer choice): `pickRoute` fenced on the visit
+  alone, so two choices in one visit shared a fence and an older answer could paint last.
+  `DiomedesHome` now numbers each choice with a `routePick` ref; a response or refusal repaints
+  or restores only while it is still the latest press in the same visit. The visit fence is
+  unchanged. The frozen committed-choice reproducer covers the success branch; the added spec
+  case `a superseded route choice that fails cannot restore what it replaced` covers the
+  refusal branch (the older write's failure neither repaints nor notices once superseded).
+- HLR-02 (migrated pending message shows the previous route): `deliver` refreshed `route`
+  only after the answer arrived, so a provisioner migration was invisible while pending.
+  `deliver` now reads the concrete thread the provisioner returned, after the cancellation
+  check and before dispatch, and updates the caption from `conversation.engine` under the
+  visit fence. `engineChoice: 'person'` is untouched - the thread stays the authority - and a
+  failed read blocks nothing. A Stop landing during the read still prevents dispatch through
+  the in-lock abort check.
+- HCR-2 (Stop arc inspected the claim before the replay response arrived): test-only. The
+  `Send again` click now registers a response wait naming that exact command's replay POST,
+  asserts the replayed result is the command's durable record (`commandId` matches,
+  `interrupted: true`), asserts the provider call count did not grow, waits for the delivery
+  to finish, and only then keeps the original claim-cleared assertion. Every prior interrupt
+  and identity assertion is unchanged.
+
 ## Decisions kept
 
 - Pending-claim, retry, discard, `inFlight` join, cross-window adoption and visit-fence
