@@ -110,7 +110,7 @@ import {
   restrictionOf,
   sourceMessageIdFor,
 } from './interaction-turn.js';
-import { findCommand } from './command-admission.js';
+import { assertReplay, findCommand } from './command-admission.js';
 import { claudeSessionRunId } from './harness/claude-session-run.js';
 import { baselineRedact } from './secrets.js';
 import { EngineError } from './engines/process.js';
@@ -2524,6 +2524,26 @@ export async function createApp(options: AppOptions) {
       });
     },
   });
+  /**
+   * The digest the task route would give this message's own task command. A message too long
+   * for a task description has no valid command at all, so it has no receipt to trust either
+   * and its own admission refuses it below in the route's own words.
+   */
+  const conversationTaskDigest = (
+    commandId: string,
+    task: { name: string; description: string },
+  ) => {
+    try {
+      return parseTaskCommand({
+        protocolVersion: 1,
+        commandId,
+        owner: 'diomedes-with-ok',
+        ...task,
+      })!.admission.payloadDigest;
+    } catch {
+      return null;
+    }
+  };
   // The Diomedes conversation. `InteractionTurns` owns the sequence; what follows is only what
   // the Store and the existing admission paths supply to it. Each method takes and releases
   // its own lock, and none of them holds one while a provider runs.
@@ -2821,14 +2841,22 @@ export async function createApp(options: AppOptions) {
           .filter((id) => id !== home?.projectId),
       };
     },
-    receipts: (projectId, ids) =>
+    receipts: (projectId, ids, intent) =>
       store.locked(async () => {
         const state = store.state(projectId);
-        const task = findCommand(state, ids.taskCommandId);
+        // A derived command id another request bound to different work is a conflict, not
+        // this message's child. The parser, the digest and the replay refusal a person's own
+        // task goes through decide that, so nothing foreign is read back as a start here.
+        const expected = intent && conversationTaskDigest(ids.taskCommandId, intent.task);
+        const task = expected
+          ? store.taskCommand(projectId, ids.taskCommandId, expected)
+          : undefined;
+        if (!expected) assertReplay(findCommand(state, ids.taskCommandId), 'task.create');
         const work = findCommand(state, ids.workCommandId);
+        assertReplay(work, 'work.start');
         return {
           projectId,
-          taskId: task?.type === 'task.create' ? task.subject.id : null,
+          taskId: task?.id ?? null,
           sessionId: work?.type === 'work.start' ? work.subject.id : null,
         };
       }),

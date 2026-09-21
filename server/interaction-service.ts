@@ -92,6 +92,15 @@ export interface AdmissionSource {
   runId: string;
 }
 
+/**
+ * What this message's children are made from, rebuilt from its own saved phases. A receipt
+ * found under a derived command id is this message's child only when the command holds
+ * exactly this, so an id bound to different work is a conflict rather than a start.
+ */
+export interface ChildIntent {
+  task: { name: string; description: string };
+}
+
 /** What the host supplies. Every method that touches the Store takes and releases its own lock. */
 export interface InteractionHost {
   /**
@@ -112,10 +121,16 @@ export interface InteractionHost {
     result: { runId: string; text: string; model: string; version: string },
   ): Promise<void>;
   admissionContext(): Promise<{ homeProjectId: string | null; targetableProjectIds: string[] }>;
-  /** A read. The receipts that exist under these derived command ids in this project. */
+  /**
+   * A read. The receipts that exist under these derived command ids in this project, and only
+   * where the command holds what this message would submit. A command bound to different work
+   * is refused here, through the same replay check a person's own task goes through, so no
+   * other request's child is ever read back as this message's start.
+   */
   receipts(
     projectId: string,
     ids: { taskCommandId: string; workCommandId: string },
+    intent: ChildIntent | null,
   ): Promise<Receipts>;
   /**
    * Both admissions name the conversation run they come from. The host refuses, inside the
@@ -142,6 +157,16 @@ const narrower = (a: Restriction, b: Restriction) => (NARROW[a] <= NARROW[b] ? a
 
 const MOVED_ON =
   'This message did not finish before the conversation moved on. Send it again as a new message if you still want it.';
+
+/**
+ * The task this message proposes, from its first phase and nothing else. Admission submits
+ * exactly this and a read compares exactly this, so a retry from any route reaches the same
+ * receipt and a command holding anything else is not this message's child.
+ */
+const taskIntent = (body: DecisionPhaseBody) => ({
+  name: (body.decision.publicSummary.trim() || body.text).slice(0, 200),
+  description: body.text,
+});
 
 /** Which guard refused a new message, if it is one a fresh lineage answers. */
 function retirement(error: unknown): LineageRetirement | null {
@@ -343,7 +368,11 @@ export class InteractionTurns {
         ? verdict.projectId
         : null);
     const receipts: Receipts = target
-      ? await this.host.receipts(target, conversationCommandIds(message.sourceMessageId))
+      ? await this.host.receipts(
+          target,
+          conversationCommandIds(message.sourceMessageId),
+          body ? { task: taskIntent(body) } : null,
+        )
       : { projectId: null, taskId: null, sessionId: null };
     return { phases, body, verdict, receipts, outcome: outcomeOf(phases, receipts, verdict, { settled }) };
   }
@@ -380,8 +409,7 @@ export class InteractionTurns {
       ]);
     // Everything a task or a Work command is made from comes out of the saved first phase, so
     // a retry from any route builds the same payload and reaches the receipt it already has.
-    const instruction = body.text;
-    const name = (body.decision.publicSummary.trim() || instruction).slice(0, 200);
+    const { name, description: instruction } = taskIntent(body);
     const refusal = (error: unknown) =>
       error instanceof ApiError && error.status >= 400 && error.status < 500
         ? { status: error.status, message: error.message }
