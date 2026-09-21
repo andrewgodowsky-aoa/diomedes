@@ -66,6 +66,12 @@ afterEach(async () => {
 
 test('the page names a command\'s answer exactly as the server projected it', async () => {
   const home = await api<{ projectId: string; threadId: string }>('/home/conversation', 'POST', {});
+  // A newly provisioned Home thread defaults to AWS under the Home contract; this fixture's
+  // only scripted provider is Claude Code, so its route is chosen explicitly, the same way
+  // the Route control writes it.
+  await api(`/projects/${home.projectId}/threads/${home.threadId}`, 'PUT', {
+    engine: 'claude-code',
+  });
   const messages = `/projects/${home.projectId}/threads/${home.threadId}/messages`;
   const say = (commandId: string, text: string) =>
     api<MessageResult>(messages, 'POST', { commandId, text, mode: 'auto', sources: [], consent: true });
