@@ -24,6 +24,14 @@ import {
   validateClaudeNativeCheckpoint,
 } from './claude-session-run.js';
 import { ENGINE_TEXT_TURN, TextRouteRuntime, textDispatchAuthorizer } from './text-route.js';
+import {
+  createBedrockModelAdapter,
+  validateBedrockCredentials,
+  type BedrockModelProfile,
+  type BedrockCredentials,
+} from './vercel-model-adapter.js';
+import { BedrockModelCatalog } from './vercel-model-catalog.js';
+import { FileSdkTranscripts } from './sdk-transcripts.js';
 
 export const HARNESS_POLICY_VERSION = 'diomedes-host-policy-v1';
 
@@ -467,6 +475,25 @@ export function createHarnessHost({
     codex,
     textRoute,
     claudeSessions,
+    /** Builds a provider binding only. Admission and RunService egress authorization
+     * still belong to the caller's existing Trust route; this creates no run. */
+    createBedrockModelRoute(options: { profile: BedrockModelProfile; credentials: BedrockCredentials }) {
+      if (closed) throw new ApiError(503, 'The local service is closing.');
+      const credentials = validateBedrockCredentials(options.credentials);
+      const adapter = createBedrockModelAdapter({
+        ...options,
+        credentials,
+        transcripts: new FileSdkTranscripts(path.join(dataDir, 'private', 'bedrock-transcripts')),
+      });
+      const catalog = new BedrockModelCatalog({
+        accountRoute: options.profile.accountRoute,
+        region: options.profile.region,
+        credentials,
+      });
+      for (const [key, value] of Object.entries(credentials))
+        if (key !== 'kind' && value) secrets.add(value);
+      return { adapter, catalog };
+    },
     /** Host-only until authenticated client admission is supplied by Trust.
      * Reuses the same command parser, collision check, receipt and Store lock. */
     startCodexReport(
