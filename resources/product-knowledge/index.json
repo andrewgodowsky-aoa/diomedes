@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "version": "2026-09-20.1",
-  "buildVersion": "0.1.6",
+  "buildVersion": "0.1.7",
   "resources": [
     {
       "path": "core.json",
-      "sha256": "eea0079958e1a7736ed23df61847de4b2a58a3b9c7023152743a4c4506387ff9",
+      "sha256": "6963dd02635a48e00824249c24fe3d0218ca01be7e568546619b5457782b88f9",
       "scopes": [
         "product",
         "route:native-fixture",

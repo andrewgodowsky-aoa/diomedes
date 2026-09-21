@@ -6,16 +6,19 @@ tasks, conversations, approvals and file history in one place. A helper can prop
 change; Diomedes shows the exact before and after and writes nothing until you say go
 ahead. Every write is recorded and reversible.
 
-Diomedes has no model of its own. It drives an AI tool you already installed and signed
-in to, through an adapter. Your account, your allowance, your bill.
+Diomedes has no model of its own. It works through routes you configure: an AI tool
+you already installed and signed in to, driven through an adapter, or the optional
+direct AWS Bedrock (GPT-5.6 Luna) route on your own AWS account. Your account, your
+allowance, your bill.
 
 It runs on this computer, and there is no telemetry. An optional account sign-in exists
-in source and needs configuration before it is available at all; personal use works
-without it, without signing in and without network access
-(`docs/implementation/2026-09-20-native-workspace-sign-in.md`). What a task sends leaves
-through the AI tool you signed in to.
+in source and needs configuration before it is available at all; local and sample
+work run without it, without signing in and without network access
+(`docs/implementation/2026-09-20-native-workspace-sign-in.md`), while a provider-backed
+conversation needs connectivity. What a task sends leaves through the route it uses:
+the AI tool you signed in to, or your own AWS account.
 
-Diomedes Systems (LLC formation pending). This source tree is Diomedes 0.1.6;
+Diomedes Systems (LLC formation pending). This source tree is Diomedes 0.1.7;
 `package.json` holds that number and `tests/engine-routes.test.ts` fails if this file
 disagrees with it.
 

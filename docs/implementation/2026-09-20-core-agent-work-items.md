@@ -787,6 +787,45 @@ gates, package and installer/runtime proof, publication and site deployment are
 still owed. The live Luna call, credentials and spend limit stay with Andrew
 and the AWS owner. Preparation and typecheck slots are released.
 
+### Round 23: version refresh rejected before publication (2026-09-21)
+
+Andrew explicitly continued the release: "perform that versioning and all that
+up to publication and website deployment". The pinned coordinator transferred
+only `package.json`, `package-lock.json` and `licenses`; the former owner's two
+runtime paths remain reserved. This supersedes Round 22's pending transfer.
+The release and site worktrees remain isolated, and no additional PR was opened.
+
+Candidate `6f5bb3532de0beacdf008327e0cc9a228017577e` updates the three
+package-version fields to 0.1.7, regenerates the notices and capability record,
+and passes the 38 existing focused release-copy/record cases. It is rejected
+for release. Its full gate passes typecheck, build and 50 page cases, then the
+browser suite reports 175 passed and one failed readiness case. Full local
+Vitest did not run after that failure. Hosted run `35636976303` also fails on
+both Windows and macOS; historical green checks do not supersede these results.
+
+The independent review is committed unedited in
+`2026-09-21-core-agent-release-version-review.md`. On the unchanged candidate,
+the original README/product-knowledge tests report seven passed and two failed;
+both affected desktop inventory cases fail at their original version assertions.
+The unchanged build-identity tests separately report 18 passed and one failed:
+the genuine previous package record still describes 0.1.6. Original logs and
+browser artifacts remain in the continuation deliverable under `release-v017-*`.
+
+The separate version author has a four-file repair assignment: the README,
+both product-knowledge files including their byte checksum, and the inventory
+demo's two current-version literals. No assertion weakening is authorized.
+A real preparatory package must generate the new build record before the exact
+committed gates can pass. Final bytes will then be regenerated from the accepted
+commit with HEAD frozen through the candidate-record writer. No hand-edited
+build evidence, published 0.1.7 asset or deployed site is claimed here.
+
+The four-file repair now passes independent exact-substitution and LF checksum
+inspection, all nine original README/knowledge cases and all 30 inventory browser
+cases across desktop, iPhone and iPad emulation. The same separate author also
+corrected the README introduction's stale installed-tool-only claim; local/sample
+offline work is distinguished from provider-backed conversation. These focused
+results do not close the generated-build-record or full-release gates.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
