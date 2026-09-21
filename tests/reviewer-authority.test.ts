@@ -104,9 +104,15 @@ async function launch(reviewer: ReviewerAdapter | null = review) {
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 async function close() {
-  await app.locals.close();
-  server.closeAllConnections();
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+  // Held before the first await: a hook that outlives its timeout keeps running,
+  // and by then these bindings belong to the next test.
+  const closingApp = app, closingServer = server;
+  try {
+    await closingApp.locals.close();
+  } finally {
+    closingServer.closeAllConnections();
+    await new Promise<void>((resolve) => closingServer.close(() => resolve()));
+  }
 }
 
 beforeEach(async () => {

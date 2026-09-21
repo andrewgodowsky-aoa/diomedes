@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -484,8 +485,12 @@ describe('member thread to real adapter glue', () => {
   });
 });
 beforeEach(async () => {
-  await fs.mkdir(path.join(process.cwd(), 'test-results'), { recursive: true });
-  temp = await fs.mkdtemp(path.join(process.cwd(), 'test-results', 'native-work-'));
+  // Outside this checkout. Under test-results/ the project folder sat inside the
+  // Diomedes repository, so once a test turned on the Software Engineering pack,
+  // change review took the whole repository as the project's Git and snapshotted
+  // it three times per run. On a fresh checkout its scrubbed Git read hundreds of
+  // CRLF files as modified and hashed each one, which pushed close() past 30 s.
+  temp = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-native-work-'));
   invoke = async () => proposal([update, created]);
   generator = vi.fn((input: Parameters<NativeGenerator>[0]) => invoke(input));
   app = await createApp({
@@ -507,11 +512,21 @@ beforeEach(async () => {
   await request('/settings', 'PUT', { services: { codex: true } });
 });
 afterEach(async () => {
-  await app.locals.close();
-  server.closeAllConnections();
-  await new Promise<void>((resolve, reject) =>
-    server.close((error) => (error ? reject(error) : resolve())),
-  );
+  // Hold this test's own app, server and folder. A hook that outlives its timeout
+  // keeps running, and by the time close() returns the module bindings belong to
+  // the next test, whose server it would otherwise shut.
+  const closingApp = app, closingServer = server, closingTemp = temp;
+  try {
+    await closingApp?.locals.close();
+  } finally {
+    if (closingServer) {
+      closingServer.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        closingServer.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  }
+  await fs.rm(closingTemp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 describe('guarded native file proposals', () => {

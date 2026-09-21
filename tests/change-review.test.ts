@@ -585,11 +585,17 @@ describe('change-review service over HTTP', () => {
     url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
   afterEach(async () => {
-    await app.locals.close();
-    server.closeAllConnections();
-    await new Promise<void>((resolve, reject) =>
-      server.close((error) => (error ? reject(error) : resolve())),
-    );
+    // Held before the first await: a hook that outlives its timeout keeps running,
+    // and by then these bindings belong to the next test.
+    const closingApp = app, closingServer = server;
+    try {
+      await closingApp.locals.close();
+    } finally {
+      closingServer.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        closingServer.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
   });
 
   async function runSampleTask(): Promise<{ id: string; taskId: string; sessionId: string }> {

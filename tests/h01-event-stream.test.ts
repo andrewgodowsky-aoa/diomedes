@@ -34,7 +34,9 @@ import { streamChecks } from '../server/harness/conformance.js';
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
-  while (cleanups.length) await cleanups.pop()!();
+  // Taken before the first await: a hook that outlives its timeout must not go
+  // on to run the cleanups the next test pushes.
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
 const principal: HarnessPrincipal = {
