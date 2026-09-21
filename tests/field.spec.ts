@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { Project, ProjectState, Settings } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -76,7 +77,8 @@ async function projectState(page: Page): Promise<ProjectState> {
   return response.json();
 }
 
-/** Land on the Console with our project open. The Console reopens the last project. */
+/** Land on the Console with our project open. A launch lands on Diomedes; the project is one
+ * click away as a tab in the open-projects strip. */
 async function openConsole(page: Page) {
   const opened = await page.request.put('/api/settings', {
     headers: HEADERS,
@@ -84,14 +86,8 @@ async function openConsole(page: Page) {
   });
   expect(opened.ok()).toBe(true);
   await page.goto('/');
-  const root = page.locator('.console');
-  const card = page.getByRole('button', { name: PROJECT_NAME }).first();
-  // The app paints once its settings arrive and may reopen the last project then.
-  await expect(root.or(card).first()).toBeVisible();
-  if ((await root.count()) === 0) {
-    await card.click();
-    await expect(root).toBeVisible();
-  }
+  await reopenLastProject(page);
+  await expect(page.locator('.console')).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
 }
 

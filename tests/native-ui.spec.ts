@@ -6,6 +6,7 @@ import type { Server } from 'node:http';
 import { createApp } from '../server/app';
 import type { NativeGenerator } from '../server/native-work';
 import type { ApprovalCommand, Conversation, Need, Project, ProjectState, Session, Task, TaskCandidate } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 // This scenario exercises the native controller and browser plumbing with an
 // injected generator. It never calls a model, uses credentials, or spends quota.
@@ -116,8 +117,13 @@ test('Native UI: consent, exact proposal preview, approval, Review and History w
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(baseURL);
+  await reopenLastProject(page);
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
+  // Opening a project (the tab click above) always lands on its Home page; the
+  // fixture's `lastPage: 'tasks'` is no longer read on entry (only the retired
+  // auto-reopen-on-launch code did that), so this reaches Tasks explicitly.
+  await page.getByRole('navigation', { name: 'Project pages' }).getByRole('button', { name: /^Tasks/ }).click();
   await page.locator('.task-card').first().locator('.task-title').click();
   await page.getByRole('dialog').getByRole('combobox', { name: 'Work service' }).selectOption('codex');
   const commands: string[] = [];
@@ -224,6 +230,7 @@ test('Console task Start recovers both lost responses from state without duplica
     await route.abort('connectionreset');
   });
   await page.goto(baseURL);
+  await reopenLastProject(page);
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   const rail = page.getByRole('navigation', { name: 'Threads and views' });
   await rail.getByRole('button', { name: /^Board/ }).click();
@@ -286,6 +293,7 @@ test('Console exact approval recovers both lost responses from durable state eve
   const expected = ready.preview![0].after;
   await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id] });
   await page.goto(baseURL);
+  await reopenLastProject(page);
   const rail = page.getByRole('navigation', { name: 'Threads and views' });
   await rail.getByRole('button', { name: /Exact approval thread/ }).click();
   const pane = page.locator('#scrThread');
@@ -339,6 +347,7 @@ test('Console New task makes a task, Ready shows it, and Start admits one run', 
   const fresh = await api<Project>('/projects/sample', 'POST', {});
   await api('/settings', 'PUT', { surface: 'console', openProjects: [fresh.id] });
   await page.goto(baseURL);
+  await reopenLastProject(page);
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   const rail = page.getByRole('navigation', { name: 'Threads and views' });
   await rail.getByRole('button', { name: /^Board/ }).click();
@@ -388,6 +397,7 @@ test('Console retries a lost task creation response after reload and shows the d
     await route.abort('failed');
   });
   await page.goto(baseURL);
+  await reopenLastProject(page);
   const rail = page.getByRole('navigation', { name: 'Threads and views' });
   await rail.getByRole('button', { name: /^Board/ }).click();
   const board = page.locator('.board[aria-label="Board"]');
@@ -439,6 +449,7 @@ test('Console closes a confirmed creation even if refreshing the Board fails', a
   const fresh = await api<Project>('/projects/sample', 'POST', {});
   await api('/settings', 'PUT', { surface: 'console', openProjects: [fresh.id] });
   await page.goto(baseURL);
+  await reopenLastProject(page);
   const rail = page.getByRole('navigation', { name: 'Threads and views' });
   await rail.getByRole('button', { name: /^Board/ }).click();
   const board = page.locator('.board[aria-label="Board"]');
@@ -472,6 +483,7 @@ test('Console Start again restarts a faulted task through the same admission', a
   expect(generationCount).toBe(generationsBefore + 1);
   await api('/settings', 'PUT', { surface: 'console', openProjects: [faulted.id] });
   await page.goto(baseURL);
+  await reopenLastProject(page);
   const rail = page.getByRole('navigation', { name: 'Threads and views' });
   await rail.getByRole('button', { name: /^Board/ }).click();
   const board = page.locator('.board[aria-label="Board"]');
@@ -512,6 +524,7 @@ for (const selectAt of ['creation', 'start'] as const) {
     if (selectAt === 'start')
       await api(`/projects/${fixture.id}/tasks`, 'POST', { name: 'Append a short validation section', owner: 'you' });
     await page.goto(baseURL);
+    await reopenLastProject(page);
     const rail = page.getByRole('navigation', { name: 'Threads and views' });
     await rail.getByRole('button', { name: /^Board/ }).click();
     const board = page.locator('.board[aria-label="Board"]');
@@ -592,6 +605,7 @@ test('Console document selection blocks stale paths and listing failures without
   await fs.rename(path.join(fixture.folder, 'Reopening plan.md'), path.join(fixture.folder, 'Moved plan.md'));
   await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id], services: { codex: true, defaultEngine: 'codex' } });
   await page.goto(baseURL);
+  await reopenLastProject(page);
   await page.getByRole('navigation', { name: 'Threads and views' }).getByRole('button', { name: /^Board/ }).click();
   const row = page.locator('.board .crow').filter({ hasText: task.name });
   await row.getByRole('button', { name: 'Start', exact: true }).click();
@@ -623,6 +637,7 @@ test('Workbook Tasks header keeps every view label on one line', async ({ page }
   const fixture = await api<Project>('/projects/sample', 'POST', {});
   await api('/settings', 'PUT', { surface: 'workbook', detail: 'guided', openProjects: [fixture.id] });
   await page.goto(baseURL);
+  await reopenLastProject(page);
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
   await page.getByRole('navigation', { name: 'Project pages' }).getByRole('button', { name: /^Tasks/ }).click();
   const toggle = page.locator('.segmented.compact');
