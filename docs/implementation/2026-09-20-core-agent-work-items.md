@@ -39,9 +39,10 @@ used as a source of truth for code.
 | Feature | Work order | Branch | Path | Owner | State |
 |---|---|---|---|---|---|
 | core-agent-bot | CD-00, integration | `feature/core-agent-bot` | `F:/Diomedes/diomedes-wt/core-agent-bot` | Fable | open; the integration branch the lanes merge into |
-| core-agent-contract | CD-01 | `feature/core-agent-contract` | `F:/Diomedes/diomedes-wt/core-agent-contract` | Opus; Astra reviews | round 3 running, rejected twice |
+| core-agent-contract | CD-01, then the seam code | `feature/core-agent-contract` | `F:/Diomedes/diomedes-wt/core-agent-contract` | Opus rounds 1 to 3; Fable seat since round 4; Astra reviews | rejected four times; round 5 is code, committed from `127c13c` on |
 | core-agent-page | CD-05a | `feature/core-agent-page` | `F:/Diomedes/diomedes-wt/core-agent-page` | Sonnet 5 builds under the Fable seat's claim; Astra reviews | dispatched 2026-09-21, four new files |
-| core-agent-admission | CD-02 | `feature/core-agent-admission` | not created | Muse, one file per brief | waits on CD-01 acceptance |
+| core-agent-mode | CD-02h.MODE (O1 to O3) | `feature/core-agent-mode` | `F:/Diomedes/diomedes-wt/core-agent-mode` | Sonnet 5 builds under the Fable seat's claim | dispatched 2026-09-21, branched from the contract branch at `c05f4ea` |
+| core-agent-admission | CD-02 | none | not created | Muse | not needed: the one Muse file was written straight into core-agent-contract, which was a clean worktree with no overlapping edit |
 
 The page went to Sonnet rather than Muse: a long Muse brief ends early with no files, and this
 lane needs design fidelity. Muse keeps the bounded single-file lanes. The coordination tool knows
@@ -265,6 +266,52 @@ reviewer files are byte-identical.
 (Everything on hover, Automations as a reserved pin) and `c53e116` (the Diomedes page). If R-4
 rejects again, the next submission is code, not a document: the driver seam and its fake-provider
 integration test.
+
+#### CD-01.R-4: rejected a fourth time (2026-09-21, report blob `206a652b`)
+
+| Finding | Round 4 |
+|---|---|
+| R-10 | **closed** |
+| R-03 P1 | narrowed: the read-only replay I-2 added skips the body check I-1 relied on |
+| R-14 P2 | narrowed: a terminal replay cannot do the phase writes I-3 requires |
+| R-05 P2 | narrowed, and **I-4 item 4 overturned**: an explicit limit is not only the Mode control |
+| R-13 P3 | narrowed to a mechanical validator, now obligation O4 |
+
+No new findings. Astra asked for the driver and route patches and a fake-provider test, and
+said so plainly: no fifth prose round. That was right. Three rounds of my and Opus's prose each
+left one executable seam open that only code could show.
+
+#### CD-05.R-1: both client candidates accepted with named fixes (report blob `395cf6c6`)
+
+`cdfc845` and `c53e116` were each accepted with named fixes, no P1. All four fixes are in:
+CD05-R-01 as `d157214` (focus entering a hover-opened panel owns it; verified in the running app
+in four scenarios, with the note that a background pane fires no native focus events);
+CD05-R-02, -03 and -04 as `9973109` (neutral home row, the ledger stacked under both shared
+hiding rules, a home id outside the project id alphabet). 5 of 5 and 28 of 28; `tsc` 0 in both.
+
+#### Round 5: the candidate is code (in progress, under `CD-01.C`)
+
+Built in `core-agent-contract`, committed as it goes. Workers: the pure admission module went to
+**Muse** on a refrozen single-file brief and came back matching it; the `auto` Mode migration is
+with **Sonnet** in its own worktree; the seam itself is the integrator's, as Astra assigned it.
+
+| Commit | What |
+|---|---|
+| `c05f4ea` | Driver: bound replay, phases as `transform` steps, a settled run read and never touched. 10 tests; the 23 existing driver and route tests unchanged |
+| `0d329c7` | `server/interaction-admission.ts` (Muse) and its 12 exhaustive tests, the adversarial C06 proposal among them |
+| `d748b66` | `server/interaction-turn.ts`: identities, the splitter, the preview gate, the outcome reader. 17 tests |
+| `f2cfaa9` | `server/interaction-service.ts`: the message sequence behind a narrow host port |
+| pending | `server/engines/interaction-routes.ts`, the host port in `server/app.ts`, lineages, and `tests/interaction-seam.test.ts` through the real app. Waits on the Mode lane to compile |
+
+Three decisions the integrator took, each recorded in the contract's Round 5 section:
+
+1. **Under Automatic, proposed work is shown and one selection starts it**, bound to the
+   message, the proposal digest and the target. This is Astra's deterministic exit from R-05
+   and it leaves the C06 guarantee whole. Andrew can widen it later by decision.
+2. **`server/engines/service.ts` is not touched.** It is held by the live cloud-handoff session
+   (`claim_muaredn5_544e3a55`). The identity rides on the request instead, which is also simpler.
+3. **Not in this candidate:** the plan-lineage hop, a portable handoff across lineages, the
+   reserved home Project (O4). Each is named as unclaimed rather than half built.
 
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
