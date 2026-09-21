@@ -696,6 +696,41 @@ refreshed immediately before composition and remains `58bdc65`; PR #29 stays dra
 provider, credential, spend, release, installer or site deployment result is claimed. Nothing
 is DONE until its required exact implementation is merged into main.
 
+### Round 20: full expanded composition accepted locally (2026-09-21)
+
+**Exact candidate `9060128ad4f42895c045a7a56770ce021a2ada8a` passes all composed
+gates.** Independent TypeScript and Vite build exit 0; all 50 page cases pass;
+full Playwright passes 176 with no failures, skips, flaky cases or retries; full
+Vitest passes 252 files and 4,682 tests, with zero failures and four skips. The
+exclusive slot `slot_mubesliv_a244a003` is released. Forty generated tracked PNGs
+were restored by name, and the final candidate tree is clean. Complete evidence
+is under `F:/Diomedes/deliverables/core-agent-continuation-20260921/`, prefix
+`home-composed-final-r2`. Independent acceptance is
+`2026-09-21-core-agent-home-composed-review-r2.md`.
+
+The first full composed run at `89f0d16` passed TypeScript but had 4,681 unit
+passes, one failure and four skips. Its turn-identity fixture scripted Claude
+without explicitly choosing that route after Home began defaulting to AWS.
+Immutable review `dbbaa56` preceded the separate author's six-line setup-only
+correction at `9060128`. Both focused tests and the complete suite now pass, with
+every original command, identity assertion and native projection seam preserved.
+The first failure and all logs remain retained. No product default was weakened.
+
+All original reviewer payloads and acceptance files remain unchanged. The parent
+did not author this fixture correction or the accepted Home implementation;
+bounded authorship used explicit Devin `swe-2-max`, and parent execution supplies
+the independent result. Disclosed mutation survivors and live-proof limits remain
+as recorded in the earlier reviews. No real provider call or credential was used.
+
+At the post-gate refresh, main remains `58bdc65`. The previously queued worktree
+hygiene and ended-session fixes already reached main through PRs 28 and 31; those
+old queue entries do not represent missing work to restart. PR 29 is still draft
+until the final checkpoint is pushed and its hosted checks pass. The subsequent
+release needs a version bump, a fresh dependency install and all release proofs.
+The AWS owner's distinct version/notices claim remains pending a narrow handoff;
+the earlier Stop-file transfer did not include those paths. No merge, release or
+deployment is claimed here, and no broad package item is marked DONE.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
