@@ -158,7 +158,7 @@ three files: the reviewer's two frozen files plus
 | M8 | b2, the pinned target, digest and derived command identity check | SURVIVED | see below |
 | M9 | b3, refuse a settled run inside the fence | KILLED | `a concurrent provider failure after liveness check must prevent new Work` |
 | M10 | b5, `work.ts` revalidates prepared scope | KILLED | `a competing session admitted after the sample Work path prepared refuses the start` |
-| M11 | b5, `native-work.ts` revalidates prepared scope | KILLED | `a task removed after the native Work path prepared refuses the start` and `a competing session admitted after the native Work path prepared refuses the start` |
+| M11 | b5, `native-work.ts` revalidates prepared scope | KILLED | `a competing session admitted after the native Work path prepared refuses the start`, which is the meaningful half: the mutant admits a second active session. `a task removed after the native Work path prepared refuses the start` also goes red, but as a crash, because the mutant dereferences the task it no longer has |
 | M12 | b1, the saved Work route | KILLED | `a retry after the target project engine changed starts the route this message pinned` |
 | M13 | b9, join an identical phase save | KILLED | `concurrent identical selections converge on one receipt` |
 | M14 | b4, thread the fence into the Work start path | KILLED | `a concurrent provider failure after liveness check must prevent new Work` |
@@ -201,9 +201,12 @@ directly. Cancel is the Runtime primitive that the failed step commit, `decide`,
 acquires Store. The HTTP cancel route cannot be used here, because it reaches that
 queue only after `Store.locked`, which the admission is holding.
 
-The proof is that after 300 milliseconds the cancellation has not landed, and the
-source run read back is deep-equal to the run as it stood when the commit began.
-With the hold removed it lands during the commit and the test is red.
+The proof is that 300 milliseconds after the cancellation was asked for, it still
+has not landed, and the source run read back is deep-equal to the run as it stood at
+the moment the cancellation was requested. The assertion that goes red with the hold
+removed is that pending check: the cancellation lands during the commit instead of
+after it. The source run is parked `waiting` for its next command while this happens,
+which is the live, non-terminal state the fence admits against.
 
 The honest outcome is boundary 4's second half, in the handoff's own words:
 "Cancellation/narrowing first means no new prohibited child; child commit first
@@ -267,6 +270,18 @@ No other mutation survives.
 
 ## What remains unproved
 
+The first item is the one with a real path through shipped code. The rest have no
+executed schedule to build on.
+
+- **A soft-deleted task between preparation and the commit.** Pick this up first.
+  Both revalidations use `tasks.find(id)`, which is exactly the predicate each path's
+  own earlier check used. The `deletedAt` refinement exists only in `admitWork`'s
+  pre-check (`server/app.ts:1889`) and is not re-read under the guard. A task
+  soft-deleted by the team board (`server/team/service.ts:553`) in that window would
+  pass. No executed schedule covers it, and it was not changed here: widening the
+  guard's predicate past the check it re-runs is a separate decision, and the
+  schedule that would prove it needs the team board's own delete path, not a
+  test-injected splice.
 - **Crash recovery.** The guard is process-local ordering. It is not atomic
   multi-file crash recovery, and nothing here says otherwise. An abrupt multi-file
   crash mid-commit is not executed anywhere.
@@ -279,13 +294,6 @@ No other mutation survives.
 - **Native child Work beyond admission.** The native path's guarded commit is now
   driven and refused, and a control case admits a session through it. What happens to
   a native child after admission, including its own run's interleavings, is not.
-- **A soft-deleted task between preparation and the commit.** Both revalidations use
-  `tasks.find(id)`, which is exactly the predicate each path's own earlier check used.
-  The `deletedAt` refinement exists only in `admitWork`'s pre-check
-  (`server/app.ts:1889`) and is not re-read under the guard. A task soft-deleted by
-  the team board (`server/team/service.ts:553`) in that window would pass. No
-  executed schedule covers it, and it was not changed here: widening the guard's
-  predicate past the check it re-runs is a separate decision.
 - **The snapshot and baseline of a refused session.** `work.ts` takes its snapshot
   and change-review baseline before the guard, so a refusal inside the guard leaves a
   snapshot and a baseline for a session that never existed. The provider-failure case
