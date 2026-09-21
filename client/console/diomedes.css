@@ -14,7 +14,7 @@
 .console.diomedes {
   grid-template-rows: minmax(0, 1fr);
 }
-.console .dio-screen {
+.console.diomedes .dio-screen {
   grid-template-columns: minmax(0, 1fr) 296px;
 }
 
@@ -99,8 +99,46 @@
   font-size: inherit;
 }
 
-@media (max-width: 860px) {
-  .console .dio-screen {
+/* ---- narrow ----
+   console.css takes every ledger off the screen below two widths: the app
+   container at 1100px and the window at 860px. That is right for a thread,
+   whose ledger repeats what the thread already shows. Here the ledger is the
+   only place a result can be opened from, so it moves under the conversation
+   instead of going away, keeps its own scroll, and stays after the composer
+   in the tab order. With nothing to show it draws nothing at all, the same
+   as it does when it is wide: no strip, no line, no placeholder sentence.
+
+   The two blocks are the same on purpose. A window width and a container
+   width cannot share one condition, and either one alone hides the ledger. */
+@container app (max-width: 1100px) {
+  .console.diomedes .dio-screen {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .console.diomedes .ledger {
+    display: block;
+    max-height: 176px;
+    padding: 12px 16px;
+    border-left: 0;
+    border-top: 1px solid var(--hair);
+  }
+  .console.diomedes .ledger:empty {
+    display: none;
+  }
+}
+@media (max-width: 860px) {
+  .console.diomedes .dio-screen {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .console.diomedes .ledger {
+    display: block;
+    max-height: 176px;
+    padding: 12px 16px;
+    border-left: 0;
+    border-top: 1px solid var(--hair);
+  }
+  .console.diomedes .ledger:empty {
+    display: none;
   }
 }

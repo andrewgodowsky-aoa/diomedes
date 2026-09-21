@@ -100,6 +100,36 @@ describe('spineItems', () => {
     expect(selectedSpineId('proj-1')).toBe('proj-1');
     expect(scopeFromSpineId('proj-1')).toBe('proj-1');
   });
+
+  it('keeps a saved project whose id is the word "all" apart from home', () => {
+    // The saved-registry check in server/store.ts accepts `all` as an id, so
+    // one can reach these props even though nothing here creates it. It must
+    // still be its own row, its own option, and its own scope.
+    const items = spineItems([projectFixture({ id: 'all', name: 'Catering' })], NOW);
+    expect(new Set(items.map((i) => i.id)).size).toBe(items.length);
+    expect(selectedSpineId('all')).toBe('all');
+    expect(scopeFromSpineId('all')).toBe('all');
+    expect(scopeFromSpineId(selectedSpineId(null))).toBe(null);
+  });
+
+  it('uses a home id no saved project id can take', () => {
+    // The pattern is server/store.ts's PROJECT_ID, repeated here because a
+    // client test cannot import the server's private constant.
+    expect(ALL_PROJECTS).not.toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/);
+  });
+
+  it('says nothing about reach on the home row, with no project or several', () => {
+    // The page can be showing "this conversation cannot run here" while this
+    // row is on screen, and this function is never told. So the row never
+    // claims the workspace, whatever it is given.
+    const several = [projectFixture({ id: 'a', name: 'A' }), projectFixture({ id: 'b', name: 'B' })];
+    for (const projects of [[], several]) {
+      const home = spineItems(projects, NOW)[0];
+      expect(home.id).toBe(ALL_PROJECTS);
+      expect(home.sub).toBe('Your main conversation');
+      expect(`${home.name} ${home.sub}`).not.toMatch(/workspace|everything|every project/i);
+    }
+  });
 });
 
 describe('selectedSpineId and scopeFromSpineId round trip', () => {

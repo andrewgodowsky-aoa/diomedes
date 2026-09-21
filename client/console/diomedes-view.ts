@@ -25,12 +25,13 @@ export interface DiomedesResult {
 }
 
 /**
- * The spine id for the home conversation: "every project at once", not a
- * project of its own. A real Project can never carry this id, so a project
- * that happens to be named "all" cannot collide with it; the collision guard
- * lives on id, never on name.
+ * The spine id for the home conversation, which is not a project of its own.
+ * It is a screen-only value and is never saved. The leading colon keeps it
+ * outside the alphabet a saved project id may use (`PROJECT_ID` in
+ * server/store.ts starts with a letter or a digit), so no project that loads,
+ * not even one whose id is the word "all", can be mistaken for home.
  */
-export const ALL_PROJECTS = 'all';
+export const ALL_PROJECTS = ':all';
 
 /** The Mode select, in order. Build is absent on purpose and must stay absent:
  *  this page answers, looks things up and plans; it never applies a change
@@ -78,13 +79,18 @@ function projectSub(p: Project): { text: string; tone?: 'attn' | 'live' } {
  * first: the same ordering the thread rail keeps for threads, applied here
  * to projects. `now` makes the age column testable and keeps this function
  * from reading the clock itself.
+ *
+ * The home row says what it is, a conversation, and nothing about what that
+ * conversation can reach. This function is never told whether the
+ * conversation can run, so a line about reach would stay on the screen beside
+ * a composer that has just said it cannot.
  */
 export function spineItems(projects: readonly Project[], now: number): RailItem[] {
   const home: RailItem = {
     id: ALL_PROJECTS,
     name: 'All projects',
     time: '',
-    sub: 'The whole workspace',
+    sub: 'Your main conversation',
   };
   const rest = [...projects]
     .sort((a, b) => (b.lastOpenedAt || b.createdAt).localeCompare(a.lastOpenedAt || a.createdAt))
