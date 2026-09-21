@@ -36,9 +36,36 @@ import { FileRunStore } from '../server/harness/run-store.js';
 import { RunService } from '../server/harness/run-service.js';
 import { textDispatchAuthorizer } from '../server/harness/text-route.js';
 
-const roots: string[] = [];
+/**
+ * Fixture lifecycle ownership. Each fixture registers its temporary root the
+ * moment it exists and its driver once constructed. Teardown closes and awaits
+ * every created driver before removing that driver's root, including when the
+ * test body rejected, so driver work never races the removal. A close or
+ * removal failure still surfaces; nothing is retried or swallowed.
+ */
+const owned: { root: string; driver?: { closeAll(): Promise<void> } }[] = [];
 afterEach(async () => {
-  for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
+  let failed = false;
+  let failure: unknown;
+  for (const entry of owned.splice(0)) {
+    try {
+      await entry.driver?.closeAll();
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        failure = error;
+      }
+    }
+    try {
+      await fs.rm(entry.root, { recursive: true, force: true });
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        failure = error;
+      }
+    }
+  }
+  if (failed) throw failure;
 });
 
 const deferred = () => {
@@ -113,7 +140,6 @@ interface Fixture {
       runId: string,
       commandId: string,
     ): Promise<{ answered: boolean; interrupted: boolean } | null>;
-    closeAll(): Promise<void>;
   };
   transports: ReturnType<typeof heldTransports>;
   send(commandId: string, mode?: 'start' | 'follow-up'): Promise<TurnOutcome>;
@@ -149,7 +175,8 @@ const CLAUDE_INPUT: TextRequest = {
 
 async function claudeFixture(): Promise<Fixture> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'interrupt-claude-'));
-  roots.push(root);
+  const entry: { root: string; driver?: { closeAll(): Promise<void> } } = { root };
+  owned.push(entry);
   const storage = new FileRunStore(root);
   const settings = { 'claude-code': true, 'claude-codeAccountRoute': CLAUDE_INPUT.accountRoute };
   const authorize = textDispatchAuthorizer(() => settings, [CLAUDE_SESSION_CAPABILITY.id]);
@@ -159,6 +186,7 @@ async function claudeFixture(): Promise<Fixture> {
       authorize(await runs.get(runId), intent, phase),
   });
   const driver = new ClaudeSessionRuns(runs);
+  entry.driver = driver;
   let pendingGet: Promise<void> | null = null;
   const realGet = driver.get.bind(driver);
   driver.get = async (projectId: string, runId: string): Promise<HarnessRun> => {
@@ -286,7 +314,8 @@ const MODEL_INPUT: TextRequest = {
 
 async function modelFixture(): Promise<Fixture> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'interrupt-model-'));
-  roots.push(root);
+  const entry: { root: string; driver?: { closeAll(): Promise<void> } } = { root };
+  owned.push(entry);
   const storage = new FileRunStore(root);
   const services: Record<string, unknown> = {
     'aws-bedrock': true,
@@ -298,6 +327,7 @@ async function modelFixture(): Promise<Fixture> {
       authorize(await runs.get(runId), intent, phase),
   });
   const driver = new ModelSessionRuns(runs, 'aws-bedrock');
+  entry.driver = driver;
   let pendingGet: Promise<void> | null = null;
   const realGet = driver.get.bind(driver);
   driver.get = async (projectId: string, runId: string): Promise<HarnessRun> => {
@@ -416,7 +446,6 @@ const suite = (label: string, make: () => Promise<Fixture>) =>
         expect(result).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
         await expect(f.driver.turnResult(f.projectId, f.runId, 'a')).resolves.toBeNull();
       }
-      await f.driver.closeAll();
     });
 
     test('with no active turn the answer is idle, before any turn and again after it settles', async () => {
@@ -438,7 +467,6 @@ const suite = (label: string, make: () => Promise<Fixture>) =>
       await expect(f.driver.interruptCommand(f.projectId, f.runId, 'a')).resolves.toEqual({
         state: 'idle',
       });
-      await f.driver.closeAll();
     });
 
     test('a Stop for a settled command while another is active answers superseded and aborts nothing', async () => {
@@ -461,7 +489,6 @@ const suite = (label: string, make: () => Promise<Fixture>) =>
         ok: true,
         value: { interrupted: false, response: { text: 'answer:b' } },
       });
-      await f.driver.closeAll();
     });
 
     test('a Stop for another project is refused by the existing lookup and cannot abort the turn', async () => {
@@ -478,7 +505,6 @@ const suite = (label: string, make: () => Promise<Fixture>) =>
         ok: true,
         value: { interrupted: false, response: { text: 'answer:a' } },
       });
-      await f.driver.closeAll();
     });
 
     test('an unknown run is refused through the existing error path', async () => {
@@ -487,7 +513,6 @@ const suite = (label: string, make: () => Promise<Fixture>) =>
       await expect(f.driver.interruptCommand(f.projectId, 'never-run', 'a')).rejects.toMatchObject({
         code: 'unknown_run',
       });
-      await f.driver.closeAll();
     });
 
     test('a Stop whose lookup was delayed sees the active entry as it stands then, not as it was', async () => {
@@ -513,7 +538,6 @@ const suite = (label: string, make: () => Promise<Fixture>) =>
         ok: true,
         value: { interrupted: false, response: { text: 'answer:b' } },
       });
-      await f.driver.closeAll();
     });
 
     test('a replayed command reads the recorded outcome and dispatches nothing again', async () => {
@@ -540,7 +564,6 @@ const suite = (label: string, make: () => Promise<Fixture>) =>
         expect(await replayed).toMatchObject({ ok: false, error: { code: 'RECONCILE_REQUIRED' } });
       }
       expect(f.transports.sent('a')).toBe(1);
-      await f.driver.closeAll();
     });
   });
 
