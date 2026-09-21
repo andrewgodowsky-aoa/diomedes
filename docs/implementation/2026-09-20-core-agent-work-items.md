@@ -313,6 +313,35 @@ Three decisions the integrator took, each recorded in the contract's Round 5 sec
 3. **Not in this candidate:** the plan-lineage hop, a portable handoff across lineages, the
    reserved home Project (O4). Each is named as unclaimed rather than half built.
 
+#### Rounds 5 to 7: what review found once the candidate was code (2026-09-21)
+
+The "pending" row above landed as `6bd7906` (routes, host port, the seam test through the real
+app) and `265a33c` (the Mode lane merged). Decision 3 above is superseded in one respect: the
+reserved home Project was built in its own lane and merged in round 6.
+
+| Round | Candidate | Astra's verdict | What it turned on |
+|---|---|---|---|
+| R-5 | `ef5e366` | rejected, five P2 defects, each with a reproducer | a retry ignored the Mode control as it stands; cancellation between a recorded input and its admission; a missing decision read as answered; a repaired projection rebuilt from the present; budget exhaustion never replaced the lineage. Accepted: body binding, the terminal-write guard, the selection mechanism (ruled to need no owner decision), I-11, I-12 |
+| R-6 | `976b688` | rejected, one P2 defect (CD01-R-16); all five above closed | the older direct route `POST /projects/:id/ask` went round both home guards and started Work in the reserved home Project |
+| R-7 | `4e2c93c` plus evidence | dispatched | `Store.createTask` makes no task in home, so no route has one to start Work on; the direct route refuses home for every mode |
+
+Her sandbox cannot run Vitest, so every reproducer is a source trace. The rule that has held since
+round 5: paste it in unchanged, run it, and only then change code. Five of six failed as
+traced. The sixth (R-10) failed for a different reason, which was the real defect: the budget
+matcher had never fired, because `EngineService` rewraps the Runtime's refusal.
+
+Lanes that closed inside these rounds:
+
+| Lane | Worker | Worktree | Result |
+|---|---|---|---|
+| CD-02h.MODE, `auto` as a Mode | Sonnet | `core-agent-mode` | merged `265a33c`. Its focused runs missed `tests/modes.test.ts` (the 900-character rule), which the full suite caught; every brief since demands the full suite |
+| CD-02h.HOME, the reserved home Project (O4) | Opus | `core-agent-home` | `08fbbdf`, `7a6d107`, 14 cases, merged into the contract branch. R-6 narrowed it to R-16 |
+| CD-05b, launch and the conversation client | Fable | `core-agent-bot` | `client/conversation-send.ts`, `client/console/DiomedesHome.tsx`, the landing gate in `client/App.tsx`, H3 in `client/console/Home.tsx`, `tests/diomedes-home.spec.ts` through the real app with a scripted provider. Awaits CD-05.R-2 |
+
+Guard-removal mutations now stand at 21 single removals and 3 pairs across rounds 5 to 7. Two
+single removals survive, both disclosed to the reviewer, and both for the same reason: a second
+guard refuses the same request one call later, and the pair is killed.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 

@@ -92,6 +92,7 @@ export default defineConfig({
     'change-review-ui.spec.ts',
     'reviewer-ui.spec.ts',
     'agent-ui.spec.ts',
+    'diomedes-home.spec.ts',
     'app-updates-ui.spec.ts',
     'workspace-ui.spec.ts',
     'configuration-ui.spec.ts',

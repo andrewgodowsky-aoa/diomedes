@@ -33,7 +33,8 @@ export interface DiomedesPageProps {
   pending: boolean;
   restriction: Restriction;
   onRestriction(next: Restriction): void;
-  onSend(text: string): void;
+  /** Resolves false when the message was refused and never sent, so the text is given back. */
+  onSend(text: string): Promise<boolean>;
   onStop(): void;
   /** Why the conversation cannot run here, in plain words, or null when it can. */
   unavailable: string | null;
@@ -122,8 +123,13 @@ export function Diomedes({
   const ready = canSend(text, pending, blocked);
   const submit = () => {
     if (!canSend(text, pending, blocked)) return;
-    onSend(text);
+    const sending = text;
     setText('');
+    // A refused message was never sent. It goes back in the box, unless the person has
+    // already started typing something else.
+    void onSend(sending).then((sent) => {
+      if (!sent) setText((now) => now || sending);
+    });
   };
 
   const spine = spineItems(projects, Date.now());

@@ -71,6 +71,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   // Answers arrive for the scope that asked. A scope the person has left must not paint this one.
   const scopeRef = useRef(scopeId);
   scopeRef.current = scopeId;
+  // The project thread this page has seen pinned to Claude Code. The home thread is made pinned.
+  const pinned = useRef<string | null>(null);
 
   const thread = useCallback(async (found: Binding): Promise<Conversation | null> => {
     const state = await api<ProjectState>(`/projects/${encodeURIComponent(found.projectId)}/state`);
@@ -96,6 +98,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
           const state = await api<ProjectState>(`/projects/${encodeURIComponent(scope)}/state`);
           conversation = diomedesThread(state.conversations);
           found = conversation ? { projectId: scope, threadId: conversation.id } : null;
+          pinned.current = conversation?.engine === 'claude-code' ? conversation.id : null;
         }
         if (scopeRef.current !== scope) return;
         setBinding(found);
@@ -130,19 +133,26 @@ export function DiomedesHome(props: DiomedesHomeProps) {
 
   /** The scope's conversation, made now if it never was. Only a send calls this. */
   const ensure = async (scope: string | null): Promise<Binding> => {
-    if (binding) return binding;
+    if (binding && (scope === null || pinned.current === binding.threadId)) return binding;
     if (scope === null) return api<Binding>('/home/conversation', 'POST', {});
-    const state = await api<ProjectState>(`/projects/${encodeURIComponent(scope)}/state`);
-    const existing = diomedesThread(state.conversations);
-    if (existing) return { projectId: scope, threadId: existing.id };
-    const made = await api<Conversation>(`/projects/${encodeURIComponent(scope)}/threads`, 'POST', {
-      name: 'Diomedes',
-      mode: 'auto',
-    });
-    return { projectId: scope, threadId: made.id };
+    const project = `/projects/${encodeURIComponent(scope)}`;
+    const state = await api<ProjectState>(`${project}/state`);
+    const found =
+      diomedesThread(state.conversations) ??
+      (await api<Conversation>(`${project}/threads`, 'POST', { name: 'Diomedes', mode: 'auto' }));
+    // Diomedes talks through Claude Code whatever the project's own work runs on, and work it
+    // starts still runs on the project's AI. Asked on every first send rather than once at
+    // creation, so a thread whose pin was lost between the two requests gets it now.
+    if (found.engine !== 'claude-code')
+      await api(`${project}/threads/${encodeURIComponent(found.id)}`, 'PUT', {
+        engine: 'claude-code',
+      });
+    pinned.current = found.id;
+    return { projectId: scope, threadId: found.id };
   };
 
-  const send = async (text: string, mode = modeFor(restriction)) => {
+  /** True when the message was sent, or may have been. False when it was refused and never sent. */
+  const send = async (text: string, mode = modeFor(restriction)): Promise<boolean> => {
     const scope = scopeId;
     setNotice(null);
     setLast(null);
@@ -159,14 +169,18 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         controller.signal,
       );
       const conversation = await thread(found);
-      if (scopeRef.current !== scope) return;
+      if (scopeRef.current !== scope) return true;
       setUnconfirmed(null);
       setTurns(conversation?.turns ?? []);
       setLast(result);
+      return true;
     } catch (error) {
-      if (scopeRef.current !== scope) return;
-      if (error instanceof UnconfirmedMessage) setUnconfirmed(text);
+      // The saved message holds the text of an unconfirmed send; only a refusal gives it back.
+      const kept = error instanceof UnconfirmedMessage;
+      if (scopeRef.current !== scope) return kept;
+      if (kept) setUnconfirmed(text);
       else setNotice(words(error));
+      return kept;
     } finally {
       if (stop.current === controller) stop.current = null;
       if (scopeRef.current === scope) setPending(false);
@@ -226,7 +240,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       pending={pending}
       restriction={restriction}
       onRestriction={setRestriction}
-      onSend={(text) => void send(text)}
+      onSend={(text) => send(text)}
       onStop={() => stop.current?.abort()}
       unavailable={unavailable}
       card={card}
