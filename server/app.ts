@@ -2297,6 +2297,14 @@ export async function createApp(options: AppOptions) {
         b.engine === undefined
       )
         throw new ApiError(400, 'Provide a thread name, permission mode, mode or helper choice.');
+      // The home conversation only runs on Claude Code, and no screen lists home to change it
+      // back. Refused before any field is touched, so a request that also renames or narrows
+      // the Mode leaves nothing half applied. Its name, Mode and permission stay its own.
+      if (b.engine !== undefined && b.engine !== 'claude-code' && store.isHomeProject(id(req)))
+        throw new ApiError(
+          409,
+          'The Diomedes conversation runs on Claude Code. Its engine cannot be changed.',
+        );
       if (b.name !== undefined) {
         if (typeof b.name !== 'string' || !b.name.trim() || b.name.trim().length > 120)
           throw new ApiError(400, 'Give this thread a name of up to 120 characters.');
@@ -3067,7 +3075,8 @@ export async function createApp(options: AppOptions) {
             : choice(b.route, ROUTES, 'service');
       // Home is reached through its messages route alone. This direct route would start work
       // there, write a plan into it, or re-route the one thread that has to stay on Claude
-      // Code, so it is refused for every mode before anything is read or changed.
+      // Code, so it is refused for every mode before anything is changed, any source file is
+      // read or anything is sent.
       if (store.isHomeProject(projectId))
         throw new ApiError(
           409,

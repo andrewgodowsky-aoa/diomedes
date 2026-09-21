@@ -572,3 +572,83 @@ test('R-16: an ordinary project keeps the direct route exactly as it was', async
   expect(state.conversations.at(-1)).toMatchObject({ mode: 'build', engine: 'sample' });
   expect(store().createTask(state, { name: 'Count the linen' }).name).toBe('Count the linen');
 });
+
+// Review r7, CD01-R-17 and obligation O5. The reproducer is pasted as written.
+test('R-17: the ordinary thread update cannot reroute home away from its conversation engine', async () => {
+  const home = await provision();
+  const threadPath = `/projects/${home.projectId}/threads/${home.threadId}`;
+  const updated = await request(threadPath, 'PUT', { engine: 'sample' });
+  const message = await request(`${threadPath}/messages`, 'POST', {
+    commandId: 'm-r17',
+    text: 'Good morning',
+    mode: 'auto',
+    sources: [],
+    consent: true,
+  });
+  const state = store().state(home.projectId);
+  expect({
+    updateStatus: updated.status,
+    messageStatus: message.status,
+    engine: state.conversations.find((item) => item.id === home.threadId)!.engine,
+    tasks: state.tasks.length,
+    sessions: state.sessions.length,
+  }).toEqual({
+    updateStatus: 409,
+    messageStatus: 200,
+    engine: 'claude-code',
+    tasks: 0,
+    sessions: 0,
+  });
+  expect((await message.json()).outcome).toEqual({ status: 'answered' });
+});
+
+test('R-17: a refused home engine change is whole, and the conversation still answers after a restart', async () => {
+  const home = await provision();
+  const threadPath = `/projects/${home.projectId}/threads/${home.threadId}`;
+  // Every field the update route can write. Loading a project fills an absent `requested`
+  // with null on any thread, so the two spellings of "no choice" are read as one.
+  const written = () => {
+    const { name, mode, engine, permission, requested } = threadsOf(home.projectId)[0];
+    return { name, mode, engine, permission, requested: requested ?? null };
+  };
+  const before = written();
+  // One request that renames, narrows the Mode and re-routes: refused as one thing.
+  const mixed = await request(threadPath, 'PUT', { name: 'Renamed', mode: 'ask', engine: 'codex' });
+  expect(mixed.status).toBe(409);
+  expect(await mixed.text()).toContain('runs on Claude Code');
+  // An engine nobody offers is refused the same way, not half applied.
+  expect((await request(threadPath, 'PUT', { name: 'Renamed', engine: 'nonsense' })).status).toBe(409);
+  expect(written()).toEqual(before);
+  await close();
+  await open();
+  expect(written()).toEqual(before);
+  expect(await readHome()).toEqual(home);
+  expect((await send(home, 'm-after-restart', 'Good morning')).outcome).toEqual({
+    status: 'answered',
+  });
+});
+
+test('R-17: home keeps every control that is not its engine, and an ordinary project keeps them all', async () => {
+  const home = await provision();
+  const threadPath = `/projects/${home.projectId}/threads/${home.threadId}`;
+  // Answer only and Plan only are the conversation's own restrictions: narrowing is allowed.
+  for (const mode of ['ask', 'plan', 'auto'])
+    expect((await api<Conversation>(threadPath, 'PUT', { mode })).mode).toBe(mode);
+  expect((await api<Conversation>(threadPath, 'PUT', { name: 'Morning desk' })).name).toBe(
+    'Morning desk',
+  );
+  // Naming the engine it already runs on changes nothing and is not a refusal.
+  expect((await api<Conversation>(threadPath, 'PUT', { engine: 'claude-code' })).engine).toBe(
+    'claude-code',
+  );
+  expect(await readHome()).toEqual(home);
+  expect((await send(home, 'm-still', 'Good morning')).outcome).toEqual({ status: 'answered' });
+
+  const mine = await realProject();
+  const thread = await api<Conversation>(`/projects/${mine.id}/threads`, 'POST', {});
+  const rerouted = await api<Conversation>(`/projects/${mine.id}/threads/${thread.id}`, 'PUT', {
+    name: 'Orders',
+    engine: 'sample',
+  });
+  expect([rerouted.name, rerouted.engine]).toEqual(['Orders', 'sample']);
+});

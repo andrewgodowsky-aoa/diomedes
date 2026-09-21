@@ -13,6 +13,47 @@ The reviews answered are
 Nothing here is implemented. This freezes shapes and boundaries so CD-02 and
 CD-05 can be written against one contract.
 
+## Round 8: accepted, and the one obligation that came with it (2026-09-21)
+
+Astra's round-7 review (`2026-09-21-core-agent-contract-review-r7.md`) is **accepted with
+integrator obligations**. R-16, R-13 and her retained obligation O4 are closed, refusing Ask and
+Plan on the direct route in home was ruled within bounds, and CD-02 and CD-05 may build against
+the conversation seam as frozen. It is acceptance of a development seam, in her words, and not a
+release or production certification. She also set a limit on I-18 that this document adopts: the
+proved invariant is that a task-free home stays task-free under every current creation path. It
+is not a sanitizer. A state file or journal written by an older development build, or edited by
+hand, can still carry a home task, and nothing here rejects it.
+
+One obligation came with the acceptance, O5, which closes her new finding CD01-R-17 (P3). It was
+the residual round 7 had disclosed. Her reproducer was pasted into
+`tests/home-conversation.test.ts` unchanged and run before anything was edited, and it failed
+exactly as traced: `{ updateStatus: 200, messageStatus: 409, engine: 'sample' }`.
+
+### I-19. The home thread's engine is not a thread setting
+
+`PUT /api/projects/:id/threads/:threadId` refuses, for the home Project, any engine other than
+`claude-code`, with 409 and before any field of the thread is touched. The check uses the reserved
+Project identity (`isHomeProject`), never `settings.home`. Nothing is rewritten silently, and the
+home read and provisioning are unchanged. The home thread's name, permission and Mode stay its own
+to change: Answer only and Plan only are the conversation's own restrictions, and narrowing to
+them has to stay possible. Naming `claude-code` is accepted and changes nothing.
+
+Proved by three cases beside her reproducer's: a single request that renames, narrows the Mode
+and re-routes is refused whole, an engine nobody offers is refused the same way, and the
+conversation answers after a restart; home keeps every other control and still answers; an
+ordinary project renames and re-routes a thread exactly as before. One guard removal (P1) is
+killed by two of them. The message, selection and outcome shapes are untouched by this diff.
+
+One thing the first of those cases surfaced, recorded so nobody chases it: loading a project fills
+an absent `requested` with `null` on any thread (`migrateConversation`), and a reload between two
+reads shows up as that one field changing. It is not a partial write, and the case reads the two
+spellings as one.
+
+This supersedes the first bullet under "What round 7 does not contain" below. The round-7 wording
+"before it reads or changes anything" was also too strong, as the reviewer noted: the direct
+route's guard follows the body parse and an in-memory read that picks the engine. What it
+precedes is every change, every source-file read and everything sent.
+
 ## Round 7: the one defect review r6 found (2026-09-21)
 
 Astra's round-6 review (`2026-09-21-core-agent-contract-review-r6.md`) closed all five round-5
@@ -43,8 +84,8 @@ the closure has two parts, and the first is the one that holds for every route.
    hold no task can hold no Work session. The Store asks its own `isHomeProject`, which knows home
    by its reserved folder and not by `settings.home`, as r6 required. This is one invariant at one
    boundary. It is not a permission system and it consults nothing the Store did not already own.
-2. **The direct route refuses the home Project for every mode, before it reads or changes
-   anything.** Refusing only Build and Fix would satisfy the reproducer and leave two defects of
+2. **The direct route refuses the home Project for every mode, before it changes anything,
+   reads a source file or sends anything** (wording corrected in Round 8)**.** Refusing only Build and Fix would satisfy the reproducer and leave two defects of
    the same kind, both run and confirmed before this change. Under Plan the route writes a plan
    file into the home folder and adds a plans entry. Under Ask, given the home thread, it sets
    `conversation.engine` to the requested route and `conversation.mode` to `ask`; the messages
@@ -66,7 +107,7 @@ Build case, which counts calls to an injected native generator and requires zero
 
 ### What round 7 does not contain
 
-- A guard on `PUT /api/projects/:id/threads/:threadId`. A raw client can still change the home
+- **Superseded by I-19 in Round 8.** A guard on `PUT /api/projects/:id/threads/:threadId`. A raw client can still change the home
   thread's engine or Mode through the ordinary thread update. That starts no Work and writes no
   file, so it is outside R-16 and H2; it is recorded here because it has the same effect on the
   conversation as the Ask case above. No screen can reach it, because home is never listed.
