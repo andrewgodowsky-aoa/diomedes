@@ -2,6 +2,7 @@ import { _electron as electron, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { checkPackagedRelease } from './packaged-release-check.mjs';
 
 /*
  * Packaged proof for `Approve for me` and the Agent primitive.
@@ -23,6 +24,7 @@ const evidence = path.resolve('evidence/reviewer-packaged');
 await fs.mkdir(root, { recursive: true });
 await fs.mkdir(evidence, { recursive: true });
 const executablePath = path.resolve('release/Diomedes-win32-x64/Diomedes.exe');
+await checkPackagedRelease({ executablePath });
 const asarPath = path.join(path.dirname(executablePath), 'resources/app.asar');
 const env = {
   ...process.env,

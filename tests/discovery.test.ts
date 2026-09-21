@@ -129,7 +129,7 @@ describe('binary engine discovery', () => {
   });
 
   it('falls back to the known folders when PATH has nothing', async () => {
-    const expected = path.join(TEST_ENV.USERPROFILE, '.local', 'bin', 'opencode.exe');
+    const expected = path.win32.join(TEST_ENV.USERPROFILE, '.local', 'bin', 'opencode.exe');
     const seen: string[] = [];
     const discovery = createDiscovery(
       fakeDeps({
@@ -576,7 +576,7 @@ describe('Windows launcher shims', () => {
 
 describe('installation enumeration for candidate binding', () => {
   it('reports every PATH hit and every known-folder hit for one engine, deduplicated', async () => {
-    const folder = path.join(TEST_ENV.USERPROFILE, '.local', 'bin', 'opencode.exe');
+    const folder = path.win32.join(TEST_ENV.USERPROFILE, '.local', 'bin', 'opencode.exe');
     const discovery = createDiscovery(
       fakeDeps({
         which: async (name) =>
@@ -618,7 +618,7 @@ describe('installation enumeration for candidate binding', () => {
   });
 
   it('reads the current user PATH from the registry so a tool installed after launch is found', async () => {
-    const installed = path.join(
+    const installed = path.win32.join(
       TEST_ENV.LOCALAPPDATA,
       'Programs',
       'newly',

@@ -454,7 +454,13 @@ describe('independent packaging provenance', () => {
   it('fingerprints every auth source and the bundler using the actual packaging snapshot function', async () => {
     const repo = path.resolve(import.meta.dirname, '..');
     const source = await fs.readFile(path.join(repo, 'scripts/package-desktop.mjs'), 'utf8');
-    const body = source.slice(source.indexOf('const sha256 ='), source.indexOf('const source = await sourceSnapshot();'));
+    const start = source.indexOf('async function sourceSnapshot()');
+    const end = source.indexOf('const source = await sourceSnapshot();', start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const hashDefinition = source.match(/const sha256 = [^\n]+/)?.[0];
+    expect(hashDefinition).toBeDefined();
+    const body = `${hashDefinition}\n${source.slice(start, end)}`;
     expect(body).toContain('async function sourceSnapshot()');
     const stage = await fs.mkdtemp(path.join(repo, '.desktop-stage-native-auth-review-fingerprint-'));
     for (const dir of ['client', 'server', 'shared', 'desktop', 'fixtures', 'licenses', 'resources', 'dist', 'scripts'])

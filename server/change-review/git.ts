@@ -422,6 +422,16 @@ export interface GitEnvironment {
 const pathspecFor = (env: GitEnvironment): string[] =>
   env.subdir === null ? [] : ['--', `:(top,literal)${env.subdir}`];
 
+/** Keep Git's racy-index cutoff when moving the inspection copy to temp. */
+async function copyInspectionIndex(source: string, destination: string): Promise<void> {
+  const stat = await fs.stat(source);
+  await fs.copyFile(source, destination);
+  // A new copy timestamp can make an unchanged-size edit look older than the
+  // index and suppress Git's content check. Date precision rounds down here,
+  // so the private cutoff is conservative. The real index is never written.
+  await fs.utimes(destination, stat.atime, stat.mtime);
+}
+
 /**
  * Prepare an isolated inspection context for one repository: a temp directory
  * holding a private index seeded from the real one. Nothing here writes to
@@ -448,7 +458,7 @@ export async function prepareGit(root: string): Promise<GitEnvironment | null> {
   const indexFile = path.join(dir, 'index');
   const realIndex = path.join(gitDir, 'index');
   try {
-    await fs.copyFile(realIndex, indexFile);
+    await copyInspectionIndex(realIndex, indexFile);
   } catch {
     // No index yet (fresh init): seed the temp index from HEAD.
     try {
@@ -476,7 +486,7 @@ export async function snapshotGit(env: GitEnvironment): Promise<GitProbe> {
   try {
     // Refresh the private index copy so staging that happened since the last
     // snapshot is visible. A torn copy fails the read honestly below.
-    await fs.copyFile(env.realIndex, env.indexFile).catch(() => undefined);
+    await copyInspectionIndex(env.realIndex, env.indexFile).catch(() => undefined);
     const raw = await git(
       env.toplevel,
       [

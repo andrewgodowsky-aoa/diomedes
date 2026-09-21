@@ -115,7 +115,8 @@ function setup(client = new FakeNative()) {
     verifySandbox,
     createClient,
     fetch,
-    ...createIntegrations({ createClient, verifySandbox, fetch, turnTimeoutMs: 25 }),
+    // FakeNative above explicitly implements the Windows sandbox protocol.
+    ...createIntegrations({ platform: 'win32', createClient, verifySandbox, fetch, turnTimeoutMs: 25 }),
   };
 }
 const request = {
