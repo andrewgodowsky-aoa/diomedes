@@ -13,9 +13,35 @@ The reviews answered are
 Nothing here is implemented. This freezes shapes and boundaries so CD-02 and
 CD-05 can be written against one contract.
 
+## Round 10: the client half of I-1, by command (2026-09-21)
+
+Read this round first, then Round 9. Nothing here changes a route, a shape or the server. The
+admission boundary's rejection in Round 9 is still open: its repair is on
+`feature/core-agent-admission-repair` and has not been re-run by the reviewer that executes.
+
+### I-22. One pending message, and every act on it names its command
+
+The client half of I-1 keeps one pending message per conversation, shared by every window of the
+browser: a claim in local storage, changed only under that conversation's Web Lock. From this
+round every act on the claim names the command it means, and does nothing to any other:
+
+- The page shows an unconfirmed message together with its command, and Send again and Discard act
+  on that command. They never choose whichever command is pending when they are pressed.
+- Send again for a command the claim no longer names sends nothing and reads what that command
+  came to.
+- Discard waits for the lock, looks again once it holds it, and removes the claim only while it
+  still names its command. It answers whether it gave anything up.
+- Every cleanup removes the claim only while it names the command being settled, inside the lock.
+- A claim that names the last confirmed command is settled. It is not offered, it does not block
+  a new message, and it never lends a new message its identity.
+
+Without Web Locks nothing is sent and nothing shared is removed. Proved in
+`tests/conversation-send.test.ts` (36 cases) and by the CD05-R-11 cases of
+`tests/diomedes-home.spec.ts`; the reviewer's reproducers are in both, unedited.
+
 ## Round 9: what the client review added beside the seam, and what is open (2026-09-21)
 
-Read this round first. Round 8's acceptance no longer stands for the admission boundary: a
+Round 8's acceptance no longer stands for the admission boundary: a
 bounded independent review that executes its cases rejected it, the integrator reproduced the
 failures at `26b33ff` (8 of 26 cases red, tests committed unedited as `25122e0`), and the repair
 is in progress on `feature/core-agent-admission-repair`. Its record is

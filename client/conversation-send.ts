@@ -184,18 +184,21 @@ function save(pending: PendingMessage, minted: boolean) {
   }
 }
 
-/** Both records go when the message stops being pending. A cleanup fault never retries a send. */
-function clear(projectId: string, threadId: string) {
+/**
+ * Both records of ONE command go when that command stops being pending. The claim is shared, so
+ * it is removed only while it still names the command being settled: a cleanup that runs late, or
+ * a control pressed beside an older message, must never take a newer message's claim with it.
+ * Call it inside the lock. A cleanup fault never retries a send.
+ */
+function clear(projectId: string, threadId: string, commandId: string) {
   try {
-    storageFor('local').removeItem(keyOf(CLAIM, projectId, threadId));
+    if (readClaim(projectId, threadId)?.commandId === commandId)
+      storageFor('local').removeItem(keyOf(CLAIM, projectId, threadId));
   } catch {
     // The same body and identity read back the same answer.
   }
-  try {
-    storageFor('session').removeItem(keyOf(PENDING, projectId, threadId));
-  } catch {
-    // The claim decides; a reference no claim backs is dropped the next time it is read.
-  }
+  // The claim decides; a reference no claim backs is dropped the next time it is read.
+  dropReference(projectId, threadId, commandId);
 }
 
 /**
@@ -267,8 +270,13 @@ export function pendingMessage(projectId: string, threadId: string): PendingMess
     return null;
   }
   // A claim naming the last confirmed command is a cleanup that failed, not a message to resend.
+  // It is not offered, and it is removed under the lock and by its own name, so a message another
+  // window claims before that cleanup runs is left alone.
   if (claim.commandId === lastCommand(projectId, threadId)) {
-    clear(projectId, threadId);
+    const settled = claim.commandId;
+    void underLock(projectId, threadId, undefined, async () =>
+      clear(projectId, threadId, settled),
+    ).catch(() => undefined);
     return null;
   }
   return claim;
@@ -277,11 +285,22 @@ export function pendingMessage(projectId: string, threadId: string): PendingMess
 /**
  * The person's own choice to give up on an unconfirmed message. It may have been answered; if it
  * was, the transcript shows it. Nothing it proposed can start, because only a selection starts work.
- * The claim goes first, so no window still reads the message as pending.
+ *
+ * It gives up the command it was shown, never whatever is pending now. It waits its turn for the
+ * lock and looks again once it has it: if that command was settled meanwhile, or another message
+ * has been claimed since, nothing shared is touched and the answer is false.
  */
-export function discardPendingMessage(projectId: string, threadId: string) {
-  storageFor('local').removeItem(keyOf(CLAIM, projectId, threadId));
-  storageFor('session').removeItem(keyOf(PENDING, projectId, threadId));
+export async function discardPendingMessage(
+  projectId: string,
+  threadId: string,
+  commandId: string,
+): Promise<boolean> {
+  if (!id(projectId) || !id(threadId)) throw invalid();
+  return underLock(projectId, threadId, undefined, async () => {
+    const held = readClaim(projectId, threadId)?.commandId === commandId;
+    clear(projectId, threadId, commandId);
+    return held;
+  });
 }
 
 /**
@@ -327,14 +346,14 @@ async function dispatch(
       );
       if (!confirms(result, pending)) throw new UnconfirmedMessage();
       // A cleanup failure must never retry a confirmed send.
-      clear(pending.projectId, pending.threadId);
+      clear(pending.projectId, pending.threadId, pending.commandId);
       rememberLast(pending.projectId, pending.threadId, pending.commandId);
       return result;
     } catch (error) {
       if (final(error)) {
         // A first attempt the server refused was never accepted. After an uncertain attempt a
         // refusal may be about the retry, not the original, so the saved message is kept.
-        if (!uncertain) clear(pending.projectId, pending.threadId);
+        if (!uncertain) clear(pending.projectId, pending.threadId, pending.commandId);
         throw error;
       }
       // Stopping is the person's act, not a fault to retry. The saved message stays, so sending
@@ -366,7 +385,13 @@ export async function sendMessage(
   }
   const promise = underLock(projectId, threadId, signal, async () => {
     const reference = readReference(projectId, threadId);
-    const claim = readClaim(projectId, threadId);
+    let claim = readClaim(projectId, threadId);
+    // A claim naming the last confirmed command is a cleanup that failed. It is settled, so it
+    // neither blocks a new message nor lends it an identity.
+    if (claim && claim.commandId === lastCommand(projectId, threadId)) {
+      clear(projectId, threadId, claim.commandId);
+      claim = null;
+    }
     if (claim && JSON.stringify(claim.input) !== inputJson) throw earlier();
     // A claim still pending is this message, whichever window began it. Without one the text is a
     // new message however often it has been sent before, and any reference left here named a

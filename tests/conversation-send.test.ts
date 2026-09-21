@@ -8,6 +8,7 @@ const THREAD = 'thread-1';
 const PENDING = `diomedes.conversation.pending.${PROJECT}|${THREAD}`;
 const CLAIM = `diomedes.conversation.claim.${PROJECT}|${THREAD}`;
 const LAST = `diomedes.conversation.last.${PROJECT}|${THREAD}`;
+const LOCK = `diomedes.conversation.send.${PROJECT}|${THREAD}`;
 const input = (text = 'Order the usual') => ({ text, mode: 'auto' as const, sources: [] });
 
 function makeStorage() {
@@ -171,7 +172,7 @@ describe('sending one message', () => {
     );
     expect(fetchMock).not.toHaveBeenCalled();
     // Discarding is the person's own act; after it the new text is a new message.
-    mod.discardPendingMessage(PROJECT, THREAD);
+    expect(await mod.discardPendingMessage(PROJECT, THREAD, 'uuid-1')).toBe(true);
     fetchMock.mockImplementationOnce(answered);
     await mod.sendMessage(PROJECT, THREAD, input('Order double'));
     expect(sent(0).commandId).toBe('uuid-2');
@@ -387,7 +388,7 @@ describe('one pending message, shared by every window', () => {
     );
     const firstWindow = session;
     const secondWindow = await newWindow();
-    secondWindow.discardPendingMessage(PROJECT, THREAD);
+    expect(await secondWindow.discardPendingMessage(PROJECT, THREAD, 'uuid-1')).toBe(true);
     vi.stubGlobal('sessionStorage', firstWindow);
     expect(mod.pendingMessage(PROJECT, THREAD)).toBeNull();
     expect(firstWindow.getItem(PENDING)).toBeNull();
@@ -425,8 +426,118 @@ describe('one pending message, shared by every window', () => {
     session.setItem(PENDING, record);
     expect(mod.lastCommand(PROJECT, THREAD)).toBe('uuid-1');
     expect(mod.pendingMessage(PROJECT, THREAD)).toBeNull();
+    // The removal waits its turn for the lock, like every other change to the shared claim.
+    await settle();
     expect(local.getItem(CLAIM)).toBeNull();
     expect(session.getItem(PENDING)).toBeNull();
+  });
+
+  /**
+   * Another window, reduced to what matters here: it holds this conversation's lock, and before it
+   * lets go it settles the pending message and claims a newer one.
+   */
+  function otherWindowHolds(replacement: string) {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const locks = (navigator as unknown as { locks: ReturnType<typeof makeLocks> }).locks;
+    const done = locks.request(LOCK, {}, async () => {
+      await held;
+      local.setItem(LAST, 'uuid-1');
+      local.setItem(
+        CLAIM,
+        JSON.stringify({
+          commandId: replacement,
+          projectId: PROJECT,
+          threadId: THREAD,
+          input: input('Order double'),
+        }),
+      );
+    });
+    return {
+      release: async () => {
+        release();
+        await done;
+      },
+    };
+  }
+
+  test('Discard gives up the command it names and no other', async () => {
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    expect(await mod.discardPendingMessage(PROJECT, THREAD, 'uuid-9')).toBe(false);
+    expect(JSON.parse(local.getItem(CLAIM)!).commandId).toBe('uuid-1');
+    expect(JSON.parse(session.getItem(PENDING)!).commandId).toBe('uuid-1');
+    expect(await mod.discardPendingMessage(PROJECT, THREAD, 'uuid-1')).toBe(true);
+    expect(local.getItem(CLAIM)).toBeNull();
+    expect(session.getItem(PENDING)).toBeNull();
+  });
+
+  test('a Discard that waited for the lock looks again, and leaves a newer message alone', async () => {
+    fetchMock.mockRejectedValue(new TypeError('network'));
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toBeInstanceOf(
+      mod.UnconfirmedMessage,
+    );
+    const other = otherWindowHolds('uuid-9');
+    // Pressed while the claim still named uuid-1; it is queued behind the other window.
+    const discarded = mod.discardPendingMessage(PROJECT, THREAD, 'uuid-1');
+    await settle();
+    expect(JSON.parse(local.getItem(CLAIM)!).commandId).toBe('uuid-1');
+    await other.release();
+    expect(await discarded).toBe(false);
+    expect(JSON.parse(local.getItem(CLAIM)!)).toMatchObject({
+      commandId: 'uuid-9',
+      input: input('Order double'),
+    });
+    // This window's own reference to the message it was shown is gone; the newer one is offered.
+    expect(session.getItem(PENDING)).toBeNull();
+    expect(mod.pendingMessage(PROJECT, THREAD)?.commandId).toBe('uuid-9');
+  });
+
+  test('a cleanup that runs late never takes a newer message with it', async () => {
+    fetchMock.mockImplementationOnce(answered);
+    await mod.sendMessage(PROJECT, THREAD, input());
+    // What a cleanup that failed after the confirmation would have left behind.
+    local.setItem(
+      CLAIM,
+      JSON.stringify({ commandId: 'uuid-1', projectId: PROJECT, threadId: THREAD, input: input() }),
+    );
+    const other = otherWindowHolds('uuid-9');
+    // Reading schedules the cleanup of uuid-1. Another window claims a newer message first.
+    expect(mod.pendingMessage(PROJECT, THREAD)).toBeNull();
+    await settle();
+    expect(JSON.parse(local.getItem(CLAIM)!).commandId).toBe('uuid-1');
+    await other.release();
+    await settle();
+    expect(JSON.parse(local.getItem(CLAIM)!).commandId).toBe('uuid-9');
+    expect(mod.pendingMessage(PROJECT, THREAD)?.commandId).toBe('uuid-9');
+  });
+
+  test('a claim left by a failed cleanup neither blocks a new message nor lends it an identity', async () => {
+    fetchMock.mockImplementationOnce(answered);
+    await mod.sendMessage(PROJECT, THREAD, input());
+    const stale = JSON.stringify({
+      commandId: 'uuid-1',
+      projectId: PROJECT,
+      threadId: THREAD,
+      input: input(),
+    });
+    local.setItem(CLAIM, stale);
+    session.setItem(PENDING, stale);
+    // The same words again are a second message, not the first one sent twice.
+    fetchMock.mockReset().mockImplementationOnce(answered);
+    await mod.sendMessage(PROJECT, THREAD, input());
+    expect(sent(0).commandId).toBe('uuid-2');
+    // And different words are not refused for a message that was already confirmed.
+    local.setItem(
+      CLAIM,
+      JSON.stringify({ commandId: 'uuid-2', projectId: PROJECT, threadId: THREAD, input: input() }),
+    );
+    fetchMock.mockReset().mockImplementationOnce(answered);
+    await mod.sendMessage(PROJECT, THREAD, input('Order double'));
+    expect(sent(0).commandId).toBe('uuid-3');
+    expect(local.getItem(CLAIM)).toBeNull();
   });
 
   test('Send again dispatches the saved body under the command the claim holds', async () => {

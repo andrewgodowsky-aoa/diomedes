@@ -59,6 +59,19 @@ function retained(found: Binding): PendingMessage | null {
 }
 
 /**
+ * The unconfirmed message as the page shows it: its words, and the command those words belong
+ * to. Send again and Discard act on this command and no other. Another window can settle it and
+ * claim a newer message while this one is still on screen, and a control beside these words
+ * must never reach that newer message.
+ */
+interface Kept {
+  text: string;
+  commandId: string | null;
+}
+const keptOf = (saved: PendingMessage | null): Kept | null =>
+  saved ? { text: saved.input.text, commandId: saved.commandId } : null;
+
+/**
  * The Diomedes page with its records: it finds the conversation for the scope the person chose,
  * sends through `conversation-send`, and reads every outcome from the server each time it shows
  * one. It keeps no status of its own. `Diomedes` stays a page of props.
@@ -78,7 +91,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const [restriction, setRestriction] = useState<Restriction>('automatic');
   const [pending, setPending] = useState(false);
   const [last, setLast] = useState<MessageResult | null>(null);
-  const [unconfirmed, setUnconfirmed] = useState<string | null>(null);
+  const [kept, setKept] = useState<Kept | null>(null);
   const [unavailable, setUnavailable] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [cardBusy, setCardBusy] = useState(false);
@@ -124,7 +137,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       setBinding(null);
       setTurns([]);
       setLast(null);
-      setUnconfirmed(null);
+      setKept(null);
       setNotice(null);
       setUnavailable(null);
       setUnread(false);
@@ -146,7 +159,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         if (!found || !conversation) return;
         setTurns(conversation.turns);
         setRestriction(restrictionFor(conversation.mode));
-        setUnconfirmed(retained(found)?.input.text ?? null);
+        setKept(keptOf(retained(found)));
         // The last message's outcome is asked for again, never remembered.
         const command = lastCommand(found.projectId, found.threadId);
         const recorded = command
@@ -206,8 +219,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       if (owns()) setBinding(found);
       const result = await transport(found, controller.signal);
       // Confirmed. Nothing after this line may hand the text back or send it again: a
-      // transcript that cannot be read is a failed read, not a failed send.
-      if (owns()) setUnconfirmed(null);
+      // transcript that cannot be read is a failed read, not a failed send. What is shown as
+      // unconfirmed now is whatever the conversation still holds, which is nothing unless
+      // another window has claimed a newer message since.
+      if (owns()) setKept(keptOf(retained(found)));
       try {
         await show(found, result, owns);
       } catch (error) {
@@ -222,7 +237,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       // now speaks to somewhere else.
       if (!owns()) return true;
       if (error instanceof UnconfirmedMessage) {
-        setUnconfirmed(text);
+        const saved = found ? retained(found) : null;
+        setKept(keptOf(saved) ?? { text, commandId: null });
         return true;
       }
       setNotice(words(error));
@@ -230,7 +246,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       // saved message is kept for exactly that case. It is shown with its own words so it can
       // be sent again or given up, never silently turned back into a draft.
       const saved = found ? retained(found) : null;
-      setUnconfirmed(saved?.input.text ?? null);
+      setKept(keptOf(saved));
       return saved?.input.text === text.trim();
     } finally {
       if (stop.current === controller) stop.current = null;
@@ -251,22 +267,31 @@ export function DiomedesHome(props: DiomedesHomeProps) {
 
   const resend = () => {
     const found = binding;
-    const saved = found ? retained(found) : null;
-    // Settled or given up in another window since this page last looked: read what happened.
-    if (!found || !saved) return void load(scopeId);
-    // The saved command itself, with the body it was saved with, Mode included. Sending it again
-    // never makes a new message, whatever the box or the Mode control say now.
+    const shown = kept;
+    const command = shown?.commandId;
+    // Nothing on record to send again: read what happened.
+    if (!found || !shown || !command) return void load(scopeId);
+    // The command these words were shown for, never whichever is pending now. The transport
+    // sends it with the body it was saved with, Mode included, and if another window settled it
+    // meanwhile it sends nothing and reads what that command came to.
     void deliver(
-      saved.input.text,
+      shown.text,
       () => Promise.resolve(found),
-      (where, signal) => resendPending(where.projectId, where.threadId, saved.commandId, signal),
+      (where, signal) => resendPending(where.projectId, where.threadId, command, signal),
     ).then((sent) => {
       if (!sent) void load(scopeId);
     });
   };
   const discard = () => {
-    if (binding) discardPendingMessage(binding.projectId, binding.threadId);
-    void load(scopeId);
+    const found = binding;
+    const command = kept?.commandId;
+    if (!found || !command) return void load(scopeId);
+    // Gives up the command that was shown. A newer message another window has claimed since is
+    // not this one to give up, and reading again shows it for what it is.
+    void discardPendingMessage(found.projectId, found.threadId, command).then(
+      () => load(scopeId),
+      (error) => setNotice(words(error)),
+    );
   };
 
   const card = outcomeCard(last?.outcome ?? null, projects);
@@ -323,7 +348,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       card={card}
       cardBusy={cardBusy}
       onCardAction={() => void act()}
-      unconfirmed={unconfirmed}
+      unconfirmed={kept?.text ?? null}
       onResend={resend}
       onDiscard={discard}
       notice={notice}

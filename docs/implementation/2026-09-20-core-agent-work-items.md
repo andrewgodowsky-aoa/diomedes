@@ -416,6 +416,63 @@ liveness-only copy of the Claude one, which its owner has confirmed. So:
 6. Live and packaged AWS proof waits for the accepted composed build. The live call and its
    spend cap are between Andrew and the AWS owner.
 
+### Round 10: five findings closed, one new one repaired (2026-09-21)
+
+**CD-05.R-3: Astra closed R-05, R-07, R-08, R-09 and R-10 at `da6ec3d`, narrowed R-06, and raised
+CD05-R-11 (P2).** Her review is `2026-09-21-core-agent-client-review-r3.md`, committed unedited
+(`21bc268`). R-11: the recovery strip forgot which command it was showing, Discard took no command
+and no lock, and the cleanup of a settled claim ran outside the lock. So a Send again or Discard
+pressed beside an OLD message in one window could post or delete a NEWER message another window
+had claimed since. It was a source trace; her sandbox still cannot run Vitest.
+
+Her two reproducers were pasted in unchanged and committed alone (`1388e6f`) after both ran red
+on the unfixed build exactly as traced: after a stale Discard the newer claim read null, and a
+stale Send again posted the newer command. The repair is `703c6b4`:
+
+| Part | Change |
+|---|---|
+| Page (`client/console/DiomedesHome.tsx`) | the strip keeps the command beside the words it shows; Send again and Discard act on that command only; a delivery that succeeds shows whatever the conversation still holds |
+| Transport (`client/conversation-send.ts`) | every removal of the shared claim names its command and removes it only while the claim still names it; Discard waits for the conversation's lock and looks again once it holds it; the cleanup of a settled claim moved inside the lock; a settled claim no longer blocks a new message or lends it an identity |
+
+Four new unit cases, as her closure asked: Discard by name, a queued Discard that rechecks after
+the lock is granted and finds a replacement, a late cleanup that leaves a replacement alone, and a
+settled claim met by a new send. One browser closure in both actions: after the stale control the
+first window has posted nothing and shows the newer message, and the newer message's own window
+sends it again after a reload under the command it was claimed with, once. The whole page spec in
+file order: 29 passed, one serial run. Guard removals: five in the unit file, all killed; three through the
+browser (B14 to B16), all killed, each by the case written for it. Every file restored byte for byte.
+
+Two things the closure taught, recorded so nobody relearns them. The strip is hidden for as long
+as a delivery runs, and the old answer is already in the transcript a second window opens on, so
+neither "the strip is gone" nor "the answer is there" says a Send again has settled; the pending
+line going away does. Her frozen R-11 reproducer types its next message after exactly those two
+waits, and the box ignores Enter while a delivery runs: it passed four times and failed once, at
+its line 920. Her text is not edited. The spec's own `say` helper now waits for the pending line
+to go before it types, as a person has to, which covers every case in the file. It is disclosed
+to her for a ruling.
+
+CD-05.R-4 goes to Astra on the clean review checkout. CD-05b stays unaccepted until she rules.
+
+**CD-01, the admission boundary: repaired on `feature/core-agent-admission-repair`
+(`31c10e9` to `7b063b6`), not yet re-run by the executing reviewer.** The reviewer's matrix and
+the independent file pass unedited, 13 of 13 each, in the integrator's rerun. `RunService.fence`
+and `RunService.join` are driver-agnostic and `ConversationDriver` is the four-member interface a
+second driver satisfies. The `work-input` phase now carries the saved Work route, so a phase saved
+by an earlier build conflicts on retry; the seam is unreleased and there is no fallback. Guard
+removal left seven survivors, which the worker disclosed; an Opus worker is writing the schedules
+that kill the reachable ones (the queue hold across the child commit first) and the repair's
+record, `2026-09-21-core-agent-admission-repair.md`, on that branch. The AWS owner has begun
+composing its route onto the repair in its own worktree.
+
+**Release tooling.** `tests/capability-record.test.ts` went red on every branch when the machine's
+shared object store was repacked: `packHolds` binary-searched a pack index with its branches
+swapped, which only shows once a commit stops being loose. Fixed with 14 cases on
+`feature/capability-commit-lookup` (`d3a5eb7`), PR #34. Three of the new cases fail with the old
+search.
+
+**Integration branch.** `feature/core-agent-bot` has main (`d4f5384`) merged in as `8c0a3aa`,
+type check clean. Its gates are rerun after R-11 is merged in.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
