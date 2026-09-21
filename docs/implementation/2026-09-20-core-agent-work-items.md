@@ -214,6 +214,58 @@ split: the hot-file seams (the R-13 Settings shape and provisioning, the R-11 pr
 become the integrator's directly, and the pure design decisions stay with Opus. A third Astra
 review follows either way.
 
+**CD-01.R-3 verdict, 2026-09-21: REJECTED, and no further authoring round requested.** Verdict
+file `docs/implementation/2026-09-20-core-agent-contract-review-r3.md` (blob `63ee039e`). Round 3's
+candidate: contract `2e3d9c47`, source map `9bf9178b`, `shared/interaction.ts` `fabd162a`, its test
+`bb071351`; the integrator's run was `tsc` 0 and 59 of 59. Closed this round: R-01, R-11, R-12, and
+F-2 through five append-only phases. F-3 (adding `auto` to `Mode` breaks six exhaustive maps and
+more) was ruled a bounded integration obligation, F3-O1 to F3-O3, not a reason to reject.
+
+| Finding | State | What remains |
+|---|---|---|
+| R-03 | narrowed, P1 | The source identity is minted before generation and persisted after it; a retry after a lost response has no replay handle; refusals at phases 2 and 4 are unspecified |
+| R-05 | narrowed, P2 | `AUTO_INSTRUCTIONS` still begins with Ask's ban on proposals and carries neither the schema nor the issued identity; the effective restriction was dropped |
+| R-10 | narrowed, P2 | Replay through a retired lineage has no lookup rule; the generation fallback can reuse an id |
+| R-13 | narrowed, P2 | The home thread has no identity to adopt after a crash; the binding is trusted, not validated |
+| R-14 | new, P2 | `decide(context: StepContext)` cannot append a sibling step (`run-service.ts:77-96`), and its placement cycles with the fresh-lock admission order |
+
+**The pattern across three rounds.** Nine found; then six closed and four added; then three more
+closed and one added. It converges, slowly, and every finding left is an executable seam rather
+than a design idea. Astra's own closure for R-14 asks for a fake-provider integration test. Prose
+has done what prose can.
+
+**CD-01.I, the integrator's round, 2026-09-21.** The convergence guard applied. The Opus claim was
+released and the Fable seat took the four files under `claim_muas2eww_17035194`. One section was
+added to the contract, "Round 4: integrator rulings", with nine markers at the passages it
+supersedes. Only the contract changed (`fe20971e`); the other three candidate files and all four
+reviewer files are byte-identical.
+
+- **I-1.** The client retries with the same persisted `commandId`, which `client/work-start.ts`
+  already does for Work starts. The source identity is computed,
+  `'sm.' + digest({ projectId, threadId, commandId }).slice(0, 32)`, so it exists before
+  generation and is recomputable from the turn input the run already persists. One change closes
+  both R-03 reproducers and gives R-10 the lookup key it lacked.
+- **I-2.** Replay is resolved first, as a read through every lineage including retired ones, never
+  a `step` call on a terminal run. The generation rule counts retired entries.
+- **I-3.** The driver owns the phases. `ClaudeSessionRuns` holds the private run owner, so it gains
+  `record` and `phases`, and nothing calls back into the app. Phase 1 is written in one tail both
+  paths reach. The route runs five steps with fresh locks and no cycle. Refusals are their own
+  phases, and a missing receipt phase is checked against the receipts before it is believed.
+- **I-4.** `auto` has its own instructions carrying the schema; the issued identity travels in a
+  prompt trailer; the effective restriction is restored. One interpretation is put to Astra:
+  "explicit" means the Mode control, because the package forbids a keyword rule.
+- **I-5.** The home thread is the oldest conversation in the home Project. Provisioning adopts
+  before it creates and writes the binding last; the binding is validated; the server is its only
+  writer.
+- **I-6, I-7.** F-3's obligations plus three runtime sites the compiler will not find; the stale
+  carried risk withdrawn; the `ui.spec.ts` launch pins corrected.
+
+**CD-01.R-4 dispatched to Astra** under `claim_muas8h5p_db864a81`, followed in the same run by
+**CD-05.R-1** under `claim_muas8hry_a0a4905d`: the first independent review of `cdfc845`
+(Everything on hover, Automations as a reserved pin) and `c53e116` (the Diomedes page). If R-4
+rejects again, the next submission is code, not a document: the driver seam and its fake-provider
+integration test.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
