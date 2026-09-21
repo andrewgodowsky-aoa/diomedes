@@ -93,6 +93,7 @@ export default defineConfig({
     'reviewer-ui.spec.ts',
     'agent-ui.spec.ts',
     'diomedes-home.spec.ts',
+    'home-luna.spec.ts',
     'app-updates-ui.spec.ts',
     'workspace-ui.spec.ts',
     'configuration-ui.spec.ts',
