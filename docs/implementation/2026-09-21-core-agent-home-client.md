@@ -230,6 +230,25 @@ and runs green.
   the callback-entry check can end the resend. No read, no POST, no issued identity; claim and
   reference unchanged.
 
+Guard closure review R2 of candidate `ec25e4d58017c5cedc01f794c7c2cb4ca8663c05`
+(`2026-09-21-core-agent-home-client-guards-review-r2.md`) recorded clean red/restoration/green
+for unchanged C2/C4/C13 removals, and a masked failure path for C22/C26: the response waiter
+outlived the test, the runner closed the page, and `unroute` errored at line 803. Three
+test-only corrections; no rerun is claimed by this lane.
+
+- HCG-5 / C22-C26 (missing interrupt must be an assertion, not a teardown error): the HCG-3
+  case keeps its exact schedule, command identity, scope, one-POST and retained-pending
+  assertions. The `waitForResponse` is replaced by a `response` listener collecting this
+  command's interrupt acks plus a bounded `expect.poll(...).toBe(1)`: under the removal the
+  missing interrupt fails as an ordinary assertion while the page is still open, so the
+  finally's release/unroute still owns real cleanup.
+- HCG-1 follow-through: the late-join test now counts each identity callback's invocations and
+  asserts `[['uuid-1'], ['uuid-1']]` - each told exactly once - and releases the held mock
+  request and drains both sends in `finally` whatever the assertions said.
+- HCG-4 follow-through: the lock-entry test snapshots both stored records' raw bytes before the
+  resend and compares the actual `localStorage` claim and `sessionStorage` reference against
+  them after it, instead of reading the claim twice.
+
 ## Decisions kept
 
 - Pending-claim, retry, discard, `inFlight` join, cross-window adoption and visit-fence

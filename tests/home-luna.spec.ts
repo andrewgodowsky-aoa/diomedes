@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import { test, expect, type Page, type Route, type Response } from '@playwright/test';
 import express from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -776,11 +776,17 @@ test('a delivery left behind in an old visit cannot take the new Stop with it', 
     await expect.poll(() => seen.length).toBeGreaterThan(callsBefore);
     const commandId = await claimedCommand(page);
     expect(commandId).not.toBeNull();
-    const interrupt = page.waitForResponse(
-      (response) =>
-        response.url().endsWith(`/messages/${commandId}/interrupt`) &&
-        response.request().method() === 'POST',
-    );
+    // A listener, not a floating waiter: if the Stop names nothing, the bounded poll below
+    // fails as the missing-interrupt assertion while the page is still open, instead of a
+    // waiter outliving the test and failing cleanup.
+    const interruptAcks: Response[] = [];
+    page.on('response', (response) => {
+      if (
+        interruptPost(response.request()) &&
+        response.url().endsWith(`/messages/${commandId}/interrupt`)
+      )
+        interruptAcks.push(response);
+    });
     // Now the old provision answer is let through. Its continuation finds the visit moved and
     // its own delivery cancelled, and finishes; two paints is further than that continuation
     // can take to run its cleanup.
@@ -789,9 +795,10 @@ test('a delivery left behind in an old visit cannot take the new Stop with it', 
     await painted(page);
     // The delivery on screen still owns its identity: this Stop names the newer command.
     await page.getByRole('button', { name: 'Stop' }).click();
-    const ack = await interrupt;
+    await expect.poll(() => interruptAcks.length).toBe(1);
+    const ack = interruptAcks[0];
     expect(ack.ok()).toBe(true);
-    expect((await ack.json() as { commandId: string }).commandId).toBe(commandId);
+    expect(((await ack.json()) as { commandId: string }).commandId).toBe(commandId);
     // The delivery that never learned its conversation sent nothing: one message POST, and it
     // belongs to the new scope's thread. The stopped message stays pending, ready to be sent
     // again from its own record.

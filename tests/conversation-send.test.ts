@@ -797,30 +797,38 @@ describe('the dispatch identity a Stop may act on', () => {
 
   test("a same-window join after the identity was issued is handed it, not asked to wait", async () => {
     let reached!: () => void;
-    let release!: () => void;
+    let release: () => void = () => undefined;
     const arrived = new Promise<void>((resolve) => (reached = resolve));
     fetchMock.mockImplementationOnce(async () => {
       reached();
       await new Promise<void>((resolve) => (release = resolve));
       return answered();
     });
-    const claims: (string | null)[] = [null, null];
+    const calls: string[][] = [[], []];
     const first = mod.sendMessage(PROJECT, THREAD, input(), undefined, (identity) => {
-      claims[0] = identity.commandId;
+      calls[0].push(identity.commandId);
     });
-    // The POST on the wire is the proof the locked section already issued this send's identity.
-    // A join now meets a flight whose claim is already set, and takes it rather than queueing
-    // behind an issuance that already happened.
+    // The POST on the wire is the proof the locked section already issued this send's
+    // identity. A join now meets a flight whose claim is already set, and takes it rather
+    // than queueing behind an issuance that already happened.
     await arrived;
     const second = mod.sendMessage(PROJECT, THREAD, input(), undefined, (identity) => {
-      claims[1] = identity.commandId;
+      calls[1].push(identity.commandId);
     });
-    await settle();
-    expect(claims).toEqual(['uuid-1', 'uuid-1']);
-    release();
-    // Both callers were told the same command once, share the one result, and one POST ran.
-    expect(await second).toBe(await first);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    try {
+      await settle();
+      // Each callback ran exactly once with the issued command: the sender's at issuance, the
+      // late join's the moment it joined.
+      expect(calls).toEqual([['uuid-1'], ['uuid-1']]);
+      release();
+      // Both callers were told the same command once, share the one result, and one POST ran.
+      expect(await second).toBe(await first);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      // Whatever the assertions said, the held request is let through and both sends drain.
+      release();
+      await Promise.allSettled([first, second]);
+    }
   });
 
   test('a pending claim for different words issues no identity and sends nothing', async () => {
@@ -936,17 +944,19 @@ describe('the dispatch identity a Stop may act on', () => {
         },
       },
     });
+    const claimBefore = local.getItem(CLAIM);
+    const referenceBefore = session.getItem(PENDING);
     let issued: unknown = null;
     await expect(
       mod.resendPending(PROJECT, THREAD, 'uuid-1', stop.signal, (identity) => {
         issued = identity;
       }),
     ).rejects.toThrow(/Stopped/);
-    // No read ran, nothing was posted, no identity exists a Stop could name - and the claim
-    // and this window's reference are exactly what they were.
+    // No read ran, nothing was posted, no identity exists a Stop could name - and the shared
+    // claim and this window's own reference are byte-for-byte what they were before the call.
     expect(issued).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(JSON.parse(local.getItem(CLAIM)!).commandId).toBe('uuid-1');
-    expect(mod.pendingMessage(PROJECT, THREAD)?.commandId).toBe('uuid-1');
+    expect(local.getItem(CLAIM)).toBe(claimBefore);
+    expect(session.getItem(PENDING)).toBe(referenceBefore);
   });
 });
