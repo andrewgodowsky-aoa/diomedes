@@ -2984,6 +2984,11 @@ export async function createApp(options: AppOptions) {
             : choice(b.route, ROUTES, 'service');
       const parsedMode = modeOf(b.mode);
       if (!parsedMode) throw new ApiError(400, 'Choose a valid mode.');
+      if (parsedMode === 'auto')
+        throw new ApiError(
+          409,
+          'Automatic is a conversation mode. Direct execution does not accept it.',
+        );
       const mode = parsedMode;
       const attached =
         b.attachedTo === undefined ? { kind: 'project', ref: projectId } : plain(b.attachedTo);

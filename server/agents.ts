@@ -183,7 +183,8 @@ export class AgentRegistry {
    */
   async resolve(input: {
     requestedAgentId?: string | null;
-    mode: Mode;
+    /** A worker is resolved for a work mode only; `auto` never reaches here. */
+    mode: Exclude<Mode, 'auto'>;
     routeId: string;
     requestedModel?: string | null;
     state: ProjectState;
@@ -191,6 +192,12 @@ export class AgentRegistry {
     /** Whether the model came from an explicit pick or a saved default. */
     modelSelection?: AgentResolution['modelSelection'];
   }): Promise<AgentResolution> {
+    // The type excludes `auto`, but this guards the boundary in case a caller
+    // reaches it through an untyped path: Automatic never selects a worker.
+    if ((input.mode as string) === 'auto')
+      throw new ApiError(409, 'Automatic is a conversation mode. It does not resolve a worker.', {
+        code: 'auto_has_no_worker',
+      });
     const requested = input.requestedAgentId?.trim() || null;
     const automatic = !requested || requested === AUTO_AGENT;
     const wanted = automatic ? AUTO_BY_MODE[input.mode] : requested;

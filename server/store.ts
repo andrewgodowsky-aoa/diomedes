@@ -101,7 +101,9 @@ export function migrateConversation(
     const last = [...(conversation.turns ?? [])].reverse().find((t) => t.mode);
     const raw = (last?.mode as unknown) === 'work' ? 'build' : last?.mode;
     conversation.mode =
-      raw === 'ask' || raw === 'plan' || raw === 'build' || raw === 'fix' ? raw : 'ask';
+      raw === 'ask' || raw === 'plan' || raw === 'auto' || raw === 'build' || raw === 'fix'
+        ? raw
+        : 'ask';
   }
   if (conversation.createdAt === undefined) {
     conversation.createdAt = conversation.turns[0]?.at ?? loadTime;

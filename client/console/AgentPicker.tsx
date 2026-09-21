@@ -85,8 +85,10 @@ export function AgentPicker({
   const chosenId = thread.requested?.agent ?? null;
   const chosen = chosenId ? agents.find((item) => item.id === chosenId) : undefined;
   // What Auto resolves to for the current mode, shown so the person can see it
-  // before starting rather than only in the record afterwards.
-  const autoName = agents.find((item) => item.id === AUTO_BY_MODE[mode])?.name ?? '';
+  // before starting rather than only in the record afterwards. Automatic is a
+  // conversation mode: it never resolves a worker, so it has no entry here.
+  const autoName =
+    mode === 'auto' ? '' : (agents.find((item) => item.id === AUTO_BY_MODE[mode])?.name ?? '');
   const forMode = (item: AgentOption) => item.modes.includes(mode);
 
   function choose(agentId: string | null) {

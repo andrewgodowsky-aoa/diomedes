@@ -25,7 +25,7 @@ export type Page =
   | 'documents'
   | 'history'
   | 'connections';
-export type Mode = 'ask' | 'plan' | 'build' | 'fix';
+export type Mode = 'ask' | 'plan' | 'auto' | 'build' | 'fix';
 export type TaskState = 'todo' | 'working' | 'waiting' | 'done';
 export type Owner = 'you' | 'diomedes' | 'diomedes-with-ok';
 export type ExternalEngine = 'claude-code' | 'opencode' | 'oh-my-pi' | 'cursor' | 'devin';
