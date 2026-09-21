@@ -731,6 +731,34 @@ The AWS owner's distinct version/notices claim remains pending a narrow handoff;
 the earlier Stop-file transfer did not include those paths. No merge, release or
 deployment is claimed here, and no broad package item is marked DONE.
 
+### Round 21: PR 29 merged; release preparation begins (2026-09-21)
+
+**PR 29 is merged at `70645764ef061d8ff40a78c0c48e4385e1795098`, at
+2026-09-21 16:01:52 UTC.** Before readiness, the Windows local-gates job, Apple
+Silicon job and Workers build all passed on exact PR head `dbaea43`. A fresh
+fetch confirmed main had not drifted from `58bdc65`; the PR was made ready and
+merged with `--match-head-commit dbaea43b9c1fcd49b37fbb4ad0c85a4f1910b557`.
+The fetched merge tree is identical to that accepted head. The integration
+worktree is clean and fast-forwarded to the merge. Machine records are retained
+as `pr29-pre-merge.json` and `pr29-merged.json` beside the full-gate evidence.
+
+This completes the requested original client/admission/composed acceptance and
+the additional Home Luna default/Stop integration into main. It does not mark
+the entire CD-1 program complete. A separate package scope audit is reconciling
+the numbered prompts' broader requirements before any completion label or move.
+The first audit's output-file write was refused by its non-interactive harness;
+exit zero is not credited as a delivered review. The same reviewer is returning
+its gathered result without tools, for verbatim preservation and reconciliation.
+
+The endgame now proceeds in a fresh release worktree from this merged main:
+locked dependency install, versioning, generated records, exact release gates,
+packaged and installer/runtime proofs, immutable publication, then website update.
+No new release, installed build or site deployment is claimed yet. The AWS owner
+still holds the separate package/version/notices claim; its narrow handoff is
+pending Andrew. Other release preparation can continue without taking it.
+The live Luna call, credentials and spend cap remain entirely with Andrew and
+the AWS owner. All completed Home implementation and review claims are released.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 
