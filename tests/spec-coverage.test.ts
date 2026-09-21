@@ -26,6 +26,7 @@ const CONFIGS = [
   // which made this guard report the spec it registers as unregistered — the
   // guard failing on the very thing it was written to catch.
   'playwright.acceptance.config.ts',
+  'playwright.inventory.config.ts',
 ] as const;
 
 /**

@@ -12,6 +12,7 @@ import type { Authority, Denial } from '../trust/index.js';
 import { prepareInventoryCommand } from './commands.js';
 import { inventoryLocationKey, parseInventoryStockDocument } from './ledger.js';
 import { InventoryStockRepository } from './stock-repository.js';
+import { inventoryViewSchema, type InventoryView } from '../../shared/inventory-workflow.js';
 
 export type InventoryStockPermission = InventoryCommand['kind'] | 'correct';
 export type InventoryOperationStatus =
@@ -80,6 +81,69 @@ export class InventoryStockService<Claim = unknown> {
 
   async init(projectId: string): Promise<void> {
     await this.repository.init(projectId);
+  }
+
+  /** A read projection of the same ledger and Store History, under fresh authority. */
+  async view(projectId: string, claim: Claim, olderThan?: string): Promise<InventoryView> {
+    return this.options.store.locked(async () => {
+      const authorization = await this.options.authorize(claim, {
+        phase: 'status',
+        projectId,
+        operationId: 'inventory-history',
+        command: null,
+      });
+      if (isStockDenial(authorization))
+        throw new ApiError(authorization.status, authorization.reason);
+      const refusal = this.readRefusal(authorization, projectId);
+      if (refusal) throw new ApiError(403, refusal);
+      await this.repository.recover(projectId);
+      const text = await this.repository.read(projectId);
+      if (text === null) throw new ApiError(404, 'Inventory is unavailable.');
+      let input: unknown;
+      try {
+        input = JSON.parse(text);
+      } catch {
+        throw new ApiError(422, 'The stock document is not valid JSON.');
+      }
+      const snapshot = parseInventoryStockDocument(input, authorization.scope);
+      const records = [...snapshot.operations].reverse();
+      const cursor =
+        olderThan === undefined ? -1 : records.findIndex((row) => row.receipt.id === olderThan);
+      if (olderThan !== undefined && cursor === -1)
+        throw new ApiError(404, 'Inventory history is unavailable. Refresh the list.');
+      const page = records.slice(cursor + 1, cursor + 21);
+      const entries = new Map(
+        this.options.store.state(projectId).history.map((entry) => [entry.id, entry]),
+      );
+      const history = page.map((row) => {
+        const entry = entries.get(row.receipt.historyEntryId);
+        if (
+          !entry ||
+          entry.kind !== 'inventory-stock' ||
+          entry.label !== row.command.operationId ||
+          entry.time !== row.receipt.recordedAt ||
+          !entry.files.some((file) => file.path === this.repository.stockPath)
+        )
+          throw new ApiError(
+            409,
+            'A stock receipt is missing its linked History evidence. Reconcile before continuing.',
+          );
+        return {
+          receipt: row.receipt,
+          quantity: row.command.quantity,
+          beforeOnHandMinor: row.before.map((balance) => balance.onHandMinor),
+          history: { id: entry.id, time: entry.time, sentence: entry.sentence, label: entry.label },
+        };
+      });
+      return inventoryViewSchema.parse({
+        catalog: snapshot.catalog,
+        canReceive:
+          authorization.authority.capabilities.has('write.apply') &&
+          authorization.permissions.includes('receive'),
+        history,
+        olderThan: records.length > cursor + 21 ? page.at(-1)!.receipt.id : null,
+      });
+    });
   }
 
   async status(

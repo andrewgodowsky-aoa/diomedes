@@ -20,5 +20,10 @@ export default defineConfig({
     proxy: { '/api': `http://127.0.0.1:${process.env.DIOMEDES_PORT ?? 47631}` },
     fs: { allow: [path.resolve('.'), modules] },
   },
-  build: { outDir: 'dist' },
+  build: {
+    outDir: 'dist',
+    rollupOptions: {
+      input: { app: path.resolve('index.html'), inventory: path.resolve('inventory.html') },
+    },
+  },
 });

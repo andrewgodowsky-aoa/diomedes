@@ -1,0 +1,126 @@
+# Mobile stock receipt and history work order
+
+- Feature: inventory-mobile-receipt-history
+- Prompt: owner-requested next inventory slice (MI03/MI04/MI07 bounded consumer)
+- Branch: feature/inventory-mobile-receipt-history
+- Worktree: F:/Diomedes/diomedes-wt/inventory-mobile-receipt-history
+- Base: origin/main b4eb2c2f46bc43840de31622509a82addd4bc746; package 0.1.6
+- Owner: Codex main task, direct implementation; no delegated workers
+- Canonical mirrors: Pillars 2026-09-19.1; Roadmap and Project Memory 2026-09-19.2
+
+Implement a reusable Console receive-only form and receipt/history projection over
+the merged InventoryStockService. Preserve its authorizer, current permissions,
+idempotency, versions, atomic replacement and confirm-only recovery. A fixed host
+binding chooses the project and path. HTTP callers supply stock intent only.
+
+The explicit loopback demonstration uses synthetic stock and a test authorizer
+that simulates the genuine-authority result required by the service. It is not
+verified identity, a production gateway, remote access or purchasing. No normal
+desktop API, listener, Trust grant table or installed profile is changed.
+
+## Implemented boundary
+
+- `InventoryStockService.view` reads the existing ledger and linked Store History
+  under current read authority, retaining before/after quantities and exact
+  receipt/History identity. It paginates by immutable receipt cursor and refuses
+  absent or inconsistent evidence. It does not expose project paths or restore.
+- The host-bound router accepts receive intent only and offers stock/history and
+  operation-status reads. There are no caller-selected projects or paths, identity
+  fields, correction, use, transfer, orders or administrative endpoints.
+- The Console component reviews an explicit amount and expected version. It
+  stores the exact command before sending, serializes clicks, keeps uncertain
+  outcomes for status reconciliation, and requires a new review after conflict.
+  A changed project binding clears the old review. Amounts use integer minor
+  units; unknown stock and physical-count provenance stay distinct.
+- The isolated demonstration serves Vite's built entry with a visible source
+  identity and synthetic-data/authorization boundary. Fresh profiles have a fixed
+  baseline; restarts preserve the same real ledger and History. The normal app
+  does not mount this transport or substitute the fixture authorizer for Trust.
+- [The demonstration runbook](../demos/inventory-receipts-0.1.6.md) names the
+  baseline, exact expected changes, recovery/conflict scenarios, viewport matrix,
+  capture locations and remaining physical-device acceptance.
+
+PILLAR IMPACT: deterministic work, current authority and durable evidence advance
+within the existing Store/Trust/Console contracts. No product definition changed.
+ROADMAP IMPACT: a bounded receipt/history consumer and rehearsal are implemented;
+MI01 deployment/identity, full MI03/MI04 and MI-DEMO acceptance remain OPEN. No
+numbered prompt, package completion count or canonical cloud document was changed.
+
+BUILD/PUBLICATION: package version remains 0.1.6. This is source-candidate behavior,
+not proof that the published 0.1.6 installer has this newly added screen. No
+packaging, installed-profile modification, provider call or deployment is part
+of this slice. Real iPhone/iPad Safari and a person's independent observed
+demonstration remain separate acceptance.
+
+## Verification
+
+Performed in the feature worktree on 2026-09-20 (local time):
+
+- `npm run check`: passed. Existing root and control-plane dependencies were
+  reused through local junctions; no dependency manifest or lockfile changed.
+- `npx vite build`: passed. The demonstration refuses stale client output.
+- Focused Vitest: **49 passed**, comprising the receipt workflow/client tests,
+  the 15 merged durable-service cases and the four spec-registration checks.
+  Log: `test-results/inventory-focused-final.log`.
+- Inventory Playwright: **27 passed**, nine scenarios on each of the three
+  viewports. Log: `test-results/inventory-browser-final.log`; machine-readable
+  report and screenshots: `test-results/inventory-receipts/`. Captures were
+  inspected for readable controls, evidence and horizontal overflow.
+- Broad Vitest: **4,030 passed, 1 skipped, 1 failed** across 208 files. The sole
+  failure is `tests/hostile-truth-capability-record.test.ts:118`, which expects
+  the published version to differ from source although the current checked-in
+  release record says they match. It was reproduced (13 passed, 1 failed) in
+  an untouched detached checkout of origin/main `b4eb2c2`, at
+  `F:/Diomedes/diomedes-wt/inventory-receipt-baseline`. The implicated source,
+  test and release record have no diff in this slice. Broad-run log:
+  `test-results/inventory-full-vitest-final.log`.
+- Required core Playwright (`ui`, `native-ui`, `field`): **26 passed, 1 failed,
+  9 did not run**. `tests/ui.spec.ts:523` expected `data-detail="standard"`
+  but saw `guided`. The clean-main targeted comparison timed out in browser
+  setup before this assertion, so its cause is not established by this slice.
+  Logs: `test-results/inventory-core-browser.log` and the baseline checkout's
+  `test-results/baseline-detail-menu.log`. No UI or capability-record test outside
+  the named spec-coverage registration was changed to conceal a failing gate.
+
+The complete repository gates are not green. This work is preserved as a local
+feature commit; push, merge, packaging and release remain withheld. The detached
+baseline worktree and its evidence are retained.
+
+## Integration prerequisite
+
+The separate `inventory-receipt-validation` task reported two reproduced defects
+in the merged stock repository: an unrecognized stock replacement discards the
+pending journal, and malformed stock JSON escapes operation status as a
+`SyntaxError`. That task owns `server/inventory/stock-repository.ts`; this slice
+does not change it. Its accepted recovery repair must be composed and checked
+before integration. The reported worker result is not recorded here as an
+accepted commit or as proof of the combined candidate.
+
+## Changed files
+
+```text
+client/console/InventoryReceipts.tsx
+client/console/inventory-receipts.css
+client/inventory/main.tsx
+client/inventory/receipt-client.ts
+docs/demos/inventory-receipts-0.1.6.md
+docs/implementation/2026-09-20-inventory-mobile-receipt-history.md
+inventory.html
+playwright.inventory.config.ts
+scripts/inventory-receipts-demo.ts
+server/inventory/receipt-routes.ts
+server/inventory/stock-service.ts
+shared/inventory-workflow.ts
+tests/fixtures/inventory-receipts.ts
+tests/inventory-receipt-client.test.ts
+tests/inventory-receipt-ui.spec.ts
+tests/inventory-receipt-workflow.test.ts
+tests/spec-coverage.test.ts
+vite.config.ts
+```
+
+The initial broad run also caught the new browser config missing from the
+repository's spec-coverage registry. That registration was corrected, and the
+subsequent broad and focused runs pass the guard. The first browser run exposed
+an unbound native `fetch` call; the final client and all device scenarios use
+the corrected transport. Neither earlier failure is hidden as a passing run.
