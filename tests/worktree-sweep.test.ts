@@ -73,6 +73,13 @@ describe('externalRecordFor', () => {
   test('names nothing when there are no records', () => {
     expect(externalRecordFor(`${WT}/foo`, new Map())).toBeNull();
   });
+
+  test('an unresolved Windows alias conservatively protects every tree', () => {
+    expect(externalRecordFor(`${WT}/foo`, recordsOf({ worktree: 'F:/DIOMED~1/work' })))
+      .toBe('record.json');
+    expect(externalRecordFor(`${WT}/foo`, recordsOf({ worktree: '//?/F:/Diomedes/work' })))
+      .toBe('record.json');
+  });
 });
 
 describe('touchedWithin', () => {

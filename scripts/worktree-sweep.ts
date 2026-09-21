@@ -112,22 +112,20 @@ function claimedWorktrees(): Set<string> {
     for (const name of fs.readdirSync(claims)) {
       if (!name.endsWith('.json') || name.endsWith('.released.json')) continue;
       if (fs.existsSync(path.join(claims, name.replace(/\.json$/, '.released.json')))) continue;
+      const claim = JSON.parse(fs.readFileSync(path.join(claims, name), 'utf8')) as {
+        owner?: { pid?: number; worktree?: string };
+      };
+      const pid = claim.owner?.pid;
+      const wt = claim.owner?.worktree;
+      if (!Number.isSafeInteger(pid) || !pid || pid < 1 || typeof wt !== 'string' || !wt)
+        throw new Error(`ABORT: cannot establish claim ownership: ${path.join(claims, name)}`);
       try {
-        const claim = JSON.parse(fs.readFileSync(path.join(claims, name), 'utf8')) as {
-          owner?: { pid?: number; worktree?: string };
-        };
-        const pid = claim.owner?.pid;
-        const wt = claim.owner?.worktree;
-        if (!pid || !wt) continue;
-        try {
-          process.kill(pid, 0); // Signal 0 only tests for the process.
-          held.add(path.resolve(wt).toLowerCase());
-        } catch {
-          /* the owner is gone; the claim is stale and protects nothing */
-        }
-      } catch {
-        /* an unreadable claim is not a grant */
+        process.kill(pid, 0); // Signal 0 only tests for the process.
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ESRCH') continue;
+        // Access denied does not establish that the owner exited.
       }
+      held.add(path.resolve(wt).toLowerCase());
     }
   }
   return held;
@@ -168,11 +166,8 @@ function externallyRecorded(): Map<string, string> {
     if (!fs.existsSync(dir)) continue;
     for (const name of fs.readdirSync(dir)) {
       if (!name.endsWith('.json')) continue;
-      try {
-        records.push({ file: name, json: JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')) });
-      } catch {
-        /* an unreadable record protects nothing it cannot name */
-      }
+      // A partial or unreadable record cannot safely be treated as no owner.
+      records.push({ file: name, json: JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')) });
     }
   }
   return indexRecordStrings(records);
@@ -191,6 +186,10 @@ export function externalRecordFor(dir: string, records: Map<string, string>): st
       if (!/^\.?[a-z0-9_-]/.test(text.slice(at + needle.length))) return file;
       at = text.indexOf(needle, at + 1);
     }
+    // Free-form records can name Windows aliases that a lexical comparison
+    // cannot resolve. Conservatively protect every tree until that record is
+    // reconciled, rather than silently dropping an active owner's protection.
+    if (/\/\/[?.]\//.test(text) || /[a-z]:\/[^\r\n]*~[a-z0-9]/i.test(text)) return file;
   }
   return null;
 }
@@ -229,46 +228,51 @@ function gitTouches(dir: string): number[] {
   return times;
 }
 
-/** Detach every reparse point under a worktree. Never touches a target. */
-function detachLinks(root: string): number {
-  let detached = 0;
-  // Called only on entries lstat reports as links; junctions report so too.
-  const unlink = (p: string): void => {
-    try {
-      fs.rmdirSync(p); // On a junction this removes the link only.
-      detached += 1;
-    } catch {
-      /* not a link, or not empty — leave it for the recursive walk */
-    }
-  };
-  for (const rel of ['node_modules', path.join('services', 'control-plane', 'node_modules')]) {
-    const p = path.join(root, rel);
-    if (!fs.existsSync(p)) continue;
-    try {
-      if (fs.lstatSync(p).isSymbolicLink()) unlink(p);
-    } catch {
-      /* unreadable */
-    }
-  }
-  const walk = (dir: string, depth: number): void => {
-    if (depth > 6) return;
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const p = path.join(dir, entry.name);
-      if (entry.isSymbolicLink()) {
-        unlink(p);
-        continue; // Never descend through a link.
+/** Ignored files can be user data. Only links are disposable without deleting their contents. */
+export function retainedIgnoredPaths(dir: string): string[] {
+  return git(['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'], dir)
+    .split('\0')
+    .filter(Boolean)
+    .filter((relative) => !fs.lstatSync(path.join(dir, relative.replace(/\/$/, ''))).isSymbolicLink());
+}
+
+/** Inspect the entire tree before detaching links, and fail closed on every error. */
+export function detachLinks(root: string): number {
+  const absolute = path.resolve(root);
+  const collect = (): string[] => {
+    const links: string[] = [];
+    const pending = [absolute];
+    while (pending.length > 0) {
+      const dir = pending.pop()!;
+      const stat = fs.lstatSync(dir);
+      if (stat.isSymbolicLink() || !stat.isDirectory())
+        throw new Error(`ABORT: directory changed or is a link: ${dir}`);
+      for (const name of fs.readdirSync(dir)) {
+        const child = path.join(dir, name);
+        const childStat = fs.lstatSync(child);
+        if (childStat.isSymbolicLink()) links.push(child);
+        else if (childStat.isDirectory()) pending.push(child);
       }
-      if (entry.isDirectory()) walk(p, depth + 1);
     }
+    return links;
   };
-  walk(root, 0);
-  return detached;
+  const links = collect();
+  for (const link of links) {
+    // Never reinterpret a replaced link as an ordinary directory to remove.
+    if (!fs.lstatSync(link).isSymbolicLink())
+      throw new Error(`ABORT: link changed during inspection: ${link}`);
+    fs.unlinkSync(link);
+    // existsSync follows links, so it cannot detect a surviving broken junction.
+    try {
+      fs.lstatSync(link);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      throw error;
+    }
+    throw new Error(`ABORT: link survived detachment: ${link}`);
+  }
+  if (collect().length > 0) throw new Error(`ABORT: new links appeared during detachment: ${absolute}`);
+  return links.length;
 }
 
 function assertSharedInstallIntact(): void {
@@ -314,6 +318,11 @@ function main(): void {
       keep.push({ wt, why: `${String(dirty.length)} uncommitted change(s)` });
       continue;
     }
+    const ignored = retainedIgnoredPaths(wt.dir);
+    if (ignored.length > 0) {
+      keep.push({ wt, why: `${String(ignored.length)} ignored file(s) or directory tree(s) to preserve` });
+      continue;
+    }
     const isLanded = tryGit(['merge-base', '--is-ancestor', wt.head, mainSha]) !== null;
     if (!isLanded) {
       const ahead = tryGit(['rev-list', '--count', `${mainSha}..${wt.head}`]) ?? '?';
@@ -343,12 +352,26 @@ function main(): void {
   assertSharedInstallIntact();
   let removed = 0;
   for (const wt of landed) {
+    // The report is a snapshot. Recheck ownership and content immediately before
+    // touching the tree, and let Git enforce dirty/locked checks at removal too.
+    const current = listWorktrees().find((entry) => entry.dir === wt.dir);
+    if (!current || current.head !== wt.head || current.locked !== null ||
+        claimedWorktrees().has(path.resolve(wt.dir).toLowerCase()) ||
+        externalRecordFor(wt.dir, externallyRecorded()) !== null ||
+        tryGit(['status', '--porcelain'], wt.dir) !== '' ||
+        retainedIgnoredPaths(wt.dir).length > 0 ||
+        tryGit(['merge-base', '--is-ancestor', wt.head, 'origin/main']) === null ||
+        touchedWithin(gitTouches(wt.dir), Date.now(), GRACE_MS) !== null)
+      throw new Error(`ABORT: worktree eligibility changed: ${wt.dir}`);
+    // Removing a tracked link would make the checkout dirty. Preserve it for
+    // deliberate retirement instead of bypassing Git's dirty-tree protection.
+    if (git(['ls-files', '--stage'], wt.dir).split('\n').some((line) => line.startsWith('120000 ')))
+      throw new Error(`ABORT: worktree contains tracked symbolic links: ${wt.dir}`);
     detachLinks(wt.dir);
-    const nm = path.join(wt.dir, 'node_modules');
-    if (fs.existsSync(nm) && fs.lstatSync(nm).isSymbolicLink())
-      throw new Error(`ABORT: ${nm} is still a link after detaching. Not running git against it.`);
+    if (retainedIgnoredPaths(wt.dir).length > 0)
+      throw new Error(`ABORT: ignored data appeared during detachment: ${wt.dir}`);
     assertSharedInstallIntact();
-    git(['worktree', 'remove', '--force', wt.dir]);
+    git(['worktree', 'remove', wt.dir]);
     assertSharedInstallIntact();
     if (wt.branch) tryGit(['branch', '-d', wt.branch]); // -d, never -D: refuses unmerged.
     removed += 1;
