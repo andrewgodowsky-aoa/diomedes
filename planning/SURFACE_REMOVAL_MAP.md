@@ -390,7 +390,7 @@ Every call site still compiles and every branch still exists; the Workbook simpl
 stops being reachable. Reversible by reverting one function.
 **Ships with (or the suites go red here, not at step 7):**
 `tests/surface.test.ts:19`, `:28`, `:34`, `:43` — all four assert a `'workbook'`
-outcome; `tests/backend.test.ts:575` (asserts at `:585`).
+outcome; `tests/backend.test.ts:583` (asserts at `:593`).
 Every `data-surface='workbook'` assertion, because `App.tsx:281` writes the
 constant from this step on: `tests/ui.spec.ts:156`, `:183`, `:600`, `:758`;
 `tests/native-ui.spec.ts:119`, `:626`; `tests/field.spec.ts:190`;

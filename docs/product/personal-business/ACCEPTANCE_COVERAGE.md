@@ -14,7 +14,7 @@ Note: the brief for this work said 33 rows; the source table in `06_EDGE_CASES_A
 | ordinary-invitee | Ordinary invitee joins | COVERED | `tests/workspaces.test.ts:393` — an invited member joins the existing setup and does not redo it |
 | same-person-two-companies | Same person, two companies | COVERED | `tests/workspaces.test.ts:522` — stay separate in tenant, setup and answers |
 | crafted-tenant-or-stale-membership | Crafted tenant ID or stale membership | COVERED | `tests/configuration-service.test.ts:289` — a stranger and a revoked member are refused at both stage and activate |
-| switch-workspace-during-run | Switch workspace during a run | COVERED | `tests/harness.test.ts:409` — a different tenant cannot execute a run |
+| switch-workspace-during-run | Switch workspace during a run | COVERED | `tests/harness.test.ts:412` — a different tenant cannot execute a run |
 | billing-contact-without-admin | Billing contact lacks admin role | GAP | `tests/acceptance-matrix.test.ts` — a billing contact who is only a member configures nothing and administers nobody |
 | questionnaire-bypass-instructions | Questionnaire contains instructions to bypass rules | GAP | `tests/acceptance-matrix.test.ts` — an answer that tries to grant its own permission is refused as data, not adopted as policy |
 | concurrent-draft-edit | Admins edit the same draft | COVERED | `tests/workspaces.test.ts:339` — two administrators editing at once conflict rather than overwrite |
