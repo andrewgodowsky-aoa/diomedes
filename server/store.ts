@@ -3,6 +3,7 @@ import { validateTaskReceipts } from './task-admission.js';
 import { ScopeGrants, validateScopeGrants } from './trust/scope-grants.js';
 import { validateAgentResolutions } from './agents.js';
 import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/attribution.js';
+import { HOST_TEST_PROJECT } from '../shared/engines.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -48,6 +49,8 @@ import {
 export const now = () => new Date().toISOString();
 export const hash = contentHash;
 export const identifier = (prefix = '') => prefix + randomBytes(6).toString('hex');
+/** One plain folder name: what a saved project id has to be before it meets a path. */
+const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 // Folders that never hold Diomedes documents; skipped during the documents walk.
 export const SKIPPED_FOLDERS = new Set([
   'node_modules',
@@ -124,10 +127,13 @@ export function migrateConversation(
  * Settings written by an earlier build. The two surfaces were renamed - the
  * Book became the Workbook and the Desk the Console - and 'technical' detail
  * had already been retired into the second surface before that. Old values are
- * read forever and only the current ones are written, so a person who has been
- * running Diomedes does not land on a surface they did not choose.
+ * read forever. Since the Workbook left a person's reach they all resolve to
+ * the one surface there is, so nobody is stranded on one they cannot leave.
  */
-export function migrateSettings(settings: Settings): void {
+export function migrateSettings(
+  settings: Settings,
+  { atLaunch = true }: { atLaunch?: boolean } = {},
+): void {
   // Settings written before workspaces existed mean Personal, which is also
   // what a malformed value means: a stored reference is honoured only when the
   // membership behind it is still active, and this is not where that is decided.
@@ -145,11 +151,20 @@ export function migrateSettings(settings: Settings): void {
   settings.onboarding.setupVersion = 2;
   settings.onboarding.discoveryConsentAt ??= null;
   settings.onboarding.aiSkipped ??= false;
-  const stored = settings.surface as string | undefined;
-  if (stored === 'book') settings.surface = 'workbook';
-  else if (stored === 'desk' || stored === 'technical') settings.surface = 'console';
-  if (settings.surface === undefined)
-    settings.surface = settings.detail === 'technical' ? 'console' : 'workbook';
+  // The Workbook is retired from a person's reach (Andrew, 2026-09-19 and
+  // 2026-09-20): no control switches into it any more, so a stored choice of it
+  // would strand the person on a surface with no way out. Every stored value,
+  // old spelling or new, opens on the Console. The key itself is still accepted
+  // by the API for one more release, which is what keeps the legacy acceptance
+  // specs runnable until they are ported; nothing a person can click writes it.
+  //
+  // At launch only. The recovery reload further down re-reads this file in the
+  // middle of a session, and a running session's surface is not something a
+  // recovered transaction should move; there, only a missing value is filled.
+  if (atLaunch || settings.surface === undefined) settings.surface = 'console';
+  else if ((settings.surface as string) === 'book') settings.surface = 'workbook';
+  else if ((settings.surface as string) === 'desk' || (settings.surface as string) === 'technical')
+    settings.surface = 'console';
 }
 
 export const emptyTeam = (): TeamState => ({ members: [], messages: [], runs: [] });
@@ -201,19 +216,73 @@ export const defaults = (): Settings => ({
   services: { codex: false },
 });
 
-async function durableWrite(target: string, bytes: string, beforeReplace?: () => Promise<void>) {
+/**
+ * Windows denies a replacement while any handle is open on the destination, so
+ * a reader that holds `state.json` for the microseconds of one read - the
+ * desktop client, a backup or indexing service, a second Diomedes, a test
+ * polling the file - makes this rename fail with EPERM while nothing is wrong.
+ * The next attempt succeeds. Without the retry a single unlucky read turns a
+ * durable write into a thrown error, and because every state write runs inside
+ * `locked()`, that throw reloads the last state from disk and fails the person's
+ * run: the proposal they were about to be shown is discarded for a collision
+ * nobody needed to see. `FileRunStore` already guards its run records this way
+ * (server/harness/run-store.ts); project state never got the same guard.
+ * Attempts are bounded and the final failure is still raised, so a real
+ * permission fault is reported rather than retried into silence.
+ *
+ * `guard` is re-run before every attempt, not once: it is the caller's
+ * last look at the file it is about to replace, and running it once would
+ * stretch that look-to-replace window from microseconds to the whole retry
+ * budget. Only a failed `rename` is retried, so a guard that refuses - the
+ * file changed, the scope lapsed - still stops the write on the first try.
+ */
+async function replaceFile(temp: string, target: string, guard?: () => Promise<void>) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await guard?.();
+      await fs.rename(temp, target);
+      return;
+    } catch (error) {
+      if (
+        process.platform !== 'win32' ||
+        attempt >= 5 ||
+        !(error instanceof Error) ||
+        !('code' in error) ||
+        !('syscall' in error) ||
+        error.syscall !== 'rename' ||
+        !['EPERM', 'EACCES', 'EBUSY'].includes(String(error.code))
+      )
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, 20 * (attempt + 1)));
+    }
+  }
+}
+
+/**
+ * The one durable write in the process: temp file, fsync, atomic rename.
+ *
+ * `bytes` is text or raw bytes. The binary case is how an imported picture
+ * reaches disk (see `server/theme-assets.ts`); it is the same primitive rather
+ * than a second one, because a second write path is a second set of rules about
+ * when a file is really there.
+ */
+export async function durableWrite(
+  target: string,
+  bytes: string | Uint8Array,
+  beforeReplace?: () => Promise<void>,
+) {
   await fs.mkdir(path.dirname(target), { recursive: true });
   const temp = `${target}.${identifier()}.tmp`;
   const handle = await fs.open(temp, 'wx');
   try {
-    await handle.writeFile(bytes, 'utf8');
+    if (typeof bytes === 'string') await handle.writeFile(bytes, 'utf8');
+    else await handle.writeFile(bytes);
     await handle.sync();
   } finally {
     await handle.close();
   }
   try {
-    await beforeReplace?.();
-    await fs.rename(temp, target);
+    await replaceFile(temp, target, beforeReplace);
   } catch (error) {
     await fs.unlink(temp);
     throw error;
@@ -296,6 +365,14 @@ export class Store extends EventEmitter {
     migrateSettings(this.settings);
     this.registry = await readJson(path.join(this.dataDir, 'registry.json'), () => []);
     for (const project of this.registry) {
+      // A project id is generated here and never accepted from anyone, so a
+      // saved row naming anything else was not written by this application.
+      // The reserved host id is refused by name; anything that is not one plain
+      // folder name is refused because `statePath` puts it straight into a
+      // path. The id itself stays out of the message: it is untrusted text.
+      const id: unknown = (project as { id?: unknown } | null)?.id;
+      if (typeof id !== 'string' || !PROJECT_ID.test(id) || id === HOST_TEST_PROJECT)
+        throw new Error('A saved project registry entry names an id this build will not open.');
       const state = await readJson<StoredState>(this.statePath(project.id), () => {
         throw new Error(`Project state is missing for ${project.id}.`);
       });
@@ -370,7 +447,7 @@ export class Store extends EventEmitter {
     }
     await this.interruptUnpreparedApprovals();
     this.settings = await readJson(path.join(this.dataDir, 'settings.json'), defaults);
-    migrateSettings(this.settings);
+    migrateSettings(this.settings, { atLaunch: false });
     this.recoveryRequired = false;
   }
   async locked<T>(action: () => Promise<T>): Promise<T> {

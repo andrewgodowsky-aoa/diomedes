@@ -1,0 +1,200 @@
+.console .readiness-page {
+  gap: 24px;
+  min-width: 0;
+}
+.console .ready-page-head,
+.console .ready-card-head,
+.console .ready-section-head,
+.console .ready-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.console .ready-page-head h1,
+.console .ready-section h2,
+.console .ready-capability h3,
+.console .ready-workflow h3,
+.console .ready-blockers h4 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.console .ready-page-head p,
+.console .ready-section-head p,
+.console .ready-workflow p,
+.console .ready-note {
+  margin: 4px 0 0;
+  color: var(--t3);
+  overflow-wrap: anywhere;
+}
+.console .ready-page-head button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 5px 11px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t1);
+}
+.console .ready-page-head button:hover:not(:disabled) {
+  background: var(--raised);
+}
+.console .ready-page-head button:disabled {
+  cursor: default;
+  color: var(--t3);
+}
+.console .ready-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--t2);
+}
+.console .ready-scope input {
+  flex: 0 0 auto;
+}
+.console .ready-meta {
+  padding: 10px 12px;
+  border-block: 1px solid var(--hair);
+  color: var(--t3);
+  font: 400 var(--dm-type-caption) / 1.4 var(--mono);
+}
+.console .ready-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.console .ready-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+.console .ready-capability,
+.console .ready-workflow {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  background: var(--raised);
+}
+.console .ready-card-head > div {
+  min-width: 0;
+}
+.console .ready-card-head .caption {
+  margin: 0 0 3px;
+  color: var(--t3);
+}
+.console .ready-result {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid var(--hair-2);
+  border-radius: 999px;
+  color: var(--t2);
+  font: 500 var(--dm-type-caption) / 1.3 var(--ui);
+}
+.console .ready-result.yes {
+  color: var(--light);
+}
+.console .ready-result.blocked {
+  color: var(--attn);
+}
+.console .ready-axes {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 14px;
+  background: var(--hair);
+  border: 1px solid var(--hair);
+  min-width: 0;
+}
+.console .ready-axis {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 7px;
+  background: var(--chrome);
+}
+.console .ready-axis span {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  overflow-wrap: anywhere;
+}
+.console .ready-axis strong {
+  color: var(--t2);
+  font-size: var(--dm-type-body);
+}
+.console .ready-axis.yes strong {
+  color: var(--light);
+}
+.console .ready-axis.no strong {
+  color: var(--attn);
+}
+.console .ready-details {
+  margin-top: 12px;
+  min-width: 0;
+}
+.console .ready-details summary {
+  cursor: pointer;
+  color: var(--t2);
+}
+.console .ready-details dl {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 12px 0 0;
+}
+.console .ready-details dl > div {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.25fr) minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+}
+.console .ready-details dt {
+  color: var(--t2);
+}
+.console .ready-details dd {
+  margin: 0;
+  color: var(--t3);
+  overflow-wrap: anywhere;
+}
+.console .ready-details dd .mono {
+  display: block;
+  margin-top: 2px;
+  color: var(--t3);
+  overflow-wrap: anywhere;
+}
+.console .ready-details .ready-freshness {
+  display: block;
+  margin-top: 3px;
+  color: var(--t3);
+  overflow-wrap: anywhere;
+}
+.console .ready-blockers {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hair);
+}
+.console .ready-blockers ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--t2);
+}
+.console .ready-blockers li {
+  margin: 5px 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1120px) {
+  .console .ready-axes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .console .ready-details dl > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}

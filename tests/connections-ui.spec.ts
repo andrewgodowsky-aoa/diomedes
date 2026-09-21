@@ -1,7 +1,14 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 
-test('Connections works through ordinary Console navigation', async ({ page }) => {
+// Connections left the Console on 2026-09-19. It runs against three hardcoded
+// example locations and its own heading calls them synthetic data, so it is a
+// demo rather than a screen, and it is now a row in Everything that says it
+// cannot open yet and why. There is deliberately no navigation to it, so this
+// test has no route in. The server, the compiler and every route below are
+// untouched and still covered by the unit suite; this is skipped rather than
+// deleted so it can be unskipped the day the demo is pointed at real software.
+test.skip('Connections works through ordinary Console navigation', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
   const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
   const projectResponse = await page.request.post('/api/projects/sample', { headers, data: {} });

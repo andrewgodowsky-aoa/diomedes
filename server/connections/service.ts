@@ -15,6 +15,7 @@ import {
 import { ruleSchema, serviceWindowSchema, type Rule, type RuleScope } from '../../shared/connection-rules.js';
 import type { Store } from '../store.js';
 import type { HarnessHost } from '../harness/host.js';
+import { HOST_TEST_PROJECT } from '../engines/service.js';
 import { copy, digest, HarnessError, validatePrincipal } from '../harness/policy.js';
 import { evaluateRules, enforceRules, proposeRule, selectRules } from '../rules.js';
 import type { ConnectionCredentials } from './credentials.js';
@@ -248,6 +249,11 @@ export class ConnectionsService {
     // Uses the existing mandatory-policy-then-hook boundary; hooks only deny or observe.
     this.host.runs.use(async ({ runId, step }) => {
       const run = await this.host.runs.get(runId);
+      // A connector binding lives in a project's own state, so a run Diomedes
+      // started for itself can hold none: there is no project state to read
+      // and nothing here to enforce. The reserved id is compared whole, so
+      // every project a person made still goes through the check below.
+      if (run.projectId === HOST_TEST_PROJECT) return;
       if (!this.data(run.projectId).connections.bindings[runId]) return;
       const bound = await this.bound(runId, step.permission ?? 'connections.read');
       const write = !['pure', 'read'].includes(step.effect);

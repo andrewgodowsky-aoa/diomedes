@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "node_id": "B00.R",
+  "review_id": "B00.R-20260917",
+  "recorded_at": "2026-09-17",
+  "actual_model_route": "Codex primary reviewer and integrator; no delegated model calls",
+  "base_sha": "e2c1e1576eea5ba0265a522c1506820c947425a9",
+  "main_base_sha": "5da4fec42db90d6fe631a790070b1bde2a608a68",
+  "worktree": "F:/Diomedes/diomedes-wt/integration-swe2-b00-20260917",
+  "branch": "integration/swe2-b00-20260917",
+  "owned_paths": [
+    "AGENTS.md",
+    "docs/implementation/2026-09-16-b00-control-plane-contract.md",
+    "docs/implementation/2026-09-17-swe2-independent-acceptance.md",
+    "docs/product/personal-business/09_ZERO_BUDGET_VENDOR_DECISION.md",
+    "evidence/unified-20260913/B00.I.json",
+    "evidence/unified-20260913/B00.R.json",
+    "evidence/unified-20260913/C00.R-rollout-20260917.json",
+    "evidence/unified-20260913/H01.R.json",
+    "server/app.ts",
+    "server/managed-gateway.ts",
+    "server/managed-usage.ts",
+    "services/control-plane/contract/contract.ts",
+    "services/control-plane/contract/fixtures.ts",
+    "services/control-plane/contract/index.ts",
+    "services/control-plane/contract/vendors.ts",
+    "tests/b00-acceptance-20260917.test.ts",
+    "tests/b00-control-plane-contract.test.ts",
+    "tests/managed-gateway.test.ts",
+    "tsconfig.json"
+  ],
+  "changed_paths": [
+    "AGENTS.md",
+    "docs/implementation/2026-09-16-b00-control-plane-contract.md",
+    "docs/implementation/2026-09-17-swe2-independent-acceptance.md",
+    "docs/product/personal-business/09_ZERO_BUDGET_VENDOR_DECISION.md",
+    "evidence/unified-20260913/B00.I.json",
+    "evidence/unified-20260913/B00.R.json",
+    "evidence/unified-20260913/C00.R-rollout-20260917.json",
+    "evidence/unified-20260913/H01.R.json",
+    "server/app.ts",
+    "server/managed-gateway.ts",
+    "server/managed-usage.ts",
+    "services/control-plane/contract/contract.ts",
+    "services/control-plane/contract/fixtures.ts",
+    "services/control-plane/contract/index.ts",
+    "services/control-plane/contract/vendors.ts",
+    "tests/b00-acceptance-20260917.test.ts",
+    "tests/b00-control-plane-contract.test.ts",
+    "tests/managed-gateway.test.ts",
+    "tsconfig.json"
+  ],
+  "patch_path": "F:/Diomedes/deliverables/swe2-acceptance-20260917/integration-candidate.patch",
+  "outer_manifest": "F:/Diomedes/deliverables/swe2-acceptance-20260917/integration-candidate.manifest.json",
+  "changed_file_sha256": {
+    "services/control-plane/contract/contract.ts": "5858e22d7943046a669a40a991499ddc4fd48999f0c7c1170cb1a94bc273ef20",
+    "services/control-plane/contract/fixtures.ts": "cb6d6e4d843b1ce8c16c5fc442e08b4c6140159c7bb8c59c94e2f00aed9e6a86",
+    "services/control-plane/contract/index.ts": "e8360b20ded8e30d9e1f7e79f399d2febd40a75f464c8046a4380e92816ae284",
+    "services/control-plane/contract/vendors.ts": "9ce08cf9749f32ef4860d3312ef5ed047c83ab3d39284f66d2b913038633da65"
+  },
+  "hashing_convention": "Listed SHA-256 values cover raw bytes of the four B00 interface files. The detached final manifest covers every changed file and Git blob, including this record; this record does not hash itself.",
+  "consumed_contract_revision": "2026-09-13.1",
+  "produced_contract_revision": "CONTROL_PLANE_CONTRACT_VERSION=1",
+  "approved_contract_revision": "CONTROL_PLANE_CONTRACT_VERSION=1",
+  "interface_digest": {
+    "algorithm": "SHA-256",
+    "value": "02fd4bd31b06731f52527c37d86c0a45bbf5dd4b9911136ddca039942d71275b",
+    "input": "F:/Diomedes/deliverables/swe2-acceptance-20260917/B00-interface-digest-input.txt",
+    "encoding": "UTF-8 without BOM; first line CONTROL_PLANE_CONTRACT_VERSION=1, then sorted '<Git blob ID> <path>' lines, each including LF. Covers contract.ts, fixtures.ts, index.ts and vendors.ts."
+  },
+  "verdict": "accepted",
+  "candidate_scope": "Repaired B00 subset only. H01 is excluded. C00 source and historical records arrive through the existing e2c1e15 ancestry; local rollout has its own dated record.",
+  "commands": [
+    {
+      "command": ".\\node_modules\\.bin\\tsc.cmd --noEmit",
+      "exit_code": 0,
+      "evidence": "F:/Diomedes/deliverables/swe2-acceptance-20260917/logs/integration-typecheck.log"
+    },
+    {
+      "command": ".\\node_modules\\.bin\\vitest.cmd run --reporter=default --reporter=json --outputFile.json=F:/Diomedes/deliverables/swe2-acceptance-20260917/logs/integration-vitest.json",
+      "exit_code": 0,
+      "files": 104,
+      "passed": 1921,
+      "skipped": 1,
+      "failed": 0,
+      "evidence": "F:/Diomedes/deliverables/swe2-acceptance-20260917/logs/integration-vitest.json"
+    },
+    {
+      "command": ".\\node_modules\\.bin\\vite.cmd build",
+      "exit_code": 0,
+      "warning": "Existing bundle-size warning",
+      "evidence": "F:/Diomedes/deliverables/swe2-acceptance-20260917/logs/integration-vite.log"
+    },
+    {
+      "command": ".\\node_modules\\.bin\\playwright.cmd test",
+      "exit_code": 0,
+      "passed": 67,
+      "skipped": 0,
+      "failed": 0,
+      "evidence": "F:/Diomedes/deliverables/swe2-acceptance-20260917/logs/integration-playwright.log"
+    }
+  ],
+  "evidence": [
+    "tests/b00-acceptance-20260917.test.ts",
+    "tests/b00-control-plane-contract.test.ts",
+    "tests/managed-gateway.test.ts",
+    "docs/implementation/2026-09-17-swe2-independent-acceptance.md",
+    "F:/Diomedes/deliverables/swe2-acceptance-20260917/logs/new-regressions-red.log",
+    "F:/Diomedes/deliverables/swe2-acceptance-20260917/logs/b00-host-acceptance.log"
+  ],
+  "observed_versions": {
+    "node": "22.23.2",
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vitest": "3.2.7",
+    "playwright": "1.63.0",
+    "pillars": "2026-09-10.1",
+    "roadmap": "2026-09-15.5",
+    "project_memory": "2026-09-15.4",
+    "live_provider": null,
+    "model": "fixture-model in the explicitly synthetic HTTP test; no live model observed",
+    "profile": null,
+    "pack": null
+  },
+  "status": {
+    "implementation": "Repaired B00 subset implemented; executable source passed all four integration gates. Later edits are documentation/evidence and a vendor comment only.",
+    "independent_review": "accepted for the exact versioned interface and bounded local integration",
+    "live_provider": "not-run; host acceptance uses an explicit offline adapter fixture",
+    "packaged": "not-run",
+    "publication": "not-run; no push authorized",
+    "deployment": "not-run"
+  },
+  "blockers": [],
+  "safe_prerequisite_release": "B00 contract consumers may consume this exact v1 interface after the local integration is verified. Their other prerequisites and live-account gates remain separate. H01/SDKR/H19 runtime extensions are not released by this verdict.",
+  "limitations": [
+    "No hosted authentication, membership or entitlement backend was added. verifySubject is a shape/provenance predicate for trusted host records, not a cryptographic identity verifier.",
+    "SPEND_POLICY and vendor data constrain selected development plans; actual vendor account plans and usage are unverified.",
+    "A passing B00 verdict does not approve the original combined 53-file B00/H01 patch."
+  ],
+  "pillar_impact": "Advances zero new spend, fail-closed authority and Personal cloud independence without a new identity, money or file-authority service. No pillar meaning changes.",
+  "roadmap_impact": "04a/B00.R accepted. 04b/H01.R rejected in its own record. No broader cloud or self-hosted development capability marked complete; canonical definitions unchanged.",
+  "commit_authorized": true,
+  "authorization": "Andrew's current request explicitly authorizes merging reviewed passing work and immediate repairs; no push, install or deployment is included.",
+  "uncommitted_paths": [
+    "AGENTS.md",
+    "docs/implementation/2026-09-16-b00-control-plane-contract.md",
+    "docs/implementation/2026-09-17-swe2-independent-acceptance.md",
+    "docs/product/personal-business/09_ZERO_BUDGET_VENDOR_DECISION.md",
+    "evidence/unified-20260913/B00.I.json",
+    "evidence/unified-20260913/B00.R.json",
+    "evidence/unified-20260913/C00.R-rollout-20260917.json",
+    "evidence/unified-20260913/H01.R.json",
+    "server/app.ts",
+    "server/managed-gateway.ts",
+    "server/managed-usage.ts",
+    "services/control-plane/contract/contract.ts",
+    "services/control-plane/contract/fixtures.ts",
+    "services/control-plane/contract/index.ts",
+    "services/control-plane/contract/vendors.ts",
+    "tests/b00-acceptance-20260917.test.ts",
+    "tests/b00-control-plane-contract.test.ts",
+    "tests/managed-gateway.test.ts",
+    "tsconfig.json"
+  ],
+  "unpublished_changes": [
+    "The integration is local-only. State at record finalization is pre-commit; final commit, main tree identity and clean status are recorded in the detached integration-final.json."
+  ],
+  "historical_record": "B00.I.json is retained byte-for-byte from the producer handoff; its mixed H01 path list and old counts are historical and superseded for acceptance by this record."
+}

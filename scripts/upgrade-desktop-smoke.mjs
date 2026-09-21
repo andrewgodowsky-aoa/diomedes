@@ -3,6 +3,25 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 
+// What this test is really about is the upgrade, not two particular numbers.
+// Naming 0.1.0 and 0.1.1 as literals meant a version bump either broke it or,
+// worse, left it asserting a pair that was no longer the pair being shipped.
+// The current build must be the version this tree builds, and the prior build
+// must be genuinely older, or nothing here is an upgrade.
+const { version: appVersion } = JSON.parse(
+  await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'),
+);
+const parseVersion = (value) => {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(value ?? '').trim());
+  if (!match) throw new Error(`${JSON.stringify(value)} is not an X.Y.Z version.`);
+  return match.slice(1, 4).map(Number);
+};
+const isOlder = (left, right) => {
+  const [a, b] = [parseVersion(left), parseVersion(right)];
+  for (let index = 0; index < 3; index += 1) if (a[index] !== b[index]) return a[index] < b[index];
+  return false;
+};
+
 const [priorArg, currentArg, rootArg] = process.argv.slice(2);
 if (!priorArg || !currentArg || !rootArg) throw new Error('Supply prior executable, current executable and NEW proof root.');
 const prior = path.resolve(priorArg), current = path.resolve(currentArg), root = path.resolve(rootArg);
@@ -28,7 +47,11 @@ async function open(executablePath) {
   proof.origins.push(origin);
 }
 try {
-  await open(prior); expect((await api('/health')).version).toBe('0.1.0');
+  await open(prior);
+  const priorVersion = (await api('/health')).version;
+  expect(isOlder(priorVersion, appVersion),
+    `The prior build reports ${priorVersion}, which is not older than ${appVersion}: this pair would not exercise an upgrade.`).toBe(true);
+  proof.priorVersion = priorVersion; proof.currentVersion = appVersion;
   const project = await api('/projects/sample', 'POST', {}), base = `/projects/${project.id}`;
   await api('/settings', 'PUT', { detail: 'technical', surface: 'workbook', openProjects: [project.id],
     onboarding: { work: 'business', detail: 'technical', familiarity: 'some', resumeAt: 'done', completedAt: new Date().toISOString() },
@@ -41,14 +64,14 @@ try {
   await fs.writeFile(sentinel, 'User project data survives the application upgrade.');
   proof.before = { projectId: project.id, need, settings, history: before.history };
   await desktop.close(); desktop = undefined;
-  await open(current); expect((await api('/health')).version).toBe('0.1.1');
+  await open(current); expect((await api('/health')).version).toBe(appVersion);
   const after = await api(`${base}/state`), sameNeed = after.needs.find(n => n.id === need.id);
   expect(sameNeed.approval).toEqual(need.approval); expect(sameNeed.harness).toEqual(need.harness);
   expect(after.history).toEqual(before.history);
   expect((await api('/settings')).surface).toBe(settings.surface);
   expect((await api('/settings')).openProjects).toEqual(settings.openProjects);
   expect(await fs.readFile(sentinel, 'utf8')).toBe('User project data survives the application upgrade.');
-  proof.checks.push('Actual 0.1.0 profile upgraded to ZIP-extracted 0.1.1 with project, preferences, History and exact pending Need preserved');
+  proof.checks.push(`Actual ${priorVersion} profile upgraded to ${appVersion} with project, preferences, History and exact pending Need preserved`);
   await page.reload();
   await expect(page.getByRole('region', { name: 'Needs your OK' })).toBeVisible();
   await page.getByRole('button', { name: 'Show me first', exact: true }).click();

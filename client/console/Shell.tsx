@@ -3,6 +3,7 @@ import { selectedEngine } from '../../shared/ai-selection';
 import { formatOrigin, originForNeed, originForSession } from '../../shared/attribution';
 import type { ScopeGrantView } from '../../shared/permissions';
 import { isRoute, isExternalEngine } from '../../shared/engines';
+import type { EngineConnection } from '../../shared/engines';
 import {
   selectTaskSources,
   taskDocumentProblem,
@@ -14,10 +15,10 @@ import type {
   Conversation,
   DocumentInfo,
   EngineCatalog,
+  ExternalEngine,
   IntegrationStatus,
   Mode,
   Need,
-  Page,
   Project,
   ProjectState,
   Route,
@@ -30,7 +31,8 @@ import type {
   ThreadPermission,
   UsageSnapshot,
 } from '../../shared/types';
-import { api, listDocuments } from '../api';
+import { api, listDocuments, readSettings } from '../api';
+import { decideFirstTask } from '../first-task-handoff';
 import { reconcileWorkStarts, startWork } from '../work-start';
 import { createTask as admitTaskCreation } from '../task-create';
 import { decideApproval, reconcileApprovals } from '../approval-decisions';
@@ -42,21 +44,29 @@ import {
   Modal,
   time,
   titleCase,
+  askDraftKey,
+  askModeKey,
 } from '../components';
 import { Mark } from './Mark';
 import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
+import { acceptPreview, type PreviewPosition } from './engine-text-preview';
 import { SendConfirmation } from './SendConfirmation';
 import { PermissionPanel } from './PermissionPanel';
 import { Ledger } from './Ledger';
 import { Picker } from './Picker';
+import { COMPOSER_LABEL } from './Composer';
 import { AgentPicker } from './AgentPicker';
 import { BoardView } from './BoardView';
 import { FilesPane, DEFAULT_WIDTH, clampWidth } from './FilesPane';
 import { ActivityOverview } from './ActivityOverview';
 import { projectActivity, type ActivityRow } from './activity';
 import { TeamView } from './TeamView';
-import { Connections } from '../connections/Connections';
+import { HistoryView } from './HistoryView';
+import { DocumentEditor, UNSAVED_WARNING } from './DocumentEditor';
+import type { EverythingItem } from './Everything';
+import { DiscoveryPage } from './DiscoveryPage';
+import { ReadinessPage } from './ReadinessPage';
 import { Palette } from './Palette';
 import { WorkspaceMark, WorkspacePanel, useWorkspace } from './Workspaces';
 import { applyQuery, buildEntries, type PaletteContext } from './paletteEntries';
@@ -75,7 +85,6 @@ interface ShellProps {
   integrations: IntegrationStatus[];
   usage: UsageSnapshot[];
   saveSettings: (value: Settings) => Promise<void>;
-  openInBook: (page: Page) => void;
   openEngineSettings: () => void;
   onOpenProject: (project: Project) => void;
   onShowProjects: () => void;
@@ -84,9 +93,38 @@ interface ShellProps {
   online: boolean;
   /** Registration so App can open the console palette on Ctrl+K. */
   onPaletteKey?: (open: () => void) => void;
+  /**
+   * A route and model a connection test verified, handed over from Settings so
+   * the person can write their first task on it. `n` identifies one handover,
+   * which is settled exactly once, and `madeAtMs` is when it was taken: the
+   * facts it rests on are the host's, and they expire. It chooses; it never
+   * sends.
+   */
+  firstTask?: {
+    route: ExternalEngine;
+    model: string;
+    effort: string | null;
+    madeAtMs: number;
+    n: number;
+  } | null;
+  /**
+   * Said once the handover above is settled — applied, refused or let go — so
+   * that it is never carried into another project, another thread or another
+   * day.
+   */
+  onFirstTaskTaken?: () => void;
 }
 
 const emptyTeam: TeamState = { members: [], messages: [], runs: [] };
+
+/**
+ * What the rail carries before anybody changes it: the three screens that were
+ * already in the view switch, the History the Console just gained, and the
+ * Files pane that was already in its foot. That is six fewer decisions made for
+ * everybody than the eight fixed buttons this replaces, and every one of them
+ * can now be taken out. Everything else is one click away in Everything.
+ */
+const DEFAULT_PINS = ['thread', 'board', 'team', 'history', 'files'];
 
 // Cap for the live streamed display: ephemeral text never persists.
 const MAX_STREAM_CHARS = 256 * 1024;
@@ -103,7 +141,6 @@ export function Shell({
   integrations,
   usage,
   saveSettings,
-  openInBook,
   openEngineSettings,
   onOpenProject,
   onShowProjects,
@@ -111,6 +148,8 @@ export function Shell({
   report,
   online,
   onPaletteKey,
+  firstTask,
+  onFirstTaskTaken,
 }: ShellProps) {
   const [state, setState] = useState<ProjectState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -146,6 +185,30 @@ export function Shell({
     const saved = Number(stored('console.files.width'));
     return Number.isFinite(saved) && saved > 0 ? clampWidth(saved) : DEFAULT_WIDTH;
   });
+  // What this person keeps in the rail. Remembered per person and never per
+  // project, the same as the Files pane above: which destinations you reach for
+  // is a habit, not a property of the work.
+  //
+  // localStorage rather than Settings on purpose. `validateSettings` rejects any
+  // key that is not in `defaults()`, so a new settings key is a server change
+  // that every existing settings file has to be migrated through; pins do not
+  // earn that yet. A browser that refuses storage gets the defaults every time
+  // and everything still works.
+  const [pins, setPins] = useState<string[]>(() => {
+    const saved = stored('console.rail.pins');
+    if (saved === null) return DEFAULT_PINS;
+    try {
+      const parsed: unknown = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : DEFAULT_PINS;
+    } catch {
+      return DEFAULT_PINS;
+    }
+  });
+  // The file being written in, on the main stage, and whether it holds writing
+  // that has not been saved. The Console owns the warning because the Console
+  // owns the navigation the warning is about.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [unsaved, setUnsaved] = useState(false);
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
@@ -162,6 +225,8 @@ export function Shell({
   const askThreadId = useRef<string | null>(null);
   const askEngine = useRef<Route | null>(null);
   const streamingId = useRef<string | null>(null);
+  const streamingRunId = useRef<string | null>(null);
+  const streamingPosition = useRef<PreviewPosition>(null);
   // The member a palette Message picked. The lane view has no composer yet,
   // so opening Team records the target here for the pass that adds one.
   const teamTarget = useRef<Slot | null>(null);
@@ -243,7 +308,7 @@ export function Shell({
   // Live engine catalogues for the Models group, read exactly as the Picker does.
   useEffect(() => {
     let alive = true;
-    for (const id of ['codex', 'claude-code', 'opencode', 'oh-my-pi', 'cursor'] as const) {
+    for (const id of ['codex', 'claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin'] as const) {
       const found = integrations.find((i) => i.id === id);
       const on =
         !!found &&
@@ -282,6 +347,16 @@ export function Shell({
       clearTimeout(timer);
       timer = setTimeout(() => void load().catch(report), 70);
     };
+    const discardPreview = () => {
+      if (streamingId.current == null || streamingPosition.current === 'lost') return;
+      streamingPosition.current = 'lost';
+      setStreaming(null);
+      update();
+    };
+    // EventSource reconnects without replaying ephemeral text. A missed frame
+    // invalidates the whole preview; read the durable outcome without dispatch.
+    es.addEventListener('error', discardPreview);
+    es.addEventListener('open', update);
     [
       'state',
       'project',
@@ -301,6 +376,11 @@ export function Shell({
         projectId?: unknown;
         threadId?: unknown;
         requestId?: unknown;
+        runId?: unknown;
+        stepId?: unknown;
+        attempt?: unknown;
+        fence?: unknown;
+        seq?: unknown;
         kind?: unknown;
         text?: unknown;
       };
@@ -310,6 +390,7 @@ export function Shell({
         return;
       }
       if (
+        !data ||
         typeof data.projectId !== 'string' ||
         typeof data.threadId !== 'string' ||
         typeof data.requestId !== 'string' ||
@@ -320,8 +401,13 @@ export function Shell({
       if (data.projectId !== currentId.current) return;
       if (data.kind === 'started') {
         if (askThreadId.current == null || data.threadId !== askThreadId.current) return;
+        if (typeof data.runId !== 'string' || !data.runId) return;
         if (streamingId.current != null) return;
         streamingId.current = data.requestId;
+        // The stream binds to the run that owns it: deltas and the end frame
+        // only count when they carry the same authoritative run identity.
+        streamingRunId.current = data.runId;
+        streamingPosition.current = null;
         setStreaming({
           requestId: data.requestId,
           threadId: data.threadId,
@@ -330,20 +416,29 @@ export function Shell({
         });
         return;
       }
+      if (streamingId.current == null || data.requestId !== streamingId.current) return;
+      if (
+        data.runId !== streamingRunId.current || data.threadId !== askThreadId.current
+      )
+        return;
       if (data.kind === 'delta') {
-        if (streamingId.current == null || data.requestId !== streamingId.current) return;
-        if (data.threadId !== askThreadId.current) return;
-        const chunk = typeof data.text === 'string' ? data.text : '';
-        if (!chunk) return;
+        const accepted = acceptPreview(streamingPosition.current, { ...data, kind: 'text-delta' });
+        if (accepted.kind === 'discard') {
+          discardPreview();
+          return;
+        }
+        if (accepted.kind === 'ignore') return;
+        streamingPosition.current = accepted.cursor;
         setStreaming((prev) => {
           if (!prev || prev.requestId !== data.requestId) return prev;
-          const next = (prev.text + chunk).slice(0, MAX_STREAM_CHARS);
+          const next = (prev.text + accepted.text).slice(0, MAX_STREAM_CHARS);
           return next === prev.text ? prev : { ...prev, text: next };
         });
         return;
       }
-      if (streamingId.current == null || data.requestId !== streamingId.current) return;
       streamingId.current = null;
+      streamingRunId.current = null;
+      streamingPosition.current = null;
       setStreaming((prev) => (prev && prev.requestId === data.requestId ? null : prev));
     };
     es.addEventListener('engine-text', onEngineText as EventListener);
@@ -360,6 +455,8 @@ export function Shell({
       askControl.current = null;
       askThreadId.current = null;
       streamingId.current = null;
+      streamingRunId.current = null;
+      streamingPosition.current = null;
       setStreaming(null);
     };
   }, [projectId]);
@@ -370,12 +467,17 @@ export function Shell({
   useEffect(() => {
     remember('console.files.width', String(filesWidth));
   }, [filesWidth]);
+  useEffect(() => {
+    remember('console.rail.pins', JSON.stringify(pins));
+  }, [pins]);
   // `statePayload` strips `documents` from the SSE fan-out, so the listing is
   // fetched here: when the pane or the palette wants it, and again on each
   // state event while one of them is open. Nothing reads `state.documents`.
   // The Board uses the same listing for the new task's document picker.
   // Starts refresh it again before presenting the selection and dispatching.
-  const wantDocuments = filesOpen || paletteOpen || view === 'Board';
+  // The editor is on this list too: it opens one file from the listing, and a
+  // person can reach it from History without the pane ever having been open.
+  const wantDocuments = filesOpen || paletteOpen || view === 'Board' || editing !== null;
   const documentsFor = useRef<string | null>(null);
   useEffect(() => {
     if (!wantDocuments) return;
@@ -438,6 +540,27 @@ export function Shell({
   useEffect(() => {
     if (selected) setMode(selected.mode ?? 'ask');
   }, [selected?.id, selected?.mode]);
+  // A mode chosen on the Projects page arrives with the carried ask and lands on
+  // the thread the draft opens in. Declared after the effect above, which would
+  // otherwise put the thread's stored mode back in the same commit.
+  useEffect(() => {
+    if (!selected) return;
+    let carried: string | null = null;
+    try {
+      carried = localStorage.getItem(askModeKey(projectId));
+      if (carried !== null) localStorage.removeItem(askModeKey(projectId));
+    } catch {
+      // Storage is unavailable; the thread keeps its own mode.
+    }
+    if (carried !== 'ask' && carried !== 'plan' && carried !== 'build' && carried !== 'fix') return;
+    if (carried === (selected.mode ?? 'ask')) return;
+    const next: Mode = carried;
+    setMode(next);
+    void api(`${base}/threads/${selected.id}`, 'PUT', { mode: next }).catch((e: unknown) => {
+      report(e);
+      setMode(selected.mode ?? 'ask');
+    });
+  }, [selected?.id]);
   useEffect(() => {
     setRoute(selectedEngine(settings, state?.project, selected));
   }, [selected?.id, selected?.engine, state?.project.ai, settings.services?.defaultEngine]);
@@ -451,6 +574,24 @@ export function Shell({
   const taskOf = (thread: Conversation | null) =>
     thread?.taskId ? (state?.tasks.find((t) => t.id === thread.taskId) ?? null) : null;
   const selectedTask = taskOf(selected);
+  /**
+   * A run of the selected thread's task is in flight. One value, read by the
+   * two pickers and by the guard inside `pick()`, so no caller can be looking
+   * at a different answer than the one that refuses.
+   */
+  const selectedLive = selectedTask ? liveByTask(selectedTask.id) !== null : false;
+  /**
+   * The same three facts, kept current at every render. An answer that arrives
+   * after an await — the first-task handover re-reads the host before it
+   * applies anything — must be decided against the thread that is selected
+   * now, not the one that was selected when the read began.
+   */
+  const current = useRef<{ thread: Conversation | null; live: boolean; busy: boolean }>({
+    thread: null,
+    live: false,
+    busy: false,
+  });
+  current.current = { thread: selected ?? null, live: selectedLive, busy };
   // Thread -> Board -> Team -> Thread continuity: one travelling point
   // between the views' anchors (kind `screen`, 260 ms). Enter and every
   // board/team action resolve without waiting on it.
@@ -495,6 +636,144 @@ export function Shell({
       state?.project,
       state?.conversations.find((thread) => thread.taskId === task.id),
     );
+
+  // An ask carried from the Projects page needs a thread to land in. A project
+  // with none would show "No threads yet" over a draft nobody can see, so the
+  // thread is opened for it, once per project.
+  const openedForAsk = useRef('');
+  useEffect(() => {
+    if (!state || state.project.id !== projectId || threads.length > 0) return;
+    if (openedForAsk.current === projectId) return;
+    let carried = '';
+    try {
+      carried = localStorage.getItem(askDraftKey(projectId)) ?? '';
+    } catch {
+      // Storage is unavailable; nothing was carried.
+    }
+    if (!carried) return;
+    openedForAsk.current = projectId;
+    void newThread();
+  }, [state, projectId, threads.length]);
+
+  /**
+   * One handover from Settings: the route and model a connection test verified
+   * become a thread's choice through the same call the Picker makes, the cursor
+   * goes into the composer, and nothing is sent.
+   *
+   * The offer was gated on four facts of the host's when it was drawn, and used
+   * to be applied without asking any of them again — to whatever thread was
+   * selected whenever a Console next mounted, over a run in flight and over an
+   * explicit choice. So the host is read again here, `decideFirstTask` re-runs
+   * that gate against what it now says, and the answer is carried out: applied,
+   * given a thread of its own, or let go. An expired offer goes quietly; one
+   * whose route moved says so.
+   */
+  const takenStart = useRef(0);
+  const openedForStart = useRef('');
+  const [startPass, setStartPass] = useState(0);
+  useEffect(() => {
+    if (!firstTask || firstTask.n === takenStart.current) return;
+    if (!state || state.project.id !== projectId) return;
+    // A write of the Console's own is in flight. Nothing is claimed and nothing
+    // is read: this runs again when that write finishes.
+    if (busy) return;
+    // This project has threads and none of them is selected yet, so the Console
+    // is still settling. Deciding now would open a thread nobody needed; the
+    // dependencies below bring this back when one is selected. A carried ask is
+    // already opening one for the same reason.
+    if (!selected && (threads.length > 0 || openedForAsk.current === projectId)) return;
+    // Claimed before the reads below, so a re-render while they are in flight
+    // cannot start a second pass at the same handover.
+    takenStart.current = firstTask.n;
+    const handover = firstTask;
+    let cancelled = false;
+    /**
+     * Give the handover back unsettled. `again` is for a pass that acted on
+     * something — it asks for one more pass, because the dependency it is
+     * waiting on may already have changed while this one was in flight. A pass
+     * that acted on nothing takes the quiet form and waits for a real change,
+     * which is what keeps two of these from chasing each other.
+     */
+    const release = (again = true) => {
+      takenStart.current = 0;
+      if (again) setStartPass((n) => n + 1);
+    };
+    void (async () => {
+      let connection: EngineConnection | null = null;
+      let storedModel = '';
+      try {
+        const [status, saved] = await Promise.all([
+          api<{ connections: EngineConnection[] }>('/ai/status'),
+          readSettings(),
+        ]);
+        connection = status.connections.find((c) => c.engine === handover.route) ?? null;
+        const model = saved.services?.[`${handover.route}Model`];
+        storedModel = typeof model === 'string' ? model : '';
+      } catch {
+        // The host could not be read. That is not a reason to apply a choice
+        // made against an older answer; the decision below says so.
+        connection = null;
+      }
+      if (cancelled || currentId.current !== projectId) return;
+      // Read now, not from the render this pass began in.
+      const { thread, live, busy: writing } = current.current;
+      const decision = decideFirstTask({
+        pending: {
+          route: handover.route,
+          model: handover.model,
+          effort: handover.effort,
+          madeAtMs: handover.madeAtMs,
+          n: handover.n,
+        },
+        now: Date.now(),
+        connection,
+        storedModel,
+        thread: thread
+          ? { live, busy: writing, requested: thread.requested ?? null }
+          : null,
+      });
+      if (decision.kind === 'wait') {
+        release();
+        return;
+      }
+      if (decision.kind === 'new-thread') {
+        const key = `${projectId}:${handover.n}`;
+        // One thread per handover. This one already has its own and is waiting
+        // for it to arrive, so nothing is opened and nothing is chased.
+        if (openedForStart.current === key) {
+          release(false);
+          return;
+        }
+        openedForStart.current = key;
+        await newThread();
+        if (cancelled) return;
+        release();
+        return;
+      }
+      if (decision.kind === 'drop') {
+        if (decision.sentence) say(decision.sentence);
+        onFirstTaskTaken?.();
+        return;
+      }
+      setView('Thread');
+      // The guard lives in `pick()`, so this can still be refused by something
+      // that changed in the moment between the decision and the call.
+      const applied = pick({ model: decision.model, effort: decision.effort }, decision.route, thread, live);
+      if (!applied) {
+        say('This thread changed while Diomedes was checking it, so nothing was selected.');
+        onFirstTaskTaken?.();
+        return;
+      }
+      rootRef.current
+        ?.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${COMPOSER_LABEL}"]`)
+        ?.focus();
+      say(`This thread uses ${decision.model}. Write your first task.`);
+      onFirstTaskTaken?.();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [firstTask?.n, state, projectId, selected?.id, threads.length, busy, startPass]);
 
   async function newThread(taskId?: string) {
     await perform(async () => {
@@ -567,15 +846,32 @@ export function Shell({
           };
     void setRequested(selected, next as Conversation['requested'], route);
   }
-  function pick(requested: Conversation['requested'], engine: string) {
-    if (!selected || !isRoute(engine)) return;
+  /**
+   * One thread's route and model, changed through the one guard every caller
+   * passes. The refusal used to live in the Picker's own menu, which the
+   * first-task handover called straight past: it could change the route of a
+   * thread with a run in flight. It is here now, so a second caller cannot step
+   * around it, and it answers whether the change was made.
+   *
+   * The thread is a parameter because a caller that waited on the host has to
+   * act on the thread that is selected now, not the one its render closed over.
+   */
+  function pick(
+    requested: Conversation['requested'],
+    engine: string,
+    thread: Conversation | null = selected ?? null,
+    live: boolean = selectedLive,
+  ): boolean {
+    if (!thread || !isRoute(engine)) return false;
+    if (live || current.current.busy) return false;
     setRoute(engine);
     // Changing the model must not silently change the worker.
-    const agent = selected.requested?.agent ?? null;
+    const agent = thread.requested?.agent ?? null;
     const next = agent
       ? { model: requested?.model ?? null, effort: requested?.effort ?? null, agent }
       : requested;
-    void setRequested(selected, next as Conversation['requested'], engine);
+    void setRequested(thread, next as Conversation['requested'], engine);
+    return true;
   }
   async function postMessage(to: Slot, content: string) {
     await perform(async () => {
@@ -723,15 +1019,21 @@ export function Shell({
         await load();
         // The persisted turn is in; drop the ephemeral text if still ours.
         streamingId.current = null;
+        streamingRunId.current = null;
+        streamingPosition.current = null;
         setStreaming((prev) => (prev && prev.threadId === thread.id ? null : prev));
       } catch (e) {
         if (control.signal.aborted || isAbortError(e)) {
           streamingId.current = null;
+          streamingRunId.current = null;
+          streamingPosition.current = null;
           setStreaming((prev) => (prev && prev.threadId === thread.id ? null : prev));
           report(new Error('Request stopped. The provider may still consume usage.'));
           return;
         }
         streamingId.current = null;
+        streamingRunId.current = null;
+        streamingPosition.current = null;
         setStreaming((prev) => (prev && prev.threadId === thread.id ? null : prev));
         throw e;
       } finally {
@@ -851,6 +1153,134 @@ export function Shell({
     };
   });
   const openTasks = state.tasks.filter((t) => t.state !== 'done').length;
+
+  /**
+   * Everywhere the Console can go, in one list, because the rail and the
+   * flyout have to agree about what exists and only one of them should be
+   * holding the list.
+   *
+   * Two rows carry `unavailableReason` and open nothing. They are here rather
+   * than hidden because a person asking "can it do X" deserves the answer
+   * "not yet, and here is why" instead of silence:
+   *
+   * - Automations has no built item behind it. The button exists, the work it
+   *   would run does not, and wiring the button to nothing would be worse than
+   *   saying so (owner decision, 2026-09-19).
+   * - Connections runs against three hardcoded example locations, which its own
+   *   heading calls synthetic data. It is real code and a real demo; it is not
+   *   a connection to anything this person owns, and presenting it as one would
+   *   be the drift we just took off the marketing site.
+   */
+  // A label names the screen it opens, so Board and Team keep the words their
+  // own headings use. The plain-language explanation belongs in `hint`, where
+  // it does not have to disagree with the place it takes you.
+  const destinations: EverythingItem[] = [
+    {
+      id: 'thread',
+      label: 'Thread',
+      hint: 'The conversation you are having, and everything it produced.',
+    },
+    {
+      id: 'board',
+      label: 'Board',
+      hint: 'Everything asked for, who has it, and what is waiting on you.',
+      badge: openTasks > 0 ? `${openTasks} open` : undefined,
+    },
+    {
+      id: 'team',
+      label: 'Team',
+      hint: 'The helpers on this project, what they are doing, and what they cost.',
+      badge: team.members.length > 0 ? `${team.members.length} workers` : undefined,
+    },
+    {
+      id: 'history',
+      label: 'History',
+      hint: 'Every change made in this project, and the way to put files back.',
+    },
+    {
+      id: 'files',
+      label: 'Files',
+      hint: "Read and write in this project's documents.",
+    },
+    {
+      id: 'discovery',
+      label: 'Discovery',
+      hint: 'What this business does, gathered from public sources you can check.',
+    },
+    {
+      id: 'readiness',
+      label: 'Readiness',
+      hint: 'What is in place before work starts, and what is still missing.',
+    },
+    {
+      id: 'automations',
+      label: 'Automations',
+      hint: 'Work that runs on its own, on a schedule or when something happens.',
+      unavailableReason:
+        'Nothing is built behind this yet. It opens once there is real work for it to run.',
+    },
+    {
+      id: 'connections',
+      label: 'Connections',
+      hint: 'Watch the software your business already runs on, and act on what it says.',
+      unavailableReason:
+        'It runs on example data rather than your own software, so nothing it would show you is yours.',
+    },
+    {
+      id: 'engines',
+      label: 'AI engines',
+      hint: 'Which engines are installed, signed in, and available to this project.',
+    },
+    {
+      id: 'settings',
+      label: 'Settings',
+      hint: 'How much Diomedes explains, what it may do on its own, and how it looks.',
+    },
+    {
+      id: 'projects',
+      label: 'Projects',
+      hint: 'Leave this project and open another one.',
+    },
+  ];
+  const destinationGroups = [
+    { heading: 'In this project', ids: ['thread', 'board', 'team', 'history', 'files'] },
+    { heading: 'Diomedes', ids: ['engines', 'settings', 'projects'] },
+    { heading: 'Not ready yet', ids: ['automations', 'connections'] },
+  ];
+  // Which destination the rail and the flyout mark as the one showing. The
+  // Files pane is a toggle rather than a screen, so it counts as current while
+  // it is open, whatever screen is behind it.
+  const currentDestination = editing
+    ? 'files'
+    : view === 'Board'
+      ? 'board'
+      : view === 'Team'
+        ? 'team'
+        : view === 'History'
+          ? 'history'
+          : 'thread';
+
+  function goTo(id: string) {
+    // The editor is the one screen holding writing that only exists here. It
+    // confirms its own close, so the rail does not close it out from under a
+    // person; it says why it did nothing and leaves them where they are.
+    if (editing && unsaved) {
+      say(UNSAVED_WARNING);
+      return;
+    }
+    if (editing) setEditing(null);
+    if (id === 'thread') setView('Thread');
+    else if (id === 'board') setView('Board');
+    else if (id === 'team') setView('Team');
+    else if (id === 'history') setView('History');
+    else if (id === 'discovery') setView('Discovery');
+    else if (id === 'readiness') setView('Readiness');
+    else if (id === 'files') setFilesOpen(!filesOpen);
+    else if (id === 'engines') openEngineSettings();
+    else if (id === 'settings') onOpenSettings();
+    else if (id === 'projects') onShowProjects();
+  }
+
   const policy: 'first' | 'go' = selected?.permission === 'task' ? 'go' : 'first';
   const taskWorker = selectedTask
     ? ((liveByTask(selectedTask.id)
@@ -961,7 +1391,7 @@ export function Shell({
               thread={selected}
               mode={mode}
               route={route}
-              live={selectedTask ? liveByTask(selectedTask.id) !== null : false}
+              live={selectedLive}
               busy={busy}
               onPick={pickAgent}
             />
@@ -971,7 +1401,7 @@ export function Shell({
               thread={selected}
               mode={mode}
               route={route}
-              live={selectedTask ? liveByTask(selectedTask.id) !== null : false}
+              live={selectedLive}
               integrations={integrations}
               settings={settings}
               busy={busy}
@@ -1004,29 +1434,25 @@ export function Shell({
             </button>
             {menuOpen && (
               <div className="pmenu open" role="menu">
-                <p className="caption">Surface</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void saveSettings({
-                      ...settings,
-                      surface: 'workbook',
-                      detail: settings.detail === 'technical' ? 'standard' : settings.detail,
-                    });
-                  }}
-                >
-                  The Workbook
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void saveSettings({ ...settings, surface: 'console' });
-                  }}
-                >
-                  The Console
-                </button>
+                {/* The button opening this menu is labelled "Interface detail
+                    menu" and held no detail control at all, because Detail was
+                    gated on the Workbook. It is kept now, so the label is true. */}
+                <p className="caption">Detail</p>
+                {(['guided', 'standard', 'technical'] as const).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={settings.detail === d}
+                    className={settings.detail === d ? 'on' : ''}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void saveSettings({ ...settings, detail: d });
+                    }}
+                  >
+                    {titleCase(d)}
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -1042,26 +1468,66 @@ export function Shell({
           items={railItems}
           selectedId={selectedId}
           onSelect={(id) => {
+            if (editing && unsaved) {
+              say(UNSAVED_WARNING);
+              return;
+            }
+            setEditing(null);
             setSelectedId(id);
             setView('Thread');
           }}
           onNew={() => void newThread()}
-          view={view}
-          onView={setView}
-          openTasks={openTasks}
-          workerCount={team.members.length}
-          filesOpen={filesOpen}
-          onFiles={() => setFilesOpen(!filesOpen)}
-          onHome={() => openInBook('home')}
-          onHistory={() => openInBook('history')}
-          onEngines={openEngineSettings}
+          destinations={destinations}
+          groups={destinationGroups}
+          pinned={pins}
+          currentId={currentDestination}
+          onDestination={goTo}
+          onTogglePin={(id) =>
+            setPins(pins.includes(id) ? pins.filter((item) => item !== id) : [...pins, id])
+          }
         />
-        {view === 'Connections' && (
-          <section className="screen on" aria-label="Connections">
-            <Connections projectId={projectId} />
+        {editing && (
+          <section className="screen on" aria-label="Writing in a file">
+            <DocumentEditor
+              key={`${projectId}:${editing}`}
+              projectId={projectId}
+              document={
+                documents.find((file) => file.path === editing) ?? {
+                  path: editing,
+                  kind: 'markdown',
+                  size: 0,
+                  changedAt: new Date().toISOString(),
+                  hasChangesWaiting: false,
+                  recorded: false,
+                }
+              }
+              onClose={() => {
+                setUnsaved(false);
+                setEditing(null);
+              }}
+              onUnsavedChange={setUnsaved}
+              onOpen={(path) => setEditing(path)}
+              // `load()` refreshes the listing too: the documents effect runs
+              // again on every new state object, so a saved file's new size and
+              // changed time arrive without a second fetch from here.
+              onSaved={(written) => {
+                say(`Saved ${written.path}.`);
+                void load().catch(report);
+              }}
+            />
           </section>
         )}
-        {view === 'Thread' && selected && (
+        {!editing && view === 'Discovery' && (
+          <section className="screen on" aria-label="Discovery">
+            <DiscoveryPage projectId={projectId} />
+          </section>
+        )}
+        {!editing && view === 'Readiness' && (
+          <section className="screen on" aria-label="Readiness">
+            <ReadinessPage projectId={projectId} />
+          </section>
+        )}
+        {!editing && view === 'Thread' && selected && (
           <section className="screen on" id="scrThread">
             <ThreadView
               thread={selected}
@@ -1156,7 +1622,41 @@ export function Shell({
             />
           </section>
         )}
-        {view === 'Thread' && !selected && (
+        {!editing && view === 'History' && (
+          <section className="screen on" aria-label="History">
+            <HistoryView
+              projectId={projectId}
+              entries={state.history}
+              sessions={state.sessions}
+              needs={state.needs}
+              busy={busy}
+              detail={settings.detail}
+              onError={report}
+              onRestored={() => void load().catch(report)}
+              onSavedVersion={() => void load().catch(report)}
+              onOpenFile={(path) => setEditing(path)}
+              // Stopped by session, not by task. The session stop route reads
+              // the session and takes the task from it, so a restore is never
+              // blocked by a task id this view could not name.
+              //
+              // Not through `perform`: it reports a failure and swallows it, so
+              // a stop that did not happen would look like one that did, and
+              // History would go straight on to a restore that meets the same
+              // 409 with nothing said about why. This rejects, and the dialog
+              // says what went wrong. Busy is still held for the same window.
+              onStopWork={async (work) => {
+                setBusy(true);
+                try {
+                  await api(`${base}/work/${work.sessionId}/stop`, 'POST', {});
+                  await load();
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            />
+          </section>
+        )}
+        {!editing && view === 'Thread' && !selected && (
           <section className="screen on" id="scrThread">
             <main className="work" aria-label="No thread">
               <div className="col head">
@@ -1196,7 +1696,7 @@ export function Shell({
             />
           </section>
         )}
-        {view === 'Board' && (
+        {!editing && view === 'Board' && (
           <section className="screen on" aria-label="Board">
             <BoardView
               project={project}
@@ -1238,7 +1738,7 @@ export function Shell({
             />
           </section>
         )}
-        {view === 'Team' && (
+        {!editing && view === 'Team' && (
           <section className="screen on" aria-label="Team">
             <TeamView
               project={project}
@@ -1288,6 +1788,7 @@ export function Shell({
             onOpen={setOpenPath}
             onWidth={setFilesWidth}
             onClose={() => setFilesOpen(false)}
+            onEdit={(path) => setEditing(path)}
           />
         )}
       </div>

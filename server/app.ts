@@ -3,8 +3,15 @@ import { taskDocumentProblem } from '../shared/task-sources.js';
 import { mountPermissionRoutes } from './permission-routes.js';
 import { WorkspaceService } from './workspaces.js';
 import { mountWorkspaceRoutes } from './workspace-routes.js';
+import { ThemeService, THEME_PACK_ID_PATTERN, THEME_SCOPE_PATTERN } from './themes.js';
+import { mountThemeRoutes } from './theme-routes.js';
+import { CustomizationGate } from './customization-gate.js';
+import { CustomizationBenefitLedger } from './customization-benefit.js';
+import { mountCustomizationBenefitRoutes } from './customization-benefit-routes.js';
 import { ConfigurationService } from './configuration.js';
 import { mountConfigurationRoutes } from './configuration-routes.js';
+import { DiscoveryService } from './discovery/service.js';
+import { mountDiscoveryRoutes } from './discovery/routes.js';
 import { WeeklyBriefService } from './weekly-brief.js';
 import { browseImports, inspectImport, importExports } from './file-imports.js';
 import { isActiveMember } from '../shared/workspaces.js';
@@ -31,11 +38,7 @@ import type {
   Route,
 } from '../shared/types.js';
 import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
-import {
-  activatePack,
-  deactivatePack,
-  discoverInstructionFiles,
-} from './capability-packs.js';
+import { activatePack, deactivatePack, discoverInstructionFiles } from './capability-packs.js';
 import {
   CAPABILITY_PACK_IDS,
   CAPABILITY_PACKS,
@@ -43,8 +46,10 @@ import {
 } from '../shared/capability-packs.js';
 import { defaults, findTasks, hash, identifier, now, Store, threadNameFromText } from './store.js';
 import { buildSupportBundle, renderSupportBundle } from './support-bundle.js';
+import { currentBuildIdentity } from './build-identity.js';
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
+import { ChangeReviewService } from './change-review/service.js';
 import { askCodex, getIntegrationStatuses, type NativeTeamOptions } from './integrations.js';
 import { MODES, modeOf } from './modes.js';
 import { fakeCodexSnapshot, usageService } from './usage.js';
@@ -59,6 +64,8 @@ import { mountTeamRoutes } from './team/routes.js';
 import { createHarnessHost } from './harness/host.js';
 import { mountHarnessRoutes } from './harness/routes.js';
 import { localHarnessPrincipal } from './harness/bridge.js';
+import { textRunId } from './harness/text-route.js';
+import type { TransientPreview } from '../shared/adapter-contract.js';
 import { FIXTURE_ENGINE } from './harness/approval.js';
 import { CODEX_ENGINE, type ResolveHarnessAuthority } from './harness/codex-engine.js';
 import { roleInstructions } from './team/prompts.js';
@@ -66,6 +73,11 @@ import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
 import { parseTaskCommand } from './task-admission.js';
 import { WorkControl } from './work-control.js';
 import { DesktopConnections } from './connections/desktop.js';
+import { toastConnector } from './connections/fixture.js';
+import { compiledConnectionDemoConnectors } from './connections/compiler-demo.js';
+import { digest as evidenceDigest } from './harness/policy.js';
+import { mountReadinessRoutes } from './readiness/routes.js';
+import { loadShippedProductKnowledge } from './readiness/instructions.js';
 import packageInfo from '../package.json' with { type: 'json' };
 import {
   EXTERNAL_ENGINES,
@@ -73,8 +85,12 @@ import {
   isExternalEngine,
   isRoute,
   ROUTES,
+  type EngineConnection,
 } from '../shared/engines.js';
 import { EngineService } from './engines/service.js';
+import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
+import { claudeSessionRunId } from './harness/claude-session-run.js';
+import { baselineRedact } from './secrets.js';
 import { EngineError } from './engines/process.js';
 import { selectedEngine, selectedModel } from '../shared/ai-selection.js';
 import { AppUpdateService, mountAppUpdateRoutes, type UpdateTransport } from './app-updates.js';
@@ -95,7 +111,11 @@ interface AppOptions {
    */
   reviewerAdapter?: ReviewerAdapter | null;
   engineService?: EngineService;
+  /** How a native sign-in window is opened; tests pass a fake so none opens. */
+  nativeLoginLaunch?: ConstructorParameters<typeof NativeLogin>[1];
   harnessAuthority?: ResolveHarnessAuthority;
+  /** Lease TTL for external text-turn runs; tests shorten it to exercise takeover. */
+  harnessTextLeaseMs?: number;
   updateOverrides?: {
     platform?: string;
     packaged?: boolean;
@@ -301,6 +321,42 @@ function validateSettings(current: Settings, body: unknown): Settings {
           throw new ApiError(400, 'Text scale must be between 0.75 and 2.');
         result.appearance[key] = n;
       }
+    if (value.textureOff !== undefined) {
+      if (typeof value.textureOff !== 'boolean')
+        throw new ApiError(400, 'Texture must be on or off.');
+      result.appearance.textureOff = value.textureOff;
+    }
+    // Shape only. Whether the theme still exists, still validates, or was
+    // written by this install is decided when it is read, by the theme service
+    // and its fallback — not here, where a stale pointer would become a saved
+    // settings failure instead of a notice.
+    if (value.activeTheme !== undefined) {
+      if (value.activeTheme === null) result.appearance.activeTheme = null;
+      else {
+        const theme = plain(value.activeTheme);
+        for (const key of Object.keys(theme))
+          if (!['id', 'revision', 'scope'].includes(key))
+            throw new ApiError(400, `Unknown active theme field: ${key}`);
+        if (typeof theme.id !== 'string' || !THEME_PACK_ID_PATTERN.test(theme.id))
+          throw new ApiError(400, 'That theme name is not one this computer can store.');
+        if (
+          typeof theme.revision !== 'number' ||
+          !Number.isInteger(theme.revision) ||
+          theme.revision < 1
+        )
+          throw new ApiError(400, 'A theme revision is a whole number from 1 up.');
+        // Shape only, and never stamped here: the theme routes own which scope
+        // a pointer was written in. A pointer sent without one is a pointer
+        // written before scopes were recorded, and stays that way.
+        if (theme.scope !== undefined && !THEME_SCOPE_PATTERN.test(String(theme.scope)))
+          throw new ApiError(400, 'That theme scope is not one this computer writes.');
+        result.appearance.activeTheme = {
+          id: theme.id,
+          revision: theme.revision,
+          ...(theme.scope === undefined ? {} : { scope: String(theme.scope) }),
+        };
+      }
+    }
   }
   if (supplied.services) {
     const value = plain(supplied.services);
@@ -391,10 +447,40 @@ function validateSettings(current: Settings, body: unknown): Settings {
 export async function createApp(options: AppOptions) {
   const store = new Store(path.resolve(options.dataDir), options.projectRoot);
   await store.init();
-  const work = new WorkService(store, options.stepMs);
-  const engines = options.engineService ?? new EngineService(path.join(store.dataDir, 'engines'));
+  // Automatic Change Review: deterministic per-run evidence. Constructed before
+  // the work services so every run can capture its baseline from the start.
+  const changeReview = new ChangeReviewService(store);
+  await changeReview.init();
+  const work = new WorkService(store, options.stepMs, changeReview);
+  const engines =
+    options.engineService ??
+    new EngineService(path.join(store.dataDir, 'engines'), {
+      redactFor: () => baselineRedact,
+      // A staged failure names the build it happened in, so a stale shortcut or
+      // an older installed copy shows up in the first support report.
+      buildId: () => currentBuildIdentity(packageInfo.version).buildId,
+    });
   const installer = new EngineInstaller(engines.root);
-  const login = new NativeLogin(engines.root);
+  // A finished native sign-in is not evidence of an account. The window ending
+  // only asks for one fresh inspection, and what that inspection answers is what
+  // the screen shows.
+  let closing = false;
+  const login = new NativeLogin(engines.root, options.nativeLoginLaunch, {
+    onFinished: async (engine) => {
+      if (closing) return;
+      // A check that began before the sign-in finished cannot know about it, so
+      // it is never allowed to be the last word: wait for it, then look again.
+      await engines.settled(engine);
+      if (closing) return;
+      try {
+        await engines.check(engine);
+      } catch (error) {
+        // A failed check has already written its own detail onto the connection,
+        // and REQUEST_ACTIVE only means a newer check for this route is running.
+        if (!(error instanceof EngineError && error.code === 'REQUEST_ACTIVE')) noteError(error);
+      }
+    },
+  });
   const reviewerAdapter =
     options.reviewerAdapter === undefined ? codexReviewerAdapter() : options.reviewerAdapter;
   const agents = new AgentRegistry(store.dataDir);
@@ -403,6 +489,57 @@ export async function createApp(options: AppOptions) {
   // creates is a labelled local fixture rather than a hosted organization.
   const workspaces = new WorkspaceService(store);
   await workspaces.init();
+  const discovery = new DiscoveryService(store, {
+    verifyObservedEvidence: async ({ operatorId, evidence }) => {
+      if (operatorId !== workspaces.currentPerson().id) return false;
+      let state: ReturnType<Store['state']>;
+      try {
+        state = store.state(evidence.projectId);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return false;
+        throw error;
+      }
+      const entry = state.history.find((item) => item.id === evidence.historyEntryId);
+      if (!entry) return false;
+      if (evidence.kind === 'approved-file') {
+        const name = relativeName(evidence.path);
+        return (
+          (entry.actor === 'you' || !!entry.approvalId || !!entry.authorization) &&
+          entry.files.some(
+            (file) => file.path === name && file.recorded && file.after === evidence.sha,
+          ) &&
+          hash(await store.current(evidence.projectId, name)) === evidence.sha
+        );
+      }
+      return (
+        entry.sessionId === evidence.executionId &&
+        state.sessions.some(
+          (session) => session.id === evidence.executionId && session.state === 'done',
+        )
+      );
+    },
+  });
+  // Design Studio storage. It reads the *live* workspace rather than the stored
+  // reference, so a revoked business member reads their Personal themes and not
+  // the ones they can no longer see.
+  const themes = new ThemeService(store, {
+    workspace: () => workspaces.active(),
+    personId: () => workspaces.currentPerson().id,
+  });
+  // Who may change how this app looks. It reads the same live workspace the
+  // storage does, so the scope a mutation is checked against is the scope it
+  // would be written to. `DIOMEDES_DESIGN_AUTHORING` is read once, here, from
+  // the environment the service was launched in.
+  const customization = new CustomizationGate({
+    workspace: () => workspaces.active(),
+    personId: () => workspaces.currentPerson().id,
+    membershipOf: (organizationId, personId) => workspaces.membershipOf(organizationId, personId),
+    entitlementOf: (organizationId) => workspaces.entitlementOf(organizationId),
+  });
+  // The one design engagement a paid plan includes, recorded beside the
+  // billing records because it is a promise with money behind it.
+  const customizationBenefit = new CustomizationBenefitLedger(store);
+  await customizationBenefit.init();
   // The setup those answers compile into. It reads the Agent registry and Trust
   // live on every check, so a staged configuration cannot ride on an old reading.
   const configuration = new ConfigurationService(store, workspaces, agents);
@@ -424,6 +561,7 @@ export async function createApp(options: AppOptions) {
     tenantFor: (organizationId) => workspaces.organization(organizationId)?.tenantId ?? null,
     memberOf: (organizationId, personId) =>
       isActiveMember(workspaces.membershipOf(organizationId, personId)),
+    billingStatusFor: (organizationId) => billing.statusOf(organizationId),
     policyFor: (organizationId) => {
       const active = configuration.active(organizationId);
       return {
@@ -478,12 +616,18 @@ export async function createApp(options: AppOptions) {
       }),
     reviewer,
     agents,
+    changeReview,
   );
   const harness = createHarnessHost({
     store,
     dataDir: store.dataDir,
     currentAuthority: options.harnessAuthority,
+    textLeaseMs: options.harnessTextLeaseMs,
   });
+  // External text turns run through the host's RunService: the adapter is only
+  // the provider transport inside the fenced dispatch step.
+  engines.dispatch = harness.textRoute.request;
+  engines.nativeSessions = harness.claudeSessions;
   await harness.init();
   const connections = new DesktopConnections(store, harness);
   const app = express();
@@ -615,9 +759,104 @@ export async function createApp(options: AppOptions) {
   });
   mountPermissionRoutes(app, store, nativeWork);
   mountWorkspaceRoutes(app, store, workspaces, configuration, briefs);
+  mountThemeRoutes(app, store, themes, customization);
+  mountCustomizationBenefitRoutes(app, store, workspaces, customization, customizationBenefit);
   mountManagedUsageRoutes(app, store, ledger, gateway, billing, workspaces);
   mountConfigurationRoutes(app, store, workspaces, configuration, agents);
+  mountDiscoveryRoutes(app, discovery, {
+    operatorId: () => workspaces.currentPerson().id,
+    importDocument: async (_req, input) => {
+      const name = relativeName(input.path);
+      const state = store.state(input.projectId);
+      const imported =
+        name.startsWith('Imports/') &&
+        state.history.some(
+          (entry) =>
+            entry.actor === 'you' &&
+            entry.label === 'Imported exports' &&
+            entry.files.some(
+              (file) =>
+                file.path === name &&
+                file.op === 'created' &&
+                file.recorded &&
+                file.after === input.sha,
+            ),
+        );
+      if (!imported) throw new ApiError(403, 'Choose a research file imported through Files.');
+      const document = await store.readDocument(input.projectId, name);
+      if (document.sha !== input.sha || document.text === null)
+        throw new ApiError(409, 'The research file changed. Select its current version again.');
+      return { filename: name, content: document.text };
+    },
+    exportToProject: async (_req, artifact, projectId) => {
+      store.state(projectId);
+      const destination = `Discovery/${artifact.prospectId}/${identifier('record')}.md`;
+      const entry = await store.writeRecorded(
+        projectId,
+        [
+          {
+            path: destination,
+            text: artifact.text,
+            expected: null,
+          },
+        ],
+        {
+          actor: 'you',
+          kind: 'discovery-export',
+          merge: false,
+          label: 'Discovery record',
+          sentence: 'You exported the active discovery record.',
+        },
+      );
+      return { id: entry.id, path: destination, createdAt: entry.time };
+    },
+  });
   connections.mount(app);
+  mountReadinessRoutes(app, {
+    knowledge: () => loadShippedProductKnowledge({ buildVersion: packageInfo.version }),
+    snapshot: async (req) => {
+      const projectId = req.query.projectId;
+      if (projectId !== undefined && (typeof projectId !== 'string' || !projectId))
+        throw new ApiError(400, 'Choose one project for connection readiness.');
+      // Cached snapshots never arm a connector or probe an engine.
+      const saved = projectId ? connections.service.snapshot(projectId).connections : null;
+      return {
+        build: { version: packageInfo.version, source: 'package.json' },
+        settings: { services: { ...store.settings.services }, observedAt: now() },
+        engines: engines.status(),
+        connectors: {
+          manifests: [toastConnector, ...compiledConnectionDemoConnectors].map(({ manifest }) => ({
+            manifest,
+            digest: evidenceDigest(manifest),
+          })),
+          instances: saved?.instances ?? [],
+          // Bind only exact processed receipts; legacy observations lack generation.
+          observations: saved
+            ? saved.inbox
+                .filter(
+                  (event) =>
+                    event.state === 'processed' &&
+                    evidenceDigest(
+                      saved.observations[
+                        evidenceDigest([
+                          event.connectionId,
+                          event.observation.resourceId,
+                          event.observation.key,
+                        ])
+                      ] ?? null,
+                    ) === evidenceDigest(event.observation),
+                )
+                .map((event) => ({
+                  connectionId: event.connectionId,
+                  generation: event.generation,
+                  projectId: projectId as string,
+                  observation: event.observation,
+                }))
+            : [],
+        },
+      };
+    },
+  });
   // Accepted close-and-install latches before the desktop handoff; new
   // mutating work pauses after that point. Assigned once updates exist;
   // route handlers run later, so the late binding is safe.
@@ -712,6 +951,11 @@ export async function createApp(options: AppOptions) {
         projectRoot: store.projectRoot,
         port,
         engines: await getIntegrationStatuses({ refresh: false, passive: true }),
+        // Cached observations only: a support export never starts a scan.
+        connections: engines.status(),
+        services: store.settings.services,
+        // The name is the identifying part, so it travels only when asked for.
+        includeProjectName: req.query.projectName === '1',
         state,
         recentErrors,
         secrets,
@@ -756,7 +1000,10 @@ export async function createApp(options: AppOptions) {
             etag: settingsTag(store.settings),
           },
         );
-      return withSettingsTag(res, await store.saveSettings(validateSettings(store.settings, req.body)));
+      return withSettingsTag(
+        res,
+        await store.saveSettings(validateSettings(store.settings, req.body)),
+      );
     }),
   );
   const externalEngine = (req: Request) =>
@@ -768,9 +1015,22 @@ export async function createApp(options: AppOptions) {
     });
     return controller.signal;
   };
+  // The next action is derived on the host, beside the facts it rests on: the
+  // On switch lives in settings and the guided installer knows its platforms.
+  const withNextAction = (connections: EngineConnection[]): EngineConnection[] =>
+    connections.map((connection) => ({
+      ...connection,
+      nextAction: engines.nextAction(connection.engine, {
+        enabled: store.settings.services?.[connection.engine] === true,
+        installSupported: installer.offer(connection.engine).available,
+      }),
+      // Whether a native sign-in window Diomedes opened is still open, so a
+      // screen can wait for its check instead of asking for one.
+      signInWindow: login.state(connection.engine),
+    }));
   app.get(
     '/api/ai/status',
-    route(async () => ({ connections: engines.status() }), false),
+    route(async () => ({ connections: withNextAction(engines.status()) }), false),
   );
   app.post(
     '/api/ai/discover',
@@ -786,12 +1046,60 @@ export async function createApp(options: AppOptions) {
           },
         }),
       );
-      return { connections: await engines.discover(true) };
+      return { connections: withNextAction(await engines.discover(true)) };
     }, false),
   );
   app.post(
     '/api/ai/check/:engine',
-    route(async (req, res) => engines.check(externalEngine(req), connectionSignal(res)), false),
+    route(async (req, res) => {
+      const checked = await engines.check(externalEngine(req), connectionSignal(res));
+      return withNextAction([checked])[0];
+    }, false),
+  );
+  /**
+   * Choose which observed installation a route uses. A candidate id names
+   * something the host itself observed; a path from the screen is never bound.
+   */
+  app.post(
+    '/api/ai/bind',
+    route(async (req) => {
+      const b = body(req),
+        engine = choice(b.engine, EXTERNAL_ENGINES, 'engine');
+      // `<source>:<engine>:<canonical path>`: at most 20 characters of prefix and
+      // a Windows path of up to 32,767 units, which a long-path install can have.
+      // The id is only ever compared with ids the host itself produced.
+      const bound = await engines.bind(engine, asString(b.candidateId, 'an installation', 32_787));
+      return withNextAction([bound])[0];
+    }, false),
+  );
+  /**
+   * One real request, on the person's say-so. It may use their allowance or
+   * incur provider charges, so nothing calls it for them: not a scan, not a
+   * finished sign-in, not reopening Settings.
+   */
+  app.post(
+    '/api/ai/test/:engine',
+    route(async (req, res) => {
+      const engine = externalEngine(req),
+        b = body(req);
+      if (b.consent !== true)
+        throw new ApiError(
+          409,
+          'Confirm that this test sends one small request through your selected service first.',
+        );
+      const model = asString(b.model, 'a model', 120);
+      // A receipt verifies the route a run would take, so the model tested is
+      // the model selected — never one the screen names on its own.
+      if (model !== store.settings.services?.[`${engine}Model`])
+        throw new ApiError(409, 'Select this model in AI setup before testing it.');
+      const receipt = await engines.testConnection(engine, {
+        consent: true,
+        model,
+        signal: connectionSignal(res),
+      });
+      const connection = engines.status().find((c) => c.engine === engine)!;
+      return { receipt, connection: withNextAction([connection])[0] };
+    }, false),
   );
   app.post(
     '/api/ai/select',
@@ -849,14 +1157,25 @@ export async function createApp(options: AppOptions) {
       const engine = externalEngine(req);
       if (body(req).consent !== true)
         throw new ApiError(409, 'Review and confirm this installation first.');
-      const found = (await engines.discover(true)).find((c) => c.engine === engine)!;
-      if (found.installation === 'found')
+      // Installing one route is a question about one route, so only it is scanned.
+      const found = (await engines.discover(true, { engine })).find((c) => c.engine === engine)!;
+      // Found is not usable. A wrong-version, changed or corrupt installation
+      // still needs the private compatible copy; only a usable one is reused.
+      const usable =
+        found.installation === 'found' && found.compatibility === 'supported' && !found.repair;
+      if (usable)
         return {
           detail:
             'An installation already exists. Diomedes will reuse it. Check compatibility and sign-in.',
         };
-      const result = await installer.install(engine, true, connectionSignal(res));
-      await engines.discover(true);
+      // A private copy that failed its digest needs the repair path even when
+      // another installation sits beside it and the route reads as unsupported.
+      const result = await installer.install(engine, true, connectionSignal(res), {
+        repair:
+          found.installation === 'corrupt' ||
+          (found.candidates ?? []).some((c) => c.source === 'managed' && c.integrity === 'failed'),
+      });
+      await engines.discover(true, { engine });
       return result;
     }, false),
   );
@@ -1078,7 +1397,8 @@ export async function createApp(options: AppOptions) {
       store.state(id(req));
       return browseImports(
         typeof req.query.path === 'string' && req.query.path.trim()
-          ? req.query.path : store.projectRoot,
+          ? req.query.path
+          : store.projectRoot,
       );
     }),
   );
@@ -1804,6 +2124,26 @@ export async function createApp(options: AppOptions) {
       ),
     ),
   );
+  // Automatic Change Review: the deterministic per-run manifest, and the two
+  // fixed Business examples running through the same pipeline.
+  app.get(
+    '/api/projects/:id/change-review/session/:sessionId',
+    route(async (req) => ({
+      manifest: await changeReview.manifestForSession(id(req), String(req.params.sessionId)),
+    })),
+  );
+  app.get(
+    '/api/projects/:id/change-review/task/:taskId',
+    route(async (req) => ({
+      manifest: await changeReview.manifestForTask(id(req), String(req.params.taskId)),
+    })),
+  );
+  app.get(
+    '/api/projects/:id/change-review/examples/:exampleId',
+    route(async (req) => ({
+      manifest: await changeReview.exampleManifest(String(req.params.exampleId), id(req)),
+    })),
+  );
   app.get(
     '/api/projects/:id/conversations',
     route(async (req) => ({ conversations: store.state(id(req)).conversations })),
@@ -1974,6 +2314,162 @@ export async function createApp(options: AppOptions) {
     // never disappear just because the connection is stale or unavailable.
     return { model };
   };
+  mountClaudeSessionRoutes(app, engines, {
+    authorize: async (req) => {
+      store.state(String(req.params.id));
+    },
+    prepare: async (req, command) => {
+      const projectId = String(req.params.id);
+      const input = await store.locked(async () => {
+        const state = store.state(projectId);
+        const thread = state.conversations.find((item) => item.id === command.threadId);
+        if (!thread) throw new ApiError(404, 'This thread was not found.');
+        if (selectedEngine(store.settings, state.project, thread) !== 'claude-code')
+          throw new ApiError(
+            409,
+            'Select Claude Code for this thread before opening its native conversation.',
+          );
+        if (store.settings.services?.['claude-code'] !== true)
+          throw new ApiError(409, 'Turn Claude Code on in Settings before sending.');
+        const accountRoute = store.settings.services?.['claude-codeAccountRoute'];
+        const selection = nativeChoice('claude-code', projectId, thread);
+        if (!selection.model || typeof accountRoute !== 'string')
+          throw new ApiError(409, 'Select the Claude account and model in Settings first.');
+        const paths = new Set<string>();
+        const documents = [];
+        for (const source of command.sources) {
+          const name = relativeName(source.path);
+          if (paths.has(name.toLowerCase()))
+            throw new ApiError(400, 'Choose each source file once.');
+          paths.add(name.toLowerCase());
+          const document = await store.readDocument(projectId, name);
+          if (document.sha !== source.sha)
+            throw new ApiError(409, `${name} changed. Choose its current version before sending.`);
+          documents.push({ path: name, text: document.text });
+        }
+        if (
+          documents.reduce((bytes, document) => bytes + Buffer.byteLength(document.text), 0) >
+          128_000
+        )
+          throw new ApiError(413, 'Choose less than 128 KB of source text for this request.');
+        return {
+          projectId,
+          threadId: thread.id,
+          requestId: command.commandId,
+          prompt: command.text,
+          documents,
+          instructions: MODES[command.mode].instructions,
+          model: selection.model,
+          accountRoute,
+        };
+      });
+      const runId =
+        req.params.runId && !req.path.endsWith('/fork')
+          ? String(req.params.runId)
+          : claudeSessionRunId(projectId, command.commandId);
+      const progress = (kind: 'started' | 'delta' | 'ended', frame?: TransientPreview) =>
+        store.emit('engine-text', {
+          projectId,
+          threadId: input.threadId,
+          requestId: input.requestId,
+          runId,
+          kind,
+          ...(frame
+            ? {
+                stepId: frame.stepId,
+                attempt: frame.attempt,
+                fence: frame.fence,
+                seq: frame.seq,
+                text: frame.text,
+              }
+            : {}),
+        });
+      progress('started');
+      let ended = false;
+      const end = () => {
+        if (!ended) {
+          ended = true;
+          progress('ended');
+        }
+      };
+      req.res?.once('finish', end);
+      req.res?.once('close', end);
+      return {
+        ...input,
+        signal: req.res ? connectionSignal(req.res) : undefined,
+        onPreview: (frame) => progress('delta', frame),
+      };
+    },
+    recordResult: async (_req, command, result, input) => {
+      if (!result.response) return;
+      const response = result.response;
+      await store.locked(async () => {
+        // Project a committed runtime result into the ordinary thread. Clone first:
+        // a failed persist must remain repairable by replaying the same command.
+        const state = structuredClone(store.state(input.projectId));
+        const thread = state.conversations.find((item) => item.id === input.threadId);
+        if (!thread)
+          throw new ApiError(
+            404,
+            'The response is recorded in the runtime, but its thread is missing.',
+          );
+        const identity = hash(JSON.stringify([result.runId, input.requestId]))!;
+        const userId = `Uclaude-${identity.slice(0, 32)}`;
+        const assistantId = `Aclaude-${identity.slice(0, 32)}`;
+        const priorUser = thread.turns.find((turn) => turn.id === userId);
+        const priorAssistant = thread.turns.find((turn) => turn.id === assistantId);
+        if (priorUser || priorAssistant) {
+          if (priorUser?.text !== input.prompt || priorAssistant?.text !== response.text)
+            throw new ApiError(
+              409,
+              'The recorded conversation projection conflicts with this native response.',
+            );
+          return;
+        }
+        const at = now();
+        const sources = input.documents.map((document) => document.path);
+        const helper = {
+          engine: 'claude-code',
+          model: response.model,
+          version: response.version,
+          verified: true,
+        };
+        thread.turns.push(
+          {
+            id: userId,
+            role: 'you',
+            mode: command.mode,
+            text: input.prompt,
+            at,
+            sources,
+            route: 'claude-code',
+          },
+          {
+            id: assistantId,
+            role: 'assistant',
+            mode: command.mode,
+            text: response.text,
+            at,
+            sources,
+            route: 'claude-code',
+            helper,
+            origin: directOrigin({
+              engine: 'claude-code',
+              requestedModel: input.model,
+              reportedModel: response.model,
+              version: response.version,
+              accountRoute: input.accountRoute,
+              executorId: 'claude-code',
+            }),
+          },
+        );
+        thread.helper = { engine: 'claude-code', model: response.model };
+        thread.mode = command.mode;
+        touchThread(thread, at, state.tasks);
+        await store.persist(state);
+      });
+    },
+  });
   const codexHelper = (result: {
     model?: string;
     version?: string;
@@ -2320,13 +2816,22 @@ export async function createApp(options: AppOptions) {
         if (!requestedModel || typeof accountRoute !== 'string')
           throw new ApiError(409, 'Select this service and model in AI setup first.');
         const requestId = identifier('R');
-        const progress = (kind: 'started' | 'delta' | 'ended', text?: string) =>
+        const runId = textRunId(projectId, requestId);
+        const progress = (
+          kind: 'started' | 'delta' | 'ended',
+          text?: string,
+          frame?: TransientPreview,
+        ) =>
           store.emit('engine-text', {
             projectId,
             threadId: prepared.conversationId,
             requestId,
+            runId,
             kind,
-            ...(text ? { text } : {}),
+            ...(frame
+              ? { stepId: frame.stepId, attempt: frame.attempt, fence: frame.fence, seq: frame.seq }
+              : {}),
+            ...(text === undefined ? {} : { text }),
           });
         progress('started');
         try {
@@ -2340,7 +2845,7 @@ export async function createApp(options: AppOptions) {
             model: requestedModel,
             accountRoute,
             signal: connectionSignal(res),
-            onDelta: (delta) => progress('delta', delta),
+            onPreview: (frame) => progress('delta', frame.text, frame),
           });
           answer = result.text;
           helper = {
@@ -2571,16 +3076,25 @@ export async function createApp(options: AppOptions) {
           [
             'CONSENT_REQUIRED',
             'AUTH_REQUIRED',
+            'ACCOUNT_ROUTE',
             'MODEL_UNAVAILABLE',
             'STALE_STATUS',
             'NOT_INSTALLED',
             'UNSUPPORTED_VERSION',
             'ACCOUNT_CHANGED',
+            'ROUTE_REFUSED',
+            'BINDING_CHANGED',
           ].includes(error.code)
             ? 409
             : 503,
         )
-        .json({ error: error.message, code: error.code, ambiguous: error.ambiguous });
+        .json({
+          error: error.message,
+          code: error.code,
+          ambiguous: error.ambiguous,
+          // Where it failed decides the recovery, so the stage travels with the code.
+          ...(error.stage ? { stage: error.stage } : {}),
+        });
       return;
     }
     if (error instanceof ApiError) {
@@ -2606,17 +3120,26 @@ export async function createApp(options: AppOptions) {
   };
   app.use(errorHandler);
   app.locals.store = store;
+  app.locals.discovery = discovery;
   app.locals.work = work;
   app.locals.nativeWork = nativeWork;
+  app.locals.changeReview = changeReview;
   app.locals.harness = harness;
   app.locals.connections = connections;
   app.locals.workControl = workControl;
   app.locals.close = async () => {
+    // A window closed on the way out must not start a check against services
+    // that are already shutting down.
+    closing = true;
     // Stop listening before anything is stopped, or shutting a run down would
     // announce a settled session and schedule a delivery on the way out.
     deliveryClosed = true;
     store.off('change', deliverFor);
     await Promise.allSettled([...deliveries]);
+    // Change-review writes into the data dir; drain its queued builds before
+    // the remaining services' close persists can settle, or a late record
+    // write can race removal of the data dir.
+    await changeReview.close();
     engines.close();
     await login.close();
     await connections.close();

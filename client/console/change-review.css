@@ -1,0 +1,246 @@
+/* Automatic Change Review — one transcript block in the Console's own vocabulary:
+   the run inspector's reading type, the ledger's section labels, the transcript's
+   hanging markers, the record's quiet links and the instructions panel for verbatim
+   text. Every rule is scoped to `.console` so it outranks the shell's own resets
+   (`.console button`, `.console .mono`) instead of losing to them. */
+
+.console .crev {
+  min-width: 0;
+  padding: 12px 0 8px;
+  font: 400 var(--dm-type-body) / 1.5 var(--ui);
+  color: var(--t1);
+}
+
+.console .crev-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+}
+.console .crev-head h2 {
+  margin: 0;
+  font: 500 var(--dm-type-body) / 1.5 var(--ui);
+  color: var(--t1);
+}
+.console .crev h3 {
+  margin: 18px 0 6px;
+  font: 500 var(--dm-type-meta) / 1.5 var(--ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+/* zero-specificity reset, so each list's own margins below still apply */
+.console .crev :where(ul, ol) {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* notes and their links: the record's quiet underline, not the browser's */
+.console .crev-note {
+  margin-block: 4px;
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+}
+.console .crev-note button {
+  color: var(--t2);
+  border-bottom: 1px solid var(--hair-2);
+}
+.console .crev-note button:hover {
+  color: var(--t1);
+}
+/* on a plain thread the examples line stands alone under the permission note */
+.console .transcript .col > .crev-examples {
+  margin-block: 12px 0;
+}
+
+.console .crev-sentences {
+  margin-top: 8px;
+}
+.console .crev-sentences li {
+  margin-block: 2px;
+  overflow-wrap: anywhere;
+}
+
+/* attention and failure hang a marker in the transcript gutter, like a need does */
+.console .crev-flag,
+.console .crev-check:is(.failed, .error) {
+  position: relative;
+}
+.console .crev-flag::before,
+.console .crev-check:is(.failed, .error)::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: calc(0.75em - 3px);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--attn);
+}
+.console .crev-check:is(.failed, .error)::before {
+  top: 0.75em; /* the row's 3px block padding plus half the first line, less half the dot */
+  background: var(--fail);
+}
+.console .crev-flag {
+  margin-block: 4px;
+  overflow-wrap: anywhere;
+}
+
+/* checks and changes share one left column: the state or kind word, then the text */
+.console .crev-check {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: 0 10px;
+  align-items: baseline;
+  padding-block: 3px;
+}
+.console .crev-check-state {
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+}
+.console .crev-check-state.passed {
+  color: var(--t2);
+}
+.console .crev-check-state:is(.failed, .error) {
+  color: var(--fail);
+}
+.console .crev-check-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .crev-check-detail {
+  margin-left: 10px;
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+}
+
+.console .crev-row {
+  border-bottom: 1px solid var(--hair);
+}
+.console .crev-row:first-child {
+  border-top: 1px solid var(--hair);
+}
+.console .crev-path {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding-block: 4px;
+  text-align: left;
+  color: var(--t1);
+}
+.console .crev-path:hover .crev-name {
+  color: var(--light);
+}
+.console .crev-kind {
+  flex: none;
+  width: 4.5rem;
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+}
+.console .crev-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .crev-observed {
+  flex: none;
+  font-size: var(--dm-type-caption);
+  color: var(--attn);
+}
+.console .crev-evidence {
+  padding: 2px 0 12px calc(4.5rem + 10px);
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+}
+.console .crev-evidence p {
+  margin-block: 4px;
+}
+/* verbatim file text reads like the instructions panel: code role, chrome ground */
+.console .crev-patch {
+  margin: 6px 0;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  min-width: 0;
+  background: var(--chrome);
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  font: 400 var(--dm-type-code) / 1.55 var(--mono);
+  color: var(--t2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.console .crev-fields {
+  margin-block: 6px;
+}
+.console .crev-fields li {
+  margin-block: 2px;
+  overflow-wrap: anywhere;
+}
+.console .crev-fields b {
+  font-weight: 500;
+  color: var(--t1);
+}
+.console .crev-dim {
+  color: var(--t3);
+}
+.console .crev-refs {
+  margin-top: 6px;
+}
+.console .crev-refs li {
+  overflow-wrap: anywhere;
+}
+
+/* technical details open like the run inspector's own disclosure */
+.console .crev-details {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-block: 4px;
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+}
+.console .crev-details::before {
+  content: '';
+  width: 6px;
+  height: 8px;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  transition: transform var(--move);
+}
+.console .crev-details[aria-expanded='true']::before {
+  transform: rotate(90deg);
+}
+.console .crev-details:hover {
+  color: var(--t1);
+}
+.console .crev-technical {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hair);
+  font-size: var(--dm-type-caption);
+}
+.console .crev-technical dl {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(0, 3fr);
+  gap: 6px 16px;
+  margin: 0;
+}
+.console .crev-technical dt {
+  color: var(--t3);
+}
+.console .crev-technical dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--t2);
+  overflow-wrap: anywhere;
+}
+.console .crev-limits {
+  margin-top: 6px;
+}

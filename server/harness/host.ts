@@ -8,15 +8,22 @@ import { FileRunStore, validateRunId, type RunStore } from './run-store.js';
 import { RunService, type StepDefinition, type StepHandler } from './run-service.js';
 import { ToolRegistry } from './tools.js';
 import { HarnessError } from './policy.js';
-import { HarnessBridge } from './bridge.js';
+import { HarnessBridge, localHarnessPrincipal } from './bridge.js';
 import { ScriptedModelAdapter } from './fixture-adapter.js';
 import { REPORT_PATH } from './approval.js';
 import { registerFormatReport } from './capabilities/format-report.js';
 import { CODEX_REPORT, CodexEngineAdapter, type ResolveHarnessAuthority } from './codex-engine.js';
 import { askCodex } from '../integrations.js';
+import { HOST_TEST_PROJECT } from '../engines/service.js';
 import { parseWorkCommand } from '../work-admission.js';
 import { identifier } from '../store.js';
 import { currentAuthority as resolveTrustAuthority } from '../trust/index.js';
+import {
+  CLAUDE_SESSION_CAPABILITY,
+  ClaudeSessionRuns,
+  validateClaudeNativeCheckpoint,
+} from './claude-session-run.js';
+import { ENGINE_TEXT_TURN, TextRouteRuntime, textDispatchAuthorizer } from './text-route.js';
 
 export const HARNESS_POLICY_VERSION = 'diomedes-host-policy-v1';
 
@@ -138,6 +145,9 @@ const readableRun = z.object({
       output: z.json(),
       outputHash: sha.nullable(),
       origin: stepOrigin,
+      nativeCheckpoint: z
+        .strictObject({ v: z.literal(1), providerId: z.string().min(1).max(80), payload: z.json() })
+        .optional(),
       leaseFence: integer,
       startedAt: stamp.nullable(),
       endedAt: stamp.nullable(),
@@ -174,7 +184,14 @@ const readableRun = z.object({
   lastSeq: integer,
 });
 
-/** One lazily created file store per registered project; no second write queue. */
+/**
+ * One lazily created file store per registered project; no second write queue.
+ *
+ * Diomedes also starts runs for itself — the consented connection test is one —
+ * and those belong to no customer project. They are kept under one reserved
+ * folder of their own so they are durable, recoverable and listable without
+ * being inside anybody's project.
+ */
 class ProjectRunStore implements RunStore {
   private projects = new Map<string, FileRunStore>();
   private locations = new Map<string, string>();
@@ -185,12 +202,28 @@ class ProjectRunStore implements RunStore {
   constructor(
     private readonly store: Store,
     private readonly dataDir: string,
+    /**
+     * The one reserved project id a host-initiated run carries. Compared whole
+     * — never as a prefix or a pattern — so a project a person made can never
+     * be read as this one, and this one is never read as theirs.
+     */
+    private readonly hostProjectId: string,
   ) {}
   private project(projectId: string) {
-    this.store.state(projectId);
+    const host = projectId === this.hostProjectId;
+    // A host run has no project state to open; a customer run still must.
+    if (!host) this.store.state(projectId);
     let files = this.projects.get(projectId);
     if (!files) {
-      files = new FileRunStore(path.join(this.dataDir, 'projects', projectId, 'harness', 'runs'));
+      // The host folder is a constant path. Nothing a caller supplies reaches
+      // it: the branch above already proved the id is the reserved one, and the
+      // only variable part of what is written there is the run id, which
+      // `validateRunId` restricts to one plain file name.
+      files = new FileRunStore(
+        host
+          ? path.join(this.dataDir, 'host', this.hostProjectId, 'harness', 'runs')
+          : path.join(this.dataDir, 'projects', projectId, 'harness', 'runs'),
+      );
       this.projects.set(projectId, files);
     }
     return files;
@@ -220,9 +253,12 @@ class ProjectRunStore implements RunStore {
       }
   }
   async list() {
-    return (
-      await Promise.all((await this.store.projects()).map((project) => this.ids(project.id)))
-    ).flat();
+    const ids = (await this.store.projects()).map((project) => project.id);
+    // Every run this store holds, and it holds the host's own. The reserved
+    // project is in no registry, so listing the registry alone would leave a
+    // record the store keeps out of the index it builds from this listing.
+    if (!ids.includes(this.hostProjectId)) ids.push(this.hostProjectId);
+    return (await Promise.all(ids.map((id) => this.ids(id)))).flat();
   }
   async create(run: HarnessRun) {
     if (this.locations.has(run.id))
@@ -302,25 +338,41 @@ export function createHarnessHost({
   currentAuthority,
   codexGenerator,
   codexAccountRoute,
+  textLeaseMs,
 }: {
   store: Store;
   dataDir: string;
   currentAuthority?: ResolveHarnessAuthority;
   codexGenerator?: typeof askCodex;
   codexAccountRoute?: () => Promise<string>;
+  /** Lease TTL for text-route runs; the default covers a slow provider turn. */
+  textLeaseMs?: number;
 }) {
   if (path.resolve(dataDir) !== store.dataDir)
     throw new Error('The harness must use the Store data folder.');
   const secrets = new Set<string>();
   const redact = secretScrubber(secrets);
-  const files = new ProjectRunStore(store, dataDir);
+  const files = new ProjectRunStore(store, dataDir, HOST_TEST_PROJECT);
   let codex: CodexEngineAdapter;
-  const runs = new HostRunService(files, {
+  let textRoute: TextRouteRuntime;
+  const textAuthorize = textDispatchAuthorizer(
+    () => store.settings.services,
+    [ENGINE_TEXT_TURN.id, CLAUDE_SESSION_CAPABILITY.id],
+  );
+  const runs: HostRunService = new HostRunService(files, {
     clock: Date.now,
     policyVersion: HARNESS_POLICY_VERSION,
     redact,
-    authorizeEgress: (runId, intent, principal, phase) =>
-      codex.authorize(runId, intent, principal, phase),
+    validateNativeCheckpoint: validateClaudeNativeCheckpoint,
+    authorizeEgress: async (runId, intent, principal, phase) => {
+      const run = await runs.get(runId);
+      if (
+        run.capabilityId === ENGINE_TEXT_TURN.id ||
+        run.capabilityId === CLAUDE_SESSION_CAPABILITY.id
+      )
+        return textAuthorize(run, intent, phase);
+      return codex.authorize(runId, intent, principal, phase);
+    },
   });
   const tools = new ToolRegistry();
   const adapter = new ScriptedModelAdapter(async (runId) => {
@@ -341,8 +393,21 @@ export function createHarnessHost({
     codexAccountRoute,
   );
   const adapters = { 'native-fixture': adapter, codex };
-  const bridge = new HarnessBridge(store, runs, tools, adapter, redact, codex);
-  files.saved = (run) => bridge.enqueue(run);
+  textRoute = new TextRouteRuntime(runs, {
+    owner: identifier('text-route-'),
+    leaseMs: textLeaseMs,
+  });
+  const claudeSessions = new ClaudeSessionRuns(runs);
+  const bridge = new HarnessBridge(store, runs, tools, adapter, redact, HOST_TEST_PROJECT, codex);
+  const observers = new Set<{ runId: string; changed: () => void; closed: () => void }>();
+  let closed = false;
+  files.saved = (run) => {
+    bridge.enqueue(run);
+    // A wake-up carries no event data or authority. Readers obtain a fresh,
+    // authorized snapshot after the atomic write, using the same durable log.
+    for (const observer of observers)
+      if (observer.runId === run.id) observer.changed();
+  };
   runs.afterStep = () => bridge.flush();
   runs.use((context) => bridge.beforeStep(context));
   const refreshSecrets = async () => {
@@ -350,8 +415,18 @@ export function createHarnessHost({
       for (const token of Object.values(await store.readTeamSecrets(project.id)))
         secrets.add(token);
   };
+  /**
+   * A client reads runs by naming the project they belong to, and the reserved
+   * host project is not one a person can open. Its records were unreachable
+   * only because resolving the project failed; now that the store holds them,
+   * these two refuse it by name, and answer exactly as an id nobody made does.
+   */
+  const customerProject = (projectId: string) => {
+    if (projectId === HOST_TEST_PROJECT) throw new ApiError(404, 'This project was not found.');
+    return projectId;
+  };
   const get = async (projectId: string, runId: string) => {
-    if (!(await files.ids(projectId)).includes(validateRunId(runId)))
+    if (!(await files.ids(customerProject(projectId))).includes(validateRunId(runId)))
       throw new ApiError(404, 'This run was not found in this project.');
     const run = await runs.get(runId);
     if (run.capabilityId === CODEX_REPORT.id) await codex.authorityForRun(run, 'project.read');
@@ -373,7 +448,7 @@ export function createHarnessHost({
     return result;
   };
   const list = async (projectId: string) => {
-    const result = await savedRuns(projectId);
+    const result = await savedRuns(customerProject(projectId));
     for (const run of result)
       if (run.capabilityId === CODEX_REPORT.id) await codex.authorityForRun(run, 'project.read');
     return result;
@@ -390,6 +465,8 @@ export function createHarnessHost({
     adapters,
     bridge,
     codex,
+    textRoute,
+    claudeSessions,
     /** Host-only until authenticated client admission is supplied by Trust.
      * Reuses the same command parser, collision check, receipt and Store lock. */
     startCodexReport(
@@ -451,6 +528,12 @@ export function createHarnessHost({
     scrub,
     get,
     list,
+    subscribe(runId: string, changed: () => void, onClose: () => void) {
+      if (closed) throw new ApiError(503, 'The local service is closing.');
+      const observer = { runId, changed, closed: onClose };
+      observers.add(observer);
+      return () => { observers.delete(observer); };
+    },
     refreshSecrets,
     // Future leased secrets use the same live scrubber; no secret is leased by this fixture.
     rememberSecret(secret: string) {
@@ -459,11 +542,30 @@ export function createHarnessHost({
     async init() {
       await refreshSecrets();
       await files.list();
-      for (const project of await store.projects())
-        await bridge.recover(project.id, await savedRuns(project.id));
+      for (const project of await store.projects()) {
+        const saved = await savedRuns(project.id);
+        await bridge.recover(
+          project.id,
+          saved.filter((run) => run.capabilityId !== CLAUDE_SESSION_CAPABILITY.id),
+        );
+        // Text-route runs are not the bridge's sessions; the runtime's own
+        // recovery invalidates dead leases and parks in-flight dispatches.
+        for (const run of saved) await textRoute.recover(run.id, run);
+        for (const run of saved) await claudeSessions.recover(run);
+      }
+      // A host run has no Session and no Task, so the bridge has nothing to
+      // recover for it. The runtime still invalidates its dead lease and parks
+      // a dispatch whose outcome was never confirmed; nothing re-sends it.
+      for (const run of await savedRuns(HOST_TEST_PROJECT)) await textRoute.recover(run.id, run);
       await bridge.flush();
     },
-    close: () => bridge.close(),
+    close: async () => {
+      closed = true;
+      for (const observer of observers) observer.closed();
+      observers.clear();
+      await claudeSessions.closeAll();
+      await bridge.close();
+    },
   };
 }
 

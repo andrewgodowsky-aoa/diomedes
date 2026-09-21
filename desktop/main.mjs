@@ -1,9 +1,11 @@
 import { app, BrowserWindow, dialog, Menu, shell } from 'electron';
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { watch } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { captureNativeAuthCallbacks, createNativeAuth } from './native-auth.mjs';
 import {
   createInstallAccepted,
   isUpdateReleaseReference,
@@ -22,6 +24,11 @@ function openSetupReference(destination) {
     'https://github.com/can1357/oh-my-pi/releases/download/v18.0.6/omp-windows-x64.exe',
     // Official Diomedes release notes, opened from Settings > App updates.
     'https://github.com/andrewgodowsky-aoa/diomedes/releases',
+    // The local Website Studio, opened from the Design Center's Website target.
+    // Loopback by address and listed explicitly: the allowlist is the whole
+    // mechanism, so a studio on this computer is named here or it does not open.
+    // Byte-identical to WEBSITE_STUDIO_URL in server/website-studio.ts.
+    'http://127.0.0.1:4400/',
   ]);
   if (!allowed.has(destination) && !isUpdateReleaseReference(destination)) return;
   void shell
@@ -39,6 +46,7 @@ let server;
 let service;
 let shuttingDown = false;
 let releaseLock;
+let nativeAuth;
 
 // Field colour schemes as [chrome, t1] pairs for the titlebar overlay.
 // `cobalt` is retired and reads as `harbor` for saved settings.
@@ -66,15 +74,71 @@ function titleBarFor(packageId) {
   return { color, symbolColor, height: 40 };
 }
 
+/**
+ * The folder one account's themes live in.
+ *
+ * Mirrored from `themeScopeKey` in server/themes.ts, which owns it. This file
+ * is the Electron shell and cannot import the service's TypeScript, so the six
+ * lines are duplicated rather than shared. Change one and change the other.
+ */
+function themeScopeKey(workspace, personId) {
+  const of = (value) => createHash('sha256').update(String(value)).digest('hex').slice(0, 16);
+  return workspace?.kind === 'business'
+    ? `business-${of(workspace.organizationId)}`
+    : `personal-${of(personId)}`;
+}
+
+/**
+ * The titlebar for a custom theme: its own chrome and t1 when both are plain
+ * six-digit hex, and otherwise the built-in entry for the scheme it was built
+ * on. Every pack names a `baseTheme`, so there is always an answer here — which
+ * is exactly why `dataset.package` carries the base scheme id too.
+ *
+ * Nothing is trusted: the pack is read as data, two colours are taken from it,
+ * and anything unreadable falls through to the scheme.
+ */
+async function customTitleBar(settings) {
+  const active = settings?.appearance?.activeTheme;
+  if (!active || typeof active.id !== 'string' || !/^[a-z0-9][a-z0-9-]{2,63}$/.test(active.id))
+    return null;
+  try {
+    const identity = JSON.parse(
+      await fs.readFile(path.join(dataDir, 'workspaces', 'identity.json'), 'utf8'),
+    );
+    // The stored workspace, not the service's demoted one: the shell cannot
+    // check a membership. A revoked member's titlebar therefore keeps the old
+    // colours until the service writes Personal back on the next read, which is
+    // a cosmetic lag and never access — the themes themselves are served only
+    // through the scope `workspaces.active()` resolves.
+    const scope = themeScopeKey(settings.activeWorkspace, identity?.id);
+    // A theme applied in another workspace is not this workspace's theme. The
+    // service answers the built-in appearance for it, so the titlebar must too,
+    // rather than reading a folder that belongs to a different scope. A pointer
+    // with no scope was written before scopes were recorded; it is taken as-is.
+    if (active.scope !== undefined && active.scope !== scope) return null;
+    const pack = JSON.parse(
+      await fs.readFile(path.join(dataDir, 'themes', scope, active.id, 'pack.json'), 'utf8'),
+    );
+    const chrome = pack?.tokens?.color?.chrome?.$value;
+    const text = pack?.tokens?.color?.t1?.$value;
+    if (HEX_COLOR.test(String(chrome)) && HEX_COLOR.test(String(text)))
+      return { color: chrome, symbolColor: text, height: 40 };
+    return titleBarFor(pack?.baseTheme);
+  } catch {
+    return null;
+  }
+}
+
 // The service persists settings at settings.json in the data dir
 // (see server/store.ts). Read the saved appearance once, then re-apply
-// when it changes. No IPC or preload: this stays in the shell.
+// when it changes. Titlebar appearance stays in the shell.
 async function applyTitleBarOverlay() {
   if (!window || window.isDestroyed()) return;
   try {
     const raw = await fs.readFile(path.join(dataDir, 'settings.json'), 'utf8');
     const settings = JSON.parse(raw);
-    window.setTitleBarOverlay(titleBarFor(settings?.appearance?.package));
+    const custom = await customTitleBar(settings);
+    window.setTitleBarOverlay(custom ?? titleBarFor(settings?.appearance?.package));
   } catch {
     // Missing file, unparsable JSON, or unknown id: keep the default overlay.
   }
@@ -102,6 +166,9 @@ function watchSettingsForTitleBar() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  // Capture callbacks before ready; main retains single-instance ownership.
+  const nativeCallbacks = captureNativeAuthCallbacks(app, process.argv);
+  app.on('will-quit', () => { nativeCallbacks.dispose(); nativeAuth?.dispose(); });
   app.on('second-instance', () => {
     if (window?.isMinimized()) window.restore();
     window?.show();
@@ -173,6 +240,13 @@ if (!app.requestSingleInstanceLock()) {
       serveClient(service, path.join(root, 'dist'));
       server.on('request', service);
       const url = `http://127.0.0.1:${port}`;
+      nativeAuth = createNativeAuth({
+        clientId: process.env.DIOMEDES_WORKOS_CLIENT_ID,
+        tokenIssuer: process.env.DIOMEDES_WORKOS_TOKEN_ISSUER,
+        origin: url,
+        getWindow: () => window,
+      });
+      nativeCallbacks.connect((callback) => nativeAuth.handleCallback(callback));
       window = new BrowserWindow({
         width: 1440,
         height: 960,
@@ -184,7 +258,10 @@ if (!app.requestSingleInstanceLock()) {
         titleBarStyle: 'hidden',
         titleBarOverlay: { color: '#121417', symbolColor: '#e6e9ed', height: 40 },
         autoHideMenuBar: true,
-        webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
+        webPreferences: {
+          nodeIntegration: false, contextIsolation: true, sandbox: true,
+          preload: path.join(root, 'native-auth-preload.cjs'),
+        },
       });
       // The persisted interface preference is the only app zoom authority. Native
       // Chromium zoom would multiply it and drift from the visible Settings value.

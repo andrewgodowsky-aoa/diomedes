@@ -1,0 +1,342 @@
+/* The Projects page, in the Console's language. Every rule is prefixed with
+   `.console`; tokens only. The rail, the spine, the ledger, the instrument
+   line, the composer box and Send are console.css's own rules, reused by class.
+   What is here is the register of projects and the little this page adds.
+
+   Shape and line rules (docs/implementation/2026-09-20-console-design-language.md):
+   containers take --r, controls and rows take --rb, and inside a region a group
+   is made by space and a hover fill, never by a rule between rows. */
+
+/* This root holds a stage and no strip: the strip is TopStrip's, above it. */
+.console.home {
+  grid-template-rows: minmax(0, 1fr);
+}
+.console .home-screen {
+  grid-template-columns: minmax(0, 1fr) 296px;
+}
+/* The thread screen's rows are heading, instruments, transcript, composer. This
+   page has a heading, instruments and one scrolling body. */
+.console .home-work {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-areas: 'heading' 'instruments' 'body';
+}
+.console .home-scroll {
+  grid-area: body;
+  overflow-y: auto;
+  min-height: 0;
+}
+.console .home-col {
+  padding: 22px 0 56px;
+}
+
+.console .home-head {
+  align-items: center;
+  padding-bottom: 4px;
+}
+.console .home-actions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* The Console's bordered control: the box "Import files" uses in the Files pane. */
+.console .home-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t1);
+  font-weight: 500;
+  transition:
+    background var(--quick),
+    border-color var(--quick),
+    color var(--quick);
+}
+.console .home-btn:hover {
+  background: var(--raised);
+}
+/* One go-ahead per screen: --light text on a --light hairline, never a fill. */
+.console .home-btn.go {
+  color: var(--light);
+  border-color: color-mix(in srgb, var(--light) 55%, transparent);
+}
+.console .home-btn.go:hover {
+  background: color-mix(in srgb, var(--light) 8%, transparent);
+  border-color: var(--light);
+}
+.console .instr .attn,
+.console .instr .attn b {
+  color: var(--attn);
+}
+
+.console .home-first {
+  margin-top: 8px;
+}
+.console .home-register {
+  margin-top: 34px;
+}
+/* The ask and the first-run headings only: the rail's head and the ledger's
+   title are h2s too, and they keep the Console's own sizes. */
+.console .home-ask h2,
+.console .home-first h2 {
+  margin: 0 0 12px;
+  font: 500 var(--dm-type-section) / 1.3 var(--ui);
+  letter-spacing: -0.005em;
+}
+
+.console.home .composer textarea {
+  min-height: 72px;
+}
+.console.home .bar {
+  padding: 4px 8px 4px 14px;
+  min-height: 40px;
+  gap: 6px 16px;
+}
+.console .home-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  white-space: nowrap;
+}
+/* A project name is a machine string in a fixed-width bar (decision 5). */
+.console .home-target select {
+  min-width: 0;
+  max-width: 32ch;
+  padding: 3px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  background-color: var(--surface);
+  color: var(--t1);
+  font: inherit;
+  text-overflow: ellipsis;
+  transition: border-color var(--quick);
+}
+.console .home-target select:hover {
+  border-color: color-mix(in srgb, var(--t3) 70%, transparent);
+}
+/* What the chosen mode promises, in the words the thread's composer uses. */
+.console .home-cap {
+  margin: 10px 0 0;
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+}
+.console.home .helper-line {
+  margin: 4px 0 0;
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+}
+.console.home .helper-line .text-button {
+  color: var(--t1);
+  text-decoration: underline;
+  text-decoration-color: var(--hair-2);
+  text-underline-offset: 3px;
+}
+
+/* ---- the register: one row a project, one column a readout ----
+   The head and every row share one column template, so the figures stand under
+   their labels. The readouts are counts the project record already keeps. */
+.console .home-reg-head,
+.console .home-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px 64px 64px 52px 60px;
+  gap: 4px 16px;
+}
+.console .home-reg-head {
+  padding: 0 0 6px;
+  font-size: var(--dm-type-meta);
+}
+.console .home-reg-head > span:not(:first-child) {
+  text-align: right;
+}
+.console .home-list {
+  list-style: none;
+  /* The row's text sits on the column edge with the labels above it; the hover
+     box is what reaches 12 px into the gutter. */
+  margin: 0 -12px;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.console .home-row {
+  align-items: baseline;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--rb);
+  text-align: left;
+  color: var(--t2);
+  transition:
+    background var(--quick),
+    color var(--quick);
+}
+.console .home-row:hover {
+  background: var(--raised);
+  color: var(--t1);
+}
+.console .home-row.first {
+  grid-template-columns: minmax(0, 1fr);
+}
+.console .home-name {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.console .home-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.console .home-title .pt {
+  flex: none;
+}
+.console .home-name strong {
+  font-weight: 500;
+  color: var(--t1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .home-sub,
+.console .home-path {
+  /* Under the name, clear of the point: 8 px point plus its 10 px gap. */
+  padding-left: 18px;
+}
+.console .home-row.first .home-sub {
+  padding-left: 0;
+}
+.console .home-sub {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .home-sub.attn,
+.console .home-cell.attn,
+.console .console-thread small.attn {
+  color: var(--attn);
+}
+.console .home-sub.live,
+.console .home-cell.live,
+.console .console-thread small.live {
+  color: var(--light);
+}
+/* A folder path never wraps a row open: one line, cut at the end, whole in the title. */
+.console .home-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .home-cell {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.console .home-tasks {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+/* Done over total, as a measure beside the figure it measures. */
+.console .home-meter {
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--hair-2);
+  overflow: hidden;
+}
+.console .home-meter i {
+  display: block;
+  height: 100%;
+  background: var(--t2);
+}
+.console .home-note {
+  margin: 14px 0 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .home-first .home-note:first-of-type {
+  margin: 0 0 14px;
+}
+.console .home-link,
+.console .home-ledger-link {
+  color: var(--t1);
+  text-decoration: underline;
+  text-decoration-color: var(--hair-2);
+  text-underline-offset: 3px;
+  transition: text-decoration-color var(--quick);
+}
+.console .home-link:hover,
+.console .home-ledger-link:hover {
+  text-decoration-color: var(--t2);
+}
+
+/* A project's name is longer than a thread's, and the date beside it must not
+   be pushed onto a line of its own: the name gives way first (decision 5). */
+.console.home .console-thread .row {
+  flex-wrap: nowrap;
+}
+.console.home .console-thread .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console.home .console-thread .when {
+  flex: none;
+}
+
+/* ---- the ledger across projects ---- */
+.console .home-ledger-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .ledger .home-engine-usage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+.console .ledger .home-ledger-link {
+  margin-top: 8px;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .ledger .home-ledger-link:hover {
+  color: var(--t1);
+}
+
+@media (max-width: 1100px) {
+  .console .home-reg-head,
+  .console .home-row {
+    grid-template-columns: minmax(0, 1fr) 92px 64px 60px;
+  }
+  /* Running and Today give way first; Waiting is the one a person acts on. */
+  .console .home-reg-head > span:nth-child(4),
+  .console .home-reg-head > span:nth-child(5),
+  .console .home-row > .home-cell:nth-child(4),
+  .console .home-row > .home-cell:nth-child(5) {
+    display: none;
+  }
+}
+@media (max-width: 860px) {
+  .console .home-screen {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .console .home-reg-head {
+    display: none;
+  }
+  .console .home-row {
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
+  .console .home-row > .home-cell:not(.home-tasks) {
+    display: none;
+  }
+  .console.home .bar {
+    flex-wrap: wrap;
+  }
+}

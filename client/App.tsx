@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  ExternalEngine,
   IntegrationStatus,
+  Mode,
   Page,
   Project,
   Settings,
@@ -13,24 +15,34 @@ import {
   Brand,
   Button,
   Empty,
-  HelperLine,
   Icon,
   Mark,
   Modal,
   UsageChip,
   askDraftKey,
-  date,
+  askModeKey,
   pages,
   surfaceOf,
   tightestWindow,
   titleCase,
 } from './components';
 import { Shell } from './console/Shell';
+import { Home, type HomeDestination } from './console/Home';
+import { TopStrip } from './console/TopStrip';
+import { DesignCenter } from './console/DesignCenter';
 import { MarkGlyph } from './console/Mark';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
+import { ErrorBoundary } from './ErrorBoundary';
 import { Workspace } from './Workspace';
 import { Wake } from './console/Wake';
+import {
+  applyResolvedAppearance,
+  clearResolvedAppearance,
+} from './console/theme-runtime';
+import { TextureLayer } from './console/theme-artwork';
+import { resolveAppearance } from '../shared/theme-pack/resolve';
+import type { ThemePackV1 } from '../shared/theme-pack/types';
 import { useWake } from './console/useWake';
 
 export function App() {
@@ -47,6 +59,7 @@ export function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [page, setPage] = useState<Page>('home');
   const [showSettings, setShowSettings] = useState(false);
+  const [designCenter, setDesignCenter] = useState(false);
   const [account, setAccount] = useState(false);
   const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
   const [usage, setUsage] = useState<UsageSnapshot[]>([]);
@@ -64,9 +77,40 @@ export function App() {
     folders: { name: string; path: string }[];
   } | null>(null);
   const [search, setSearch] = useState(false);
+  const [sectionRequest, setSectionRequest] = useState<{ section: string; n: number } | null>(null);
+  /**
+   * The route and model a connection test just verified, on its way to the
+   * Console. It is a choice for one thread and never a send, and it waits here
+   * until a Console with a project to carry it into is showing.
+   *
+   * It carries the moment it was made, because the facts behind it are the
+   * host's and they go out of date. Waiting here is only ever for as long as
+   * the person is still doing the thing they pressed it for: dismissing the
+   * project search, or going back into Settings, abandons it, and the Console
+   * lets go of one that has been waiting too long.
+   */
+  const [startTask, setStartTask] = useState<{
+    route: ExternalEngine;
+    model: string;
+    effort: string | null;
+    madeAtMs: number;
+    n: number;
+  } | null>(null);
   const [query, setQuery] = useState('');
   const [landingText, setLandingText] = useState('');
   const [landingProjectId, setLandingProjectId] = useState<string | null>(null);
+  // The custom theme on the document, and the one sentence that explains a
+  // fallback. Both are absent for every built-in appearance package.
+  const [activeTheme, setActiveTheme] = useState<ThemePackV1 | null>(null);
+  /**
+   * Whether the applied-theme pointer is this workspace's own, which is a
+   * different question from whether a pack could be read through it. A pointer
+   * at a theme whose files are gone paints nothing and still has to be
+   * clearable from Settings — it is the only way back to the built-in package.
+   */
+  const [themeApplies, setThemeApplies] = useState(false);
+  const [appearanceNotice, setAppearanceNotice] = useState('');
+  const themeKey = useRef<string | null>(null);
   const settingsRef = useRef(settings);
   const scaleWrites = useRef<Promise<void>>(Promise.resolve());
   settingsRef.current = settings;
@@ -123,6 +167,23 @@ export function App() {
       setBusy(false);
     }
   }
+  /**
+   * One appearance field, named. The whole-settings PUT on the Appearance
+   * screen echoed `appearance.activeTheme` back from whatever snapshot that
+   * screen was holding, so a theme applied from the Design Center could be
+   * un-applied by an unrelated control. Nothing outside the theme routes sends
+   * `activeTheme` any more.
+   */
+  async function patchAppearance(patch: Record<string, unknown>) {
+    setBusy(true);
+    try {
+      setSettings(await patchSettings({ appearance: patch }));
+    } catch (e) {
+      report(e);
+    } finally {
+      setBusy(false);
+    }
+  }
   const loadInitial = useCallback(async () => {
     try {
       const [s, p] = await Promise.all([
@@ -174,24 +235,124 @@ export function App() {
       es.close();
     };
   }, [refreshProjects, refreshUsage, report]);
+  /**
+   * The applied custom theme, fetched once per `<id>@<revision>`.
+   *
+   * Kept out of the appearance effect below on purpose: that effect runs on
+   * every settings change, and a fetch inside it would go back to the service
+   * each time someone pressed Ctrl+Plus.
+   */
+  // Which workspace this is, as one string. Theme storage is per scope while
+  // the pointer is global, so a switch changes what `/themes/active` answers
+  // without changing the pointer at all. It belongs in the fetch key, not only
+  // in the dependency list: the key is what the early return below compares.
+  const workspaceKey =
+    settings?.activeWorkspace?.kind === 'business'
+      ? `business:${settings.activeWorkspace.organizationId}`
+      : 'personal';
+  useEffect(() => {
+    const pointer = settings?.appearance.activeTheme ?? null;
+    if (!pointer) {
+      themeKey.current = null;
+      setActiveTheme(null);
+      setThemeApplies(false);
+      setAppearanceNotice('');
+      return;
+    }
+    const key = `${workspaceKey}/${pointer.id}@${pointer.revision}`;
+    if (key === themeKey.current) return;
+    themeKey.current = key;
+    let live = true;
+    void api<{
+      pack: ThemePackV1 | null;
+      source: string;
+      notice: string | null;
+      applies: boolean;
+    }>('/themes/active')
+      .then((answer) => {
+        if (!live) return;
+        setActiveTheme(answer.pack);
+        setThemeApplies(answer.applies === true);
+        setAppearanceNotice(answer.notice ?? '');
+      })
+      .catch(() => {
+        // A theme that cannot be fetched is not a reason to stop painting. The
+        // built-in package is already on the document; say so and leave it.
+        //
+        // `applies` stays unknown here, so it is left false: a server hiccup
+        // must not offer a control that clears a pointer, and the next
+        // successful read decides. The notice is the client's own and is never
+        // the discriminator for either.
+        if (!live) return;
+        setActiveTheme(null);
+        setThemeApplies(false);
+        setAppearanceNotice(
+          'Your saved theme could not be read. The built-in appearance package is showing.',
+        );
+      });
+    return () => {
+      live = false;
+    };
+  }, [
+    workspaceKey,
+    settings?.appearance.activeTheme?.id,
+    settings?.appearance.activeTheme?.revision,
+  ]);
   useEffect(() => {
     if (!settings) return;
     const root = document.documentElement;
     const surface = surfaceOf(settings);
     root.dataset.surface = surface;
-    // The Console shows the machinery; components that gate on 'technical' follow it.
-    root.dataset.detail = surface === 'console' ? 'technical' : settings.detail;
+    // Detail is the person's own setting and nothing else decides it. It used to
+    // be pinned to 'technical' whenever the Console was showing, which made the
+    // setting unreachable for anybody working there; with one surface left that
+    // would have retired Detail altogether.
+    root.dataset.detail = settings.detail;
+    // One owner for the appearance. With no custom theme this is the code that
+    // has always run, unchanged, so the ten built-in schemes behave exactly as
+    // before; with one, the resolver decides and the runtime writes, and the
+    // built-in branch is skipped rather than fighting it.
+    const scales = {
+      'ui-scale': settings.appearance.interfaceScale ?? 1,
+      'read-scale': settings.appearance.readingScale ?? 1,
+      'code-scale': settings.appearance.codeScale ?? 1,
+    };
+    try {
+      if (activeTheme) {
+        applyResolvedAppearance(
+          resolveAppearance({
+            surface: 'app-console',
+            theme: activeTheme,
+            personal: { motion: settings.appearance.motion },
+            accessibility: {
+              reducedMotion: settings.appearance.motion === 'reduced',
+              textureOff: settings.appearance.textureOff === true,
+            },
+          }),
+        );
+        // The resolver's personal layer only carries the four approved scales,
+        // and Ctrl+Plus writes any size between 0.75 and 2. A person's own size
+        // is theirs whatever a theme asked for, so it is re-asserted here.
+        for (const [name, value] of Object.entries(scales))
+          root.style.setProperty(`--dm-${name}`, String(value));
+        return;
+      }
+      clearResolvedAppearance();
+    } catch {
+      // Painting must never be what fails. An exception thrown from an effect
+      // unmounts the tree and leaves a blank window, which is the one outcome
+      // worse than the built-in scheme.
+      clearResolvedAppearance();
+      setAppearanceNotice(
+        'Your saved theme could not be applied. The built-in appearance package is showing.',
+      );
+    }
     root.dataset.package = settings.appearance.package;
     root.dataset.motion = settings.appearance.motion;
     // Surface changes never resize the interface. Explicit size preferences win.
-    const effectiveUiScale = settings.appearance.interfaceScale ?? 1;
-    for (const [name, value] of Object.entries({
-      'ui-scale': effectiveUiScale,
-      'read-scale': settings.appearance.readingScale ?? 1,
-      'code-scale': settings.appearance.codeScale ?? 1,
-    }))
+    for (const [name, value] of Object.entries(scales))
       root.style.setProperty(`--dm-${name}`, String(value));
-  }, [settings]);
+  }, [settings, activeTheme]);
   useEffect(() => {
     const change = (command: ScaleCommand) => {
       // Serialize held/repeated shortcuts and read the current preference each time.
@@ -260,6 +421,11 @@ export function App() {
     },
     [report, selected],
   );
+  // Going back into Settings abandons the handover too: the person is back at
+  // the screen that made the offer, where they can make it again.
+  useEffect(() => {
+    if (showSettings) setStartTask(null);
+  }, [showSettings]);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key.toLowerCase() === 'k') {
@@ -327,11 +493,12 @@ export function App() {
     }
   }
   // Landing ask box handler for the projects-page block below (kept out of the scale effect above).
-  const sendLandingAsk = (text: string, project: Project) => {
+  const sendLandingAsk = (text: string, project: Project, mode: Mode) => {
     const value = text.trim();
     if (!value) return;
     try {
       localStorage.setItem(askDraftKey(project.id), value);
+      localStorage.setItem(askModeKey(project.id), mode);
     } catch {
       // Storage is unavailable; continue without a carried draft.
     }
@@ -366,6 +533,44 @@ export function App() {
         : settings?.detail === 'guided'
           ? ''
           : 'Ready when you are.';
+
+  // The frozen Workbook keeps its own frozen bar, and nobody reaches it from the
+  // interface any more. Everything a person sees wears the Console's strip:
+  // Shell draws its own inside a project, and TopStrip draws the same one over
+  // the Projects page and Settings.
+  const legacyChrome = surface === 'workbook';
+  const stripShown = !consoleActive && !legacyChrome;
+  // The strip speaks only when there is news. "Ready when you are." narrated a
+  // state the empty strip already shows (standing decision 4).
+  const stripStatus = !online
+    ? { state: 'fault' as const, text: status }
+    : needs
+      ? { state: 'waiting' as const, text: status }
+      : running
+        ? { state: 'working' as const, text: status }
+        : null;
+
+  // Everything the Projects page's rail and flyout can open. Settings sections
+  // are asked for by name, the way the usage chip asks for the engines section.
+  const goFromHome = (destination: HomeDestination) => {
+    const section: Partial<Record<HomeDestination, string>> = {
+      engines: 'Engines',
+      appearance: 'Appearance',
+      'design-center': 'Design Center',
+      permissions: 'Permissions',
+      detail: 'Interface detail',
+      updates: 'App updates',
+      about: 'About',
+    };
+    if (destination === 'new-project') setProjectDialog('new');
+    else if (destination === 'open-folder') setProjectDialog('open');
+    else if (destination === 'sample') void sampleProject();
+    else if (destination === 'find') setSearch(true);
+    else if (section[destination]) {
+      setSectionRequest((last) => ({ section: section[destination]!, n: (last?.n ?? 0) + 1 }));
+      setShowSettings(true);
+    }
+  };
 
   const loaded = settings !== null && initialLoaded;
   const reduced =
@@ -405,11 +610,20 @@ export function App() {
     <>
       {wakeLayer}
       <div className="app">
+        {/* The applied theme's texture: decorative, beneath everything, and
+            switched off by `--dm-texture-opacity` whenever the person or the
+            accessibility layer says so. `.app` is a stacking context, so this
+            paints above its background and below every label and focus ring in
+            it without any other rule having to know it is there. */}
+        {/* The pack's own id, not the pointer's: the pointer is global over
+            per-workspace storage, and the asset URLs this builds must name the
+            theme that is actually painting. */}
+        <TextureLayer themeId={activeTheme?.id ?? null} pack={activeTheme} />
         {settings.onboarding.resumeAt !== 'done' ? (
           <Setup settings={settings} save={saveSettings} busy={busy} />
         ) : (
           <>
-            {!consoleActive && (
+            {!consoleActive && legacyChrome && (
               <header className="top-bar">
                 <button
                   className="brand-button"
@@ -486,43 +700,22 @@ export function App() {
                     </Button>
                     {account && (
                       <div className="account-menu">
-                        <p className="caption">Surface</p>
-                        {(['workbook', 'console'] as const).map((s) => (
+                        {/* Not gated on a surface. Detail decides how much a change
+                            card spells out, which is the same question wherever the
+                            card is shown, so all three levels are offered here. */}
+                        <p className="caption">Detail</p>
+                        {(['guided', 'standard', 'technical'] as const).map((d) => (
                           <button
-                            key={s}
+                            key={d}
                             onClick={() => {
-                              void saveSettings({
-                                ...settings,
-                                surface: s,
-                                detail:
-                                  s === 'workbook' && settings.detail === 'technical'
-                                    ? 'standard'
-                                    : settings.detail,
-                              });
+                              void saveSettings({ ...settings, detail: d });
                               setAccount(false);
                             }}
                           >
-                            <Mark state={s === surface ? 'working' : 'todo'} />
-                            {s === 'workbook' ? 'The Workbook' : 'The Console'}
+                            <Mark state={d === settings.detail ? 'working' : 'todo'} />
+                            {titleCase(d)}
                           </button>
                         ))}
-                        {surface === 'workbook' && (
-                          <>
-                            <p className="caption">Detail</p>
-                            {(['guided', 'standard'] as const).map((d) => (
-                              <button
-                                key={d}
-                                onClick={() => {
-                                  void saveSettings({ ...settings, detail: d });
-                                  setAccount(false);
-                                }}
-                              >
-                                <Mark state={d === settings.detail ? 'working' : 'todo'} />
-                                {titleCase(d)}
-                              </button>
-                            ))}
-                          </>
-                        )}
                       </div>
                     )}
                   </div>
@@ -530,17 +723,87 @@ export function App() {
               </header>
             )}
             <div
-              className={`page-frame ${needs && current?.status?.needsYou ? 'needs-attention' : ''} ${!online ? 'disconnected' : ''}`}
+              className={`page-frame ${stripShown ? 'with-strip' : ''} ${needs && current?.status?.needsYou ? 'needs-attention' : ''} ${!online ? 'disconnected' : ''}`}
             >
+              {stripShown && (
+                <TopStrip
+                  projects={shownProjects}
+                  onProjects={!selected && !showSettings}
+                  settingsOpen={showSettings}
+                  settings={settings}
+                  saveSettings={saveSettings}
+                  onShowProjects={() => {
+                    setSelected(null);
+                    setShowSettings(false);
+                  }}
+                  onOpenProject={openProject}
+                  onToggleSettings={() => setShowSettings(!showSettings)}
+                  onFind={() => setSearch(true)}
+                  status={stripStatus}
+                  chip={
+                    chipVisible && activeIntegration && activeUsage ? (
+                      <UsageChip
+                        snapshot={activeUsage}
+                        name={activeIntegration.name}
+                        onOpen={() => {
+                          setShowSettings(true);
+                          setHelpersRequest((n) => n + 1);
+                        }}
+                      />
+                    ) : null
+                  }
+                />
+              )}
               {showSettings ? (
+                // A narrower one around Settings: AI setup renders host-shaped
+                // records from five adapters, and a failure drawing one of them
+                // should cost the person this screen, not the Console they were
+                // working in. Closing Settings leaves the crash behind.
+                <ErrorBoundary
+                  scope="screen"
+                  onLeave={{ label: 'Close settings', act: () => setShowSettings(false) }}
+                >
                 <SettingsPage
                   settings={settings}
                   save={saveSettings}
+                  patchAppearance={patchAppearance}
                   integrations={integrations}
                   usage={usage}
                   openHelpersSignal={helpersRequest}
+                  sectionRequest={sectionRequest}
                   refresh={() => void refreshIntegrations(true)}
+                  // What is actually painted, not what the pointer names: the
+                  // pointer is global and theme storage is per workspace.
+                  appliedTheme={activeTheme}
+                  // Separate from the pack: a pointer whose theme cannot be
+                  // read paints nothing and is still this workspace's to clear.
+                  themeApplies={themeApplies}
+                  onOpenDesignCenter={() => {
+                    // Settings closes behind it, so closing the Design Center
+                    // leaves the person back in the Console they were working
+                    // in rather than three screens deep.
+                    setShowSettings(false);
+                    setDesignCenter(true);
+                  }}
+                  // A verified route, carried into the Console. Settings closes
+                  // behind it the same way the Design Center's does. With no
+                  // project open there is nothing to carry it into, so the
+                  // existing "Open a project" search is what opens — Diomedes
+                  // does not make a project on somebody's behalf — and the
+                  // choice waits here until one is open.
+                  onStartFirstTask={(route, model, effort) => {
+                    setShowSettings(false);
+                    setStartTask((last) => ({
+                      route,
+                      model,
+                      effort,
+                      madeAtMs: Date.now(),
+                      n: (last?.n ?? 0) + 1,
+                    }));
+                    if (!selected) setSearch(true);
+                  }}
                 />
+                </ErrorBoundary>
               ) : selected && surface === 'console' ? (
                 <Shell
                   key={`console:${selected}`}
@@ -550,14 +813,6 @@ export function App() {
                   integrations={integrations}
                   usage={usage}
                   saveSettings={saveSettings}
-                  openInBook={(p) => {
-                    void saveSettings({
-                      ...settings,
-                      surface: 'workbook',
-                      detail: settings.detail === 'technical' ? 'standard' : settings.detail,
-                    });
-                    navigate(p);
-                  }}
                   openEngineSettings={() => {
                     setShowSettings(true);
                     setHelpersRequest((n) => n + 1);
@@ -573,6 +828,8 @@ export function App() {
                   onPaletteKey={(open) => {
                     paletteOpen.current = open;
                   }}
+                  firstTask={startTask}
+                  onFirstTaskTaken={() => setStartTask(null)}
                 />
               ) : selected ? (
                 <Workspace
@@ -588,204 +845,50 @@ export function App() {
                   online={online}
                 />
               ) : (
-                <main className="main projects-page">
-                  <header className="page-header">
-                    <h1>Projects</h1>
-                    <div className="actions push-right">
-                      <Button onClick={() => setProjectDialog('open')}>
-                        Open a folder as a project
-                      </Button>
-                      <Button tone="primary" onClick={() => setProjectDialog('new')}>
-                        <Icon name="plus" />
-                        New project
-                      </Button>
-                    </div>
-                  </header>
-                  <div className="workbook-layout home">
-                    <div className="reading">
-                      {projects.length ? (
-                        <>
-                          <section className="intents landing-ask" aria-label="Start here">
-                            <h2>What do you want to do?</h2>
-                            <textarea
-                              rows={2}
-                              aria-label="Ask, plan, or say what to do"
-                              placeholder={
-                                {
-                                  business:
-                                    'Ask about a supplier, plan a schedule, or say what to do',
-                                  school: 'Ask about a reading, plan the week, or say what to do',
-                                  software: 'Ask about the code, plan a change, or say what to do',
-                                  personal: 'Ask a question, plan something, or say what to do',
-                                  mix: 'Ask, plan, or say what to do',
-                                }[settings.onboarding.work ?? 'mix']
-                              }
-                              value={landingText}
-                              onChange={(e) => setLandingText(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (
-                                  e.key === 'Enter' &&
-                                  !e.shiftKey &&
-                                  !e.nativeEvent.isComposing
-                                ) {
-                                  e.preventDefault();
-                                  const target =
-                                    byRecency.find((p) => p.id === landingProjectId) ?? byRecency[0];
-                                  if (target) sendLandingAsk(landingText, target);
-                                }
-                              }}
-                            />
-                            <div className="landing-row">
-                              <label className="landing-project">
-                                <span className="caption">In project</span>
-                                <select
-                                  aria-label="In project"
-                                  value={landingProjectId ?? byRecency[0]?.id ?? ''}
-                                  onChange={(e) => setLandingProjectId(e.target.value)}
-                                >
-                                  {byRecency.map((p) => (
-                                      <option key={p.id} value={p.id}>
-                                        {p.name}
-                                      </option>
-                                    ))}
-                                </select>
-                              </label>
-                              <Button
-                                tone="primary"
-                                disabled={!landingText.trim()}
-                                onClick={() => {
-                                  const target =
-                                    byRecency.find((p) => p.id === landingProjectId) ?? byRecency[0];
-                                  if (target) sendLandingAsk(landingText, target);
-                                }}
-                              >
-                                Send
-                              </Button>
-                            </div>
-                          </section>
-                          <HelperLine
-                            integrations={integrations}
-                            settings={settings}
-                            saveSettings={saveSettings}
-                          />
-                          <div className="project-list">
-                            {[...projects]
-                              .sort(
-                                (a, b) =>
-                                  (b.status?.needsYou ? 1 : 0) - (a.status?.needsYou ? 1 : 0) ||
-                                  (b.lastOpenedAt || b.createdAt).localeCompare(
-                                    a.lastOpenedAt || a.createdAt,
-                                  ),
-                              )
-                              .map((p) => (
-                                <button
-                                  key={p.id}
-                                  className="project-row"
-                                  onClick={() => openProject(p)}
-                                >
-                                  <div>
-                                    <strong>{p.name}</strong>
-                                    {settings.detail === 'technical' && (
-                                      <span className="code caption">{p.folder}</span>
-                                    )}
-                                  </div>
-                                  <span className="dotted-leader" />
-                                  <span className="project-row-status">
-                                    {p.status?.needsYou ? (
-                                      <>
-                                        <Mark state="waiting" />
-                                        Needs your OK
-                                      </>
-                                    ) : p.status?.working ? (
-                                      <>
-                                        <Mark state="working" />
-                                        Working on {p.status.working} task
-                                      </>
-                                    ) : p.status?.tasksTotal ? (
-                                      `${p.status.tasksDone} of ${p.status.tasksTotal} tasks done`
-                                    ) : (
-                                      'Ready to begin'
-                                    )}
-                                  </span>
-                                  <span className="caption">
-                                    {date(p.lastOpenedAt || p.createdAt)}
-                                  </span>
-                                </button>
-                              ))}
-                          </div>
-                          <p className="caption">
-                            Projects are ordinary folders on this computer.
-                            {!projects.some((p) =>
-                              p.name.toLowerCase().includes('harbor street'),
-                            ) && (
-                              <>
-                                {' '}
-                                <button
-                                  className="text-button"
-                                  onClick={() => void sampleProject()}
-                                >
-                                  Try the sample project.
-                                </button>
-                              </>
-                            )}
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <div className="intent-rail">
-                            <button className="intent" onClick={() => setProjectDialog('new')}>
-                              <span className="pt" aria-hidden="true" />
-                              <span>
-                                <strong>New project</strong>
-                                <span>Start from an empty folder.</span>
-                              </span>
-                            </button>
-                            <button className="intent" onClick={() => setProjectDialog('open')}>
-                              <span className="pt" aria-hidden="true" />
-                              <span>
-                                <strong>Open a folder as a project</strong>
-                                <span>Use documents you already have.</span>
-                              </span>
-                            </button>
-                            <button className="intent" onClick={() => void sampleProject()}>
-                              <span className="pt" aria-hidden="true" />
-                              <span>
-                                <strong>Try the sample project</strong>
-                                <span>Three example documents to explore on this computer.</span>
-                              </span>
-                            </button>
-                          </div>
-                          <p className="prose">
-                            {
-                              {
-                                business:
-                                  "For example: a project for a restaurant's menus, suppliers and schedules.",
-                                school:
-                                  "For example: a project for this semester's courses, readings and deadlines.",
-                                software:
-                                  'For example: a project for a codebase, its plans and its history.',
-                                personal:
-                                  "For example: a project for a renovation, a trip, or a game you're building.",
-                                mix: "For example: one project per thing you're working on.",
-                              }[settings.onboarding.work ?? 'mix']
-                            }
-                          </p>
-                          <p className="caption">Projects are ordinary folders on this computer.</p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </main>
+                <Home
+                  projects={projects}
+                  byRecency={byRecency}
+                  settings={settings}
+                  integrations={integrations}
+                  usage={usage}
+                  saveSettings={saveSettings}
+                  text={landingText}
+                  onText={setLandingText}
+                  targetId={landingProjectId}
+                  onTarget={setLandingProjectId}
+                  onSend={sendLandingAsk}
+                  onOpenProject={openProject}
+                  onGo={goFromHome}
+                />
               )}
             </div>
           </>
         )}
       </div>
+      {/* The Design Center is a full-surface workspace over whatever is showing
+          rather than a page of its own. Opening it must not unmount the work
+          underneath: applying a theme changes presentation, and presentation
+          changing is not a reason to lose an unsent message. */}
+      {designCenter && settings && (
+        <DesignCenter settings={settings} onClose={() => setDesignCenter(false)} />
+      )}
       {error && (
         <div className="error-bar" role="alert">
           <Mark state="fault" />
           <span>{error}</span>
           <Button tone="quiet" onClick={() => setError('')}>
+            Dismiss
+          </Button>
+        </div>
+      )}
+      {/* A theme that could not be applied is a fact about the appearance, not a
+          failed request: the app is running and readable, and this says which
+          appearance it is running in and why. */}
+      {appearanceNotice && (
+        <div className="error-bar appearance-notice" role="status">
+          <Mark state="waiting" />
+          <span>{appearanceNotice}</span>
+          <Button tone="quiet" onClick={() => setAppearanceNotice('')}>
             Dismiss
           </Button>
         </div>
@@ -867,7 +970,16 @@ export function App() {
         </Modal>
       )}
       {search && (
-        <Modal title="Open a project" onClose={() => setSearch(false)}>
+        <Modal
+          title="Open a project"
+          onClose={() => {
+            setSearch(false);
+            // Closing this is leaving the flow the offer belongs to. The choice
+            // a connection test made was for the task the person was about to
+            // write, not for whatever project they open next.
+            setStartTask(null);
+          }}
+        >
           <label className="field">
             Find by name
             <input

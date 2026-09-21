@@ -1,7 +1,9 @@
 # Approved launch review and website handoff
 
+> **Retired prices removed, 2026-09-19.** By owner direction, Diomedes' own retired price figures were struck from this dated document and appear as "[retired price removed]". Market and hardware prices were kept as evidence. Totals and margins that were computed from the struck figures no longer have their inputs and are not current. Reason and scope: `docs/business/PRICING_STRATEGY_2026-09-15.md`, "Removed figures". Git history holds the original.
+
 **Date:** 2026-09-10  
-**Pricing authority:** PRICING_STRATEGY_2026-09-10.md version 2026-09-10.2. Prices remain unchanged.  
+**Pricing authority:** the 2026-09-10 pricing checkpoint (removed 2026-09-19) version 2026-09-10.2. Prices remain unchanged.  
 **Full review and Astra prompt:** https://docs.google.com/document/d/1N3TdGFvyIIuKyyCx2QmArWXOIplr6wf5BTCWSkjc0nA/edit
 
 This is a reviewed implementation companion, not a new pricing plan. Recommendations and unbuilt engineering contracts are not claims of existing functionality.
@@ -20,23 +22,23 @@ Andrew approved the affordable launch ladder, a public first 60-minute free cons
 |---|---:|
 | Workflow Fit Call | First 60 minutes free |
 | Further consulting, only after acceptance | $100/hour |
-| Cloud AI Quick Start | $299 fixed |
-| Workflow Audit | $350 fixed |
-| Local hardware/model plan | $249 fixed, credited toward qualifying deployment |
-| Local deployment | From $749 + hardware |
-| Shared/networked deployment | From $1,250 |
-| Workflow Pilot | From $1,250 |
+| Cloud AI Quick Start | [retired price removed] fixed |
+| Workflow Audit | [retired price removed] fixed |
+| Local hardware/model plan | [retired price removed] fixed, credited toward qualifying deployment |
+| Local deployment | From [retired price removed] + hardware |
+| Shared/networked deployment | From [retired price removed] |
+| Workflow Pilot | From [retired price removed] |
 | Broader implementation | From $2,500 |
-| Diomedes Business software | Planned from $99/month **per organization** |
-| Managed Diomedes | Optional, from $249/month for the agreed deployment |
+| Diomedes Business software | Planned from [retired price removed]/month **per organization** |
+| Managed Diomedes | Optional, from [retired price removed]/month for the agreed deployment |
 
-Audit credit guideline: $200 toward a qualifying $1,250+ pilot within 30 days. Services are alternatives, not a mandatory sequence. Do not automatically bill at minute 61. No duplicate setup fee, forced Managed retainer, per-location multiplication, annual-only setup waiver, lifetime discount or $29/$39 entry tier has been adopted.
+Audit credit guideline: $200 toward a qualifying [retired price removed]+ pilot within 30 days. Services are alternatives, not a mandatory sequence. Do not automatically bill at minute 61. No duplicate setup fee, forced Managed retainer, per-location multiplication, annual-only setup waiver, lifetime discount or $29/$39 entry tier has been adopted.
 
 The public free consultation is intentional. Do not confuse it with the instruction not to advertise the entire product or private design-partner pilots as free.
 
 ## Scope and client expectations
 
-The $299 starter is one supported route, baseline settings/permissions, a useful example and handoff. It does not include arbitrary custom OAuth/MCP or multi-user production deployment. The $749 local starting scope is one compatible machine with a supported model/runtime, measured tuning, documentation and training. Larger scopes receive larger quotes; a two-day bespoke deployment does not have to be sold at the starting price.
+The [retired price removed] starter is one supported route, baseline settings/permissions, a useful example and handoff. It does not include arbitrary custom OAuth/MCP or multi-user production deployment. The [retired price removed] local starting scope is one compatible machine with a supported model/runtime, measured tuning, documentation and training. Larger scopes receive larger quotes; a two-day bespoke deployment does not have to be sold at the starting price.
 
 Quotes must identify deliverables, prerequisites, covered workflows/sites, acceptance criteria, handoff, defect correction, change control, third-party charges and any ongoing support. Hardware is normally purchased by the client. Record actual preparation, travel, troubleshooting, training and follow-up time.
 
@@ -82,7 +84,7 @@ Sources: https://www.bls.gov/ooh/management/food-service-managers.htm and https:
 
 U.S. list prices checked 2026-09-10:
 - Square: Free $0, Plus $49, Premium $149 per location/month, plus processing/hardware/other charges. Restaurant Inventory by MarketMan is listed at $99/location/month on applicable plans for customers new to MarketMan.
-- MarginEdge: $350/location/month for restaurant back-office invoice/inventory/food-cost/accounting-related tools; not a POS or reservation system.
+- MarginEdge: [retired price removed]/location/month for restaurant back-office invoice/inventory/food-cost/accounting-related tools; not a POS or reservation system.
 - Resy: Essential $289/month, Premium $459; no reservation cover fees according to Resy, other prepaid-experience fees possible.
 - OpenTable: Basic/Core/Pro $149/$299/$499 monthly; network seated-diner covers $1.50 Basic or $1 Core/Pro; Basic direct-website pricing also differs.
 
@@ -94,7 +96,7 @@ Do not add alternative POS systems or alternative reservation systems into a sup
 
 Keep its shared capability/workflow packs, deployment/update trust, budget/entitlement separation, offboarding and practical ingestion ideas. Do not adopt its raised prices, per-location conversion, mandatory setup/Managed fees, unlimited promises, lifetime discounts or hiring forecasts without Andrew's decision.
 
-At its proposed 10–15 hours/week and $40–85/hour, contractor labor costs approximately $1,733–$5,525/month before overhead. One $249 retainer cannot fund that. Tie hiring to contracted contribution margin/cash reserves and repeatable work, not month three. Revenue scenarios are assumptions, not profit forecasts. Professional/contractor classification and legal/tax details need actual qualified review.
+At its proposed 10–15 hours/week and $40–85/hour, contractor labor costs approximately $1,733–$5,525/month before overhead. One [retired price removed] retainer cannot fund that. Tie hiring to contracted contribution margin/cash reserves and repeatable work, not month three. Revenue scenarios are assumptions, not profit forecasts. Professional/contractor classification and legal/tax details need actual qualified review.
 
 ## Website status and next action
 

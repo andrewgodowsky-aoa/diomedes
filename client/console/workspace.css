@@ -308,26 +308,14 @@
 /* Where a business writes, and what managed access would cost. Both reuse the
    panel's own section, fact-list and form treatments; neither introduces a card. */
 
-/* A native select carries the input treatment plus a drawn chevron. The arrow
-   is an SVG in --t3 rather than a text glyph, so it matches the icon weight and
-   does not shift with the font. */
+/* The dropdown itself is drawn once, in styles.css ("One dropdown"); this select
+   only takes the panel's width rules. */
 .console .ws-select {
-  appearance: none;
-  padding-right: 26px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23808b97' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 9px center;
   text-overflow: ellipsis;
 }
 .console .ws-select:disabled {
   color: var(--t3);
   cursor: default;
-}
-/* The menu itself is drawn by the platform; give its options the panel's
-   surface so an open list is not a white rectangle over a graphite panel. */
-.console .ws-select option {
-  background: var(--chrome);
-  color: var(--t1);
 }
 
 /* Where a business writes is a settled fact, not a live state and not an

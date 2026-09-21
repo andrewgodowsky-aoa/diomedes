@@ -3,8 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { EngineService, TESTED_VERSIONS } from '../server/engines/service.js';
+import { EngineError } from '../server/engines/process.js';
 import type { ExternalEngine, IntegrationStatus } from '../shared/types.js';
-import type { TextEngineAdapter } from '../server/engines/contract.js';
+import type { AdapterInspection, TextEngineAdapter } from '../server/engines/contract.js';
+import { routeContractFor } from '../server/harness/route-contract.js';
+import { fixtureTextDispatch, textResponse } from './h01-fixture.js';
 const installed: IntegrationStatus = {
   id: 'claude-code',
   name: 'Claude Code',
@@ -44,11 +47,9 @@ function fixture(
     models: [model],
     detail: 'Checked',
   }));
-  const generate = vi.fn<TextEngineAdapter['generate']>(async (input) => ({
-    ...input,
-    text: 'Answer',
-    version,
-  }));
+  const generate = vi.fn<TextEngineAdapter['generate']>(async (input) =>
+    textResponse(input, 'Answer', version),
+  );
   const discover = vi.fn<() => Promise<IntegrationStatus[]>>(async () => [
     { ...installed, id: engine, installedVersion: version },
   ]);
@@ -57,8 +58,11 @@ function fixture(
   const service = new EngineService(root, {
     discover,
     version: async () => version,
-    adapter: () => ({ id: engine, inspect, generate }),
+    adapter: () => ({ id: engine, contract: routeContractFor(engine), inspect, generate }),
   });
+  service.dispatch = fixtureTextDispatch(path.join(root, 'runs'), {
+    [`${engine}AccountRoute`]: accountRoute,
+  }).dispatch;
   return { service, inspect, generate, discover };
 }
 describe('AI setup readiness and dispatch', () => {
@@ -70,9 +74,28 @@ describe('AI setup readiness and dispatch', () => {
       'opencode',
       'oh-my-pi',
       'cursor',
+      'devin',
     ]);
     expect(discover).not.toHaveBeenCalled();
     expect(inspect).not.toHaveBeenCalled();
+  });
+  it('sends nothing while finding, checking or selecting a connection', async () => {
+    const { service, generate } = fixture();
+    // Every path a screen reaches on its own: none of them may spend a
+    // person's allowance. Only an explicit test or request dispatches.
+    let dispatched = 0;
+    const seam = service.dispatch!;
+    service.dispatch = ((request) => {
+      dispatched += 1;
+      return seam(request);
+    }) as typeof service.dispatch;
+    await service.discover(true);
+    await service.check('claude-code');
+    service.selection('claude-code', 'sonnet');
+    service.nextAction('claude-code', { enabled: true, installSupported: true });
+    service.integration('claude-code', true);
+    expect(dispatched).toBe(0);
+    expect(generate).not.toHaveBeenCalled();
   });
   it('requires disclosure consent and only reports installation on discovery', async () => {
     const { service, inspect } = fixture();
@@ -117,7 +140,11 @@ describe('AI setup readiness and dispatch', () => {
     });
     expect(service.integration('cursor', false).disclosure.join(' ')).toContain('denies tools');
     await expect(
-      service.generate('cursor', { ...input, accountRoute: 'cursor:api' }),
+      service.generate('cursor', {
+        ...input,
+        requestId: 'r2',
+        accountRoute: 'cursor:api',
+      }),
     ).rejects.toMatchObject({ code: 'ACCOUNT_CHANGED' });
     expect(generate).toHaveBeenCalledTimes(1);
   });
@@ -190,11 +217,11 @@ describe('AI setup readiness and dispatch', () => {
   it('rejects a response associated with a different logical request', async () => {
     const { service, generate } = fixture();
     generate.mockImplementation(async (input) => ({
-      ...input,
+      ...textResponse(input, 'Answer', '2.1.252'),
       requestId: 'wrong',
-      text: 'Answer',
-      version: '2.1.252',
     }));
+    // The provider answered under the wrong request id: nothing is committed,
+    // and the dispatched run parks as uncertain rather than resolving.
     await expect(
       service.generate('claude-code', {
         projectId: 'p',
@@ -206,7 +233,7 @@ describe('AI setup readiness and dispatch', () => {
         documents: [],
         instructions: 'x',
       }),
-    ).rejects.toMatchObject({ code: 'IDENTITY_MISMATCH' });
+    ).rejects.toMatchObject({ code: 'DISPATCH_UNCERTAIN' });
   });
   it('refuses duplicate dispatch and drops a late answer after cancellation', async () => {
     const { service, generate } = fixture();
@@ -216,7 +243,7 @@ describe('AI setup readiness and dispatch', () => {
       await new Promise<void>((resolve) => {
         release = resolve;
       });
-      return { ...input, text: 'Late', version: '2.1.252' };
+      return textResponse(input, 'Late', '2.1.252');
     });
     const input = {
       projectId: 'p',
@@ -238,5 +265,242 @@ describe('AI setup readiness and dispatch', () => {
     release!();
     await expect(pending).rejects.toMatchObject({ code: 'CANCELLED' });
     expect(generate).toHaveBeenCalledTimes(1);
+  });
+});
+
+const ROUTE_ISSUE = {
+  required: 'claude-code:claude.ai',
+  connected: ['api_key'],
+};
+/** What the adapter reports for an account kind this route does not accept. */
+const wrongAccount = (): AdapterInspection => ({
+  authentication: 'unknown',
+  accountRoute: null,
+  models: [],
+  routeIssue: { ...ROUTE_ISSUE, connected: [...ROUTE_ISSUE.connected] },
+  detail: 'Claude Code is signed in with an account kind this route does not accept.',
+});
+const READY = { enabled: true, installSupported: true };
+
+/** One service whose adapter answers whatever the current script says. */
+function scripted() {
+  const version = TESTED_VERSIONS['claude-code'];
+  let answer: () => Promise<AdapterInspection> = async () => wrongAccount();
+  const inspect = vi.fn(async () => answer());
+  const generate = vi.fn<TextEngineAdapter['generate']>(async (input) =>
+    textResponse(input, 'Answer', version),
+  );
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'diomedes-route-'));
+  roots.push(root);
+  const service = new EngineService(root, {
+    discover: async () => [{ ...installed, installedVersion: version }],
+    version: async () => version,
+    adapter: () => ({
+      id: 'claude-code',
+      contract: routeContractFor('claude-code'),
+      inspect,
+      generate,
+    }),
+  });
+  return {
+    service,
+    inspect,
+    say: (next: () => Promise<AdapterInspection>) => {
+      answer = next;
+    },
+    connection: () => service.status().find((row) => row.engine === 'claude-code')!,
+  };
+}
+
+/**
+ * A route issue means "you are signed in to an account this route cannot use".
+ * It outranks the sign-in state wherever it is reported, so it must be as
+ * carefully retired as it is raised: it describes one observation of one
+ * executable, and it may not outlive either.
+ */
+describe('a reported account-route mismatch', () => {
+  it('stops describing a route issue once the account reports signed out', async () => {
+    const { service, say, connection } = scripted();
+    await service.discover(true);
+    await service.check('claude-code');
+    expect(connection().routeIssue).toEqual(ROUTE_ISSUE);
+    expect(service.nextAction('claude-code', READY)).toBe('explain-account-route');
+    // The person acted on that: they signed out of the account this route
+    // cannot use. The next check finds no sign-in at all.
+    say(async () => {
+      throw new EngineError('AUTH_REQUIRED', 'Sign in to Claude Code.', false, 'provider-auth');
+    });
+    await expect(service.check('claude-code')).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+    expect(connection().routeIssue).toBeNull();
+    expect(connection().authentication).toBe('signed-out');
+    expect(service.nextAction('claude-code', READY)).toBe('sign-in');
+  });
+
+  it('survives a rescan that finds the very same executable', async () => {
+    const { service, inspect, connection } = scripted();
+    await service.discover(true);
+    await service.check('claude-code');
+    const checked = connection();
+    expect(checked.routeIssue).toEqual(ROUTE_ISSUE);
+    // Checking this computer again is not a new observation of the account.
+    // Nothing about this executable moved, so nothing it reported is retired.
+    await service.discover(true);
+    expect(inspect).toHaveBeenCalledTimes(1);
+    expect(connection().routeIssue).toEqual(ROUTE_ISSUE);
+    expect(connection().detail).toBe(checked.detail);
+    expect(service.nextAction('claude-code', READY)).toBe('explain-account-route');
+  });
+
+  it('does not carry a route issue across a change of executable', async () => {
+    const version = TESTED_VERSIONS['claude-code'];
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'diomedes-route-'));
+    roots.push(root);
+    let location = 'tool.exe';
+    const service = new EngineService(root, {
+      discover: async () => [{ ...installed, installedVersion: version, location }],
+      version: async () => version,
+      adapter: () => ({
+        id: 'claude-code',
+        contract: routeContractFor('claude-code'),
+        inspect: vi.fn(async () => wrongAccount()),
+        generate: vi.fn<TextEngineAdapter['generate']>(async (input) =>
+          textResponse(input, 'Answer', version),
+        ),
+      }),
+    });
+    const connection = () => service.status().find((row) => row.engine === 'claude-code')!;
+    await service.discover(true);
+    await service.check('claude-code');
+    expect(connection().routeIssue).toEqual(ROUTE_ISSUE);
+    // A different installation is a different question. What the old one
+    // reported about its account says nothing about this one.
+    location = 'other-tool.exe';
+    await service.discover(true);
+    expect(connection().routeIssue).toBeNull();
+    expect(service.nextAction('claude-code', READY)).toBe('check-connection');
+  });
+
+  it('does not carry a route issue across a change of version', async () => {
+    const version = TESTED_VERSIONS['claude-code'];
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'diomedes-route-'));
+    roots.push(root);
+    let reported = version;
+    const service = new EngineService(root, {
+      discover: async () => [{ ...installed, installedVersion: reported }],
+      version: async () => reported,
+      adapter: () => ({
+        id: 'claude-code',
+        contract: routeContractFor('claude-code'),
+        inspect: vi.fn(async () => wrongAccount()),
+        generate: vi.fn<TextEngineAdapter['generate']>(async (input) =>
+          textResponse(input, 'Answer', version),
+        ),
+      }),
+    });
+    const connection = () => service.status().find((row) => row.engine === 'claude-code')!;
+    await service.discover(true);
+    await service.check('claude-code');
+    expect(connection().routeIssue).toEqual(ROUTE_ISSUE);
+    // The same file, updated. What its previous version reported about the
+    // account is not a fact about the one that would run now.
+    reported = '1.0.0';
+    await service.discover(true);
+    expect(connection().routeIssue).toBeNull();
+    expect(connection().compatibility).toBe('unsupported');
+  });
+
+  it('refuses a selection without telling a signed-in person to sign in', async () => {
+    const { service, connection } = scripted();
+    await service.discover(true);
+    await service.check('claude-code');
+    expect(connection().routeIssue).toEqual(ROUTE_ISSUE);
+    let thrown: unknown;
+    try {
+      service.selection('claude-code', 'sonnet');
+    } catch (error) {
+      thrown = error;
+    }
+    // Every other unusable state here is answered by checking sign-in. This
+    // one is not: that person signed in, and the account they hold is the
+    // whole problem. Asking them to do it again would not resolve anything.
+    expect(thrown).toBeInstanceOf(EngineError);
+    const refusal = thrown as EngineError;
+    expect(refusal.message).not.toMatch(/check sign-in/i);
+    expect(refusal.message).toMatch(/different account/i);
+    expect(refusal.message).toContain(ROUTE_ISSUE.required);
+    expect(refusal.stage).toBe('provider-auth');
+    // Its own code, so nothing downstream can file it under signing in.
+    expect(refusal.code).toBe('ACCOUNT_ROUTE');
+  });
+});
+
+describe('waiting for a check that is already running', () => {
+  it('returns at once when nothing is being checked', async () => {
+    const { service, inspect } = fixture();
+    await service.settled('claude-code');
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it('answers anyway when checks keep being handed over, and never rejects', async () => {
+    const { service } = fixture();
+    // A producer that always has another check in flight. No outside caller can
+    // build this through `check()`, which clears its entry before anyone
+    // waiting resumes, so the table the wait reads is made to say it directly.
+    const checks = (service as unknown as { checks: Map<string, Promise<unknown>> }).checks;
+    let looked = 0;
+    checks.get = () => {
+      looked += 1;
+      return looked % 2 ? Promise.resolve() : Promise.reject(new Error('a failed check'));
+    };
+    await expect(service.settled('claude-code')).resolves.toBeUndefined();
+    // One look per handover it was willing to follow, and then it stopped.
+    expect(looked).toBe(9);
+  });
+
+  it('returns after a check that succeeds, so the next one asks again', async () => {
+    const { service, inspect } = fixture();
+    await service.discover(true);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    inspect.mockImplementationOnce(async () => {
+      await held;
+      return {
+        authentication: 'signed-in' as const,
+        accountRoute: 'claude-code:claude.ai',
+        models: [model],
+        detail: 'Checked',
+      };
+    });
+    const running = service.check('claude-code');
+    let waited = false;
+    const waiting = service.settled('claude-code').then(() => {
+      waited = true;
+    });
+    // It is genuinely waiting: the check has not finished yet.
+    await Promise.resolve();
+    expect(waited).toBe(false);
+    release();
+    await running;
+    await waiting;
+    expect(waited).toBe(true);
+    // And the caller may now run its own fresh check rather than inheriting
+    // an answer that was decided before it asked.
+    await service.check('claude-code');
+    expect(inspect).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns after a check that throws, and never throws itself', async () => {
+    const { service, inspect } = fixture();
+    await service.discover(true);
+    inspect.mockRejectedValueOnce(
+      new EngineError('AUTH_REQUIRED', 'Sign in to this service.', false, 'provider-auth'),
+    );
+    const running = service.check('claude-code');
+    const waiting = service.settled('claude-code');
+    await expect(running).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+    await expect(waiting).resolves.toBeUndefined();
+    await expect(service.settled('claude-code')).resolves.toBeUndefined();
   });
 });

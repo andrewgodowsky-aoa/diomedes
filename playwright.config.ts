@@ -1,9 +1,38 @@
 import { defineConfig } from '@playwright/test';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const runRoot = path.resolve('test-results', `app-data-${Date.now()}-${process.pid}`);
 const clientPort = Number(process.env.DIOMEDES_UI_CLIENT_PORT ?? 5174);
+const servicePort = Number(process.env.DIOMEDES_UI_SERVICE_PORT ?? 47632);
+
+/**
+ * Reclaim this worktree's orphaned dev-server tree before Playwright's own
+ * webServer check trips on the port. A config file evaluates before any runner
+ * task — including webServer startup and globalSetup — so a synchronous guard
+ * here is the only hook early enough. Holders are only killed when the
+ * `.dev-server.json` marker plus their live command lines prove they are this
+ * worktree's orphan; anything else fails here with a full diagnostic instead
+ * of Playwright's bare "already used" error.
+ *
+ * Worker processes re-evaluate this config while the runner's webServer is
+ * legitimately up, so the guard is skipped wherever TEST_WORKER_INDEX is set.
+ */
+if (process.env.TEST_WORKER_INDEX === undefined) {
+  const guard = spawnSync(
+    process.execPath,
+    [
+      path.resolve('scripts/dev-server-guard.mjs'),
+      '--ports',
+      `${clientPort},${servicePort}`,
+      '--root',
+      path.resolve('.'),
+    ],
+    { stdio: 'inherit' },
+  );
+  if (guard.status !== 0) process.exit(guard.status ?? 1);
+}
 
 /**
  * A fixed engine catalogue for the suite. The server reads the engine's own
@@ -56,14 +85,22 @@ export default defineConfig({
     'ui.spec.ts',
     'native-ui.spec.ts',
     'field.spec.ts',
+    'design-studio-ui.spec.ts',
     'ai-engines-ui.spec.ts',
+    'first-task-handoff.spec.ts',
     'autonomy-ui.spec.ts',
+    'change-review-ui.spec.ts',
     'reviewer-ui.spec.ts',
     'agent-ui.spec.ts',
     'app-updates-ui.spec.ts',
     'workspace-ui.spec.ts',
     'configuration-ui.spec.ts',
     'file-imports-ui.spec.ts',
+    'fd02-discovery.spec.ts',
+    'fd03-readiness.spec.ts',
+    'files-pane-ux-20260917.spec.ts',
+    'h01-preview-repair.spec.ts',
+    'independent-h01-final-20260917.spec.ts',
     'allowance-ui.spec.ts',
   ],
   fullyParallel: false,
@@ -97,6 +134,12 @@ export default defineConfig({
       DIOMEDES_DATA_DIR: path.join(runRoot, 'data'),
       DIOMEDES_PROJECTS_DIR: path.join(runRoot, 'projects'),
       DIOMEDES_TEST_MODE: '1',
+      // A5 gates Design Center authoring on the customization capability. The
+      // suite runs one dev server for every spec, so the launch profile is the
+      // entitled one and the specs that need a different named state ask for it
+      // per test with `X-Diomedes-Entitlement-Fixture`. Both the env var and the
+      // header are inert without `DIOMEDES_TEST_MODE=1`.
+      DIOMEDES_ENTITLEMENT_FIXTURE: 'paid',
       CODEX_HOME: codexHome,
     },
     stdout: 'pipe',

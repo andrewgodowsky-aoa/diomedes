@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractFile } from '@electron/asar';
@@ -16,6 +17,7 @@ import { TESTED_VERSIONS } from '../server/engines/service.js';
 import { CLAUDE_VERSION } from '../server/engines/claude.js';
 import { OPENCODE_VERSION } from '../server/engines/opencode.js';
 import { CURSOR_VERSION } from '../server/engines/cursor.js';
+import { DEVIN_VERSION } from '../server/engines/devin.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 // Records stay stable across platforms, so separators are always slashes.
@@ -181,7 +183,7 @@ async function main(): Promise<void> {
       // shared/permissions.ts declares protocolVersion 2 on the grant type; it exports no constant.
       scopedGrant: 2,
       reviewer: REVIEWER_PROTOCOL_VERSION, agent: AGENT_PROTOCOL_VERSION, harness,
-      engines: { testedVersions: TESTED_VERSIONS, claude: CLAUDE_VERSION, opencode: OPENCODE_VERSION, cursor: CURSOR_VERSION },
+      engines: { testedVersions: TESTED_VERSIONS, claude: CLAUDE_VERSION, opencode: OPENCODE_VERSION, cursor: CURSOR_VERSION, devin: DEVIN_VERSION },
     },
     verification: {
       typecheck: options.typecheck,
@@ -195,6 +197,17 @@ async function main(): Promise<void> {
       },
     },
     signing: { application: 'NotSigned', installer: 'NotSigned', publisher: null },
+    // The computer this record was written on, which is the one the gate
+    // reports above were produced on when the release steps run in one place.
+    // The release README prints `host.tested`, and says the question is not
+    // verified when a record carries none. `os.version()` is the product name
+    // ("Windows 11 Home"); `os.release()` alone reads "10.0.26200", which a
+    // person takes for Windows 10.
+    host: {
+      tested: `${os.version()} (${os.release()})`,
+      platform: process.platform,
+      arch: process.arch,
+    },
     recordedAt: new Date().toISOString(),
   };
   const outRel = `evidence/release-candidates/${releaseId}.json`;

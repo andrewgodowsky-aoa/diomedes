@@ -276,3 +276,23 @@ test('C07: the thread head states the exact-OK rule while an approval is open', 
   await expect(page.locator('.console')).toBeVisible();
   await expect(page.getByText('Each proposed file change needs its own exact OK.')).toBeVisible();
 });
+
+test('C08: a mode chosen on the Projects page arrives with the ask', async ({ page }) => {
+  await openConsole(page);
+  await page.getByRole('navigation', { name: 'Open projects' }).getByRole('button', { name: 'Projects', exact: true }).click();
+  const startHere = page.getByRole('region', { name: 'Start here' });
+  await expect(startHere).toBeVisible();
+  const mode = startHere.getByLabel('Mode');
+  await expect(mode).toHaveValue('ask');
+  await mode.selectOption('plan');
+  await expect(startHere.getByText('A plan you read before work begins.')).toBeVisible();
+  await startHere.getByLabel('In project').selectOption({ label: PROJECT_NAME });
+  await startHere.getByRole('textbox').fill('Plan the patio reopening.');
+  await startHere.getByRole('button', { name: 'Send', exact: true }).click();
+  const modes = page.getByRole('radiogroup', { name: 'Mode' });
+  await expect(modes.getByRole('radio', { name: 'plan' })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('.console .composer textarea')).toHaveValue('Plan the patio reopening.');
+  // Put the thread back so a later run starts from the same mode.
+  await modes.getByRole('radio', { name: 'ask' }).click();
+  await expect(modes.getByRole('radio', { name: 'ask' })).toHaveAttribute('aria-checked', 'true');
+});

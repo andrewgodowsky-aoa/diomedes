@@ -139,7 +139,12 @@ describe('the plan definition is inactive', () => {
     expect(MANAGED_PLAN_CANDIDATE.limitsReason).toMatch(/approved value/i);
   });
 
-  test('the allowance is described as a debited USD allowance, not as money or tokens', () => {
+  // Owner decision of 2026-09-19 changed the unit: included usage is published
+  // as a count of requests, never as a dollar figure. The negatives stayed.
+  // `tests/included-usage.test.ts` holds the rest of that contract.
+  test('the included usage is described as a count of requests, not as money or tokens', () => {
+    expect(ALLOWANCE_MEANING).toMatch(/request/i);
+    expect(ALLOWANCE_MEANING).not.toMatch(/\bUSD\b/);
     expect(ALLOWANCE_MEANING).toMatch(/not withdrawable/i);
     expect(ALLOWANCE_MEANING).toMatch(/not.*token/i);
   });

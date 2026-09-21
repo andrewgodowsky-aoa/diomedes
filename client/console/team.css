@@ -339,7 +339,7 @@
 .console .teamcompose .to select {
   flex: 1 1 180px;
   width: 100%;
-  background: var(--surface);
+  background-color: var(--surface);
   color: var(--t1);
   border: 1px solid var(--hair-2);
   border-radius: var(--rb);

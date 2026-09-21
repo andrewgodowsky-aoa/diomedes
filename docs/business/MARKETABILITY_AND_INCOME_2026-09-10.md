@@ -1,9 +1,13 @@
 # Diomedes: marketability, income scenarios and commercial execution
 
+> **Retired prices removed, 2026-09-19.** By owner direction, Diomedes' own retired price figures were struck from this dated document and appear as "[retired price removed]". Market and hardware prices were kept as evidence. Totals and margins that were computed from the struck figures no longer have their inputs and are not current. Reason and scope: `docs/business/PRICING_STRATEGY_2026-09-15.md`, "Removed figures". Git history holds the original.
+
+> Historical planning model using the September 10 price ladder. Current quotes follow [September 15 pricing](PRICING_STRATEGY_2026-09-15.md), version 2026-09-15.1. The revenue scenarios and linked JSON remain unchanged assumptions until deliberately recalculated; the pricing revision does not validate a forecast.
+
 Version: 2026-09-10.1
 Date: September 10, 2026
 Status: Founder planning assessment, not a guaranteed earnings forecast or public customer claim.
-Related pricing: docs/business/PRICING_STRATEGY_2026-09-10.md, version 2026-09-10.3.
+Related pricing: the 2026-09-10 pricing checkpoint (removed 2026-09-19), version 2026-09-10.3.
 
 ## Bottom line
 
@@ -29,7 +33,7 @@ The inspected GitHub roadmap remained .7 from September 9 while the cloud roadma
 
 Useful: acquisition matters; founder time/support is a real cost; an unsigned experimental application adds buyer friction; recurring revenue requires retention; returned salaried time is not automatically payroll savings; unknown custom integrations need scope control; production customers need credible continuity and data controls.
 
-Not established: zero software revenue for 18 months, single-digit self-service sales, universal pilot overruns of 2-3 times, guaranteed losses on $299 work, universal $175+ consulting acceptance, quoted warm/cold conversion rates, an order-of-magnitude vertical-sales advantage, and a fixed solo revenue ceiling. These are unsupported judgments in the supplied text, not measured Diomedes data.
+Not established: zero software revenue for 18 months, single-digit self-service sales, universal pilot overruns of 2-3 times, guaranteed losses on [retired price removed] work, universal $175+ consulting acceptance, quoted warm/cold conversion rates, an order-of-magnitude vertical-sales advantage, and a fixed solo revenue ceiling. These are unsupported judgments in the supplied text, not measured Diomedes data.
 
 Incorrect technical claim: EV signing does not confer instant SmartScreen reputation. Microsoft explicitly states that EV no longer bypasses SmartScreen. Valid signing establishes publisher identity and contributes to reputation; a new signed binary may still warn. Enterprise policies can block unsigned files, but not every small business universally refuses every unsigned prototype. [1]
 
@@ -55,17 +59,17 @@ A May 2026 Census analysis of December 2025-May 2026 data found reported AI use 
 
 The initial differentiator is installation, fit, cross-system workflow execution, understandable controls, results that survive normal failures, and someone accountable for the agreed setup. The durable differentiator would be reusable connectors/workflows, verified policy enforcement, measured reliability, low servicing cost and evidence that others can implement the same product. Merely having many selectable models or copying a competitor's feature list is not enough.
 
-Self-service distribution should remain a long-term route. Services-assisted subscriptions can start earlier, once the paid workflow and access controls are real; there is no justified rule that software must earn zero for a fixed 18 months. Conversely, listing $99 on a website does not create a customer acquisition engine.
+Self-service distribution should remain a long-term route. Services-assisted subscriptions can start earlier, once the paid workflow and access controls are real; there is no justified rule that software must earn zero for a fixed 18 months. Conversely, listing [retired price removed] on a website does not create a customer acquisition engine.
 
 ## Pricing conclusion
 
-Retain the approved entry ladder: free first hour; $100/h agreed continuation; $299 Quick Start; $350 audit; $249 local plan; from $749 local deployment; from $1,250 bounded pilot; from $2,500 broader implementation; planned $99/month Business; optional Managed from $249/month.
+Retain the approved entry ladder: free first hour; $100/h agreed continuation; [retired price removed] Quick Start; [retired price removed] audit; [retired price removed] local plan; from [retired price removed] local deployment; from [retired price removed] bounded pilot; from $2,500 broader implementation; planned [retired price removed]/month Business; optional Managed from [retired price removed]/month.
 
-The outside critique is right about scope risk, not about replacing every entry price. A 12-hour $1,250 reusable pilot has about $104 of revenue per delivery hour before sales, overhead and follow-up. The same price for 35 delivery hours yields about $36/hour. The scope and delivery method determine the economics. A $299 setup taking three hours is not automatically a loss; one taking two days is not sustainable as the default.
+The outside critique is right about scope risk, not about replacing every entry price. A 12-hour [retired price removed] reusable pilot has about $104 of revenue per delivery hour before sales, overhead and follow-up. The same price for 35 delivery hours yields about $36/hour. The scope and delivery method determine the economics. A [retired price removed] setup taking three hours is not automatically a loss; one taking two days is not sustainable as the default.
 
 Use larger custom quotes when new integrations, data cleanup, site work, multiple stakeholders or production reliability engineering make them necessary. A $2,500-$7,500 custom implementation range is a proposal consistent with the existing from-$2,500 line, not an across-the-board public price increase. Do not force regulated industries into a cheap local-install offer just because they care about privacy.
 
-A possible $39-$49 starter is an experiment, not approved pricing. It needs bounded features and very little human support. It should not undercut $99 Business while providing the same workload and expectations. Basic safety remains foundational at every price.
+A possible $39-$49 starter is an experiment, not approved pricing. It needs bounded features and very little human support. It should not undercut [retired price removed] Business while providing the same workload and expectations. Basic safety remains foundational at every price.
 
 ## First-year revenue: calculated scenarios, not predictions
 
@@ -73,10 +77,10 @@ Period: first 12 months of active commercialization. All examples assume the rel
 
 | Input | Validation | Steady part-time | Strong founder-led |
 | --- | ---: | ---: | ---: |
-| Audits at $350 | 4 | 8 | 12 |
-| Quick Starts at $299 | 4 | 6 | 10 |
-| Local deployments at $749 | 2 | 3 | 5 |
-| Bounded pilots at $1,250 | 2 | 4 | 6 |
+| Audits at [retired price removed] | 4 | 8 | 12 |
+| Quick Starts at [retired price removed] | 4 | 6 | 10 |
+| Local deployments at [retired price removed] | 2 | 3 | 5 |
+| Bounded pilots at [retired price removed] | 2 | 4 | 6 |
 | Custom projects | 0 | 3 at $4,000 | 7 at $5,500 |
 | Additional advice hours at $100 | 8 | 20 | 40 |
 | $200 audit credits | 2 | 4 | 6 |
@@ -85,7 +89,7 @@ Period: first 12 months of active commercialization. All examples assume the rel
 | Active Business customers at year end | 6 | 15 | 35 |
 | Active Managed customers at year end | 2 | 6 | 12 |
 
-Customer-months matter: 15 subscribers reached near year end do not produce 15 x 12 months of revenue during year one. Monthly ramps are supplied in income_model_2026-09-10.json. They are assumed net active customers, not measured conversion/churn rates.
+Customer-months matter: 15 subscribers reached near year end do not produce 15 x 12 months of revenue during year one. Monthly ramps are supplied in the 2026-09-10 income-model inputs (removed 2026-09-19). They are assumed net active customers, not measured conversion/churn rates.
 
 | Output | Validation | Steady part-time | Strong founder-led |
 | --- | ---: | ---: | ---: |
@@ -109,7 +113,7 @@ My practical planning range is approximately $10,000-$40,000 revenue if the foun
 
 ## Upside requires customers, not a story about market size
 
-At $99 Business with 30% also buying $249 Managed, the blended recurring revenue is $173.70 per Business account-month. Stable-account examples, excluding projects:
+At [retired price removed] Business with 30% also buying [retired price removed] Managed, the blended recurring revenue is $173.70 per Business account-month. Stable-account examples, excluding projects:
 
 | Active Business accounts | Managed accounts | Monthly recurring revenue | Annualized recurring run rate |
 | --- | ---: | ---: | ---: |
@@ -125,7 +129,7 @@ At 100 Business accounts and 30 Managed, the modeled basic support is 25 hours/m
 
 ## Unit economics: support can matter more than tokens
 
-At $99/month, an illustrative $15 API bill, $5 hosting, $2.97 collection cost and 15 minutes of $50/hour support leave $63.53 before fixed product costs, sales and profit. With 1.5 hours of that support instead, only $1.03 remains. These are assumed costs, not actual measured gross margins.
+At [retired price removed]/month, an illustrative $15 API bill, $5 hosting, $2.97 collection cost and 15 minutes of $50/hour support leave $63.53 before fixed product costs, sales and profit. With 1.5 hours of that support instead, only $1.03 remains. These are assumed costs, not actual measured gross margins.
 
 At $49 with the first set of assumptions, only $15.03 remains. This is why a low-cost software entry can work while an inexpensive, high-touch managed service cannot. A reusable onboarding path and dependable execution are financial features.
 

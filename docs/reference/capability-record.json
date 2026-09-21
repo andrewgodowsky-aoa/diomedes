@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "kind": "diomedes-capability-record",
+  "appVersion": "0.1.6",
+  "generatedFrom": {
+    "commit": "52db51dc70961fcdcb202c28c86814cdc23795a4",
+    "note": "The commit checked out when this file was written. The commit that carries the file is its child."
+  },
+  "states": {
+    "source": "The code is in this source tree and its tests pass there.",
+    "packaged": "A named candidate record names this, so the code is inside a build that was packaged and recorded here.",
+    "cleanMachine": "That exact build was installed and used on a machine other than the one that built it."
+  },
+  "release": {
+    "releaseId": "diomedes-0.1.6-windows-experimental-20260920-4a06a45cee9b",
+    "appVersion": "0.1.6",
+    "channel": "experimental",
+    "baseCommit": "4a06a45cee9bd0be4ef952b9d101149edf436c24",
+    "recordedAt": "2026-09-20T21:52:33.432Z",
+    "installerFilename": "Diomedes-Experimental-0.1.6-unsigned-setup.exe",
+    "installerSha256": "b63007a600872316949bf8cdc2b2cf757a7d75c0fd728b2da2c13486f30a351d",
+    "signing": {
+      "application": "NotSigned",
+      "installer": "NotSigned"
+    },
+    "evidence": "evidence/release-candidates/diomedes-0.1.6-windows-experimental-20260920-4a06a45cee9b.json",
+    "appVersionMatchesSource": true,
+    "note": "This evidence is build-level, not route-level. It records build identity, installer bytes, reviewed tool versions and test counts. It records no request through any adapter route, and it does not record whether this build was published."
+  },
+  "routes": [
+    {
+      "engine": "claude-code",
+      "displayName": "Claude Code",
+      "routeLabel": "Claude subscription, signed in to Claude Code",
+      "taskScope": "Text and reviewed proposals",
+      "limits": "Tools, MCP and slash commands are off.",
+      "reviewedVersion": "2.1.252",
+      "guidedInstall": true,
+      "states": {
+        "source": "implemented",
+        "packaged": {
+          "release": "diomedes-0.1.6-windows-experimental-20260920-4a06a45cee9b",
+          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit 4a06a45cee9bd0be4ef952b9d101149edf436c24."
+        },
+        "cleanMachine": null
+      }
+    },
+    {
+      "engine": "opencode",
+      "displayName": "OpenCode",
+      "routeLabel": "OpenCode Go",
+      "taskScope": "Text and reviewed proposals",
+      "limits": "Tools, plugins and MCP are off.",
+      "reviewedVersion": "1.18.4",
+      "guidedInstall": true,
+      "states": {
+        "source": "implemented",
+        "packaged": {
+          "release": "diomedes-0.1.6-windows-experimental-20260920-4a06a45cee9b",
+          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit 4a06a45cee9bd0be4ef952b9d101149edf436c24."
+        },
+        "cleanMachine": null
+      }
+    },
+    {
+      "engine": "oh-my-pi",
+      "displayName": "oh-my-pi",
+      "routeLabel": "OpenAI API key, in a separate oh-my-pi profile",
+      "taskScope": "Text and reviewed proposals",
+      "limits": "Tools, extensions and skills are off.",
+      "reviewedVersion": "18.0.6",
+      "guidedInstall": true,
+      "states": {
+        "source": "implemented",
+        "packaged": {
+          "release": "diomedes-0.1.6-windows-experimental-20260920-4a06a45cee9b",
+          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit 4a06a45cee9bd0be4ef952b9d101149edf436c24."
+        },
+        "cleanMachine": null
+      }
+    },
+    {
+      "engine": "cursor",
+      "displayName": "Cursor",
+      "routeLabel": "Cursor account, signed in through the Cursor CLI",
+      "taskScope": "Text and reviewed proposals",
+      "limits": "Ask mode. A tool event stops the request.",
+      "reviewedVersion": "2026.08.11",
+      "guidedInstall": false,
+      "states": {
+        "source": "implemented",
+        "packaged": {
+          "release": "diomedes-0.1.6-windows-experimental-20260920-4a06a45cee9b",
+          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit 4a06a45cee9bd0be4ef952b9d101149edf436c24."
+        },
+        "cleanMachine": null
+      }
+    },
+    {
+      "engine": "devin",
+      "displayName": "Devin",
+      "routeLabel": "Devin account, signed in through its browser flow",
+      "taskScope": "Text and reviewed proposals",
+      "limits": "Ask mode. A tool event stops the request.",
+      "reviewedVersion": "3000.10.23",
+      "guidedInstall": false,
+      "states": {
+        "source": "implemented",
+        "packaged": {
+          "release": "diomedes-0.1.6-windows-experimental-20260920-4a06a45cee9b",
+          "note": "The candidate record names this reviewed tool version. It does not record a request through this route, and the adapter in that build is at commit 4a06a45cee9bd0be4ef952b9d101149edf436c24."
+        },
+        "cleanMachine": null
+      }
+    }
+  ],
+  "notProven": [
+    "No clean Windows standard-user install of the exact published artifact has been run for any route.",
+    "No real consented provider result through one of these routes is recorded here.",
+    "No check that a route stays ready after a restart, and answers again, is recorded here.",
+    "The recorded installer is unsigned, so a matching checksum proves the bytes and not the publisher."
+  ]
+}

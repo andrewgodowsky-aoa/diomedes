@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type {
   EngineCatalog,
+  ExternalEngine,
   IntegrationStatus,
   Settings as SettingsModel,
   UsageSnapshot,
 } from '../shared/types';
+import type { ThemePackV1 } from '../shared/theme-pack/types';
 import { api } from './api';
 import { INTERFACE_SCALES } from '../shared/interface-scale';
 import { AppUpdates } from './AppUpdates';
@@ -13,6 +15,7 @@ import { freshnessLine, planLine, shouldShowEmptyDetail } from './usage-presenta
 import { AIConnections } from './AISetup';
 import { isExternalEngine } from '../shared/engines';
 import { SCHEMES, schemeId } from './console/schemes';
+import { readCustomizationStatus } from './console/design-center/entitlement-api';
 import {
   Button,
   Mark,
@@ -22,7 +25,6 @@ import {
   tightestWindow,
   detailDescriptions,
   meterLine,
-  surfaceDescriptions,
   surfaceOf,
   titleCase,
 } from './components';
@@ -48,18 +50,82 @@ function resetLine(resetsAt: string | null): string {
 export function SettingsPage({
   settings,
   save,
+  patchAppearance,
   integrations,
   usage,
   openHelpersSignal,
+  sectionRequest,
   refresh,
+  onOpenDesignCenter,
+  onStartFirstTask,
+  appliedTheme = null,
+  themeApplies = false,
 }: {
   settings: SettingsModel;
   save: (value: SettingsModel) => Promise<void>;
+  /**
+   * Write one appearance field and name only that field.
+   *
+   * The Appearance screen used to send `{ ...settings, appearance: { ...settings.appearance, … } }`
+   * for every control on it. Two things were wrong with that. It echoed
+   * `appearance.activeTheme` back from a snapshot this screen may have taken
+   * before a theme was applied, which quietly un-applied it; and picking a
+   * built-in scheme while a theme was applied did nothing visible, because the
+   * theme is what the resolver paints and the scheme underneath it is not.
+   * Every control here now owns one field, the way the Ctrl+Plus handler does.
+   */
+  patchAppearance: (patch: Record<string, unknown>) => Promise<void>;
   integrations: IntegrationStatus[];
   usage: UsageSnapshot[];
   openHelpersSignal?: number;
+  /** A section asked for by name from outside, e.g. the Projects page's rail. */
+  sectionRequest?: { section: string; n: number } | null;
   refresh: () => void;
+  /** Opens the full Design Center workspace. Console only. */
+  onOpenDesignCenter?: () => void;
+  /**
+   * Closes Settings and puts the person in front of a composer on the route a
+   * test just verified. Console only, and never a send: what it carries is the
+   * thread's route and model choice.
+   */
+  onStartFirstTask?: (route: ExternalEngine, model: string, effort: string | null) => void;
+  /**
+   * The custom theme this app is actually wearing, or null for a built-in
+   * package. The resolved answer from `GET /api/themes/active`, held by
+   * `client/App.tsx` and passed down — never `appearance.activeTheme`.
+   *
+   * The pointer is one field in one global settings file while themes are
+   * stored per workspace, so in a workspace where the theme was not applied
+   * the pointer is set and the built-in package is what paints. Reading the
+   * pointer here made this screen say a theme was applied over a built-in
+   * scheme, show no scheme as selected, and offer to "put away" a theme that
+   * belongs to another workspace.
+   */
+  appliedTheme?: ThemePackV1 | null;
+  /**
+   * `applies` from `GET /api/themes/active`: the pointer is this workspace's
+   * own, whether or not anything could be read through it.
+   *
+   * The two are not the same question, and the difference is a person who
+   * cannot get back. A pointer at a theme whose `pack.json` and
+   * last-known-good are both unreadable paints the built-in package and
+   * carries a notice on every launch — so `appliedTheme` is null while the
+   * pointer is very much still here. Gating the way back on the pack would
+   * hide the only control that clears it. Gating on the notice would be worse:
+   * `client/App.tsx` sets one of its own when the fetch fails, and a server
+   * hiccup must not be able to clear a good pointer.
+   */
+  themeApplies?: boolean;
 }) {
+  // Failures on the Appearance and Design Center screens, which share nothing
+  // with the connection check above and must not borrow its message line.
+  const [appearanceError, setAppearanceError] = useState('');
+  /**
+   * The launch-time design authoring authorization, read from the service. Only
+   * stated, never offered as a control: it is set in the environment the app was
+   * started in, and no setting here could change it.
+   */
+  const [designAuthoring, setDesignAuthoring] = useState(false);
   const [section, setSection] = useState('Interface detail');
   const [disclosure, setDisclosure] = useState<IntegrationStatus | null>(null);
   const [connectionError, setConnectionError] = useState('');
@@ -80,6 +146,27 @@ export function SettingsPage({
       refresh();
     }
   }, [helpersOpen, integrations, refresh, settings.onboarding.discoveryConsentAt]);
+  // Which surface this is. Read here rather than further down because the
+  // Design Center is a desktop-only section and the request below is too.
+  const surface = surfaceOf(settings);
+  const isDesk = surface === 'console';
+  useEffect(() => {
+    // The Design Center is not listed outside the Console, so nothing on this
+    // page reads the answer there. Asking anyway spent a request on every
+    // Settings open for every person on the browser surface.
+    if (!isDesk) return;
+    let live = true;
+    void readCustomizationStatus()
+      .then((status) => {
+        if (live) setDesignAuthoring(status.authoring);
+      })
+      .catch(() => {
+        // Off is the conservative reading, and it is already in state.
+      });
+    return () => {
+      live = false;
+    };
+  }, [isDesk]);
   // What each engine says it can run. Only engines with a ready adapter are
   // asked, and the key is the id list so an unchanged roster does not refetch.
   const [catalogs, setCatalogs] = useState<Record<string, EngineCatalog>>({});
@@ -119,13 +206,21 @@ export function SettingsPage({
       ...settings,
       services: { ...settings.services, codexModel: model, codexEffort: effort },
     });
-  const surface = surfaceOf(settings);
-  const isDesk = surface === 'console';
   const helpersSection = isDesk ? 'Engines' : 'Helpers on this computer';
   // The top-bar chip asks for the helpers section by raising this signal.
   useEffect(() => {
     if (openHelpersSignal) setSection(helpersSection);
   }, [openHelpersSignal, helpersSection]);
+  // Only a section this build offers is opened; an unknown name leaves the page
+  // where it was rather than on an empty pane.
+  const requested = sectionRequest?.section;
+  const requestCount = sectionRequest?.n;
+  useEffect(() => {
+    if (!requested) return;
+    const known = requested === 'Engines' ? helpersSection : requested;
+    if (!isDesk && ['Design Center', 'App updates', 'Rules', 'Developer'].includes(known)) return;
+    setSection(known);
+  }, [requested, requestCount, helpersSection, isDesk]);
   const sections = [
     'Interface detail',
     'Helpers on this computer',
@@ -133,7 +228,7 @@ export function SettingsPage({
     'History',
     'Appearance',
     'About',
-    ...(isDesk ? ['Engines', 'App updates', 'Rules', 'Developer'] : []),
+    ...(isDesk ? ['Design Center', 'Engines', 'App updates', 'Rules', 'Developer'] : []),
   ];
   return (
     <div className="settings-layout">
@@ -158,66 +253,29 @@ export function SettingsPage({
             {section === 'Interface detail' && (
               <>
                 <p className="prose">
-                  Choose how Diomedes lays out your work and how much detail the Workbook shows.
+                  Choose how much detail Diomedes shows you about each change.
                 </p>
-                <h2>Surface</h2>
+                {/* Detail stands on its own. It was gated on the Workbook, and
+                    choosing a level also wrote `surface: 'workbook'`, so picking
+                    one from the Console moved you out of it. Both are gone: this
+                    control writes the detail level and nothing else. */}
+                <h2>Detail</h2>
                 <div className="radio-list">
-                  {(['workbook', 'console'] as const).map((s) => (
-                    <label key={s} className={`radio-row ${surface === s ? 'selected' : ''}`}>
+                  {(['guided', 'standard', 'technical'] as const).map((d) => (
+                    <label key={d} className={`radio-row ${settings.detail === d ? 'selected' : ''}`}>
                       <input
                         type="radio"
-                        name="settings-surface"
-                        checked={surface === s}
-                        onChange={() =>
-                          void save({
-                            ...settings,
-                            surface: s,
-                            ...(s === 'workbook' && settings.detail === 'technical'
-                              ? { detail: 'standard' }
-                              : {}),
-                          })
-                        }
+                        name="settings-detail"
+                        checked={settings.detail === d}
+                        onChange={() => void save({ ...settings, detail: d })}
                       />
                       <span>
-                        <strong>The {titleCase(s)}</strong>
-                        <span className="caption">{surfaceDescriptions[s]}</span>
+                        <strong>{titleCase(d)}</strong>
+                        <span className="caption">{detailDescriptions[d]}</span>
                       </span>
                     </label>
                   ))}
                 </div>
-                {surface === 'workbook' && (
-                  <>
-                    <h2>Detail</h2>
-                    <div className="radio-list">
-                      {(['guided', 'standard'] as const).map((d) => (
-                        <label
-                          key={d}
-                          className={`radio-row ${settings.detail === d ? 'selected' : ''}`}
-                        >
-                          <input
-                            type="radio"
-                            name="settings-detail"
-                            checked={settings.detail === d}
-                            onChange={() =>
-                              void save({ ...settings, detail: d, surface: 'workbook' })
-                            }
-                          />
-                          <span>
-                            <strong>{titleCase(d)}</strong>
-                            <span className="caption">{detailDescriptions[d]}</span>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </>
-                )}
-                <section className="block">
-                  <h3>Same work, two surfaces</h3>
-                  <p className="prose">
-                    Documents, tasks, approvals and History stay in place when you switch. Every
-                    decision is still yours.
-                  </p>
-                </section>
               </>
             )}
             {(section === 'Helpers on this computer' || section === 'Engines') && (
@@ -232,7 +290,13 @@ export function SettingsPage({
                     one sends.
                   </p>
                 )}
-                {isDesk && <AIConnections settings={settings} save={save} />}
+                {isDesk && (
+                  <AIConnections
+                    settings={settings}
+                    save={save}
+                    onStartFirstTask={onStartFirstTask}
+                  />
+                )}
                 <p className="caption">
                   Check connections runs bounded local version, account and status checks. It sends
                   no model prompts and opens no sign-in pages.
@@ -402,6 +466,74 @@ export function SettingsPage({
                 </div>
               </>
             )}
+            {section === 'Design Center' && (
+              <>
+                <p className="prose">
+                  The Design Center is where you change how Diomedes looks: its colours, its type,
+                  how round its controls are, how much it moves. It works with no internet
+                  connection and no AI engine, and nothing in it asks a model anything.
+                </p>
+                <div className="service-list">
+                  <section className="service">
+                    <div className="row">
+                      <h3>
+                        <Mark state={appliedTheme ? 'done' : 'todo'} />
+                        Appearance
+                      </h3>
+                      <span className="caption push-right">
+                        {appliedTheme
+                          ? `Theme applied (version ${appliedTheme.revision})`
+                          : 'Built-in package'}
+                      </span>
+                    </div>
+                    <p>
+                      {appliedTheme
+                        ? `“${appliedTheme.id}” is applied to this app.`
+                        : themeApplies
+                          ? // The pointer is this workspace's own and nothing
+                            // could be read through it. Saying only "the
+                            // built-in package is showing" would leave the
+                            // button below looking like it had nothing to do.
+                            `The theme you chose could not be read, so the built-in “${schemeId(settings.appearance.package)}” package is showing. Put the theme away to stop being told so.`
+                          : `The built-in “${schemeId(settings.appearance.package)}” package is showing. Open the Design Center to make a theme of your own.`}
+                    </p>
+                    <p className="caption">
+                      A theme made here can be applied to this app and exported for the website as a
+                      single .diomedes-theme file.
+                    </p>
+                    {appearanceError && <p role="alert">{appearanceError}</p>}
+                    <div className="actions">
+                      <Button tone="primary" onClick={() => onOpenDesignCenter?.()}>
+                        Open Design Center
+                      </Button>
+                      {/* The way back. Gated on the pointer belonging here, not
+                          on a pack having been read: a theme whose files are
+                          gone is exactly the pointer that needs clearing. */}
+                      {themeApplies && (
+                        <Button
+                          tone="quiet"
+                          onClick={() => {
+                            setAppearanceError('');
+                            // Reset clears the pointer on the server; the patch that
+                            // follows re-affirms the package this app was already
+                            // wearing and is what hands back fresh settings, so this
+                            // card stops saying a theme is applied. Same two steps,
+                            // same order, as the radio list below.
+                            void api('/themes/reset', 'POST')
+                              .then(() =>
+                                patchAppearance({ package: schemeId(settings.appearance.package) }),
+                              )
+                              .catch(() => setAppearanceError('The theme could not be put away.'));
+                          }}
+                        >
+                          Use the built-in package
+                        </Button>
+                      )}
+                    </div>
+                  </section>
+                </div>
+              </>
+            )}
             {section === 'App updates' && <AppUpdates />}
             {section === 'Permissions' && (
               <>
@@ -457,21 +589,50 @@ export function SettingsPage({
             {section === 'Appearance' && (
               <>
                 <h2>Appearance package</h2>
+                {appliedTheme && (
+                  <p className="caption">
+                    A theme from the Design Center is applied. Choosing a built-in package below
+                    puts that theme away and shows the package instead; the theme itself is kept.
+                  </p>
+                )}
                 <div className="radio-list">
                   {SCHEMES.map((s) => {
-                    const selected = schemeId(settings.appearance.package) === s.id;
+                    // What is painted decides what is selected. A theme applied
+                    // in another workspace leaves the pointer set while the
+                    // built-in package paints, and reading the pointer here
+                    // showed no scheme selected at all.
+                    const selected = !appliedTheme && schemeId(settings.appearance.package) === s.id;
                     return (
                       <label className={`radio-row ${selected ? 'selected' : ''}`} key={s.id}>
                         <input
                           type="radio"
                           name="appearance"
                           checked={selected}
-                          onChange={() =>
-                            void save({
-                              ...settings,
-                              appearance: { ...settings.appearance, package: s.id },
-                            })
-                          }
+                          onChange={() => {
+                            // Two writes, each owning one thing: the theme
+                            // routes own `activeTheme` and nothing else may
+                            // send it, and the package is patched on its own.
+                            // Picking a scheme while a theme is applied used to
+                            // be a visual no-op, because the theme is what the
+                            // resolver paints.
+                            setAppearanceError('');
+                            // With no pointer of this workspace's own there is
+                            // nothing to put away, and the reset would be a
+                            // second request that can only fail. One control,
+                            // one write. The test is whether the pointer is
+                            // *here* — not whether a pack was read through it,
+                            // which would strand an unreadable theme, and not
+                            // the raw pointer, which would let a scheme picked
+                            // here clear another workspace's theme.
+                            const put = themeApplies
+                              ? api('/themes/reset', 'POST').then(() => undefined)
+                              : Promise.resolve();
+                            void put
+                              .then(() => patchAppearance({ package: s.id }))
+                              .catch(() =>
+                                setAppearanceError('The appearance package could not be changed.'),
+                              );
+                          }}
                         />
                         <span
                           className="palette-dot"
@@ -487,19 +648,14 @@ export function SettingsPage({
                     );
                   })}
                 </div>
+                {appearanceError && <p role="alert">{appearanceError}</p>}
                 <label className="setting-row">
                   <span>Reduced motion</span>
                   <input
                     type="checkbox"
                     checked={settings.appearance.motion === 'reduced'}
                     onChange={(e) =>
-                      void save({
-                        ...settings,
-                        appearance: {
-                          ...settings.appearance,
-                          motion: e.target.checked ? 'reduced' : 'normal',
-                        },
-                      })
+                      void patchAppearance({ motion: e.target.checked ? 'reduced' : 'normal' })
                     }
                   />
                 </label>
@@ -515,15 +671,7 @@ export function SettingsPage({
                               ? (settings.appearance.interfaceScale ?? effectiveInterfaceScale)
                               : (settings.appearance[key] ?? 1)
                           }
-                          onChange={(e) =>
-                            void save({
-                              ...settings,
-                              appearance: {
-                                ...settings.appearance,
-                                [key]: Number(e.target.value),
-                              },
-                            })
-                          }
+                          onChange={(e) => void patchAppearance({ [key]: Number(e.target.value) })}
                         >
                           {key === 'interfaceScale' ? (
                             <>
@@ -617,6 +765,21 @@ export function SettingsPage({
                   Requests from other origins are blocked. The local service has no sign-in; other
                   software running on this computer can access it.
                 </p>
+                <h2>Design authoring</h2>
+                {/*
+                  Read-only on purpose. This is a launch-time authorization the
+                  service reads from its own environment, so it cannot be turned
+                  on or off from inside the running app — stating it here and
+                  offering no switch is the honest shape.
+                */}
+                <p className="code" data-design-authoring={designAuthoring ? 'on' : 'off'}>
+                  Design authoring: {designAuthoring ? 'on (set at launch)' : 'off'}
+                </p>
+                <p className="prose">
+                  When it is on, themes can be authored for this computer without a plan. It grants
+                  nothing else: no organization branding, no agent authority, and it cannot be
+                  changed from here.
+                </p>
               </>
             )}
           </div>
@@ -670,31 +833,91 @@ export function SettingsPage({
 }
 
 /**
- * One button that copies the support bundle: version, host, paths, engine
- * status, counts and recent errors, with secrets scrubbed and the exclusions
- * listed in the text itself. The feedback says what actually happened.
+ * A long machine string in a dialog is the case decision 5 is about, so the
+ * preview wraps and scrolls inside its own box instead of widening the dialog.
+ */
+const supportPreview: CSSProperties = {
+  margin: 0,
+  minWidth: 0,
+  maxHeight: '40vh',
+  overflow: 'auto',
+  whiteSpace: 'pre-wrap',
+  overflowWrap: 'anywhere',
+};
+
+/**
+ * The support bundle, read before it is shared: build identity, host, paths,
+ * per-route connection facts, counts and recent errors, with secrets scrubbed
+ * and the exclusions listed in the text itself.
+ *
+ * It carries paths, so it is not anonymous and is not offered as anonymous. The
+ * person sees the exact characters first and copies that same string — the
+ * preview is the payload, never a summary of one.
  */
 function SupportBundleCopy() {
   const [note, setNote] = useState('');
+  const [preview, setPreview] = useState<string | null>(null);
   return (
-    <p className="caption">
-      <button
-        type="button"
-        onClick={async () => {
-          setNote('');
-          try {
-            const { text } = await api<{ text: string }>('/support/bundle');
-            if (!navigator.clipboard) throw new Error('The clipboard is not available here.');
-            await navigator.clipboard.writeText(text);
-            setNote('Copied. Secrets and document contents are not included.');
-          } catch (error) {
-            setNote(error instanceof Error ? error.message : 'The bundle could not be copied.');
-          }
-        }}
-      >
-        Copy support information
-      </button>
-      {note && <span role="status"> {note}</span>}
-    </p>
+    <>
+      <p className="caption">
+        <button
+          type="button"
+          onClick={async () => {
+            setNote('');
+            try {
+              const { text } = await api<{ text: string }>('/support/bundle');
+              setPreview(text);
+            } catch (error) {
+              setNote(error instanceof Error ? error.message : 'The bundle could not be read.');
+            }
+          }}
+        >
+          Review support information
+        </button>
+        {note && preview === null && <span role="status"> {note}</span>}
+      </p>
+      {preview !== null && (
+        <Modal
+          title="Support information"
+          wide
+          onClose={() => {
+            setPreview(null);
+            setNote('');
+          }}
+        >
+          <pre className="code" style={supportPreview}>
+            {preview}
+          </pre>
+          <div className="dialog-actions">
+            <Button
+              tone="primary"
+              onClick={async () => {
+                try {
+                  if (!navigator.clipboard)
+                    throw new Error('The clipboard is not available here.');
+                  await navigator.clipboard.writeText(preview);
+                  setNote('Copied.');
+                } catch (error) {
+                  setNote(
+                    error instanceof Error ? error.message : 'The bundle could not be copied.',
+                  );
+                }
+              }}
+            >
+              Copy
+            </Button>
+            <Button
+              onClick={() => {
+                setPreview(null);
+                setNote('');
+              }}
+            >
+              Close
+            </Button>
+            {note && <span role="status">{note}</span>}
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }

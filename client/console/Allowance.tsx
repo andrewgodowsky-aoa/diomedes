@@ -146,9 +146,15 @@ export function Allowance({
   );
 }
 
-/** Drawn from the contract when the host has no allowance surface to ask. */
+/**
+ * Drawn from the contract when the host has no allowance surface to ask.
+ *
+ * Kept in the same unit as `ALLOWANCE_MEANING`: a count of requests, never a
+ * dollar figure (owner decision, 2026-09-19). This is the fallback wording, so
+ * it must not say something the served wording does not.
+ */
 const ALLOWANCE_TEXT =
-  'Managed model access is a USD allowance for model usage, debited by the upstream charges your work actually incurs under a recorded rate card. It is not withdrawable money, not credit on a provider account, not a fixed number of words, and not a guaranteed number of jobs.';
+  'Managed model access includes a set number of requests each period, and we pay for them. A request is one thing you ask Diomedes to do, and it counts once however many model calls it takes to finish. It is not withdrawable money, not credit on a provider account, not a fixed number of words, and not a guaranteed number of jobs.';
 
 const UNREACHABLE_TEXT =
   'This installation has no entitlement service, so there is no allowance to show and no managed usage to bill. What follows is what such an allowance would cover, so it can be read before there is anything to buy.';

@@ -43,6 +43,25 @@ import {
   type BusinessSetupView,
 } from '../shared/business-setup.js';
 import {
+  AUTHORIZATION_RESOURCE_TYPES,
+  BUSINESS_ACCESS_CONTRACT_VERSION,
+  BUSINESS_PERMISSIONS,
+  isBusinessPermission,
+  isWorkerPermission,
+  normalizeBusinessPermissions,
+  organizationRootResourceId,
+  resourcesVisibleTo,
+  systemOwnerAssignmentId,
+  systemOwnerProfileId,
+  type AccessAssignment,
+  type AccessProfile,
+  type AuthorizationResource,
+  type AuthorizationResourceType,
+  type OrganizationAccessView,
+  type ResourceScope,
+  type WorkerProfile,
+} from '../shared/business-access.js';
+import {
   HOSTED_BUSINESS_UNAVAILABLE_REASON,
   MEMBER_ROLES,
   PERSONAL,
@@ -78,6 +97,14 @@ interface Registry {
   invitations: Invitation[];
   /** Where each organization's work is written, keyed by organization id. */
   outputs: Record<string, OutputBinding>;
+  access: {
+    resources: AuthorizationResource[];
+    profiles: AccessProfile[];
+    assignments: AccessAssignment[];
+    workerProfiles: WorkerProfile[];
+    organizationGenerations: Record<string, number>;
+    principalGenerations: Record<string, number>;
+  };
 }
 
 const emptyRegistry = (): Registry => ({
@@ -86,6 +113,14 @@ const emptyRegistry = (): Registry => ({
   memberships: [],
   invitations: [],
   outputs: {},
+  access: {
+    resources: [],
+    profiles: [],
+    assignments: [],
+    workerProfiles: [],
+    organizationGenerations: {},
+    principalGenerations: {},
+  },
 });
 
 const INVITATION_DAYS = 7;
@@ -137,6 +172,13 @@ export class WorkspaceService {
     this.registry.memberships ??= [];
     this.registry.invitations ??= [];
     this.registry.outputs ??= {};
+    this.registry.access ??= emptyRegistry().access;
+    this.registry.access.resources ??= [];
+    this.registry.access.profiles ??= [];
+    this.registry.access.assignments ??= [];
+    this.registry.access.workerProfiles ??= [];
+    this.registry.access.organizationGenerations ??= {};
+    this.registry.access.principalGenerations ??= {};
     this.person = await readJson<Person | null>(this.identityPath, () => null);
     if (!this.person) {
       // No identity service authenticated anyone. This record exists so the
@@ -158,6 +200,8 @@ export class WorkspaceService {
       );
       if (setup) this.setups.set(organization.id, setup);
     }
+    const accessChanged = this.ensureAccessFoundations();
+    if (accessChanged) await this.saveRegistry();
   }
 
   /**
@@ -181,6 +225,214 @@ export class WorkspaceService {
   private async saveSetup(setup: BusinessSetup) {
     this.setups.set(setup.organizationId, setup);
     await jsonWrite(this.setupPath(setup.organizationId), setup);
+  }
+
+  private principalGenerationKey(organizationId: string, personId: string): string {
+    return `${organizationId}:${personId}`;
+  }
+
+  private organizationGeneration(organizationId: string): number {
+    return this.registry.access.organizationGenerations[organizationId] ?? 0;
+  }
+
+  private principalGeneration(organizationId: string, personId: string): number {
+    return (
+      this.registry.access.principalGenerations[
+        this.principalGenerationKey(organizationId, personId)
+      ] ?? 0
+    );
+  }
+
+  private bumpOrganizationGeneration(organizationId: string): void {
+    this.registry.access.organizationGenerations[organizationId] =
+      this.organizationGeneration(organizationId) + 1;
+  }
+
+  private bumpPrincipalGeneration(organizationId: string, personId: string): void {
+    const key = this.principalGenerationKey(organizationId, personId);
+    this.registry.access.principalGenerations[key] =
+      this.principalGeneration(organizationId, personId) + 1;
+  }
+
+  private accessProfileDigest(input: {
+    organizationId: string;
+    id: string;
+    revision: number;
+    name: string;
+    description: string;
+    systemKind: AccessProfile['systemKind'];
+    permissions: readonly string[];
+  }): string {
+    return payloadDigest({ type: 'business.access.profile', ...input });
+  }
+
+  private workerProfileDigest(input: {
+    organizationId: string;
+    id: string;
+    revision: number;
+    name: string;
+    purpose: string;
+    executionMode: WorkerProfile['executionMode'];
+    agent: WorkerProfile['agent'];
+    permissionCeilings: readonly string[];
+    resourceCeilings: readonly ResourceScope[];
+    contextCeilings: readonly string[];
+    toolCeilings: readonly string[];
+    ruleScopes: readonly string[];
+    routeCeilings: readonly string[];
+  }): string {
+    return payloadDigest({ type: 'business.worker.profile', ...input });
+  }
+
+  /**
+   * Add protected organization roots and Owner assignments to old registries.
+   * This is an additive migration inside the existing workspace registry, not
+   * another organization or authority store.
+   */
+  private ensureAccessFoundations(): boolean {
+    let changed = false;
+    const access = this.registry.access;
+    for (const organization of this.registry.organizations) {
+      const rootId = organizationRootResourceId(organization.id);
+      if (!access.resources.some((resource) => resource.id === rootId)) {
+        access.resources.push({
+          v: BUSINESS_ACCESS_CONTRACT_VERSION,
+          organizationId: organization.id,
+          id: rootId,
+          type: 'organization',
+          parentId: null,
+          externalId: organization.id,
+          label: organization.name,
+          state: 'active',
+          revision: 1,
+        });
+        changed = true;
+      }
+
+      const ownerProfileId = systemOwnerProfileId(organization.id);
+      if (
+        !access.profiles.some(
+          (profile) =>
+            profile.organizationId === organization.id &&
+            profile.id === ownerProfileId &&
+            profile.revision === 1,
+        )
+      ) {
+        const name = 'Owner';
+        const description =
+          'Protected organization-wide access. Exact effect approvals and data-route choices remain separate.';
+        access.profiles.push({
+          v: BUSINESS_ACCESS_CONTRACT_VERSION,
+          organizationId: organization.id,
+          id: ownerProfileId,
+          revision: 1,
+          name,
+          description,
+          systemKind: 'owner',
+          state: 'active',
+          permissions: [...BUSINESS_PERMISSIONS],
+          digest: this.accessProfileDigest({
+            organizationId: organization.id,
+            id: ownerProfileId,
+            revision: 1,
+            name,
+            description,
+            systemKind: 'owner',
+            permissions: BUSINESS_PERMISSIONS,
+          }),
+          createdAt: organization.createdAt,
+          createdBy: 'system',
+        });
+        changed = true;
+      }
+
+      for (const membership of this.registry.memberships.filter(
+        (candidate) =>
+          candidate.organizationId === organization.id &&
+          candidate.state === 'active' &&
+          candidate.role === 'owner',
+      )) {
+        const activeAssignment = access.assignments.some(
+          (assignment) =>
+            assignment.organizationId === organization.id &&
+            assignment.personId === membership.personId &&
+            assignment.profileId === ownerProfileId &&
+            assignment.profileRevision === 1 &&
+            assignment.revokedAt === null,
+        );
+        if (activeAssignment) continue;
+        const baseId = systemOwnerAssignmentId(organization.id, membership.personId);
+        const id = access.assignments.some((assignment) => assignment.id === baseId)
+          ? `${baseId}:${token(4)}`
+          : baseId;
+        access.assignments.push({
+          v: BUSINESS_ACCESS_CONTRACT_VERSION,
+          organizationId: organization.id,
+          id,
+          personId: membership.personId,
+          profileId: ownerProfileId,
+          profileRevision: 1,
+          scopes: [{ resourceId: rootId, includeDescendants: true }],
+          revision: 1,
+          createdAt: membership.joinedAt ?? membership.invitedAt,
+          createdBy: 'system',
+          revokedAt: null,
+          revokedBy: null,
+        });
+        changed = true;
+      }
+
+      if (access.organizationGenerations[organization.id] === undefined) {
+        access.organizationGenerations[organization.id] = 1;
+        changed = true;
+      }
+      for (const membership of this.registry.memberships.filter(
+        (candidate) => candidate.organizationId === organization.id,
+      )) {
+        const key = this.principalGenerationKey(organization.id, membership.personId);
+        if (access.principalGenerations[key] === undefined) {
+          access.principalGenerations[key] = 1;
+          changed = true;
+        }
+      }
+    }
+
+    const outputOwners = new Map<string, string | null>();
+    for (const [organizationId, binding] of Object.entries(this.registry.outputs)) {
+      const previous = outputOwners.get(binding.projectId);
+      outputOwners.set(
+        binding.projectId,
+        previous === undefined ? organizationId : previous === organizationId ? previous : null,
+      );
+    }
+    for (const [projectId, organizationId] of outputOwners) {
+      if (!organizationId) continue;
+      if (
+        access.resources.some(
+          (resource) =>
+            resource.type === 'project' &&
+            resource.externalId === projectId &&
+            resource.state === 'active',
+        )
+      )
+        continue;
+      const organization = this.organization(organizationId);
+      const binding = this.registry.outputs[organizationId];
+      if (!organization || !binding) continue;
+      access.resources.push({
+        v: BUSINESS_ACCESS_CONTRACT_VERSION,
+        organizationId,
+        id: `project:${projectId}`,
+        type: 'project',
+        parentId: organizationRootResourceId(organizationId),
+        externalId: projectId,
+        label: binding.projectName,
+        state: 'active',
+        revision: 1,
+      });
+      changed = true;
+    }
+    return changed;
   }
 
   organization(id: string): Organization | undefined {
@@ -292,6 +544,7 @@ export class WorkspaceService {
       revokedAt: null,
       revokedReason: null,
     });
+    this.ensureAccessFoundations();
     await this.saveRegistry();
     await this.store.saveSettings({
       ...this.store.settings,
@@ -377,6 +630,9 @@ export class WorkspaceService {
     }
     invitation.redeemedAt = at;
     invitation.redeemedBy = person.id;
+    this.ensureAccessFoundations();
+    this.bumpOrganizationGeneration(invitation.organizationId);
+    this.bumpPrincipalGeneration(invitation.organizationId, person.id);
     await this.saveRegistry();
     await this.store.saveSettings({
       ...this.store.settings,
@@ -413,6 +669,23 @@ export class WorkspaceService {
       String(reason ?? '')
         .trim()
         .slice(0, 200) || null;
+    for (let index = 0; index < this.registry.access.assignments.length; index += 1) {
+      const assignment = this.registry.access.assignments[index]!;
+      if (
+        assignment.organizationId !== organizationId ||
+        assignment.personId !== personId ||
+        assignment.revokedAt !== null
+      )
+        continue;
+      this.registry.access.assignments[index] = {
+        ...assignment,
+        revision: assignment.revision + 1,
+        revokedAt: membership.revokedAt,
+        revokedBy: this.currentPerson().id,
+      };
+    }
+    this.bumpOrganizationGeneration(organizationId);
+    this.bumpPrincipalGeneration(organizationId, personId);
     await this.saveRegistry();
     // Every Trust reference minted under this tenant stops resolving at its next
     // check. Work already dispatched parks and reconciles rather than writing.
@@ -677,6 +950,489 @@ export class WorkspaceService {
     return entitlementFor(organizationId);
   }
 
+  // --- organization access profiles -----------------------------------------
+
+  private accessOwner(organizationId: string): {
+    organization: Organization;
+    membership: Membership;
+  } {
+    const mine = this.mine(organizationId);
+    if (!canAdministerMembers(mine.membership))
+      throw refuse(403, 'Only an owner can manage access profiles and assignments.', 'not_owner');
+    return mine;
+  }
+
+  private accessText(value: unknown, label: string, min: number, max: number): string {
+    const text = String(value ?? '').trim();
+    if (text.length < min || text.length > max)
+      throw refuse(
+        400,
+        `${label} must be between ${min} and ${max} characters.`,
+        'invalid_access_profile',
+      );
+    return text;
+  }
+
+  private accessPermissions(value: unknown, worker = false) {
+    if (!Array.isArray(value) || value.length === 0 || value.length > BUSINESS_PERMISSIONS.length)
+      throw refuse(400, 'Choose at least one known permission.', 'invalid_permissions');
+    const raw = value.map((permission) => String(permission ?? '').trim());
+    for (const permission of raw) {
+      if (!isBusinessPermission(permission))
+        throw refuse(400, `Unknown business permission: ${permission}`, 'unknown_permission');
+      if (worker && !isWorkerPermission(permission))
+        throw refuse(
+          400,
+          `${permission} cannot be placed in a worker profile.`,
+          'worker_permission_forbidden',
+        );
+    }
+    return normalizeBusinessPermissions(raw);
+  }
+
+  private accessResource(organizationId: string, resourceId: string): AuthorizationResource {
+    const resource = this.registry.access.resources.find(
+      (candidate) =>
+        candidate.id === resourceId &&
+        candidate.organizationId === organizationId &&
+        candidate.state === 'active',
+    );
+    if (!resource)
+      throw refuse(404, 'That access resource does not exist here.', 'resource_not_found');
+    return resource;
+  }
+
+  private accessScopes(organizationId: string, value: unknown): ResourceScope[] {
+    if (!Array.isArray(value) || value.length === 0 || value.length > 32)
+      throw refuse(400, 'Choose between 1 and 32 resource scopes.', 'invalid_resource_scopes');
+    const scopes = new Map<string, ResourceScope>();
+    for (const raw of value) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+        throw refuse(400, 'Each resource scope must name one resource.', 'invalid_resource_scopes');
+      const item = raw as Record<string, unknown>;
+      const resourceId = String(item.resourceId ?? '').trim();
+      this.accessResource(organizationId, resourceId);
+      const includeDescendants = item.includeDescendants === true;
+      scopes.set(`${resourceId}:${includeDescendants}`, { resourceId, includeDescendants });
+    }
+    return [...scopes.values()].sort((a, b) => a.resourceId.localeCompare(b.resourceId));
+  }
+
+  private accessStringList(
+    value: unknown,
+    label: string,
+    options: { allowEmpty?: boolean; maxItems?: number } = {},
+  ): string[] {
+    if (!Array.isArray(value))
+      throw refuse(400, `${label} must be a list.`, 'invalid_worker_profile');
+    const maxItems = options.maxItems ?? 64;
+    if ((!options.allowEmpty && value.length === 0) || value.length > maxItems)
+      throw refuse(400, `${label} has an invalid number of entries.`, 'invalid_worker_profile');
+    const values = new Set<string>();
+    for (const raw of value) {
+      const item = String(raw ?? '').trim();
+      if (!item || item.length > 120)
+        throw refuse(400, `${label} contains an invalid entry.`, 'invalid_worker_profile');
+      values.add(item);
+    }
+    return [...values].sort();
+  }
+
+  accessView(organizationId: string): OrganizationAccessView {
+    const { organization } = this.accessOwner(organizationId);
+    const access = this.registry.access;
+    const personId = this.currentPerson().id;
+    return {
+      v: BUSINESS_ACCESS_CONTRACT_VERSION,
+      organizationId,
+      tenantId: organization.tenantId,
+      organizationGeneration: this.organizationGeneration(organizationId),
+      principalGeneration: this.principalGeneration(organizationId, personId),
+      resources: access.resources.filter((resource) => resource.organizationId === organizationId),
+      profiles: access.profiles.filter((profile) => profile.organizationId === organizationId),
+      assignments: access.assignments.filter(
+        (assignment) => assignment.organizationId === organizationId,
+      ),
+      workerProfiles: access.workerProfiles.filter(
+        (profile) => profile.organizationId === organizationId,
+      ),
+    };
+  }
+
+  discoverAccessResources(organizationId: string, permission: string): AuthorizationResource[] {
+    const { organization } = this.mine(organizationId);
+    if (!isBusinessPermission(permission))
+      throw refuse(400, `Unknown business permission: ${permission}`, 'unknown_permission');
+    const personId = this.currentPerson().id;
+    return resourcesVisibleTo({
+      organizationId,
+      personId,
+      membershipActive: true,
+      permission,
+      resources: this.registry.access.resources,
+      profiles: this.registry.access.profiles,
+      assignments: this.registry.access.assignments,
+    }).filter((resource) => resource.organizationId === organization.id);
+  }
+
+  async createAccessResource(
+    organizationId: string,
+    input: { type: unknown; parentId: unknown; label: unknown; externalId?: unknown },
+  ): Promise<AuthorizationResource> {
+    this.accessOwner(organizationId);
+    const requestedType = String(input.type ?? '');
+    if (
+      !(AUTHORIZATION_RESOURCE_TYPES as readonly string[]).includes(requestedType) ||
+      requestedType === 'organization' ||
+      requestedType === 'project' ||
+      requestedType === 'worker-profile'
+    )
+      throw refuse(
+        400,
+        'Choose a location, business area, data scope or connector.',
+        'invalid_resource_type',
+      );
+    const type = requestedType as AuthorizationResourceType;
+    const parent = this.accessResource(organizationId, String(input.parentId ?? ''));
+    let cursor: AuthorizationResource | undefined = parent;
+    let depth = 0;
+    while (cursor) {
+      depth += 1;
+      if (depth > 8)
+        throw refuse(409, 'This resource hierarchy is too deep.', 'resource_hierarchy_too_deep');
+      cursor = cursor.parentId
+        ? this.registry.access.resources.find((candidate) => candidate.id === cursor!.parentId)
+        : undefined;
+    }
+    const label = this.accessText(input.label, 'Resource label', 2, 120);
+    const externalId =
+      input.externalId == null ? null : String(input.externalId).trim().slice(0, 200) || null;
+    if (
+      externalId &&
+      this.registry.access.resources.some(
+        (resource) =>
+          resource.type === type &&
+          resource.externalId === externalId &&
+          resource.state === 'active',
+      )
+    )
+      throw refuse(
+        409,
+        'That external resource is already owned by an organization.',
+        'external_resource_already_owned',
+      );
+    const resource: AuthorizationResource = {
+      v: BUSINESS_ACCESS_CONTRACT_VERSION,
+      organizationId,
+      id: `resource_${token(9)}`,
+      type,
+      parentId: parent.id,
+      externalId,
+      label,
+      state: 'active',
+      revision: 1,
+    };
+    this.registry.access.resources.push(resource);
+    this.bumpOrganizationGeneration(organizationId);
+    await this.saveRegistry();
+    return resource;
+  }
+
+  async createAccessProfile(
+    organizationId: string,
+    input: { name: unknown; description: unknown; permissions: unknown },
+  ): Promise<AccessProfile> {
+    this.accessOwner(organizationId);
+    const id = `access_profile_${token(9)}`;
+    const revision = 1;
+    const name = this.accessText(input.name, 'Profile name', 2, 80);
+    const description = this.accessText(input.description, 'Profile description', 2, 500);
+    const permissions = this.accessPermissions(input.permissions);
+    const profile: AccessProfile = {
+      v: BUSINESS_ACCESS_CONTRACT_VERSION,
+      organizationId,
+      id,
+      revision,
+      name,
+      description,
+      systemKind: 'custom',
+      state: 'active',
+      permissions,
+      digest: this.accessProfileDigest({
+        organizationId,
+        id,
+        revision,
+        name,
+        description,
+        systemKind: 'custom',
+        permissions,
+      }),
+      createdAt: now(),
+      createdBy: this.currentPerson().id,
+    };
+    this.registry.access.profiles.push(profile);
+    this.bumpOrganizationGeneration(organizationId);
+    await this.saveRegistry();
+    return profile;
+  }
+
+  async reviseAccessProfile(
+    organizationId: string,
+    profileId: string,
+    input: {
+      expectedRevision: unknown;
+      name: unknown;
+      description: unknown;
+      permissions: unknown;
+    },
+  ): Promise<AccessProfile> {
+    this.accessOwner(organizationId);
+    const revisions = this.registry.access.profiles
+      .filter(
+        (profile) =>
+          profile.organizationId === organizationId &&
+          profile.id === profileId &&
+          profile.systemKind === 'custom',
+      )
+      .sort((a, b) => b.revision - a.revision);
+    const current = revisions[0];
+    if (!current)
+      throw refuse(404, 'That custom access profile does not exist.', 'profile_not_found');
+    const expectedRevision = Number(input.expectedRevision);
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision !== current.revision)
+      throw refuse(
+        409,
+        'This access profile changed. Reload it before creating another revision.',
+        'revision_conflict',
+      );
+    const revision = current.revision + 1;
+    const name = this.accessText(input.name, 'Profile name', 2, 80);
+    const description = this.accessText(input.description, 'Profile description', 2, 500);
+    const permissions = this.accessPermissions(input.permissions);
+    const profile: AccessProfile = {
+      ...current,
+      revision,
+      name,
+      description,
+      permissions,
+      digest: this.accessProfileDigest({
+        organizationId,
+        id: profileId,
+        revision,
+        name,
+        description,
+        systemKind: 'custom',
+        permissions,
+      }),
+      createdAt: now(),
+      createdBy: this.currentPerson().id,
+    };
+    this.registry.access.profiles.push(profile);
+    this.bumpOrganizationGeneration(organizationId);
+    await this.saveRegistry();
+    return profile;
+  }
+
+  async assignAccessProfile(
+    organizationId: string,
+    input: {
+      personId: unknown;
+      profileId: unknown;
+      profileRevision: unknown;
+      scopes: unknown;
+    },
+  ): Promise<AccessAssignment> {
+    this.accessOwner(organizationId);
+    const personId = String(input.personId ?? '').trim();
+    const membership = this.membershipOf(organizationId, personId);
+    if (!isActiveMember(membership))
+      throw refuse(404, 'That person is not an active member.', 'membership_not_found');
+    const profileId = String(input.profileId ?? '').trim();
+    const profileRevision = Number(input.profileRevision);
+    const profile = this.registry.access.profiles.find(
+      (candidate) =>
+        candidate.organizationId === organizationId &&
+        candidate.id === profileId &&
+        candidate.revision === profileRevision &&
+        candidate.state === 'active',
+    );
+    if (!profile)
+      throw refuse(404, 'That access profile revision does not exist.', 'profile_not_found');
+    if (profile.systemKind !== 'custom')
+      throw refuse(
+        409,
+        'Protected Owner access follows active ownership and is not assigned here.',
+        'protected_owner_profile',
+      );
+    const scopes = this.accessScopes(organizationId, input.scopes);
+    const duplicate = this.registry.access.assignments.some(
+      (assignment) =>
+        assignment.organizationId === organizationId &&
+        assignment.personId === personId &&
+        assignment.profileId === profileId &&
+        assignment.profileRevision === profileRevision &&
+        assignment.revokedAt === null &&
+        JSON.stringify(assignment.scopes) === JSON.stringify(scopes),
+    );
+    if (duplicate)
+      throw refuse(409, 'That exact access assignment is already active.', 'assignment_exists');
+    const assignment: AccessAssignment = {
+      v: BUSINESS_ACCESS_CONTRACT_VERSION,
+      organizationId,
+      id: `access_assignment_${token(9)}`,
+      personId,
+      profileId,
+      profileRevision,
+      scopes,
+      revision: 1,
+      createdAt: now(),
+      createdBy: this.currentPerson().id,
+      revokedAt: null,
+      revokedBy: null,
+    };
+    this.registry.access.assignments.push(assignment);
+    this.bumpOrganizationGeneration(organizationId);
+    this.bumpPrincipalGeneration(organizationId, personId);
+    await this.saveRegistry();
+    return assignment;
+  }
+
+  async revokeAccessAssignment(
+    organizationId: string,
+    assignmentId: string,
+    expectedRevisionValue: unknown,
+  ): Promise<AccessAssignment> {
+    this.accessOwner(organizationId);
+    const index = this.registry.access.assignments.findIndex(
+      (assignment) =>
+        assignment.organizationId === organizationId && assignment.id === assignmentId,
+    );
+    const current = this.registry.access.assignments[index];
+    if (!current)
+      throw refuse(404, 'That access assignment does not exist.', 'assignment_not_found');
+    if (current.profileId === systemOwnerProfileId(organizationId))
+      throw refuse(
+        409,
+        'Protected Owner access changes only through membership ownership.',
+        'protected_owner_assignment',
+      );
+    const expectedRevision = Number(expectedRevisionValue);
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision !== current.revision)
+      throw refuse(
+        409,
+        'This access assignment changed. Reload it before revoking it.',
+        'revision_conflict',
+      );
+    if (current.revokedAt)
+      throw refuse(409, 'That access assignment is already revoked.', 'assignment_revoked');
+    const assignment: AccessAssignment = {
+      ...current,
+      revision: current.revision + 1,
+      revokedAt: now(),
+      revokedBy: this.currentPerson().id,
+    };
+    this.registry.access.assignments[index] = assignment;
+    this.bumpOrganizationGeneration(organizationId);
+    this.bumpPrincipalGeneration(organizationId, assignment.personId);
+    await this.saveRegistry();
+    return assignment;
+  }
+
+  async createWorkerProfile(
+    organizationId: string,
+    input: {
+      name: unknown;
+      purpose: unknown;
+      executionMode: unknown;
+      agent: unknown;
+      permissionCeilings: unknown;
+      resourceCeilings: unknown;
+      contextCeilings: unknown;
+      toolCeilings: unknown;
+      ruleScopes: unknown;
+      routeCeilings: unknown;
+    },
+  ): Promise<WorkerProfile> {
+    this.accessOwner(organizationId);
+    const name = this.accessText(input.name, 'Worker profile name', 2, 80);
+    const purpose = this.accessText(input.purpose, 'Worker purpose', 2, 500);
+    if (input.executionMode !== 'interactive' && input.executionMode !== 'organization-worker')
+      throw refuse(400, 'Choose a worker execution mode.', 'invalid_worker_profile');
+    if (!input.agent || typeof input.agent !== 'object' || Array.isArray(input.agent))
+      throw refuse(400, 'Choose an immutable Agent reference.', 'invalid_worker_profile');
+    const rawAgent = input.agent as Record<string, unknown>;
+    const agent = {
+      id: this.accessText(rawAgent.id, 'Agent id', 1, 80),
+      version: this.accessText(rawAgent.version, 'Agent version', 1, 20),
+      digest: String(rawAgent.digest ?? '').trim(),
+    };
+    if (!/^sha256:[a-f0-9]{64}$/.test(agent.digest))
+      throw refuse(400, 'The Agent reference needs its exact digest.', 'invalid_worker_profile');
+    const permissionCeilings = this.accessPermissions(input.permissionCeilings, true);
+    const resourceCeilings = this.accessScopes(organizationId, input.resourceCeilings);
+    const contextCeilings = this.accessStringList(input.contextCeilings, 'Context ceilings', {
+      allowEmpty: true,
+    });
+    const toolCeilings = this.accessStringList(input.toolCeilings, 'Tool ceilings', {
+      allowEmpty: true,
+    });
+    const ruleScopes = this.accessStringList(input.ruleScopes, 'Rule scopes', { allowEmpty: true });
+    const routeCeilings = this.accessStringList(input.routeCeilings, 'Route ceilings');
+    const id = `worker_profile_${token(9)}`;
+    const revision = 1;
+    const digest = this.workerProfileDigest({
+      organizationId,
+      id,
+      revision,
+      name,
+      purpose,
+      executionMode: input.executionMode,
+      agent,
+      permissionCeilings,
+      resourceCeilings,
+      contextCeilings,
+      toolCeilings,
+      ruleScopes,
+      routeCeilings,
+    });
+    const profile: WorkerProfile = {
+      v: BUSINESS_ACCESS_CONTRACT_VERSION,
+      organizationId,
+      id,
+      revision,
+      name,
+      purpose,
+      state: 'active',
+      executionMode: input.executionMode,
+      agent,
+      permissionCeilings,
+      resourceCeilings,
+      contextCeilings,
+      toolCeilings,
+      ruleScopes,
+      routeCeilings,
+      grantsAuthority: false,
+      digest,
+      createdAt: now(),
+      createdBy: this.currentPerson().id,
+    };
+    this.registry.access.workerProfiles.push(profile);
+    this.registry.access.resources.push({
+      v: BUSINESS_ACCESS_CONTRACT_VERSION,
+      organizationId,
+      id: `worker-profile:${id}`,
+      type: 'worker-profile',
+      parentId: organizationRootResourceId(organizationId),
+      externalId: id,
+      label: name,
+      state: 'active',
+      revision: 1,
+    });
+    this.bumpOrganizationGeneration(organizationId);
+    await this.saveRegistry();
+    return profile;
+  }
+
   outputBinding(organizationId: string): OutputBinding | null {
     return this.registry.outputs[organizationId] ?? null;
   }
@@ -698,8 +1454,33 @@ export class WorkspaceService {
       );
     const projects = await this.store.projects();
     const project = projects.find((candidate) => candidate.id === projectId);
-    if (!project)
-      throw refuse(404, 'That project is not here.', 'project_not_found');
+    if (!project) throw refuse(404, 'That project is not here.', 'project_not_found');
+    const existingOwner = this.registry.access.resources.find(
+      (resource) =>
+        resource.type === 'project' &&
+        resource.externalId === project.id &&
+        resource.state === 'active',
+    );
+    if (existingOwner && existingOwner.organizationId !== organizationId)
+      throw refuse(
+        409,
+        'That project already belongs to another organization.',
+        'project_owned_by_another_organization',
+      );
+    if (!existingOwner) {
+      this.registry.access.resources.push({
+        v: BUSINESS_ACCESS_CONTRACT_VERSION,
+        organizationId,
+        id: `project:${project.id}`,
+        type: 'project',
+        parentId: organizationRootResourceId(organizationId),
+        externalId: project.id,
+        label: project.name,
+        state: 'active',
+        revision: 1,
+      });
+      this.bumpOrganizationGeneration(organizationId);
+    }
     this.registry.outputs[organizationId] = {
       projectId: project.id,
       projectName: project.name,
@@ -723,7 +1504,17 @@ export class WorkspaceService {
       organization,
       membership,
       binding: this.outputBinding(organizationId),
-      projects: projects.map((project) => ({ id: project.id, name: project.name })),
+      projects: projects.map((project) => ({
+        id: project.id,
+        name: project.name,
+        organizationId:
+          this.registry.access.resources.find(
+            (resource) =>
+              resource.type === 'project' &&
+              resource.externalId === project.id &&
+              resource.state === 'active',
+          )?.organizationId ?? null,
+      })),
     });
   }
 

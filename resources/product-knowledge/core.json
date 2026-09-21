@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "id": "diomedes-core",
+  "version": "2026-09-20.1",
+  "buildVersion": "0.1.6",
+  "title": "Diomedes installed product and route knowledge",
+  "qualification": {
+    "status": "unverified",
+    "evidenceId": null,
+    "source": null,
+    "qualifiedAt": null,
+    "staleAfterMs": null
+  },
+  "scopes": [
+    "product",
+    "route:native-fixture",
+    "route:codex-report",
+    "route:harness-runtime",
+    "route:sample",
+    "route:codex",
+    "route:claude-code",
+    "route:claude-code-session",
+    "route:opencode",
+    "route:oh-my-pi",
+    "route:cursor",
+    "route:devin",
+    "workflow:sample-draft",
+    "workflow:claude-code-draft"
+  ],
+  "routes": [
+    { "routeId": "native-fixture", "contractVersion": 1, "engineVersion": "1" },
+    { "routeId": "codex-report", "contractVersion": 1, "engineVersion": "0.153.4" },
+    { "routeId": "harness-runtime", "contractVersion": 1, "engineVersion": "1" },
+    { "routeId": "sample", "contractVersion": 1, "engineVersion": "0.1.0" },
+    { "routeId": "codex", "contractVersion": 1, "engineVersion": "0.153.4" },
+    { "routeId": "claude-code", "contractVersion": 1, "engineVersion": "2.1.252" },
+    { "routeId": "claude-code-session", "contractVersion": 1, "engineVersion": "2.1.252" },
+    { "routeId": "opencode", "contractVersion": 1, "engineVersion": "1.18.4" },
+    { "routeId": "oh-my-pi", "contractVersion": 1, "engineVersion": "18.0.6" },
+    { "routeId": "cursor", "contractVersion": 1, "engineVersion": "2026.08.11" },
+    { "routeId": "devin", "contractVersion": 1, "engineVersion": "3000.10.23" }
+  ],
+  "connectors": [],
+  "workflows": [
+    {
+      "id": "sample-draft",
+      "title": "Create a deterministic sample draft",
+      "requirements": [
+        {
+          "kind": "route",
+          "id": "sample",
+          "commands": ["start", "status", "close"],
+          "operations": [],
+          "controls": {
+            "filesystemWrites": "enforced",
+            "approvals": "enforced",
+            "networkEgress": "unsupported"
+          }
+        }
+      ]
+    },
+    {
+      "id": "claude-code-draft",
+      "title": "Create a guarded file proposal through Claude Code",
+      "requirements": [
+        {
+          "kind": "route",
+          "id": "claude-code",
+          "commands": ["start", "status", "close"],
+          "operations": [],
+          "controls": {
+            "filesystemWrites": "enforced",
+            "approvals": "enforced"
+          }
+        }
+      ]
+    }
+  ],
+  "statements": [
+    {
+      "id": "product-authority",
+      "scopes": ["product"],
+      "text": "Diomedes stages model output as a proposal and applies project-file changes through its guarded Store and History path after the applicable authority decision.",
+      "sources": ["server/native-work.ts", "server/store.ts", "server/trust.ts"]
+    },
+    {
+      "id": "product-readiness",
+      "scopes": ["product"],
+      "text": "Present-tense availability requires separate implemented, installed, authorized, verified and healthy evidence; a missing or stale axis remains unknown or blocks readiness.",
+      "sources": ["shared/readiness.ts", "server/readiness/projection.ts"]
+    },
+    {
+      "id": "route-sample",
+      "scopes": ["route:sample"],
+      "text": "The sample route is a deterministic in-process staged worker with no model, tool or network call.",
+      "sources": ["server/work.ts", "server/harness/route-contract.ts", "server/harness/adapters.ts"]
+    },
+    {
+      "id": "route-text-limit",
+      "scopes": ["route:claude-code", "route:opencode", "route:oh-my-pi", "route:cursor", "route:devin"],
+      "text": "Single-turn text routes start a fresh request and do not expose native follow-up, resume, fork or reconciliation sessions. Native follow-up, resume and fork exist on the separate opt-in Claude Code session route.",
+      "sources": ["server/harness/route-contract.ts", "server/engines/service.ts"]
+    },
+    {
+      "id": "route-text-containment",
+      "scopes": ["route:claude-code", "route:opencode", "route:oh-my-pi", "route:cursor", "route:devin"],
+      "text": "The host enforces project file proposals and approvals, while operating-system sandbox parity is not claimed for these text adapters.",
+      "sources": ["server/harness/adapters.ts", "shared/engines.ts", "server/native-work.ts"]
+    },
+    {
+      "id": "route-session",
+      "scopes": ["route:claude-code-session"],
+      "text": "The opt-in Claude Code session route holds one persistent process across turns, so follow-up, resume and fork are native there; active-turn steering and provider reconciliation are refused, and a session turn carries only ask or plan mode.",
+      "sources": ["server/harness/route-contract.ts", "server/engines/claude-session-routes.ts"]
+    },
+    {
+      "id": "route-switch",
+      "scopes": ["product"],
+      "text": "Diomedes does not automatically switch a selected readiness workflow to another route; a different route requires an explicit choice.",
+      "sources": ["server/readiness/projection.ts"]
+    }
+  ]
+}

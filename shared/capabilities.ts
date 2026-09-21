@@ -340,6 +340,72 @@ export const ROUTE_CAPABILITIES: Record<string, RouteCapabilities> = {
     uncertaintyAfterDispatch:
       'The native process can have unseen effects, and provider work may finish or consume usage after Stop. ACP has no no-tools advertisement; a successful text fixture is not production containment proof.',
   },
+  devin: {
+    routeId: 'devin',
+    name: 'Devin account, ACP text route',
+    storeOnlyWrites: fact(
+      'yes',
+      'diomedes-enforced',
+      'server/engines/devin.ts returns bounded text; reviewed proposals use the existing Store.writeRecorded path (server/native-work.ts, server/store.ts).',
+    ),
+    spawnsProcesses: fact(
+      'unknown',
+      'not-measured',
+      'server/engines/devin.ts starts the installed devin.exe with shell:false. The user-scope mcp_config.json is loaded at server start, so configured MCP helper processes launch under the user account; their tools are denied by project permissions.',
+    ),
+    runsShellCommands: fact(
+      'unknown',
+      'not-measured',
+      'server/engines/devin.ts sets ACP ask mode and workspace deny rules for exec and every documented scope. No live hostile command probe has measured the native boundary.',
+    ),
+    arbitraryFilesystem: fact(
+      'unknown',
+      'not-measured',
+      'server/engines/devin.ts configures Read(**)/Write(**) denial and offers no ACP filesystem handlers. Automatic native reads and OS access are not contained.',
+    ),
+    network: fact(
+      'unknown',
+      'not-measured',
+      'server/engines/devin.ts denies Fetch scopes and MCP tools but the CLI reaches its account provider and configured MCP servers. No egress probe has measured other native traffic.',
+    ),
+    receivesSecrets: fact(
+      'no',
+      'diomedes-enforced',
+      'server/engines/devin.ts uses engineEnvironment() from server/engines/process.ts, excluding API keys and endpoint overrides. Devin ACP authenticates its own process through the browser flow; Diomedes never reads or copies credentials.',
+    ),
+    preExecutionInterception: fact(
+      'yes',
+      'diomedes-enforced',
+      'server/engines/devin.ts denies blocking ACP client requests. The supported effect is a text proposal, applied only through exact Store review (server/native-work.ts); unseen native effects are not covered.',
+    ),
+    revocationStopsFutureEffects: fact(
+      'unknown',
+      'not-measured',
+      'server/engines/devin.ts sends session/cancel then calls killOwnedProcess; protocol fixtures cover late-output rejection. Provider cancellation and billing after dispatch are not measured.',
+    ),
+    effectProof: fact(
+      'yes',
+      'diomedes-enforced',
+      'server/store.ts records before/after content and History for applied text proposals. This does not prove effects inside Devin.',
+    ),
+    osSandbox: fact(
+      'no',
+      'not-implemented',
+      'server/engines/devin.ts launches as the current user. Ask mode, project deny rules and an empty workspace are not an OS sandbox owned by Diomedes.',
+    ),
+    disposableEnvironment: fact(
+      'no',
+      'not-implemented',
+      'server/engines/devin.ts uses a temporary workspace, not a restorable OS environment. No environment provider exists in server/trust/environments.ts.',
+    ),
+    hostRootBoundary: fact(
+      'no',
+      'not-implemented',
+      'server/paths.ts guards Diomedes writes; server/engines/devin.ts does not confine the native process to a host root.',
+    ),
+    uncertaintyAfterDispatch:
+      'The native process can have unseen effects, and provider work may finish or consume usage after Stop. Devin ACP authenticates per process; sign-in state is never assumed from the native CLI. ACP has no no-tools advertisement; a successful text fixture is not production containment proof.',
+  },
   'harness-runtime': {
     routeId: 'harness-runtime',
     name: 'Diomedes Runtime harness',

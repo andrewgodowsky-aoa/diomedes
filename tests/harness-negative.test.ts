@@ -17,6 +17,7 @@ import {
   type ModelAdapter,
   type StepDefinition,
 } from '../server/harness/index.js';
+import { routeContractFor } from '../server/harness/route-contract.js';
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -86,6 +87,7 @@ async function waiting() {
 const scriptAdapter = (complete: () => Promise<unknown> | unknown): ModelAdapter => ({
   id: 'fixture',
   version: '1',
+  contract: routeContractFor('native-fixture'),
   capabilities: () => ({
     engineId: 'native-fixture',
     engineVersion: '1',

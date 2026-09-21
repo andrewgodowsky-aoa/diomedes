@@ -1,10 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Conversation, Mode, Route } from '../../shared/types';
+import { askDraftKey } from '../components';
 import { reducedMotion, spring } from './motion';
 import { SendConfirmation } from './SendConfirmation';
 
-const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
-const CAPS: Record<Mode, string> = {
+/**
+ * The composer's own accessible name. Exported so the Console can put focus in
+ * this field by the name a person hears, rather than by a class the stylesheet
+ * owns.
+ */
+export const COMPOSER_LABEL = 'Message this thread';
+export const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
+export const CAPS: Record<Mode, string> = {
   ask: 'Nothing in the project changes.',
   plan: 'A plan you read before work begins.',
   build: 'Applied only on your go-ahead.',
@@ -26,6 +33,8 @@ const LINE_FOR: Record<Mode, [number, boolean]> = {
 
 interface ComposerProps {
   thread: Conversation;
+  /** Names the project whose Projects-page draft this composer may pick up. */
+  projectId?: string;
   mode: Mode;
   onMode(mode: Mode): void;
   busy: boolean;
@@ -36,15 +45,38 @@ interface ComposerProps {
   onSend(text: string, failingDocument: string, failingText: string, sources: string[]): void;
 }
 
+/** Pure, because React may run a state initializer twice; the effect below clears it. */
+function carriedAsk(projectId: string): string {
+  try {
+    return localStorage.getItem(askDraftKey(projectId)) ?? '';
+  } catch {
+    // Storage is unavailable; the composer opens empty.
+    return '';
+  }
+}
+
 /**
  * The prototype composer 1:1: autosizing box, the mode strip with its
  * point-and-line indicator, the caption, Send and the Enter hint, plus the
  * Build/Fix aux rows.
  */
 export function Composer({
-  thread, mode, onMode, busy, online, route, confirmSend, prepareSources, onSend,
+  thread, projectId, mode, onMode, busy, online, route, confirmSend, prepareSources, onSend,
 }: ComposerProps) {
-  const [text, setText] = useState('');
+  // What the person typed on the Projects page arrives here, once. It used to
+  // be read by the Workbook alone, so from the Console the words were dropped
+  // on the way into the project. It is taken, not copied: once this composer
+  // holds it the stored copy goes, so a second thread does not open holding the
+  // same sentence.
+  const [text, setText] = useState(() => (projectId ? carriedAsk(projectId) : ''));
+  useEffect(() => {
+    if (!projectId) return;
+    try {
+      localStorage.removeItem(askDraftKey(projectId));
+    } catch {
+      // Nothing was stored if storage is unavailable.
+    }
+  }, [projectId]);
   const [failingDocument, setFailingDocument] = useState('');
   const [failingText, setFailingText] = useState('');
   const [pending, setPending] = useState<{ text: string; sources: string[]; send(): void } | null>(null);
@@ -73,7 +105,12 @@ export function Composer({
     };
   }, [thread.id, mode, route]);
 
+  // A different thread opens on an empty box. Mounting is not a change of thread:
+  // clearing there is what emptied the draft carried in from the Projects page.
+  const shownThread = useRef(thread.id);
   useEffect(() => {
+    if (shownThread.current === thread.id) return;
+    shownThread.current = thread.id;
     setText('');
     setFailingDocument('');
     setFailingText('');
@@ -239,7 +276,7 @@ export function Composer({
         <textarea
           ref={box}
           rows={1}
-          aria-label="Message this thread"
+          aria-label={COMPOSER_LABEL}
           placeholder={PLACEHOLDERS[mode]}
           value={text}
           disabled={preparing || pending !== null}

@@ -24,10 +24,17 @@ import { z } from 'zod';
 import { copy, digest, HarnessError, units } from './policy.js';
 import { RunService, Suspended } from './run-service.js';
 import type { ToolRegistry } from './tools.js';
+import { commandGate, type AdapterRouteContract } from '../../shared/adapter-contract.js';
 
 export interface ModelAdapter {
   id: string;
   version: string;
+  /**
+   * The route descriptor this adapter is bound to. The loop does not trust a
+   * model that cannot say what it is: an adapter without a valid contract, or
+   * one whose route declares `start` unsupported, is refused at construction.
+   */
+  contract: AdapterRouteContract;
   capabilities(): AdapterCapabilities;
   complete(request: ModelRequest, signal: AbortSignal): Promise<ModelResult>;
   /** Trusted context assembly runs in a durable pure step before final model authorization. */
@@ -103,6 +110,16 @@ export class NativeAgent {
       typeof adapter.capabilities !== 'function'
     )
       throw new HarnessError('invalid_adapter', 'A versioned model adapter is required.');
+    // The descriptor the adapter carries is operative: a route that cannot
+    // say `start` is supported never drives the loop.
+    const gate = commandGate(adapter.contract, 'start');
+    if (!gate.admitted)
+      throw new HarnessError(
+        gate.code === 'command_unsupported' ? 'unsupported_command' : 'invalid_adapter',
+        gate.code === 'command_unsupported'
+          ? gate.reason
+          : 'A model adapter must carry a valid route contract descriptor.',
+      );
   }
 
   async run(

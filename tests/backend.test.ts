@@ -572,25 +572,27 @@ describe('threads are first-class conversations', () => {
     await reloadedAgain.init();
     expect(JSON.stringify(reloadedAgain.state(id).conversations)).toBe(snapshot);
   });
-  test("settings without surface get 'workbook' (standard) and 'console' (technical)", async () => {
+  // The Workbook left a person's reach (2026-09-20): nothing switches into it, so
+  // a stored file opens on the Console whatever it holds. It used to fall back on
+  // the detail level, and a stored 'workbook' used to be honoured.
+  test('stored settings open on the Console, with or without a surface', async () => {
     const settingsPath = path.join(temp, 'data', 'settings.json');
     await request('/settings', 'PUT', { detail: 'standard' });
-    let raw = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
-    delete raw.surface;
-    raw.detail = 'standard';
-    await fs.writeFile(settingsPath, JSON.stringify(raw));
-    let reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
-    await reloaded.init();
-    expect(reloaded.settings.detail).toBe('standard');
-    expect(reloaded.settings.surface).toBe('workbook');
-    raw = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
-    delete raw.surface;
-    raw.detail = 'technical';
-    await fs.writeFile(settingsPath, JSON.stringify(raw));
-    reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
-    await reloaded.init();
-    expect(reloaded.settings.detail).toBe('technical');
-    expect(reloaded.settings.surface).toBe('console');
+    for (const [stored, detail] of [
+      [undefined, 'standard'],
+      [undefined, 'technical'],
+      ['workbook', 'guided'],
+    ] as const) {
+      const raw = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
+      if (stored === undefined) delete raw.surface;
+      else raw.surface = stored;
+      raw.detail = detail;
+      await fs.writeFile(settingsPath, JSON.stringify(raw));
+      const reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
+      await reloaded.init();
+      expect(reloaded.settings.detail).toBe(detail);
+      expect(reloaded.settings.surface).toBe('console');
+    }
   });
   test('POST /threads creates, PUT renames, GET lists newest-updated first', async () => {
     const id = await sample();
@@ -1196,6 +1198,7 @@ describe('modes belong to the thread and every turn', () => {
 
 describe('state reads stay fast with a cached documents listing', () => {
   test('(a) projectState returns quickly with a large folder', async () => {
+    const fixtureStarted = performance.now();
     const big = path.join(temp, 'big-project');
     await fs.mkdir(big, { recursive: true });
     const dirs = 30,
@@ -1209,13 +1212,24 @@ describe('state reads stay fast with a cached documents listing', () => {
         ),
       );
     }
+    console.info(
+      `state-speed: created 3000 fixture files in ${Math.round(performance.now() - fixtureStarted)} ms`,
+    );
+    const projectStarted = performance.now();
     const created = await request('/projects', 'POST', { name: 'big', folder: big });
     expect(created.status).toBe(200);
+    console.info(
+      `state-speed: project creation took ${Math.round(performance.now() - projectStarted)} ms`,
+    );
     const id = created.data.id as string;
     // First call starts the background walk; force it via the explicit list.
     await request(`/projects/${id}/state`);
+    const walkStarted = performance.now();
     const listed = await documentsOf(id);
     expect(listed.length).toBe(dirs * perDir);
+    console.info(
+      `state-speed: explicit document walk took ${Math.round(performance.now() - walkStarted)} ms`,
+    );
     const started = Date.now();
     const second = await request(`/projects/${id}/state`);
     const elapsed = Date.now() - started;
@@ -1223,7 +1237,9 @@ describe('state reads stay fast with a cached documents listing', () => {
     expect(second.status).toBe(200);
     expect(elapsed).toBeLessThan(200);
     expect(second.data.documents).toHaveLength(dirs * perDir);
-  });
+    // Seeding and walking 3000 real files can exceed the ordinary test deadline
+    // on hosted Windows disks. The actual cached-read requirement stays 200 ms.
+  }, 120_000);
   test('(b) SKIPPED_FOLDERS are never listed', async () => {
     expect(SKIPPED_FOLDERS.has('artifacts')).toBe(true);
     expect(SKIPPED_FOLDERS.has('dist')).toBe(true);

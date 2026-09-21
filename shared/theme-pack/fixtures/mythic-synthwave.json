@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "id": "mythic-synthwave",
+  "name": "Mythic Synthwave",
+  "revision": 3,
+  "baseTheme": "graphite",
+  "surfaces": ["app-console", "website"],
+  "provenance": {
+    "author": "Diomedes design",
+    "createdAt": "2026-09-17T00:00:00.000Z",
+    "tool": "diomedes-design-studio/1",
+    "notes": "Violet, cyan and coral on black and graphite. Reference pack for the v1 contract."
+  },
+  "tokens": {
+    "color": {
+      "chrome": { "$type": "color", "$value": "#0a0710" },
+      "surface": { "$type": "color", "$value": "#100b1a" },
+      "raised": { "$type": "color", "$value": "#181026" },
+      "hair": { "$type": "color", "$value": "#b98cff1f" },
+      "hair2": { "$type": "color", "$value": "#b98cff33" },
+      "t1": { "$type": "color", "$value": "#f2ecff" },
+      "t2": { "$type": "color", "$value": "#b9aed1" },
+      "t3": { "$type": "color", "$value": "#8d84a6" },
+      "light": { "$type": "color", "$value": "#4ff0ff" },
+      "attn": { "$type": "color", "$value": "#c77dff" },
+      "fail": { "$type": "color", "$value": "#ff6b7d" }
+    },
+    "lightScheme": { "$type": "boolean", "$value": false }
+  },
+  "typography": {
+    "interfaceScale": 1,
+    "readingScale": 1,
+    "codeScale": 1,
+    "lineHeight": 1.55,
+    "interfaceFont": "schibsted-grotesk",
+    "readingFont": "schibsted-grotesk",
+    "codeFont": "ibm-plex-mono"
+  },
+  "geometry": {
+    "controlRadius": 4,
+    "separatorStrength": 0.8,
+    "density": "standard"
+  },
+  "artwork": {
+    "bust": {
+      "assetHash": "b28b66d844601c653a817e41e494c0bf8922a2740acb16479a78557c564e6afb",
+      "focal": { "x": 0.5, "y": 0.38 },
+      "crop": { "x": 0, "y": 0, "width": 1, "height": 1 },
+      "opacity": 0.85,
+      "blend": "screen",
+      "mask": "edge-fade",
+      "surfaces": {
+        "app-console": { "opacity": 0.6, "mask": "diffuse" }
+      }
+    },
+    "hero": {
+      "assetHash": "b28b66d844601c653a817e41e494c0bf8922a2740acb16479a78557c564e6afb",
+      "focal": { "x": 0.5, "y": 0.5 },
+      "crop": { "x": 0, "y": 0, "width": 1, "height": 1 },
+      "opacity": 1,
+      "blend": "normal",
+      "mask": "none"
+    }
+  },
+  "motion": {
+    "presetId": "drift",
+    "duration": 420,
+    "intensity": 0.6,
+    "reducedMotionBehaviour": "static"
+  },
+  "assets": {
+    "b28b66d844601c653a817e41e494c0bf8922a2740acb16479a78557c564e6afb": {
+      "mime": "image/png",
+      "bytes": 232,
+      "width": 16,
+      "height": 16
+    }
+  }
+}

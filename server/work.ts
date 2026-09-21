@@ -21,6 +21,8 @@ export class WorkService {
   constructor(
     readonly store: Store,
     private stepMs = 1500,
+    /** Automatic Change Review baseline capture; absent in tests that predate it. */
+    private changeReview?: { runStarted(projectId: string, sessionId: string, taskId: string | null): Promise<void> },
   ) {}
   running(id: string) {
     return this.runs.has(id);
@@ -79,6 +81,7 @@ export class WorkService {
     this.runs.set(projectId, run);
     try {
       await this.store.snapshot(projectId, null, session.id);
+      await this.changeReview?.runStarted(projectId, session.id, taskId);
       const fresh = this.store.state(projectId);
       fresh.sessions.push(session);
       this.store.recordWorkAdmission(projectId, session, options.admission);

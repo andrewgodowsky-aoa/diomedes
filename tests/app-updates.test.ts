@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -23,8 +24,44 @@ import {
 // Bounded update flow. No test hits the network or launches an installer:
 // every transport seam is injected, and production fetch mapping is
 // exercised through a stubbed global fetch.
-const INSTALLED = '0.1.1';
-const NEXT = '0.1.2';
+//
+// One test starts the real service, which reports the running build's own
+// version, so the fixture versions are derived from package.json instead of
+// written as literals. Pinned literals here did not merely go stale: the bump
+// to 0.1.2 made the installed version equal the fixture's "next" version, so an
+// update that should have read as available read as current, and the three
+// tests that depend on an accepted install failed behind it.
+const { version: INSTALLED } = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+) as { version: string };
+const versionParts = (value: string) => {
+  const parts = value.split('.').map(Number);
+  if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part) || part < 0))
+    throw new Error(`package.json version ${JSON.stringify(value)} is not X.Y.Z.`);
+  return parts as [number, number, number];
+};
+/** Strictly newer than the running build, whatever it is. */
+const NEXT = (() => {
+  const [major, minor, patch] = versionParts(INSTALLED);
+  return `${major}.${minor}.${patch + 1}`;
+})();
+/** Strictly older than the running build, for the no-downgrade checks. */
+const PREVIOUS = (() => {
+  const [major, minor, patch] = versionParts(INSTALLED);
+  if (patch > 0) return `${major}.${minor}.${patch - 1}`;
+  if (minor > 0) return `${major}.${minor - 1}.0`;
+  if (major > 0) return `${major - 1}.0.0`;
+  throw new Error(`No release is older than ${INSTALLED}.`);
+})();
+/**
+ * A version that is never the one under test, for the fixtures that must not
+ * match. Written as a literal this silently stopped being a mismatch the moment
+ * the real version caught up with it.
+ */
+const OTHER = (() => {
+  const [major, minor, patch] = versionParts(NEXT);
+  return `${major}.${minor}.${patch + 1}`;
+})();
 const ASSET = `Diomedes-Experimental-${NEXT}-unsigned-setup.exe`;
 const ASSET_URL = `https://github.com/andrewgodowsky-aoa/diomedes/releases/download/v${NEXT}/${ASSET}`;
 const SIZE = 1_100_000;
@@ -155,16 +192,16 @@ describe('update version and channel policy', () => {
 
   it('accepts only the exact official download path with matching versions', () => {
     expect(parseOfficialAssetUrl(ASSET_URL)).toMatchObject({ version: NEXT, name: ASSET });
-    const otherTag = ASSET_URL.replace('/v0.1.2/', '/v0.1.3/');
+    const otherTag = ASSET_URL.replace(`/v${NEXT}/`, `/v${OTHER}/`);
     expect(parseOfficialAssetUrl(otherTag)).toBeNull();
     expect(
       parseOfficialAssetUrl(
-        'https://github.com/andrewgodowsky-aoa/diomedes/releases/download/v0.1.2/%ZZ',
+        `https://github.com/andrewgodowsky-aoa/diomedes/releases/download/v${NEXT}/%ZZ`,
       ),
     ).toBeNull();
     expect(
       parseOfficialAssetUrl(
-        'https://user:pass@github.com/andrewgodowsky-aoa/diomedes/releases/download/v0.1.2/' +
+        `https://user:pass@github.com/andrewgodowsky-aoa/diomedes/releases/download/v${NEXT}/` +
           ASSET,
       ),
     ).toBeNull();
@@ -172,7 +209,7 @@ describe('update version and channel policy', () => {
       ASSET_URL.replace('https:', 'http:'),
       ASSET_URL.replace('andrewgodowsky-aoa/diomedes', 'someone-else/diomedes'),
       ASSET_URL.replace('/releases/download/', '/releases/'),
-      'https://github.com/andrewgodowsky-aoa/diomedes/releases/download/v0.1.2/Setup.exe',
+      `https://github.com/andrewgodowsky-aoa/diomedes/releases/download/v${NEXT}/Setup.exe`,
       'https://evil.example/diomedes.exe',
       '../escape.exe',
       null,
@@ -229,10 +266,10 @@ describe('update version and channel policy', () => {
     duplicate.assets.push(structuredClone(duplicate.assets[0]));
     expect(() => selectWindowsAsset(duplicate)).toThrow();
     const tagMismatch = structuredClone(base);
-    tagMismatch.tag_name = 'v0.1.3';
+    tagMismatch.tag_name = `v${OTHER}`;
     expect(() => selectWindowsAsset(tagMismatch)).toThrow();
     const urlMismatch = structuredClone(base);
-    urlMismatch.assets[0].browser_download_url = ASSET_URL.replace('/v0.1.2/', '/v0.1.3/');
+    urlMismatch.assets[0].browser_download_url = ASSET_URL.replace(`/v${NEXT}/`, `/v${OTHER}/`);
     expect(() => selectWindowsAsset(urlMismatch)).toThrow();
     const sizeMismatch = structuredClone(base);
     sizeMismatch.assets[0].size = 123;
@@ -286,7 +323,7 @@ describe('explicit check outcomes', () => {
   it('reports current when the feed is older or equal, never an install', async () => {
     const dir = await tempDir();
     dirs.push(dir);
-    for (const version of ['0.1.1', '0.1.0']) {
+    for (const version of [INSTALLED, PREVIOUS]) {
       const bytes = fixtureBytes();
       const { service } = serviceFor(dir, {
         fetchRelease: async () => releasePayload(version, bytes, digestOf(bytes)),
@@ -437,7 +474,7 @@ describe('production feed mapping without network', () => {
     for (const trusted of [
       'https://objects.githubusercontent.com/diomedes/payload.exe',
       'https://release-assets.githubusercontent.com/diomedes/payload.exe',
-      'https://github.com/andrewgodowsky-aoa/diomedes/releases/download/v0.1.2/' + ASSET,
+      `https://github.com/andrewgodowsky-aoa/diomedes/releases/download/v${NEXT}/` + ASSET,
     ])
       expect(() => assertTrustedFinalUrl(ASSET_URL, trusted)).not.toThrow();
   });

@@ -6,12 +6,18 @@ import type { EngineConnection } from '../../shared/engines.js';
 import { killOwnedProcess } from '../integrations.js';
 import { engineEnvironment, EngineError, psQuote } from './process.js';
 import { cursorCommand, resolveCursorEntry } from './cursor.js';
+import { resolveDevinEntry, startDevinLogin } from './devin.js';
 
 export function loginCommand(engine: ExternalEngine): string[] {
   if (engine === 'claude-code')
     return ['--safe-mode', '--setting-sources', '', 'auth', 'login', '--claudeai'];
   if (engine === 'opencode') return ['auth', 'login', '--pure', '--provider', 'opencode-go'];
   if (engine === 'cursor') return ['login'];
+  if (engine === 'devin')
+    throw new EngineError(
+      'LOGIN_UNSUPPORTED',
+      'Devin signs in through its ACP browser flow, not a console command.',
+    );
   throw new EngineError(
     'LOGIN_UNSUPPORTED',
     'Direct OpenAI API access uses the native OMP models.yml configuration, not OAuth login.',
@@ -32,11 +38,28 @@ export async function prepareOmpConfiguration(root: string): Promise<string> {
   }
   return directory;
 }
+/**
+ * How a native sign-in ended. It says what happened to the window, never what
+ * the native tool decided: an exit code is not evidence of a signed-in account.
+ */
+export type SignInOutcome = 'exited' | 'stopped' | 'timed-out';
+export interface NativeLoginOptions {
+  /**
+   * Called once per started sign-in, after the native process has actually
+   * ended. The host uses it to ask for one fresh inspection; that inspection's
+   * own answer is what a screen shows.
+   */
+  onFinished?: (engine: ExternalEngine, outcome: SignInOutcome) => void | Promise<void>;
+}
+interface SignInSession {
+  child: ChildProcess;
+  timer: ReturnType<typeof setTimeout>;
+  /** Claimed by whichever ending happens first, before the process is killed. */
+  outcome?: SignInOutcome;
+  finished: boolean;
+}
 export class NativeLogin {
-  private active = new Map<
-    ExternalEngine,
-    { child: ChildProcess; timer: ReturnType<typeof setTimeout> }
-  >();
+  private active = new Map<ExternalEngine, SignInSession>();
   constructor(
     private readonly root: string,
     private readonly launch: (
@@ -44,7 +67,63 @@ export class NativeLogin {
       args: string[],
       options: SpawnOptions,
     ) => ChildProcess = spawn,
+    private readonly options: NativeLoginOptions = {},
   ) {}
+  /** Whether this instance was given a host that re-checks when a window ends. */
+  private get rechecks() {
+    return this.options.onFinished !== undefined;
+  }
+  /** Whether a native sign-in window Diomedes opened is still running. */
+  state(engine: ExternalEngine): 'idle' | 'running' {
+    return this.active.has(engine) ? 'running' : 'idle';
+  }
+  private track(engine: ExternalEngine, child: ChildProcess): SignInSession {
+    const session: SignInSession = {
+      child,
+      timer: setTimeout(() => {
+        void this.end(engine, session, 'timed-out').catch(() => {});
+      }, 600_000),
+      finished: false,
+    };
+    session.timer.unref();
+    this.active.set(engine, session);
+    // The exit code is deliberately ignored. A window that ended only asks for
+    // a fresh check; whether the right account is signed in is the check's answer.
+    child.once('exit', () => this.finish(engine, session, 'exited'));
+    return session;
+  }
+  /** The window is gone. Forget it, then report it once. */
+  private finish(engine: ExternalEngine, session: SignInSession, outcome: SignInOutcome) {
+    session.outcome ??= outcome;
+    if (this.active.get(engine) === session) this.active.delete(engine);
+    if (session.finished) return;
+    session.finished = true;
+    clearTimeout(session.timer);
+    const report = this.options.onFinished;
+    if (!report) return;
+    // The re-check runs on the host's own time: a failure inside it belongs to
+    // the host that recorded it, and never leaves this route marked signing in.
+    void Promise.resolve()
+      .then(() => report(engine, session.outcome!))
+      .catch(() => {});
+  }
+  /**
+   * Close a window Diomedes opened, naming why before the process can exit.
+   * The bookkeeping survives a kill that fails: a caller still sees the
+   * rejection, but the window is still forgotten and still reported once.
+   * Reporting it is the promise the screen made — "Diomedes checks this
+   * service again when this window closes" — and a kill Windows could not
+   * confirm is not a reason to break that promise, least of all when the
+   * window may still be open and the person may really have signed in.
+   */
+  private async end(engine: ExternalEngine, session: SignInSession, outcome: SignInOutcome) {
+    session.outcome ??= outcome;
+    try {
+      await killOwnedProcess(session.child);
+    } finally {
+      this.finish(engine, session, outcome);
+    }
+  }
   async start(connection: EngineConnection, consent: boolean) {
     if (!consent)
       throw new EngineError('CONSENT_REQUIRED', 'Confirm opening the native sign-in tool.');
@@ -86,10 +165,36 @@ export class NativeLogin {
     }
     if (this.active.has(engine))
       return {
-        detail: 'The native sign-in window is already open. Finish or cancel it, then recheck.',
+        detail: this.rechecks
+          ? 'The native sign-in window is already open. Finish or cancel it; Diomedes checks this service again when it closes.'
+          : 'The native sign-in window is already open. Finish or cancel it, then recheck.',
       };
     const cwd = path.join(this.root, engine);
     await fs.mkdir(cwd, { recursive: true });
+    if (engine === 'devin') {
+      // Devin ACP authenticates its own process and never reuses the native CLI
+      // sign-in, so login starts the browser flow instead of a console window.
+      const entry = await resolveDevinEntry(connection.location);
+      const { child, done } = startDevinLogin(entry, cwd);
+      await new Promise<void>((resolve, reject) => {
+        child.once('spawn', resolve);
+        child.once('error', () =>
+          reject(new EngineError('LOGIN_FAILED', 'The Devin sign-in could not start.')),
+        );
+      });
+      const session = this.track(engine, child);
+      // The browser flow settling is this sign-in ending, either way; closing
+      // the ACP child after it is cleanup, not a person cancelling.
+      done.then(
+        () => this.end(engine, session, 'exited'),
+        () => this.end(engine, session, 'exited'),
+      ).catch(() => {});
+      return {
+        detail: this.rechecks
+          ? 'Complete the Devin sign-in in the browser window that opened. Diomedes checks this service again when the sign-in finishes.'
+          : 'Complete the Devin sign-in in the browser window that opened, then use Check sign-in and models in Diomedes.',
+      };
+    }
     const env = engineEnvironment();
     if (engine === 'opencode') {
       const nativeHome = process.env.USERPROFILE ?? process.env.HOME;
@@ -109,8 +214,9 @@ export class NativeLogin {
       env.OPENCODE_DISABLE_PROJECT_CONFIG = '1';
       env.OPENCODE_DISABLE_EXTERNAL_SKILLS = '1';
     }
-    const caption =
-      'Complete sign-in in this native tool, then use Check sign-in and models in Diomedes.';
+    const caption = this.rechecks
+      ? 'Complete sign-in in this native tool. Diomedes checks this service again when this window closes.'
+      : 'Complete sign-in in this native tool, then use Check sign-in and models in Diomedes.';
     const command =
       engine === 'cursor'
         ? cursorCommand(await resolveCursorEntry(connection.location), loginCommand(engine))
@@ -137,28 +243,35 @@ export class NativeLogin {
         reject(new EngineError('LOGIN_FAILED', 'The native sign-in window could not open.')),
       );
     });
-    const timer = setTimeout(() => {
-      void this.stop(engine);
-    }, 600_000);
-    timer.unref();
-    this.active.set(engine, { child, timer });
-    child.once('exit', () => {
-      clearTimeout(timer);
-      this.active.delete(engine);
-    });
+    this.track(engine, child);
     return { detail: caption };
   }
   async stop(engine: ExternalEngine) {
-    const item = this.active.get(engine);
-    if (!item) return { detail: 'No native sign-in window is running.' };
-    this.active.delete(engine);
-    clearTimeout(item.timer);
-    await killOwnedProcess(item.child);
+    const session = this.active.get(engine);
+    if (!session) return { detail: 'No native sign-in window is running.' };
+    await this.end(engine, session, 'stopped');
     return {
-      detail: 'The native sign-in window was closed. Recheck to see whether sign-in completed.',
+      detail: this.rechecks
+        ? 'The native sign-in window was closed. Diomedes is checking this service again.'
+        : 'The native sign-in window was closed. Recheck to see whether sign-in completed.',
     };
   }
   async close() {
-    for (const engine of this.active.keys()) await this.stop(engine);
+    // Every window is closed and reported even when one of them will not
+    // confirm; the first failure is still raised once they all have been
+    // attempted, so one stuck process cannot hide the others.
+    let failure: unknown;
+    let raised = false;
+    for (const engine of [...this.active.keys()]) {
+      try {
+        await this.stop(engine);
+      } catch (error) {
+        if (!raised) {
+          failure = error;
+          raised = true;
+        }
+      }
+    }
+    if (raised) throw failure;
   }
 }

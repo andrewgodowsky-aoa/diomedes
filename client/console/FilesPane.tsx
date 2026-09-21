@@ -4,6 +4,12 @@ import { readDocument } from '../api';
 import { date, time } from '../components';
 import type { FilesPaneProps } from './types';
 import { ImportFiles } from './ImportFiles';
+import {
+  fileTreeKey,
+  visibleFileNodes,
+  visibleFocus,
+  type FileNode as Node,
+} from './file-tree-navigation';
 
 /**
  * The Files pane: the Core file and artifact surface, bound to the current
@@ -26,19 +32,7 @@ export const DEFAULT_WIDTH = 320;
 export const clampWidth = (value: number): number =>
   Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(value)));
 
-interface Folder {
-  kind: 'folder';
-  path: string;
-  name: string;
-  children: Node[];
-}
-interface Leaf {
-  kind: 'file';
-  path: string;
-  name: string;
-  document: DocumentInfo;
-}
-type Node = Folder | Leaf;
+type Folder = Extract<Node, { kind: 'folder' }>;
 
 /**
  * A tree, derived in the client from the flat `/`-joined paths the listing
@@ -64,7 +58,7 @@ export function buildTree(documents: readonly DocumentInfo[]): Node[] {
   for (const file of documents) {
     const at = file.path.lastIndexOf('/');
     const name = at < 0 ? file.path : file.path.slice(at + 1);
-    const leaf: Leaf = { kind: 'file', path: file.path, name, document: file };
+    const leaf: Node = { kind: 'file', path: file.path, name, document: file };
     (at < 0 ? roots : folderAt(file.path.slice(0, at)).children).push(leaf);
   }
   const order = (nodes: Node[]): Node[] => {
@@ -154,68 +148,120 @@ function Markdown({ text }: { text: string }) {
 
 function FileTree({
   nodes,
-  depth,
   open,
   openPath,
+  focusPath,
+  restoreFocus,
+  onFocus,
   onToggle,
   onOpen,
 }: {
   nodes: Node[];
-  depth: number;
   open: ReadonlySet<string>;
   openPath: string | null;
+  focusPath: string | null;
+  restoreFocus: boolean;
+  onFocus(path: string): void;
   onToggle(path: string): void;
   onOpen(path: string): void;
 }) {
+  const rows = useMemo(() => visibleFileNodes(nodes, open), [nodes, open]);
+  const activePath = visibleFocus(rows, focusPath);
+  const buttons = useRef(new Map<string, HTMLButtonElement>());
+  const treeRef = useRef<HTMLUListElement>(null);
+  const hadFocus = useRef(false);
+  const restoreOnMount = useRef(restoreFocus);
+  useEffect(() => {
+    // Refreshes can remove the focused file. Restore only when focus belonged
+    // to the tree or Back requested it, never while the person is elsewhere.
+    if (
+      activePath &&
+      (restoreOnMount.current || (hadFocus.current && document.activeElement === document.body))
+    )
+      buttons.current.get(activePath)?.focus();
+    restoreOnMount.current = false;
+  }, [activePath]);
   return (
-    <ul className="files-tree" role="group">
-      {nodes.map((node) =>
-        node.kind === 'folder' ? (
-          <li key={node.path}>
-            <button
-              type="button"
-              className="files-row files-folder"
-              style={{ paddingLeft: 10 + depth * 12 }}
-              aria-expanded={open.has(node.path)}
-              onClick={() => onToggle(node.path)}
-            >
+    <ul
+      className="files-tree"
+      role="tree"
+      aria-label="Project files"
+      ref={treeRef}
+      onFocusCapture={() => {
+        hadFocus.current = true;
+      }}
+      onBlurCapture={(event) => {
+        if (event.relatedTarget && !treeRef.current?.contains(event.relatedTarget))
+          hadFocus.current = false;
+      }}
+    >
+      {rows.map(({ node, depth, position, size }) => (
+        <li key={node.path} role="none">
+          <button
+            type="button"
+            role="treeitem"
+            ref={(element) => {
+              if (element) buttons.current.set(node.path, element);
+              else buttons.current.delete(node.path);
+            }}
+            tabIndex={node.path === activePath ? 0 : -1}
+            aria-label={node.name}
+            aria-description={
+              node.kind === 'file' ? marks(node.document).join(', ') || undefined : undefined
+            }
+            aria-level={depth + 1}
+            aria-posinset={position}
+            aria-setsize={size}
+            aria-expanded={node.kind === 'folder' ? open.has(node.path) : undefined}
+            aria-selected={node.path === openPath}
+            title={node.path}
+            className={`files-row files-${node.kind}${node.path === openPath ? ' on' : ''}`}
+            // Deep folders retain their full ARIA level and path, while
+            // indentation leaves room for names at the existing pane minimum.
+            style={{ paddingLeft: 10 + Math.min(depth, 4) * 12 }}
+            onFocus={() => onFocus(node.path)}
+            onKeyDown={(event) => {
+              if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+              if (
+                !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(
+                  event.key,
+                )
+              )
+                return;
+              const action = fileTreeKey(rows, open, node.path, event.key);
+              event.preventDefault();
+              event.stopPropagation();
+              if (!action) return;
+              if (action.kind === 'focus') buttons.current.get(action.path)?.focus();
+              else onToggle(action.path);
+            }}
+            onClick={() => {
+              buttons.current.get(node.path)?.focus();
+              if (node.kind === 'folder') onToggle(node.path);
+              else onOpen(node.path);
+            }}
+          >
+            {node.kind === 'folder' ? (
               <span className="files-caret" aria-hidden="true">
                 {open.has(node.path) ? '−' : '+'}
               </span>
-              <span className="files-name">{node.name}</span>
-              <span className="mono files-meta">{node.children.length}</span>
-            </button>
-            {open.has(node.path) && (
-              <FileTree
-                nodes={node.children}
-                depth={depth + 1}
-                open={open}
-                openPath={openPath}
-                onToggle={onToggle}
-                onOpen={onOpen}
-              />
-            )}
-          </li>
-        ) : (
-          <li key={node.path}>
-            <button
-              type="button"
-              className={`files-row files-file${node.path === openPath ? ' on' : ''}`}
-              style={{ paddingLeft: 10 + depth * 12 }}
-              onClick={() => onOpen(node.path)}
-            >
+            ) : (
               <span
                 className={`pt ${node.document.hasChangesWaiting ? 'attn' : node.document.recorded ? 'done' : ''}`.trimEnd()}
               />
-              <span className="files-name">{node.name}</span>
-              <span className="mono files-meta">{changedLabel(node.document.changedAt)}</span>
-              {marks(node.document).length > 0 && (
-                <small className="files-marks">{marks(node.document).join(' · ')}</small>
-              )}
-            </button>
-          </li>
-        ),
-      )}
+            )}
+            <span className="files-name">{node.name}</span>
+            <span className="mono files-meta">
+              {node.kind === 'folder'
+                ? node.children.length
+                : changedLabel(node.document.changedAt)}
+            </span>
+            {node.kind === 'file' && marks(node.document).length > 0 && (
+              <small className="files-marks">{marks(node.document).join(' · ')}</small>
+            )}
+          </button>
+        </li>
+      ))}
     </ul>
   );
 }
@@ -224,21 +270,30 @@ function Viewer({
   projectId,
   document: info,
   onBack,
+  onEdit,
 }: {
   projectId: string;
   document: DocumentInfo;
   onBack(): void;
+  /** Write in this file. Offered only for the kinds the editor can open. */
+  onEdit?(path: string): void;
 }) {
   const [content, setContent] = useState<DocumentContent | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [raw, setRaw] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const back = useRef<HTMLButtonElement>(null);
   const readable = info.kind !== 'unsupported';
+  useEffect(() => {
+    back.current?.focus();
+  }, []);
   useEffect(() => {
     if (!readable) return;
     let alive = true;
+    const controller = new AbortController();
     setContent(null);
     setFailure(null);
-    readDocument(projectId, info.path)
+    readDocument(projectId, info.path, controller.signal)
       .then((value) => {
         if (alive) setContent(value);
       })
@@ -248,13 +303,14 @@ function Viewer({
       });
     return () => {
       alive = false;
+      controller.abort();
     };
-  }, [projectId, info.path, readable]);
+  }, [projectId, info.path, readable, attempt]);
   const rendered = info.kind === 'markdown' || info.kind === 'plan';
   return (
     <div className="files-doc">
       <div className="files-doc-head">
-        <button type="button" className="files-back" onClick={onBack}>
+        <button ref={back} type="button" className="files-back" onClick={onBack}>
           Back
         </button>
         <span className="files-path mono" title={info.path}>
@@ -285,6 +341,15 @@ function Viewer({
             </button>
           </span>
         )}
+        {/* This pane stays a reader (decision 13, and the note at the top of
+            this file). Writing happens in the editor on the main stage, which
+            is a different surface reached from here, not one grown inside the
+            pane. */}
+        {onEdit && readable && (
+          <button type="button" className="files-edit" onClick={() => onEdit(info.path)}>
+            Write in this file
+          </button>
+        )}
       </div>
       {marks(info).length > 0 && <p className="caption">{marks(info).join(' · ')}</p>}
       {/* The head and the bar already carry the path, kind, size and changed
@@ -297,22 +362,50 @@ function Viewer({
         </p>
       )}
       {readable && failure && (
-        <p className="caption files-fail">{failure}</p>
+        <div className="files-read-failure">
+          <p className="caption files-fail" role="alert">
+            {failure}
+          </p>
+          <button
+            type="button"
+            className="files-retry"
+            onClick={() => {
+              setFailure(null);
+              setContent(null);
+              setAttempt((value) => value + 1);
+              back.current?.focus();
+            }}
+          >
+            Retry preview
+          </button>
+        </div>
       )}
-      {readable && !failure && !content && <p className="caption">Reading...</p>}
+      {readable && !failure && !content && (
+        <p className="caption" role="status">
+          Reading...
+        </p>
+      )}
       {readable && content && content.outsideChange && (
         <p className="caption">{content.outsideChange.sentence}</p>
       )}
-      {readable && content && (rendered && !raw ? (
-        <Markdown text={content.text} />
-      ) : (
-        <pre className="files-raw">{content.text}</pre>
-      ))}
+      {readable &&
+        content &&
+        (rendered && !raw ? (
+          <Markdown text={content.text} />
+        ) : (
+          <pre className="files-raw">{content.text}</pre>
+        ))}
     </div>
   );
 }
 
-export function FilesPane({
+export function FilesPane(props: FilesPaneProps) {
+  // Expansion, focus and pending reads all belong to one project, even when
+  // two projects contain the same relative path.
+  return <ProjectFilesPane key={props.projectId} {...props} />;
+}
+
+function ProjectFilesPane({
   projectId,
   documents,
   loading,
@@ -322,10 +415,12 @@ export function FilesPane({
   onOpen,
   onWidth,
   onClose,
+  onEdit,
 }: FilesPaneProps) {
   const [importing, setImporting] = useState(false);
-  useEffect(() => setImporting(false), [projectId]);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const [focusPath, setFocusPath] = useState<string | null>(null);
+  const restoreFocus = useRef(false);
   const dragFrom = useRef<{ x: number; width: number } | null>(null);
   const tree = useMemo(() => buildTree(documents), [documents]);
   const openDocument = openPath ? (documents.find((d) => d.path === openPath) ?? null) : null;
@@ -334,6 +429,7 @@ export function FilesPane({
   // closing it lands on the row rather than a collapsed tree.
   useEffect(() => {
     if (!openPath) return;
+    setFocusPath(openPath);
     const reveal = ancestors(openPath);
     if (!reveal.length) return;
     setExpanded((prev) => {
@@ -391,9 +487,13 @@ export function FilesPane({
         </button>
       </div>
       <div className="files-body">
-        <button type="button" className="files-import" onClick={() => setImporting(true)}>Import files</button>
+        <button type="button" className="files-import" onClick={() => setImporting(true)}>
+          Import files
+        </button>
         {failure && <p className="caption files-fail">{failure}</p>}
-        {!failure && loading && !documents.length && <p className="caption">Reading the folder...</p>}
+        {!failure && loading && !documents.length && (
+          <p className="caption">Reading the folder...</p>
+        )}
         {!failure && !loading && !documents.length && (
           <p className="caption">This project's folder has nothing to list.</p>
         )}
@@ -401,18 +501,27 @@ export function FilesPane({
           // A fresh viewer per document: the Rendered/Raw choice belongs to the
           // document being read, not to the pane.
           <Viewer
-            key={openDocument.path}
+            key={JSON.stringify([projectId, openDocument.path])}
             projectId={projectId}
             document={openDocument}
-            onBack={() => onOpen(null)}
+            onBack={() => {
+              restoreFocus.current = true;
+              onOpen(null);
+            }}
+            onEdit={onEdit}
           />
         ) : (
           documents.length > 0 && (
             <FileTree
               nodes={tree}
-              depth={0}
               open={expanded}
               openPath={openPath}
+              focusPath={focusPath}
+              restoreFocus={restoreFocus.current}
+              onFocus={(path) => {
+                restoreFocus.current = false;
+                setFocusPath(path);
+              }}
               onToggle={toggle}
               onOpen={onOpen}
             />

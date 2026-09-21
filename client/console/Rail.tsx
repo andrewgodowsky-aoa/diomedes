@@ -1,11 +1,13 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import type { ShellView } from './types';
+import { Everything, type EverythingItem } from './Everything';
 
 export interface RailItem {
   id: string;
   name: string;
   time: string;
   sub: string;
+  /** Colours the sub line when it carries a state: waiting on the person, or running. */
+  tone?: 'attn' | 'live';
 }
 
 interface RailProps {
@@ -15,23 +17,31 @@ interface RailProps {
   selectedId: string | null;
   onSelect(id: string): void;
   onNew(): void;
-  view: ShellView;
-  onView(view: ShellView): void;
-  openTasks: number;
-  workerCount: number;
-  /** Whether the Files pane is showing; the foot toggle states it. */
-  filesOpen: boolean;
-  onFiles(): void;
-  onHome(): void;
-  onHistory(): void;
-  onEngines(): void;
+  /** Everything the Console can open, in the order Everything should read them. */
+  destinations: EverythingItem[];
+  /** The ids showing in the rail's own foot, in the person's chosen order. */
+  pinned: string[];
+  /** The destination open right now, so both the rail and the flyout mark it. */
+  currentId?: string;
+  onDestination(id: string): void;
+  onTogglePin(id: string): void;
+  /** Headings for the flyout. Without them it groups unavailable rows last. */
+  groups?: { heading: string; ids: string[] }[];
+  /** What the spine lists. The Projects page lists projects on the same spine. */
+  title?: string;
+  navLabel?: string;
 }
 
 /**
- * The thread rail: mono head, the spine with its sliding point, the three
- * views, and the files/workbook/engine foot. 1:1 with the prototype rail,
- * plus the Files pane toggle: the pane is not a view, so it is not in the
- * view switch.
+ * The thread rail: mono head, the spine with its sliding point, and a foot of
+ * destinations.
+ *
+ * The foot used to be a fixed set: four view buttons and four more for Files,
+ * the Workbook, History and Engines. Every one of them was a decision made for
+ * everybody, and two of them left the Console altogether. It is now whatever
+ * this person pinned, with Everything holding the rest. A rail that carries
+ * nothing still works: Everything is always the last row, so nothing can be
+ * pinned away into being unreachable.
  */
 export function Rail({
   top,
@@ -39,15 +49,14 @@ export function Rail({
   selectedId,
   onSelect,
   onNew,
-  view,
-  onView,
-  openTasks,
-  workerCount,
-  filesOpen,
-  onFiles,
-  onHome,
-  onHistory,
-  onEngines,
+  destinations,
+  pinned,
+  currentId,
+  onDestination,
+  onTogglePin,
+  groups,
+  title = 'Threads',
+  navLabel,
 }: RailProps) {
   const buttons = useRef(new Map<string, HTMLButtonElement>());
   const [pointTop, setPointTop] = useState<number | null>(null);
@@ -55,11 +64,15 @@ export function Rail({
     const el = selectedId ? buttons.current.get(selectedId) : undefined;
     setPointTop(el ? el.offsetTop + 12 : null);
   }, [selectedId, items.length]);
+  const byId = new Map(destinations.map((item) => [item.id, item]));
+  // A pinned id that names nothing is skipped rather than drawn empty: pins
+  // outlive the build that wrote them, and a destination can be withdrawn.
+  const shown = pinned.map((id) => byId.get(id)).filter((item): item is EverythingItem => !!item);
   return (
-    <nav className="rail" aria-label="Threads and views">
+    <nav className="rail" aria-label={navLabel ?? 'Threads and views'}>
       {top}
       <div className="rail-head">
-        <h2>Threads</h2>
+        <h2>{title}</h2>
         <button type="button" onClick={onNew}>
           New
         </button>
@@ -82,38 +95,32 @@ export function Rail({
                 <span className="nm">{item.name}</span>
                 <span className="mono lc when">{item.time}</span>
               </span>
-              <small>{item.sub}</small>
+              <small className={item.tone}>{item.sub}</small>
             </button>
           </li>
         ))}
       </ul>
-      <div className="views">
-        {(['Thread', 'Board', 'Team', 'Connections'] as ShellView[]).map((v) => (
+      <div className="foot">
+        {shown.map((item) => (
           <button
-            key={v}
+            key={item.id}
             type="button"
-            className={view === v ? 'on' : ''}
-            onClick={() => onView(v)}
+            className={currentId === item.id ? 'on' : ''}
+            aria-current={currentId === item.id ? 'true' : undefined}
+            onClick={() => onDestination(item.id)}
           >
-            {v}
-            {v === 'Board' && <span className="mono">{openTasks}</span>}
-            {v === 'Team' && <span className="mono">{workerCount} workers</span>}
+            {item.label}
+            {item.badge && <span className="mono">{item.badge}</span>}
           </button>
         ))}
-      </div>
-      <div className="foot">
-        <button type="button" aria-pressed={filesOpen} className={filesOpen ? 'on' : ''} onClick={onFiles}>
-          Files
-        </button>
-        <button type="button" onClick={onHome}>
-          Workbook
-        </button>
-        <button type="button" onClick={onHistory}>
-          History
-        </button>
-        <button type="button" onClick={onEngines}>
-          Engines
-        </button>
+        <Everything
+          items={destinations}
+          pinned={pinned}
+          currentId={currentId}
+          groups={groups}
+          onSelect={onDestination}
+          onTogglePin={onTogglePin}
+        />
       </div>
     </nav>
   );

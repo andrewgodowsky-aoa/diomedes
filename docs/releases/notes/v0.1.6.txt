@@ -1,0 +1,93 @@
+WHAT IS NEW
+  The Console is one screen language. Home, the strip across the top, the
+  Everything rail and History were rebuilt against a single set of tokens, so
+  spacing, corner radius, motion and colour are decided in one place instead of
+  in each screen's own stylesheet. History is a screen inside the Console now
+  rather than a detour out of it, and there is an editor for a task document.
+
+  Every dropdown in the app is drawn by the app. These lists used to be painted
+  by Windows, so a menu opened in the app's colours and closed in the system's.
+  The list, its highlight and its tick are now styled with the rest of the app,
+  and where that is not supported the app draws its own chevron instead. How a
+  dropdown behaves did not change: it is still an ordinary control, still
+  reachable from the keyboard and still read by a screen reader.
+
+  The Projects view lets you choose how a question runs. You could already carry
+  a question into a project, but not say whether it should ask, plan or build
+  once it got there. The mode now sits beside the question with a line naming
+  what that mode is allowed to do, and it travels with the question. If the
+  project you pick has no thread yet, one is opened for the question rather than
+  leaving you on an empty list.
+
+  Discovery and Readiness are screens you can open. Discovery records a
+  prospect's inputs, hand-offs and time, takes an owner's correction on a
+  recorded fact, and imports a research brief. Readiness shows which tools are
+  available and what each workflow still needs, one capability at a time, with
+  the evidence behind each answer and how fresh it is. Neither screen needs a
+  Business account.
+
+  Setup can repair an installation it cannot use. Before this build, a tool that
+  was present but the wrong version was reported as needing a compatibility check
+  and left there, which is a dead end for the person most likely to hit it. A
+  wrong-version, changed or corrupt installation now offers to repair itself with
+  a compatible copy, and a missing one offers to install that copy. Claude Code,
+  OpenCode and oh-my-pi have such a copy; Cursor and Devin do not, so on those two
+  a version that differs is still yours to sort out.
+
+  Setup also offers a connection test you press yourself. It says what it will do
+  before it does it: one small synthetic request through the route you chose,
+  which may use that service's allowance or add provider charges. It is sent once
+  rather than retried, because a request whose outcome is uncertain may already
+  have been billed.
+
+  The app ships what it knows about itself. A set of statements about the
+  product and about each route is installed beside the app and read locally, so
+  an answer about how Diomedes works comes from the build you are running. The
+  set names the build it describes and is ignored outright when the two disagree,
+  rather than answering from a version you do not have.
+
+UPDATES
+  Settings > App updates offers stable releases only, and this is one. An
+  installed 0.1.5 is offered this build when you press Check for updates.
+  Nothing is downloaded, verified or installed until you confirm it, and a
+  download is accepted only when its SHA-256 matches the digest the release
+  publishes.
+
+LIMITS
+  Unsigned, experimental, one machine tested.
+  Claude Code can hold a session open, but nothing in the app opens one. Every
+  text request still starts a fresh process, so a follow-up is a new request and
+  nothing is resumed, exactly as in 0.1.5. What this build adds is a second
+  route behind the local service that keeps one process across turns and can
+  resume or fork a turn from a recorded point; no screen reaches it yet. When it
+  is reachable, steering a turn while it runs and asking the provider to
+  reconcile an unknown outcome will still be refused rather than approximated.
+  Organisation access is in this build as server code with no screen. Accounts,
+  roles and per-member limits answer over the local service, and nothing in the
+  app asks them, so there is no multi-user behaviour to see. Treat it as
+  groundwork, not a feature.
+  Durable inventory stock receipts are in this build as server code that nothing
+  reaches at all: no route serves them and no screen shows them. They are
+  included because they are written and tested, not because they do anything in
+  this build.
+  The Design Center is in this build and behaves as it did in 0.1.5. Authoring
+  inside the app is still developer-only, because the account and subscription
+  software it depends on is not shipped yet. In an ordinary install you can open
+  the Design Center, change things and watch the preview, while Apply, Save as
+  new theme and Import do not work, and the screen says so. Authoring is
+  switched on only by starting Diomedes with DIOMEDES_DESIGN_AUTHORING=1, which
+  the included Start-Experimental.ps1 launcher sets.
+  Appearance work is included in a Diomedes Business subscription and is done by
+  our own design team: we build and install your first look after a design
+  consultation, and up to two revisions a year are included. There is nothing
+  extra to buy.
+  The OpenCode route runs on the native OpenCode Go account. A sign-in to
+  OpenCode Zen, or to any other provider inside your own OpenCode, is a different
+  account and is invisible to this route by construction. The app reports that no
+  Go account is connected and names the route, rather than implying you never
+  signed in.
+  No real provider request was made in testing, and nothing here has been run on
+  a machine that did not build it.
+  The local service listens on 127.0.0.1 only.
+  There is no delete for a theme, and removing a picture from a theme leaves its
+  bytes on disk.

@@ -61,6 +61,25 @@
 .console .files-fail {
   color: var(--attn);
 }
+.console .files-read-failure {
+  min-width: 0;
+  padding: 0 8px;
+  overflow-wrap: anywhere;
+}
+.console .files-read-failure p {
+  margin: 0 0 8px;
+  font-size: var(--dm-type-caption);
+}
+.console .files-retry {
+  padding: 4px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t1);
+  font-size: var(--dm-type-caption);
+}
+.console .files-retry:hover {
+  background: var(--raised);
+}
 
 /* ---- tree ---- */
 .console .files-tree {
@@ -160,6 +179,11 @@
   justify-content: space-between;
   gap: 8px;
   padding: 0 8px;
+}
+.console .files-doc-bar > .files-meta {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .console .files-seg {
   display: inline-flex;

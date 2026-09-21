@@ -16,6 +16,46 @@ export function hasUsableService(settings: Settings): boolean {
 }
 
 /**
+ * What continuing from the AI step actually does. Three different answers, and
+ * the label and the sentence say which one this is:
+ *
+ * - `verified`: the selected route answered one real request through the
+ *   binding it still has.
+ * - `untested`: a route is selected and switched on, and nothing has been sent
+ *   through it. Continuing is allowed and is not a verification.
+ * - `sample`: nothing usable is selected, so the app runs scripted local work.
+ *
+ * `hasUsableService` keeps its meaning for every other caller; this only
+ * separates its `true` into the two cases the person should be able to tell
+ * apart. `verifiedRoutes` are the engines whose own record carries a result
+ * through their current binding revision — the screen reads that from the
+ * host's record and passes the answer in, so nothing here inspects the wire.
+ */
+export type ContinueChoice = 'verified' | 'untested' | 'sample';
+
+export function continueChoice(
+  settings: Settings,
+  verifiedRoutes: readonly string[] = [],
+): ContinueChoice {
+  if (!hasUsableService(settings)) return 'sample';
+  const def = settings.services?.['defaultEngine'];
+  return typeof def === 'string' && verifiedRoutes.includes(def) ? 'verified' : 'untested';
+}
+
+export function continueLabel(choice: ContinueChoice): string {
+  if (choice === 'verified') return 'Continue';
+  return choice === 'untested' ? 'Continue without testing' : 'Continue with the local sample';
+}
+
+/** The one sentence beside that control. Never a claim the sample verified anything. */
+export function continueNote(choice: ContinueChoice): string {
+  if (choice === 'verified') return 'Diomedes will use the service you tested.';
+  return choice === 'untested'
+    ? 'This connection has not answered a real request yet.'
+    : 'Sample work is scripted on this computer. It is not proof that a provider answered.';
+}
+
+/**
  * Bring stored settings onto setup version 2 without changing what the
  * person chose. Permissions (especially false), services, work, detail,
  * familiarity, resumeAt and completedAt are preserved verbatim. No discovery

@@ -1,0 +1,2 @@
+# Product knowledge is indexed by the exact shipped bytes on every platform.
+resources/product-knowledge/*.json text eol=lf

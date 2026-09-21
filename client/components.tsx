@@ -156,15 +156,27 @@ export function Modal({
   children,
   onClose,
   wide = false,
+  inline = false,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  /**
+   * Render in place instead of taking the top layer.
+   *
+   * The Design Center previews this exact component, and `showModal()` would
+   * put a real modal dialog over the editor the moment the preview mounted. An
+   * open `<dialog>` with no `showModal()` is the same element with the same
+   * markup, styles and children, sitting where it is put. Nothing but the
+   * preview passes this.
+   */
+  inline?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
   useEffect(() => {
+    if (inline) return;
     const el = ref.current;
     const focused = document.activeElement;
     el?.showModal();
@@ -172,12 +184,13 @@ export function Modal({
       el?.close();
       if (focused instanceof HTMLElement) focused.focus();
     };
-  }, []);
+  }, [inline]);
   return (
     <dialog
       ref={ref}
+      open={inline || undefined}
       aria-labelledby={id}
-      className={`dialog ${wide ? 'wide' : ''}`}
+      className={`dialog ${wide ? 'wide' : ''} ${inline ? 'inline' : ''}`}
       onCancel={(e) => {
         e.preventDefault();
         onClose();
@@ -514,6 +527,10 @@ export function SessionStatus({
 export function askDraftKey(projectId: string) {
   return `diomedes.ask-draft.${projectId}`;
 }
+/** The mode chosen beside a carried ask. A key of its own: the draft key stays plain text. */
+export function askModeKey(projectId: string) {
+  return `diomedes.ask-mode.${projectId}`;
+}
 
 /** The window closest to empty: the highest percent used. */
 export function tightestWindow(snapshot: UsageSnapshot): UsageWindow | null {
@@ -608,9 +625,9 @@ export function HelperLine({
   return (
     <p className="caption helper-line">
       {switchedOn ? (
-        <span>
-          {switchedOn.name} is on. {switchedOn.disclosure[0]}
-        </span>
+        // The disclosure names the service and the account itself; "X is on" in
+        // front of it said the same thing twice (standing decision 4).
+        <span>{switchedOn.disclosure[0]}</span>
       ) : signedIn ? (
         <>
           <span>{signedIn.name} is signed in but turned off.</span>

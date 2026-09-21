@@ -13,6 +13,7 @@ let server: Server;
 let temp: string, url: string, projectId: string, taskId: string;
 let result: Awaited<ReturnType<NativeGenerator>>;
 let generate: NativeGenerator;
+const pendingObservers = new Set<() => void>();
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 async function request(route: string, method = 'GET', body?: unknown) {
   const response = await fetch(`${url}/api${route}`, {
@@ -56,12 +57,33 @@ function proposal(name: string, text: string | null = 'recorded result') {
   };
 }
 async function settled() {
-  let current = await state();
-  await vi.waitFor(async () => {
-    current = await state();
-    expect(current.sessions.at(-1)?.state).not.toBe('working');
+  const store: Store = app.locals.store;
+  const targetProject = projectId, targetTask = taskId;
+  await new Promise<void>((resolve, reject) => {
+    let sessionId: string | undefined;
+    const cleanup = () => {
+      store.off('change', changed);
+      pendingObservers.delete(cancel);
+    };
+    const cancel = () => { cleanup(); reject(new Error('Session observation ended before completion.')); };
+    const changed = (id: string) => {
+      if (id !== targetProject) return;
+      try {
+        const sessions = store.state(targetProject).sessions;
+        sessionId ??= [...sessions].reverse().find((session) => session.taskId === targetTask)?.id;
+        const session = sessions.find((item) => item.id === sessionId);
+        if (!session) throw new Error('The started task session is missing.');
+        if (session.state !== 'working' && session.state !== 'queued') {
+          cleanup(); resolve();
+        }
+      } catch (error) { cleanup(); reject(error); }
+    };
+    pendingObservers.add(cancel);
+    // Subscribe before the first state read so completion cannot fall in a gap.
+    store.on('change', changed);
+    changed(targetProject);
   });
-  return current;
+  return state(); // Assertions still inspect the actual HTTP representation.
 }
 beforeEach(async () => {
   await fs.mkdir(path.join(process.cwd(), 'test-results'), { recursive: true });
@@ -85,13 +107,57 @@ beforeEach(async () => {
   await request('/settings', 'PUT', { services: { codex: true } });
   proposal('Result.md');
 });
+// close() drains every change-review build the test queued. Runs that share one
+// task each rebuild all the earlier ones, so twenty of them queue about a thousand
+// builds. Alone on a quiet machine the drain is about 17 s; alone on a busy one it
+// has measured 49 s after a 44 s body, each past vitest's 30 s default. This budget
+// covers that cost and nothing else, and should come down when the rebuilds do.
+const DRAIN_BUDGET = 300_000;
 afterEach(async () => {
-  await app.locals.close();
-  server.closeAllConnections();
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-});
+  // Hold this test's own app and server. A hook that outlives its timeout keeps
+  // running, and by the time close() returns the module bindings belong to the
+  // next test, whose server it would otherwise shut.
+  const closingApp = app, closingServer = server;
+  for (const cancel of [...pendingObservers]) cancel();
+  try {
+    // Undefined only when beforeEach failed first; its error is the one to report.
+    await closingApp?.locals.close();
+  } finally {
+    if (closingServer) {
+      closingServer.closeAllConnections();
+      await new Promise<void>((resolve) => closingServer.close(() => resolve()));
+    }
+  }
+}, DRAIN_BUDGET);
 
 describe('human-issued task scope', () => {
+  test('completion observation stays pending for working sessions and ignores another project', async () => {
+    expect((await grant()).status).toBe(200);
+    let finish!: (value: typeof result) => void;
+    generate = () => new Promise((resolve) => { finish = resolve; });
+    expect((await start()).status).toBe(200);
+    const store: Store = app.locals.store;
+    const listenersBefore = store.listenerCount('change');
+    let completed = false;
+    const observed = settled().then((current) => { completed = true; return current; });
+    try {
+      expect(store.listenerCount('change')).toBe(listenersBefore + 1);
+      store.emit('change', 'another-project');
+      await Promise.resolve();
+      expect(completed).toBe(false);
+      expect(store.state(projectId).sessions.at(-1)?.state).toBe('working');
+      finish(result);
+      const current = await observed;
+      expect(current.sessions.at(-1)?.state).toBe('done');
+      expect(current.needs.at(-1)?.execution?.state).toBe('applied');
+      expect(await fs.readFile(path.join(current.project.folder, 'Result.md'), 'utf8')).toBe('recorded result');
+      expect(store.listenerCount('change')).toBe(listenersBefore);
+      // Already completed sessions do not need a future event, and leak no listener.
+      expect((await settled()).sessions.at(-1)?.state).toBe('done');
+      expect(store.listenerCount('change')).toBe(listenersBefore);
+    } finally { finish(result); }
+  });
+
   test('one confirmation permits twenty journaled edits, each with independent authorization evidence', async () => {
     const issued = await grant();
     expect(issued.status).toBe(200);
@@ -113,7 +179,7 @@ describe('human-issued task scope', () => {
     const current = await state();
     expect(current.history.filter((entry) => entry.kind === 'changed')).toHaveLength(20);
     expect(new Set(current.needs.map((need) => need.authorization?.id)).size).toBe(20);
-  }, 30_000);
+  }, DRAIN_BUDGET);
 
   test('review changes still waits and legacy task flags do not mint authority', async () => {
     const thread = await request(`/projects/${projectId}/threads`, 'POST', {

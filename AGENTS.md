@@ -203,7 +203,11 @@ Take these to Andrew rather than choosing:
 - The coordination root is `<git common dir>/diomedes-coordination/unified-20260913/` (for this
   repository, `F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913/`). Claims, the
   heavy-test slot and per-role journals live there; `scripts/coordination.ts` reads and writes
-  them (`./node_modules/.bin/tsx scripts/coordination.ts status`). Only coordination files go
+  them. Invoke the pinned tool at
+  `F:/Diomedes/diomedes/.git/diomedes-coordination/unified-20260913/tool/coordination.ts`
+  with this checkout's `node_modules/.bin/tsx` (`tsx.cmd` on Windows), including for `status`.
+  Do not invoke an older worktree's `scripts/coordination.ts`; read the shared root's README
+  before claiming paths. Only coordination files go
   there; never Git's own files.
 - Claim exact paths before editing, atomically, and release them when the patch returns. A stale
   timestamp is not permission to steal a claim. If your partner's journal is absent, do read-only
@@ -215,8 +219,9 @@ Take these to Andrew rather than choosing:
   candidates and owns independent tests; Opus is a bounded worker under a written work order.
 - The heavy-test / Playwright / packaging / live-call slot is one, shared by this repository and
   the site. Take it through the tool before running those; release it after.
-- Contract revision `2026-09-13.1` (`shared/contract-revision.ts`) is the frozen additive
-  amendment later items consume. Ledger: `docs/implementation/2026-09-13-rebaseline.md`.
+- Contract revision `2026-09-13.1` (`shared/contract-revision.ts`) is the proposed additive
+  amendment later items consume once C00.R accepts it, and not before. Ledger:
+  `docs/implementation/2026-09-13-rebaseline.md`.
 
 ---
 

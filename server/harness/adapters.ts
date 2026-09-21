@@ -12,6 +12,26 @@
 import type { AdapterCapabilities, Enforcement } from '../../shared/harness.js';
 
 export const ADAPTER_CAPABILITIES = {
+  'claude-code-session': {
+    engineId: 'claude-code',
+    engineVersion: '2.1.252',
+    protocolVersion: 'stream-json',
+    modelCalls: 'observed',
+    toolCalls: 'observed',
+    filesystemWrites: 'observed',
+    networkEgress: 'observed',
+    approvals: 'enforced',
+    resumability: 'observed',
+    cancellability: 'observed',
+    checkpointGranularity: 'step',
+    notes: [
+      'Explicit opt-in native session route; the default claude-code text route remains single-turn.',
+      'RunService persists bounded recovery metadata before each dispatch and after a known result. Unknown outcomes refuse resume or retry.',
+      'Sequential input, native interrupt, --resume and --fork-session are protocol-fixture verified for 2.1.252; no paid live acceptance is claimed.',
+      'Tool restrictions remain engine-honored configuration plus fail-closed permission handling, not OS containment. Active steering is unsupported.',
+      'Native transcripts stay with Claude. A portable Harness fork never inherits a provider checkpoint.',
+    ],
+  },
   'native-fixture': {
     engineId: 'native-fixture',
     engineVersion: '1',
@@ -61,7 +81,7 @@ export const ADAPTER_CAPABILITIES = {
     checkpointGranularity: 'task',
     notes: [
       'Model calls happen inside the pinned app-server; Diomedes sees turn events and the reported model, it does not dispatch each call (server/integrations.ts askCodex).',
-      'Every tool feature is switched off in the thread configuration and the model has no shell or file tool; that inventory is the model\'s own report, not a protocol-level proof (evidence/codex-team-real-binary-2026-09-06.md, D8).',
+      "Every tool feature is switched off in the thread configuration and the model has no shell or file tool; that inventory is the model's own report, not a protocol-level proof (evidence/codex-team-real-binary-2026-09-06.md, D8).",
       'Project files cannot be written by the engine: the Windows read-only sandbox passes a write-denial probe before each run, and a proposal is applied only by Store.writeRecorded after the person says go ahead.',
       'The runtime echoes networkAccess=false in the policy check; no outbound probe has been run.',
       'There is no checkpoint inside a Codex turn. The host-only codex-report capability persists a completed outer-turn observation; unknown dispatch stays parked for reconciliation and is never automatically resent.',
@@ -81,16 +101,126 @@ export const ADAPTER_CAPABILITIES = {
     cancellability: 'observed',
     checkpointGranularity: 'task',
     notes: [
-      'The thirteen team tools are served by Diomedes\' own loopback MCP host and are mediated there (server/team/mcp.ts); the engine\'s other internal tools are only reported by the model.',
-      'The member\'s bearer token is leased into one environment variable for the run and redacted from every log and proposal afterwards.',
+      "The thirteen team tools are served by Diomedes' own loopback MCP host and are mediated there (server/team/mcp.ts); the engine's other internal tools are only reported by the model.",
+      "The member's bearer token is leased into one environment variable for the run and redacted from every log and proposal afterwards.",
       'Otherwise as the single Codex route.',
+    ],
+  },
+  // The five single-turn text routes (server/engines/). One bounded prompt per
+  // request over a fresh process or session; shared/engines.ts
+  // TEXT_ROUTE_CONTROLS is the same evidence vocabulary for the Console.
+  'claude-code': {
+    engineId: 'claude-code',
+    engineVersion: '2.1.252',
+    protocolVersion: 'stream-json',
+    modelCalls: 'observed',
+    toolCalls: 'observed',
+    filesystemWrites: 'observed',
+    networkEgress: 'observed',
+    approvals: 'enforced',
+    resumability: 'unsupported',
+    cancellability: 'observed',
+    checkpointGranularity: 'task',
+    notes: [
+      'Each generate() is one bounded prompt to a fresh `claude` process launched with the --tools restriction; a reported tool list or a tool_use frame in the stream stops the request (server/engines/claude.ts).',
+      "The engine's own tool machinery is disabled by launch configuration, not by Diomedes code; that restriction is engine-honored, not a protocol proof, and no OS containment is claimed.",
+      'File proposals go only through the recorded writer; a stopped request aborts and ends the owned process, which the engine reports.',
+      'Every request starts a fresh native session; there is nothing to resume.',
+    ],
+  },
+  opencode: {
+    engineId: 'opencode',
+    engineVersion: '1.18.4',
+    protocolVersion: 'http+sse',
+    modelCalls: 'observed',
+    toolCalls: 'observed',
+    filesystemWrites: 'observed',
+    networkEgress: 'observed',
+    approvals: 'enforced',
+    resumability: 'unsupported',
+    cancellability: 'observed',
+    checkpointGranularity: 'task',
+    notes: [
+      'Each request is one bounded prompt against a fresh `opencode serve --pure` session with permission denies and tool disablement in the session config (server/engines/opencode.ts).',
+      'Tool denial is engine-honored configuration Diomedes writes, not a protocol proof; no OS containment is claimed.',
+      'File proposals go only through the recorded writer; a stopped request aborts the request and ends the owned server process.',
+      'Every request starts a fresh session; there is nothing to resume.',
+    ],
+  },
+  'oh-my-pi': {
+    engineId: 'oh-my-pi',
+    engineVersion: '18.0.6',
+    protocolVersion: 'stream-json',
+    modelCalls: 'observed',
+    toolCalls: 'observed',
+    filesystemWrites: 'observed',
+    networkEgress: 'observed',
+    approvals: 'enforced',
+    resumability: 'unsupported',
+    cancellability: 'observed',
+    checkpointGranularity: 'task',
+    notes: [
+      'Each request is one bounded prompt to a fresh `omp` process launched with --no-tools; the flag removes the tool surface entirely (server/engines/omp.ts).',
+      'Tool denial is engine-honored launch configuration, not a protocol proof; no OS containment is claimed.',
+      'File proposals go only through the recorded writer; a stopped request aborts and ends the owned process.',
+      'Every request starts a fresh session; there is nothing to resume.',
+    ],
+  },
+  cursor: {
+    engineId: 'cursor',
+    engineVersion: '2026.08.11',
+    protocolVersion: 'acp/1',
+    modelCalls: 'observed',
+    toolCalls: 'observed',
+    filesystemWrites: 'observed',
+    networkEgress: 'observed',
+    approvals: 'enforced',
+    resumability: 'unsupported',
+    cancellability: 'observed',
+    checkpointGranularity: 'task',
+    notes: [
+      'Each request is one bounded session/prompt over ACP stdio to a fresh process under a fresh config dir with deny rules for Shell, Read, Write, WebFetch, WebSearch and MCP (server/engines/cursor.ts, shared transport in server/engines/acp-client.ts).',
+      'Client filesystem and terminal capabilities are advertised false; a blocking client request is declined and a tool or plan update aborts the turn. Those are Diomedes-side refusals over engine-honored configuration, not a protocol proof, and no OS containment is claimed.',
+      'File proposals go only through the recorded writer; a stopped request sends session/cancel and ends the owned process.',
+      'Every request starts a fresh session; there is nothing to resume.',
+    ],
+  },
+  devin: {
+    engineId: 'devin',
+    engineVersion: '3000.10.23',
+    protocolVersion: 'acp/1',
+    modelCalls: 'observed',
+    toolCalls: 'observed',
+    filesystemWrites: 'observed',
+    networkEgress: 'observed',
+    approvals: 'enforced',
+    resumability: 'unsupported',
+    cancellability: 'observed',
+    checkpointGranularity: 'task',
+    notes: [
+      "Each request is one bounded session/prompt over ACP stdio to a fresh process in a fresh workspace whose .devin/config.json denies every documented tool scope including mcp__*; the session is forced to ask mode and confirmed by the agent's own echo before a prompt is sent (server/engines/devin.ts).",
+      'A blocking client request is declined and a tool or plan update aborts the turn; ACP authentication is per process through the browser flow. These are Diomedes-side refusals over engine-honored configuration, not a protocol proof, and no OS containment is claimed.',
+      'The session model is pinned with --model at launch; a different reported selection stops the request before any prompt is sent.',
+      'File proposals go only through the recorded writer; a stopped request sends session/cancel and ends the owned process. Every request starts a fresh session; there is nothing to resume.',
     ],
   },
 } as const satisfies Record<string, AdapterCapabilities>;
 
 export type AdapterId = keyof typeof ADAPTER_CAPABILITIES;
 
-const GUARANTEES: { key: keyof Pick<AdapterCapabilities, 'modelCalls' | 'toolCalls' | 'filesystemWrites' | 'networkEgress' | 'approvals' | 'resumability' | 'cancellability'>; subject: string }[] = [
+const GUARANTEES: {
+  key: keyof Pick<
+    AdapterCapabilities,
+    | 'modelCalls'
+    | 'toolCalls'
+    | 'filesystemWrites'
+    | 'networkEgress'
+    | 'approvals'
+    | 'resumability'
+    | 'cancellability'
+  >;
+  subject: string;
+}[] = [
   { key: 'modelCalls', subject: 'Each call to the service' },
   { key: 'toolCalls', subject: 'Each tool the helper uses' },
   { key: 'filesystemWrites', subject: 'Writing project files' },

@@ -190,6 +190,36 @@ describe('binding where a business writes', () => {
     expect(bound.status).toBe(404);
     expect(bound.data.code).toBe('organization_not_found');
   });
+
+  test('one project cannot be bound to two organizations', async () => {
+    const projectId = await makeProject('Shared-looking project');
+    const firstOrganizationId = await makeOrganization('Fernbrook Joinery');
+    expect(
+      (
+        await request(`/workspace/organizations/${firstOrganizationId}/output`, 'POST', {
+          projectId,
+        })
+      ).status,
+    ).toBe(200);
+
+    const secondOrganizationId = await makeOrganization('Halcyon Bakery');
+    const second = await request<{ code?: string }>(
+      `/workspace/organizations/${secondOrganizationId}/output`,
+      'POST',
+      { projectId },
+    );
+    expect(second.status).toBe(409);
+    expect(second.data.code).toBe('project_owned_by_another_organization');
+
+    const firstView = await request<WorkspaceView>('/workspace/switch', 'POST', {
+      kind: 'business',
+      organizationId: firstOrganizationId,
+    });
+    const first = firstView.data.organizations.find(
+      (entry) => entry.organization.id === firstOrganizationId,
+    );
+    expect(first?.output?.projectId).toBe(projectId);
+  });
 });
 
 describe('running the brief', () => {

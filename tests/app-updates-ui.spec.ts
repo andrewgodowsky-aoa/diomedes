@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import express from 'express';
 import fs from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createServer, type Server } from 'node:http';
 import { createApp } from '../server/app';
@@ -16,9 +17,29 @@ import type { UpdateInstallArtifact } from '../shared/app-updates';
 // it is not run by the update slice itself.
 test.describe.configure({ mode: 'serial' });
 
+// The panel reports the running build's own version, which comes from
+// package.json. Reading it from the same file keeps this assertion about what
+// the panel does rather than about which release happens to be current: as a
+// literal it pinned the browser suite to one version number and failed on the
+// next bump.
+const { version: appVersion } = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+) as { version: string };
+
 let baseURL = '';
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
-const NEXT = '0.1.2';
+/**
+ * The fixture release has to be strictly newer than the build under test, or
+ * the panel correctly reports "current" and the whole offered-update flow below
+ * has nothing to act on. As the literal 0.1.2 it did exactly that the moment
+ * the app's own version reached 0.1.2.
+ */
+const NEXT = (() => {
+  const parts = appVersion.split('.').map(Number);
+  if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part) || part < 0))
+    throw new Error(`package.json version ${JSON.stringify(appVersion)} is not X.Y.Z.`);
+  return `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
+})();
 const ASSET = `Diomedes-Experimental-${NEXT}-unsigned-setup.exe`;
 const ASSET_URL = `https://github.com/andrewgodowsky-aoa/diomedes/releases/download/v${NEXT}/${ASSET}`;
 const SIZE = 1_100_000;
@@ -165,7 +186,7 @@ test('Settings > App updates checks, downloads, verifies and hands off', async (
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('button', { name: 'App updates', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'App updates', level: 2 })).toBeVisible();
-  await expect(page.locator('.app-updates')).toContainText('Current version 0.1.1');
+  await expect(page.locator('.app-updates')).toContainText(`Current version ${appVersion}`);
   expect(checked).toBe(0);
 
   await page.getByRole('button', { name: 'Check for updates', exact: true }).click();

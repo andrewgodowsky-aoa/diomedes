@@ -24,6 +24,7 @@ const ROSTER = [
   'opencode',
   'oh-my-pi',
   'cursor',
+  'devin',
   'hermes',
   'localai',
   'ollama',
@@ -450,7 +451,7 @@ describe('roster composition', () => {
 
   it('keeps available false for planned and observe-only engines', async () => {
     const statuses = await allFoundStatuses();
-    for (const id of ['claude-code', 'opencode', 'oh-my-pi', 'cursor', 'hermes', 'ollama']) {
+    for (const id of ['claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin', 'hermes', 'ollama']) {
       const entry = statuses.find((item) => item.id === id)!;
       expect(entry.found).toBe(true);
       expect(entry.adapter === 'planned' || entry.adapter === 'none').toBe(true);
@@ -460,7 +461,7 @@ describe('roster composition', () => {
 
   it('uses no banned word in any discovered status or detail', async () => {
     const statuses = await allFoundStatuses();
-    for (const id of ['claude-code', 'opencode', 'oh-my-pi', 'cursor', 'hermes', 'ollama']) {
+    for (const id of ['claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin', 'hermes', 'ollama']) {
       const entry = statuses.find((item) => item.id === id)!;
       expect(entry.status.match(BANNED) ?? [], `banned word in ${id} status`).toEqual([]);
       expect(entry.detail.match(BANNED) ?? [], `banned word in ${id} detail`).toEqual([]);
@@ -492,6 +493,7 @@ describe('roster composition', () => {
       'opencode',
       'oh-my-pi',
       'cursor',
+      'devin',
       'hermes',
       'ollama',
     ]);
@@ -569,5 +571,146 @@ describe('Windows launcher shims', () => {
     expect(wrapped.verbatim).toBe(true);
     expect(commandFor('C:\\x\\a"b & calc\\agent.cmd', ['--version'])).toBeUndefined();
     expect(commandFor('C:\\x\\agent.cmd', ['--version', '& calc'])).toBeUndefined();
+  });
+});
+
+describe('installation enumeration for candidate binding', () => {
+  it('reports every PATH hit and every known-folder hit for one engine, deduplicated', async () => {
+    const folder = path.join(TEST_ENV.USERPROFILE, '.local', 'bin', 'opencode.exe');
+    const discovery = createDiscovery(
+      fakeDeps({
+        which: async (name) =>
+          name === 'opencode'
+            ? [
+                'C:\\first\\opencode.exe',
+                'C:\\FIRST\\OpenCode.exe',
+                'D:\\second\\opencode.exe',
+              ]
+            : [],
+        exists: async (candidate) => candidate === folder,
+      }),
+    );
+    const found = await discovery.installations({ engine: 'opencode' });
+    expect(found.map((row) => row.path)).toEqual([
+      'C:\\first\\opencode.exe',
+      'D:\\second\\opencode.exe',
+      folder,
+    ]);
+    expect(found.every((row) => row.engine === 'opencode')).toBe(true);
+    expect(found.every((row) => row.context === 'windows-native')).toBe(true);
+  });
+
+  it('scopes enumeration to one engine and leaves the others unprobed', async () => {
+    const asked: string[] = [];
+    const discovery = createDiscovery(
+      fakeDeps({
+        which: async (name) => {
+          asked.push(name);
+          return [];
+        },
+      }),
+    );
+    await discovery.installations({ engine: 'cursor' });
+    expect(asked).toEqual(['agent']);
+    asked.length = 0;
+    await discovery.installations();
+    expect(asked).toEqual(['claude', 'opencode', 'omp', 'agent', 'devin']);
+  });
+
+  it('reads the current user PATH from the registry so a tool installed after launch is found', async () => {
+    const installed = path.join(
+      TEST_ENV.LOCALAPPDATA,
+      'Programs',
+      'newly',
+      'claude.exe',
+    );
+    const queried: { file: string; args: string[] }[] = [];
+    const discovery = createDiscovery(
+      fakeDeps({
+        which: async () => [],
+        run: async (file, args) => {
+          queried.push({ file, args });
+          if (/reg\.exe$/i.test(file))
+            return okRun(
+              '\r\nHKEY_CURRENT_USER\\Environment\r\n' +
+                '    Path    REG_EXPAND_SZ    %LOCALAPPDATA%\\Programs\\newly;D:\\other\r\n\r\n',
+            );
+          return okRun('');
+        },
+        exists: async (candidate) => candidate === installed,
+      }),
+    );
+    const found = await discovery.installations({ engine: 'claude-code' });
+    expect(found.map((row) => row.path)).toEqual([installed]);
+    // Read through a native argument array: no shell, and no user text in a command line.
+    expect(queried[0].args).toEqual(['query', 'HKCU\\Environment', '/v', 'Path']);
+  });
+
+  it('names a WSL or desktop-application installation as what it is', async () => {
+    const discovery = createDiscovery(
+      fakeDeps({
+        which: async (name) =>
+          name === 'devin'
+            ? [
+                '\\\\wsl.localhost\\Ubuntu\\home\\a\\.local\\bin\\devin',
+                'C:\\Users\\test\\AppData\\Local\\Programs\\Devin\\resources\\app\\bin\\devin.exe',
+              ]
+            : [],
+      }),
+    );
+    const found = await discovery.installations({ engine: 'devin' });
+    // A runnable executable ranks first; neither is presented as a native Windows CLI.
+    expect(found.map((row) => row.context)).toEqual(['desktop-app', 'wsl']);
+  });
+
+  it('enumerates a native executable whose folder carries a legal odd character', async () => {
+    // `& % ^ !` are legal in Windows folder names, and a native executable is
+    // launched through an argument array with no shell, so none of them can
+    // reach a command line. Dropping these hid real installations.
+    for (const file of [
+      'C:\\bad\\o&calc\\omp.exe',
+      'C:\\Tools\\50%off\\omp.exe',
+      'C:\\Tools\\up^one\\omp.exe',
+      'C:\\Tools\\hey!\\omp.exe',
+    ]) {
+      const discovery = createDiscovery(
+        fakeDeps({
+          which: async (name) => (name === 'omp' ? [file, 'C:\\Program Files\\ünï\\omp.exe'] : []),
+        }),
+      );
+      const found = await discovery.installations({ engine: 'oh-my-pi' });
+      expect(found.map((row) => row.path)).toEqual([file, 'C:\\Program Files\\ünï\\omp.exe']);
+    }
+  });
+
+  it('never enumerates a shim a shell would have to interpret', async () => {
+    // A .cmd runs through cmd.exe, so a metacharacter in its path could carry a
+    // second command. `launchCommand` refuses those too; this keeps them out of
+    // the inventory so nothing offers an installation that cannot be started.
+    for (const file of [
+      'C:\\bad\\o&calc\\omp.cmd',
+      'C:\\Tools\\50%off\\omp.cmd',
+      'C:\\Tools\\up^one\\omp.bat',
+      'C:\\Tools\\hey!\\omp.cmd',
+    ]) {
+      const discovery = createDiscovery(
+        fakeDeps({ which: async (name) => (name === 'omp' ? [file] : []) }),
+      );
+      expect(await discovery.installations({ engine: 'oh-my-pi' })).toEqual([]);
+    }
+  });
+
+  it('never enumerates a quote, newline or NUL in a path, whatever the file is', async () => {
+    for (const file of [
+      'C:\\bad\\o"calc\\omp.exe',
+      'C:\\bad\\two\nlines\\omp.exe',
+      'C:\\bad\\nul\0byte\\omp.exe',
+      'C:\\bad\\o"calc\\omp.cmd',
+    ]) {
+      const discovery = createDiscovery(
+        fakeDeps({ which: async (name) => (name === 'omp' ? [file] : []) }),
+      );
+      expect(await discovery.installations({ engine: 'oh-my-pi' })).toEqual([]);
+    }
   });
 });

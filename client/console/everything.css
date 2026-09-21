@@ -1,0 +1,137 @@
+/* Everything: the rail entry that opens onto every destination.
+
+   The panel reuses console.css's `.pmenu` box wholesale — its surface, hairline,
+   radius, shadow, scrollbar and stacking are the Console's menu, and this file
+   changes only what it has to. Each selector below carries `.everything` as
+   well, so it outranks the two-class `.console .pmenu …` rules whatever order
+   the bundler puts the two files in. */
+
+.console .everything {
+  position: relative;
+  min-width: 0;
+}
+
+/* The same box the rail's own view and foot buttons use, so the entry sits in
+   the rail whether or not it is placed among them. */
+.console .everything .ev-trigger {
+  display: flex;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px 6px 12px;
+  gap: 10px;
+  align-items: baseline;
+  border-radius: var(--rb);
+  color: var(--t2);
+  transition:
+    background var(--quick),
+    color var(--quick);
+}
+.console .everything .ev-trigger:hover {
+  background: var(--raised);
+  color: var(--t1);
+}
+.console .everything .ev-trigger.on {
+  color: var(--t1);
+  background: var(--surface);
+}
+
+/* The rail scrolls, and a scrolling box clips both axes, so the panel cannot be
+   positioned inside it. It is fixed and placed from the trigger's rectangle in
+   Everything.tsx; `top`, `bottom`, `left` and `max-height` arrive inline. */
+.console .everything .pmenu {
+  position: fixed;
+  right: auto;
+  top: auto;
+  bottom: auto;
+}
+
+.console .everything .ev-group + .ev-group {
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 1px solid var(--hair);
+}
+
+/* The row is the pair: the destination and its pin, side by side. The pin is a
+   sibling of the row's action, never inside it — a button within a button is
+   invalid, and the two do different things. */
+.console .everything .ev-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  border-radius: var(--rb);
+  transition: background var(--quick);
+}
+.console .everything .ev-row:hover {
+  background: var(--surface);
+}
+.console .everything .ev-row .ev-open {
+  /* The menu's 10 px gap is a column gap; stacked, it opened each row out. */
+  row-gap: 2px;
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+/* The whole row already lights up; the action must not darken it twice. */
+.console .everything .ev-row .ev-open:hover {
+  background: none;
+}
+.console .everything .ev-row .ev-open.on .ev-label {
+  color: var(--light);
+}
+
+.console .everything .ev-open .ev-state {
+  color: var(--t3);
+}
+
+/* A destination that exists and is not ready. It is not an error and it is not
+   faded out of reach: the label keeps reading weight, the reason carries the
+   Console's attention colour, and the words "Not ready" say it without relying
+   on the colour at all. */
+.console .everything .ev-row .ev-open[aria-disabled='true'] {
+  cursor: default;
+  color: var(--t2);
+}
+.console .everything .ev-open .ev-reason {
+  color: var(--attn);
+}
+
+.console .everything .ev-pin {
+  flex: 0 0 auto;
+  margin: 4px 2px 0 0;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--rb);
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  line-height: 1.25;
+  transition:
+    background var(--quick),
+    color var(--quick),
+    border-color var(--quick);
+}
+.console .everything .ev-pin:hover {
+  background: var(--raised);
+  color: var(--t1);
+}
+/* Pinned reads as pinned without colour: the row says so in words, and the
+   control states the thing it will do next. */
+.console .everything .ev-pin[aria-pressed='true'] {
+  color: var(--t1);
+  background: var(--surface);
+  border-color: var(--hair-2);
+}
+
+/* The polite live region. Present whether or not the panel is, so a pin
+   announcement is a change inside a region the reader is already on. */
+.console .everything .ev-said {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}

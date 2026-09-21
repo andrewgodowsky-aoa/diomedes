@@ -1,0 +1,337 @@
+{
+  "schema_version": 1,
+  "candidate_head": "a0341639d3a918d0bb87753758f600a37f4beb3e",
+  "review_outcome": "failed",
+  "producer_tests": {
+    "total": 32,
+    "passed": 32,
+    "failed": 0
+  },
+  "independent_tests": {
+    "total": 27,
+    "passed": 14,
+    "failed": 13
+  },
+  "existing_runtime_tests": {
+    "total": 118,
+    "passed": 118,
+    "failed": 0
+  },
+  "typecheck": {
+    "exit_code": 0,
+    "log": "F:\\Diomedes\\deliverables\\c00-review-20260913\\typecheck.log"
+  },
+  "assertions": [
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent coordination acceptance C01 identical concurrent claims yield one winner",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent coordination acceptance C02 dot-segment aliases cannot acquire the same source twice",
+      "status": "failed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent coordination acceptance C03 hot-file spelling SERVER/APP.TS cannot bypass integrator ownership",
+      "status": "failed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent coordination acceptance C03 hot-file spelling server/../server/app.ts cannot bypass integrator ownership",
+      "status": "failed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent coordination acceptance C04 a directory claim conflicts with a descendant claim",
+      "status": "failed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent coordination acceptance C05 a descendant claim conflicts with a directory claim",
+      "status": "failed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent coordination acceptance C06 an arbitrary handoff id cannot authorize a hot-file claim",
+      "status": "failed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent coordination acceptance C07 another process with the same role cannot release a live claim",
+      "status": "failed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent coordination acceptance C08 reused PID with a different process start cannot release a live slot",
+      "status": "failed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent coordination acceptance C09 matching PID on another host cannot release a live slot",
+      "status": "failed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent coordination acceptance C10 missing partner keeps implementation read-only",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent coordination acceptance C11 another lifetime of the same PID cannot be treated as the path holder",
+      "status": "failed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent coordination acceptance C12 common root is identical from the main and reviewer worktrees",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent coordination acceptance C13 concurrent heavy verifiers yield one winner and release admits the next owner",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent contract acceptance S01 externally constructed command, ids, tool and evidence examples parse",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent contract acceptance S02 requested alias and actual runtime identity remain distinct",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent contract acceptance S03 not-recorded source cannot assert a reported model",
+      "status": "failed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent contract acceptance S04 runtime source must name a reported model",
+      "status": "failed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent contract acceptance S05 authoritative run identifiers obey the existing RunStore identifier contract",
+      "status": "failed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent contract acceptance S06 native resume requires an opaque native reference; copied messages cannot substitute",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent contract acceptance S07 logged-only steering cannot be upgraded to delivered without a session",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent contract acceptance S08 an activated pack carries no authorization and cannot authorize a write",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent contract acceptance S09 old run round-trips from disk without growing tools, packs, native resume or receipts",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent contract acceptance S10 saved execution cannot regain authority when live state changes {\"grantRevoked\":true}",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent contract acceptance S10 saved execution cannot regain authority when live state changes {\"generationAdvanced\":true}",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent contract acceptance S10 saved execution cannot regain authority when live state changes {\"membershipState\":\"revoked\"}",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/c00-independent.test.ts",
+      "name": "C00 independent contract acceptance S11 viewing a saved run with invented extra powers does not promote them",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "the revision identity is a dated, frozen literal that names the contract versions it amends",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas command example parses and round-trips",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas authoritative ids example parses and round-trips",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas native session ref example parses and round-trips",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas steering ack example parses and round-trips",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas continuation mode example parses and round-trips",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas profile snapshot example parses and round-trips",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas pack lock example parses and round-trips",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas tool ref example parses and round-trips",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas verification evidence example parses and round-trips",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas command identity reuses the admission regex and digest shape",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas the frozen patterns accept and reject exactly what the admission layer does",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas a steering acknowledgment is a distinct state, never a boolean that reads as delivered",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas continuation modes are resume, retry and fork, and native resume needs a native ref",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas a profile snapshot keeps requested and reported model apart and records the selection source",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas a pack lock pins id and version and a dependency lock cannot be empty-string",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "examples validate against the shared schemas verification evidence has four outcomes and keeps capability, evidence level and enforcement orthogonal",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "compatibility for existing saved runs and receipts an old v:1 run reopens with exactly the powers it recorded: no steering, no native resume, no extra tools, no packs",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "compatibility for existing saved runs and receipts unknown extra fields on an old run are ignored, never promoted into powers",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "compatibility for existing saved runs and receipts a recorded native transcript is reported as a reference, not as a resume power",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "compatibility for existing saved runs and receipts a forked run reports fork lineage, and the fork point is the recorded one",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "compatibility for existing saved runs and receipts a receipt written before the revision reads as pre-revision, never as the current one",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/contract-revision.test.ts",
+      "name": "compatibility for existing saved runs and receipts the store still refuses a newer run version; the compatibility policy is for v:1 files only",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/coordination.test.ts",
+      "name": "exclusive file claims two workers claiming the same path: exactly one wins, and the loser is told who holds it",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/coordination.test.ts",
+      "name": "exclusive file claims a stale timestamp alone is not permission to steal a claim",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/coordination.test.ts",
+      "name": "exclusive file claims a released claim can be taken again, and the release record names the releaser",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/coordination.test.ts",
+      "name": "exclusive file claims a charter hot file can only be claimed by the integrator",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/coordination.test.ts",
+      "name": "the heavy-test / live-call slot two verifiers requesting the slot: one holds it, the other waits with the holder named",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/coordination.test.ts",
+      "name": "the heavy-test / live-call slot releasing with a different owner than the holder is refused",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/coordination.test.ts",
+      "name": "journals and work mode journals are separate per role and append-only",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/coordination.test.ts",
+      "name": "journals and work mode a missing partner journal leads to read-only work, not a second implementation",
+      "status": "passed"
+    },
+    {
+      "file": "F:/Diomedes/diomedes-wt/astra-c00-review-20260913/tests/coordination.test.ts",
+      "name": "journals and work mode a non-integrator asking to edit a hot file is read-only even with the partner present",
+      "status": "passed"
+    }
+  ],
+  "raw_evidence": {
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\independent-tests-final.json": "sha256:cccfc2caac54ff4b340f5aaeabd26ddc44c5db096774eb6c4a3bda1f110a7e1d",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\independent-tests-final.log": "sha256:221e2d88640e022fcb76ce31631224b35effa77785c5e7ef2bf784aa5c81ac96",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\existing-runtime-tests.json": "sha256:4d12ee9a136ae5b6634aa3edc0bb74c50b7a5f2c491aca97fb91553e9dc26a00",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\existing-runtime-tests.log": "sha256:7d3b16d64bc857739ddb31c68a74081dee148be98570a9180aa13a1705959590",
+    "F:\\Diomedes\\deliverables\\c00-review-20260913\\typecheck.log": "sha256:449de46b9f563b6358f7e9b549ed54d5d3c89eacbde313543d891c688e078ce4"
+  },
+  "not_certified": [
+    "native steering delivery racing terminal completion",
+    "Diomedes live-provider",
+    "browser",
+    "packaged",
+    "installed-app",
+    "publication",
+    "deployment"
+  ]
+}

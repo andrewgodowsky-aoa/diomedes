@@ -230,6 +230,22 @@ try {
       const ready = board.locator('.crow', { hasText: 'Packaged reviewed task' }).first();
       await ready.getByRole('button', { name: 'Start', exact: true }).first().click();
       await ready.locator('.confirm').getByRole('button', { name: 'Start', exact: true }).click();
+      // Any route but the sample asks first; only the dialog's Send task starts the work.
+      const send = page.getByRole('dialog', { name: 'Send this task?', exact: true });
+      await expect(send).toBeVisible();
+      const { sessions } = await fixtureApi(`/projects/${project.id}/state`);
+      await send.getByRole('button', { name: 'Send task', exact: true }).click();
+      await expect(send).toHaveCount(0);
+      // Send task lists documents again before the host admits the run, and step
+      // 5's declined proposal keeps its boundary, so wait until the new run leaves
+      // 'working', the moment its own proposal is recorded.
+      await waitState(
+        project.id,
+        (value) =>
+          value.sessions.length === sessions.length + 1 &&
+          value.sessions.at(-1)?.state !== 'working',
+        'the new run to record its proposal',
+      );
       await rail
         .getByRole('button', { name: /Packaged reviewed task/ })
         .first()

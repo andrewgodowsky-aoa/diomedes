@@ -16,6 +16,7 @@ foreach ($entry in @(@('DIOMEDES_DESKTOP_PROFILE','profile'), @('DIOMEDES_DATA_D
 $startInfo.EnvironmentVariables.Remove('ELECTRON_RUN_AS_NODE')
 $startInfo.EnvironmentVariables.Remove('DIOMEDES_TEST_HOLD_TRIAGE')
 $startInfo.EnvironmentVariables['DIOMEDES_TEST_MODE'] = '0'
+$startInfo.EnvironmentVariables['DIOMEDES_DESIGN_AUTHORING'] = '1'
 $process = [Diagnostics.Process]::Start($startInfo)
 Write-Output ('Started isolated experimental app. PID: ' + $process.Id)
 Write-Output ('Evaluation files: ' + $evaluationRoot)

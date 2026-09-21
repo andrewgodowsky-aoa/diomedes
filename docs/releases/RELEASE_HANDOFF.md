@@ -1,11 +1,23 @@
 # Diomedes Windows experimental 0.1.1 handoff
 
-> **Current release (12 September 2026):** `v0.1.1-experimental.3` from commit `4fb8656`, record
-> `evidence/release-candidates/diomedes-0.1.1-windows-experimental-20260912-4fb86560c1d7.json`,
-> published at https://github.com/andrewgodowsky-aoa/diomedes/releases/tag/v0.1.1-experimental.3
-> (installer sha256 `d9eccbd5101b675968a17f2adbb760b66db627e247da24f8c4d07aa66b0e369d`). Public assets
-> are produced by `scripts/write-release-assets.mjs`; the release pipeline is described in
-> `docs/implementation/2026-09-12-integration.md` §12 and signing in `docs/releases/CODE_SIGNING.md`.
+> **Current release (20 September 2026):** `v0.1.6` from commit `4a06a45`, record
+> `evidence/release-candidates/diomedes-0.1.6-windows-experimental-20260920-4a06a45cee9b.json`,
+> published at https://github.com/andrewgodowsky-aoa/diomedes/releases/tag/v0.1.6
+> (installer `Diomedes-Experimental-0.1.6-unsigned-setup.exe`, 266,387,557 bytes, sha256
+> `b63007a600872316949bf8cdc2b2cf757a7d75c0fd728b2da2c13486f30a351d`). It is a stable tag and is
+> GitHub's `latest`, which is what the in-app update check reads. The tag points at the commit
+> the bytes were built from, not at the later commits that carry the evidence, which is how
+> `v0.1.4` was cut. `v0.1.5` (`8d7d63b`, 20 September) is the release before it and `v0.1.4`
+> (`efa83acd`, 19 September) the one before that. Public assets are produced by `scripts/write-release-assets.mjs`; the release
+> pipeline is described in `docs/implementation/2026-09-12-integration.md` §12 and signing in
+> `docs/releases/CODE_SIGNING.md`.
+>
+> `release-manifest.json` beside this file is **not** this release's manifest. It is the record of
+> the superseded `.1` prerelease built from `11829e1`, kept as written for the reason given in
+> `docs/implementation/2026-09-12-release-candidate.md`; its generator is hard-wired to that
+> build. Each release's own public manifest is the `release-manifest.json` published as an asset
+> beside its installer.
+>
 > The text below is the September 9 handoff, kept as written.
 
 The app is implemented, integrated, rebuilt and tested as a real Windows package.

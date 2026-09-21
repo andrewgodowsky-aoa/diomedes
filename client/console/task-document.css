@@ -14,7 +14,7 @@
   padding: 5px 8px;
   font: inherit;
   color: var(--t1);
-  background: var(--raised);
+  background-color: var(--raised);
   border: 1px solid var(--hair-2);
   border-radius: var(--rb);
   text-overflow: ellipsis;

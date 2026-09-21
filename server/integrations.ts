@@ -16,6 +16,8 @@ import {
   windowsFromRateLimits,
   type UsageService,
 } from './usage.js';
+import { commandGate } from '../shared/adapter-contract.js';
+import { routeContractFor } from './harness/route-contract.js';
 
 // Protocol generated from the installed 0.153.4 CLI. An upgrade needs a new
 // isolation proof, particularly for the experimental empty-environments field.
@@ -215,7 +217,7 @@ export async function killOwnedProcess(child: ChildProcess): Promise<void> {
         if (code === 0 || child.exitCode !== null || child.signalCode !== null) resolve();
         else
           reject(
-            new IntegrationError('CLEANUP_FAILED', 'The owned Codex process could not be stopped.'),
+            new IntegrationError('CLEANUP_FAILED', 'The owned process could not be stopped.'),
           );
       });
     });
@@ -234,7 +236,7 @@ export async function killOwnedProcess(child: ChildProcess): Promise<void> {
           reject(
             new IntegrationError(
               'CLEANUP_TIMEOUT',
-              'The owned Codex process did not confirm exit.',
+              'The owned process did not confirm exit.',
             ),
           ),
         5000,
@@ -526,7 +528,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
   async function codexStatus(): Promise<IntegrationStatus> {
     const status: IntegrationStatus = {
       id: 'codex',
-      name: 'Codex with ChatGPT',
+      name: 'ChatGPT',
       kind: 'online',
       found: true,
       available: false,
@@ -671,7 +673,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     const core =
       coreCache?.result ??
       Promise.resolve([
-        pending('codex', 'Codex with ChatGPT'),
+        pending('codex', 'ChatGPT'),
         pending('localai', 'LocalAI supervisor'),
       ]);
     const found = discoveryCache?.result ?? Promise.resolve(pendingDiscovery());
@@ -709,6 +711,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         pick('opencode'),
         pick('oh-my-pi'),
         pick('cursor'),
+        pick('devin'),
         pick('hermes'),
         localai,
         pick('ollama'),
@@ -757,6 +760,15 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     /** In-process host grant check. Never accepted from renderer/request JSON. */
     beforeDispatch?: (identity: CodexDispatchIdentity) => Promise<void>;
   }): Promise<{ text: string; model?: string; threadId?: string; version?: string }> {
+    // The codex route's declared contract is operative here too: a descriptor
+    // that withdraws `start` support stops this entry point, not only the
+    // EngineService dispatch.
+    const gate = commandGate(routeContractFor('codex'), 'start');
+    if (!gate.admitted)
+      throw new IntegrationError(
+        gate.code === 'command_unsupported' ? 'COMMAND_UNSUPPORTED' : 'CONTRACT_INVALID',
+        gate.reason,
+      );
     if (!input.prompt.trim())
       throw new IntegrationError('EMPTY_PROMPT', 'Enter a question or planning request.');
     if (input.signal?.aborted) throw abortError();

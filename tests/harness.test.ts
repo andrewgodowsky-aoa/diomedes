@@ -17,6 +17,7 @@ import {
   type StepDefinition,
   type StepHandler,
 } from '../server/harness/index.js';
+import { routeContractFor } from '../server/harness/route-contract.js';
 
 /**
  * These pin the durable step boundary that every native model or tool call in
@@ -682,6 +683,7 @@ describe('native loop over an injected model adapter', () => {
   ): ModelAdapter => ({
     id: 'fixture',
     version: '1',
+    contract: routeContractFor('native-fixture'),
     capabilities: () => ({
       engineId: 'native-fixture',
       engineVersion: '1',

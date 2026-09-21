@@ -47,12 +47,17 @@ function gateway(options: {
   member?: boolean;
   processing?: 'local-only' | 'non-sensitive-may-leave' | 'may-leave';
   organizationRoute?: 'managed' | 'byo' | 'personal-subscription';
+  suspended?: boolean | string;
 } = {}) {
   return new ManagedGateway({
     ledger,
     entitlementFor: () => options.entitlement ?? entitled,
     tenantFor: () => TENANT,
     memberOf: () => options.member ?? true,
+    billingStatusFor: async () => ({
+      suspended: Boolean(options.suspended),
+      suspendedReason: typeof options.suspended === 'string' ? options.suspended : null,
+    }),
     policyFor: () => ({
       processing: options.processing ?? 'may-leave',
       organizationRoute: options.organizationRoute ?? 'managed',
@@ -171,6 +176,28 @@ describe('the checks that come before money', () => {
     expect(decision.admitted).toBe(false);
     if (decision.admitted) throw new Error('unreachable');
     expect(decision.code).toBe('insufficient_allowance');
+  });
+
+  test('a paid invoice cannot override a security suspension', async () => {
+    const decision = await gateway({
+      entitlement: paid,
+      suspended: 'chargeback under review',
+    }).admit(ask());
+    expect(decision.admitted).toBe(false);
+    if (decision.admitted) throw new Error('unreachable');
+    expect(decision.code).toBe('security_suspended');
+    expect(decision.message).toBe('chargeback under review');
+    expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(0);
+  });
+
+  test('a suspension on the company account never holds a person’s own key hostage', async () => {
+    const decision = await gateway({
+      organizationRoute: 'byo',
+      suspended: 'chargeback under review',
+    }).admit(ask());
+    expect(decision.admitted).toBe(true);
+    if (!decision.admitted) throw new Error('unreachable');
+    expect(decision.payer).toBe('byo');
   });
 });
 

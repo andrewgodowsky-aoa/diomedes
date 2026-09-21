@@ -4,6 +4,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+// The packaged build reports package.json's version, so the expectation is read
+// from the same file rather than restated as a literal a bump would falsify.
+const { version: appVersion } = JSON.parse(
+  await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'),
+);
+
 const executablePath = path.resolve(process.argv[2] ?? '');
 const root = path.resolve(process.argv[3] ?? '');
 if (path.basename(executablePath) !== 'Diomedes.exe' || !process.argv[3])
@@ -192,7 +198,7 @@ function ageHarnessNeed(projectId, need) {
 
 try {
   const health = await launch();
-  assert.equal(health.version, '0.1.1');
+  assert.equal(health.version, appVersion);
   proof.version = health.version;
   const initialSettings = await api('/settings');
   assert.equal(initialSettings.services.codex, false);
