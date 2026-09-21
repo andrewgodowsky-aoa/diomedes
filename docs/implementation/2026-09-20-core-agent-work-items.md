@@ -759,6 +759,34 @@ pending Andrew. Other release preparation can continue without taking it.
 The live Luna call, credentials and spend cap remain entirely with Andrew and
 the AWS owner. All completed Home implementation and review claims are released.
 
+### Round 22: fresh release preparation and package scope reconciliation (2026-09-21)
+
+The isolated release worktree `F:/Diomedes/diomedes-wt/core-agent-release`,
+branch `feature/core-agent-release`, starts at merged main `e05833b`. Both
+locked dependency installs and the pinned three-binary native-runtime
+preparation passed. Existing junctions and worktrees were preserved. A separate
+author made a two-passage release README copy correction; independent diff
+inspection, all 15 existing release-copy tests and the fresh-install typecheck
+passed. `2026-09-21-core-agent-release-review.md` records the bounded verdict
+and raw log paths. No new version or full release result is claimed.
+
+The returned package audit is preserved unedited in
+`2026-09-21-core-agent-package-scope-review.md`; its pre-merge snapshot is
+superseded by Round 21's verified merge. The separate reconciliation record
+keeps all four audited numbered pairs OPEN. Conditional acceptance of the
+CD-01 seam and CD-05 client slice cannot close broader prompts that still lack
+required evidence, including C24 tenant authorization, C47's zoom leg and C49
+reduced motion. CD-00/CD-02 whole-prompt review and canonical reconciliation
+also remain open. No prompt or completion/index/checksum record was changed.
+
+Release version and license paths remain in the AWS owner's separate active
+claim. The exact three-path transfer request is pending Andrew; no edit to that
+claim is authorized by the earlier one-file Stop transfer. The latest published
+release remains v0.1.6 at the last check. Versioning, fresh exact-commit release
+gates, package and installer/runtime proof, publication and site deployment are
+still owed. The live Luna call, credentials and spend limit stay with Andrew
+and the AWS owner. Preparation and typecheck slots are released.
+
 **The open conflict for the integrator.** The contract-revision marker and the accepted rollout
 record disagree. Nothing in this program consumes the marker as accepted until that is reconciled.
 

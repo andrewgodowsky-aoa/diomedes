@@ -180,7 +180,7 @@ export function releaseReadme({
   const routes = capability.routes ?? [];
   const carried = routes.filter((route) => route.states?.packaged?.release === record.releaseId);
   const elsewhere = routes.filter((route) => !carried.includes(route));
-  const engines = `The routes this build carries are ${list(carried.map((r) => r.displayName))}.${
+  const engines = `The installed-tool routes this build carries are ${list(carried.map((r) => r.displayName))}.${
     elsewhere.length
       ? ` ${list(elsewhere.map((r) => r.displayName))}: in the source repository, not recorded in this build.`
       : ''
@@ -253,8 +253,9 @@ ${antivirus}
 FIRST RUN
   Open Diomedes from the Start menu (installer) or from the extracted folder.
   On first run it offers to look for AI tools already on this computer and looks
-  only if you say yes. Diomedes holds no credential of its own: it uses the
-  sign-in a tool you installed already has.
+  only if you say yes. An installed-tool route uses the sign-in a tool you
+  installed already has. Set up each route in Settings, following this
+  release's setup instructions in the notes below.
   ${engines}
   Which of those were exercised live on this build is under LIMITS.
 
