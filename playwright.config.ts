@@ -105,6 +105,8 @@ export default defineConfig({
     'h01-preview-repair.spec.ts',
     'independent-h01-final-20260917.spec.ts',
     'allowance-ui.spec.ts',
+    'artifacts-ui.spec.ts',
+    'nectovia-skin.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,

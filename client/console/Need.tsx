@@ -1,6 +1,6 @@
 import type { Need, Session } from '../../shared/types';
 import { ApprovalStatus } from '../components';
-import { formatOrigin, originForNeed } from '../../shared/attribution';
+import { formatOrigin, originForNeed } from '../attribution-display';
 
 /**
  * The needs-you moment in the Console's own register.

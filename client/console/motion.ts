@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react';
+import { drawHeaderSeam } from './nectovia-motion';
 import type { ShellView } from './types';
 
 /**
@@ -260,6 +261,9 @@ export function useTravelOnView(
       requestAnimationFrame(() => {
         travel(from, to, 'screen', 260);
       });
+      // Nectovia only: the strip's seam draws again once the new screen has
+      // sheared in (the strip itself is not remounted by a view change).
+      drawHeaderSeam(rootRef.current);
     }
     // Record this view's anchor centre for the next transition.
     lastPos.current = anchorCenter(anchorForView(root, view, focusTaskId));

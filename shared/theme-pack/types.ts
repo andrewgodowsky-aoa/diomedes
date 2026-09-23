@@ -47,6 +47,7 @@ export const FORBIDDEN_STRING_FRAGMENTS = ['url(', '<', 'javascript:', 'expressi
 // ---------------------------------------------------------------------------
 
 export const BASE_THEME_IDS = [
+  'nectovia',
   'field',
   'deep-field',
   'graphite',
@@ -86,6 +87,22 @@ export interface BaseThemeColors {
  * `SCHEMES` converted to `#rrggbbaa`; the drift test proves the conversion.
  */
 export const BASE_THEME_COLORS: Readonly<Record<BaseThemeId, BaseThemeColors>> = {
+  nectovia: {
+    colors: {
+      chrome: '#08080c',
+      surface: '#0d0d12',
+      raised: '#14141a',
+      hair: '#e6e9ed12',
+      hair2: '#e6e9ed24',
+      t1: '#e6e9ed',
+      t2: '#a4acb6',
+      t3: '#838d99',
+      light: '#44d2c9',
+      attn: '#e0a94a',
+      fail: '#e06c6c',
+    },
+    lightScheme: false,
+  },
   field: {
     colors: {
       chrome: '#121417',

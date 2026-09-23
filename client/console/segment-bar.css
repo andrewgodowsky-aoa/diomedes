@@ -1,0 +1,237 @@
+/* The segment bar. Colours come from the scheme: the lead (live work), the
+   needs-you and failed state colours, and the region rule for what is still
+   ahead. A state keeps its colour under every scheme. */
+.seg-bar {
+  --seg-lead: var(--seam-lead, var(--light));
+  --seg-ahead: var(--hair-2);
+  /* 1 while motion is on, 0 when a theme sets its motion intensity to 0 (the
+     app's own "no motion", contract §4): every duration below is multiplied by
+     it, so nothing here moves then. The reduced-motion setting, the media query
+     and a motion preset of none are also named outright at the end. */
+  --seg-on: min(1, calc(var(--dm-motion-intensity, 0.5) * 1000));
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.seg-bar .seg-track {
+  display: grid;
+  gap: 4px;
+  height: 3px;
+  min-width: 0;
+}
+
+.seg-bar.panel .seg-track {
+  height: 4px;
+}
+
+.seg-bar .seg {
+  position: relative;
+  overflow: hidden;
+  background: var(--seg-ahead);
+}
+
+/* `.seg` is also the Console's segmented radio control (console.css: an
+   inline-flex box with a border, a radius and `margin-left: auto`, at the
+   same specificity as the rule above). Inside the Console that rule reached
+   these spans too, and `margin-left: auto` in a grid cell shrinks a 3 px
+   segment to nothing. The segment's own box wins here, whatever order the
+   stylesheets load in. */
+.seg-bar > .seg-track > span.seg {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.seg-bar .seg.done {
+  background: var(--seg-lead);
+  animation: seg-snap calc(240ms * var(--seg-on)) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.seg-bar .seg.active {
+  background: color-mix(in oklab, var(--seg-lead) 45%, transparent);
+}
+
+/* the unit being worked on carries a travelling highlight */
+.seg-bar .seg.active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--seg-lead) 85%, #ffffff 15%),
+    transparent
+  );
+  transform: translateX(-100%);
+  opacity: var(--seg-on);
+  animation: seg-travel calc(1.6s * var(--seg-on)) linear infinite;
+}
+
+.seg-bar .seg.blocked {
+  background: var(--attn);
+}
+
+.seg-bar .seg.failed {
+  background: var(--fail);
+}
+
+/* nothing was counted: one track, one scanning span, no invented fraction */
+.seg-bar.indeterminate .seg-track {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: var(--seg-ahead);
+}
+
+.seg-bar .seg-scan {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  /* 28% while it scans; still (motion intensity 0), the whole track, quietly
+     lit, as under reduced motion below: a still 28% would read as 28% done */
+  width: calc(100% - 72% * var(--seg-on));
+  opacity: calc(0.45 + 0.55 * var(--seg-on));
+  background: var(--seg-lead);
+  animation: seg-scan calc(1.8s * var(--seg-on)) cubic-bezier(0.76, 0, 0.24, 1) infinite alternate;
+}
+
+/* a share the source reported: one continuous track, filled that far. The
+   fill is scaled, never sized, so a change of value moves by transform. */
+.seg-bar.fraction .seg-track {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: var(--seg-ahead);
+}
+
+.seg-bar .seg-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--seg-lead);
+  transform: scaleX(var(--seg-share, 0));
+  transform-origin: 0 50%;
+  /* the extend token is 0 ms under reduced motion and a motion preset of none */
+  transition: transform calc(var(--dm-t-extend, 200ms) * var(--seg-on)) var(--dm-ease, ease-out);
+}
+
+.seg-bar.fraction.blocked .seg-fill {
+  background: var(--attn);
+}
+
+.seg-bar.fraction.failed .seg-fill {
+  background: var(--fail);
+}
+
+.seg-bar .seg-caption {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--dm-type-caption, 0.8125rem);
+  line-height: 1.4;
+  color: var(--t2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The source's own words (a label and its detail) may run longer than a
+   count, so they wrap rather than lose their end. */
+.seg-bar.words .seg-caption {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* A reply's own progress (a model's `progress` visual, contract A15): an
+   outlined gauge with its fill inset, never the lit track a record keeps, and
+   still, because it tracks nothing live. The segmented form never draws it
+   (SegmentBar reads only its share). The outline is t3, 5:1 or more on every
+   dark ground, so the gauge's extent reads at a glance. */
+.seg-bar[data-source='reply'] {
+  --seg-reply-rule: var(--t3);
+}
+.seg-bar[data-source='reply'] .seg-track {
+  height: 8px;
+  border: 1px solid var(--seg-reply-rule);
+  border-radius: 2px;
+  background: transparent;
+}
+/* Through the track, so the still-motion rules below (which widen a scan to
+   the whole track) never push a reply's inset fill past its outline. */
+.seg-bar[data-source='reply'] .seg-track .seg-fill {
+  inset: 1px;
+  transition: none;
+}
+.seg-bar[data-source='reply'] .seg-track .seg-scan {
+  inset: 1px;
+  width: auto;
+  opacity: 0.35;
+  animation: none;
+}
+
+@keyframes seg-travel {
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@keyframes seg-scan {
+  to {
+    transform: translateX(257%);
+  }
+}
+
+@keyframes seg-snap {
+  from {
+    filter: brightness(1.8);
+  }
+}
+
+/* The reduced-motion setting and a motion preset of none, named outright as
+   artifacts.css names them (a preset of none also zeroes the intensity, which
+   --seg-on reads, but a stylesheet that says it is still is plainer). */
+html[data-motion='reduced'] .seg-bar .seg,
+html[data-motion='reduced'] .seg-bar .seg::after,
+html[data-motion='reduced'] .seg-bar .seg-scan,
+html[data-motion-preset='none'] .seg-bar .seg,
+html[data-motion-preset='none'] .seg-bar .seg::after,
+html[data-motion-preset='none'] .seg-bar .seg-scan {
+  animation: none;
+}
+html[data-motion='reduced'] .seg-bar .seg-fill,
+html[data-motion-preset='none'] .seg-bar .seg-fill {
+  transition: none;
+}
+html[data-motion='reduced'] .seg-bar .seg.active::after,
+html[data-motion-preset='none'] .seg-bar .seg.active::after {
+  display: none;
+}
+/* Standing still, a 28% span would read as 28% done. Without motion the
+   indeterminate form is the whole track, evenly and quietly lit. */
+html[data-motion='reduced'] .seg-bar .seg-scan,
+html[data-motion-preset='none'] .seg-bar .seg-scan {
+  width: 100%;
+  opacity: 0.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seg-bar .seg,
+  .seg-bar .seg::after,
+  .seg-bar .seg-scan {
+    animation: none;
+  }
+  .seg-bar .seg-fill {
+    transition: none;
+  }
+  .seg-bar .seg.active::after {
+    display: none;
+  }
+  .seg-bar .seg-scan {
+    width: 100%;
+    opacity: 0.45;
+  }
+}

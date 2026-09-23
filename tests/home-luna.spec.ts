@@ -70,7 +70,7 @@ const homeThread = async () => {
   if (!bound || !state) return null;
   return state.conversations.find((item) => item.id === bound.threadId) ?? null;
 };
-const composer = (page: Page) => page.getByRole('textbox', { name: 'Message Diomedes' });
+const composer = (page: Page) => page.getByRole('textbox', { name: 'Message Nectovia' });
 const answers = (page: Page) => page.locator('.turn.dio .body');
 const routeControl = (page: Page) => page.getByRole('combobox', { name: 'Route' });
 const strip = (page: Page) =>
@@ -106,7 +106,7 @@ function gate() {
 
 async function open(page: Page) {
   await page.goto(baseURL);
-  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
 }
 async function say(page: Page, text: string) {
   await expect(page.locator('.dio-pending')).toHaveCount(0);
@@ -714,6 +714,13 @@ test('two Stop presses in one JavaScript turn name the command once', async ({ p
   await expect.poll(() => seen.length).toBeGreaterThan(callsBefore);
   const commandId = await claimedCommand(page);
   expect(commandId).not.toBeNull();
+  // The record is read only once the interrupt has been answered: the request leaving the page
+  // is not the server having recorded it.
+  const answered = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/messages/${commandId}/interrupt`) &&
+      response.request().method() === 'POST',
+  );
   // Both click events run in one page evaluation, before any promise continuation can settle
   // the first press: the second finds the delivery's identity already released and has nothing
   // left to name.
@@ -731,6 +738,7 @@ test('two Stop presses in one JavaScript turn name the command once', async ({ p
   await painted(page);
   expect(interrupts).toHaveLength(1);
   expect(interrupts[0]).toContain(`/messages/${commandId}/interrupt`);
+  expect((await answered).ok()).toBe(true);
   const bound = await home();
   const recorded = await api<{ interrupted: boolean }>(
     `/projects/${bound!.projectId}/threads/${bound!.threadId}/messages/${commandId}`,

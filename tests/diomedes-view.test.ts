@@ -91,6 +91,18 @@ describe('spineItems', () => {
     expect(items.map((i) => i.id)).toEqual([ALL_PROJECTS, 'new', 'old']);
   });
 
+  it('counts a project\'s tasks in words, one task in the singular', () => {
+    const items = spineItems(
+      [
+        projectFixture({ id: 'one', name: 'One', tasksTotal: 1, tasksDone: 0, lastOpenedAt: ago(1_000) }),
+        projectFixture({ id: 'four', name: 'Four', tasksTotal: 4, tasksDone: 2, lastOpenedAt: ago(2_000) }),
+      ],
+      NOW,
+    );
+    expect(items.find((i) => i.id === 'one')?.sub).toBe('0 of 1 task done');
+    expect(items.find((i) => i.id === 'four')?.sub).toBe('2 of 4 tasks done');
+  });
+
   it('reads a project\'s age from the now it is given, not the clock', () => {
     const items = spineItems([projectFixture({ id: 'p', lastOpenedAt: ago(2 * 60 * 60 * 1000) })], NOW);
     expect(items[1].time).toBe('2h');
@@ -325,7 +337,7 @@ describe('what one outcome reads as', () => {
   it('offers Start only for a proposal, names the project, and promises nothing is written yet', () => {
     const card = outcomeCard(proposed, projects)!;
     expect(card.action).toEqual({ kind: 'start', label: 'Start' });
-    expect(card.title).toBe('Diomedes can start this in Harbor Street Bakery');
+    expect(card.title).toBe('Nectovia can start this in Harbor Street Bakery');
     expect(card.body).toContain('Order the usual from the supplier.');
     expect(card.body).toContain('Nothing is written until you say go ahead.');
   });
@@ -360,7 +372,7 @@ describe('what one outcome reads as', () => {
 
   it('names no project it cannot find rather than showing an id', () => {
     expect(outcomeCard({ ...proposed, projectId: 'gone' }, projects)!.title).toBe(
-      'Diomedes can start this in a project',
+      'Nectovia can start this in a project',
     );
   });
 });

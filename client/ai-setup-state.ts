@@ -175,9 +175,9 @@ export function primaryControl(c: EngineConnection, name: string): PrimaryContro
   const action: SetupAction = c.nextAction ?? 'check-connection';
   switch (action) {
     case 'install':
-      return { action, intent: 'install', label: 'Install compatible copy for Diomedes' };
+      return { action, intent: 'install', label: 'Install compatible copy for Nectovia' };
     case 'repair':
-      return { action, intent: 'install', label: 'Repair with a compatible copy for Diomedes' };
+      return { action, intent: 'install', label: 'Repair with a compatible copy for Nectovia' };
     case 'choose-installation':
       return { action, intent: 'choose', label: 'Choose an installation' };
     case 'sign-in':
@@ -188,7 +188,7 @@ export function primaryControl(c: EngineConnection, name: string): PrimaryContro
           c.engine === 'oh-my-pi' ? 'Configure OpenAI API access' : `Sign in with ${name}`,
       };
     case 'enable':
-      return { action, intent: 'enable', label: 'Turn on for Diomedes' };
+      return { action, intent: 'enable', label: 'Turn on for Nectovia' };
     case 'test-connection':
       return { action, intent: 'test', label: 'Test this connection' };
     case 'ready':
@@ -210,18 +210,18 @@ export function repairText(c: EngineConnection): string {
   const at = where ? ` at ${where}` : '';
   switch (c.repair) {
     case 'selected-missing':
-      return `The installation you chose${at} is no longer there. Diomedes will not switch to another copy on its own.`;
+      return `The installation you chose${at} is no longer there. Nectovia will not switch to another copy on its own.`;
     case 'selected-changed':
-      return `The installation you chose${at} has changed since you chose it. Diomedes will not run it until you choose again or install a compatible copy.`;
+      return `The installation you chose${at} has changed since you chose it. Nectovia will not run it until you choose again or install a compatible copy.`;
     case 'selected-unverified':
       return `The installation you chose${at} no longer passes its version and integrity checks.`;
     case 'no-reviewed-candidate':
-      return 'No installation on this computer matches the version Diomedes supports.';
+      return 'No installation on this computer matches the version Nectovia supports.';
     case 'record-unreadable':
-      return 'Diomedes cannot read which installation you chose for this service, so it will not use one. Choose an installation again. The record it could not read is kept.';
+      return 'Nectovia cannot read which installation you chose for this service, so it will not use one. Choose an installation again. The record it could not read is kept.';
     default:
       return c.installation === 'corrupt'
-        ? `The installation${at} failed its integrity check. Diomedes will not run it.`
+        ? `The installation${at} failed its integrity check. Nectovia will not run it.`
         : '';
   }
 }
@@ -240,7 +240,7 @@ export function repairNote(c: EngineConnection): string {
   const said = repairText(c);
   if (said !== '') return said;
   return c.repair
-    ? 'This installation needs attention for a reason this version of Diomedes cannot put into words. Choose an installation again, or install the compatible copy.'
+    ? 'This installation needs attention for a reason this version of Nectovia cannot put into words. Choose an installation again, or install the compatible copy.'
     : '';
 }
 
@@ -324,16 +324,16 @@ export function verifiedSentence(
 
 /** Whose installation this is. */
 export function sourceText(source: CandidateSource): string {
-  if (source === 'managed') return "Diomedes's private copy";
-  if (source === 'manual') return 'An installation you pointed Diomedes at';
+  if (source === 'managed') return "Nectovia's private copy";
+  if (source === 'manual') return 'An installation you pointed Nectovia at';
   return 'Your own installation';
 }
 
 /** Publisher provenance, said plainly and without implying a verdict on the tool. */
 export function provenanceText(provenance: EngineCandidate['provenance']): string {
   return provenance === 'reviewed-release'
-    ? 'Diomedes verified these bytes against the release it pinned.'
-    : 'Your own copy; Diomedes did not verify its publisher.';
+    ? 'Nectovia verified these bytes against the release it pinned.'
+    : 'Your own copy; Nectovia did not verify its publisher.';
 }
 
 /** A WSL copy and a desktop application are named as what they are. */
@@ -373,7 +373,7 @@ export function routeIssueSentences(c: EngineConnection, name: string): string[]
     connected.length > 0
       ? `${name} reported ${connected.join(', ')}.`
       : `${name} reported no account this adapter accepts.`,
-    `This route uses ${c.routeIssue.required} only. Other accounts you hold are not used here, and Diomedes does not switch to one of them.`,
+    `This route uses ${c.routeIssue.required} only. Other accounts you hold are not used here, and Nectovia does not switch to one of them.`,
   ];
 }
 
@@ -508,10 +508,10 @@ export function signingIn(watch: SignInWatch | undefined): boolean {
 export function signInSentence(watch: SignInWatch | undefined, name: string): string {
   if (!watch || watch.state === 'idle') return '';
   if (watch.state === 'unconfirmed')
-    return `Diomedes could not confirm the ${name} sign-in. Check it again.`;
+    return `Nectovia could not confirm the ${name} sign-in. Check it again.`;
   return watch.state === 'open'
     ? `The ${name} sign-in window is open on this computer. Finish it there, or close it.`
-    : `The ${name} sign-in window closed. Diomedes is checking this service again.`;
+    : `The ${name} sign-in window closed. Nectovia is checking this service again.`;
 }
 
 /** One failed action, read from the payload the host sent with it. */

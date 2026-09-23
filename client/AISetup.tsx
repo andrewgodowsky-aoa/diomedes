@@ -43,7 +43,7 @@ import { Button } from './components';
 import './ai-setup.css';
 
 const DISCLOSURE =
-  'Diomedes checks installed tools, versions, sign-in status, and model lists on this computer. ' +
+  'Nectovia checks installed tools, versions, sign-in status, and model lists on this computer. ' +
   'Short-lived checks do not send model prompts, install tools, or open sign-in pages.';
 
 /**
@@ -51,7 +51,7 @@ const DISCLOSURE =
  * addition, never a change to what the person already installed.
  */
 const PRIVATE_COPY =
-  'This copy belongs to Diomedes alone. It does not change, downgrade or remove your own ' +
+  'This copy belongs to Nectovia alone. It does not change, downgrade or remove your own ' +
   'installation, and it does not change PATH.';
 
 function messageOf(error: unknown): string {
@@ -889,7 +889,7 @@ export function AIConnections({
                   <summary>{`Installations on this computer (${candidates.length})`}</summary>
                   {candidates.length === 0 ? (
                     <p className="caption">
-                      Diomedes has no guided installer for this route on this computer. Install{' '}
+                      Nectovia has no guided installer for this route on this computer. Install{' '}
                       {name} yourself, then check again.
                     </p>
                   ) : (
@@ -1040,7 +1040,7 @@ export function AIConnections({
                     <a target="_blank" rel="noreferrer" href="https://platform.openai.com/api-keys">
                       OpenAI API billing
                     </a>{' '}
-                    is separate from ChatGPT. Diomedes creates an empty template only if missing and
+                    is separate from ChatGPT. Nectovia creates an empty template only if missing and
                     never reads your key.
                   </p>
                 ) : (
@@ -1048,7 +1048,7 @@ export function AIConnections({
                     {engine === 'devin'
                       ? 'Sign-in opens the Devin browser flow.'
                       : "Sign-in runs in the provider's own tool in your terminal."}{' '}
-                    Diomedes never asks for provider secrets.
+                    Nectovia never asks for provider secrets.
                   </p>
                 ))}
               <details className="ai-connection-details">

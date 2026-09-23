@@ -3,6 +3,8 @@ import type { UpdateStatusSnapshot } from '../shared/app-updates';
 import { ApiError, api } from './api';
 import { readUpdateStatus } from './use-update-status';
 import { Button } from './components';
+import { SegmentBar } from './console/SegmentBar';
+import { updateBar, type UpdateRequest } from './update-progress';
 import './app-updates.css';
 
 type Phase = 'loading' | 'ready' | 'checking' | 'downloading' | 'installing' | 'launched';
@@ -15,6 +17,27 @@ function failureMessage(error: unknown): string {
 
 function megabytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * The version this copy of the app is running, as the update service reports it
+ * (`installedVersion`), or null until it answers or when it cannot be read. A
+ * caller that has no version prints none rather than a guess.
+ */
+export function useInstalledVersion(): string | null {
+  const [version, setVersion] = useState<string | null>(null);
+  useEffect(() => {
+    let current = true;
+    api<UpdateStatusSnapshot>('/updates/status')
+      .then((status) => {
+        if (current && status.installedVersion) setVersion(status.installedVersion);
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, []);
+  return version;
 }
 
 export function AppUpdates() {
@@ -65,6 +88,21 @@ export function AppUpdates() {
     [refresh],
   );
 
+  // While a download runs the host's record is read again at the update
+  // card's own interval, so the bar follows the bytes the host has received.
+  // A failed read here changes nothing: the download's own answer says how it
+  // ended.
+  const downloadRunning = phase === 'downloading' || !!status?.download.progress;
+  useEffect(() => {
+    if (!downloadRunning) return;
+    const timer = setInterval(() => {
+      readUpdateStatus()
+        .then(setStatus)
+        .catch(() => undefined);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [downloadRunning]);
+
   const outcome = status?.check.outcome ?? null;
   const handedOff = phase === 'launched' || status?.install.phase === 'launched';
   const busy =
@@ -72,13 +110,17 @@ export function AppUpdates() {
     phase === 'downloading' ||
     phase === 'installing' ||
     handedOff ||
-    status?.install.phase === 'installing';
+    status?.install.phase === 'installing' ||
+    !!status?.download.progress;
+  const pending: UpdateRequest | null =
+    phase === 'checking' || phase === 'downloading' || phase === 'installing' ? phase : null;
+  const bar = handedOff ? null : updateBar(status, pending);
 
   return (
     <div className="app-updates">
       <h2>App updates</h2>
       <p className="prose">
-        Diomedes checks the official release page only when you ask. A newer version downloads first
+        Nectovia checks the official release page only when you ask. A newer version downloads first
         for verification; nothing installs without your explicit close-and-install.
       </p>
       <p className="prose version-row">
@@ -125,7 +167,7 @@ export function AppUpdates() {
                       : 'Published digest verification unavailable'}
                   </p>
                   <p className="caption">
-                    Close and install exits Diomedes and opens the verified installer. The existing
+                    Close and install exits Nectovia and opens the verified installer. The existing
                     per-user installer preserves project and profile data.
                   </p>
                 </>
@@ -149,6 +191,15 @@ export function AppUpdates() {
             <p className="caption">
               Project work is active. Finish or stop it before installing the update.
             </p>
+          )}
+          {bar && (
+            <SegmentBar
+              size="panel"
+              className="update-bar"
+              label={bar.label}
+              fraction={bar.fraction}
+              detail={bar.detail}
+            />
           )}
           <div className="actions">
             <Button disabled={busy} onClick={() => void run('checking', '/updates/check')}>
@@ -175,7 +226,7 @@ export function AppUpdates() {
           </div>
           {handedOff && (
             <p className="prose">
-              Update handoff accepted. Diomedes is closing; the installer will open after it exits.
+              Update handoff accepted. Nectovia is closing; the installer will open after it exits.
             </p>
           )}
         </>

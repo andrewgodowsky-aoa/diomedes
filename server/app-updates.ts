@@ -28,6 +28,13 @@ const REDIRECT_LIMIT = 5;
 const METADATA_MAX_BYTES = 256 * 1024;
 const SHA_PATTERN = /^[0-9a-f]{64}$/;
 
+/**
+ * Observation of a running download: the bytes received so far, and the size
+ * the response declared for them (its Content-Length), or null when it
+ * declared none. It only watches; nothing in the download reads it back.
+ */
+export type DownloadProgress = (transferred: number, total: number | null) => void;
+
 /** Injected seams. Unit tests replace every seam; production uses fetch below. */
 export interface UpdateTransport {
   fetchRelease: (signal: AbortSignal) => Promise<unknown>;
@@ -35,6 +42,7 @@ export interface UpdateTransport {
     url: string,
     expectedSize: number,
     signal: AbortSignal,
+    onProgress?: DownloadProgress,
   ) => Promise<{ bytes: Uint8Array; finalUrl: string }>;
   launchInstaller: (artifact: UpdateInstallArtifact) => Promise<void>;
 }
@@ -48,7 +56,39 @@ export interface AppUpdateOptions {
   onInstallAccepted?: () => void;
   isBusy: () => boolean | Promise<boolean>;
   transport?: Partial<UpdateTransport>;
+  /** Milliseconds for the progress throttle. Tests replace it; production reads Date.now. */
+  clock?: () => number;
 }
+
+/** A running download's progress is recorded no sooner than this after the last record... */
+export const PROGRESS_INTERVAL_MS = 250;
+/** ...and no less than this share of the declared size further on, whichever comes later. */
+export const PROGRESS_STEP = 0.01;
+
+/**
+ * Whether a download's progress report is worth recording. A report is kept
+ * once at least 250 ms have passed since the last kept one (or since the
+ * download started) and it is at least 1% of the declared size further on,
+ * whichever of the two comes later. The last byte of a declared size is always
+ * kept. With no declared size there is no 1% of anything, so the time alone
+ * decides. Pure apart from the clock it is given.
+ */
+export function progressGate(clock: () => number = Date.now): DownloadProgressGate {
+  let at = clock();
+  let kept = 0;
+  return (transferred, total) => {
+    const final = total !== null && total > 0 && transferred >= total;
+    const now = clock();
+    const due =
+      now - at >= PROGRESS_INTERVAL_MS &&
+      (total === null || transferred - kept >= total * PROGRESS_STEP);
+    if (!final && !due) return false;
+    at = now;
+    kept = transferred;
+    return true;
+  };
+}
+export type DownloadProgressGate = (transferred: number, total: number | null) => boolean;
 
 interface VerifiedRecord {
   version: string;
@@ -175,6 +215,7 @@ async function productionDownloadAsset(
   url: string,
   expectedSize: number,
   signal: AbortSignal | undefined,
+  onProgress?: DownloadProgress,
 ): Promise<{ bytes: Uint8Array; finalUrl: string }> {
   if (!parseOfficialAssetUrl(url))
     throw new ApiError(502, 'The installer request left the official channel.');
@@ -232,6 +273,17 @@ async function productionDownloadAsset(
         'The installer size does not match the release record. Nothing was saved.',
       );
   }
+  // Observation only: how much of what the response declared has arrived. The
+  // download never reads it, and an observer that throws is ignored.
+  const declaredTotal = declared === null ? null : Number(declared);
+  const observe = (received: number) => {
+    if (!onProgress) return;
+    try {
+      onProgress(received, declaredTotal);
+    } catch {
+      // Watching a download never changes it.
+    }
+  };
   if (!response.body) {
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (bytes.length !== expectedSize || bytes.length > UPDATE_MAX_ASSET_BYTES)
@@ -239,6 +291,7 @@ async function productionDownloadAsset(
         502,
         'The installer size does not match the release record. Nothing was saved.',
       );
+    observe(bytes.length);
     return { bytes, finalUrl: current };
   }
   const reader = response.body.getReader();
@@ -256,6 +309,7 @@ async function productionDownloadAsset(
       );
     }
     chunks.push(next.value);
+    observe(total);
   }
   if (total !== expectedSize)
     throw new ApiError(
@@ -302,6 +356,11 @@ export class AppUpdateService {
   private checking: Promise<UpdateStatusSnapshot['check']> | null = null;
   private downloading: Promise<{ downloaded: boolean; version: string }> | null = null;
   private installing: Promise<{ launched: boolean; version: string }> | null = null;
+  private readonly clock: () => number;
+  /** What the running download has said about itself, throttled; null when none is running. */
+  private progress: { transferred: number; total: number | null } | null = null;
+  /** Changes when a download ends, so a report that arrives after it is ignored. */
+  private progressRun = 0;
 
   constructor(options: AppUpdateOptions) {
     const installed = parseStableVersion(options.currentVersion);
@@ -314,11 +373,12 @@ export class AppUpdateService {
     // are packaged but not installed. Default closed when unknown.
     this.installed = options.installed ?? false;
     this.isBusy = options.isBusy;
+    this.clock = options.clock ?? Date.now;
     this.transport = {
       fetchRelease: options.transport?.fetchRelease ?? ((signal) => productionFetchRelease(signal)),
       downloadAsset:
         options.transport?.downloadAsset ??
-        ((url, size, signal) => productionDownloadAsset(url, size, signal)),
+        ((url, size, signal, onProgress) => productionDownloadAsset(url, size, signal, onProgress)),
       launchInstaller: options.transport?.launchInstaller ?? (() => unavailableInstaller()),
     };
   }
@@ -377,6 +437,7 @@ export class AppUpdateService {
         bytes: this.record?.stagedBytes ?? null,
         sha256: this.record?.stagedSha256 ?? null,
         verified: !this.record?.stagedSha256 ? null : 'size-origin-digest',
+        ...(this.progress ? { progress: { ...this.progress } } : {}),
       },
       install: { phase: this.installPhase, version: this.installVersion },
     };
@@ -511,6 +572,10 @@ export class AppUpdateService {
     if (this.downloading) return this.downloading;
     this.downloading = this.runDownload(normalized.signal).finally(() => {
       this.downloading = null;
+      // Succeeded, failed or aborted: what the download said about its
+      // progress ends with it, and anything it reports later is ignored.
+      this.progress = null;
+      this.progressRun += 1;
     });
     return this.downloading;
   }
@@ -553,10 +618,29 @@ export class AppUpdateService {
       throw new ApiError(502, 'The verified release record is no longer valid. Check again.');
     if (!SHA_PATTERN.test(record.publishedDigest))
       throw new ApiError(502, 'The verified release record is no longer valid. Check again.');
+    // Observation only: the download starts with nothing received and no size
+    // declared yet, and the snapshot follows what the transport reports,
+    // throttled, until `download` clears it however this ends.
+    const run = this.progressRun;
+    let keep: DownloadProgressGate | null = null;
+    try {
+      keep = progressGate(this.clock);
+      this.progress = { transferred: 0, total: null };
+    } catch {
+      // No clock, no progress: the download itself goes on untouched.
+    }
     const { bytes } = await this.transport.downloadAsset(
       record.assetUrl,
       record.assetSize,
       withTimeout(signal, DOWNLOAD_TIMEOUT_MS),
+      (transferred, total) => {
+        try {
+          if (keep && run === this.progressRun && keep(transferred, total))
+            this.progress = { transferred, total };
+        } catch {
+          // Watching a download never changes it.
+        }
+      },
     );
     // A concurrent check invalidates the generation the download started under.
     if (this.generation !== admittedGeneration || this.record !== record)

@@ -381,6 +381,7 @@ function validateSettings(current: Settings, body: unknown): Settings {
       result.appearance.package = choice(
         value.package,
         [
+          'nectovia',
           'field',
           'deep-field',
           'graphite',

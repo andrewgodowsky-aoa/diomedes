@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { selectedEngine } from '../../shared/ai-selection';
-import { formatOrigin, originForNeed, originForSession } from '../../shared/attribution';
+import { formatOrigin, originForNeed, originForSession } from '../attribution-display';
 import type { ScopeGrantView } from '../../shared/permissions';
 import { isRoute, isExternalEngine } from '../../shared/engines';
 import type { EngineConnection } from '../../shared/engines';
@@ -48,7 +48,7 @@ import {
   askDraftKey,
   askModeKey,
 } from '../components';
-import { Mark } from './Mark';
+import { NectoviaMark } from './NectoviaMark';
 import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
 import { acceptPreview, type PreviewPosition } from './engine-text-preview';
@@ -67,6 +67,8 @@ import { COMPOSER_LABEL } from './Composer';
 import { AgentPicker } from './AgentPicker';
 import { BoardView } from './BoardView';
 import { FilesPane, DEFAULT_WIDTH, clampWidth } from './FilesPane';
+import { threadRun, useArtifactHost } from './artifact-panel';
+import { saveArtifact } from './artifact-save';
 import { ActivityOverview } from './ActivityOverview';
 import { projectActivity, type ActivityRow } from './activity';
 import { TeamView } from './TeamView';
@@ -81,6 +83,8 @@ import { applyQuery, buildEntries, type PaletteContext } from './paletteEntries'
 import { useTravelOnView } from './motion';
 import type { ShellView } from './types';
 import './console.css';
+import './artifacts.css';
+import './nectovia.css';
 import './palette.css';
 import './motion.css';
 import './files.css';
@@ -599,6 +603,19 @@ export function Shell({
   const selected = selectedId
     ? (state?.conversations.find((c) => c.id === selectedId) ?? null)
     : null;
+  // The third column also hosts the artifact panel: a chip in the thread opens
+  // it, and Files and the panel keep their own state behind one another.
+  const artifactHost = useArtifactHost({
+    reset: projectId,
+    scope: selected?.id ?? null,
+    turns: selected?.turns,
+    filesOpen,
+    setFilesOpen,
+    filesWidth,
+    onSave: (record) => saveArtifact(projectId, record),
+    onShowFile: (path) => openDocument(path),
+    session: threadRun(state?.sessions, selected),
+  });
   useEffect(() => {
     if (selected) setMode(selected.mode ?? 'ask');
   }, [selected?.id, selected?.mode]);
@@ -833,7 +850,7 @@ export function Shell({
       // that changed in the moment between the decision and the call.
       const applied = pick({ model: decision.model, effort: decision.effort }, decision.route, thread, live);
       if (!applied) {
-        say('This thread changed while Diomedes was checking it, so nothing was selected.');
+        say('This thread changed while Nectovia was checking it, so nothing was selected.');
         onFirstTaskTaken?.();
         return;
       }
@@ -1237,6 +1254,7 @@ export function Shell({
   function openDocument(path: string) {
     setOpenPath(path);
     setFilesOpen(true);
+    artifactHost.showFiles();
   }
   /** A row is a way back into the record it came from, never a new action. */
   function openActivityRow(row: ActivityRow) {
@@ -1358,7 +1376,7 @@ export function Shell({
     {
       id: 'settings',
       label: 'Settings',
-      hint: 'How much Diomedes explains, what it may do on its own, and how it looks.',
+      hint: 'How much Nectovia explains, what it may do on its own, and how it looks.',
     },
     {
       id: 'projects',
@@ -1368,7 +1386,7 @@ export function Shell({
   ];
   const destinationGroups = [
     { heading: 'In this project', ids: ['thread', 'board', 'team', 'history', 'files'] },
-    { heading: 'Diomedes', ids: ['engines', 'settings', 'projects'] },
+    { heading: 'Nectovia', ids: ['engines', 'settings', 'projects'] },
     { heading: 'Not ready yet', ids: ['automations', 'connections'] },
   ];
   // Which destination the rail and the flyout mark as the one showing. The
@@ -1399,7 +1417,7 @@ export function Shell({
     else if (id === 'history') setView('History');
     else if (id === 'discovery') setView('Discovery');
     else if (id === 'readiness') setView('Readiness');
-    else if (id === 'files') setFilesOpen(!filesOpen);
+    else if (id === 'files') artifactHost.toggleFiles();
     else if (id === 'engines') openEngineSettings();
     else if (id === 'settings') onOpenSettings();
     else if (id === 'projects') onShowProjects();
@@ -1498,7 +1516,7 @@ export function Shell({
   return (
     <div ref={rootRef} className={`console ${!online ? 'disconnected' : ''}`}>
       <header className="top">
-        <Mark />
+        <NectoviaMark />
         <nav className="crumb" aria-label="Open projects">
           <button type="button" onClick={onShowProjects}>
             Projects
@@ -1593,8 +1611,8 @@ export function Shell({
       </header>
 
       <div
-        className={`stage${filesOpen ? ' files-open' : ''}`}
-        style={filesOpen ? ({ '--files-w': `${filesWidth}px` } as CSSProperties) : undefined}
+        className={`stage${artifactHost.stageClass}`}
+        style={artifactHost.stageStyle}
       >
         <Rail
           top={<WorkspaceMark view={workspace} onOpen={() => setWorkspacesOpen(true)} />}
@@ -1748,6 +1766,9 @@ export function Shell({
               streaming={streamingForSelected}
               runActivity={runActivityLines}
               onCancelText={cancelAsk}
+              artifacts={artifactHost.selection.index}
+              onOpenArtifact={(record) => artifactHost.selection.open(record)}
+              openArtifactKey={artifactHost.selection.openKey}
             />
             <Ledger
               project={project}
@@ -1939,8 +1960,12 @@ export function Shell({
             onWidth={setFilesWidth}
             onClose={() => setFilesOpen(false)}
             onEdit={(path) => setEditing(path)}
+            hidden={artifactHost.shown !== 'files'}
+            switcher={artifactHost.switcher}
+            onOpenInPanel={artifactHost.openFile}
           />
         )}
+        {artifactHost.pane}
       </div>
 
       <Palette

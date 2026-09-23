@@ -16,10 +16,11 @@ import type {
   Turn,
 } from '../../shared/types';
 import type { FollowUpCommand } from '../../shared/work-control';
+import { AGENT_NAME } from '../../shared/agent-name';
 import { effortFor } from '../../shared/effort';
 import { isExternalEngine } from '../../shared/engines';
 import type { InstructionFileRecord } from '../../shared/capability-packs';
-import { formatOrigin, originForSession, originForTurn } from '../../shared/attribution';
+import { formatOrigin, originForSession, originForTurn } from '../attribution-display';
 import { ApprovalStatus, time } from '../components';
 import { RunInspector } from '../workbench/RunInspector';
 import { taskEvidence } from '../workbench/task-evidence';
@@ -30,12 +31,13 @@ import { FollowUpQueue } from './FollowUpQueue';
 import { StopMenu, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
 import { ChangeReview } from './ChangeReview';
-import { ReplyBody } from './ReplyBody';
 import { useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
 import { ToolActivityList } from './ToolActivity';
 import { resolvedDetail, threadStyle, useWorkStyleView } from './WorkStylePicker';
 import { WORK_STYLE_LABELS } from '../../shared/work-style';
+import { TurnBody } from './TurnBody';
+import { turnKeyOf, type ArtifactIndex, type ArtifactRecord } from './artifacts';
 
 function fmtDur(ms: number): string {
   const s = ms / 1000;
@@ -110,6 +112,15 @@ interface ThreadViewProps {
   /** A playbook picked for the next message, passed through to the composer. */
   skill?: { name: string; starter: string; n: number } | null;
   onClearSkill?(): void;
+  /**
+   * The thread's artifacts, read from its durable turns. With them an artifact
+   * block leaves a chip that opens it in the panel; without them every block
+   * renders inline.
+   */
+  artifacts?: ArtifactIndex;
+  onOpenArtifact?(record: ArtifactRecord): void;
+  /** The artifact the panel is showing, so its chip can say so. */
+  openArtifactKey?: string | null;
 }
 
 /**
@@ -156,6 +167,9 @@ export function ThreadView({
   onError,
   skill = null,
   onClearSkill,
+  artifacts,
+  onOpenArtifact,
+  openArtifactKey = null,
 }: ThreadViewProps) {
   const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
@@ -204,6 +218,8 @@ export function ThreadView({
     if (turn.role === 'you' || !current || current[0].role !== 'you') exchanges.push([turn]);
     else current.push(turn);
   }
+  // A turn's place in the thread, which names it when an old record has no id.
+  const turnIndex = new Map(thread.turns.map((turn, index) => [turn, index]));
 
   // While an answer is on its way and nothing has streamed yet, the agent
   // says what it is up to. Display only; nothing here is recorded. A tool
@@ -274,7 +290,16 @@ export function ThreadView({
                 {t.role === 'you' ? (
                   paragraphs(t.text).map((p, j) => <p key={j}>{p}</p>)
                 ) : (
-                  <ReplyBody text={t.text} session={live} />
+                  <TurnBody
+                    text={t.text}
+                    session={live}
+                    artifactAt={
+                      artifacts &&
+                      ((block) => artifacts.forBlock(turnKeyOf(t, turnIndex.get(t) ?? 0), block))
+                    }
+                    onOpenArtifact={onOpenArtifact}
+                    openKey={openArtifactKey}
+                  />
                 )}
               </div>
             </div>
@@ -378,7 +403,7 @@ export function ThreadView({
           {title}
         </h1>
         {permissionControl ?? (
-          <div className="seg" role="radiogroup" aria-label="What Diomedes may do">
+          <div className="seg" role="radiogroup" aria-label={`What ${AGENT_NAME} may do`}>
             <button
               type="button"
               role="radio"
@@ -523,7 +548,7 @@ export function ThreadView({
                 <ToolActivityList lines={streaming.activity} technical={technical} />
                 <div className="body">
                   {streaming.text ? (
-                    <ReplyBody text={streaming.text} streaming session={live} />
+                    <TurnBody text={streaming.text} preview session={live} />
                   ) : (
                     streamWaiting && <p className="caption">{workingLine(streamWord)}</p>
                   )}

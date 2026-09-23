@@ -7,7 +7,7 @@ import type {
   TeamMember,
   TeamRun,
 } from '../../shared/types';
-import { formatOrigin, originForSession } from '../../shared/attribution';
+import { formatOrigin, originForSession } from '../attribution-display';
 import type { TeamProps } from './types';
 import './team.css';
 
@@ -426,7 +426,7 @@ export function TeamView({
               value={to}
               onChange={(e) => setTo(e.target.value as Slot | 'diomedes')}
             >
-              <option value="diomedes">Diomedes routes it</option>
+              <option value="diomedes">Nectovia routes it</option>
               {ordered.map((m) => (
                 <option key={m.slotId} value={m.slotId}>
                   {m.name}
@@ -434,7 +434,7 @@ export function TeamView({
               ))}
             </select>
             <span style={{ marginLeft: 'auto' }}>
-              Members talk through the Diomedes team service.
+              Members talk through the Nectovia team service.
             </span>
           </div>
           <div className="bar">

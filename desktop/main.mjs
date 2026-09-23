@@ -59,6 +59,7 @@ let nativeAuth;
 // Field colour schemes as [chrome, t1] pairs for the titlebar overlay.
 // `cobalt` is retired and reads as `harbor` for saved settings.
 const FIELD_TITLEBAR = {
+  nectovia: ['#08080c', '#e6e9ed'],
   field: ['#121417', '#e6e9ed'],
   'deep-field': ['#0c1220', '#e8edf5'],
   graphite: ['#151515', '#ebe9e6'],
@@ -185,6 +186,18 @@ function interfaceScale(command) {
     .catch((error) => console.error('Interface size could not change:', error));
 }
 
+// The window's first paint is the stored scheme's chrome, so a window opening
+// on Field or on a custom theme does not flash another scheme's ground. With no
+// settings written yet it is a new install, which starts on Nectovia's ink.
+async function windowBackground() {
+  try {
+    const settings = JSON.parse(await fs.readFile(path.join(dataDir, 'settings.json'), 'utf8'));
+    return ((await customTitleBar(settings)) ?? titleBarFor(settings?.appearance?.package)).color;
+  } catch {
+    return '#08080c';
+  }
+}
+
 /**
  * Build the main window and load the local service into it. Called once at
  * startup, and again on macOS when the Dock reopens an app whose window was
@@ -199,7 +212,7 @@ async function createMainWindow() {
     minWidth: 800,
     minHeight: 600,
     title: 'Diomedes',
-    backgroundColor: '#16191d',
+    backgroundColor: await windowBackground(),
     show: false,
     ...titleBarWindowOptions(process.platform),
     autoHideMenuBar: true,
@@ -209,6 +222,12 @@ async function createMainWindow() {
     },
   });
   const win = window;
+  // Nothing in this window uses WebRTC, and no artifact frame runs script
+  // (client/console/artifact-frame.ts): the sandbox is what stops a frame. ICE
+  // traffic is outside every Content-Security-Policy, so as a second wall WebRTC
+  // here may not use UDP except through a proxy (no STUN requests, no local or
+  // public address exposed). It narrows WebRTC to TCP; it does not remove it.
+  win.webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
   win.webContents.setZoomFactor(1);
   void win.webContents.setVisualZoomLevelLimits(1, 1);
   win.webContents.on('before-input-event', (event, input) => {
@@ -237,6 +256,14 @@ async function createMainWindow() {
       event.preventDefault();
       openSetupReference(destination);
     }
+  });
+  // Model artifacts are shown in srcdoc frames (client/console/artifact-frames.tsx).
+  // A frame may load its own document and nothing else: a design cannot leave it
+  // (an in-page anchor is the same document, so it stays allowed).
+  win.webContents.on('will-frame-navigate', (details) => {
+    if (details.isMainFrame || details.isSameDocument) return;
+    if (details.url === 'about:srcdoc' || details.url === 'about:blank') return;
+    details.preventDefault();
   });
   win.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) =>
     callback(false),

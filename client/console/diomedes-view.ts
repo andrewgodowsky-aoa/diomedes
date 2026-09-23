@@ -1,6 +1,7 @@
 import type { ConversationMode, InteractionOutcome } from '../../shared/conversation';
 import type { Project } from '../../shared/types';
 import type { RailItem } from './Rail';
+import { projectProgress } from './progress-bars';
 
 /**
  * The Diomedes page's view-model: everything the page decides, read from
@@ -71,7 +72,8 @@ function projectSub(p: Project): { text: string; tone?: 'attn' | 'live' } {
   if (p.status?.working) {
     return { text: `Working on ${p.status.working} task${p.status.working === 1 ? '' : 's'}`, tone: 'live' };
   }
-  if (p.status?.tasksTotal) return { text: `${p.status.tasksDone} of ${p.status.tasksTotal} tasks done` };
+  if (p.status?.tasksTotal)
+    return { text: `${p.status.tasksDone} of ${p.status.tasksTotal} ${p.status.tasksTotal === 1 ? 'task' : 'tasks'} done` };
   return { text: 'Ready to begin' };
 }
 
@@ -103,6 +105,8 @@ export function spineItems(projects: readonly Project[], now: number): RailItem[
         time: timeLabel(p.lastOpenedAt || p.createdAt, now),
         sub: sub.text,
         ...(sub.tone ? { tone: sub.tone } : {}),
+        // The same task count the Projects list draws, from the same record.
+        progress: projectProgress(p),
       };
     });
   return [home, ...rest];
@@ -210,8 +214,8 @@ export interface OutcomeCard {
 }
 
 const OPERATION: Record<'prepare_artifact' | 'write_internal', string> = {
-  prepare_artifact: 'Diomedes will prepare this for you to review.',
-  write_internal: 'Diomedes will propose the changes. Nothing is written until you say go ahead.',
+  prepare_artifact: 'Nectovia will prepare this for you to review.',
+  write_internal: 'Nectovia will propose the changes. Nothing is written until you say go ahead.',
 };
 
 /**
@@ -227,7 +231,7 @@ export function outcomeCard(
   if (outcome.status === 'proposed')
     return {
       tone: 'offer',
-      title: `Diomedes can start this in ${nameOf(outcome.projectId)}`,
+      title: `Nectovia can start this in ${nameOf(outcome.projectId)}`,
       body: `${outcome.summary} ${OPERATION[outcome.operationClass]}`.trim(),
       action: { kind: 'start', label: 'Start' },
     };
