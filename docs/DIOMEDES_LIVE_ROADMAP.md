@@ -1,8 +1,8 @@
 # DIOMEDES LIVE ROADMAP
 
-Roadmap version: 2026-09-19.2
-Last reconciled: September 19, 2026
-Product: Diomedes
+Roadmap version: 2026-09-23.1
+Last reconciled: September 23, 2026
+Product: Nectovia (named Diomedes until 2026-09-22)
 Company direction: Diomedes Systems
 Cloud canonical: 1bRhz3zQPXOYuVlt95U1EIkz7pcm1dtSsoBvkDrLR3zE
 Repository mirror: docs/DIOMEDES_LIVE_ROADMAP.md
@@ -12,6 +12,8 @@ Repository mirror: docs/DIOMEDES_LIVE_ROADMAP.md
 Andrew's newest explicit decision governs intent; docs/DIOMEDES_CORE_PILLARS.md governs durable constraints; this roadmap governs strategy and sequencing; docs/DIOMEDES_PROJECT_MEMORY.md governs definitions; current source and fresh verification govern implemented reality. An assistant narrative, documentation approval or roadmap checkbox is not execution evidence.
 
 This checkpoint records Andrew's September 19 instruction to publish the Automations plan in GitHub and Drive and remove stale active guidance. It consolidates BUS-10 and OPS-08–OPS-10, preserves the September 17 model-aware harness amendment (MH-1), and separates current requirements from older release, test and worker-assignment statements. That checkpoint did not amend the Core Pillars; a separate owner decision later the same day did (Pillars 2026-09-19.1, Pillar 07 only), together with the pricing decisions in section 7. No application implementation or deployment is authorized or certified by this documentation publication.
+
+**2026-09-23 checkpoint: the Nectovia rename.** Andrew named the product Nectovia on 2026-09-22; the Core Pillars carry it as patch 2026-09-22.1, and no pillar's meaning changed. It landed as display text only: the public site at main f28eb9f (live on diomedes.net, Cloudflare version 88ec3f83-8c60-4445-820d-3419f5374942) and the app at main 1123a14, which also carries the Nectovia Console skin, the model-artifacts panel and its hardening. The first release to carry it is 0.1.8, packaged after routing wave2 lands. Identifiers are unchanged. The remaining name decisions are listed in docs/product/2026-09-22-nectovia-skin.md and, for the site, in its docs/nectovia/2026-09-22-names.md. Model artifacts v2 (the decisions in docs/product/2026-09-22-model-artifacts.md section 5) was approved for implementation on 2026-09-23; the options taken are recorded with it when it lands.
 
 Read this entry point first. Detailed non-conflicting requirements remain incorporated from the previous bodies, preserved (unaltered except that retired Diomedes price figures were struck on 2026-09-19) at docs/reference/DIOMEDES_ROADMAP_PRE_AUTOMATIONS_2026-09-19.md and docs/reference/DIOMEDES_PROJECT_MEMORY_PRE_AUTOMATIONS_2026-09-19.md. Their historical statuses, test counts, release pointers, 'next' instructions and named worker assignments are not current instructions. Earlier requirements also remain in docs/reference/DIOMEDES_ROADMAP_BASE_2026-09-09.7.md and docs/reference/DIOMEDES_PROJECT_MEMORY_BASE_2026-09-10.2.md where not superseded by current decisions. Retrieve relevant detail rather than injecting every historical document.
 

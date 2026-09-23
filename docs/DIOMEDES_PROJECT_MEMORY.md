@@ -1,7 +1,7 @@
 # DIOMEDES PROJECT MEMORY — CANONICAL
 
-Version: 2026-09-19.2
-Last reconciled: September 19, 2026
+Version: 2026-09-23.1
+Last reconciled: September 23, 2026
 Cloud canonical: 13wYjK1BhEsGzc_yhpRtBz62pGmLxwdwq8pVqe1i4eKw
 Repository mirror: docs/DIOMEDES_PROJECT_MEMORY.md
 
@@ -36,6 +36,8 @@ Current source-audit boundary: app main 448448683458c2ef813035f344baa79a4c6817bd
 ## Product, responsibility boundaries and execution styles
 
 Diomedes is a general-purpose native agent/harness and human workspace, not restaurant software, a coding IDE, a chatbot, an external-agent launcher or a workflow builder alone. Model weights are resources, not the entire Agent or authority to execute. One configurable product serves Personal and Business. Historical Achilles paths may remain; do not mass-rename live data or namespaces.
+
+**Name (Andrew, 2026-09-22; recorded 2026-09-23).** The product, app and agent are named Nectovia; Diomedes Systems (LLC) remains the company. Until a wording pass, "Diomedes" in this document means the product now named Nectovia, except where it names the company. Shipped identifiers are unchanged: app id, installer and update channel, userData, environment variables, X-Diomedes-* headers, repositories, diomedes.net and hello@. The desktop shell's window title, icon and mark still read Diomedes.
 
 Desktop/Console is the human workspace. Core owns routing, context, Agents/profiles, skills/rules/memory/advisors and supervisory behavior. Runtime owns durable admission, runs/steps/events, workflows, scheduling/waits, budgets, cancellation/recovery and effect coordination. Trust owns identity, capabilities/grants/approvals, credentials, revocation, tenant boundaries and information flow. Observatory owns observed evidence, usage provenance and evaluation. Interop covers supported APIs, MCP/MCP Apps, webhooks and ACP/A2A. These are responsibility boundaries, not six new services.
 
