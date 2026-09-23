@@ -9,7 +9,9 @@
 // subset is refused rather than guessed at. Every element, attribute, CSS
 // at-rule and CSS function it does not list is refused, with a reason naming
 // it. Names compare case-insensitively, because an HTML parser lowercases
-// them. Character references are decoded before any value is checked.
+// them, except the namespace names an XML parser reads only in lower case
+// (xmlns, xmlns:xlink, xlink:href, xml:lang, xml:space), which must be written
+// that way. Character references are decoded before any value is checked.
 //
 // What it lists is what the Console's own Mermaid 11.17.2 drawings need (the
 // benign fixtures in tests/fixtures/svg-check are captured from it) plus the
@@ -88,11 +90,26 @@ const ATTRIBUTES = new Set(
   ].map((name) => name.toLowerCase()),
 );
 
-/** Attributes whose value is CSS that can name another resource: each goes through the CSS check. */
-const CSS_VALUED = new Set([
-  'style', 'fill', 'stroke', 'clip-path', 'mask', 'filter', 'marker', 'marker-start',
-  'marker-mid', 'marker-end',
+/**
+ * Attribute names XML reads as namespace declarations or namespaced names. It
+ * reads them only as written, so each must be in lower case: `XMLNS:XLINK` is
+ * an attribute with a prefix nothing declares, and the file does not open.
+ */
+const CASED = new Set(['xmlns', 'xmlns:xlink', 'xlink:href', 'xml:lang', 'xml:space']);
+
+/**
+ * The properties whose url(#...) names a paint server, clip path, mask, filter
+ * or marker in this file. Anywhere else a #fragment is still a URL: Edge
+ * fetches the drawing itself again for background-image, cursor and content
+ * (the independent review, 2026-09-23).
+ */
+const URL_PROPERTIES = new Set([
+  'fill', 'stroke', 'clip-path', 'mask', 'filter', 'marker', 'marker-start', 'marker-mid',
+  'marker-end',
 ]);
+
+/** Attributes whose value is CSS that can name another resource: each goes through the CSS check. */
+const CSS_VALUED = new Set(['style', ...URL_PROPERTIES]);
 
 /**
  * The CSS functions allowed besides `url()`, which may name only a #fragment.
@@ -128,11 +145,27 @@ export function svgProblem(text: string): string | null {
   }
 }
 
+/** A start tag of an svg element, prefixed or not, as written: a character reference never spells markup. */
+const SVG_TAG = /<(?:[A-Za-z_][A-Za-z0-9_.-]*:)?svg[ \t\r\n/>]/i;
+
 /**
- * Whether a proposed file must pass svgProblem: every `.svg`, and an `.xml`
- * that is SVG. svgRoot decides the ordinary case; a doctype naming svg, an
- * `<svg` tag or the SVG namespace anywhere in it also counts, so no prolog
- * trick that confuses svgRoot lets an SVG through as plain XML.
+ * Whether a proposed file must pass svgProblem: every `.svg`, and every `.xml`
+ * a browser could open as SVG. Any one of these makes an `.xml` SVG here:
+ *   - svgRoot reads its root as svg;
+ *   - a doctype names svg;
+ *   - an svg start tag appears anywhere, `<svg` or a prefixed `<p:svg`;
+ *   - the SVG namespace appears once character references are decoded, as an
+ *     XML parser decodes them (`http://www.w3.org/2000/sv&#103;` is SVG to it);
+ *   - a DOCTYPE has an internal subset, whose entities and default attributes
+ *     can assemble the namespace from pieces no test here would find.
+ *     svgProblem refuses every DOCTYPE, so such a file is refused.
+ * Browsers load no external DTD, so a DOCTYPE without an internal subset
+ * cannot supply the namespace. An earlier version missed the namespace in
+ * references, a prefixed svg element and an entity-built namespace (the
+ * independent review, 2026-09-23). An `.xml` can still run script without
+ * being SVG, as XHTML or through an XSLT stylesheet it names: that is why every
+ * `.xml` a proposal writes waits for exact review, and the review says when no
+ * check read it.
  */
 export function svgCheckApplies(path: string, text: string): boolean {
   if (/\.svg$/i.test(path)) return true;
@@ -140,9 +173,45 @@ export function svgCheckApplies(path: string, text: string): boolean {
   return (
     svgRoot(text) === 'svg' ||
     /<!doctype[ \t\r\n]+svg/i.test(text) ||
-    /<svg[\s/>]/i.test(text) ||
-    text.includes(SVG_NAMESPACE)
+    SVG_TAG.test(text) ||
+    withReferencesDecoded(text).includes(SVG_NAMESPACE) ||
+    hasInternalSubset(text)
   );
+}
+
+/** The text with character references and the five predefined entities decoded once, as an XML parser reads them. */
+function withReferencesDecoded(text: string): string {
+  return text.replace(
+    /&(?:#([0-9]+)|#x([0-9A-Fa-f]+)|(amp|lt|gt|quot|apos));/g,
+    (whole: string, decimal?: string, hex?: string, named?: string) => {
+      if (named) return NAMED[named];
+      const code = decimal !== undefined ? Number.parseInt(decimal, 10) : Number.parseInt(hex ?? '', 16);
+      return Number.isSafeInteger(code) && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+    },
+  );
+}
+
+/**
+ * Whether a DOCTYPE has an internal subset: a "[" after `<!DOCTYPE` and before
+ * the ">" that ends it, quoted identifiers skipped (a system literal may hold
+ * either). Past 32 DOCTYPEs it answers yes rather than read on.
+ */
+function hasInternalSubset(text: string): boolean {
+  const doctype = /<!doctype/gi;
+  let count = 0;
+  for (let match = doctype.exec(text); match; match = doctype.exec(text)) {
+    if ((count += 1) > 32) return true;
+    let quote = '';
+    for (let at = match.index + 9; at < text.length; at += 1) {
+      const c = text[at];
+      if (quote) {
+        if (c === quote) quote = '';
+      } else if (c === '"' || c === "'") quote = c;
+      else if (c === '[') return true;
+      else if (c === '>') break;
+    }
+  }
+  return false;
 }
 
 /** Whether a code point may appear, written or referenced: XML's characters, less controls and bidi overrides. */
@@ -256,7 +325,10 @@ class Reader {
   private characterData() {
     const start = this.at;
     const decoded = this.readText();
-    if (!this.stack.length && decoded.trim())
+    // Outside the root XML allows only its own four space characters, written
+    // out: no reference, and none of the other spaces JavaScript's trim() takes
+    // (no-break, ideographic, a second byte order mark).
+    if (!this.stack.length && !/^[ \t\r\n]*$/.test(this.text.slice(start, this.at)))
       this.refuse(this.rootSeen ? 'text after the <svg> element' : 'text before the <svg> element', start);
     const scheme = namesScript(decoded);
     if (scheme) this.refuse(`text holds ${scheme}`, start);
@@ -385,6 +457,10 @@ class Reader {
     }
     for (const item of prefixed)
       if (!xlink) this.refuse(`${item.name} on <${name}> uses xlink: without declaring xmlns:xlink`, item.at);
+    // Opened on its own, the file is read by an XML parser, which puts the
+    // root in the SVG namespace only when the root says so.
+    if (!parent && !seen.has('xmlns'))
+      this.refuse('the <svg> root must declare the SVG namespace with xmlns', tagStart);
     if (!selfClosing) this.stack.push({ name, xlink });
     if (!selfClosing && TEXT_ONLY.has(lower)) this.textOnly(name, lower);
   }
@@ -420,6 +496,8 @@ class Reader {
     if (key.startsWith('xmlns:') && key !== 'xmlns:xlink')
       this.refuse(`the namespace declaration ${attribute} on <${element}> is not allowed`, at);
     if (!ATTRIBUTES.has(key)) this.refuse(`the attribute ${attribute} on <${element}> is not allowed`, at);
+    if (CASED.has(key) && attribute !== key)
+      this.refuse(`the attribute ${attribute} on <${element}> must be written ${key}`, at);
     const scheme = namesScript(value);
     if (scheme) this.refuse(`${attribute} on <${element}> holds ${scheme}`, at);
     if (key === 'xmlns' && value !== SVG_NAMESPACE)
@@ -429,7 +507,7 @@ class Reader {
     else if ((key === 'href' || key === 'xlink:href') && !FRAGMENT.test(value))
       this.refuse(`${attribute} on <${element}> must name a #fragment in this file`, at);
     else if (CSS_VALUED.has(key)) {
-      const problem = cssProblem(value);
+      const problem = cssProblem(value, key === 'style' ? null : key);
       if (problem) this.refuse(`${attribute} on <${element}>: ${problem}`, at);
     } else if (/url[ \t\r\n\f]*\(/i.test(value)) this.refuse(`${attribute} on <${element}> may not hold url()`, at);
   }
@@ -447,13 +525,34 @@ const cssNameChar = (c: string | undefined) => !!c && (/[A-Za-z0-9_-]/.test(c) |
  * from `withoutFetchingUrls` in client/console/mermaid-render.ts and made
  * stricter: escapes are refused outright, so no name can be spelled in a way
  * the scanner does not see, and every function and at-rule must be listed.
- * Properties and selectors are not restricted: without a function or at-rule
- * that fetches, none of them can reach outside the file.
+ * Selectors are not restricted, and properties only in where a url() may
+ * appear: without a function or at-rule that fetches, no other can reach
+ * outside the file.
+ *
+ * A url() must name a #fragment, in a declaration of one of URL_PROPERTIES,
+ * outside any nested block (the rules inside an @keyframes). `property` is the
+ * presentation attribute a value belongs to; a stylesheet or a style attribute
+ * passes none, and each of its declarations names its own. Brackets must pair
+ * up: a browser reads a "}" or ";" inside parentheses as part of the value, so
+ * a scanner that ended a block or declaration there would lose count. In
+ * `@keyframes a{to{fill:rgb(}});fill:url(#b)}}` it would read the url() at
+ * the top level, where a browser reads it inside the keyframe.
  */
-function cssProblem(css: string): string | null {
+function cssProblem(css: string, property: string | null = null): string | null {
   if (css.includes('\\')) return 'CSS escapes (a backslash) are not allowed';
   if (css.includes('<')) return 'a "<" is not allowed in CSS';
   let at = 0;
+  // The closing brackets still owed, innermost last, and how many are "}".
+  const closers: string[] = [];
+  let depth = 0;
+  // The property the text being read belongs to, and whether a name read now
+  // could start a declaration.
+  let current = property;
+  let declarationStart = property === null;
+  const startDeclaration = () => {
+    current = property;
+    declarationStart = property === null;
+  };
   while (at < css.length) {
     const c = css[at];
     if (c === '/' && css[at + 1] === '*') {
@@ -471,20 +570,51 @@ function cssProblem(css: string): string | null {
       const rule = css.slice(at + 1, end).toLowerCase();
       if (!CSS_AT_RULES.has(rule)) return rule ? `the CSS at-rule @${rule} is not allowed` : 'an "@" that starts no allowed CSS at-rule';
       at = end;
+    } else if (c === '(' || c === '[' || c === '{') {
+      closers.push(c === '(' ? ')' : c === '[' ? ']' : '}');
+      if (c === '{') {
+        depth += 1;
+        startDeclaration();
+      }
+      at += 1;
+    } else if (c === ')' || c === ']' || c === '}') {
+      if (closers.pop() !== c) return 'CSS brackets that do not pair up';
+      if (c === '}') {
+        depth -= 1;
+        startDeclaration();
+      }
+      at += 1;
+    } else if (c === ';') {
+      if (!closers.length || closers.at(-1) === '}') startDeclaration();
+      at += 1;
     } else if (cssNameStart(c) || (c === '-' && (cssNameStart(css[at + 1]) || css[at + 1] === '-'))) {
       let end = at + 1;
       while (cssNameChar(css[end])) end += 1;
       const name = css.slice(at, end).toLowerCase();
       if (css[end] !== '(') {
+        if (declarationStart) {
+          let next = end;
+          while (cssSpace(css[next])) next += 1;
+          if (css[next] === ':') {
+            current = name;
+            declarationStart = false;
+          }
+        }
         at = end;
         continue;
       }
       if (name === 'url') {
         const close = urlEnd(css, end + 1);
         if (close < 0) return 'url() may name only a #fragment in this file';
+        if (depth > 1) return 'url() is not allowed inside @keyframes or another nested block';
+        if (current === null || !URL_PROPERTIES.has(current))
+          return 'url() may name a #fragment only in a fill, stroke, clip-path, mask, filter or marker property';
         at = close;
       } else if (!CSS_FUNCTIONS.has(name)) return `the CSS function ${name}() is not allowed`;
-      else at = end + 1;
+      else {
+        closers.push(')');
+        at = end + 1;
+      }
     } else at += 1;
   }
   return null;

@@ -65,11 +65,19 @@ const HOSTILE: Record<string, string> = {
   'xhtml-namespace.svg': 'xmlns on <g> must be the SVG namespace',
   'xinclude.svg': 'the namespace declaration xmlns:xi on <svg> is not allowed',
   'xlink-href-external.svg': 'xlink:href on <linearGradient> must name a #fragment in this file',
-  'xlink-href-uppercase.svg': 'XLINK:HREF on <linearGradient> must name a #fragment in this file',
+  'xlink-href-uppercase.svg': 'the attribute XLINK:HREF on <linearGradient> must be written xlink:href',
   'xlink-rebound.svg': 'the namespace declaration xmlns:x on <svg> is not allowed',
   'xml-base.svg': 'the attribute xml:base on <svg> is not allowed',
   'xml-declaration-breakout.svg': 'its XML declaration is not a plain version 1.0, UTF-8 one',
   'xml-stylesheet.svg': 'the processing instruction <?xml-stylesheet?> is not allowed',
+  // .xml files a browser opens as SVG and runs script from, which the
+  // independent review (2026-09-23) found svgCheckApplies passing over: the
+  // namespace spelled with a character reference, a prefixed svg element, and
+  // the namespace assembled from DOCTYPE entities.
+  'xml-entity-ns.xml': '<!DOCTYPE> is not allowed',
+  'xml-g-root-charref-ns.xml': 'its root element must be <svg>',
+  'xml-nested-prefixed.xml': 'the element <root> is not allowed',
+  'xml-prefixed-root-charref-ns.xml': 'the prefixed element <x:svg> is not allowed',
 };
 
 describe('svg-check hostile fixtures', () => {
@@ -80,7 +88,10 @@ describe('svg-check hostile fixtures', () => {
   });
 
   test.each(Object.entries(HOSTILE))('refuses %s: %s', (name, reason) => {
-    expect(svgProblem(read('hostile', name))).toContain(reason);
+    const text = read('hostile', name);
+    // The check reads it (an .xml only when it is SVG), and refuses it.
+    expect(svgCheckApplies(name, text)).toBe(true);
+    expect(svgProblem(text)).toContain(reason);
   });
 });
 
@@ -194,6 +205,79 @@ describe('svg-check rules', () => {
     expect(style('.a{font-family:"open}')).toContain('a CSS string that never ends');
     expect(style('.a{fill:red}&lt;/style&gt;')).toContain('a "<" is not allowed in CSS');
   });
+
+  test('lets url(#...) name only a paint server, clip, mask, filter or marker', () => {
+    const style = (css: string) => svgProblem(svg(`<style>${css}</style>`));
+    const only =
+      'url() may name a #fragment only in a fill, stroke, clip-path, mask, filter or marker property';
+    expect(
+      style(
+        '.a{fill:url(#g);stroke:url(#g)} .b{clip-path:url(#c);mask:url(#m);filter:url(#f)} ' +
+          '.c{marker:url(#m);marker-start:url(#m);marker-mid:url(#m);marker-end:url(#m)} .d{FILL : url(#g)}',
+      ),
+    ).toBeNull();
+    // A #fragment there is still a URL: Edge fetches the drawing itself again
+    // (the independent review, 2026-09-23).
+    expect(style('svg{background-image:url(#x)}')).toContain(only);
+    expect(style('svg{cursor:url(#x),auto}')).toContain(only);
+    expect(style('svg::before{content:url(#x)}')).toContain(only);
+    expect(style('svg{--x:url(#a)}')).toContain(only);
+    expect(style('url(#a){fill:red}')).toContain(only);
+    expect(svgProblem(svg('<rect width="1" height="1" style="background-image:url(#x)"/>'))).toContain(
+      `style on <rect>: ${only}`,
+    );
+    expect(svgProblem(svg('<rect width="1" height="1" style="fill:url(#g)"/>'))).toBeNull();
+    expect(style('@keyframes a{to{background-image:url(#b)}}')).toContain(
+      'url() is not allowed inside @keyframes',
+    );
+    expect(style('@keyframes a{to{fill:url(#b)}}')).toContain('url() is not allowed inside @keyframes');
+    // A browser reads a "}" or ";" inside parentheses as part of the value:
+    // here it reads fill:url(#b) inside the keyframe, after rgb(}}) ends.
+    expect(style('@keyframes a{to{fill:rgb(}});fill:url(#b)}}')).toContain('CSS brackets that do not pair up');
+    expect(style('.a{fill:red)}')).toContain('CSS brackets that do not pair up');
+    expect(style('.a{background-image:rgb(;fill:url(#b))}')).toContain(only);
+    expect(style('rect[class="}"]{fill:url(#g)} .b{stroke:rgb(1,2,3);fill:url(#g)}')).toBeNull();
+  });
+
+  test('allows nothing but XML space outside the root', () => {
+    const body = svg('<rect width="1" height="1"/>');
+    const bom = String.fromCharCode(0xfeff);
+    expect(svgProblem(`\n \t\r\n${body}\r\n \t`)).toBeNull();
+    // JavaScript's trim() takes these for space, but no XML parser opens the file.
+    expect(svgProblem(`${String.fromCharCode(0xa0)}${body}`)).toContain('text before the <svg> element');
+    expect(svgProblem(`${body}${String.fromCharCode(0x3000)}`)).toContain('text after the <svg> element');
+    expect(svgProblem(`${bom}${bom}${body}`)).toContain('text before the <svg> element');
+    expect(svgProblem(`&#32;${body}`)).toContain('text before the <svg> element');
+  });
+
+  test('reads namespace names only as XML does, in lower case', () => {
+    const xlink = ' xmlns:xlink="http://www.w3.org/1999/xlink"';
+    expect(svgProblem('<svg XMLNS="http://www.w3.org/2000/svg"/>')).toContain(
+      'the attribute XMLNS on <svg> must be written xmlns',
+    );
+    expect(svgProblem(svg('', ' XMLNS:XLINK="http://www.w3.org/1999/xlink"'))).toContain(
+      'the attribute XMLNS:XLINK on <svg> must be written xmlns:xlink',
+    );
+    expect(svgProblem(svg('<linearGradient id="a" xlink:HREF="#b"/>', xlink))).toContain(
+      'the attribute xlink:HREF on <linearGradient> must be written xlink:href',
+    );
+    expect(svgProblem(svg('<text XML:LANG="en">a</text>'))).toContain(
+      'the attribute XML:LANG on <text> must be written xml:lang',
+    );
+    expect(
+      svgProblem(
+        svg('<text xml:lang="en" xml:space="preserve">a</text><linearGradient id="a" xlink:href="#b"/>', xlink),
+      ),
+    ).toBeNull();
+  });
+
+  test('requires the root to declare the SVG namespace, as a file a browser opens must', () => {
+    expect(svgProblem('<svg><rect width="1" height="1"/></svg>')).toBe(
+      'the <svg> root must declare the SVG namespace with xmlns (line 1)',
+    );
+    // A nested <svg> takes the namespace from the root.
+    expect(svgProblem(svg('<svg width="1" height="1"><rect width="1" height="1"/></svg>'))).toBeNull();
+  });
 });
 
 describe('which files svg-check reads', () => {
@@ -212,5 +296,22 @@ describe('which files svg-check reads', () => {
     expect(svgCheckApplies('feed.xml', '<?xml version="1.0"?><feed><title>News</title></feed>')).toBe(false);
     expect(svgCheckApplies('page.html', svg(''))).toBe(false);
     expect(svgCheckApplies('flow.mmd', 'flowchart TD\n  A --> B')).toBe(false);
+  });
+
+  test('an .xml is SVG however its namespace is spelled, and whenever a DOCTYPE could assemble it', () => {
+    // The namespace in character references, leading zeros included.
+    expect(svgCheckApplies('icon.xml', '<g xmlns="http&#x3A;&#47;&#0000047;www.w3.org/2000/sv&#103;"/>')).toBe(true);
+    // An internal subset after a quoted ">" in the DOCTYPE's own identifier.
+    expect(svgCheckApplies('icon.xml', '<!DOCTYPE r SYSTEM "a>b" [<!ENTITY e "x">]><r/>')).toBe(true);
+    // A DOCTYPE with no internal subset names a DTD no browser loads: plain XML.
+    expect(
+      svgCheckApplies(
+        'mapper.xml',
+        '<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">' +
+          '<mapper><![CDATA[ a[1] ]]></mapper>',
+      ),
+    ).toBe(false);
+    // A reference never spells markup: an svg quoted as text in a feed stays text.
+    expect(svgCheckApplies('feed.xml', '<feed><summary>&lt;svg&gt;icons&lt;/svg&gt;</summary></feed>')).toBe(false);
   });
 });

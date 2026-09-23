@@ -346,11 +346,12 @@ export interface Session {
   entryIds: string[];
   needId: string | null;
   /**
-   * The scrubbed, capped engine reply kept when the proposal parser refused it
-   * or the proposal changed nothing, so a paid turn that produced no proposal
+   * The scrubbed, capped engine reply kept when the proposal parser or a
+   * content check (svg-check on a drawing the proposal writes) refused it, or
+   * the proposal changed nothing, so a paid turn that produced no proposal
    * still leaves diagnosable evidence. Missing on sessions recorded before
-   * 2026-09-12. `rawReplyLength` is the uncut length; `parseError` is set only
-   * when the parser refused the reply.
+   * 2026-09-12. `rawReplyLength` is the uncut length; `parseError` is set when
+   * the parser or a content check refused the reply.
    */
   rawReply?: string;
   rawReplyLength?: number;

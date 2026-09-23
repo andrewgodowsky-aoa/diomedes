@@ -29,6 +29,23 @@ let project: Project;
 /** What the injected generator proposes next: one file, written whole. */
 let next: { path: string; text: string } = { path: 'badge.svg', text: LOGO };
 let generated = 0;
+/** Every request a drawing made to this service: a hostile file's loads land here, or nowhere. */
+const PROBE = '/drawing-probe';
+const probes: string[] = [];
+/**
+ * A drawing that tries what a file already on disk could: script, handlers,
+ * and loads from this service and from outside, by element, stylesheet and
+ * foreign content. svg-check refuses it as a proposal, but a file put in the
+ * folder by other means reaches Files unchecked, and the frame alone must hold.
+ */
+const hostileDrawing = (origin: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="160" height="40" onload="console.log('hostile drawing ran: onload')">` +
+  `<script>console.log('hostile drawing ran: script')</script>` +
+  `<style>@import url("${origin}${PROBE}/import.css");rect{fill:url("${origin}${PROBE}/paint.svg#p")}</style>` +
+  `<image href="${origin}${PROBE}/image.png" width="10" height="10"/>` +
+  `<image xlink:href="https://example.invalid/outside.png" width="10" height="10"/>` +
+  `<foreignObject width="10" height="10"><img xmlns="http://www.w3.org/1999/xhtml" src="${origin}${PROBE}/foreign.png" onerror="console.log('hostile drawing ran: onerror')"/></foreignObject>` +
+  `<rect width="160" height="40"/><text x="4" y="24" class="word">Hostile</text></svg>\n`;
 
 async function api<T>(route: string, method = 'GET', body?: unknown): Promise<T> {
   const response = await fetch(`${url}/api${route}`, {
@@ -131,16 +148,23 @@ test.beforeAll(async () => {
   for (const source of [
     'client/console/FilesPane.tsx',
     'client/console/files.css',
+    'client/console/Need.tsx',
     'client/components.tsx',
+    'shared/exact-review.ts',
     'shared/types.ts',
   ])
     expect(built, `Build first: ${source}`).toBeGreaterThan((await fs.stat(source)).mtimeMs);
+  app.use(PROBE, (req, res) => {
+    probes.push(req.originalUrl);
+    res.status(204).end();
+  });
   app.use(express.static(dist));
   app.get('/{*path}', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
   server.on('request', app);
   project = await api<Project>('/projects', 'POST', { name: 'Drawings fixture' });
   await fs.writeFile(path.join(project.folder, 'logo.svg'), LOGO);
   await fs.writeFile(path.join(project.folder, 'flow.mmd'), FLOW);
+  await fs.writeFile(path.join(project.folder, 'hostile.svg'), hostileDrawing(url));
   await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
     expectedVersion: 0,
     routes: ['codex'],
@@ -204,6 +228,40 @@ test('Files previews an .svg and an .mmd only inside the sandboxed artifact fram
   await expect(pane(page).locator('pre.files-raw')).toContainText('flowchart TD');
   await expect(diagram).toHaveCount(0);
   expect(errors).toEqual([]);
+});
+
+test('a hostile .svg already in the folder runs nothing and loads nothing when Files shows it', async ({ page }) => {
+  const errors: string[] = [];
+  const ran: string[] = [];
+  probes.length = 0;
+  await guard(page, errors);
+  page.on('console', (message) => {
+    if (message.text().includes('hostile drawing ran')) ran.push(message.text());
+  });
+  await page.addInitScript(() => {
+    if (window !== window.top) return;
+    localStorage.setItem('console.files.open', 'true');
+    localStorage.setItem('console.files.width', '420');
+  });
+  await page.goto(url);
+  await page.getByRole('button', { name: 'Drawings fixture', exact: true }).click();
+
+  await row(page, 'hostile.svg').click();
+  const image = pane(page).locator('.files-drawing iframe.art-frame.still.image');
+  await expect(image).toBeVisible();
+  // Drawn in the frame's own document, and the frame has loaded: every script,
+  // handler and fetch in the file has had its chance.
+  await expect(page.frameLocator('.files-drawing iframe').locator('text.word')).toHaveText('Hostile');
+  await (await (await image.elementHandle())?.contentFrame())?.waitForLoadState('load');
+  // Nothing to wait for can prove a negative; this gives a late console event
+  // from the frame's own process time to arrive.
+  await page.waitForTimeout(500);
+  expect(ran).toEqual([]);
+  expect(probes).toEqual([]);
+  expect(errors).toEqual([]);
+  // What held: a frame with no permission at all, under a policy that loads nothing.
+  expect(await image.getAttribute('sandbox')).toBe('');
+  expect((await image.getAttribute('srcdoc')) ?? '').toContain("default-src 'none'");
 });
 
 test('a hostile .svg proposal is refused with its reason, and nothing is written', async ({ page }) => {

@@ -10,11 +10,13 @@ import { createApp } from '../server/app.js';
 import type { NativeGenerator } from '../server/native-work.js';
 import { textKind } from '../server/paths.js';
 import type { Store } from '../server/store.js';
-import type { DocumentInfo, Need, ProjectState } from '../shared/types.js';
+import type { Change, DocumentInfo, Need, ProjectState } from '../shared/types.js';
+import { directOrigin } from '../shared/attribution.js';
 import { SVG_CHECK_PASSED } from '../shared/svg-check.js';
 import { selectTaskSources, taskDocumentProblem } from '../shared/task-sources.js';
 import { buildEntries, type PaletteContext, type PaletteHandlers } from '../client/console/paletteEntries';
 import { ApprovalStatus } from '../client/components';
+import { NeedBlock } from '../client/console/Need';
 import { indexArtifacts, savedDocument } from '../client/console/artifacts';
 import { saveArtifact } from '../client/console/artifact-save';
 
@@ -292,6 +294,11 @@ describe('svg-check on proposals', () => {
       `<!DOCTYPE svg [<!ENTITY a ">">]>${LOGO.slice(LOGO.indexOf('<svg'))}`,
       '<!DOCTYPE> is not allowed (line 1)',
     ],
+    [
+      'the SVG namespace spelled with a character reference',
+      fixture('hostile', 'xml-g-root-charref-ns.xml'),
+      'its root element must be <svg> (line 1)',
+    ],
   ])('an .xml file with %s is checked as SVG', async (_name, text, problem) => {
     proposal('icon.xml', text);
     await start();
@@ -358,6 +365,24 @@ describe('grants and exact review', () => {
     expect(needs[0].state).toBe('open');
     expect(needs[0].authorization).toBeUndefined();
     expect(needs[0].authorizationBoundary).toContain('logo-2.svg always needs your exact review');
+  });
+
+  test('a grant covers no part of a batch that writes an .svg: the Markdown waits with it', async () => {
+    expect((await grant()).status).toBe(200);
+    propose([
+      { path: 'drawing-notes.md', text: '# Drawing notes\n' },
+      { path: 'logo-2.svg', text: LOGO },
+    ]);
+    await start();
+    const { needs } = await settled();
+    expect(needs).toHaveLength(1);
+    expect(needs[0].state).toBe('open');
+    expect(needs[0].authorization).toBeUndefined();
+    expect(needs[0].authorizationBoundary).toBe(
+      'logo-2.svg always needs your exact review: an SVG, HTML or XML file can run code when it is opened.',
+    );
+    expect(await exists('drawing-notes.md')).toBe(false);
+    expect(await exists('logo-2.svg')).toBe(false);
   });
 
   test('a grant still covers a .mmd proposal', async () => {
@@ -467,5 +492,63 @@ describe('the verdict in the review', () => {
 
   test('shows nothing for a Need no check read', () => {
     expect(renderToStaticMarkup(createElement(ApprovalStatus, { need: need({}) }))).toBe('');
+  });
+});
+
+describe('the grant offer', () => {
+  const OFFER = 'Allow creates and updates for this task';
+  const change = (file: string, index: number): Change => ({
+    id: `C${index}`,
+    entryId: '',
+    sessionId: 'S1',
+    taskId: 'T1',
+    path: file,
+    op: 'created',
+    summary: `Write ${file}`,
+    before: null,
+    after: 'text',
+    current: null,
+    changedSince: null,
+    hunks: [],
+    state: 'waiting',
+  });
+  const block = (files: string[]) =>
+    renderToStaticMarkup(
+      createElement(NeedBlock, {
+        need: {
+          id: 'N1',
+          sessionId: 'S1',
+          taskId: 'T1',
+          what: `apply the proposed changes to ${files.length} files`,
+          why: 'Draw it',
+          consequence: 'Your OK applies only to the exact files and text shown here.',
+          files,
+          state: 'open',
+          createdAt: '2026-09-23T09:00:00.000Z',
+          decidedAt: null,
+          decidedFrom: 'desktop',
+          allowForTask: false,
+          origin: directOrigin({ engine: 'codex' }),
+          preview: files.map(change),
+        },
+        decide: vi.fn(),
+        show: vi.fn(),
+        onScope: vi.fn(),
+      }),
+    );
+
+  test('is made where a grant could cover every file', () => {
+    expect(block(['Notes.md', 'flow.mmd'])).toContain(OFFER);
+  });
+
+  test.each([
+    { files: ['logo.svg'] },
+    { files: ['page.html'] },
+    { files: ['feed.xml'] },
+    { files: ['Notes.md', 'logo.svg'] },
+  ])('is not made for a proposal that writes $files: no grant covers it', ({ files }) => {
+    const html = block(files);
+    expect(html).not.toContain(OFFER);
+    expect(html).toContain('Show me first');
   });
 });
