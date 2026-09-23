@@ -357,7 +357,7 @@ beforeEach(async () => {
   });
   project = await api<Project>('/projects', 'POST', { name: 'Linen service' });
   await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
-    expectedVersion: 0, routes: ['aws-bedrock'], documents: [],
+    expectedVersion: 0, routes: ['aws-bedrock', 'claude-code'], documents: [],
     shareConversationHistory: true, shareReviewPackets: false,
   });
   thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});

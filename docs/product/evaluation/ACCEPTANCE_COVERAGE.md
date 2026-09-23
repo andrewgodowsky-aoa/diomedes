@@ -61,7 +61,7 @@ for an evaluation is a GAP, however well the ledger's own contract is tested els
 | J12 | User explicitly requests all locations or invoices | COVERED | `tests/evaluation-selection.test.ts:168` — a required sweep that drops anything is labelled `partial`, never complete; the proved-complete case is at line 160 |
 | J13 | Prior invoices are missing | COVERED | `tests/evaluation-supplier-journey.test.ts:211` — with the prior period absent the movement is returned as not known, with the exact reason, rather than guessed |
 | J14 | Protected instruction scores as irrelevant | COVERED | `tests/evaluation-selection.test.ts:82` — a protected instruction that the ranking scored at nothing is still selected and reported as retained |
-| J15 | Source changes after ranking but before effect | COVERED | `tests/reviewer-authority.test.ts:465` — a selected source edited during the review refuses the write, so an approve decision made against the old bytes does not execute |
+| J15 | Source changes after ranking but before effect | COVERED | `tests/reviewer-authority.test.ts:491` — a selected source edited during the review refuses the write, so an approve decision made against the old bytes does not execute |
 | J16 | Excerpts omit units, warnings or exceptions | GAP | `tests/evaluation-selection.test.ts` — must show a truncated excerpt is labelled as such and cannot satisfy required coverage. Selection works at whole-source granularity, so no excerpt exists to truncate |
 
 ## Tools and routing
