@@ -82,12 +82,14 @@ import {
   type OpenRouterConnection,
   type OpenRouterConnections,
 } from './openrouter.js';
-import type { RespondLimits, RespondResult, StreamSinks } from './model-api-core.js';
+import { callCeiling, type RespondLimits, type RespondResult, type StreamSinks } from './model-api-core.js';
+import { decideJobStep, type JobTier } from '../../shared/job-caps.js';
+import type { MicroUsd } from '../../shared/managed-usage.js';
 import { createAwsModelAdapter } from '../harness/aws-model-adapter.js';
 import { createAzureModelAdapter } from '../harness/azure-model-adapter.js';
 import { createOpenRouterModelAdapter } from '../harness/openrouter-model-adapter.js';
 import type { ModelAdapter } from '../harness/native-agent.js';
-import type { ExposureAttempt } from '../spend-exposure.js';
+import type { ExposureAttempt, JobScope, ModelRateCard } from '../spend-exposure.js';
 import type { ModelTranscripts } from '../harness/model-transcripts.js';
 import type { ModelSessionAdmission, ModelSessionRuns, ModelSessionTurn } from '../harness/model-session-run.js';
 import type { ReadToolDeps } from '../harness/capabilities/read-scope-tools.js';
@@ -390,6 +392,12 @@ export class EngineService {
   modelSessions?: ModelSessionRuns;
   /** Connection record, protected credential, spend ledger and private transcripts for model-API routes. */
   modelApi?: ModelApiServices;
+  /**
+   * Parent-job caps. The app attaches the host's `JobCaps`; with it attached,
+   * every model-API call is held against its job's cap as well as the
+   * connection's, and a step that would pass the job's cap is never started.
+   */
+  jobCaps?: JobCapsPort;
   constructor(
     readonly root: string,
     deps: Partial<EngineServiceDeps> = {},
@@ -1799,6 +1807,43 @@ export class EngineService {
     }
   }
   /**
+   * The spend ledger this request's calls hold against: the ledger itself held
+   * to the request's job. The job is named by the request id and its tier comes
+   * from its thread, both read by the host; nothing in a request body sets a cap.
+   */
+  private async jobLedger(api: ModelApiServices, input: Pick<TextRequest, 'projectId' | 'requestId' | 'threadId'>): Promise<SpendExposure> {
+    if (!this.jobCaps) return api.exposure;
+    return api.exposure.forJob(await this.jobCaps.scope(input.projectId, input.requestId, input.threadId ?? null));
+  }
+  /** Record where a job stopped at its cap, so "Go over this once" can raise the next one from it. */
+  private async noteJobStop(error: unknown) {
+    const job = error instanceof ModelApiError ? error.evidence.job : null;
+    if (!job || !this.jobCaps) return;
+    await this.jobCaps
+      .noteStop(job.id, {
+        usedMicroUsd: job.usedMicroUsd as MicroUsd,
+        capMicroUsd: job.capMicroUsd as MicroUsd,
+        neededMicroUsd: job.neededMicroUsd as MicroUsd,
+      })
+      .catch(() => undefined);
+  }
+  /**
+   * The declared price card a model-API route would use for a model, for the
+   * pre-send estimate. Null when the route is not connected, does not serve the
+   * model, or has no declared price for it: an unknown price, never zero.
+   */
+  async modelApiCard(route: ModelApiRoute, model: string): Promise<ModelRateCard | null> {
+    const api = this.modelApi;
+    if (!api) return null;
+    try {
+      const handle = await modelApiRoute(api, route);
+      if (!handle.connected || !handle.serves(model)) return null;
+      return handle.card(model);
+    } catch {
+      return null;
+    }
+  }
+  /**
    * Admission for a model-API route, read fresh each time: the route is switched on, the saved
    * connection is the one Settings selects, the requested model is one the connection serves, the
    * credential is present and unexpired, and the spend ledger has an approved cap. Nothing here
@@ -1882,7 +1927,7 @@ export class EngineService {
           const adapter = handle.adapter({
             model: admission.model,
             secret,
-            exposure: api.exposure,
+            exposure: await this.jobLedger(api, input),
             instructions,
             effort: effortOf(input.effort),
             transport: api.transport,
@@ -1895,6 +1940,7 @@ export class EngineService {
         },
       });
     } catch (error) {
+      await this.noteJobStop(error);
       throw seamError(modelApiError(error));
     }
   }
@@ -1921,6 +1967,10 @@ export class EngineService {
     const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
     try {
       const runId = textRunId(input.projectId, input.requestId);
+      const exposure = await this.jobLedger(api, input);
+      // The step boundary for a one-call Work turn: checked before the dispatch step, so a turn
+      // its job cannot afford is refused as never sent rather than parked as uncertain.
+      await this.admitWorkCall(route, input, exposure);
       const intent = {
         engine: route,
         projectId: input.projectId,
@@ -1952,7 +2002,7 @@ export class EngineService {
             result = await handle.respond({
               model: admission.model,
               secret,
-              exposure: api.exposure,
+              exposure,
               attempt: { runId, stepId: TEXT_DISPATCH_STEP, attempt: context.attempt, requestDigest: digest(intent) },
               instructions: input.instructions,
               messages: [{ role: 'user', content: contextMessage(input) }],
@@ -2001,11 +2051,42 @@ export class EngineService {
       });
       return { ...outcome.result, runId: outcome.run.id };
     } catch (error) {
+      await this.noteJobStop(error);
       throw seamError(modelApiError(error));
     } finally {
       controller.abort();
       this.running.delete(key);
     }
+  }
+  /** The job check for a one-call Work turn, with the same ceiling its reservation will hold. */
+  private async admitWorkCall(route: ModelApiRoute, input: TextRequest, exposure: SpendExposure) {
+    const job = exposure.jobScope;
+    if (!job) return;
+    const card = await this.modelApiCard(route, input.model);
+    // No card means the call is refused before it is sent anyway; the reservation still checks.
+    if (!card) return;
+    let next: MicroUsd;
+    try {
+      next = callCeiling({
+        prefix: route,
+        card,
+        instructions: input.instructions,
+        messages: [{ role: 'user', content: contextMessage(input) }],
+        tools: [],
+        limits: WORK_LIMITS,
+      });
+    } catch {
+      // Too large for the route: the call itself refuses it, with the route's own words, before sending.
+      return;
+    }
+    const decision = decideJobStep({ capMicroUsd: job.capMicroUsd, usedMicroUsd: exposure.jobUsed(job.id), nextMicroUsd: next });
+    if (!decision.ok)
+      throw new ModelApiError(
+        `${route}_job_cap_reached`,
+        'This job would pass its cap on this step, so it stopped before sending anything.',
+        false,
+        { job: { id: job.id, usedMicroUsd: decision.usedMicroUsd, capMicroUsd: decision.capMicroUsd, neededMicroUsd: decision.neededMicroUsd } },
+      );
   }
   /**
    * One team member's Work turn on a model-API route. The route carries the team tools by
@@ -2043,7 +2124,7 @@ export class EngineService {
           const adapter = handle.adapter({
             model: admission.model,
             secret,
-            exposure: api.exposure,
+            exposure: await this.jobLedger(api, input),
             instructions,
             effort: effortOf(input.effort),
             transport: api.transport,
@@ -2065,6 +2146,7 @@ export class EngineService {
         runId: result.runId,
       };
     } catch (error) {
+      await this.noteJobStop(error);
       throw seamError(modelApiError(error));
     } finally {
       controller.abort();
@@ -2076,6 +2158,12 @@ export class EngineService {
   }
 }
 
+
+/** What the engine service needs from the host's parent-job caps (`server/job-caps.ts`). */
+export interface JobCapsPort {
+  scope(projectId: string, jobId: string, threadId: string | null): Promise<JobScope & { tier: JobTier }>;
+  noteStop(key: string, stop: { usedMicroUsd: MicroUsd; capMicroUsd: MicroUsd; neededMicroUsd: MicroUsd }): Promise<void>;
+}
 
 /**
  * What a model-API route needs from the app: its record, its protected credential, its ledgers.
@@ -2122,6 +2210,8 @@ type ConnectedRoute = {
   expiresAt: string | null;
   serving: string;
   serves(model: string): boolean;
+  /** The declared price card calls for this model are reserved under. Throws when there is none. */
+  card(model: string): ModelRateCard;
   adapter(options: RouteCallOptions): ModelAdapter;
   respond(
     options: RouteCallOptions & {
@@ -2166,6 +2256,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute): Promi
         expiresAt: connection.credential.expiresAt,
         serving: connection.modelId,
         serves: (model) => model === connection.modelId,
+        card: () => AWS_LUNA_RATE_CARD,
         adapter: (options) =>
           createAwsModelAdapter({
             connection,
@@ -2200,6 +2291,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute): Promi
         expiresAt: connection.credential.expiresAt,
         serving: models.join(', '),
         serves: (model) => models.includes(model),
+        card: (model) => azureRateCard(connection, model),
         adapter: (options) =>
           createAzureModelAdapter({
             connection,
@@ -2235,6 +2327,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute): Promi
         expiresAt: connection.credential.expiresAt,
         serving: models.join(', '),
         serves: (model) => models.includes(model),
+        card: (model) => openRouterRateCard(connection, model),
         adapter: (options) =>
           createOpenRouterModelAdapter({
             connection,
@@ -2313,6 +2406,9 @@ const effortOf = (effort: string | undefined): 'low' | 'medium' | 'high' =>
 /** A model-API failure in the service's vocabulary. What is known about the send decides the code. */
 function modelApiError(error: unknown): unknown {
   if (!(error instanceof ModelApiError)) return error;
+  // A job that reached its cap stopped at a step boundary: nothing of that step was sent.
+  if (!error.dispatched && /_job_cap_reached$/.test(error.code))
+    return new EngineError('JOB_CAP', error.message, false);
   if (!error.dispatched)
     return new EngineError(/_spend_refused$/.test(error.code) ? 'SPEND_LIMIT' : 'ROUTE_REFUSED', error.message, true);
   if (error.evidence.reservation?.state === 'uncertain')

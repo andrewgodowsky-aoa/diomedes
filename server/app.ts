@@ -106,6 +106,12 @@ import {
 import { FIXTURE_ENGINE } from './harness/approval.js';
 import { CODEX_ENGINE, type ResolveHarnessAuthority } from './harness/codex-engine.js';
 import { roleInstructions } from './team/prompts.js';
+import { unreadForSlot } from './team/mailbox.js';
+import { JobCaps } from './job-caps.js';
+import { jobRatesOf, mountJobCapRoutes, type JobPlan } from './job-cap-routes.js';
+import { jobTierOf, type JobShape } from '../shared/job-caps.js';
+import { CONVERSATION_LIMITS, WORK_LIMITS as MODEL_WORK_LIMITS } from './engines/model-api-core.js';
+import { MODEL_TURN_CAPABILITY, TEAM_WORK_CAPABILITY } from './harness/model-session-run.js';
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
 import { parseTaskCommand } from './task-admission.js';
 import { WorkControl } from './work-control.js';
@@ -160,7 +166,7 @@ import { mountModelApiRoutes } from './engines/model-api-routes.js';
 import { mountReadConnectorRoutes } from './engines/read-connector-routes.js';
 import { ConnectionSecrets, type SecretBox } from './connection-secrets.js';
 import { SpendExposure } from './spend-exposure.js';
-import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_ROUTES } from '../shared/model-api.js';
+import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_ROUTES, type ModelApiRoute } from '../shared/model-api.js';
 import { baselineRedact } from './secrets.js';
 import { EngineError } from './engines/process.js';
 import { selectedEngine, selectedModel } from '../shared/ai-selection.js';
@@ -783,6 +789,19 @@ export async function createApp(options: AppOptions) {
   engines.modelSessions = harness.modelSessions;
   const exposure = new SpendExposure(store.dataDir);
   await exposure.init();
+  // Parent-job caps (owner decision 2026-09-23): each job's tier is its thread's WorkStyle, else
+  // the Settings default, read here by the host; the engine service holds every model-API call
+  // to its job's cap as well as the connection's.
+  const jobCaps = new JobCaps(store.dataDir, {
+    tierOf: (projectId, threadId) => {
+      const thread = threadId
+        ? store.state(projectId).conversations.find((item) => item.id === threadId)
+        : null;
+      return jobTierOf(styleOf(thread));
+    },
+  });
+  await jobCaps.init();
+  engines.jobCaps = jobCaps;
   engines.modelApi = {
     connections: new AwsConnections(store.dataDir),
     secrets: new ConnectionSecrets(store.dataDir, options.secretBox ?? null),
@@ -4288,8 +4307,101 @@ export async function createApp(options: AppOptions) {
   mountAppUpdateRoutes(app, updates, {
     onInstallAccepted: options.updateOverrides?.onInstallAccepted,
   });
+  // The job-cap estimate, the one-job raise and a stopped job's status. Every figure is the host's.
+  const noMeteredShape: JobShape = {
+    inputBytes: 0,
+    messages: 0,
+    maxOutputTokensPerStep: 0,
+    maxSteps: 1,
+    maxRequestBytes: 0,
+    toolResultBytesPerStep: 0,
+  };
+  const meteredPlan = async (
+    threadId: string,
+    route: ModelApiRoute,
+    model: unknown,
+    shape: JobShape,
+  ): Promise<JobPlan> => {
+    const card = typeof model === 'string' && model ? await engines.modelApiCard(route, model) : null;
+    return {
+      threadId,
+      metering: 'metered',
+      rates: jobRatesOf(card),
+      shape,
+      ...(card
+        ? {}
+        : { reason: 'This route has no declared price for its model, so the cost is not known.' }),
+    };
+  };
+  mountJobCapRoutes(app, {
+    jobCaps,
+    // The same route, style and model a send resolves, and the same limits the turn runs under.
+    messagePlan: async (projectId, threadId, draft) => {
+      const state = store.state(projectId);
+      const thread = state.conversations.find((item) => item.id === threadId);
+      if (!thread) throw new ApiError(404, 'This thread was not found.');
+      const route = selectedEngine(store.settings, state.project, thread);
+      if (!isModelApiRoute(route))
+        return { threadId, metering: 'not-metered', rates: null, shape: noMeteredShape };
+      const styled = styleChoice(route, projectId, thread, {
+        mode: draft.mode,
+        text: draft.text,
+        stableEffort: true,
+      });
+      let sourceBytes = 0;
+      for (const source of draft.sources) {
+        const document = await store.readDocument(projectId, relativeName(source.path)).catch(() => null);
+        sourceBytes += document ? Buffer.byteLength(document.text) : 0;
+      }
+      const conversationMode = draft.mode === 'plan' || draft.mode === 'auto' ? draft.mode : 'ask';
+      const instructions = instructionsFor(conversationMode, MODES[draft.mode].instructions);
+      const history = thread.turns.reduce((bytes, turn) => bytes + Buffer.byteLength(turn.text), 0);
+      return meteredPlan(threadId, route, styled?.model ?? store.settings.services?.[`${route}Model`], {
+        inputBytes: Buffer.byteLength(instructions) + Buffer.byteLength(draft.text) + sourceBytes + history,
+        messages: thread.turns.length + 1,
+        maxOutputTokensPerStep: CONVERSATION_LIMITS.maxOutputTokens,
+        maxSteps: MODEL_TURN_CAPABILITY.maxTurns,
+        maxRequestBytes: CONVERSATION_LIMITS.maxRequestBytes,
+        toolResultBytesPerStep: CONVERSATION_LIMITS.maxRequestBytes,
+      });
+    },
+    teamWakePlan: async (projectId, slotId) => {
+      const state = store.state(projectId);
+      const member = state.team?.members.find((item) => item.slotId === slotId);
+      if (!member) throw new ApiError(404, 'This team member was not found.');
+      if (!member.threadId) throw new ApiError(400, 'This helper has no thread to wake.');
+      const threadId = member.threadId;
+      if (!isModelApiRoute(member.engine))
+        return { threadId, metering: 'not-metered', rates: null, shape: noMeteredShape };
+      const waiting = unreadForSlot(state.team?.messages ?? [], member.slotId);
+      const text = waiting.reduce((bytes, message) => bytes + Buffer.byteLength(message.content), 0);
+      const role = roleInstructions(member.role, member, state.project);
+      const plan = await meteredPlan(
+        threadId,
+        member.engine,
+        member.model ?? store.settings.services?.[`${member.engine}Model`],
+        {
+          inputBytes: Buffer.byteLength(MODES.build.instructions) + Buffer.byteLength(role) + text,
+          messages: 1,
+          maxOutputTokensPerStep: MODEL_WORK_LIMITS.maxOutputTokens,
+          maxSteps: TEAM_WORK_CAPABILITY.maxTurns,
+          maxRequestBytes: MODEL_WORK_LIMITS.maxRequestBytes,
+          toolResultBytesPerStep: MODEL_WORK_LIMITS.maxRequestBytes,
+        },
+      );
+      return { ...plan, threadId };
+    },
+    wake: (projectId, slotId) =>
+      store.locked(() => teamService.wakeMember(projectId, slotId as TeamMember['slotId'])),
+  });
   app.use('/api', (_req, _res, next) => next(new ApiError(404, 'This action was not found.')));
   const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, _next) => {
+    if (error instanceof EngineError && error.code === 'JOB_CAP') {
+      // A job stopped before a step that would pass its cap. Nothing of that step was sent; the
+      // person chooses a higher tier or going over once, and the message is sent as a new job.
+      res.status(402).json({ error: error.message, code: 'job_cap_reached', ambiguous: false });
+      return;
+    }
     if (error instanceof EngineError) {
       res
         .status(

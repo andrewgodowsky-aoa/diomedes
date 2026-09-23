@@ -421,6 +421,20 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
       DOCS.invoice.path,
     ])).toEqual(asked);
     expect(seen).toHaveLength(2);
+
+    // Job caps (owner decision 2026-09-23): the message is one job, named by its command id and
+    // pinned under the host's tier; with no style set, the placeholder default of 20 credits.
+    const job = await api<{ jobId: string; tier: string; capMicroUsd: number; stop: unknown }>(
+      `/projects/${project.id}/jobs/m-linen`,
+    );
+    expect(job).toMatchObject({ jobId: 'm-linen', tier: 'efficient', capMicroUsd: 2_000_000, stop: null });
+    // The pre-send estimate for the next message prices it from the route's declared card.
+    const estimate = await api<{ estimate: { kind: string; capMicroUsd: number; warn: boolean } }>(
+      `/projects/${project.id}/threads/${thread.id}/job-estimate`,
+      'POST',
+      { text: 'And the tablecloths?', mode: 'auto', sources: [] },
+    );
+    expect(estimate.estimate).toMatchObject({ kind: 'estimate', capMicroUsd: 2_000_000 });
   });
 
   test('request a draft checklist: deny one exact proposal and nothing changes; approve a new one and it is written', async () => {

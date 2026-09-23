@@ -4,7 +4,7 @@
  * for an allow-listed model on its allowed endpoints only.
  */
 import type { AdapterRouteContract } from '../../shared/adapter-contract.js';
-import { CONVERSATION_LIMITS, type RespondLimits, type StreamSinks } from '../engines/model-api-core.js';
+import { admitJobStep, CONVERSATION_LIMITS, type RespondLimits, type StreamSinks } from '../engines/model-api-core.js';
 import {
   OPENROUTER_PROTOCOL,
   OPENROUTER_ROUTE,
@@ -77,6 +77,16 @@ export function createOpenRouterModelAdapter(
       'Stopping a call closes the HTTP read and leaves its spend hold uncertain.',
     ],
     sinks: { onDelta: options.onDelta, onToolActivity: options.onToolActivity },
+    admitStep: (call) =>
+      admitJobStep({
+        prefix: 'openrouter',
+        connectionId: connection.id,
+        exposure: options.exposure,
+        card: options.card,
+        instructions: options.instructions,
+        limits,
+        ...call,
+      }),
     respond: (call) =>
       respondOpenRouter({
         connection,

@@ -26,7 +26,7 @@ import {
   type AwsConnection,
   type RespondLimits,
 } from '../engines/aws-bedrock.js';
-import type { StreamSinks } from '../engines/model-api-core.js';
+import { admitJobStep, type StreamSinks } from '../engines/model-api-core.js';
 import type { ModelRateCard, SpendExposure } from '../spend-exposure.js';
 import { createModelApiAdapter, modelApiContract } from './model-api-adapter.js';
 import type { ModelTranscripts } from './model-transcripts.js';
@@ -87,6 +87,16 @@ export function createAwsModelAdapter(options: AwsModelAdapterOptions): ModelAda
       'Stopping a call closes the HTTP read and leaves its spend hold uncertain.',
     ],
     sinks: { onDelta: options.onDelta, onToolActivity: options.onToolActivity },
+    admitStep: (call) =>
+      admitJobStep({
+        prefix: 'aws',
+        connectionId: connection.id,
+        exposure: options.exposure,
+        card: options.card,
+        instructions: options.instructions,
+        limits,
+        ...call,
+      }),
     respond: (call) =>
       respondOnce({
         connection,

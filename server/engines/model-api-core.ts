@@ -24,8 +24,11 @@ import type { Json, ToolDescriptor } from '../../shared/harness.js';
 import { HarnessError } from '../harness/policy.js';
 import { readToolSummary } from '../harness/capabilities/read-scope-tools.js';
 import { normalizeUsage } from '../../shared/usage-contract.js';
+import { decideJobStep, inputTokenBound } from '../../shared/job-caps.js';
+import type { MicroUsd } from '../../shared/managed-usage.js';
 import { secretScrubber } from '../secrets.js';
 import {
+  JobCapReached,
   ceilingCost,
   type ExposureAttempt,
   type ExposureReservation,
@@ -51,6 +54,8 @@ export class ModelApiError extends HarnessError {
       providerRequestId?: string | null;
       responseId?: string | null;
       partialText?: string | null;
+      /** Set when the job's cap stopped the call at a step boundary. */
+      job?: { id: string; usedMicroUsd: number; capMicroUsd: number; neededMicroUsd: number } | null;
     } = {},
   ) {
     super(code, message);
@@ -463,9 +468,75 @@ export interface RespondResult {
   servedBy?: string | null;
 }
 
-/** The input-token ceiling a request can reach, from its bytes: a token never covers less than one byte. */
-export function inputTokenBound(bytes: number, messages: number) {
-  return bytes + 1_024 + messages * 16;
+/** The input-token ceiling a request can reach, from its bytes. One rule, shared with the job estimate. */
+export { inputTokenBound };
+
+/**
+ * The most one call can cost: its request's bytes as the input bound, its output
+ * ceiling, and the card's dearest rates. The reservation and the step-boundary
+ * job check both use exactly this, so they can never disagree about a step.
+ */
+export function callCeiling(input: {
+  prefix: string;
+  card: ModelRateCard;
+  instructions: string;
+  messages: ModelMessage[];
+  tools: readonly ToolDescriptor[];
+  limits: RespondLimits;
+}): MicroUsd {
+  const estimateBytes = Buffer.byteLength(
+    JSON.stringify({ instructions: input.instructions, messages: input.messages, tools: input.tools }),
+  );
+  if (estimateBytes > input.limits.maxRequestBytes)
+    throw new ModelApiError(
+      `${input.prefix}_input_too_large`,
+      'The conversation and its sources are larger than this route allows. Nothing was sent.',
+      false,
+    );
+  return ceilingCost(input.card, {
+    maxInputTokens: inputTokenBound(estimateBytes, input.messages.length + 1),
+    maxOutputTokens: input.limits.maxOutputTokens,
+  });
+}
+
+const jobCapError = (prefix: string, stop: JobCapReached) =>
+  new ModelApiError(`${prefix}_job_cap_reached`, stop.message, false, {
+    job: { id: stop.jobId, usedMicroUsd: stop.usedMicroUsd, capMicroUsd: stop.capMicroUsd, neededMicroUsd: stop.neededMicroUsd },
+  });
+
+/**
+ * The step boundary. Before a model step starts, a ledger scoped to a job
+ * refuses the step when the job's used and held amount plus this step's ceiling
+ * would pass the job's cap. It runs outside the step, so a refusal is a plain
+ * failure that provably sent nothing, never an uncertain dispatch. A step this
+ * attempt already reserved (a replay) is not checked again. The reservation
+ * inside the step enforces the same rule in the ledger's own queue.
+ */
+export async function admitJobStep(input: {
+  prefix: string;
+  connectionId: string;
+  exposure: SpendExposure;
+  card: ModelRateCard;
+  instructions: string;
+  limits: RespondLimits;
+  attempt: ExposureAttempt;
+  tools: readonly ToolDescriptor[];
+  messages: () => Promise<ModelMessage[]>;
+}): Promise<void> {
+  const job = input.exposure.jobScope;
+  if (!job) return;
+  if (input.exposure.hasAttempt(input.connectionId, input.attempt)) return;
+  const next = callCeiling({
+    prefix: input.prefix,
+    card: input.card,
+    instructions: input.instructions,
+    messages: await input.messages(),
+    tools: input.tools,
+    limits: input.limits,
+  });
+  const decision = decideJobStep({ capMicroUsd: job.capMicroUsd, usedMicroUsd: input.exposure.jobUsed(job.id), nextMicroUsd: next });
+  if (!decision.ok)
+    throw jobCapError(input.prefix, new JobCapReached(job.id, decision.usedMicroUsd, decision.capMicroUsd, decision.neededMicroUsd));
 }
 
 /** The adapter-facing raw sinks a streamed call feeds. Both are previews; neither is the answer. */
@@ -565,19 +636,13 @@ export async function respondStream(input: {
       false,
     );
   const tools = descriptorTools(prefix, input.tools);
-  const estimateBytes = Buffer.byteLength(
-    JSON.stringify({ instructions: input.instructions, messages: input.messages, tools: input.tools }),
-  );
-  if (estimateBytes > input.limits.maxRequestBytes)
-    throw new ModelApiError(
-      `${prefix}_input_too_large`,
-      'The conversation and its sources are larger than this route allows. Nothing was sent.',
-      false,
-    );
-  const maxInputTokens = inputTokenBound(estimateBytes, input.messages.length + 1);
-  const ceiling = ceilingCost(input.card, {
-    maxInputTokens,
-    maxOutputTokens: input.limits.maxOutputTokens,
+  const ceiling = callCeiling({
+    prefix,
+    card: input.card,
+    instructions: input.instructions,
+    messages: input.messages,
+    tools: input.tools,
+    limits: input.limits,
   });
   let reservation: ExposureReservation;
   try {
@@ -590,6 +655,7 @@ export async function respondStream(input: {
       maxMicroUsd: ceiling,
     });
   } catch (error) {
+    if (error instanceof JobCapReached) throw jobCapError(prefix, error);
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'spend_refused';
     const message = error instanceof Error ? error.message : 'The spend limit refused this call.';
     throw new ModelApiError(
