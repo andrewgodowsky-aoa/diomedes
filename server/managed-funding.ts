@@ -181,10 +181,12 @@ export function fundedExposure(options: {
       const attemptRef = ref(reservationId);
       if (!attemptRef.dispatched) await funding.release(attemptRef);
       else {
-        // Sent, and refused with a readable error: Google bills only HTTP 200.
+        // Either sent and refused with a readable error (Google bills only HTTP 200), or stopped
+        // in the instant between the funded dispatch commit and the send. Both cost nothing; the
+        // receipt says which.
         const result = await funding.settle({
           ...attemptRef,
-          receiptRef: `refused_${reservationId}`,
+          receiptRef: `${reason.startsWith('Not sent') ? 'unsent' : 'refused'}_${reservationId}`,
           usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 },
           reconciledFrom: 'provider-report',
         });

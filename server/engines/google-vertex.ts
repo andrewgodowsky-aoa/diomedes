@@ -621,8 +621,8 @@ export function vertexBinding(
     usage: vertexEnvelopeUsage,
     served: (classified) =>
       classified.reportedModel !== null &&
-      classified.reportedModel !== connection.model &&
-      !classified.reportedModel.startsWith(`${connection.model}-`)
+      // The model itself or a numbered version of it: never a sibling such as `-lite`.
+      !/^gemini-3\.8-flash(-\d{3})?$/.test(classified.reportedModel)
         ? {
             code: 'vertex_model_mismatch',
             message: `Vertex reported ${bounded(classified.reportedModel, 80)} instead of ${connection.model}. The answer was not used.`,

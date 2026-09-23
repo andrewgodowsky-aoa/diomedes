@@ -194,3 +194,34 @@ Not run: this machine has no `gcloud` and no ADC file. Steps, in order, each sep
 | `tests/google-vertex-conversation.test.ts` (10) | setup over HTTP (no secret in views, detection grants nothing, nothing sent), native NativeAgent+RunService conversation with read_source, attribution and spend, Ask cannot write, Work offers no tools, Work proposal as text, ADC change, reconnect generation, cross-route account, no spend room |
 | `tests/vertex-managed-funding.test.ts` (10) | real `FundingService` (memory repository): reserve/settle with cache pricing, parent-job children, job cap, concurrent jobs vs the month, entitlement missing, revocation before dispatch, 429 at zero, Stop uncertain across restart, crash after dispatch commit, BYO/local/personal payer |
 | `tests/managed-client-bundle.test.ts` (3) | client imports no Vertex/Google auth, no Google key or token tracked, connection schema holds no secret field |
+
+## Known unverified points and limits
+
+- `VERTEX_API_VERSION` is `v1`; the SDK's default is `v1beta1`. Whether `v1` accepts
+  `gemini-3.8-flash` with `thinkingConfig.thinkingLevel` is known only from the first live call. If
+  it answers 400 or 404, that constant is the switch (and the tests' URL).
+- The request-id headers (`x-goog-request-id`, `x-request-id`, `x-cloud-trace-context`) are
+  guesses; `providerRequestId` may be null on live calls. `responseId` from the body is recorded
+  either way.
+- `FundingService.recoverAfterRestart` is not wired to any host start on this branch. It belongs
+  to the unbuilt hosted boundary; the local ledger's own startup sweep still parks pending holds.
+- `tests/managed-client-bundle.test.ts` is a source-level guard over `client/` and tracked files.
+  The built `dist/` was also scanned once on 2026-09-23 (no Google auth code); the packaged
+  desktop app was not built or inspected.
+- An abort landing between the funded dispatch commit and the send settles the credit at zero with
+  an `unsent_` receipt: nothing left, nothing is charged.
+- `licenses/DEPENDENCIES.txt` records the lock hash of Windows working-copy bytes; an LF checkout
+  computes a different hash. Nothing validates it.
+- Browser (Playwright) suites were not run: no client file changed on this branch. The client
+  build passes.
+- Base note: PR #38 (`475fb11`) merged into `main` while this work ran, so relative to `main` this
+  branch now carries the credits lane's `74da363` plus its own commits.
+
+## AWS "Luna 6" (owner request, 2026-09-23): not changed
+
+The owner asked to move the AWS route's model from GPT-5.6 Luna to Luna 6. Amazon Bedrock's model
+cards (https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html, read 2026-09-23)
+list GPT-6 only as `gpt-6-astra` (`us.openai.gpt-6-astra`, `global.openai.gpt-6-astra`); there is
+no GPT-6 Luna card. `gpt-6-luna` exists on OpenAI's own API
+(https://developers.openai.com/api/docs/pricing). Switching the Bedrock model id would make every
+AWS call fail as model-not-found, so the AWS route still pins `us.openai.gpt-5.6-luna`.

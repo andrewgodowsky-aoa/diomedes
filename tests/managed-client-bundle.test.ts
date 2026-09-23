@@ -9,6 +9,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import { vertexConnectionSchema } from '../server/engines/google-vertex.js';
 
@@ -44,7 +45,7 @@ describe('customer builds carry no company Google credential', () => {
     for (const file of tracked) {
       let text: string;
       try {
-        text = require('node:fs').readFileSync(path.join(root, file), 'utf8') as string;
+        text = readFileSync(path.join(root, file), 'utf8');
       } catch {
         continue;
       }
@@ -55,10 +56,9 @@ describe('customer builds carry no company Google credential', () => {
   });
 
   test('the saved Vertex connection admits identifiers only: no token or key field exists', () => {
-    const shape = vertexConnectionSchema.innerType?.() ?? vertexConnectionSchema;
-    const serialized = JSON.stringify(Object.keys((shape as { shape: Record<string, unknown> }).shape));
+    const serialized = JSON.stringify(Object.keys(vertexConnectionSchema.shape));
     expect(serialized).not.toMatch(/token|secret|private|key"/i);
-    const credential = (shape as { shape: { credential: { shape: Record<string, unknown> } } }).shape.credential.shape;
+    const credential = vertexConnectionSchema.shape.credential.shape;
     expect(Object.keys(credential).sort()).toEqual(['expiresAt', 'fingerprint', 'kind', 'namedBy', 'principal', 'quotaProject', 'savedAt', 'source']);
   });
 });

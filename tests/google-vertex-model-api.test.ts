@@ -502,6 +502,14 @@ describe('what is never a finished answer', () => {
     const net = transport([() => sse(geminiStream([{ text: 'hello' }], { model: 'gemini-3.1-pro' }))]);
     const error = await failure(call(net.fetch));
     expect(error.code).toBe('vertex_model_mismatch');
+    for (const model of ['gemini-3.8-flash-lite-001', 'gemini-3.8-flash-cyber']) {
+      const other = transport([() => sse(geminiStream([{ text: 'hello' }], { model }))]);
+      const attempt = exposureAttempt(`run-${run}`, `model@${model}`, [{ role: 'user', content: model }]);
+      expect((await failure(call(other.fetch, { attempt }))).code).toBe('vertex_model_mismatch');
+    }
+    const versioned = transport([() => sse(geminiStream([{ text: 'hello' }], { model: 'gemini-3.8-flash-001' }))]);
+    const attempt = exposureAttempt(`run-${run}`, 'model@versioned', [{ role: 'user', content: 'v' }]);
+    expect((await call(versioned.fetch, { attempt })).reportedModel).toBe('gemini-3.8-flash-001');
   });
 
   test('usage whose total does not add up is not priced', () => {
