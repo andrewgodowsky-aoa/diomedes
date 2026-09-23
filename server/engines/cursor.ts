@@ -261,10 +261,11 @@ export class CursorAdapter implements TextEngineAdapter {
     const version = versionResult.stdout
       .trim()
       .match(/^(\d{4}\.\d{2}\.\d{2})(?:-[a-z0-9-]+)?$/)?.[1];
-    if (versionResult.code !== 0 || version !== CURSOR_VERSION)
+    // Any version Cursor reports is accepted; only an unreadable one stops here.
+    if (versionResult.code !== 0 || !version)
       throw new EngineError(
-        'UNSUPPORTED_VERSION',
-        'Cursor changed version. Review compatibility before sending.',
+        'VERSION_UNKNOWN',
+        'Cursor did not report its version. Reinstall or update it.',
         false,
         'runtime-verification',
       );

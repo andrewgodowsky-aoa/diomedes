@@ -412,8 +412,9 @@ describe('a test that never reaches the provider', () => {
   it('refuses a broken binding rather than running whatever PATH offers now', async () => {
     const h = host();
     await settle(h);
-    // The chosen installation changed on disk since it was selected.
-    fs.writeFileSync(h.files[0], 'first-but-different');
+    // The chosen installation is gone. An in-place update would be followed;
+    // a missing file is never replaced by whatever else PATH offers.
+    fs.rmSync(h.files[0]);
     await expect(
       h.service.testConnection(ENGINE, { consent: true, model: 'small' }),
     ).rejects.toMatchObject({ code: 'BINDING_CHANGED' });

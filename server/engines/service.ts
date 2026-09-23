@@ -23,7 +23,7 @@ import {
   type SetupAction,
 } from '../../shared/connection-policy.js';
 import { createDiscovery, installationContext, type DiscoveredInstallation } from '../discovery.js';
-import { BindingStore } from './binding-store.js';
+import { BindingStore, type StoredBinding } from './binding-store.js';
 import { VerificationStore } from './verification.js';
 import { recordEngineCatalog } from '../models.js';
 import { ClaudeAdapter, CLAUDE_VERSION } from './claude.js';
@@ -118,6 +118,11 @@ function recordShimError(error: unknown): boolean {
   );
 }
 
+/**
+ * The build each adapter was last exercised against. Informational only: it is
+ * shown beside the installed version and never refuses one. Every route accepts
+ * whatever version its tool reports, because these tools update themselves.
+ */
 export const TESTED_VERSIONS: Record<ExternalEngine, string> = {
   'claude-code': CLAUDE_VERSION,
   opencode: '1.18.4',
@@ -308,7 +313,7 @@ function repairDetail(
   if (installation === 'corrupt')
     return 'The private copy Diomedes installed no longer matches its reviewed release. It was not run. Repair it to continue.';
   if (installation === 'missing') return 'Install this tool to connect it.';
-  return `This adapter was checked with ${TESTED_VERSIONS[engine]}. Install a compatible copy for Diomedes, or choose another installation.`;
+  return `${ENGINE_NAMES[engine]} is installed, but it did not answer when Diomedes checked it. Reinstall or update it, or choose another installation.`;
 }
 
 /**
@@ -523,8 +528,8 @@ export class EngineService {
     const stored = this.bindings.get(engine);
     if (!receipt || !stored || receipt.engine !== engine) return null;
     if (receipt.revision !== stored.revision) return null;
-    if (receipt.candidateId !== stored.binding.id || receipt.version !== stored.binding.version)
-      return null;
+    // The installation, not its version: a receipt survives the tool updating itself.
+    if (receipt.candidateId !== stored.binding.id) return null;
     // The stored key is the exact tuple the revision was last moved for, so a
     // route or model that changed since fails here even after a restart.
     return revisionKey(stored.binding, receipt.accountRoute, receipt.model) === stored.key
@@ -672,7 +677,6 @@ export class EngineService {
         issue: sanitise(error),
       };
     }
-    const compatibility = version === TESTED_VERSIONS[engine] ? 'supported' : 'unsupported';
     return {
       ...base,
       version,
@@ -682,12 +686,8 @@ export class EngineService {
       integrity: 'verified',
       protocol: 'passed',
       provenance: item.source === 'managed' ? 'reviewed-release' : 'unverified',
-      compatibility,
-      ...(compatibility === 'unsupported'
-        ? {
-            issue: `This adapter was checked with ${TESTED_VERSIONS[engine]}. Version ${version} needs compatibility review.`,
-          }
-        : {}),
+      // Any version that answered its probe is usable.
+      compatibility: 'supported',
     };
   }
 
@@ -774,7 +774,16 @@ export class EngineService {
   ): EngineConnection {
     const scanned = this.scanned.get(engine) ?? { inventory: [] };
     const inventory = scanned.inventory;
-    const stored = this.bindings.get(engine);
+    let stored = this.bindings.get(engine);
+    // A chosen installation that updated itself in place is followed before
+    // anything is derived from the binding, so the record names what runs now.
+    if (stored && !this.bindings.unreadable(engine)) {
+      const current = selectCandidate(inventory, { engine }, stored.binding);
+      if (current.kind === 'candidate') {
+        this.followUpdate(engine, stored, current.candidate as EngineCandidate);
+        stored = this.bindings.get(engine);
+      }
+    }
     const binding = stored?.binding ?? null;
     // What this pass proved. A failure recorded at one of these stages is
     // answered by it; a failure at any other stage is not, and is kept.
@@ -818,20 +827,15 @@ export class EngineService {
         ...blank(engine),
         ...shared,
         installation: 'found',
-        compatibility: version === TESTED_VERSIONS[engine] ? 'supported' : 'unsupported',
+        compatibility: version ? 'supported' : 'unknown',
         ...(location ? { location } : {}),
         ...(version ? { version } : {}),
-        detail:
-          version === TESTED_VERSIONS[engine]
-            ? 'Found a compatible installation. Check sign-in and models next.'
-            : `This adapter was checked with ${TESTED_VERSIONS[engine]}. The installed version needs compatibility review.`,
+        detail: version
+          ? 'Found a compatible installation. Check sign-in and models next.'
+          : 'Found an installation whose version could not be read. Check this computer again.',
       }, looked);
     }
-    const decision = selectCandidate(
-      inventory,
-      { engine, version: TESTED_VERSIONS[engine] },
-      binding ?? undefined,
-    );
+    const decision = selectCandidate(inventory, { engine }, binding ?? undefined);
     if (decision.kind === 'candidate') {
       const chosen = decision.candidate as EngineCandidate;
       return this.merge(engine, {
@@ -1002,25 +1006,18 @@ export class EngineService {
       );
     if (!saved.location)
       throw new EngineError('NOT_INSTALLED', 'The tool was not found. Check this computer again.');
-    if (saved.compatibility !== 'supported')
-      throw new EngineError(
-        'UNSUPPORTED_VERSION',
-        `Use the reviewed ${TESTED_VERSIONS[engine]} version before connecting this route.`,
-      );
     try {
       if (await this.isManaged(engine, saved)) await this.deps.verifyManaged!(engine);
+      // Any version the tool reports is accepted; a failed probe throws VERSION_UNKNOWN.
       const version = await this.deps.version(saved.location, signal);
-      if (version !== TESTED_VERSIONS[engine])
-        throw new EngineError(
-          'UNSUPPORTED_VERSION',
-          'The tool changed version. Check compatibility before sending.',
-        );
       const cwd = path.join(this.root, engine);
       await fs.mkdir(cwd, { recursive: true });
       const result = await this.deps.adapter(engine, saved.location, cwd).inspect(signal);
       const value = this.save({
         ...saved,
         ...result,
+        compatibility: 'supported',
+        version,
         routeIssue: result.routeIssue ?? null,
         diagnostic: null,
         checkedAt: new Date().toISOString(),
@@ -1166,6 +1163,29 @@ export class EngineService {
     const candidate = this.effective(value);
     if (candidate) this.bindCandidate(engine, candidate, 'adopted');
   }
+  /**
+   * The chosen installation updated itself in place: same path, new version and
+   * digest, and it verified again. Record the new identity without moving the
+   * revision, so an auto-update never asks the person to choose or test again.
+   */
+  private followUpdate(
+    engine: ExternalEngine,
+    stored: StoredBinding,
+    candidate: EngineCandidate,
+  ) {
+    const old = stored.binding;
+    if (old.version === candidate.version && old.sha256 === candidate.sha256) return;
+    const binding: EngineBinding = { ...old, version: candidate.version, sha256: candidate.sha256 };
+    // The key's tail is the account route and model it was last moved for.
+    const [, , , , ...rest] = stored.key.split('|');
+    const followed = {
+      ...stored,
+      binding,
+      key: [binding.id, binding.path, binding.version, binding.sha256, ...rest].join('|'),
+    };
+    if (this.bindings.intact()) this.bindings.save(engine, followed);
+    else this.bindings.hold(engine, followed);
+  }
   /** Bind one observed candidate to this route and re-derive its state. */
   private bindCandidate(
     engine: ExternalEngine,
@@ -1262,10 +1282,7 @@ export class EngineService {
     // reach this, because neither leaves a usable candidate behind.
     if (
       value.repair &&
-      selectCandidate(value.candidates ?? [], {
-        engine,
-        version: TESTED_VERSIONS[engine],
-      }).kind === 'candidate'
+      selectCandidate(value.candidates ?? [], { engine }).kind === 'candidate'
     )
       return 'choose-installation';
     const installation =
@@ -1310,12 +1327,11 @@ export class EngineService {
         false,
         'discovery',
       );
-    const decision = selectCandidate([candidate], { engine, version: TESTED_VERSIONS[engine] });
+    const decision = selectCandidate([candidate], { engine });
     if (decision.kind !== 'candidate')
       throw new EngineError(
         'CANDIDATE_UNUSABLE',
-        candidate.issue ??
-          `This adapter was checked with ${TESTED_VERSIONS[engine]}. That installation cannot be used yet.`,
+        candidate.issue ?? 'That installation did not answer when Diomedes checked it.',
         false,
         'runtime-verification',
       );
@@ -1478,9 +1494,7 @@ export class EngineService {
           ? 'Not checked'
           : value.installation === 'missing'
             ? 'Not installed'
-            : value.compatibility === 'unsupported'
-              ? 'Compatibility check needed'
-              : value.authentication === 'signed-out'
+            : value.authentication === 'signed-out'
                 ? 'Sign in required'
                 : 'Check connection',
       detail: fresh ? value.detail : 'Recheck this connection before use.',
