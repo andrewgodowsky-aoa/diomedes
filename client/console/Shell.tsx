@@ -52,10 +52,17 @@ import { Mark } from './Mark';
 import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
 import { acceptPreview, type PreviewPosition } from './engine-text-preview';
+import {
+  acceptActivity,
+  activityTarget,
+  rememberRunActivity,
+  type ActivityState,
+} from './engine-activity';
 import { SendConfirmation } from './SendConfirmation';
 import { PermissionPanel } from './PermissionPanel';
 import { Ledger } from './Ledger';
-import { Picker } from './Picker';
+import { ThreadModelControls } from './WorkStylePicker';
+import type { WorkStyle } from '../../shared/work-style';
 import { COMPOSER_LABEL } from './Composer';
 import { AgentPicker } from './AgentPicker';
 import { BoardView } from './BoardView';
@@ -77,7 +84,12 @@ import './console.css';
 import './palette.css';
 import './motion.css';
 import './files.css';
-import { activeInstructionFiles } from '../../shared/capability-packs';
+import {
+  activeInstructionFiles,
+  isPackActive,
+  SMALL_BUSINESS_PACK,
+  type PackSkill,
+} from '../../shared/capability-packs';
 
 interface ShellProps {
   projectId: string;
@@ -158,6 +170,13 @@ export function Shell({
   const [workspacesOpen, setWorkspacesOpen] = useState(false);
   const [workspace, setWorkspace] = useWorkspace(report);
   const [mode, setMode] = useState<Mode>('ask');
+  // The playbook a person picked for their next message in one thread. It lives here, not in
+  // the composer, because the send is made here; `n` refills the composer on each pick.
+  const [skillDraft, setSkillDraft] = useState<{
+    skill: PackSkill;
+    threadId: string;
+    n: number;
+  } | null>(null);
   const [route, setRoute] = useState<Route>(selectedEngine(settings));
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
@@ -221,7 +240,12 @@ export function Shell({
     threadId: string;
     text: string;
     engine: string;
+    /** Tool calls on the same run, applied by `acceptActivity`. */
+    activity: ActivityState | null;
   } | null>(null);
+  // Live tool calls for work runs in this project, by request id (a work run's
+  // session id). Ephemeral: a run card shows them only while the run is live.
+  const [runActivity, setRunActivity] = useState<Record<string, ActivityState>>({});
   const askControl = useRef<AbortController | null>(null);
   const askThreadId = useRef<string | null>(null);
   const askEngine = useRef<Route | null>(null);
@@ -414,6 +438,7 @@ export function Shell({
           threadId: data.threadId,
           text: '',
           engine: askEngine.current ?? '',
+          activity: null,
         });
         return;
       }
@@ -443,6 +468,41 @@ export function Shell({
       setStreaming((prev) => (prev && prev.requestId === data.requestId ? null : prev));
     };
     es.addEventListener('engine-text', onEngineText as EventListener);
+    // Live tool calls: the ask on screen owns frames that carry its exact
+    // request, run and thread; any other frame in this project may belong to a
+    // work run's card, found by its session id. Narration only, never saved.
+    const onEngineActivity = (ev: Event) => {
+      let data: unknown;
+      try {
+        data = JSON.parse((ev as MessageEvent).data);
+      } catch {
+        return;
+      }
+      const target = activityTarget(data, {
+        projectId: currentId.current,
+        ask:
+          streamingId.current != null &&
+          streamingRunId.current != null &&
+          askThreadId.current != null
+            ? {
+                requestId: streamingId.current,
+                runId: streamingRunId.current,
+                threadId: askThreadId.current,
+              }
+            : null,
+      });
+      if (target.kind === 'ask') {
+        const requestId = target.requestId;
+        setStreaming((prev) => {
+          if (!prev || prev.requestId !== requestId) return prev;
+          const activity = acceptActivity(prev.activity, data);
+          return activity === prev.activity ? prev : { ...prev, activity };
+        });
+      } else if (target.kind === 'run') {
+        setRunActivity((prev) => rememberRunActivity(prev, data));
+      }
+    };
+    es.addEventListener('engine-activity', onEngineActivity as EventListener);
     return () => {
       clearTimeout(timer);
       es.close();
@@ -459,6 +519,7 @@ export function Shell({
       streamingRunId.current = null;
       streamingPosition.current = null;
       setStreaming(null);
+      setRunActivity({});
     };
   }, [projectId]);
 
@@ -615,8 +676,19 @@ export function Shell({
   // never render elsewhere.
   const streamingForSelected =
     selected && streaming && streaming.threadId === selected.id
-      ? { requestId: streaming.requestId, text: streaming.text, engine: streaming.engine }
+      ? {
+          requestId: streaming.requestId,
+          text: streaming.text,
+          engine: streaming.engine,
+          activity: streaming.activity?.lines,
+        }
       : undefined;
+  // Tool calls for this project's work runs, by session id, as ThreadView reads them.
+  const runActivityLines = useMemo(
+    () =>
+      Object.fromEntries(Object.entries(runActivity).map(([id, value]) => [id, value.lines])),
+    [runActivity],
+  );
   const selectedMember = team.members.find((m) => m.threadId === selected?.id) ?? null;
   const selectedMail = team.messages.filter((m) => {
     const member = selected ? team.members.find((x) => x.threadId === selected.id) : undefined;
@@ -822,6 +894,31 @@ export function Shell({
       await load();
     });
   }
+  /**
+   * Launch a playbook: an empty thread is reused, otherwise a new one opens, in the skill's
+   * Mode, with the composer filled and the skill shown beside it. Nothing is sent: the person
+   * reads, edits and presses Send, and the playbook itself travels in the instruction channel.
+   */
+  async function launchSkill(skill: PackSkill) {
+    await perform(async () => {
+      let target = selected && selected.turns.length === 0 ? selected : null;
+      if (!target) target = await api<Conversation>(`${base}/threads`, 'POST', {});
+      if ((target.mode ?? 'ask') !== skill.mode)
+        await api(`${base}/threads/${target.id}`, 'PUT', { mode: skill.mode });
+      await load();
+      setSelectedId(target.id);
+      setMode(skill.mode);
+      setView('Thread');
+      setSkillDraft((prev) => ({ skill, threadId: target.id, n: (prev?.n ?? 0) + 1 }));
+    });
+  }
+  async function turnOnSkills() {
+    await perform(async () => {
+      await api(`/projects/${projectId}/packs/${SMALL_BUSINESS_PACK.id}/activate`, 'POST', {});
+      await load();
+      say(`${SMALL_BUSINESS_PACK.name} skills are on for this project.`);
+    });
+  }
   function changeMode(next: Mode) {
     if (!selected || next === mode) return;
     const previous = mode;
@@ -829,6 +926,23 @@ export function Shell({
     void api(`${base}/threads/${selected.id}`, 'PUT', { mode: next }).catch((e: unknown) => {
       report(e);
       setMode(previous);
+    });
+  }
+  /**
+   * A thread's WorkStyle. It never changes the mode, the permission or the route. Picking one
+   * clears a pinned model, because a pin outranks every style and the choice would do nothing;
+   * the Agent stays.
+   */
+  function pickStyle(style: WorkStyle | null) {
+    if (!selected || selectedLive || current.current.busy) return;
+    const thread = selected;
+    const agent = thread.requested?.agent ?? null;
+    const unpin = thread.requested?.model
+      ? { requested: agent ? { model: null, effort: null, agent } : null }
+      : {};
+    void perform(async () => {
+      await api(`${base}/threads/${thread.id}`, 'PUT', { workStyle: style, ...unpin });
+      await load();
     });
   }
   /** Agent and model are separate choices; changing one preserves the other. */
@@ -994,6 +1108,7 @@ export function Shell({
     route: Route,
     failing?: { document?: string; text?: string },
     sources?: string[],
+    skill?: string,
   ) {
     askControl.current?.abort();
     const control = new AbortController();
@@ -1014,9 +1129,11 @@ export function Shell({
             attachedTo: thread.attachedTo,
             ...(sources ? { sources } : {}),
             ...(mode === 'fix' && failing ? { failing } : {}),
+            ...(skill ? { skill } : {}),
           },
           control.signal,
         );
+        if (skill) setSkillDraft((prev) => (prev?.threadId === thread.id ? null : prev));
         await load();
         // The persisted turn is in; drop the ephemeral text if still ours.
         streamingId.current = null;
@@ -1315,6 +1432,11 @@ export function Shell({
     needs: state.needs,
     changes: state.changes,
     documents,
+    skills: {
+      active: isPackActive(state.project.packs, SMALL_BUSINESS_PACK.id),
+      name: SMALL_BUSINESS_PACK.name,
+      list: SMALL_BUSINESS_PACK.skills,
+    },
     members: team.members,
     catalogs,
     integrations,
@@ -1367,6 +1489,8 @@ export function Shell({
       setView: (v) => setView(v),
       openProject: (p) => onOpenProject(p),
       openDocument,
+      launchSkill: (skill) => void launchSkill(skill),
+      turnOnSkills: () => void turnOnSkills(),
     },
   };
   const paletteEntries = (query: string) => applyQuery(buildEntries(paletteCtx), query);
@@ -1404,7 +1528,8 @@ export function Shell({
             />
           )}
           {selected && (
-            <Picker
+            <ThreadModelControls
+              projectId={projectId}
               thread={selected}
               mode={mode}
               route={route}
@@ -1413,6 +1538,7 @@ export function Shell({
               settings={settings}
               busy={busy}
               onPick={pick}
+              onStyle={pickStyle}
             />
           )}
           <span
@@ -1596,14 +1722,31 @@ export function Shell({
               onPermission={(p) => void setPermission(selected, p)}
               onRename={() => setRenaming({ id: selected.id, name: threadName(selected, state) })}
               prepareSources={(m, text, doc) => messageSources(selected, m, text, doc)}
+              skill={
+                skillDraft?.threadId === selected.id && (mode === 'ask' || mode === 'plan')
+                  ? { name: skillDraft.skill.name, starter: skillDraft.skill.starter, n: skillDraft.n }
+                  : null
+              }
+              onClearSkill={() => setSkillDraft(null)}
               onSend={(m, text, r, failing, sources) =>
-                void send(selected, m, text, r, failing, sources)
+                void send(
+                  selected,
+                  m,
+                  text,
+                  r,
+                  failing,
+                  sources,
+                  skillDraft?.threadId === selected.id && (m === 'ask' || m === 'plan')
+                    ? skillDraft.skill.id
+                    : undefined,
+                )
               }
               onResolve={(n, res, allow) => void resolveNeed(n, res, allow)}
               onPreview={setPreviewNeed}
               onStopSession={(id) => void stopSession(id)}
               onOpenBoard={() => setView('Board')}
               streaming={streamingForSelected}
+              runActivity={runActivityLines}
               onCancelText={cancelAsk}
             />
             <Ledger

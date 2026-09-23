@@ -247,6 +247,93 @@ export function previewSink(options: {
   };
 }
 
+// --- live tool activity ----------------------------------------------------------------------
+
+/**
+ * What an adapter reports about one tool call as it happens. `summary` is the
+ * one plain sentence a person reads ("Reading menu.md", "Searching the web
+ * for opening hours"); `detail` is the technical line shown under All details
+ * (arguments or a short result excerpt), already free of secrets. `callId`
+ * pairs a call's start with its end.
+ */
+export interface RawToolActivity {
+  readonly callId: string;
+  readonly phase: 'started' | 'finished' | 'failed';
+  readonly tool: string;
+  readonly summary: string;
+  readonly detail?: string;
+}
+
+/**
+ * The caller-facing activity frame: a preview like `text-delta`, never
+ * persisted, stamped with the same run identity and its own dense sequence.
+ * The durable run record stays the authority for what a tool actually did.
+ */
+export const toolActivitySchema = z.strictObject({
+  kind: z.literal('tool-activity'),
+  projectId: z.string().min(1).max(200),
+  threadId: z.string().min(1).max(200),
+  requestId: z.string().min(1).max(200),
+  runId: z.string().min(1).max(200),
+  stepId: z.string().min(1).max(200),
+  attempt: z.number().int().positive(),
+  fence: z.number().int().positive(),
+  seq: z.number().int().positive(),
+  callId: z.string().min(1).max(200),
+  phase: z.enum(['started', 'finished', 'failed']),
+  tool: z.string().min(1).max(120),
+  summary: z.string().min(1).max(300),
+  detail: z.string().max(4000).optional(),
+});
+export type ToolActivity = z.infer<typeof toolActivitySchema>;
+
+/**
+ * The producer half for tool activity, the sibling of `previewSink`. It
+ * redacts, then trims overlong text rather than failing the run (activity is
+ * narration, not the answer), and drops everything once the signal aborts.
+ */
+export function activitySink(options: {
+  readonly identity: {
+    readonly projectId: string;
+    readonly threadId: string;
+    readonly requestId: string;
+    readonly runId: string;
+    readonly stepId: string;
+    readonly attempt: number;
+    readonly fence: number;
+  };
+  readonly redact?: (text: string) => string;
+  readonly onActivity?: (frame: ToolActivity) => void;
+  readonly signal?: AbortSignal;
+}): (raw: RawToolActivity) => void {
+  let seq = 0;
+  const clean = (text: string, max: number) => {
+    const redacted = (options.redact ? options.redact(text) : text)
+      .replace(/[\u0000-\u0008\u000b-\u001f\u007f‪-‮]/g, '')
+      .trim();
+    return redacted.length > max ? `${redacted.slice(0, max - 1)}…` : redacted;
+  };
+  return (raw: RawToolActivity) => {
+    if (options.signal?.aborted) return;
+    const summary = clean(raw.summary || raw.tool, 300);
+    const detail = raw.detail === undefined ? undefined : clean(raw.detail, 4000);
+    const frame = {
+      kind: 'tool-activity' as const,
+      ...options.identity,
+      seq: seq + 1,
+      callId: clean(raw.callId, 200) || `call-${seq + 1}`,
+      phase: raw.phase,
+      tool: clean(raw.tool, 120) || 'tool',
+      summary: summary || 'Using a tool',
+      ...(detail ? { detail } : {}),
+    };
+    const parsed = toolActivitySchema.safeParse(frame);
+    if (!parsed.success) return;
+    seq += 1;
+    options.onActivity?.(parsed.data);
+  };
+}
+
 // --- cursor semantics ------------------------------------------------------------------------
 
 /** A position in one run's durable stream. `afterSeq` is the last seen seq. */

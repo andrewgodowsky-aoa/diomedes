@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { UpdateStatusSnapshot } from '../shared/app-updates';
 import { ApiError, api } from './api';
+import { readUpdateStatus } from './use-update-status';
 import { Button } from './components';
 import './app-updates.css';
 
@@ -23,7 +24,7 @@ export function AppUpdates() {
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(await api<UpdateStatusSnapshot>('/updates/status'));
+      setStatus(await readUpdateStatus());
     } catch (error) {
       setStatus(null);
       setProblem(failureMessage(error));

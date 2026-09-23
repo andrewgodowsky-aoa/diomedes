@@ -27,6 +27,8 @@ import { spawn } from 'node:child_process';
 import type {
   Conversation,
   ConversationLineage,
+  EngineModel,
+  Mode,
   Owner,
   Page,
   ProjectState,
@@ -74,13 +76,24 @@ import { codexReviewerAdapter } from './trust/codex-reviewer.js';
 import { AgentRegistry } from './agents.js';
 import { AUTO_AGENT, agentCompatibility } from '../shared/agents.js';
 import { effortFor } from '../shared/effort.js';
+import {
+  DEFAULT_WORK_STYLE,
+  chooseWorkStyleSentence,
+  isWorkStyle,
+  resolveWorkStyle,
+  type WorkStyle,
+} from '../shared/work-style.js';
 import type { UsageSnapshot } from '../shared/types.js';
 import { mountTeamRoutes } from './team/routes.js';
 import { createHarnessHost } from './harness/host.js';
 import { mountHarnessRoutes } from './harness/routes.js';
 import { localHarnessPrincipal } from './harness/bridge.js';
 import { TEXT_DISPATCH_STEP, textRunId } from './harness/text-route.js';
-import { previewSink, type TransientPreview } from '../shared/adapter-contract.js';
+import {
+  previewSink,
+  type ToolActivity,
+  type TransientPreview,
+} from '../shared/adapter-contract.js';
 import { FIXTURE_ENGINE } from './harness/approval.js';
 import { CODEX_ENGINE, type ResolveHarnessAuthority } from './harness/codex-engine.js';
 import { roleInstructions } from './team/prompts.js';
@@ -106,6 +119,7 @@ import {
 } from '../shared/engines.js';
 import { EngineService } from './engines/service.js';
 import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
+import { loadApprovedReadServers, type ReadScope } from './engines/read-scope.js';
 import { mountInteractionRoutes } from './engines/interaction-routes.js';
 import {
   InteractionTurns,
@@ -129,6 +143,8 @@ import { claudeSessionRunId } from './harness/claude-session-run.js';
 import { modelSessionRunId } from './harness/model-session-run.js';
 import { FileModelTranscripts } from './harness/model-transcripts.js';
 import { AWS_BEDROCK_ROUTE, AwsConnections } from './engines/aws-bedrock.js';
+import { AZURE_OPENAI_ROUTE, AzureConnections } from './engines/azure-openai.js';
+import { OPENROUTER_ROUTE, OpenRouterConnections } from './engines/openrouter.js';
 import { mountModelApiRoutes } from './engines/model-api-routes.js';
 import { ConnectionSecrets, type SecretBox } from './connection-secrets.js';
 import { SpendExposure } from './spend-exposure.js';
@@ -140,6 +156,7 @@ import { projectedTurnIds, turnIdentityText } from '../shared/conversation-turn-
 import { AppUpdateService, mountAppUpdateRoutes, type UpdateTransport } from './app-updates.js';
 import { EngineInstaller } from './engines/install.js';
 import { NativeLogin } from './engines/login.js';
+import { assembleSkillSection, instructionSectionBudget } from './harness/instruction-delivery.js';
 
 interface AppOptions {
   dataDir: string;
@@ -221,6 +238,19 @@ function parseThreadPermission(value: unknown): ThreadPermission {
   if (typeof value !== 'string' || !THREAD_PERMISSIONS.includes(value as ThreadPermission))
     throw new ApiError(400, PERMISSION_UNAVAILABLE);
   return value as ThreadPermission;
+}
+/** What one request says about itself, for a WorkStyle to read. Never a permission. */
+interface RunHints {
+  mode?: Mode;
+  text?: string | null;
+  /** A model-API conversation binds its level into saved context: style and mode only. */
+  stableEffort?: boolean;
+}
+/** The model and level one request is sent with, and who chose them. */
+interface RunChoice {
+  model?: string;
+  effort?: string;
+  selection?: 'automatic' | 'runtime-default';
 }
 /**
  * A thread's helper choice. Null clears it, so the thread follows the saved
@@ -419,6 +449,13 @@ function validateSettings(current: Settings, body: unknown): Settings {
       // `thread/start` config, never the answer text.
       if (key === 'defaultEngine') {
         services[key] = choice(on, ROUTES, 'default engine');
+        continue;
+      }
+      // The WorkStyle a thread follows when it names none. A style is not a
+      // switch and grants nothing; only the three names are accepted.
+      if (key === 'workStyle') {
+        if (!isWorkStyle(on)) throw new ApiError(400, chooseWorkStyleSentence());
+        services[key] = on;
         continue;
       }
       if (
@@ -680,6 +717,8 @@ export async function createApp(options: AppOptions) {
           model: input.model,
           instructions: input.instructions ?? '',
           accountRoute,
+          // A work run's requestId is its session id, which is how its run card finds these.
+          onActivity: (frame) => store.emit('engine-activity', frame),
         });
       }),
     reviewer,
@@ -705,6 +744,22 @@ export async function createApp(options: AppOptions) {
     exposure,
     transcripts: new FileModelTranscripts(path.join(store.dataDir, 'model-transcripts'), AWS_BEDROCK_ROUTE),
     transport: options.modelApiTransport,
+    // Each route keeps its own connection record and private transcripts: funds, data terms
+    // and provider continuation state are never shared between payers.
+    azure: {
+      connections: new AzureConnections(store.dataDir),
+      transcripts: new FileModelTranscripts(
+        path.join(store.dataDir, 'model-transcripts-azure-openai'),
+        AZURE_OPENAI_ROUTE,
+      ),
+    },
+    openrouter: {
+      connections: new OpenRouterConnections(store.dataDir),
+      transcripts: new FileModelTranscripts(
+        path.join(store.dataDir, 'model-transcripts-openrouter'),
+        OPENROUTER_ROUTE,
+      ),
+    },
   };
   await harness.init();
   const connections = new DesktopConnections(store, harness);
@@ -1088,9 +1143,12 @@ export async function createApp(options: AppOptions) {
     choice(String(req.params.engine), EXTERNAL_ENGINES, 'engine');
   const connectionSignal = (res: Response) => {
     const controller = new AbortController();
-    res.once('close', () => {
-      if (!res.writableEnded) controller.abort();
-    });
+    // A client that left before this was asked for has already fired 'close'.
+    if (res.closed && !res.writableEnded) controller.abort();
+    else
+      res.once('close', () => {
+        if (!res.writableEnded) controller.abort();
+      });
     return controller.signal;
   };
   // The next action is derived on the host, beside the facts it rests on: the
@@ -1956,6 +2014,7 @@ export async function createApp(options: AppOptions) {
           selectedRoute,
           projectId,
           state.conversations.find((c) => c.id === threadId),
+          { mode: 'build', text: typeof b.instruction === 'string' ? b.instruction : null },
         ),
         instruction:
           b.instruction === undefined
@@ -1989,14 +2048,21 @@ export async function createApp(options: AppOptions) {
     admit: (projectId, command) => admitWork(projectId, command, listeningPort),
     stopSession: (projectId, sessionId) =>
       serviceFor(projectId, sessionId).stop(projectId, sessionId),
-    modelFor: (projectId, threadId, engine) =>
-      engine === 'sample'
-        ? null
-        : (nativeChoice(
+    modelFor: (projectId, threadId, engine) => {
+      if (engine === 'sample') return null;
+      // A name for a queued follow-up. A style that would ask is answered when it is sent.
+      try {
+        return (
+          nativeChoice(
             engine,
             projectId,
             store.state(projectId).conversations.find((c) => c.id === threadId),
-          ).model ?? null),
+          ).model ?? null
+        );
+      } catch {
+        return null;
+      }
+    },
   });
   /**
    * The one trigger. A session reaching a terminal state and a task becoming
@@ -2355,9 +2421,13 @@ export async function createApp(options: AppOptions) {
         b.permission === undefined &&
         b.mode === undefined &&
         b.requested === undefined &&
-        b.engine === undefined
+        b.engine === undefined &&
+        b.workStyle === undefined
       )
         throw new ApiError(400, 'Provide a thread name, permission mode, mode or helper choice.');
+      // Checked before any field is touched, so a refused style leaves nothing half applied.
+      if (b.workStyle !== undefined && b.workStyle !== null && !isWorkStyle(b.workStyle))
+        throw new ApiError(400, chooseWorkStyleSentence());
       // The home conversation runs on the routes a Diomedes conversation supports: Claude
       // Code or a model-API route. Anything else is refused before any field is touched, so a
       // request that also renames or narrows the Mode leaves nothing half applied. Its name,
@@ -2383,6 +2453,10 @@ export async function createApp(options: AppOptions) {
           ? selectedEngine(store.settings, state.project, conversation)
           : choice(b.engine, ROUTES, 'engine');
       if (b.requested !== undefined) conversation.requested = parseRequested(b.requested, engine);
+      // A style changes which offered model leads and how hard it reasons, from the next
+      // request on. It never touches the mode, the permission or the route.
+      if (b.workStyle !== undefined)
+        conversation.workStyle = b.workStyle === null ? null : (b.workStyle as WorkStyle);
       if (b.engine !== undefined) {
         conversation.engine = engine;
         // A route the person picked is marked theirs: the conversation provisioners
@@ -2413,16 +2487,115 @@ export async function createApp(options: AppOptions) {
    */
   const codexChoice = (conversation?: Conversation | null): { model?: string; effort?: string } => {
     const chosen = conversation?.requested;
+    // A model chosen for this thread is never swapped for another. When ChatGPT's own list
+    // no longer offers it, the person is asked rather than given the account default.
+    if (
+      chosen?.model &&
+      engineCatalog('codex').models.length > 0 &&
+      !isKnownChoice('codex', chosen.model, chosen.effort ?? null)
+    )
+      throw new ApiError(
+        409,
+        `The chosen model ${chosen.model} is no longer offered on ChatGPT. Choose another model or return to a style.`,
+      );
     const model = chosen?.model ?? codexModelSetting();
     const effort = chosen?.model ? (chosen.effort ?? undefined) : codexEffortSetting();
     if (!model || !isKnownChoice('codex', model, effort ?? null)) return {};
     return { model, ...(effort ? { effort } : {}) };
   };
+  /** The thread's WorkStyle, else the Settings default, else none. */
+  const styleOf = (conversation?: Conversation | null): WorkStyle | null => {
+    if (isWorkStyle(conversation?.workStyle)) return conversation.workStyle;
+    const saved = store.settings.services?.workStyle;
+    return isWorkStyle(saved) ? saved : DEFAULT_WORK_STYLE;
+  };
+  /**
+   * What a route offers a style to choose from: the engine's own list. The AWS route reports
+   * no list; its one connected model is what it can run, with the three levels its adapter
+   * accepts. Nothing here adds a model a route did not report.
+   */
+  const routeModels = (engine: string): EngineModel[] => {
+    const listed = engineCatalog(engine).models;
+    if (listed.length > 0 || engine !== AWS_BEDROCK_ROUTE) return listed;
+    const saved = store.settings.services?.[`${engine}Model`];
+    if (typeof saved !== 'string' || !saved) return [];
+    const efforts = ['low', 'medium', 'high'].map((level) => ({ id: level, description: '' }));
+    return [{ slug: saved, name: saved, description: '', defaultEffort: 'low', efforts }];
+  };
+  /**
+   * The WorkStyle seam (NC-2026-09-22.1). Null when the thread pins a model (the pin always
+   * wins) or no style applies, so the caller keeps its own path unchanged. Otherwise the model
+   * and level the style resolves to from what this route offers; when nothing offered
+   * qualifies, the request is refused with the reason rather than quietly downgraded.
+   */
+  const styleChoice = (
+    engine: Exclude<Route, 'sample'>,
+    projectId: string,
+    conversation: Conversation | null | undefined,
+    options: RunHints = {},
+  ): (RunChoice & { reason: string }) | null => {
+    if (conversation?.requested?.model) return null;
+    const style = styleOf(conversation);
+    if (!style) return null;
+    const savedModel =
+      engine === 'codex'
+        ? codexModelSetting()
+        : selectedModel(engine, store.settings, store.state(projectId).project, conversation);
+    const resolved = resolveWorkStyle({
+      style,
+      mode: options.mode ?? conversation?.mode ?? 'ask',
+      route: engine,
+      availableModels: routeModels(engine),
+      hints: { text: options.text ?? null },
+      savedModel: savedModel ?? null,
+      routeDefaultAllowed: engine === 'codex',
+      stableEffort: options.stableEffort === true,
+    });
+    if (resolved.outcome === 'ask') throw new ApiError(409, resolved.reason);
+    return {
+      ...(resolved.model ? { model: resolved.model } : {}),
+      ...(resolved.effort ? { effort: resolved.effort } : {}),
+      selection: resolved.selection === 'manual' ? 'automatic' : resolved.selection,
+      reason: resolved.reason,
+    };
+  };
+  /**
+   * The read-only tools an Ask or Plan turn gets (owner decision 2026-09-23):
+   * the project folder through the path trust funnel, web search, and the MCP
+   * read tools the owner approved in `<data>/read-connectors.json`. Only the
+   * host builds it, from its own project record; a missing folder means text.
+   */
+  const readScopeFor = async (
+    projectId: string,
+    mode: string,
+  ): Promise<{ readScope?: ReadScope }> => {
+    if (mode !== 'ask' && mode !== 'plan') return {};
+    // A folder the path funnel refuses, or one that is gone, leaves the turn text-only.
+    const root = await safeAbsolute(store.state(projectId).project.folder).catch(() => null);
+    if (!root || !(await fs.stat(root).then((entry) => entry.isDirectory(), () => false)))
+      return {};
+    let mcp: ReadScope['mcp'];
+    try {
+      mcp = loadApprovedReadServers(path.join(store.dataDir, 'read-connectors.json'));
+    } catch {
+      throw new ApiError(
+        409,
+        'The approved read connectors file (read-connectors.json) is malformed. Fix or remove it, then send again.',
+      );
+    }
+    return { readScope: { root, web: true, mcp } };
+  };
   const nativeChoice = (
     engine: Exclude<Route, 'sample'>,
     projectId: string,
     conversation?: Conversation | null,
-  ): { model?: string; effort?: string } => {
+    options: RunHints = {},
+  ): RunChoice => {
+    const styled = styleChoice(engine, projectId, conversation, options);
+    if (styled) {
+      const { reason: _reason, ...choice } = styled;
+      return choice;
+    }
     if (engine === 'codex') return codexChoice(conversation);
     const model = selectedModel(
       engine,
@@ -2435,6 +2608,48 @@ export async function createApp(options: AppOptions) {
     // never disappear just because the connection is stale or unavailable.
     return { model };
   };
+  /**
+   * What the thread's next request would run with, for the style picker and the details line.
+   * Read-only: it resolves exactly as dispatch does, minus the message itself, and changes
+   * nothing. A pin is reported as the pin; a style that would ask says so here first.
+   */
+  app.get(
+    '/api/projects/:id/threads/:threadId/work-style',
+    route(async (req) => {
+      const projectId = id(req);
+      const state = store.state(projectId);
+      const thread = state.conversations.find((c) => c.id === req.params.threadId);
+      if (!thread) throw new ApiError(404, 'This thread was not found.');
+      const engine = selectedEngine(store.settings, state.project, thread);
+      const style = styleOf(thread);
+      const source = isWorkStyle(thread.workStyle)
+        ? 'thread'
+        : isWorkStyle(store.settings.services?.workStyle)
+          ? 'settings'
+          : style
+            ? 'default'
+            : 'none';
+      if (engine === 'sample') return { route: engine, style, source, resolution: null };
+      const pin = thread.requested?.model
+        ? { model: thread.requested.model, effort: thread.requested.effort ?? null }
+        : null;
+      const savedModel =
+        engine === 'codex'
+          ? codexModelSetting()
+          : selectedModel(engine, store.settings, state.project, { ...thread, requested: null });
+      const resolution = resolveWorkStyle({
+        style,
+        mode: thread.mode,
+        route: engine,
+        availableModels: routeModels(engine),
+        pin,
+        savedModel: savedModel ?? null,
+        routeDefaultAllowed: engine === 'codex',
+        stableEffort: isModelApiRoute(engine),
+      });
+      return { route: engine, style, source, resolution };
+    }),
+  );
   mountClaudeSessionRoutes(app, engines, {
     authorize: async (req) => {
       store.state(String(req.params.id));
@@ -2453,7 +2668,10 @@ export async function createApp(options: AppOptions) {
         if (store.settings.services?.['claude-code'] !== true)
           throw new ApiError(409, 'Turn Claude Code on in Settings before sending.');
         const accountRoute = store.settings.services?.['claude-codeAccountRoute'];
-        const selection = nativeChoice('claude-code', projectId, thread);
+        const selection = nativeChoice('claude-code', projectId, thread, {
+          mode: command.mode,
+          text: command.text,
+        });
         if (!selection.model || typeof accountRoute !== 'string')
           throw new ApiError(409, 'Select the Claude account and model in Settings first.');
         const paths = new Set<string>();
@@ -2482,6 +2700,7 @@ export async function createApp(options: AppOptions) {
           instructions: MODES[command.mode].instructions,
           model: selection.model,
           accountRoute,
+          ...(await readScopeFor(projectId, command.mode)),
         };
       });
       const runId =
@@ -2519,6 +2738,7 @@ export async function createApp(options: AppOptions) {
         ...input,
         signal: req.res ? connectionSignal(req.res) : undefined,
         onPreview: (frame) => progress('delta', frame),
+        onActivity: (frame) => store.emit('engine-activity', frame),
       };
     },
     recordResult: async (_req, command, result, input) => {
@@ -2753,7 +2973,13 @@ export async function createApp(options: AppOptions) {
               thread.mode === 'auto' || thread.mode === 'plan' ? thread.mode : 'ask',
             ),
             runId: located.runId,
-            route: located.runId.startsWith('model-') ? AWS_BEDROCK_ROUTE : ('claude-code' as const),
+            // A model-API run answers on the route the thread recorded; AWS is only the
+            // historical default for a thread that predates the other routes.
+            route: located.runId.startsWith('model-')
+              ? isModelApiRoute(thread.engine)
+                ? thread.engine
+                : AWS_BEDROCK_ROUTE
+              : ('claude-code' as const),
             action: 'follow-up' as const,
             replay: true,
             text: command.text,
@@ -2784,10 +3010,19 @@ export async function createApp(options: AppOptions) {
         if (store.settings.services?.[conversationRoute] !== true)
           throw new ApiError(409, `Turn ${routeName} on in Settings before sending.`);
         const accountRoute = store.settings.services?.[`${conversationRoute}AccountRoute`];
-        const selection =
-          conversationRoute === 'claude-code'
+        // A WorkStyle, when one applies, chooses from what the route offers; on a model-API
+        // route its level follows style and mode only, because that route binds it into the
+        // lineage's saved context. Without one, each route keeps its own path.
+        const styled = styleChoice(conversationRoute, projectId, thread, {
+          mode: command.mode,
+          text: command.text,
+          stableEffort: isModelApiRoute(conversationRoute),
+        });
+        const selection: { model?: unknown; effort?: string } =
+          styled ??
+          (conversationRoute === 'claude-code'
             ? nativeChoice('claude-code', projectId, thread)
-            : { model: store.settings.services?.[`${conversationRoute}Model`] };
+            : { model: store.settings.services?.[`${conversationRoute}Model`] });
         if (typeof selection.model !== 'string' || !selection.model || typeof accountRoute !== 'string')
           throw new ApiError(409, `Connect ${routeName} and choose its model in AI setup first.`);
         const paths = new Set<string>();
@@ -2821,6 +3056,14 @@ export async function createApp(options: AppOptions) {
           current = undefined;
           changed = true;
         }
+        // A model-API lineage keeps the level it was opened with. A style change that moves
+        // the level is the safe boundary: the next generation starts, the earlier stays.
+        const lineageEffort = modelRoute ? selection.effort : undefined;
+        if (current && !sent && modelRoute && current.effort !== lineageEffort) {
+          current.retired = 'scope-change';
+          current = undefined;
+          changed = true;
+        }
         // The lineages are searched newest first, so once the replacement holds this command
         // it is the one a retry or a restart finds, and the refused turn stays as evidence.
         if (current && options.replace && !sent) {
@@ -2837,6 +3080,7 @@ export async function createApp(options: AppOptions) {
               projectId,
               `lineage.${evidenceDigest({ threadId, mode: command.mode, generation }).slice(0, 40)}`,
             ),
+            ...(lineageEffort ? { effort: lineageEffort } : {}),
           };
           thread.lineages = [...lineages, current];
           changed = true;
@@ -2899,10 +3143,14 @@ export async function createApp(options: AppOptions) {
             ...request,
             documents,
             model: selection.model as string,
+            ...(modelRoute && selection.effort ? { effort: selection.effort } : {}),
             accountRoute,
+            ...(modelRoute ? {} : await readScopeFor(projectId, command.mode)),
             signal: options.signal,
             onPreview: (frame: TransientPreview) =>
               progress('delta', { ...frame, text: gate(frame.text) }),
+            // Tool calls are narration beside the answer, bound to the same run identity.
+            onActivity: (frame: ToolActivity) => store.emit('engine-activity', frame),
           },
         };
       }),
@@ -3259,6 +3507,7 @@ export async function createApp(options: AppOptions) {
       // The turn id is fixed before the run so the native worker can mark the
       // turn verified once the runtime reports its engine.
       const turnId = identifier('U');
+      const choice = nativeChoice(engine, projectId, conversation, { mode: runMode, text });
       const session = await nativeWork.start(projectId, task.id, {
         instruction,
         sources,
@@ -3268,7 +3517,7 @@ export async function createApp(options: AppOptions) {
         engine,
         threadId: conversation.id,
         mode: runMode,
-        requested: nativeChoice(engine, projectId, conversation),
+        requested: choice,
         agentId: conversation.requested?.agent ?? null,
       });
       const storedSession = store.state(projectId).sessions.find((item) => item.id === session.id)!;
@@ -3287,7 +3536,7 @@ export async function createApp(options: AppOptions) {
         ...(storedSession.origin ? { origin: structuredClone(storedSession.origin) } : {}),
         helper: {
           engine,
-          model: nativeChoice(engine, projectId, conversation).model ?? null,
+          model: choice.model ?? null,
           version: null,
           verified: false,
         },
@@ -3339,6 +3588,20 @@ export async function createApp(options: AppOptions) {
           'Automatic is a conversation mode. Direct execution does not accept it.',
         );
       const mode = parsedMode;
+      // A Small Business skill the person picked. Checked here, before consent is asked for or
+      // anything is read, so a skill that cannot run says why instead of a send being confirmed
+      // for nothing. The section itself is assembled once the selected documents are known,
+      // because they decide how much room it has.
+      const skillId =
+        b.skill === undefined || b.skill === null ? undefined : asString(b.skill, 'a skill', 64);
+      if (skillId !== undefined)
+        assembleSkillSection({
+          state: store.state(projectId),
+          packId: 'diomedes.small-business',
+          skillId,
+          mode,
+          budgetBytes: Number.POSITIVE_INFINITY,
+        });
       const attached =
         b.attachedTo === undefined ? { kind: 'project', ref: projectId } : plain(b.attachedTo);
       const attachedTo: Conversation['attachedTo'] = {
@@ -3469,8 +3732,21 @@ export async function createApp(options: AppOptions) {
             return { path: name, text: document.text };
           }),
         );
-        if (documents.reduce((total, d) => total + Buffer.byteLength(d.text), 0) > 128000)
+        const documentBytes = documents.reduce((total, d) => total + Buffer.byteLength(d.text), 0);
+        if (documentBytes > 128000)
           throw new ApiError(413, 'Choose less than 128 KB of source text for this request.');
+        // Assembled before the turn is written, so a playbook that does not fit leaves no turn
+        // behind. It rides in the instruction channel below; the person's words stay theirs.
+        const skill =
+          skillId === undefined
+            ? undefined
+            : assembleSkillSection({
+                state,
+                packId: 'diomedes.small-business',
+                skillId,
+                mode,
+                budgetBytes: instructionSectionBudget(documentBytes),
+              });
         const youTurn: Turn = {
           id: identifier('U'),
           role: 'you',
@@ -3480,12 +3756,25 @@ export async function createApp(options: AppOptions) {
           sources,
           route: serviceRoute,
           ...(attempt ? { attempt } : {}),
+          ...(skill
+            ? { skill: serviceRoute === 'sample' ? { ...skill.use, bytes: 0 } : skill.use }
+            : {}),
         };
         conversation.turns.push(youTurn);
         touchThread(conversation, youTurn.at, state.tasks);
         await store.persist(state);
-        return { conversationId: conversation.id, documents, attempt };
+        return {
+          conversationId: conversation.id,
+          documents,
+          attempt,
+          skill: skill ? { section: skill.section, name: skill.use.name } : undefined,
+        };
       });
+      // The mode's own contract first, then the playbook the person picked, if any. Identical on
+      // every route that takes an instruction channel.
+      const instructionsForRequest = prepared.skill
+        ? `${MODES[mode].instructions}\n\n${prepared.skill.section}`
+        : MODES[mode].instructions;
       let answer: string;
       let helper: NonNullable<Turn['helper']>;
       const runChoice =
@@ -3495,6 +3784,7 @@ export async function createApp(options: AppOptions) {
               serviceRoute,
               projectId,
               store.state(projectId).conversations.find((c) => c.id === prepared.conversationId),
+              { mode, text },
             );
       const requestedModel = runChoice.model;
       if (isExternalEngine(serviceRoute)) {
@@ -3519,19 +3809,24 @@ export async function createApp(options: AppOptions) {
               : {}),
             ...(text === undefined ? {} : { text }),
           });
+        // The signal exists before Stop is shown, so a Stop during the read-scope lookup still lands.
+        const signal = connectionSignal(res);
         progress('started');
         try {
+          const readScope = await readScopeFor(projectId, mode);
           const result = await engines.generate(serviceRoute, {
             projectId,
             threadId: prepared.conversationId,
             requestId,
             prompt: text,
             documents: prepared.documents,
-            instructions: MODES[mode].instructions,
+            instructions: instructionsForRequest,
             model: requestedModel,
             accountRoute,
-            signal: connectionSignal(res),
+            ...readScope,
+            signal,
             onPreview: (frame) => progress('delta', frame.text, frame),
+            onActivity: (frame) => store.emit('engine-activity', frame),
           });
           answer = result.text;
           helper = {
@@ -3587,13 +3882,14 @@ export async function createApp(options: AppOptions) {
             prompt: text,
             documents: prepared.documents,
             ...(requestedModel ? { model: requestedModel } : {}),
-            instructions: MODES[mode].instructions,
+            instructions: instructionsForRequest,
             // A level chosen for the thread outranks the mode's own, up to the
             // mode's ceiling; only Fix has one, so Ask and Plan follow the choice.
             effort: effortFor(mode, runChoice.effort, MODES[mode].effort),
             // Stop closes the request, and this ends the ChatGPT turn with it.
             signal,
             onDelta,
+            ...(await readScopeFor(projectId, mode)),
           });
           answer = result.text;
           helper = codexHelper(result);
@@ -3611,7 +3907,7 @@ export async function createApp(options: AppOptions) {
         helper = sampleHelper();
         answer =
           mode === 'ask'
-            ? `No service is connected for this request, so Diomedes cannot answer yet.${sources.length ? ` It would read ${sources.slice(0, 3).join(', ')} to answer.` : ''} ${
+            ? `No service is connected for this request, so Diomedes cannot answer yet.${prepared.skill ? ` It would follow the ${prepared.skill.name} playbook.` : ''}${sources.length ? ` It would read ${sources.slice(0, 3).join(', ')} to answer.` : ''} ${
                 store.settings.surface === 'console'
                   ? 'Turn an engine on in Settings > Engines.'
                   : 'Turn a helper on in Settings > Helpers on this computer.'
@@ -3752,10 +4048,13 @@ export async function createApp(options: AppOptions) {
     };
     const settingsListener = (settings: Settings) => send('settings', settings);
     const textListener = (data: unknown) => send('engine-text', data);
+    // Tool activity rides the same stream as text previews: narration, never persisted.
+    const activityListener = (data: unknown) => send('engine-activity', data);
     const usageListener = (snapshots: UsageSnapshot[]) => send('usage', { usage: snapshots });
     store.on('change', listener);
     store.on('settings', settingsListener);
     store.on('engine-text', textListener);
+    store.on('engine-activity', activityListener);
     const offUsage: () => void = usageService.subscribe(usageListener);
     // The client re-fetches /api/usage on this event, like it does for settings.
     send('ready', { ok: true });
@@ -3768,6 +4067,7 @@ export async function createApp(options: AppOptions) {
       store.off('change', listener);
       store.off('settings', settingsListener);
       store.off('engine-text', textListener);
+      store.off('engine-activity', activityListener);
       offUsage();
     });
   });

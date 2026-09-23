@@ -1,0 +1,327 @@
+/* Inline visuals in a reply (client/console/InlineVisual.tsx). Every colour is
+   a theme token from client/styles.css :root and the scheme overrides, so a
+   chart follows the chosen appearance, light or dark, with no palette of its
+   own. Flat surfaces, thin rules, radius 6/5 px, no shadows. */
+
+.console .iv {
+  margin: 10px 0 14px;
+  padding: 0;
+  max-width: min(100%, 44rem);
+  min-width: 0;
+  animation: iv-in var(--dm-t-view, 160ms) var(--dm-ease, ease-out) both;
+}
+.console .iv:last-child {
+  margin-bottom: 0;
+}
+@keyframes iv-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.console .iv-title {
+  margin: 0 0 6px;
+  font-size: var(--dm-type-caption);
+  font-weight: 500;
+  color: var(--t2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .iv-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.console .iv-num {
+  font-variant-numeric: tabular-nums;
+}
+.console .iv-dim {
+  color: var(--t3);
+}
+
+/* Series colours: theme accents first, then mixes of them, so eight series
+   stay distinct in every scheme without introducing a colour of their own. */
+.console .iv .iv-s0 { --iv-c: var(--light); }
+.console .iv .iv-s1 { --iv-c: var(--attn); }
+.console .iv .iv-s2 { --iv-c: var(--t2); }
+.console .iv .iv-s3 { --iv-c: var(--fail); }
+.console .iv .iv-s4 { --iv-c: color-mix(in oklab, var(--light) 55%, var(--t1)); }
+.console .iv .iv-s5 { --iv-c: color-mix(in oklab, var(--attn) 55%, var(--t1)); }
+.console .iv .iv-s6 { --iv-c: color-mix(in oklab, var(--light) 50%, var(--attn)); }
+.console .iv .iv-s7 { --iv-c: var(--t3); }
+.console .iv .iv-alt { opacity: 0.6; }
+
+.console .iv-grid line {
+  stroke: var(--hair);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.console .iv-grid .iv-zero {
+  stroke: var(--hair-2);
+}
+.console .iv-grid text,
+.console .iv-total {
+  fill: var(--t3);
+  font: 400 11px var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.console .iv-total {
+  fill: var(--t1);
+  font: 500 22px var(--ui);
+}
+.console .iv-mark {
+  fill: var(--iv-c);
+}
+.console .iv-line {
+  fill: none;
+  stroke: var(--iv-c);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.console .iv-fill {
+  fill: var(--iv-c);
+  opacity: 0.16;
+}
+.console .iv-slice {
+  fill: none;
+  stroke: var(--iv-c);
+  stroke-width: 34;
+}
+
+.console .iv-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+}
+.console .iv-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.console .iv-swatch {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--iv-c);
+}
+.console .iv-donut {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.console .iv-donut .iv-svg {
+  width: min(180px, 100%);
+  flex: none;
+}
+.console .iv-legend-col {
+  flex: 1 1 14rem;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.console .iv-legend-col li {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto 3.5em;
+  gap: 8px;
+}
+.console .iv-legend-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .iv-legend-col .iv-num {
+  text-align: right;
+}
+
+.console .iv-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--r);
+  background: var(--hair-2);
+  overflow: hidden;
+}
+.console .iv-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--surface);
+  min-width: 0;
+}
+.console .iv-stat-label {
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+  overflow-wrap: anywhere;
+}
+.console .iv-stat-value {
+  font-size: var(--dm-type-section);
+  font-weight: 500;
+  color: var(--t1);
+  overflow-wrap: anywhere;
+}
+.console .iv-delta {
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+}
+.console .iv-delta.up {
+  color: var(--light);
+}
+.console .iv-delta.down {
+  color: var(--attn);
+}
+
+.console .iv-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--r);
+}
+.console .body table.iv-table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--dm-type-caption);
+}
+.console .iv-table caption {
+  caption-side: top;
+  text-align: left;
+  padding: 8px 10px 0;
+  font-weight: 500;
+  color: var(--t2);
+}
+.console .iv-table th,
+.console .iv-table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--hair);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.console .iv-table th {
+  font-weight: 500;
+  color: var(--t3);
+}
+.console .iv-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.console .iv-table td.iv-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.console .iv-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.console .iv-progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+  min-width: 0;
+}
+.console .iv-progress-head > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .iv-track {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--hair-2);
+  overflow: hidden;
+}
+.console .iv-fillbar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--light);
+  transition: width var(--move) var(--ease);
+}
+.console .iv-track.indeterminate .iv-fillbar {
+  width: 30%;
+  animation: iv-busy 1.4s var(--ease) infinite;
+}
+@keyframes iv-busy {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+.console .iv-detail {
+  margin: 0;
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+  overflow-wrap: anywhere;
+}
+.console .iv-state.failed {
+  color: var(--fail);
+}
+.console .iv-state.stopped {
+  color: var(--attn);
+}
+
+.console .body .iv-note {
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+}
+
+/* Visually hidden, still read: the data behind every chart. */
+.console .iv .iv-data,
+.console .iv .iv-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+html[data-motion='reduced'] .console .iv,
+html[data-motion='reduced'] .console .iv-fillbar {
+  animation: none;
+  transition: none;
+}
+html[data-motion='reduced'] .console .iv-track.indeterminate .iv-fillbar {
+  width: 100%;
+  opacity: 0.45;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .console .iv,
+  .console .iv-fillbar {
+    animation: none;
+    transition: none;
+  }
+  .console .iv-track.indeterminate .iv-fillbar {
+    width: 100%;
+    opacity: 0.45;
+    transform: none;
+  }
+}

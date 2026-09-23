@@ -11,6 +11,7 @@ import type {
   Task,
   TeamMember,
 } from '../../shared/types';
+import type { PackSkill } from '../../shared/capability-packs';
 import type { PaletteEntry, PalettePoint, ShellView } from './types';
 
 /**
@@ -44,6 +45,10 @@ export interface PaletteHandlers {
   openProject(project: Project): void;
   /** Open a project document in the Files pane, opening the pane if it is shut. */
   openDocument(path: string): void;
+  /** Open a thread with this playbook selected and the composer filled; nothing is sent. */
+  launchSkill(skill: PackSkill): void | Promise<void>;
+  /** Turn the Small Business pack on for this project. A person's decision; it grants nothing. */
+  turnOnSkills(): void | Promise<void>;
 }
 
 export interface PaletteContext {
@@ -58,6 +63,13 @@ export interface PaletteContext {
    * Files group has nothing to offer yet.
    */
   documents: DocumentInfo[];
+  /**
+   * The Small Business pack's playbooks and whether this project has it on.
+   * Absent where there is no project to run a skill in. Off shows one row that
+   * offers to turn it on, never the playbooks themselves: a pack that is off
+   * lights nothing up (capability-packs.md section 1).
+   */
+  skills?: { active: boolean; name: string; list: readonly PackSkill[] };
   members: TeamMember[];
   /** engine id -> live catalogue (GET /engines/:id/models), as the Picker reads it. */
   catalogs: Record<string, EngineCatalog>;
@@ -285,6 +297,34 @@ function fileEntries(ctx: PaletteContext): PaletteEntry[] {
   });
 }
 
+const SKILL_MODE: Record<PackSkill['mode'], string> = { ask: 'answers', plan: 'writes a plan' };
+
+function skillEntries(ctx: PaletteContext): PaletteEntry[] {
+  const skills = ctx.skills;
+  if (!skills || !skills.list.length) return [];
+  if (!skills.active)
+    return [
+      {
+        group: 'Skills',
+        id: 'skills:off',
+        name: `${skills.name} skills`,
+        sub: `${skills.list.length} playbooks, off in this project`,
+        search: skills.list.map((skill) => `${skill.name} ${skill.triggers.join(' ')}`).join(' '),
+        point: '',
+        actions: [{ label: 'Turn on', run: () => void ctx.handlers.turnOnSkills() }],
+      },
+    ];
+  return skills.list.map((skill) => ({
+    group: 'Skills',
+    id: `skill:${skill.id}`,
+    name: skill.name,
+    sub: `${SKILL_MODE[skill.mode]}, ${skill.value}`,
+    search: skill.triggers.join(' '),
+    point: '',
+    actions: [{ label: 'Use', light: true, run: () => void ctx.handlers.launchSkill(skill) }],
+  }));
+}
+
 function workerEntries(ctx: PaletteContext): PaletteEntry[] {
   return ctx.members.map((m) => {
     const sub = `${m.role}, ${m.engine}${m.status === 'error' ? ', blocked' : ''}`;
@@ -376,6 +416,7 @@ export function buildEntries(ctx: PaletteContext): PaletteEntry[] {
   return [
     ...taskEntries(ctx),
     ...fileEntries(ctx),
+    ...skillEntries(ctx),
     ...workerEntries(ctx),
     ...modelEntries(ctx),
     ...projectEntries(ctx),

@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import type { Project, Route, Turn } from '../../shared/types';
 import { routeDisplayName } from '../../shared/engines';
+import { WORK_STYLES, WORK_STYLE_DESCRIPTIONS, WORK_STYLE_LABELS, isWorkStyle, type WorkStyle } from '../../shared/work-style';
 import type { EverythingItem } from './Everything';
 import { Rail } from './Rail';
+import { ReplyBody } from './ReplyBody';
 import { useWorkingWord, workingLine } from './working-words';
+import { toolRunning, type ToolLine } from './engine-activity';
+import { ToolActivityList } from './ToolActivity';
 import {
   ALL_PROJECTS,
   RESTRICTIONS,
@@ -33,6 +37,13 @@ export interface DiomedesPageProps {
   onScope(id: string | null): void;
   turns: Turn[];
   pending: boolean;
+  /**
+   * The answer to the message in flight as it streams, with its tool calls. Display only; the
+   * recorded answer replaces it. Null while nothing has started.
+   */
+  live?: { text: string; activity: readonly ToolLine[] } | null;
+  /** The Technical detail level: tool calls also name their tool and open to their detail. */
+  technical?: boolean;
   restriction: Restriction;
   onRestriction(next: Restriction): void;
   /** Resolves false when the message was refused and never sent, so the text is given back. */
@@ -50,6 +61,12 @@ export interface DiomedesPageProps {
   routeChoices: Route[] | null;
   /** The person's route choice, written to the thread. */
   onRoute(next: Route): void;
+  /**
+   * The thread's WorkStyle, null to follow the Settings default, or undefined while there is no
+   * thread to write a choice to (the Style control is then not shown).
+   */
+  workStyle?: WorkStyle | null;
+  onWorkStyle?(next: WorkStyle | null): void;
   /** Why the conversation cannot run here, in plain words, or null when it can. */
   unavailable: string | null;
   /** What the last message led to, beyond its answer. Null when the answer is all there is. */
@@ -134,6 +151,8 @@ export function Diomedes({
   onScope,
   turns,
   pending,
+  live = null,
+  technical = false,
   restriction,
   onRestriction,
   onSend,
@@ -141,6 +160,8 @@ export function Diomedes({
   route,
   routeChoices,
   onRoute,
+  workStyle,
+  onWorkStyle,
   unavailable,
   card,
   cardBusy,
@@ -160,7 +181,11 @@ export function Diomedes({
   onNewProject,
 }: DiomedesPageProps) {
   const [text, setText] = useState('');
-  const pendingWord = useWorkingWord('thinking it over', pending);
+  // Only a message in flight streams, and what streamed is shown under it. The waiting line
+  // stays until text arrives, stepping aside while a tool call is already saying what it does.
+  const streamed = pending ? live : null;
+  const waiting = pending && !streamed?.text && !toolRunning(streamed?.activity);
+  const pendingWord = useWorkingWord('thinking it over', waiting);
   // One unconfirmed message at a time: it is resolved before anything new is sent.
   const blocked = unconfirmed !== null ? 'An earlier message is waiting.' : unavailable;
   const ready = canSend(text, pending, blocked);
@@ -219,9 +244,11 @@ export function Diomedes({
                       <b>{turn.role === 'you' ? 'You' : 'Diomedes'}</b>
                     </div>
                     <div className="body">
-                      {paragraphs(turn.text).map((p, i) => (
-                        <p key={i}>{p}</p>
-                      ))}
+                      {turn.role === 'you' ? (
+                        paragraphs(turn.text).map((p, i) => <p key={i}>{p}</p>)
+                      ) : (
+                        <ReplyBody text={turn.text} />
+                      )}
                     </div>
                   </div>
                 ))}
@@ -243,8 +270,23 @@ export function Diomedes({
                     )}
                   </div>
                 )}
+                {/* Not a `.turn`: it is a preview of an answer, not a recorded one, and the
+                    transcript's turns stay exactly what the record holds. */}
+                {streamed && (streamed.text || streamed.activity.length > 0) && (
+                  <div className="dio-live">
+                    <div className="who">
+                      <b>Diomedes</b>
+                    </div>
+                    <ToolActivityList lines={streamed.activity} technical={technical} />
+                    {streamed.text && (
+                      <div className="body">
+                        <ReplyBody text={streamed.text} streaming />
+                      </div>
+                    )}
+                  </div>
+                )}
                 {pending && (
-                  <p className="mono dio-pending" role="status" aria-label="Working">
+                  <p className="mono dio-pending" role="status" aria-label="Working" hidden={!waiting}>
                     <span aria-hidden="true">{workingLine(pendingWord)}</span>
                   </p>
                 )}
@@ -348,6 +390,27 @@ export function Diomedes({
                           {routeChoices.map((choice) => (
                             <option key={choice} value={choice}>
                               {routeName(choice)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    {workStyle !== undefined && onWorkStyle && (
+                      <label className="dio-field">
+                        <span>Style</span>
+                        <select
+                          aria-label="Style"
+                          value={workStyle ?? ''}
+                          title={workStyle ? WORK_STYLE_DESCRIPTIONS[workStyle] : 'Follows the default in Settings'}
+                          disabled={pending}
+                          onChange={(e) =>
+                            onWorkStyle(isWorkStyle(e.target.value) ? e.target.value : null)
+                          }
+                        >
+                          <option value="">Default</option>
+                          {WORK_STYLES.map((style) => (
+                            <option key={style} value={style} title={WORK_STYLE_DESCRIPTIONS[style]}>
+                              {WORK_STYLE_LABELS[style]}
                             </option>
                           ))}
                         </select>
