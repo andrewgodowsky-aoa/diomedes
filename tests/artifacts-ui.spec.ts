@@ -788,6 +788,10 @@ test('a hostile design runs nothing: no script, no handler, no javascript: URL, 
     expect
       .soft(srcdoc.startsWith(`<!doctype html><meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">`))
       .toBe(true);
+    // Its <link>s are gone, and so is its nested frame's srcdoc, which held another: Chromium does
+    // not hold dns-prefetch or preconnect to the frame's policy, and no proxy sees a DNS lookup.
+    expect.soft(srcdoc).not.toContain('<link');
+    expect.soft(srcdoc).not.toMatch(/\ssrcdoc=/);
 
     // The page is drawn, and everything it would run is in its document as written...
     await expect.poll(async () => (await stillFrame(page, frame)).text).toContain('Ten percent off every order this week.');
