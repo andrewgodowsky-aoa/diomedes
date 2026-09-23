@@ -1,246 +1,117 @@
-# Diomedes pricing and service scope
+# Diomedes / Nectovia pricing and service scope
 
-Version: 2026-09-19.2
-Date: September 19, 2026 (first issued September 15, 2026)
-Status: Approved commercial pricing direction. Supersedes the 2026-09-10.3 launch anchors where they conflict.
-Company direction: Diomedes Systems
+Version: NC-2026-09-22.1. Date: September 22, 2026.
+Status: commercial reconciliation and implementation direction, not proof of a deployed paid service.
+
+This replaces obsolete operative request-count and service-price language in the preceding version. Basis: Andrew's September 22 directions and `diomedes-site/src/data/pricing.ts` at `8c1dcef76a166df40a6226377b5be2a471c7dbdc`. Historical decisions remain in Git history; do not restore them as current offers. New allowance values identified as proposals are not approved. Nectovia is the customer-facing experience in this work; repository/company identifiers are not globally renamed here.
 
 ## Commercial principle
 
-Diomedes software and Diomedes Systems services are separate products with separate economics.
+Software, professional implementation and ongoing operational service are different products. Sell useful business outcomes without inventing ROI. Keep consequential actions subject to the existing human-approval boundary. A price decision does not implement billing, entitlements, provider access, a connector or an SLA.
 
-The software should remain accessible. Custom discovery, on-site implementation, integration work, training, maintenance, incident triage and ongoing operational responsibility are professional services and must not be priced like a self-service software subscription.
+## Recurring offers
 
-Sell a measurable business outcome, not model tokens. Keep the first engagement bounded, preserve human approval for consequential actions, and quote the real work required to make the workflow dependable in the customer's environment.
+| Offer | Price | Monthly credits | Scope |
+|---|---:|---:|---|
+| 90-Day Workflow Starter | $250/month for three months, $750 total | 500 | One supported workflow/location, up to two supported sources/file inputs, approximately 60–90 minutes remote onboarding and handoff; no additional Business charge |
+| Business | $300/month per organization | 1,000 | Self-managed workspace/workflows, funded AI, bounded basic support and the existing included design scope |
+| Managed Small | From $750/month | 3,000 | Business included; one location and up to one maintained live connection, agreed checks, routine repairs and bounded support |
+| Managed Standard | From $1,250/month | 5,000 | Business included; multiple locations or up to two live connections, agreed maintenance and support |
+| Managed Plus | From $2,000/month | 8,000 | Business included; three or more live connections or a vendor-gated connection, within agreed maintenance/review scope |
 
-## 90-Day Workflow Starter
+Managed grants are totals, not additions to a second Business grant. A live connection is an independently authenticated business account or maintained feed; locations sharing an account may share a connection. A location is any separate place the work happens, across trades, not only a restaurant.
 
-Approved launch program: $250/month for 3 months, $750 total for the initial 90 days. This is the complete Starter price during the program; do not add the $300/month Business subscription on top. Owner decision of 2026-09-19: the trial costs less than the subscription it leads to, so a business is not paying its highest price before it has seen the work.
+Starter excludes custom connectors/API development, bespoke integrations, substantial data cleanup, on-site implementation, unlimited workflows/support, priority incident response, an SLA and major engineering. Discovery outside its scope produces a separate quote. After 90 days there is no automatic continuation: stop, move to self-managed Business when operational, or separately agree Managed. This is not a free trial, automatic refund or unconditional mid-term cancellation promise.
 
-Start with one repetitive task and measure whether it earns its cost. This is a bounded entry engagement, not discounted arbitrary custom implementation. It opens with early business deployments and is discussed/requested through the existing contact form; production paid accounts, billing and operational managed service remain in development. No online purchase, activated subscription or customer portal is implied.
+Fractional AI Ops starts at $2,000/month for contracted professional time and a prioritized improvement backlog. It does not automatically bundle Business or AI credits. Work already covered by Managed is not billed twice.
 
-Included starting scope:
-- one business location or business unit and one supported workflow;
-- up to two supported information sources, file/export inputs or already-supported connections;
-- approximately 60-90 minutes of remote setup/onboarding;
-- reasonable workflow rules/instructions, bounded Diomedes/model usage agreed before the engagement, human review before consequential actions and a basic handoff.
+### Solo: owner direction versus proposal
 
-Excluded: custom connector/API development, bespoke integration, substantial data cleanup, on-site implementation, unlimited workflows or support, priority incident response, an SLA and major engineering. Discovery that reveals those needs produces a separate scope before commitment. Starter usage is agreed before the engagement and never exceeds the Business allowance in "Included AI usage" below; confirm suitability before starting.
+Andrew directs a $99/month offering for one person with light personal or solo-business work. Its credit grant is not approved. The working economics proposal is 250 credits/month, not an active entitlement. Keep the production grant unset and sellable false until allowance, user/host limits and billing are approved.
 
-After 90 days there is no automatic continuation:
-1. Stop if the workflow has not justified its cost.
-2. Move to self-managed Diomedes Business, $300/month per organization, once the paid product is operational. If it is not ready, stop or separately agree the next scope.
-3. Discuss Managed Diomedes from $750/month for agreed monitoring, compatibility triage, maintenance and bounded support, with operational availability confirmed before commencement. Major vendor changes, new integrations and material rebuilds may still require separate scope.
+Draft positioning: For one person: everyday questions, writing, research and light business administration. For shared operations, maintained connections or recurring operational workflows, choose Business or Managed.
 
-The three-month program is not a free trial, a refund promise or a claim that cancellation during the initial term is unrestricted. Do not imply a compulsory managed upgrade.
+Solo does not include team operations, maintained POS/scheduling/inventory integrations, unattended operational responsibility, custom connectors, on-site work or human design services. Suitability follows actual workload and responsibility, not merely whether a customer has a street address. Free self-managed local/BYO use remains; Solo is an optional managed-inference purchase. The previously suggested $500 Business Plus / 2,000-credit offer remains an assistant proposal, not an approved plan.
 
-The public progression is Starter ($250/month), audit (from $1,000), pilot (from $2,500), implementation (from $5,000), then optional managed support (from $750/month). These are different engagement types, not mandatory sequential purchases or five software tiers. Preserve local/in-person implementation as a separately quoted service.
+## Professional service anchors
 
+| Engagement | Current starting price | Boundary |
+|---|---:|---|
+| Fit call | First hour free | One discovery discussion; no automatic paid continuation |
+| Focused consultation | $150/hour, quoted directly | Scope and price accepted first; travel separate; not a public unlimited-advisory offer |
+| Local Hardware and Model Plan | $500 | One workload/equipment review and written procurement/running plan |
+| Cloud AI Quick Start | $750 | One supported route, useful example, configuration, training and handover; no custom production connector |
+| Workflow Audit | $2,000 | A written assessment of one recurring process; customer can use it without further purchase |
+| Bounded Pilot | $4,000 | One measurable custom workflow with agreed inputs, testing, review and stopping point |
+| Implementation | $9,000 plus $2,500 per additional location | Scoped build, testing, onboarding and handover; greater complexity quoted above the anchor |
+| Documented-interface connector build | $3,000–$5,000 | Vendor-gated work scoped separately; vendor-program fees pass through at cost |
+| Customer-owned Private AI | $15,000 plus hardware and agreed travel | Assessment, sizing, installation, workflow/model setup, benchmarks, recovery tests, documentation and handover |
+| Voice add-on / Security Review | Quoted | Voice is a separately scoped Managed add-on; security work requires written system-specific authorization |
 
-## Approved price anchors
+Connector maintenance after the build belongs to the applicable Managed scope, not a second maintenance bill. Private AI equipment is normally bought by the customer or passed through at cost. Cancellation of support should leave the functional self-managed local deployment where technology/licensing permits. A complete Private AI build is never quoted below the existing $10,000 floor without a newly authorized scope change; smaller hardware planning and setup services are not a full deployment.
 
-Private AI scope amendment: the local plan, local setup and shared/on-site rows below remain smaller, separately scoped services. They do not price a full customer-owned Private AI infrastructure engagement. Do not inherit their credits, delivery-hour assumptions or starting prices into the strategic offering below. Starter, the narrow restaurant pilot and the existing approved public subset remain unchanged.
+Scope work to the existing $100–$150/hour delivery floor, including preparation, travel, review, rework and follow-up. A starting fee is not unlimited hours: at $150/hour the current pilot implies about 26.7 hours, implementation 60 hours and an additional location 16.7 hours. Requote scope rather than absorb uncontrolled work. Private AI's normal $15,000 engagement is scoped around 100 hours at that planning rate; complexity can require a larger quote. Product-development overruns benefiting Diomedes generally are not automatically customer charges.
 
-| Offer | Approved starting price | Starting scope |
-| --- | ---: | --- |
-| Workflow Fit Call | First 60 minutes free | Initial discovery and fit. No automatic paid continuation and not an unlimited audit. |
-| Focused consultation / advisory | $150/hour | Additional strategy, troubleshooting or review after the client accepts price and scope. Travel is separate. |
-| Cloud AI Quick Start | From $750 | One supported account/model route, one useful workflow example, basic configuration, training and handoff. No custom production connector. |
-| Workflow Audit / Weak Point Map | From $1,000 | One recurring process mapped in enough detail to identify time, handoffs, systems, risk, review points and the most useful next implementation. |
-| Local Hardware and Model Plan | $500 | Hardware/workload review, local/cloud/hybrid recommendation, procurement/runtime plan and written handoff for one deployment. |
-| Customer-owned Private AI deployment | From $15,000 plus equipment and travel | Hardware sizing and sourcing, installation, model setup, agreed business workflows, benchmarking, representative workload and recovery testing, documentation, training and operational handover. Assessment required. Never quoted below a $10,000 floor: a genuine local build carries hardware, integration and operational responsibility that a smaller fee cannot cover. |
-| Bounded workflow pilot | From $2,500 | One narrow measurable workflow on the systems the customer already has, with approved inputs, acceptance checks, human review, testing, training and a defined stopping point. Quoted above the starting price for longer or more complicated work. |
-| Broader/custom implementation | From $5,000, plus $2,000 for each location after the first | Production implementation beyond a small pilot. New integrations, several systems, multiple locations or meaningful reliability work will commonly be $7,500-$15,000+ and are quoted from scope. Each additional location repeats discovery, its own information, its own staff training and its own acceptance, so it is priced rather than absorbed. |
-| Diomedes Business | $300/month per organization | Software/workspace access, up to 1,000 included requests a month, the included design work and the Design Center, as released. Final user, location, host and support limits must be explicit before sale. See "Included AI usage" and "Included design work". |
-| Managed Diomedes | From $750/month | Agreed monitoring, health review, compatibility triage, maintenance and limited support after a working deployment, and a design session every two months. Typical managed accounts may be $750-$1,500+ depending on supported systems and service allowance. |
-| Fractional AI Ops / continuous improvement | From $2,000/month | High-touch ongoing relationship for businesses that want Diomedes Systems to keep finding, improving and maintaining workflows. Scope, included hours and response expectations are explicit. |
+The existing first three-location restaurant design-partner exception is preserved: reference value approximately $4,500, discounted bounded pilot $1,500–$2,500 depending on scope, one approved workflow, discovery/implementation/handoff/measurement and approximately 30 days monitored operation as agreed. It is an exception for learning value, not the standard list price. Public case studies, names, logos and testimonials need separate permission; positive feedback is never required.
 
-The public website leads with the 90-Day Workflow Starter at $250/month for 3 months ($750 total), followed by the different scopes available: free fit call, Local Hardware and Model Plan from $500, Cloud AI Quick Start from $750, Workflow Audit from $1,000, pilot from $2,500, implementation from $5,000 plus $2,000 for each location after the first, Private AI deployment from $15,000 plus hardware, Managed Diomedes from $750/month and Fractional AI Ops from $2,000/month. Starter does not include a separate Business subscription. Self-managed Business is stated at $300/org/month as an option after Starter. Fractional AI Ops was approved here from the start and was missing from the public list by oversight, not by decision; owner direction of 2026-09-19 publishes it. Keep the page readable as scoped engagements, not a software-tier grid.
+A $500 hardware/model assessment may be credited toward qualifying Private AI work started within 30 days. Up to $500 of a paid audit may be credited toward a qualifying pilot within 30 days where stated in the accepted quote. Credits do not stack unless approved and do not charge the same fee twice. Other internal strategic Private AI ranges are scope guidance, not new public constants.
 
-Owner decision, 2026-09-17 (.2). The first two paid rows were approved here from the start but were held back from the public list, so the site opened at the $1,000 audit and the smallest businesses had no priced way in. They are now published. Diomedes Business is stated as a real subscription rather than a planned one: it is not sold from the page, and the user, location, host, inference and support limits this table already requires are fixed in the quote before any sale, which is what keeps the claim honest while the workspace and billing finish. The $150/hour focused consultation stays unpublished by owner decision, because a single hour is rarely long enough to advise a business usefully; it is still quoted directly.
+## Credits and flat job caps
 
-## Delivery rate floor
+Credits measure cumulative eligible AI usage, not a task or model-call count. A job can consume fractional credits or many credits. Include authorized planner, worker, reviewer, advisor, billed reasoning, cache and eligible correction usage. The current website conversion is internally $0.10 of eligible inference per credit; do not render the internal dollar allowance as public plan copy.
 
-Owner decision, 2026-09-17: **every engagement is scoped to hold a delivery rate of at least $100-$150 an hour.** This is the test a starting price has to pass, and it is the reason a price can be raised but should not be discounted freehand.
+Preserve three distinct quantities: provider cost, customer allowance debit and customer invoice. Production accounting uses integer micro-USD and a versioned rate card. Cloud promotional credits lower company cash expenditure, not the customer's published grant or the gross provider cost record. Do not discount the funded-usage portion under the existing 30% founding discount; only its eligible non-usage component is discounted.
 
-A starting price therefore implies an hour ceiling. Past it, the scope is requoted rather than absorbed.
+Retain a finite flat spending cap per parent request/job. This is an approval/safety limit, not a flat fee or monthly request quota. Exact default caps remain unapproved. A suggested 20-credit default is only an internal proposal; larger jobs can receive another explicitly approved finite cap. Reserve conservatively before each paid child operation against both job budget and organization funds. Delegation, retries, forks, resumed messages and billing reset cannot reset the cap or refund uncertain spend.
 
-| Offer | Starting price | Hours at $150/hour | Hours at $100/hour |
-| --- | ---: | ---: | ---: |
-| 90-Day Workflow Starter, whole program | $750 | 5 | 7.5 |
-| Local Hardware and Model Plan | $500 | 3.5 | 5 |
-| Cloud AI Quick Start | $750 | 5 | 7.5 |
-| Bounded workflow pilot | $2,500 | 17 | 25 |
-| Broader/custom implementation | $5,000 | 33 | 50 |
-| Each location after the first | $2,000 | 13 | 20 |
-| Customer-owned Private AI deployment | $15,000 | 100 | 150 |
+Settle from validated actual usage; release only proved unused holds. Missing usage is unknown, not zero. Record product-fault corrections as company expense without disguising the real upstream cost. No automatic overage, silent downgrade, unapproved payer switch or automatic top-up. Customer BYO/local work does not debit company-funded credits; personal subscriptions are terms-bound individual access, not pooled company inventory. Unpriced third-party tool charges require a separate bounded, authorized arrangement before admission.
 
-The Private AI row is the one that most needs watching. The same engagement delivered in 80 hours and in 160 hours differs by roughly $6,000 of margin on identical revenue, so a deployment is scoped to **100 hours or re-scoped**; a large price does not rescue an uncontrolled project. Where a delivery-hour estimate and a price disagree, the hour estimate is the evidence and the price is the thing that moves.
+The old literal 1,000-request promise and universal tiny per-request monetary ceiling are withdrawn. Human support, hosting and third-party non-inference services remain separately scoped rather than silently reclassified as inference.
 
-## Credits and conversion
+## Working preferences and advanced controls
 
-### Private AI infrastructure planning
+Efficient is Luna-led for everyday conversation, brainstorming and deciding when delegation is needed. Focused remains Sol-primary; qualified Muse Standard is an explicit lower-cost preference or policy-approved backup. Thorough uses Opus 5.5 for demanding reasoning and checks. These are initial policies, not permanent vendor entitlements. Task-specific quality and accepted-result cost determine qualified alternatives.
 
-Owner-directed strategic ranges, not immutable prices or approved public constants: assessment approximately $2,500-$5,000; founding/design-partner private deployment approximately $10,000 plus equipment; mature standard deployment approximately $15,000-$25,000 plus equipment; advanced/multi-server/custom infrastructure approximately $25,000-$50,000+ plus equipment. Monthly managed support is scoped to complexity and operational responsibility. These figures do not change the discounted first restaurant workflow pilot.
+Every preference may delegate suitable bounded steps to cheaper qualified models, including Luna, under the same parent budget and source/permission restrictions. An expensive lead need not write every token. Luna need not rewrite a careful premium conclusion. Working preference is separate from Ask/Plan/Build authority, model ID, payer and persona; changing it cannot grant new permissions.
 
-The future public anchor may be "Private AI Deployment - from $15,000 + hardware", assessment required. This pass uses assessment-led, separately quoted website copy and publishes none of these new ranges. Hardware is normally purchased directly by the customer; if facilitated, it passes through at cost without Diomedes markup. The customer retains a functional self-managed local deployment after Managed cancellation wherever technology and licenses permit. Engineering, third-party service charges, equipment and recurring support remain explicit separate costs. Full commercial scope and ownership handover: `2026-09-15-private-ai.md`.
+Managed inference is the recommended default. Users requesting expert controls may expose the model picker, including eligible BYO users. Clearly distinguish lead-only pinning from all-call pinning; honor a no-substitution choice. Details show actual model, route, payer and usage. Supporting expert control is not permission to obstruct BYO or silently charge the company when a personal route fails.
 
-### Existing smaller-service credits
+## Meta Contributor consent
 
-A $500 Local Hardware and Model Plan may be credited toward a qualifying Customer-owned Private AI deployment started within 30 days. Up to $500 of a paid Workflow Audit may be credited toward a qualifying pilot started within 30 days. Credits are stated in the accepted quote, do not stack unless explicitly approved, and never make the same fee payable twice.
+Default off. Contributor and Standard are separate data-policy routes even when the model is otherwise similar. Ask an authorized owner/admin to permit Meta's use of prompts, responses and permitted source content submitted through Contributor to improve/train models. Record exact route, terms revision, data/project scope and effective date. An owner cannot donate material without rights; employee/customer and third-party restrictions still apply. Derived summaries, memories, excerpts and tool results retain source restrictions.
 
-Do not use discounts to hide an unsustainable base price. A discount must have a reason: limited scope, design-partner status, reuse value, scheduling, nonprofit/community policy, or another explicit commercial decision.
+Check consent again at dispatch, including queued work. Revocation blocks future sending; do not promise retroactive untraining or recovery of already disclosed data. No silent fallback into Contributor. Offer the standard-processing alternative without coercion.
 
-## Founding design-partner exception
+Lower component rates do not mean ten times the monthly grant or ten times every completed job. Publish a numeric savings claim only with its qualified route, explicit comparison baseline and measured workload scope. Unchanged workers, reviews, tools and failures dilute whole-job savings. Provider terms and regional eligibility need review before this route is offered.
 
-The first three-location restaurant design partner is intentionally different from normal commercial pricing because Diomedes also receives product-learning value.
+## Included everyday chat on eligible Managed plans
 
-Reference value for the bounded founding pilot: approximately $4,500.
-Founding design-partner rate: $1,500-$2,500 for one approved workflow, depending on final scope.
+Owner direction: normal human Luna conversation in Ask on eligible Managed Small/Standard/Plus plans should have zero credit debit. Use an explicit entitlement, not a test that an invoice happens to exceed $750; Fractional AI Ops and one-time services do not qualify on their own.
 
-The discounted package may include discovery, implementation, staff/manager handoff, before/after measurement and approximately 30 days of monitored operation. The discount is justified by structured feedback, access to measure the agreed workflow and permission to learn from deployment failures. Any public case study, name, logo, quote or testimonial requires separate explicit permission; the client is never required to say anything positive.
+Ordinary questions, brainstorming and bounded use of existing context can qualify. Delegated workers, automation, batch processing, larger document jobs, paid research/tools and premium-model calls remain metered even when read-only or named Ask. A Luna worker inherits the paid job's accounting class, not conversational eligibility. Explain and obtain approval at the boundary before paid work.
 
-After a successful design-partner proof, do not treat the founding rate as the normal market price.
+Provider cost remains real and is recorded separately. Define and disclose reasonable context/output/rate/concurrency and abuse rules. Do not advertise unlimited conversation while hiding a monthly message quota or introducing unapproved overage. Included chat is a proposed product entitlement until its server-side eligibility, cost exposure and user-visible boundary are tested and released.
 
-## Local and in-person implementation is a first-class service
+## Nectovia usage display
 
-Diomedes Systems should be willing to go where the actual work happens when that materially improves the implementation.
+Show settled monthly debit divided by the month's included grant as the monthly used percentage. Display pending and uncertain reservations separately, along with remaining monthly funds, reset date and data freshness. Top-ups have a separate balance and do not change the monthly percentage denominator. BYO cost and zero-debit included chat do not consume the monthly bar. Unknown/stale balance is not zero. Reservations retain their original billing period across reset; final settlement cannot debit the wrong month.
 
-On-site observation can reveal handoffs, device constraints, staff behavior, network limitations, POS quirks, printed processes and informal workarounds that a remote questionnaire misses. On-site work can include workflow observation, installation, device/network validation, staff training, acceptance testing and go-live support.
+## Existing service responsibilities and design scope
 
-This is a differentiator, not free travel. Site time, travel time, lodging, mileage/transportation and other direct costs are quoted or disclosed before acceptance. Do not promise a geographic radius or free on-site support until one is deliberately approved.
+Business retains its design consultation and first look, plus up to two revisions each subscription year for the agreed initial design or major updates, and customer-operated Design Center. Internal planning target: roughly two initial hours and one hour per revision, not a customer hour promise. Managed adds a session every two months inside its stated support allowance. New brand creation, print, signage, photography and design for other software remain separate. Solo does not inherit these human services.
 
-A business should still be able to buy remote work where remote delivery is sufficient. Do not force an on-site engagement merely to raise the quote.
+Managed covers named systems, agreed checks, compatibility triage, routine repairs and limited support. Third-party outages, major redesigns, new integrations, credential-policy changes and material rebuilds can require a new scope. No unstaffed 24/7 response, automatic SLA, security certification or guarantee that vendors never change. Travel/site time and direct expenses are quoted; no assumed free geographic radius. Customers supply lawful data/access, approve authority and provide a responsible owner.
 
-## Vendor-change resilience and managed service
+Initial workflows continue to avoid autonomous payroll, payments, hiring/firing/discipline, unapproved orders and unapproved public posting. Export-based workflows remain valid where live API access is unnecessary. Tenant isolation, least privilege, retention/offboarding and evidence are still required.
 
-Third-party systems change without Diomedes controlling the release. A POS, scheduling platform, browser, authentication flow, API, export format or desktop application can ship an update that invalidates a previously working workflow. That is a normal operational risk and one of the strongest reasons Managed Diomedes has real value.
+## Architecture and implementation status
 
-A managed agreement may include, for the specifically named supported systems:
-- scheduled health checks;
-- configuration-drift checks;
-- smoke tests around important workflows;
-- compatibility triage after a known vendor change;
-- repair/reconfiguration within the purchased service allowance;
-- failure evidence, alerts and escalation;
-- version/change notes for important dependencies;
-- remote or on-site follow-up when separately included.
+Extend the existing Vercel AI SDK ModelAdapter for explicit AWS Bedrock, Azure and OpenRouter connections, plus other qualified hosts. The SDK does not pool balances, supply credentials or verify credit eligibility. Select a qualified model first, then an authorized account/payer/processing route. Preserve NativeAgent/RunService/Trust, provider-bound private continuation and no implicit fallback.
 
-Managed Diomedes does **not** mean Diomedes Systems guarantees that a third party never breaks compatibility. Vendor outages, unsupported APIs, major redesigns, credential-policy changes and work that effectively requires rebuilding an integration may require a change order or a new implementation scope. Do not promise 24/7 human response, instant resolution or an SLA that has not been contracted and staffed.
+TypeSafe Jev is a bounded advisory/evaluation model. Reuse `shared/evaluation.ts`, `server/harness/evaluation-adapter.ts` and price/usage seams; verify the real installed SDK/provider contract. Jev does not approve effects, change permissions, execute tools or make confidence equal correctness.
 
-This distinction matters commercially: $300/month is software with a small, stated amount of service inside it; $750+/month is the beginning of a service relationship in which a human company accepts some ongoing maintenance responsibility.
+The account-control-plane subset already uses WorkOS and a Neon-specific PostgreSQL adapter. Keep it in this rollout. The reported $300 Supabase offer is a reason to evaluate an appropriate later storage need, not permission to migrate identity, data or the ledger. No second task/run source of truth or automatic cloud upload of customer documents.
 
-## Scope and estimating controls
+At inspected app main `c10b7b2fa3ba12e9bba9373ac3ff82db8447b820`, the bounded AWS route still identifies GPT-5.6 Luna. New model versions, multi-provider customer funding, Contributor consent, included chat, Solo and paid metering need independent acceptance. Existing `sellable: false` safeguards remain until the relevant gates pass. This documentation change does not run application tests or prove deployment.
 
-Price from the work, risk and responsibility rather than forcing every project into the minimum.
-
-Internal planning targets, not customer hour guarantees:
-- Quick Start: roughly 3-5 delivery hours when the route is already supported.
-- Audit: roughly 4-6 focused hours for one workflow, more when on-site observation or multiple stakeholders are required.
-- Single-environment local deployment: often a full working day or more after compatibility is prechecked.
-- Bounded pilot: commonly 15-25 delivery hours across discovery, build, validation, handoff and measured operation.
-- Custom/multi-system implementation: quote from actual integration, data, reliability, stakeholder and rollout requirements rather than a fixed hour cap.
-
-Every quote should identify deliverables, inputs/access, acceptance checks, included revisions, training/handoff, support window, change-control process and exclusions. Product-development overruns that benefit Diomedes generally must not automatically be billed to the customer.
-
-Track actual preparation, travel, sales, delivery, review, rework, support and follow-up. Raising prices is not permission to stop measuring delivery cost.
-
-## Business software versus services
-
-Diomedes Business is a product subscription. It should not quietly include unlimited custom connectors, workflow design, on-site visits or founder support.
-
-Managed Diomedes is a service layer. It exists because production workflows need maintenance, vendor changes happen, credentials expire, staff change, data formats drift and edge cases appear. Managed service pricing must be able to pay for the human attention it creates.
-
-Fractional AI Ops / continuous improvement is a still-higher-touch service for organizations that want an ongoing operating partner rather than a maintenance-only relationship.
-
-Company-funded inference remains bounded and separately accounted. The included amount and how it is published are set in "Included AI usage" below.
-
-## Customer responsibilities and boundaries
-
-Diomedes Systems scopes and configures supported work, tests it, documents it, trains users where included, and maintains it only within an accepted support agreement. The customer approves business authority, supplies lawful data/account access, provides a responsible owner and purchases listed hardware/vendor services unless a quote says otherwise.
-
-Initial business work should continue to avoid autonomous payroll, payments, hiring/firing/discipline, unapproved vendor orders and unapproved public posting. An export-based workflow remains a valid first deployment when live API access is unnecessary or immature.
-
-No local installation, on-site visit or managed subscription is a security/compliance certification. Production work still requires client isolation, least privilege, credential protection, retention/offboarding rules, audit evidence and appropriate agreements.
-
-## Public positioning
-
-Lead with the weak point and the result:
-
-> Find the weak point. Fix the workflow.
-
-The business pitch is not that Diomedes is a cheaper n8n, a pile of agents or an AI chatbot. The pitch is that Diomedes Systems can inspect a recurring piece of work, configure the software and integrations around the business, implement it in the real environment when useful, train the people who use it, measure whether it helps, and remain available to keep it working under a paid managed agreement.
-
-Use concrete language: hours returned, steps removed, faster turnaround, fewer missed handoffs, consistent execution, visible approvals and evidence. Do not invent ROI.
-
-## What counts as a location
-
-Owner clarification, 2026-09-19. A location is any separate place the work happens, in any trade. A second restaurant is one. So is a construction or remodeling company's branch office, yard, hub or on-site base beside its main office, a second shop, a warehouse or a clinic. Each repeats discovery, its own information, its own staff training and its own acceptance, which is why each is priced. Multi-location pricing is not a restaurant offer.
-
-## Included AI usage
-
-Owner decisions of 2026-09-19.
-
-**What is published.** A Business subscription includes **up to 1,000 requests a month**, and Diomedes Systems pays for them. The public unit is always a count. No dollar amount of model usage is published anywhere: a buyer can check "how many requests did we send" against their own month and cannot check a dollar figure against anything.
-
-**What a request is.** One thing a person asks Diomedes to do. However many model calls Diomedes makes to finish it, it counts once. Every request counts as exactly one, so 1,000 means 1,000.
-
-**How the cost is bounded (internal, never published).**
-- Per-request ceiling: **$0.10** of upstream model cost. A request whose conservative pre-call estimate exceeds the ceiling stops and asks before it runs; it is never silently downgraded, split or billed.
-- Monthly bound: **$100** of upstream model cost per organization. 1,000 requests at the ceiling is exactly $100, so the published count and the internal bound cannot disagree.
-- Extra usage needs the customer's approval and is recorded. No unlimited usage, automatic overage or silent payer change.
-- Not counted: work on a local model or on the organization's own provider key, and calls Diomedes repeats through its own fault. Provider-run tools with no pre-call price stay not admitted under the managed payer, as rate card `rate-card-2026-09-10.1` already rules.
-
-**Enforcement status.** `shared/managed-usage.ts` already meters micro-USD with pre-call reservations, and its candidate plan's $100 allowance matches the monthly bound. The per-request ceiling and the request counter are not implemented, no company-key provider route exists, and the plan stays `sellable: false`. The site marks this capability in progress beside the claim.
-
-**Models.** Included requests run on fast, efficient, capable models that hold context and decide well. Current candidates are GPT-5.6 Luna, Gemini 3.8 Flash and Muse Spark 1.3 and their peers; a model earns its place on measured cost per accepted result, not on list price. Stronger models are used where a task needs them and the ceiling allows, or with approval, and the request that needs one costs more to serve — that is what the per-request ceiling is for, and why an unusually large request stops and asks rather than quietly spending more. Owner direction of 2026-09-19 names these three as the primary agents. None of them is a promise: a candidate is a model we intend to measure.
-
-**A named model is not a usable route (verified 2026-09-19).** The same model reached two ways is two different commercial facts, and only one of them can serve a customer.
-
-| Route | Kind | Published rate, per million tokens in / out |
-|---|---|---|
-| GPT-5.6 Luna, OpenAI API | Metered API | $0.20 / $1.20 |
-| Gemini 3.8 Flash, Gemini API | Metered API | $0.75 / $3.75 promotional, $1.50 / $7.50 after |
-| Muse Spark 1.3, OpenCode Zen | Metered API | $1.25 / $4.25 |
-| Muse Spark 1.3, OpenCode Go CLI | Subscription seat | Not usable: one seat, one subscriber per workspace, dollar-capped per model |
-| GPT-5.6 Luna, Codex CLI | Subscription seat | Not usable: bills a ChatGPT subscription, not the API |
-
-Only the metered rows can carry customer work. The subscription rows are the founder's own tooling, and `shared/managed-usage.ts` already refuses them in code: `payerForRoute` returns `refused` for a personal subscription, because it "pays for one person, under that person's terms. It is not company inventory." Rates were read from the providers' own pricing pages on 2026-09-19 and will drift; they are recorded to make the comparison, not to be quoted.
-
-**The escalation ladder.** Measured against Luna as the unit, a stronger model costs roughly ten times as much (GPT-5.6 Terra, $2 / $12), twenty times (GPT-5.6 Sol, $4 / $20) or fifty times (GPT-6 Astra, $10 / $50); Anthropic's ladder runs from Haiku 4.5 at $1 / $5 to Fable 5.1 at $10 / $50. At Luna's rate the $0.10 per-request ceiling buys roughly half a million input tokens, so the ceiling is comfortable on the primary agents and is the binding constraint on the strong ones. That is the intended shape: the ladder is available, and it is the thing the ceiling stops.
-
-**Contributor is a data decision, not a usage tier (correction, 2026-09-19).** The owner's direction described the Muse Spark 1.3 Contributor tier as what a customer moves to for more usage. The effect is real — contributor tokens are roughly an order of magnitude cheaper, so from a dollar-capped seat they do buy far more work. The mechanism is not a plan upgrade: OpenCode documents the Contributor suffix as discounted pricing **in exchange for permission to train future models on your prompts and completions**, and limits availability by the model owner's geographic policy. That makes it a customer data decision under Pillar 09, which requires an explicit organization choice and excludes data the organization has no authority to contribute. It stays where the next paragraph already puts it: an opt-in that is not offered yet, never a default, and never applied to customer work without that choice.
-
-**Data-contributing routes (owner direction, not yet offered).** An organization may later be offered an explicit opt-in to a data-contributing route, such as the Muse Spark 1.3 Contributor tier, in exchange for roughly ten times the included requests. Private processing stays the default (Pillar 09), the opt-in never reaches data the organization has no authority to contribute, and nothing about it is published or sold until that tier's terms have been read and the choice exists in the product.
-
-**Provider accounts and credits.** AWS is the preferred first route (Activate through Mercury, Bedrock); the LLC is filed and the application waits on the EIN. OpenRouter is wanted for models the main clouds do not carry. Microsoft for Startups credits apply only to models sold directly by Azure (Anthropic is excluded); its higher tiers are worth pursuing if they let early customers be given more included usage. Neon is already in use and its startup program should be claimed. Credits are a cash-flow benefit, never the reason an allowance is affordable: the offer must work at normal provider prices.
-
-## Included design work
-
-Owner decision of 2026-09-19, replacing the 2026-09-18 wording. The monthly graphical update is withdrawn: a proactive refresh for every account every month is an unbounded recurring obligation, and the subscription is the one offer that had no hour ceiling.
-
-- **Diomedes Business** includes a design consultation and the first look, built by our in-house design team when the plan is bought, and **up to two revisions in each subscription year**, for an initial design the customer is unhappy with or a major piece that needs updating. The Design Center is included for the customer's own changes. Planning target, not a customer promise: about two hours for the first look and one hour a revision.
-- **Managed Diomedes** adds a design session **every two months**: a consultation, a revision or new artwork, inside the support allowance its quote states.
-- A brand created from nothing, print, signage, photography and design for other software stay separately quoted. Readability and reduced motion hold whatever a design says.
-
-## Removed figures
-
-Owner direction, 2026-09-19: retired prices are deleted rather than kept beside current ones, and the reason is written down here.
-
-Three generations of Diomedes prices were live in this repository at once: the 2026-09-10 ladder, the 2026-09-15 to 2026-09-17 Starter and Business monthly prices, and the current ones. People and agents read documents, not supersession notes, and a stale figure had already reached a summary presented to the owner as current. A retired price left in a current document is a quote waiting to be made by mistake.
-
-What was done:
-- The earlier Starter monthly price and total, and the earlier Business monthly price, were replaced throughout this document, the roadmap, project memory and the business index by the current figures.
-- The 2026-09-10 generation's price documents were removed from the tree: the pricing checkpoint, its reference base, the income-model inputs built on it and the website prompt that carried its ladder. Their Diomedes price figures were also struck from the dated review, marketability, coordination, publication-reconciliation, local-business-plan, managed-inference and edition documents that quoted them, each with a note at the point of removal. Competitor and hardware prices in those documents are evidence about the market and were kept.
-- The rule that a usage amount must not appear on the website is withdrawn, because the owner has now set one: see "Included AI usage".
-- Nothing is lost: every removed figure is in git history before the commit that carries this version. The pre-Automations roadmap and memory snapshots under `docs/reference/` are dated archives of whole documents; their retired Diomedes figures were struck too, with a banner, and nothing else in them was changed. The website repository's own documents were brought to the current ladder the same day; its dated verification records are evidence of what was live on their date and were left as they were.
-
-The retired figures are deliberately not repeated in this section.
-
-Owner decisions recorded in this version: 2026-09-18, Business includes design work; 2026-09-19, Starter and Business repriced against each other and an included-usage count published; 2026-09-19, literal request count with a per-request ceiling and a monthly bound; 2026-09-19, design work restated as consultation, first look and two revisions a year, with a session every two months on Managed; 2026-09-19, Fractional AI Ops published; 2026-09-19, location defined across trades; 2026-09-19, retired figures removed.
-
-## Supersession
-
-This document supersedes the price anchors of the 2026-09-10 pricing checkpoint (removed from the repository on 2026-09-19, see "Removed figures"), the pricing section of `DIOMEDES_LIVE_ROADMAP.md` version 2026-09-13.1, and any 2026-09-10 marketability/income scenario **only for current price decisions**. Dated documents remain useful evidence of prior reasoning. A retired price in them is removed with a written reason at the point of removal, never silently rewritten as if the current prices were always approved.
-
-Implementation status is separate. Approving a price does not make Business billing, a connector, production identity, an SLA or a managed service operational.
+Implementation handoff: `../implementation/2026-09-22-nectovia-routing-handoff.md`. The September 22 amended unified execution package carries detailed Opus/SWE 2.0/Fable/Astra prompts and source evidence. Preserve active claims and original completion records.
