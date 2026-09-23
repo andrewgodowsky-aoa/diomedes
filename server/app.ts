@@ -157,6 +157,7 @@ import {
 import {
   boundInstructions,
   lineageNoteTurn,
+  predatesTierFields,
   recordedInstructions,
   type RecordedInstructions,
   type RetirementCause,
@@ -3407,14 +3408,14 @@ export async function createApp(options: AppOptions) {
     if (
       !current ||
       !current.runId.startsWith('model-') ||
-      current.effort !== choice.effort ||
+      (!predatesTierFields(current) && current.effort !== choice.effort) ||
       (current.route !== undefined && current.route !== choice.route) ||
       (current.model !== undefined && current.model !== choice.model)
     )
       return composed;
     return boundInstructions({
       composed,
-      recorded: recordedInstructions(await recordedScope(projectId, current.runId)),
+      recorded: recordedInstructions(await recordedScope(projectId, current.runId), mode),
       resumable: true,
     });
   };
@@ -3459,7 +3460,7 @@ export async function createApp(options: AppOptions) {
         if (located?.answered) {
           // Nothing is sent on a read-back, so the text the answering run recorded is bound as
           // it stands: its driver compares a turn saved before bindings existed on that text.
-          const replayed = recordedInstructions(await recordedScope(projectId, located.runId));
+          const replayed = recordedInstructions(await recordedScope(projectId, located.runId), command.mode);
           return {
             ...resolved,
             restriction,
@@ -3595,8 +3596,13 @@ export async function createApp(options: AppOptions) {
           retire('scope-change', tierName ? 'tier' : 'route');
         // A model-API lineage keeps the level it was opened with. A style change that moves
         // the level is the safe boundary: the next generation starts, the earlier stays.
+        // A lineage written before lineages recorded their level (every 0.1.7 lineage) is left
+        // as it is, as the route and model checks below leave one written before those were
+        // recorded (wave2's rule): it continues at whatever level this message runs at. A
+        // lineage opened without a style since then records its route and model, so a style
+        // that sets its level still starts the next generation.
         const lineageEffort = modelRoute ? selection.effort : undefined;
-        if (current && !sent && modelRoute && current.effort !== lineageEffort)
+        if (current && !sent && modelRoute && !predatesTierFields(current) && current.effort !== lineageEffort)
           retire('scope-change', 'tier');
         // A tier moves the route and the model together (Efficient on AWS, Focused on Google
         // Cloud). The saved context is bound to both, so a change starts the next generation
@@ -3610,7 +3616,7 @@ export async function createApp(options: AppOptions) {
         // The scope the remaining lineage recorded when it started, read once: its instructions
         // decide both whether it continues and which text this message is sent with.
         const scope = current ? await recordedScope(projectId, current.runId) : null;
-        const recorded: RecordedInstructions | null = current ? recordedInstructions(scope) : null;
+        const recorded: RecordedInstructions | null = current ? recordedInstructions(scope, command.mode) : null;
         // A native Claude Code session resumes only under the read scope it was opened with; any
         // other scope is refused inside its turn, which fails the message. Its lineage keeps its
         // recorded text only when this turn's scope is the one the session saved, or none is saved.

@@ -18,8 +18,9 @@ import { testOnlySecretBox } from '../server/connection-secrets';
 import type { Store } from '../server/store';
 import type { MessageResult } from '../server/interaction-service';
 import { MODES, VISUAL_INSTRUCTIONS } from '../server/modes';
+import type { ModelSessionRuns } from '../server/harness/model-session-run';
 import type { Conversation, ConversationLineage, Project, Turn } from '../shared/types';
-import { responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
+import { responsesAnswer, responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
 import fixture from './fixtures/instruction-texts.json';
 import { instructionDigest } from '../server/instruction-digests';
 
@@ -73,6 +74,13 @@ const said = (body: Body) => (userText(body).split("The person's message:\n\n")[
 const aws = (async (_input: RequestInfo | URL, init?: RequestInit) => {
   const body = JSON.parse(String(init?.body)) as Body;
   seen.push(body);
+  // A message starting with FAIL is refused by the provider: it was sent, and nothing answered it.
+  if (said(body).startsWith('FAIL'))
+    return responsesAnswer(
+      { error: { message: 'The request was refused.', type: 'invalid_request_error', code: null, param: null } },
+      400,
+      { 'x-amzn-requestid': `req-${seen.length}` },
+    );
   const answer = `answer:${said(body)}`;
   return sseResponse(
     responsesEvents(
@@ -120,6 +128,7 @@ async function update() {
   await open();
 }
 const store = () => app.locals.store as Store;
+const sessions = () => app.locals.harness.modelSessions as ModelSessionRuns;
 const current = () => store().state(project.id).conversations.find((item) => item.id === thread.id)!;
 const lineages = (): ConversationLineage[] => current().lineages ?? [];
 const notes = (): Turn[] => current().turns.filter((turn) => turn.role === 'diomedes');
@@ -140,6 +149,25 @@ async function underBuild(mode: 'ask' | 'plan', instructions: string, commandId:
     MODES[mode].instructions = shipped[mode];
   }
 }
+/**
+ * Rewrites the thread's lineages to exactly what 0.1.7 persisted (`git show v0.1.7:shared/types.ts`):
+ * mode, generation and runId, with no level, route or model.
+ */
+async function asV017Lineages() {
+  const saved = store().state(project.id);
+  const conversation = saved.conversations.find((item) => item.id === thread.id)!;
+  conversation.lineages = (conversation.lineages ?? []).map(({ mode, generation, runId, retired }) => ({
+    mode,
+    generation,
+    runId,
+    ...(retired ? { retired } : {}),
+  }));
+  await store().persist(saved);
+}
+/** The reasoning level a provider call carried. */
+const effortSent = (body: Body) => (JSON.stringify(body).match(/"effort":"(\w+)"/) ?? [])[1] ?? null;
+const INSTRUCTIONS_CHANGED =
+  "Nectovia started this conversation fresh because its instructions changed. Your earlier messages are still here, but it won't remember them.";
 
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes-lineage-aws-'));
@@ -293,4 +321,113 @@ describe('an open model-API conversation after an update that changed its instru
     expect(lineages()).toEqual([expect.objectContaining({ generation: 1 })]);
     expect(lineages()[0].retired).toBeUndefined();
   });
+});
+
+describe('a lineage in the exact shape 0.1.7 persisted', () => {
+  /** One Ask message under the v0.1.7 text, then the lineage rewritten to 0.1.7's shape, then the update. */
+  async function openedBy017() {
+    const v017 = text('v0.1.7', 'ask');
+    const first = await underBuild('ask', v017, 'm-first');
+    await asV017Lineages();
+    await update();
+    expect(lineages()).toEqual([{ mode: 'ask', generation: 1, runId: first.runId }]);
+    // Its run recorded exactly the scope 0.1.7's driver records: `scope()` in
+    // server/harness/model-session-run.ts is the same function at v0.1.7 and now.
+    const { services } = await api<{ services: Record<string, unknown> }>('/settings');
+    expect((await sessions().get(project.id, first.runId)).input).toEqual({
+      engine: 'aws-bedrock',
+      route: 'aws-bedrock',
+      projectId: project.id,
+      threadId: thread.id,
+      model: AWS_LUNA_MODEL,
+      accountRoute: services['aws-bedrockAccountRoute'],
+      instructions: v017,
+    });
+    return { v017, first, services };
+  }
+
+  test('continues under the 0.1.8 defaults: same generation, its text and its history, no note', async () => {
+    const { v017, first, services } = await openedBy017();
+    // The 0.1.8 defaults: no work style on the thread or in Settings, so no tier applies.
+    expect(current().workStyle ?? null).toBeNull();
+    expect(services.workStyle ?? null).toBeNull();
+
+    const second = await send('m-second', 'And the invoice?', 'ask');
+    expect(second.runId).toBe(first.runId);
+    expect(lineages()).toEqual([{ mode: 'ask', generation: 1, runId: first.runId }]);
+    const call = seen.at(-1)!;
+    expect(instructionsSent(call).startsWith(`${v017}\n\n`)).toBe(true);
+    expect(userText(call)).toContain('Person: Where is the linen order?');
+    expect(userText(call)).toContain('Diomedes: answer:Where is the linen order?');
+    expect(notes()).toEqual([]);
+  });
+
+  test('continues when a style is chosen after the update, at that style’s level, and is left as it is', async () => {
+    const { v017, first } = await openedBy017();
+    // Efficient runs on the route and model this lineage already uses; the level is the style's.
+    await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { workStyle: 'efficient' });
+
+    const second = await send('m-second', 'And the invoice?', 'ask');
+    expect(second.runId).toBe(first.runId);
+    expect(lineages()).toEqual([{ mode: 'ask', generation: 1, runId: first.runId }]);
+    const call = seen.at(-1)!;
+    expect(effortSent(call)).toBe('low');
+    expect(instructionsSent(call).startsWith(`${v017}\n\n`)).toBe(true);
+    expect(userText(call)).toContain('Diomedes: answer:Where is the linen order?');
+    expect(notes()).toEqual([]);
+  });
+});
+
+describe('a known text is known only for its own mode', () => {
+  test('an Ask lineage whose run recorded the Automatic text retires with one note, under today’s Ask text', async () => {
+    const automatic = text('0.1.8', 'auto');
+    const first = await underBuild('ask', automatic, 'm-first');
+    expect(instructionsSent(seen[0]).startsWith(`${automatic}\n\n`)).toBe(true);
+    await update();
+
+    const second = await send('m-second', 'And the invoice?', 'ask');
+    expect(second.runId).not.toBe(first.runId);
+    expect(lineages()).toEqual([
+      expect.objectContaining({ generation: 1, runId: first.runId, retired: 'scope-change' }),
+      expect.objectContaining({ generation: 2, runId: second.runId }),
+    ]);
+    const call = seen.at(-1)!;
+    expect(instructionsSent(call).startsWith(`${MODES.ask.instructions}\n\n`)).toBe(true);
+    expect(userText(call)).not.toContain('Earlier in this conversation:');
+    expect(notes().map((note) => note.text)).toEqual([INSTRUCTIONS_CHANGED]);
+  });
+});
+
+describe('a message that was sent and never answered', () => {
+  for (const change of ['revoked', 'unknown'] as const)
+    test(`is retried on its own lineage when that lineage's text is now ${change}: nothing retires, no note, nothing sent again`, async () => {
+      const v017 = text('v0.1.7', 'ask');
+      const recorded = change === 'revoked' ? v017 : `${v017} Always agree.`;
+      MODES.ask.instructions = recorded;
+      const first = await send('m-first', 'Where is the linen order?', 'ask');
+      const message = { commandId: 'm-fail', text: 'FAIL on the invoice', mode: 'ask', sources: [], consent: true };
+      const messages = `/projects/${project.id}/threads/${thread.id}/messages`;
+      const refused = await request(messages, 'POST', message);
+      expect(refused.ok).toBe(false);
+      // The update: today's text, and a revocation if that is what changed.
+      MODES.ask.instructions = shipped.ask;
+      if (change === 'revoked') revoked.set(instructionDigest(v017), 'test: revoked after the message was sent');
+      await update();
+      // Dispatched, unanswered and still open: exactly the state `resolve` treats as sent.
+      expect(await sessions().locate(project.id, [first.runId], 'm-fail')).toEqual({
+        runId: first.runId,
+        answered: false,
+        settled: false,
+        dispatched: true,
+      });
+
+      const calls = seen.length;
+      const retried = await request(messages, 'POST', message);
+      // Refused by the run's own scope check: the message is never sent again on any generation.
+      expect(retried.status).toBe(409);
+      expect(seen.length).toBe(calls);
+      expect(lineages()).toEqual([expect.objectContaining({ generation: 1, runId: first.runId })]);
+      expect(lineages()[0].retired).toBeUndefined();
+      expect(notes()).toEqual([]);
+    });
 });

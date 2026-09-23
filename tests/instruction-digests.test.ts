@@ -24,9 +24,10 @@ describe('the known instruction digests', () => {
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       expect(instructionDigest(row.text), `${row.build} ${row.mode}`).toBe(row.sha256);
-      const label = KNOWN_INSTRUCTION_DIGESTS.get(row.sha256);
-      expect(label, `${row.build} ${row.mode}`).toContain(LABEL[row.mode]);
-      expect(label, `${row.build} ${row.mode}`).toContain(row.build);
+      const known = KNOWN_INSTRUCTION_DIGESTS.get(row.sha256);
+      expect(known?.mode, `${row.build} ${row.mode}`).toBe(row.mode);
+      expect(known?.label, `${row.build} ${row.mode}`).toContain(LABEL[row.mode]);
+      expect(known?.label, `${row.build} ${row.mode}`).toContain(row.build);
     }
   });
 
@@ -38,7 +39,7 @@ describe('the known instruction digests', () => {
   test("today's composed Ask, Plan and Automatic texts are known, and are the 0.1.8 fixtures", () => {
     for (const mode of ['ask', 'plan', 'auto'] as const) {
       const text = today(mode);
-      expect(KNOWN_INSTRUCTION_DIGESTS.has(instructionDigest(text)), mode).toBe(true);
+      expect(KNOWN_INSTRUCTION_DIGESTS.get(instructionDigest(text))?.mode, mode).toBe(mode);
       expect(rows.find((row) => row.build === '0.1.8' && row.mode === mode)?.text, mode).toBe(text);
     }
   });
@@ -63,13 +64,20 @@ describe('a recorded text', () => {
   const v017Ask = rows.find((row) => row.build === 'v0.1.7' && row.mode === 'ask')!.text;
 
   test('is kept only when it is known byte for byte', () => {
-    expect(recordedInstructions({ instructions: v017Ask })).toEqual({ state: 'known', text: v017Ask });
+    expect(recordedInstructions({ instructions: v017Ask }, 'ask')).toEqual({ state: 'known', text: v017Ask });
     const altered = v017Ask.replace('plainly', 'plainly!');
     expect(altered).not.toBe(v017Ask);
-    expect(recordedInstructions({ instructions: altered })).toEqual({ state: 'unknown', text: altered });
-    expect(recordedInstructions({ instructions: `${v017Ask} ` })).toMatchObject({ state: 'unknown' });
-    expect(recordedInstructions({ instructions: 7 })).toEqual({ state: 'absent' });
-    expect(recordedInstructions(null)).toEqual({ state: 'absent' });
+    expect(recordedInstructions({ instructions: altered }, 'ask')).toEqual({ state: 'unknown', text: altered });
+    expect(recordedInstructions({ instructions: `${v017Ask} ` }, 'ask')).toMatchObject({ state: 'unknown' });
+    expect(recordedInstructions({ instructions: 7 }, 'ask')).toEqual({ state: 'absent' });
+    expect(recordedInstructions(null, 'ask')).toEqual({ state: 'absent' });
+  });
+
+  test('is known only for the mode it was composed for', () => {
+    const automatic = rows.find((row) => row.mode === 'auto')!.text;
+    expect(recordedInstructions({ instructions: automatic }, 'auto')).toEqual({ state: 'known', text: automatic });
+    expect(recordedInstructions({ instructions: automatic }, 'ask')).toEqual({ state: 'unknown', text: automatic });
+    expect(recordedInstructions({ instructions: v017Ask }, 'plan')).toEqual({ state: 'unknown', text: v017Ask });
   });
 
   test('that changed is explained in plain words', () => {

@@ -8,7 +8,7 @@
  * retirement itself.
  */
 import { createHash } from 'node:crypto';
-import type { Mode, Route, Turn } from '../shared/types.js';
+import type { ConversationLineage, Mode, Route, Turn } from '../shared/types.js';
 import { AGENT_NAME } from '../shared/agent-name.js';
 import { applicationOrigin } from '../shared/attribution.js';
 import {
@@ -24,13 +24,26 @@ export type RecordedInstructions =
   | { state: 'unknown'; text: string }
   | { state: 'absent' };
 
-/** Reads `instructions` from a lineage run's recorded scope (`run.input`). */
-export function recordedInstructions(runInput: unknown): RecordedInstructions {
+/**
+ * Reads `instructions` from a lineage run's recorded scope (`run.input`), for a lineage of `mode`.
+ * A text is known only for the mode that composed it; another mode's text is unknown here.
+ */
+export function recordedInstructions(runInput: unknown, mode: ConversationLineage['mode']): RecordedInstructions {
   const text = (runInput as { instructions?: unknown } | null)?.instructions;
   if (typeof text !== 'string') return { state: 'absent' };
   const digest = instructionDigest(text);
   if (REVOKED_INSTRUCTION_DIGESTS.has(digest)) return { state: 'revoked', text };
-  return KNOWN_INSTRUCTION_DIGESTS.has(digest) ? { state: 'known', text } : { state: 'unknown', text };
+  return KNOWN_INSTRUCTION_DIGESTS.get(digest)?.mode === mode ? { state: 'known', text } : { state: 'unknown', text };
+}
+
+/**
+ * Whether a lineage was written before lineages recorded the route, model and level they run on,
+ * as every 0.1.7 lineage was. Wave2's checks on those fields leave such a lineage as it is: none of
+ * them was recorded, so none of them can have moved. A lineage opened since records its route and
+ * model, and its level whenever a style set one.
+ */
+export function predatesTierFields(lineage: Pick<ConversationLineage, 'effort' | 'route' | 'model'>): boolean {
+  return lineage.effort === undefined && lineage.route === undefined && lineage.model === undefined;
 }
 
 /**
