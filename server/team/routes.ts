@@ -89,6 +89,7 @@ export function mountTeamRoutes(app: Express, store: Store, existing?: TeamServi
         role: b.role,
         engine: b.engine,
         model: b.model,
+        style: b.style,
         threadId: b.threadId,
         agentId: b.agentId,
       });

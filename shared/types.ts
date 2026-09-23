@@ -568,8 +568,16 @@ export interface TeamMember {
   role: 'lead' | 'member';
   /** Team membership by Agent identity. Absent on members created before Agents. */
   agentId?: string;
-  engine: 'codex' | 'claude-code' | 'opencode' | 'oh-my-pi' | 'sample' | 'probe';
+  /**
+   * The route this member runs on. Any route may be recorded (members saved before
+   * 2026-09-23 may name one that cannot carry team tools); only the routes in
+   * `shared/team-routes.ts` can run, and the rest are refused by name.
+   */
+  engine: Exclude<Route, 'sample'> | 'sample' | 'probe';
+  /** The model requested for this member, or null for the route's own default. Never a reported model. */
   model: string | null;
+  /** How the route and model were chosen. Absent on members created before 2026-09-23. */
+  selection?: import('./team-routes.js').TeamMemberSelection;
   status: 'idle' | 'working' | 'waiting' | 'stopped' | 'error';
   threadId: string | null;
   createdAt: string;

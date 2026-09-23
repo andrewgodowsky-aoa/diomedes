@@ -19,6 +19,15 @@ import {
   unreadForSlot,
 } from './mailbox.js';
 import {
+  isTeamRoute,
+  resolveTeamMemberModel,
+  teamRouteRefusal,
+  type TeamMemberSelection,
+  type TeamRouteCandidate,
+} from '../../shared/team-routes.js';
+import { isRoute } from '../../shared/engines.js';
+import { isWorkStyle, type WorkStyle } from '../../shared/work-style.js';
+import {
   checkCompletionAllowed,
   engineLabel,
   memberAttribution,
@@ -30,14 +39,12 @@ import {
   type TeamTaskStatus,
 } from './board.js';
 
-const engines: TeamMember['engine'][] = [
-  'codex',
-  'claude-code',
-  'opencode',
-  'oh-my-pi',
-  'sample',
-  'probe',
-];
+/** Routes with no provider behind them, kept for demos and tests. They never run team work. */
+const localEngines: TeamMember['engine'][] = ['sample', 'probe'];
+/** The request value that asks Nectovia to choose the member's route and model. */
+export const AUTO_TEAM_ENGINE = 'auto';
+/** The style "Nectovia chooses" follows when none is given; the lead resolves one tier above. */
+const DEFAULT_TEAM_STYLE: WorkStyle = 'focused';
 const roles: TeamMember['role'][] = ['lead', 'member'];
 const statuses: TeamMember['status'][] = ['idle', 'working', 'waiting', 'stopped', 'error'];
 
@@ -66,6 +73,8 @@ export interface RunStarterInput {
 }
 
 export type RunStarter = (input: RunStarterInput) => Promise<{ sessionId: string }>;
+/** The routes the person turned on and connected, with what each reported, for "Nectovia chooses". */
+export type TeamRouteCandidates = (projectId: string) => TeamRouteCandidate[];
 
 /** At most this many automatic wakes per slot inside AUTO_WAKE_WINDOW_MS. */
 const AUTO_WAKE_LIMIT = 5;
@@ -82,6 +91,7 @@ function renderWakeText(team: TeamState, unread: MailboxMessage[]): string {
 
 export class TeamService {
   private runStarter: RunStarter | null = null;
+  private candidates: TeamRouteCandidates | null = null;
   private wakeLog = new Map<string, number[]>();
   private clock: () => number = () => Date.now();
 
@@ -90,6 +100,11 @@ export class TeamService {
   /** Wire the app's run starter later; until then wakes park as 'waiting' and never fail a send. */
   setRunStarter(fn: RunStarter): void {
     this.runStarter = fn;
+  }
+
+  /** Wire the host's connected-route facts; until then "Nectovia chooses" is refused. */
+  setRouteCandidates(fn: TeamRouteCandidates): void {
+    this.candidates = fn;
   }
 
   /** Test seam for the auto-wake budget clock (avoids fake timers around network tests). */
@@ -169,8 +184,11 @@ export class TeamService {
     input: {
       name: unknown;
       role: unknown;
+      /** A route id, or `auto` for "Nectovia chooses". */
       engine: unknown;
       model?: unknown;
+      /** For `auto`: the WorkStyle the team follows. The lead resolves one tier above it. */
+      style?: unknown;
       threadId?: unknown;
       /** Team membership by Agent identity. Validated by the caller's registry. */
       agentId?: unknown;
@@ -181,15 +199,44 @@ export class TeamService {
     const name = asName(input.name, 'a member name');
     if (!roles.includes(input.role as TeamMember['role']))
       throw new ApiError(400, 'Choose a valid member role.');
-    if (!engines.includes(input.engine as TeamMember['engine']))
-      throw new ApiError(400, 'Choose a valid engine.');
     const role = input.role as TeamMember['role'];
-    const engine = input.engine as TeamMember['engine'];
+    let engine: TeamMember['engine'];
     let model: string | null = null;
-    if (input.model !== undefined && input.model !== null) {
-      if (typeof input.model !== 'string' || input.model.length > 200)
-        throw new ApiError(400, 'Provide a model of up to 200 characters.');
-      model = input.model;
+    let selection: TeamMemberSelection;
+    if (input.engine === AUTO_TEAM_ENGINE) {
+      if (input.model !== undefined && input.model !== null)
+        throw new ApiError(400, 'Nectovia chooses the model when it chooses the route. Choose a route to pick a model yourself.');
+      if (input.style !== undefined && input.style !== null && !isWorkStyle(input.style))
+        throw new ApiError(400, 'Choose Efficient, Focused or Thorough.');
+      const style = isWorkStyle(input.style) ? input.style : DEFAULT_TEAM_STYLE;
+      if (!this.candidates)
+        throw new ApiError(409, 'Nectovia cannot choose a team model here. Choose a route and model for this member.');
+      const resolved = resolveTeamMemberModel({ role, style, candidates: this.candidates(projectId) });
+      if (resolved.outcome === 'ask') throw new ApiError(409, resolved.reason);
+      engine = resolved.route;
+      model = resolved.model;
+      selection = resolved.selection;
+    } else {
+      if (
+        !localEngines.includes(input.engine as TeamMember['engine']) &&
+        !isTeamRoute(input.engine)
+      ) {
+        // A known route that cannot carry the tools is named, never swapped for one that can.
+        if (isRoute(input.engine)) throw new ApiError(409, teamRouteRefusal(input.engine)!);
+        throw new ApiError(400, 'Choose a valid engine.');
+      }
+      engine = input.engine as TeamMember['engine'];
+      if (input.model !== undefined && input.model !== null) {
+        if (typeof input.model !== 'string' || input.model.length > 200)
+          throw new ApiError(400, 'Provide a model of up to 200 characters.');
+        model = input.model;
+      }
+      selection = {
+        by: 'person',
+        style: null,
+        reason: model ? 'Chosen model.' : 'The route’s own default.',
+        substituted: false,
+      };
     }
     let agentId: string | null = null;
     if (input.agentId !== undefined && input.agentId !== null) {
@@ -217,6 +264,10 @@ export class TeamService {
         updatedAt: stamped,
         taskId: null,
         helper: { engine, model },
+        // The member's thread runs on the member's own route and model, so every path that
+        // reads the thread (the picker, Work start, a wake) resolves the same request.
+        ...(isRoute(engine) ? { engine } : {}),
+        ...(model ? { requested: { model, effort: null } } : {}),
         // A member's thread runs Build; the person can switch it on the Console.
         mode: 'build',
       };
@@ -230,6 +281,7 @@ export class TeamService {
       ...(agentId ? { agentId } : {}),
       engine,
       model,
+      selection,
       status: 'idle',
       threadId,
       createdAt: stamped,

@@ -1,6 +1,7 @@
 // Tool names and mailbox semantics follow iOfficeAI/AionCore v0.2.1 crates/aionui-team (Apache-2.0); reimplemented for Diomedes.
 import type { Task, TaskState, TeamMember } from '../../shared/types.js';
 import { ApiError } from '../paths.js';
+import { routeDisplayName } from '../../shared/engines.js';
 
 export type TeamTaskStatus = 'pending' | 'in_progress' | 'completed' | 'deleted';
 
@@ -19,7 +20,7 @@ export function engineLabel(engine: TeamMember['engine']): string {
     case 'probe':
       return 'Probe';
     default:
-      return String(engine);
+      return routeDisplayName(engine) || String(engine);
   }
 }
 

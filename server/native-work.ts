@@ -6,6 +6,19 @@ import { diffLines } from 'diff';
 import type { Change, Need, Session, ThreadPermission } from '../shared/types.js';
 import type { WorkAdmission } from './work-admission.js';
 import { askCodex, nativeWorkDisclosure, type NativeTeamOptions } from './integrations.js';
+import {
+  TEAM_CARRIAGE,
+  teamRouteRefusal,
+  type TeamRoute,
+} from '../shared/team-routes.js';
+
+/** What a team run can reach, said once in the session log, per carriage. */
+function teamWorkDisclosure(route: TeamRoute): string {
+  if (route === 'codex') return nativeWorkDisclosure({} as NativeTeamOptions);
+  if (TEAM_CARRIAGE[route] === 'mcp')
+    return `This run can talk to the Diomedes team service and no other MCP service. ${routeDisplayName(route)}'s own file, shell and web tools stay off. Diomedes applies file proposals only after your approval.`;
+  return `The model is offered the Diomedes team tools only, and Diomedes runs each call itself as this member. It has no file, shell or web access. Diomedes applies file proposals only after your approval.`;
+}
 import { MODES } from './modes.js';
 import { effortFor } from '../shared/effort.js';
 import { absent, ApiError, projectFile, relativeName, textKind } from './paths.js';
@@ -336,8 +349,10 @@ export class NativeWorkService {
     const engine = input.engine ?? 'codex';
     if (this.store.settings.services?.[engine] !== true)
       throw new ApiError(409, `Turn ${engine} on in Settings before using it.`);
-    if (input.team && engine !== 'codex')
-      throw new ApiError(409, 'Team tools are not supported on this route.');
+    // Team work runs on every route that can carry the team tools (shared/team-routes.ts).
+    // A route that cannot is refused by name; nothing falls back to another route.
+    const teamRefusal = input.team ? teamRouteRefusal(engine) : null;
+    if (teamRefusal) throw new ApiError(409, teamRefusal);
     if (input.consent !== true)
       throw new ApiError(
         409,
@@ -412,30 +427,40 @@ export class NativeWorkService {
     let tokenLease: Pick<NativeRun, 'releaseToken' | 'redact'> = {};
     if (member && input.team) {
       const tokenEnv = `DIOMEDES_TEAM_${member.slotId.toUpperCase().replace(/[^A-Z0-9]/g, '')}`;
-      if (
-        input.team.tokenEnv !== tokenEnv ||
-        member.engine !== 'codex' ||
-        input.team.role !== member.role
-      )
+      // The run must be this member's own: its slot's token variable, its role, and its
+      // own route. A member saved for one route never runs its team tools on another.
+      if (input.team.tokenEnv !== tokenEnv || input.team.role !== member.role)
         throw new ApiError(400, 'The team run configuration does not match this member.');
+      if (member.engine !== engine)
+        throw new ApiError(
+          409,
+          `${member.name} works through ${routeDisplayName(member.engine) || member.engine}, not ${routeDisplayName(engine)}. Switch the thread back to ${routeDisplayName(member.engine) || member.engine} to run this helper.`,
+        );
       const token = (await this.store.readTeamSecrets(projectId))[member.slotId];
       if (!token) throw new ApiError(409, 'This team member has no stored token.');
-      if (process.env[tokenEnv] !== undefined)
+      // Only a route whose engine reaches the team service itself needs the token; a
+      // host-carried route runs the tools in this process as the member, and no token
+      // leaves the host.
+      const carried = TEAM_CARRIAGE[engine as TeamRoute] === 'mcp';
+      if (carried && process.env[tokenEnv] !== undefined)
         throw new ApiError(409, 'This team member already has a token environment in use.');
       // Validation and secret reads yield; another start may have claimed the
       // project in the meantime. Do not lease its environment or add a session.
       if (state.sessions.some(active) || this.runs.has(projectId))
         throw new ApiError(409, 'This project already has work in progress.');
-      process.env[tokenEnv] = token;
-      let released = false;
-      tokenLease = {
-        releaseToken: () => {
-          if (released) return;
-          released = true;
-          if (process.env[tokenEnv] === token) delete process.env[tokenEnv];
-        },
-        redact: secretScrubber([token]),
-      };
+      if (!carried) tokenLease = { redact: secretScrubber([token]) };
+      else {
+        process.env[tokenEnv] = token;
+        let released = false;
+        tokenLease = {
+          releaseToken: () => {
+            if (released) return;
+            released = true;
+            if (process.env[tokenEnv] === token) delete process.env[tokenEnv];
+          },
+          redact: secretScrubber([token]),
+        };
+      }
     }
     const commit = input.commit ?? (<T>(step: () => Promise<T>) => step());
     // Preparation is done. What follows is the final validation and the durable admission,
@@ -488,14 +513,15 @@ export class NativeWorkService {
           ? `Preparing a proposal with ${routeDisplayName(engine)} from ${sources.length} ${sources.length === 1 ? 'document' : 'documents'}.`
           : `Preparing a proposal with ${routeDisplayName(engine)}.`,
       );
-      this.log(
-        session,
-        engine === 'codex'
-          ? 'The engine has no file or shell access.'
-          : 'The adapter disables engine tools and sends only selected text. This is not an operating-system sandbox.',
-        'technical',
-      );
-      if (input.team) this.log(session, nativeWorkDisclosure(input.team), 'technical');
+      if (input.team) this.log(session, teamWorkDisclosure(engine as TeamRoute), 'technical');
+      else
+        this.log(
+          session,
+          engine === 'codex'
+            ? 'The engine has no file or shell access.'
+            : 'The adapter disables engine tools and sends only selected text. This is not an operating-system sandbox.',
+          'technical',
+        );
       if (instructions.delivery) {
         // Said once, in the place History already reads: which files went, at
         // which sha, and which were left out whole. The session carries the same
