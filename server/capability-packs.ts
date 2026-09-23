@@ -274,13 +274,16 @@ export async function discoverInstructionFiles(
     }
   }
   const previous = state.instructionFiles ?? [];
+  // Records from a pack that is off stay as they were: turning one pack on must not
+  // erase what another, now inactive, pack already found.
+  const next = [...previous.filter((record) => !active.includes(record.packId)), ...found];
   const unchanged =
-    previous.length === found.length &&
-    previous.every((record, index) => sameFinding(record, found[index]));
+    previous.length === next.length &&
+    previous.every((record, index) => sameFinding(record, next[index]));
   if (unchanged) return [...previous];
-  state.instructionFiles = found;
+  state.instructionFiles = next;
   await store.persist(state);
-  return [...found];
+  return [...next];
 }
 
 async function setActivation(

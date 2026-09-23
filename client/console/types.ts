@@ -39,7 +39,7 @@ export type FilesPaneProps = { projectId: string; documents: DocumentInfo[]; loa
   onEdit?(path: string): void; };
 export type PalettePoint = '' | 'live' | 'attn' | 'fail' | 'done';
 export type PaletteAction = { label: string; run(): void | Promise<void>; light?: boolean; stay?: boolean };
-export type PaletteEntry = { group: 'Recent' | 'Tasks' | 'Files' | 'Workers' | 'Models' | 'Projects' | 'Views'; id: string; name: string; sub: string; point: PalettePoint; actions: PaletteAction[];
+export type PaletteEntry = { group: 'Recent' | 'Tasks' | 'Files' | 'Skills' | 'Workers' | 'Models' | 'Projects' | 'Views'; id: string; name: string; sub: string; point: PalettePoint; actions: PaletteAction[];
   /** Extra text the verb search matches but the row does not print: a document's full path, so a folder name finds a file whose row shows only its name. */
   search?: string };
 export type PaletteProps = { open: boolean; entries(query: string): PaletteEntry[]; onClose(): void; query?: string; onQuery?(query: string): void };

@@ -789,6 +789,20 @@ html[data-surface='console'] body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Removing a picked playbook: a quiet word at the row's end, not a second control style. */
+.console .aux .clear {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--t2);
+  font: inherit;
+  cursor: pointer;
+}
+.console .aux .clear:hover,
+.console .aux .clear:focus-visible {
+  color: var(--t1);
+}
 .console .aux select {
   background-color: var(--surface);
   color: var(--t1);

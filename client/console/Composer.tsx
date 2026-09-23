@@ -47,6 +47,13 @@ interface ComposerProps {
   confirmSend: boolean;
   prepareSources(text: string, failingDocument: string): Promise<string[]>;
   onSend(text: string, failingDocument: string, failingText: string, sources: string[]): void;
+  /**
+   * A playbook the person picked for the next message. Named once beside the box and
+   * removable; `starter` fills the box each time `n` changes. The playbook's own text is
+   * never put in the box: it travels in the instruction channel.
+   */
+  skill?: { name: string; starter: string; n: number } | null;
+  onClearSkill?(): void;
 }
 
 /** Pure, because React may run a state initializer twice; the effect below clears it. */
@@ -66,13 +73,17 @@ function carriedAsk(projectId: string): string {
  */
 export function Composer({
   thread, projectId, mode, onMode, busy, online, route, confirmSend, prepareSources, onSend,
+  skill = null, onClearSkill,
 }: ComposerProps) {
   // What the person typed on the Projects page arrives here, once. It used to
   // be read by the Workbook alone, so from the Console the words were dropped
   // on the way into the project. It is taken, not copied: once this composer
   // holds it the stored copy goes, so a second thread does not open holding the
   // same sentence.
-  const [text, setText] = useState(() => (projectId ? carriedAsk(projectId) : ''));
+  const [text, setText] = useState(
+    () => skill?.starter ?? (projectId ? carriedAsk(projectId) : ''),
+  );
+  const appliedSkill = useRef(skill?.n ?? 0);
   useEffect(() => {
     if (!projectId) return;
     try {
@@ -119,6 +130,14 @@ export function Composer({
     setFailingDocument('');
     setFailingText('');
   }, [thread.id]);
+  // A picked playbook fills the box. Declared after the thread effect above, so a pick that
+  // opens a new thread lands in the box that thread's change just emptied.
+  useEffect(() => {
+    if (!skill || appliedSkill.current === skill.n) return;
+    appliedSkill.current = skill.n;
+    setText(skill.starter);
+    box.current?.focus();
+  }, [skill?.n]);
   useEffect(() => {
     if (mode !== 'fix') {
       setFailingDocument('');
@@ -300,6 +319,24 @@ export function Composer({
             <span className="mono lc names" style={{ color: 'var(--t1)' }} title={sources.join(', ')}>
               {sources.join(', ')}
             </span>
+          </div>
+        )}
+        {skill && (
+          <div className="aux show">
+            <span className="mono">playbook</span>
+            <span className="mono lc names" style={{ color: 'var(--t1)' }} title={skill.name}>
+              {skill.name}
+            </span>
+            {onClearSkill && (
+              <button
+                type="button"
+                className="clear"
+                aria-label={`Remove the ${skill.name} playbook`}
+                onClick={onClearSkill}
+              >
+                Remove
+              </button>
+            )}
           </div>
         )}
         {mode === 'fix' && (

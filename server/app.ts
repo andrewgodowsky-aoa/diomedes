@@ -153,6 +153,7 @@ import { projectedTurnIds, turnIdentityText } from '../shared/conversation-turn-
 import { AppUpdateService, mountAppUpdateRoutes, type UpdateTransport } from './app-updates.js';
 import { EngineInstaller } from './engines/install.js';
 import { NativeLogin } from './engines/login.js';
+import { assembleSkillSection, instructionSectionBudget } from './harness/instruction-delivery.js';
 
 interface AppOptions {
   dataDir: string;
@@ -3531,6 +3532,20 @@ export async function createApp(options: AppOptions) {
           'Automatic is a conversation mode. Direct execution does not accept it.',
         );
       const mode = parsedMode;
+      // A Small Business skill the person picked. Checked here, before consent is asked for or
+      // anything is read, so a skill that cannot run says why instead of a send being confirmed
+      // for nothing. The section itself is assembled once the selected documents are known,
+      // because they decide how much room it has.
+      const skillId =
+        b.skill === undefined || b.skill === null ? undefined : asString(b.skill, 'a skill', 64);
+      if (skillId !== undefined)
+        assembleSkillSection({
+          state: store.state(projectId),
+          packId: 'diomedes.small-business',
+          skillId,
+          mode,
+          budgetBytes: Number.POSITIVE_INFINITY,
+        });
       const attached =
         b.attachedTo === undefined ? { kind: 'project', ref: projectId } : plain(b.attachedTo);
       const attachedTo: Conversation['attachedTo'] = {
@@ -3661,8 +3676,21 @@ export async function createApp(options: AppOptions) {
             return { path: name, text: document.text };
           }),
         );
-        if (documents.reduce((total, d) => total + Buffer.byteLength(d.text), 0) > 128000)
+        const documentBytes = documents.reduce((total, d) => total + Buffer.byteLength(d.text), 0);
+        if (documentBytes > 128000)
           throw new ApiError(413, 'Choose less than 128 KB of source text for this request.');
+        // Assembled before the turn is written, so a playbook that does not fit leaves no turn
+        // behind. It rides in the instruction channel below; the person's words stay theirs.
+        const skill =
+          skillId === undefined
+            ? undefined
+            : assembleSkillSection({
+                state,
+                packId: 'diomedes.small-business',
+                skillId,
+                mode,
+                budgetBytes: instructionSectionBudget(documentBytes),
+              });
         const youTurn: Turn = {
           id: identifier('U'),
           role: 'you',
@@ -3672,12 +3700,25 @@ export async function createApp(options: AppOptions) {
           sources,
           route: serviceRoute,
           ...(attempt ? { attempt } : {}),
+          ...(skill
+            ? { skill: serviceRoute === 'sample' ? { ...skill.use, bytes: 0 } : skill.use }
+            : {}),
         };
         conversation.turns.push(youTurn);
         touchThread(conversation, youTurn.at, state.tasks);
         await store.persist(state);
-        return { conversationId: conversation.id, documents, attempt };
+        return {
+          conversationId: conversation.id,
+          documents,
+          attempt,
+          skill: skill ? { section: skill.section, name: skill.use.name } : undefined,
+        };
       });
+      // The mode's own contract first, then the playbook the person picked, if any. Identical on
+      // every route that takes an instruction channel.
+      const instructionsForRequest = prepared.skill
+        ? `${MODES[mode].instructions}\n\n${prepared.skill.section}`
+        : MODES[mode].instructions;
       let answer: string;
       let helper: NonNullable<Turn['helper']>;
       const runChoice =
@@ -3720,7 +3761,7 @@ export async function createApp(options: AppOptions) {
             requestId,
             prompt: text,
             documents: prepared.documents,
-            instructions: MODES[mode].instructions,
+            instructions: instructionsForRequest,
             model: requestedModel,
             accountRoute,
             signal: connectionSignal(res),
@@ -3781,7 +3822,7 @@ export async function createApp(options: AppOptions) {
             prompt: text,
             documents: prepared.documents,
             ...(requestedModel ? { model: requestedModel } : {}),
-            instructions: MODES[mode].instructions,
+            instructions: instructionsForRequest,
             // A level chosen for the thread outranks the mode's own, up to the
             // mode's ceiling; only Fix has one, so Ask and Plan follow the choice.
             effort: effortFor(mode, runChoice.effort, MODES[mode].effort),
@@ -3805,7 +3846,7 @@ export async function createApp(options: AppOptions) {
         helper = sampleHelper();
         answer =
           mode === 'ask'
-            ? `No service is connected for this request, so Diomedes cannot answer yet.${sources.length ? ` It would read ${sources.slice(0, 3).join(', ')} to answer.` : ''} ${
+            ? `No service is connected for this request, so Diomedes cannot answer yet.${prepared.skill ? ` It would follow the ${prepared.skill.name} playbook.` : ''}${sources.length ? ` It would read ${sources.slice(0, 3).join(', ')} to answer.` : ''} ${
                 store.settings.surface === 'console'
                   ? 'Turn an engine on in Settings > Engines.'
                   : 'Turn a helper on in Settings > Helpers on this computer.'
