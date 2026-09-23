@@ -439,7 +439,7 @@ describe('the pack routes', () => {
     await open();
     const listed = await call(`/projects/${projectId}/packs`);
     expect(listed.status).toBe(200);
-    expect(listed.data.packs).toHaveLength(1);
+    expect(listed.data.packs).toHaveLength(2);
     expect(listed.data.activations).toEqual([]);
     expect(listed.data.instructionFiles).toEqual([]);
 

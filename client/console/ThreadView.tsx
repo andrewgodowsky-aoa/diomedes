@@ -100,6 +100,9 @@ interface ThreadViewProps {
   onCancelText?(): void;
   /** Where a refused scoped Stop is reported; without it the refusal is silent. */
   onError?(error: Error): void;
+  /** A playbook picked for the next message, passed through to the composer. */
+  skill?: { name: string; starter: string; n: number } | null;
+  onClearSkill?(): void;
 }
 
 /**
@@ -143,6 +146,8 @@ export function ThreadView({
   streaming,
   onCancelText,
   onError,
+  skill = null,
+  onClearSkill,
 }: ThreadViewProps) {
   const permission: ThreadPermission = thread.permission ?? 'show-first';
   const live = sessions.find((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? null;
@@ -217,6 +222,11 @@ export function ThreadView({
                   </span>
                 )}
                 <span className="mono">{time(t.at).toLowerCase()}</span>
+                {t.role === 'you' && t.skill && (
+                  <span className="mono lc" title={`${t.skill.packId} ${t.skill.packVersion}`}>
+                    playbook {t.skill.name}
+                  </span>
+                )}
                 {t.role !== 'you' && (
                   <span className="tools">
                     <button
@@ -499,6 +509,8 @@ export function ThreadView({
         }
         prepareSources={(text, doc) => prepareSources(mode, text, doc)}
         onSend={submit}
+        skill={skill}
+        onClearSkill={onClearSkill}
       />
       {/* A follow-up waits behind a run. With nothing running and nothing queued,
           the composer above sends at once, so a second box would only ask the

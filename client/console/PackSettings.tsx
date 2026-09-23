@@ -60,7 +60,8 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
       <h3>Capabilities</h3>
       {view?.packs.map((pack) => {
         const on = isPackActive(view.activations, pack.id);
-        const found = view.instructionFiles.length;
+        // Records are per pack: another pack's instruction files are not this one's finding.
+        const found = view.instructionFiles.filter((record) => record.packId === pack.id).length;
         return (
           <div className="pack" key={pack.id}>
             <div className="pack-head">
@@ -79,6 +80,11 @@ export function PackSettings({ projectId, onChange }: { projectId: string; onCha
             <p>Turning it on grants nothing; Trust still decides.</p>
             <p className="pack-label">What it contributes</p>
             <p className="mono lc pack-contributes">{pack.contributes.join(' · ')}</p>
+            {pack.skills.length > 0 && (
+              <p>
+                {pack.skills.length} playbooks, found with Ctrl K{on ? '' : ' once it is on'}.
+              </p>
+            )}
             {on && found > 0 && (
               <p>
                 {found} instruction {found === 1 ? 'file' : 'files'} recorded in this project.

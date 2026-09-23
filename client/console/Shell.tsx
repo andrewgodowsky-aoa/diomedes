@@ -77,7 +77,12 @@ import './console.css';
 import './palette.css';
 import './motion.css';
 import './files.css';
-import { activeInstructionFiles } from '../../shared/capability-packs';
+import {
+  activeInstructionFiles,
+  isPackActive,
+  SMALL_BUSINESS_PACK,
+  type PackSkill,
+} from '../../shared/capability-packs';
 
 interface ShellProps {
   projectId: string;
@@ -158,6 +163,13 @@ export function Shell({
   const [workspacesOpen, setWorkspacesOpen] = useState(false);
   const [workspace, setWorkspace] = useWorkspace(report);
   const [mode, setMode] = useState<Mode>('ask');
+  // The playbook a person picked for their next message in one thread. It lives here, not in
+  // the composer, because the send is made here; `n` refills the composer on each pick.
+  const [skillDraft, setSkillDraft] = useState<{
+    skill: PackSkill;
+    threadId: string;
+    n: number;
+  } | null>(null);
   const [route, setRoute] = useState<Route>(selectedEngine(settings));
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
@@ -822,6 +834,31 @@ export function Shell({
       await load();
     });
   }
+  /**
+   * Launch a playbook: an empty thread is reused, otherwise a new one opens, in the skill's
+   * Mode, with the composer filled and the skill shown beside it. Nothing is sent: the person
+   * reads, edits and presses Send, and the playbook itself travels in the instruction channel.
+   */
+  async function launchSkill(skill: PackSkill) {
+    await perform(async () => {
+      let target = selected && selected.turns.length === 0 ? selected : null;
+      if (!target) target = await api<Conversation>(`${base}/threads`, 'POST', {});
+      if ((target.mode ?? 'ask') !== skill.mode)
+        await api(`${base}/threads/${target.id}`, 'PUT', { mode: skill.mode });
+      await load();
+      setSelectedId(target.id);
+      setMode(skill.mode);
+      setView('Thread');
+      setSkillDraft((prev) => ({ skill, threadId: target.id, n: (prev?.n ?? 0) + 1 }));
+    });
+  }
+  async function turnOnSkills() {
+    await perform(async () => {
+      await api(`/projects/${projectId}/packs/${SMALL_BUSINESS_PACK.id}/activate`, 'POST', {});
+      await load();
+      say(`${SMALL_BUSINESS_PACK.name} skills are on for this project.`);
+    });
+  }
   function changeMode(next: Mode) {
     if (!selected || next === mode) return;
     const previous = mode;
@@ -994,6 +1031,7 @@ export function Shell({
     route: Route,
     failing?: { document?: string; text?: string },
     sources?: string[],
+    skill?: string,
   ) {
     askControl.current?.abort();
     const control = new AbortController();
@@ -1014,9 +1052,11 @@ export function Shell({
             attachedTo: thread.attachedTo,
             ...(sources ? { sources } : {}),
             ...(mode === 'fix' && failing ? { failing } : {}),
+            ...(skill ? { skill } : {}),
           },
           control.signal,
         );
+        if (skill) setSkillDraft((prev) => (prev?.threadId === thread.id ? null : prev));
         await load();
         // The persisted turn is in; drop the ephemeral text if still ours.
         streamingId.current = null;
@@ -1315,6 +1355,11 @@ export function Shell({
     needs: state.needs,
     changes: state.changes,
     documents,
+    skills: {
+      active: isPackActive(state.project.packs, SMALL_BUSINESS_PACK.id),
+      name: SMALL_BUSINESS_PACK.name,
+      list: SMALL_BUSINESS_PACK.skills,
+    },
     members: team.members,
     catalogs,
     integrations,
@@ -1367,6 +1412,8 @@ export function Shell({
       setView: (v) => setView(v),
       openProject: (p) => onOpenProject(p),
       openDocument,
+      launchSkill: (skill) => void launchSkill(skill),
+      turnOnSkills: () => void turnOnSkills(),
     },
   };
   const paletteEntries = (query: string) => applyQuery(buildEntries(paletteCtx), query);
@@ -1596,8 +1643,24 @@ export function Shell({
               onPermission={(p) => void setPermission(selected, p)}
               onRename={() => setRenaming({ id: selected.id, name: threadName(selected, state) })}
               prepareSources={(m, text, doc) => messageSources(selected, m, text, doc)}
+              skill={
+                skillDraft?.threadId === selected.id && (mode === 'ask' || mode === 'plan')
+                  ? { name: skillDraft.skill.name, starter: skillDraft.skill.starter, n: skillDraft.n }
+                  : null
+              }
+              onClearSkill={() => setSkillDraft(null)}
               onSend={(m, text, r, failing, sources) =>
-                void send(selected, m, text, r, failing, sources)
+                void send(
+                  selected,
+                  m,
+                  text,
+                  r,
+                  failing,
+                  sources,
+                  skillDraft?.threadId === selected.id && (m === 'ask' || m === 'plan')
+                    ? skillDraft.skill.id
+                    : undefined,
+                )
               }
               onResolve={(n, res, allow) => void resolveNeed(n, res, allow)}
               onPreview={setPreviewNeed}
