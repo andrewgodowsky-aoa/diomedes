@@ -104,6 +104,11 @@ export interface GuardedFetchOptions {
   label: string;
   /** The one URL (origin and path, no query) the credential may reach. */
   expectedUrl: string;
+  /**
+   * The exact query string that URL must carry, `?` included (Vertex streams only with
+   * `?alt=sse`). Empty, the default, refuses any query at all.
+   */
+  expectedQuery?: string;
   secret: string;
   /** Replaces whatever credential header the SDK set with the real one. */
   attach(headers: Headers, secret: string): void;
@@ -115,6 +120,12 @@ export interface GuardedFetchOptions {
   signal: AbortSignal;
   transport?: typeof globalThis.fetch;
   onDispatch: () => void;
+  /**
+   * The last admission before bytes leave, awaited after every other check: a funded route
+   * commits its dispatch here and re-checks that the payer still allows the send. Throwing
+   * refuses the call with nothing sent.
+   */
+  beforeDispatch?: () => Promise<void>;
   onEnvelope: (envelope: StreamEnvelope) => void;
   /** A refusal the transport raised after dispatch, recorded even when the SDK wraps or swallows it. */
   onFailure?: (error: ModelApiError) => void;
@@ -139,7 +150,7 @@ export function guardedStreamFetch(options: GuardedFetchOptions): typeof globalT
     if (
       url.origin !== expected.origin ||
       url.pathname !== expected.pathname ||
-      url.search ||
+      url.search !== (options.expectedQuery ?? '') ||
       url.hash ||
       url.username ||
       url.password
@@ -159,6 +170,22 @@ export function guardedStreamFetch(options: GuardedFetchOptions): typeof globalT
       );
     options.inspectBody?.(init.body);
     options.signal.throwIfAborted();
+    if (options.beforeDispatch) {
+      try {
+        await options.beforeDispatch();
+      } catch (error) {
+        throw refuse(
+          error instanceof ModelApiError && !error.dispatched
+            ? error
+            : new ModelApiError(
+                `${prefix}_dispatch_refused`,
+                `${error instanceof Error ? error.message : 'The payer refused this call.'} Nothing was sent.`,
+                false,
+              ),
+        );
+      }
+      options.signal.throwIfAborted();
+    }
     const headers = new Headers(init.headers);
     // The SDK was given a placeholder key; the real credential is attached here, after the checks.
     options.attach(headers, options.secret);
@@ -474,6 +501,16 @@ export interface StreamSinks {
   onToolActivity?: (raw: RawToolActivity) => void;
 }
 
+/**
+ * The ledger one call is held on. The local `SpendExposure` is the owner's own
+ * cap; a managed route passes a funded ledger that also holds the customer's
+ * parent-job credits. `beforeDispatch`, when present, is awaited once, after
+ * every request check and immediately before the bytes leave.
+ */
+export type CallExposure = Pick<SpendExposure, 'reserve' | 'settle' | 'release' | 'markUncertain'> & {
+  beforeDispatch?(reservation: ExposureReservation): Promise<void>;
+};
+
 /** What one route contributes to a call. Everything else is the same for every route. */
 export interface RouteBinding {
   route: string;
@@ -487,7 +524,7 @@ export interface RouteBinding {
   /** The explicit SDK model instance, built on the guarded fetch it is handed. */
   model(fetch: typeof globalThis.fetch): LanguageModel;
   /** The guarded transport's route-specific parts. */
-  guard: Pick<GuardedFetchOptions, 'expectedUrl' | 'attach' | 'inspectBody' | 'requestIdHeaders'>;
+  guard: Pick<GuardedFetchOptions, 'expectedUrl' | 'expectedQuery' | 'attach' | 'inspectBody' | 'requestIdHeaders'>;
   providerOptions: Record<string, Record<string, unknown>>;
   /** Reads a finished envelope. `readable: false` when it holds no complete answer. */
   classify(envelope: StreamEnvelope): { readable: boolean; classified: ClassifiedEnvelope | null };
@@ -542,7 +579,7 @@ export async function respondStream(input: {
   binding: RouteBinding;
   secret: string;
   card: ModelRateCard;
-  exposure: SpendExposure;
+  exposure: CallExposure;
   attempt: ExposureAttempt;
   instructions: string;
   messages: ModelMessage[];
@@ -697,6 +734,9 @@ export async function respondStream(input: {
       maxResponseBytes: input.limits.maxResponseBytes,
       signal,
       transport: input.transport,
+      ...(input.exposure.beforeDispatch
+        ? { beforeDispatch: () => input.exposure.beforeDispatch!(reservation) }
+        : {}),
       onDispatch: () => {
         dispatched = true;
       },
@@ -765,6 +805,8 @@ export async function respondStream(input: {
     sdkError ??= error;
   }
   if (!dispatched) {
+    const refusedEarly = transportError as ModelApiError | null;
+    if (refusedEarly) return fail(refusedEarly.code, refusedEarly.message);
     if (sdkError instanceof ModelApiError) return fail(sdkError.code, sdkError.message);
     return fail(`${prefix}_request_not_prepared`, 'The model request could not be prepared. Nothing was sent.');
   }
