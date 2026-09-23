@@ -32,7 +32,7 @@ const RATE: RateSnapshot = {
   outputMicroUsdPerMillion: 3_750_000,
 };
 
-const counts = (over: Partial<Record<(typeof USAGE_COUNT_FIELDS)[number], unknown>> = {}) => ({
+const counts = (over: Partial<Record<(typeof USAGE_COUNT_FIELDS)[number], number>> = {}) => ({
   inputTokens: 1_000,
   cacheReadTokens: 0,
   cacheWriteTokens: 0,
@@ -159,7 +159,7 @@ describe('missing is unknown, wrong is refused, nothing is clamped', () => {
 
   test('negative, fractional, unsafe and implausible counts are refused', () => {
     for (const bad of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 2, MAX_TOKENS_PER_FIELD + 1, '10'])
-      expect(normalizeUsage(counts({ outputTokens: bad })).state).toBe('refused');
+      expect(normalizeUsage({ ...counts(), outputTokens: bad }).state).toBe('refused');
   });
 
   test('parts larger than their whole are refused rather than trimmed', () => {
