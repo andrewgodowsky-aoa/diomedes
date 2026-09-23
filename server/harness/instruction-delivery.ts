@@ -192,6 +192,8 @@ export async function assembleInstructions(input: {
   routeId: string;
   agentRole: string;
   budgetBytes: number;
+  /** Only these project instruction files may enter an outbound request. */
+  allowedDocuments?: readonly string[];
   at?: string;
   /** Deterministic fixture seam; production loads the shipped indexed files. */
   productKnowledge?: ProductKnowledgeBundle;
@@ -215,7 +217,15 @@ export async function assembleInstructions(input: {
     section: [product.section, project.section].filter((value): value is string => Boolean(value)).join('\n') || null,
     productKnowledge: product.receipt,
   });
-  const rules = instructionRules(input.state);
+  const allowed = input.allowedDocuments === undefined
+    ? null
+    : new Set(input.allowedDocuments);
+  const records = new Map(
+    activeInstructionFiles(input.state.project.packs, input.state.instructionFiles)
+      .filter((record) => record.ruleId && (allowed === null || allowed.has(record.path)))
+      .map((record) => [record.ruleId!, record]),
+  );
+  const rules = instructionRules(input.state).filter(({ rule }) => records.has(rule.id));
   if (!rules.length) return combine({ section: null, delivery: null, governing: [] });
   const context = assembleContext({
     rules,
@@ -225,11 +235,6 @@ export async function assembleInstructions(input: {
     facts: [],
     surface: 'context-assembly',
   });
-  const records = new Map(
-    activeInstructionFiles(input.state.project.packs, input.state.instructionFiles)
-      .filter((record) => record.ruleId)
-      .map((record) => [record.ruleId!, record]),
-  );
   const applied = context.resolution.applied.filter((rule) => records.has(rule.id));
   if (!applied.length) return combine({ section: null, delivery: null, governing: [] });
 

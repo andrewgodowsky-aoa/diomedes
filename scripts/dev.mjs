@@ -71,10 +71,10 @@ function shutdown(code) {
   for (const child of children) terminate(child);
 }
 
-function start(name, args, signature) {
+function start(name, args, signature, env = process.env) {
   const child = spawn(process.execPath, args, {
     cwd: root,
-    env: process.env,
+    env,
     shell: false,
     windowsHide: true,
     stdio: 'inherit',
@@ -108,7 +108,10 @@ const serviceScript = path.join(root, 'server', 'index.ts');
 const viteScript = path.join(root, 'node_modules', 'vite', 'bin', 'vite.js');
 
 console.log(`Diomedes: http://127.0.0.1:${clientPort}. Press Ctrl+C to stop both local processes.`);
-start('Local service', ['--import', 'tsx', serviceScript], serviceScript);
+start('Local service', ['--import', 'tsx', serviceScript], serviceScript, {
+  ...process.env,
+  DIOMEDES_ALLOW_UNPROTECTED_BROWSER: '1',
+});
 start('Interface', [
   viteScript,
   '--host',

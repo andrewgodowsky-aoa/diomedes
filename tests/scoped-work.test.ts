@@ -105,6 +105,19 @@ beforeEach(async () => {
     })
   ).data.id;
   await request('/settings', 'PUT', { services: { codex: true } });
+  // Default-deny cloud sharing: grant the codex route and the one sample source
+  // this suite selects (sources [] or ['Fall menu.md']).
+  expect(
+    (
+      await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0,
+        routes: ['codex'],
+        documents: ['Fall menu.md'],
+        shareConversationHistory: false,
+        shareReviewPackets: false,
+      })
+    ).status,
+  ).toBe(200);
   proposal('Result.md');
 });
 // close() drains every change-review build the test queued. A run no longer

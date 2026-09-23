@@ -272,6 +272,16 @@ beforeEach(async () => {
   // Work started from this conversation follows the thread's route.
   const chosen = await api<Conversation>(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
   expect(chosen.engine).toBe('aws-bedrock');
+  // Default-deny cloud sharing stays on in production: this synthetic project
+  // explicitly grants the aws-bedrock route, the three linen sources this seam
+  // sends, and conversation history for follow-up turns on the same lineage.
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0,
+    routes: ['aws-bedrock'],
+    documents: [DOCS.order.path, DOCS.delivery.path, DOCS.invoice.path],
+    shareConversationHistory: true,
+    shareReviewPackets: false,
+  });
 });
 afterEach(async () => {
   await close();

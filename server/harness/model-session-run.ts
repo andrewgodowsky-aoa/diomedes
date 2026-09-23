@@ -215,6 +215,10 @@ function toolOutcome(phase: ToolPhase, tool: string, input: unknown, output: unk
 
 export class ModelSessionRuns {
   private closed = false;
+  private sharingPolicy: (projectId: string, documents: readonly string[], history: boolean) => void = () => {
+    throw new HarnessError('cloud_sharing_unconfigured', 'Project cloud sharing is not configured for this model session.');
+  };
+  private historyPolicy: (projectId: string) => boolean;
   private readonly owner = `model-session-${randomUUID()}`;
   private readonly active = new Map<
     string,
@@ -223,7 +227,18 @@ export class ModelSessionRuns {
   constructor(
     private readonly runs: RunService,
     private readonly route: string,
-  ) {}
+    shareHistory: (projectId: string) => boolean = () => false,
+  ) {
+    this.historyPolicy = shareHistory;
+  }
+
+  setSharingPolicy(
+    check: (projectId: string, documents: readonly string[], history: boolean) => void,
+    shareHistory: (projectId: string) => boolean,
+  ) {
+    this.sharingPolicy = check;
+    this.historyPolicy = shareHistory;
+  }
 
   async get(projectId: string, runId: string): Promise<HarnessRun> {
     const run = await this.runs.get(runId);
@@ -593,6 +608,10 @@ export class ModelSessionRuns {
         const wall = AbortSignal.timeout(TURN_WALL_MS);
         const stop = AbortSignal.any([context.signal, wall, ...(input.signal ? [input.signal] : [])]);
         const childId = turnRunId(runId, input.requestId);
+        // The host policy is read for each turn. A saved lineage does not grant
+        // permission to send previous turns to the next model call.
+        const history = this.historyPolicy(input.projectId) ? this.history(run!, turnId) : '';
+        this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), history.length > 0);
         const preview = request.activity?.(context, turnId);
         // Pairs the host's finished/failed report with the call the model announced as started.
         // One tool call per step and a sequential loop make the last announcement the one running.
@@ -629,6 +648,7 @@ export class ModelSessionRuns {
             model: input.model,
             conversationRunId: runId,
             commandId: input.requestId,
+            historyShared: history.length > 0,
             sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
           },
           budget: { units: 32, modelCalls: 8, toolCalls: 16, wallMs: TURN_WALL_MS },
@@ -636,10 +656,46 @@ export class ModelSessionRuns {
         // The lease outlives the turn's own wall clock, which aborts the loop first.
         await this.runs.claim(childId, this.owner, TURN_WALL_MS + 60_000);
         const adapter = await request.adapter(admission, `${input.instructions}\n\n${TOOL_NOTE}`, stop, sinks);
-        const agent = new NativeAgent(this.runs, adapter, registry);
+        const check = () => this.sharingPolicy(
+          input.projectId,
+          input.documents.map((doc) => doc.path),
+          history.length > 0,
+        );
+        const guarded: ModelAdapter = {
+          id: adapter.id,
+          version: adapter.version,
+          destination: adapter.destination,
+          contract: adapter.contract,
+          capabilities: () => adapter.capabilities(),
+          ...(adapter.prepare ? { prepare: async (value, signal) => {
+            check();
+            const prepared = await adapter.prepare!(value, signal);
+            check();
+            return prepared;
+          } } : {}),
+          ...(adapter.validatePrepared ? { validatePrepared: async (value) => {
+            check();
+            await adapter.validatePrepared!(value);
+            check();
+          } } : {}),
+          ...(adapter.inspect ? { inspect: async (value, answer, signal) => {
+            check();
+            const inspected = await adapter.inspect!(value, answer, signal);
+            check();
+            return inspected;
+          } } : {}),
+          complete: async (value, signal) => {
+            check();
+            const answer = await adapter.complete(value, signal);
+            check();
+            return answer;
+          },
+        };
+        const agent = new NativeAgent(this.runs, guarded, registry);
         let text: string;
         try {
-          text = await agent.run(childId, this.owner, this.compose(input, this.history(run!, turnId)), principal, {
+          check();
+          text = await agent.run(childId, this.owner, this.compose(input, history), principal, {
             maxTurns: MODEL_TURN_CAPABILITY.maxTurns,
           });
         } catch (error) {

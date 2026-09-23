@@ -223,6 +223,10 @@ beforeEach(async () => {
   await api('/ai/check/claude-code', 'POST', {});
   await api('/ai/select', 'POST', { engine: 'claude-code', model });
   project = await api<Project>('/projects', 'POST', { name: 'Linen service' });
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0, routes: ['claude-code'], documents: [],
+    shareConversationHistory: true, shareReviewPackets: false,
+  });
   thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
   const state = store().state(project.id);
   // The conversation runs on the fixture provider. Work in this project runs on the scripted
@@ -653,6 +657,10 @@ test('R-14: a message whose decision was never recorded reads as unresolved on e
 test('R-03: a projection that failed is repaired from the turn itself, not from the files and settings as they stand now', async () => {
   const contents = 'Flour 18.40 a sack';
   await fs.writeFile(path.join(project.folder, 'prices.md'), contents);
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 1, routes: ['claude-code'], documents: ['prices.md'],
+    shareConversationHistory: true, shareReviewPackets: false,
+  });
   const body = message('m-source', 'Compare the prices', {
     sources: [{ path: 'prices.md', sha: hash(contents)! }],
   });

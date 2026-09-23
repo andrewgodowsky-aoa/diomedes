@@ -7,6 +7,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Store } from '../server/store.js';
 import { ApiError } from '../server/paths.js';
+import { changeCloudSharing } from '../server/cloud-sharing.js';
 import { createHarnessHost, type HarnessHost } from '../server/harness/host.js';
 import { mountHarnessRoutes } from '../server/harness/routes.js';
 import { localHarnessPrincipal } from '../server/harness/bridge.js';
@@ -105,6 +106,19 @@ async function step(id: string) {
 async function codexRun() {
   const project = store.state(projectId).project;
   await fs.writeFile(path.join(project.folder, 'Fixture.txt'), 'Owned fixture data.\n');
+  // Default-deny cloud sharing: this synthetic project explicitly grants the
+  // codex route, the Fixture.txt source this run sends, and no prior history.
+  await store.locked(async () => {
+    const state = store.state(projectId);
+    changeCloudSharing(state, {
+      expectedVersion: 0,
+      routes: ['codex'],
+      documents: ['Fixture.txt'],
+      shareConversationHistory: false,
+      shareReviewPackets: false,
+    });
+    await store.persist(state);
+  });
   store.settings.services = { codex: true };
   store.settings.permissions.sending = true;
   await store.saveSettings(store.settings);

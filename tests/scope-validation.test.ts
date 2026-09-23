@@ -110,6 +110,19 @@ beforeEach(async () => {
     })
   ).data.id;
   await request('/settings', 'PUT', { services: { codex: true } });
+  // Default-deny cloud sharing: grant the codex route with no source documents
+  // so synthetic work/start fixtures (sources []) keep their prior behavior.
+  expect(
+    (
+      await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0,
+        routes: ['codex'],
+        documents: [],
+        shareConversationHistory: false,
+        shareReviewPackets: false,
+      })
+    ).status,
+  ).toBe(200);
   result = {
     text: JSON.stringify({
       summary: 'Create the result',

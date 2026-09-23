@@ -23,6 +23,7 @@ import { directOrigin, applicationOrigin } from '../shared/attribution.js';
 import express, { type ErrorRequestHandler, type Request, type Response } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import type {
   Conversation,
@@ -117,7 +118,7 @@ import {
   routeDisplayName,
   type EngineConnection,
 } from '../shared/engines.js';
-import { EngineService } from './engines/service.js';
+import { EngineService, HOST_TEST_PROJECT } from './engines/service.js';
 import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
 import { loadApprovedReadServers, type ReadScope } from './engines/read-scope.js';
 import { mountInteractionRoutes } from './engines/interaction-routes.js';
@@ -156,10 +157,13 @@ import { projectedTurnIds, turnIdentityText } from '../shared/conversation-turn-
 import { AppUpdateService, mountAppUpdateRoutes, type UpdateTransport } from './app-updates.js';
 import { EngineInstaller } from './engines/install.js';
 import { NativeLogin } from './engines/login.js';
+import { changeCloudSharing, cloudSharing, requireCloudSharing } from './cloud-sharing.js';
 import { assembleSkillSection, instructionSectionBudget } from './harness/instruction-delivery.js';
 
 interface AppOptions {
   dataDir: string;
+  /** Fresh per-launch secret held by the desktop main process, never persisted. */
+  loopbackToken?: string;
   projectRoot?: string;
   stepMs?: number;
   port?: number;
@@ -535,7 +539,9 @@ function validateSettings(current: Settings, body: unknown): Settings {
 }
 
 export async function createApp(options: AppOptions) {
-  const store = new Store(path.resolve(options.dataDir), options.projectRoot);
+  if (options.loopbackToken !== undefined && !/^[0-9a-f]{64}$/.test(options.loopbackToken))
+    throw new Error('The desktop local-service token is invalid.');
+  const store = new Store(path.resolve(options.dataDir), options.projectRoot, options.secretBox ?? null);
   await store.init();
   // Automatic Change Review: deterministic per-run evidence. Constructed before
   // the work services so every run can capture its baseline from the start.
@@ -688,6 +694,11 @@ export async function createApp(options: AppOptions) {
     store,
     options.nativeGenerator ??
       (async (input) => {
+        if (input.projectId && input.engine)
+          requireCloudSharing(store.state(input.projectId), input.engine, [
+            ...input.documents.map((doc) => doc.path),
+            ...(input.sharingPaths ?? []),
+          ]);
         if (isModelApiRoute(input.engine)) {
           if (!input.projectId || !input.threadId || !input.requestId || !input.model)
             throw new ApiError(409, 'Select a model and thread before requesting work.');
@@ -733,7 +744,26 @@ export async function createApp(options: AppOptions) {
   });
   // External text turns run through the host's RunService: the adapter is only
   // the provider transport inside the fenced dispatch step.
-  engines.dispatch = harness.textRoute.request;
+  engines.dispatch = (request) => {
+    const intent = request.intent as { projectId?: unknown; engine?: unknown; documents?: unknown };
+    if (intent.projectId !== HOST_TEST_PROJECT) {
+      if (
+        typeof intent.projectId !== 'string' || !isRoute(intent.engine) ||
+        !Array.isArray(intent.documents) ||
+        !intent.documents.every((doc) => doc && typeof doc === 'object' && typeof doc.path === 'string')
+      ) throw new ApiError(403, 'This cloud request has no valid project sharing scope.');
+      const names = intent.documents.map((doc: { path: string }) => doc.path);
+      requireCloudSharing(store.state(intent.projectId), intent.engine, names);
+      return harness.textRoute.request({
+        ...request,
+        send: (context, admission) => {
+          requireCloudSharing(store.state(intent.projectId as string), intent.engine as Route, names);
+          return request.send(context, admission);
+        },
+      });
+    }
+    return harness.textRoute.request(request);
+  };
   engines.nativeSessions = harness.claudeSessions;
   engines.modelSessions = harness.modelSessions;
   const exposure = new SpendExposure(store.dataDir);
@@ -806,17 +836,32 @@ export async function createApp(options: AppOptions) {
   };
   const port = options.port ?? Number(process.env.DIOMEDES_PORT ?? 47631),
     clientPort = options.clientPort ?? Number(process.env.DIOMEDES_CLIENT_PORT ?? 5173);
+  const loopbackToken = options.loopbackToken
+    ? Buffer.from(options.loopbackToken, 'hex')
+    : null;
   const origins = new Set([`http://127.0.0.1:${port}`, `http://127.0.0.1:${clientPort}`]);
   app.disable('x-powered-by');
   app.use((req, res, next) => {
     if (req.socket.localPort) listeningPort = req.socket.localPort;
-    if (req.path.startsWith('/mcp/team/')) return next();
+    const teamRequest = req.path.startsWith('/mcp/team/');
     const origin = req.headers.origin;
     const host = req.headers.host;
     if (!host || !/^127\.0\.0\.1:\d+$/.test(host))
       return next(new ApiError(403, 'This service accepts connections on 127.0.0.1 only.'));
     if (origin && !origins.has(origin))
       return next(new ApiError(403, 'This page cannot access the local service.'));
+    // Team helpers use their own scoped bearer token, but must still obey the
+    // same loopback Host and browser-Origin boundary as the desktop UI.
+    if (teamRequest) return next();
+    if (loopbackToken) {
+      const supplied = req.headers['x-diomedes-session'];
+      if (
+        typeof supplied !== 'string' ||
+        !/^[0-9a-f]{64}$/.test(supplied) ||
+        !timingSafeEqual(Buffer.from(supplied, 'hex'), loopbackToken)
+      )
+        return next(new ApiError(401, 'This local-service session is not authorized.'));
+    }
     res.setHeader('Vary', 'Origin');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -1467,6 +1512,22 @@ export async function createApp(options: AppOptions) {
     '/api/projects/:id/state',
     route(async (req) => store.projectState(id(req))),
   );
+  app.get(
+    '/api/projects/:id/cloud-sharing',
+    route(async (req) => cloudSharing(store.state(id(req)))),
+  );
+  app.put(
+    '/api/projects/:id/cloud-sharing',
+    route(async (req) => {
+      const projectId = id(req);
+      const state = store.state(projectId);
+      const candidate = structuredClone(state);
+      const policy = changeCloudSharing(candidate, body(req));
+      state.cloudSharing = policy;
+      await store.persist(state);
+      return policy;
+    }),
+  );
   /**
    * What an engine can be asked to run. Read from the engine's own list on this
    * computer, so the choices follow the account rather than a Diomedes release.
@@ -1988,6 +2049,7 @@ export async function createApp(options: AppOptions) {
           400,
           'Provide the explicitly selected source documents, or an empty list to propose new files.',
         );
+      requireCloudSharing(state, selectedRoute, b.sources.map(relativeName));
     }
     // Recheck the current local scope and service consent before returning a cached
     // receipt. Replay never scans source files or dispatches another adapter call.
@@ -2674,6 +2736,12 @@ export async function createApp(options: AppOptions) {
         });
         if (!selection.model || typeof accountRoute !== 'string')
           throw new ApiError(409, 'Select the Claude account and model in Settings first.');
+        requireCloudSharing(
+          state,
+          'claude-code',
+          command.sources.map((source) => source.path),
+          !!req.params.runId,
+        );
         const paths = new Set<string>();
         const documents = [];
         for (const source of command.sources) {
@@ -3025,6 +3093,7 @@ export async function createApp(options: AppOptions) {
             : { model: store.settings.services?.[`${conversationRoute}Model`] });
         if (typeof selection.model !== 'string' || !selection.model || typeof accountRoute !== 'string')
           throw new ApiError(409, `Connect ${routeName} and choose its model in AI setup first.`);
+        requireCloudSharing(state, conversationRoute, command.sources.map((source) => source.path));
         const paths = new Set<string>();
         const documents = [];
         for (const source of command.sources) {
@@ -3100,6 +3169,8 @@ export async function createApp(options: AppOptions) {
             : known.nativeSession
               ? ('resume' as const)
               : ('start' as const);
+        if (conversationRoute === 'claude-code' && action !== 'start')
+          requireCloudSharing(state, conversationRoute, command.sources.map((source) => source.path), true);
         // One resolved identity: progress, execution and projection all name the run that ran.
         const progress = (kind: 'started' | 'delta' | 'ended', frame?: TransientPreview) =>
           store.emit('engine-text', {
@@ -3424,6 +3495,7 @@ export async function createApp(options: AppOptions) {
     const engine = input.engine ?? 'codex';
     const run = async () => {
       const state = store.state(projectId);
+      requireCloudSharing(state, engine, sources, wake === true);
       if (
         state.sessions.some((session) => ['queued', 'working', 'waiting'].includes(session.state))
       )
@@ -3644,6 +3716,7 @@ export async function createApp(options: AppOptions) {
       sources = [...new Set(sources)];
       if (sources.length > 8)
         throw new ApiError(400, 'Select no more than eight source documents.');
+      requireCloudSharing(store.state(projectId), serviceRoute, sources);
       // Fix binds to one failing thing: a selected document and/or pasted text.
       let failing: { document?: string; text?: string } | undefined;
       if (mode === 'fix') {
@@ -3686,6 +3759,7 @@ export async function createApp(options: AppOptions) {
         });
       const prepared = await store.locked(async () => {
         const state = store.state(projectId);
+        requireCloudSharing(state, serviceRoute, sources);
         let conversation =
           threadId !== undefined
             ? state.conversations.find((c) => c.id === threadId)!
@@ -3813,6 +3887,7 @@ export async function createApp(options: AppOptions) {
         const signal = connectionSignal(res);
         progress('started');
         try {
+          requireCloudSharing(store.state(projectId), serviceRoute, prepared.documents.map((doc) => doc.path));
           const readScope = await readScopeFor(projectId, mode);
           const result = await engines.generate(serviceRoute, {
             projectId,
@@ -3878,6 +3953,7 @@ export async function createApp(options: AppOptions) {
         });
         progress('started');
         try {
+          requireCloudSharing(store.state(projectId), serviceRoute, prepared.documents.map((doc) => doc.path));
           const result = await askCodex({
             prompt: text,
             documents: prepared.documents,

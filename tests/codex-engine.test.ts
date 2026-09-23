@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Store } from '../server/store.js';
+import { changeCloudSharing } from '../server/cloud-sharing.js';
 import { createHarnessHost, type HarnessHost } from '../server/harness/host.js';
 import { localHarnessPrincipal } from '../server/harness/bridge.js';
 import { codexContextHash, type askCodex } from '../server/integrations.js';
@@ -68,6 +69,16 @@ beforeEach(async () => {
   const project = await store.locked(() => store.createProject('Synthetic Codex'));
   projectId = project.id;
   await fs.writeFile(path.join(project.folder, 'Synthetic.txt'), 'Three synthetic locations.\n');
+  await store.locked(async () => {
+    changeCloudSharing(state(), {
+      expectedVersion: 0,
+      routes: ['codex'],
+      documents: ['Synthetic.txt'],
+      shareConversationHistory: false,
+      shareReviewPackets: false,
+    });
+    await store.persist(state());
+  });
   store.settings.services = { codex: true };
   store.settings.permissions.sending = true;
   await store.saveSettings(store.settings);

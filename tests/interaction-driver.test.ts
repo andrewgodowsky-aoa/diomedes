@@ -151,12 +151,18 @@ async function fixture() {
   /** A new driver over the same files, after the startup recovery a real restart runs. */
   const restart = async () => {
     const next = new ClaudeSessionRuns(runs);
+    // Synthetic test policy for this standalone driver fixture.
+    next.setSharingPolicy(() => {});
     await next.recover(await runs.get('native'));
     return next;
   };
+  const driver = new ClaudeSessionRuns(runs);
+  // Synthetic test policy for this standalone driver fixture: allow cloud
+  // sharing so the session behaviors under test are exercised.
+  driver.setSharingPolicy(() => {});
   return {
     runs,
-    driver: new ClaudeSessionRuns(runs),
+    driver,
     turn,
     restart,
     seen,
@@ -254,6 +260,8 @@ test('a settled run is read and left exactly as it was: no claim, no step, no ph
   await f.runs.cancel('native', 'the conversation moved on', principal);
   await f.driver.closeAll();
   const restarted = new ClaudeSessionRuns(f.runs);
+  // Same synthetic fixture policy for the restarted driver.
+  restarted.setSharingPolicy(() => {});
   const before = await f.runs.get('native');
   expect(before.state).toBe('cancelled');
   // Byte-equivalent retry: the answer is still readable, with its text split for display.

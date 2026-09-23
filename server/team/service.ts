@@ -1,5 +1,5 @@
 // Tool names and mailbox semantics follow iOfficeAI/AionCore v0.2.1 crates/aionui-team (Apache-2.0); reimplemented for Diomedes.
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type {
   Conversation,
   MailboxMessage,
@@ -58,6 +58,13 @@ function findMember(team: TeamState, slotId: Slot): TeamMember {
   return member;
 }
 
+function activeMember(team: TeamState, slotId: Slot): TeamMember {
+  const member = findMember(team, slotId);
+  if (member.status === 'stopped')
+    throw new ApiError(401, 'This member token was not recognized.');
+  return member;
+}
+
 export interface RunStarterInput {
   projectId: string;
   member: TeamMember;
@@ -105,10 +112,17 @@ export class TeamService {
     return team;
   }
 
+  requireActive(projectId: string, slotId: Slot): TeamMember {
+    return activeMember(this.teamState(projectId), slotId);
+  }
+
   // The run controller persists these mutations with the corresponding Session
   // and Need changes, so clients see a consistent team and work state.
   setMemberStatus(projectId: string, slotId: Slot, status: TeamMember['status']): void {
     const member = findMember(this.teamState(projectId), slotId);
+    // A late native run or approval result cannot reactivate a helper whose
+    // owner or lead already stopped it. There is no implicit resume authority.
+    if (member.status === 'stopped' && status !== 'stopped') return;
     member.status = status;
     member.lastSeenAt = now();
   }
@@ -156,12 +170,19 @@ export class TeamService {
     if (slotId === 'owner') throw new ApiError(401, 'The owner slot cannot call the team server.');
     const team = this.teamState(projectId);
     const member = team.members.find((m) => m.slotId === slotId);
-    if (!member) throw new ApiError(401, 'This member token was not recognized.');
+    if (!member || member.status === 'stopped')
+      throw new ApiError(401, 'This member token was not recognized.');
     const secrets = await this.store.readTeamSecrets(projectId);
     const expected = secrets[slotId];
-    if (!expected || expected !== token)
+    if (
+      !expected ||
+      !/^[0-9a-f]{64}$/.test(expected) ||
+      !/^[0-9a-f]{64}$/.test(token) ||
+      !timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(token, 'hex'))
+    )
       throw new ApiError(401, 'This member token was not recognized.');
-    return member;
+    // The owner may have stopped this helper while the token file was read.
+    return this.requireActive(projectId, slotId);
   }
 
   async createMember(
@@ -260,7 +281,7 @@ export class TeamService {
   ): Promise<{ member: TeamMember; sessionId: string }> {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const member = findMember(team, slotId);
+    const member = activeMember(team, slotId);
     const waiting = unreadForSlot(team.messages, slotId);
     if (waiting.length === 0)
       throw new ApiError(400, 'Nothing is waiting for this helper.');
@@ -375,7 +396,7 @@ export class TeamService {
   ): Promise<MailboxMessage> {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const live = findMember(team, sender.slotId);
+    const live = activeMember(team, sender.slotId);
     const to = args.to;
     if (typeof to !== 'string' || !to.trim()) throw new ApiError(400, 'Provide a recipient slot.');
     if (to !== 'owner') findMember(team, to);
@@ -426,7 +447,7 @@ export class TeamService {
   ): Promise<MailboxMessage[]> {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const live = findMember(team, reader.slotId);
+    const live = activeMember(team, reader.slotId);
     if (sinceMessageId !== undefined && typeof sinceMessageId !== 'string')
       throw new ApiError(400, 'Provide a valid message id.');
     const found = peekForSlot(team.messages, live.slotId, sinceMessageId);
@@ -452,7 +473,7 @@ export class TeamService {
   ) {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const live = findMember(team, creator.slotId);
+    const live = activeMember(team, creator.slotId);
     const meta = this.store.teamMeta(projectId);
     if (args.idempotency_key !== undefined && args.idempotency_key !== null) {
       if (typeof args.idempotency_key !== 'string' || !args.idempotency_key.trim())
@@ -512,7 +533,7 @@ export class TeamService {
   ) {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const live = findMember(team, updater.slotId);
+    const live = activeMember(team, updater.slotId);
     const meta = this.store.teamMeta(projectId);
     if (typeof args.task_id !== 'string' || !args.task_id.trim())
       throw new ApiError(400, 'Provide a task id.');
@@ -594,10 +615,11 @@ export class TeamService {
 
   async taskListAsMember(
     projectId: string,
-    _reader: TeamMember,
+    reader: TeamMember,
     args: { owner?: unknown; status?: unknown; include_deleted?: unknown; limit?: unknown },
   ) {
     const state = this.store.state(projectId);
+    activeMember(migrateTeam(state), reader.slotId);
     const meta = this.store.teamMeta(projectId);
     let tasks = [...state.tasks];
     const includeDeleted = args.include_deleted === true;
@@ -626,7 +648,7 @@ export class TeamService {
   async renameAsLead(projectId: string, caller: TeamMember, slotId: Slot, newName: string) {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const live = findMember(team, caller.slotId);
+    const live = activeMember(team, caller.slotId);
     requireLead(live, 'team_rename_agent');
     const target = findMember(team, slotId);
     target.name = asName(newName, 'a member name');
@@ -643,7 +665,7 @@ export class TeamService {
   ): Promise<MailboxMessage> {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const live = findMember(team, caller.slotId);
+    const live = activeMember(team, caller.slotId);
     requireLead(live, 'team_interrupt_agent');
     const target = findMember(team, slotId);
     if (typeof message !== 'string' || !message.trim() || message.length > 16000)
@@ -666,7 +688,7 @@ export class TeamService {
   async shutdownAsLead(projectId: string, caller: TeamMember, slotId: Slot, reason?: string) {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const live = findMember(team, caller.slotId);
+    const live = activeMember(team, caller.slotId);
     requireLead(live, 'team_shutdown_agent');
     const target = findMember(team, slotId);
     const outgoing = deliverMessage(team.messages, {
