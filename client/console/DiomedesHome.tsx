@@ -20,6 +20,7 @@ import type { MessageResult } from '../../shared/conversation';
 import { CONVERSATION_DEFAULT_ROUTE } from '../../shared/engines';
 import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
 import { Diomedes, routeOptions } from './Diomedes';
+import { saveArtifact } from './artifact-save';
 import type { EverythingItem } from './Everything';
 import {
   diomedesThread,
@@ -532,6 +533,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       onDestination={props.onDestination}
       onTogglePin={props.onTogglePin}
       onNewProject={props.onNewProject}
+      artifactScope={binding?.threadId ?? null}
+      onSaveArtifact={
+        scopeId !== null && binding ? (record) => saveArtifact(binding.projectId, record) : undefined
+      }
     />
   );
 }

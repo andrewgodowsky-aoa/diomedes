@@ -30,6 +30,8 @@ import { FollowUpQueue } from './FollowUpQueue';
 import { StopMenu, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
 import { ChangeReview } from './ChangeReview';
+import { TurnBody } from './TurnBody';
+import { turnKeyOf, type ArtifactIndex, type ArtifactRecord } from './artifacts';
 
 function fmtDur(ms: number): string {
   const s = ms / 1000;
@@ -99,6 +101,15 @@ interface ThreadViewProps {
   onCancelText?(): void;
   /** Where a refused scoped Stop is reported; without it the refusal is silent. */
   onError?(error: Error): void;
+  /**
+   * The thread's artifacts, read from its durable turns. With them an artifact
+   * block leaves a chip that opens it in the panel; without them every block
+   * renders inline.
+   */
+  artifacts?: ArtifactIndex;
+  onOpenArtifact?(record: ArtifactRecord): void;
+  /** The artifact the panel is showing, so its chip can say so. */
+  openArtifactKey?: string | null;
 }
 
 /**
@@ -142,6 +153,9 @@ export function ThreadView({
   streaming,
   onCancelText,
   onError,
+  artifacts,
+  onOpenArtifact,
+  openArtifactKey = null,
 }: ThreadViewProps) {
   const permission: ThreadPermission = thread.permission ?? 'show-first';
   const live = sessions.find((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? null;
@@ -183,6 +197,8 @@ export function ThreadView({
     if (turn.role === 'you' || !current || current[0].role !== 'you') exchanges.push([turn]);
     else current.push(turn);
   }
+  // A turn's place in the thread, which names it when an old record has no id.
+  const turnIndex = new Map(thread.turns.map((turn, index) => [turn, index]));
 
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -228,9 +244,19 @@ export function ThreadView({
                 )}
               </div>
               <div className="body">
-                {paragraphs(t.text).map((p, j) => (
-                  <p key={j}>{p}</p>
-                ))}
+                {t.role === 'you' ? (
+                  paragraphs(t.text).map((p, j) => <p key={j}>{p}</p>)
+                ) : (
+                  <TurnBody
+                    text={t.text}
+                    artifactAt={
+                      artifacts &&
+                      ((block) => artifacts.forBlock(turnKeyOf(t, turnIndex.get(t) ?? 0), block))
+                    }
+                    onOpenArtifact={onOpenArtifact}
+                    openKey={openArtifactKey}
+                  />
+                )}
               </div>
             </div>
           ))}
@@ -458,7 +484,7 @@ export function ThreadView({
                 </div>
                 <div className="body">
                   {streaming.text ? (
-                    paragraphs(streaming.text).map((p, j) => <p key={j}>{p}</p>)
+                    <TurnBody text={streaming.text} preview />
                   ) : (
                     <p className="caption">Preparing…</p>
                   )}
