@@ -646,3 +646,37 @@ describe('capability commands keep the route their driver needs', () => {
     ).toThrow('The codex-report capability runs only on ChatGPT (Codex). Choose that route for it, or start ordinary Work on this route.');
   });
 });
+
+describe('the add-member form offers connected routes and "Nectovia chooses"', () => {
+  test('only ready routes are offered beside "Nectovia chooses", with the styles to choose from', async () => {
+    const { createElement } = await import('react');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const { AddMember } = await import('../client/console/TeamView');
+    const html = renderToStaticMarkup(
+      createElement(AddMember, {
+        routes: {
+          routes: [
+            { route: 'codex', name: 'ChatGPT', ready: false, models: [], savedModel: null, reason: 'Turn ChatGPT on.' },
+            { route: 'claude-code', name: 'Claude Code', ready: true, models: [{ slug: 'opus', name: 'Opus 5.5' }], savedModel: null },
+            { route: 'openrouter', name: 'OpenRouter', ready: true, models: [], savedModel: OR_MODEL },
+          ],
+          styles: [
+            { style: 'efficient', label: 'Efficient' },
+            { style: 'focused', label: 'Focused' },
+            { style: 'thorough', label: 'Thorough' },
+          ],
+        },
+        firstIsLead: true,
+        busy: false,
+        onAdd: async () => undefined,
+        onCancel: () => undefined,
+      }),
+    );
+    expect(html).toContain('<option value="auto" selected="">Nectovia chooses</option>');
+    expect(html).toContain('>Claude Code</option>');
+    expect(html).toContain('>OpenRouter</option>');
+    expect(html).not.toContain('>ChatGPT</option>');
+    expect(html).toContain('>Thorough</option>');
+    expect(html).toContain('a leader works one step above it');
+  });
+});

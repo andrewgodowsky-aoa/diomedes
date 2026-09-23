@@ -477,3 +477,79 @@ html[data-motion='reduced'] .console .lane header .pt.landed {
     transition: none;
   }
 }
+/* Add a member: flat fields on the page ground, one row that wraps. */
+.console .task .addmember-open {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  border-bottom: 1px solid var(--hair-2);
+  white-space: nowrap;
+}
+.console .task .addmember-open:hover {
+  color: var(--t1);
+}
+.console .addmember {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 16px;
+  margin: 0 32px 0 56px;
+  padding: 14px 0 18px;
+  border-top: 1px solid var(--hair-2);
+}
+.console .addmember label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 150px;
+  min-width: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .addmember input,
+.console .addmember select {
+  width: 100%;
+  min-width: 0;
+  background-color: var(--surface);
+  color: var(--t1);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  padding: 3px 6px;
+  font: inherit;
+  font-size: var(--dm-type-caption);
+  text-overflow: ellipsis;
+}
+.console .addmember .caption {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .addmember .caption.failure {
+  color: var(--t1);
+}
+.console .addmember .actions {
+  display: flex;
+  gap: 14px;
+  flex: 1 1 100%;
+}
+.console .addmember .actions button {
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+  border-bottom: 1px solid var(--hair-2);
+}
+.console .addmember .actions button:hover:not(:disabled) {
+  color: var(--t1);
+}
+.console .addmember .actions button:disabled {
+  opacity: 0.5;
+}
+@media (max-width: 1100px) {
+  .console .addmember {
+    margin-left: 32px;
+  }
+}
+@media (max-width: 860px) {
+  .console .addmember {
+    margin: 0 16px;
+  }
+}

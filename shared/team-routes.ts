@@ -62,6 +62,29 @@ export function teamRouteRefusal(route: string): string | null {
   return `${routeDisplayName(route) || route} cannot carry the Diomedes team tools yet: Diomedes does not give its sessions the team service. Choose ${teamRouteList()}.`;
 }
 
+/** What `GET /api/projects/:id/team/routes` returns, for the add-member form. */
+export interface TeamRoutesView {
+  routes: {
+    route: TeamRoute;
+    name: string;
+    /** Turned on and connected; only a ready route can be picked. */
+    ready: boolean;
+    models: { slug: string; name: string }[];
+    savedModel: string | null;
+    reason?: string;
+  }[];
+  styles: { style: WorkStyle; label: string }[];
+}
+
+/** What the add-member form sends. `engine: 'auto'` asks Nectovia to choose. */
+export interface NewTeamMember {
+  name: string;
+  role: 'lead' | 'member';
+  engine: TeamRoute | 'auto';
+  model?: string;
+  style?: WorkStyle;
+}
+
 /** How a member's route and model were chosen. Recorded on the member, never inferred later. */
 export interface TeamMemberSelection {
   by: 'person' | 'nectovia';

@@ -32,7 +32,10 @@ export type BoardProps = { project: Project; state: ProjectState; tasks: Task[];
   /** Rejects when the task was not made, so the board keeps the typed words. */
   onCreateTask(input: { name: string; description: string; sourceDocument?: string }): Promise<void>; };
 export type TeamProps = { project: Project; state: ProjectState; members: TeamMember[]; mail: MailboxMessage[]; runs: TeamRun[]; focusTaskId?: string; usage: UsageSnapshot[]; busy: boolean;
-  onMessage(to: Slot | 'diomedes', text: string): Promise<void>; onStop(m: TeamMember): Promise<void>; onWake(m: TeamMember): Promise<void>; onOpenThread(m: TeamMember): void; onAddMember?(): void; };
+  onMessage(to: Slot | 'diomedes', text: string): Promise<void>; onStop(m: TeamMember): Promise<void>; onWake(m: TeamMember): Promise<void>; onOpenThread(m: TeamMember): void;
+  /** Routes a member may run on, with their models, from the host. Absent until read. */
+  teamRoutes?: import('../../shared/team-routes').TeamRoutesView | null;
+  onAddMember?(input: import('../../shared/team-routes').NewTeamMember): Promise<void>; };
 export type FilesPaneProps = { projectId: string; documents: DocumentInfo[]; loading: boolean; failure: string | null; openPath: string | null; width: number;
   onOpen(path: string | null): void; onWidth(width: number): void; onClose(): void;
   /** Write in a file, on the main stage. The pane itself stays a reader (decision 13). */
