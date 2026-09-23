@@ -123,7 +123,8 @@ Numbers in brackets are the report's sections.
    - no new run event type;
    - no change to `shared/harness.ts`, the adapter contract or the `Turn` type;
    - no server-side artifact storage;
-   - no CSP for the whole app;
+   - no CSP for the whole app (superseded 2026-09-23: the built app document now carries one,
+     `docs/product/2026-09-23-artifact-hardening.md` section 4);
    - no automatic writes.
 
 ## 3a. The chart spec (frozen for v1)
@@ -149,6 +150,13 @@ a bar chart."), as are unknown fields, a wrong count of values, and any number t
 finite.
 
 ## 4. Security model
+
+> **Superseded in part on 2026-09-23** by the hostile review's findings
+> (`docs/product/2026-09-23-artifact-hardening.md`): a design no longer runs script (every frame is
+> `sandbox=""` under one policy that names no script source), links are taken out of design and
+> picture sources before a frame is built, the Mermaid style check reads `;` as a statement end and
+> what Mermaid draws is scanned for `url()`, and the built app document has a
+> Content-Security-Policy. The table and paragraphs below are v1 as first built.
 
 **The app's own document never parses model markup.** Turns render with React text nodes only
 (no `dangerouslySetInnerHTML`), so a tag in an answer reads as the characters it is. Charts and

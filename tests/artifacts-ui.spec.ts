@@ -1,18 +1,21 @@
 import { expect, test as base, type CDPSession, type Locator, type Page } from '@playwright/test';
 import express from 'express';
+import dgram from 'node:dgram';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createServer, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import { testOnlySecretBox } from '../server/connection-secrets';
-import { DESIGN_CSP, STATIC_CSP } from '../client/console/artifact-frame';
+import { FRAME_CSP } from '../client/console/artifact-frame';
+import { APP_CSP } from '../scripts/app-csp';
 import type { DocumentContent, Project, ProjectState } from '../shared/types';
 import {
   ARTIFACT_ENGINE,
   ARTIFACT_MODEL,
   artifactEngine,
   artifactTransport,
+  probes,
   type ArtifactEngine,
 } from './fixtures/scripted-artifacts';
 import { AWS_CONNECT_BODY } from './fixtures/scripted-home-luna';
@@ -28,6 +31,13 @@ import { AWS_CONNECT_BODY } from './fixtures/scripted-home-luna';
 // first test is the control: two such frames, seen only by the proxy). So every browser context
 // also runs through a recording proxy that refuses every tunnel: whatever any frame asks for off
 // 127.0.0.1 is written down, and never leaves the machine.
+//
+// Three more observers stand beside it (hostile review, 2026-09-23). WebRTC's ICE goes around every
+// proxy and every Content-Security-Policy, so a UDP socket on 127.0.0.1 records any STUN request
+// a frame makes, and the hostile design points its peer connection at it. Every request that
+// reaches the spec's own server under /leak is written down, whichever frame made it. And the
+// Console's own document reports each policy violation it sees: the built index.html carries the
+// app's policy (scripts/app-csp.ts), and nothing the Console does may trip it.
 
 /** Every host:port the browser asked the proxy to reach, in order, across the worker. */
 interface Tunnels {
@@ -99,6 +109,15 @@ let dialogs: string[] = [];
 /** Where this test's tunnels start in the worker's record. */
 let tunnelMark = 0;
 const tunnelsSince = (tunnels: Tunnels) => tunnels.opened.slice(tunnelMark);
+/** Every UDP datagram that reached the STUN listener, and where this test's start. */
+const stun: string[] = [];
+let stunSocket: dgram.Socket | undefined;
+let stunMark = 0;
+/** Every request that reached the spec's server under /leak, and where this test's start. */
+const leaks: string[] = [];
+let leakMark = 0;
+/** Every policy violation the Console's own document reported in this test. */
+let violations: string[] = [];
 
 async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T> {
   const response = await fetch(`${url}/api${route}`, {
@@ -144,10 +163,34 @@ test.beforeAll(async () => {
   await fs.mkdir(results, { recursive: true });
   const root = await fs.mkdtemp(path.join(results, 'artifacts-ui-'));
   engine = artifactEngine(path.join(root, 'engines'));
-  server = createServer();
+  stunSocket = dgram.createSocket('udp4');
+  stunSocket.on('message', (message, from) => stun.push(`${message.length} bytes from ${from.address}:${from.port}`));
+  await new Promise<void>((resolve) => stunSocket!.bind(0, '127.0.0.1', resolve));
+  // A request under /leak is written down and answered with a line of plain text, so a frame that
+  // followed a link there really does leave its srcdoc (and the Console never loads inside it).
+  // The app answers everything else, once it exists.
+  let answer: ((request: IncomingMessage, response: ServerResponse) => void) | null = null;
+  server = createServer((request, response) => {
+    if (request.url?.startsWith('/leak')) {
+      leaks.push(`${request.method} ${request.url}`);
+      response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' }).end('leaked');
+      return;
+    }
+    // The control's page: on this server like the Console, with no policy of any kind.
+    if (request.url === '/control') {
+      response
+        .writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        .end('<!doctype html><html><head><title>Control</title></head><body></body></html>');
+      return;
+    }
+    if (answer) answer(request, response);
+    else response.writeHead(503).end();
+  });
   await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as AddressInfo).port;
   url = `http://127.0.0.1:${port}`;
+  probes.stun = `stun:127.0.0.1:${stunSocket.address().port}`;
+  probes.leak = `${url}/leak`;
   app = await createApp({
     port,
     clientPort: port,
@@ -163,7 +206,8 @@ test.beforeAll(async () => {
   await expectFreshBundle(dist);
   app.use(express.static(dist));
   app.get('/{*path}', (_request, response) => response.sendFile(path.join(dist, 'index.html')));
-  server.on('request', app);
+  const handler = app;
+  answer = (request, response) => void handler(request, response);
   await api('/ai/discover', 'POST', { consent: true });
   await api(`/ai/check/${ARTIFACT_ENGINE}`, 'POST', {});
   await api('/ai/select', 'POST', { engine: ARTIFACT_ENGINE, model: ARTIFACT_MODEL });
@@ -178,13 +222,31 @@ test.afterAll(async () => {
   await app?.locals.close?.();
   server?.closeAllConnections();
   await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
+  await new Promise<void>((resolve) => (stunSocket ? stunSocket.close(() => resolve()) : resolve()));
 });
 
 test.beforeEach(async ({ page, tunnels }) => {
   pageErrors = [];
   externals = [];
   dialogs = [];
+  violations = [];
   tunnelMark = tunnels.opened.length;
+  stunMark = stun.length;
+  leakMark = leaks.length;
+  // The Console's own document, and only it, reports each policy violation it sees. Frames
+  // report theirs to themselves: a hostile artifact's refused fetches are its frame's business.
+  await page.exposeBinding('__reportViolation', (_source, line: string) => violations.push(line));
+  await page.addInitScript(() => {
+    if (window !== window.top) return;
+    document.addEventListener(
+      'securitypolicyviolation',
+      (event) =>
+        (window as unknown as { __reportViolation(line: string): void }).__reportViolation(
+          `${event.effectiveDirective} refused ${event.blockedURI || '(inline)'} at ${event.sourceFile || document.URL}:${event.lineNumber}`,
+        ),
+      true,
+    );
+  });
   page.on('pageerror', (error) => pageErrors.push(error.message));
   page.on('dialog', (dialog) => {
     dialogs.push(dialog.message());
@@ -207,6 +269,9 @@ test.afterEach(({ tunnels }) => {
     tunnelsSince(tunnels).filter((target) => !browserOwn(target)),
     'No frame may reach past 127.0.0.1, sandboxed ones included',
   ).toEqual([]);
+  expect(stun.slice(stunMark), 'No frame may send a STUN request: no script runs in any of them').toEqual([]);
+  expect(leaks.slice(leakMark), 'No link in an artifact may reach the server').toEqual([]);
+  expect(violations, "Nothing the Console does may trip its own Content-Security-Policy").toEqual([]);
   expect(dialogs, 'No script may open a dialog').toEqual([]);
   expect(pageErrors, 'The interface must not throw uncaught browser errors').toEqual([]);
 });
@@ -245,6 +310,23 @@ async function openConsole(page: Page, project: Project) {
   await expect(composer(page)).toBeVisible();
 }
 
+/**
+ * Serves the Console's document without its policy, as a browser on the development server has
+ * it, so what a frame's own sandbox, policy and markup do is tested with nothing behind them.
+ */
+async function withoutAppPolicy(page: Page): Promise<{ served: () => number; restore: () => Promise<void> }> {
+  const consoleDocument = `${url}/`;
+  let served = 0;
+  await page.route(consoleDocument, async (route) => {
+    const response = await route.fetch();
+    const html = await response.text();
+    const bare = html.replace(/<meta\b[^>]*http-equiv="Content-Security-Policy"[^>]*>/i, '');
+    if (bare !== html) served += 1;
+    await route.fulfill({ response, body: bare });
+  });
+  return { served: () => served, restore: () => page.unroute(consoleDocument) };
+}
+
 async function send(page: Page, text: string) {
   await composer(page).fill(text);
   await page.getByRole('button', { name: 'Send', exact: true }).click();
@@ -261,6 +343,7 @@ interface DomNode {
   nodeName: string;
   localName?: string;
   nodeValue?: string;
+  documentURL?: string;
   attributes?: string[];
   children?: DomNode[];
   shadowRoots?: DomNode[];
@@ -282,35 +365,45 @@ function attributesOf(node: DomNode): Record<string, string> {
 }
 
 interface FrameContents {
+  /** Where the frame's document is, as the browser has it: about:srcdoc until something moves it. */
+  url: string;
   /** Every element's tag name, lower case, in document order. */
   elements: string[];
+  /** Every element with its attributes, shadow roots and nested frames included. */
+  tags: Array<{ name: string; attributes: Record<string, string> }>;
   /** Every text node, joined by single spaces. */
   text: string;
   /** The attributes of the frame's <html> element. */
   root: Record<string, string>;
+  /** The attributes of the frame's <body> element. */
+  body: Record<string, string>;
 }
 
 function contentsOf(document: DomNode): FrameContents {
   const nodes = [...walk(document)];
   const html = nodes.find((node) => node.nodeType === 1 && node.localName === 'html');
+  const body = nodes.find((node) => node.nodeType === 1 && node.localName === 'body');
+  const elements = nodes.filter((node) => node.nodeType === 1);
   return {
-    elements: nodes
-      .filter((node) => node.nodeType === 1)
-      .map((node) => (node.localName || node.nodeName).toLowerCase()),
+    url: document.documentURL ?? '',
+    elements: elements.map((node) => (node.localName || node.nodeName).toLowerCase()),
+    tags: elements.map((node) => ({ name: (node.localName || node.nodeName).toLowerCase(), attributes: attributesOf(node) })),
     text: nodes
       .filter((node) => node.nodeType === 3)
       .map((node) => node.nodeValue ?? '')
       .join(' ')
       .replace(/\s+/g, ' '),
     root: html ? attributesOf(html) : {},
+    body: body ? attributesOf(body) : {},
   };
 }
 
 /**
- * What a `sandbox=""` frame holds. Nothing can run in one, Playwright's own injected script
- * included, so it is read the way DevTools reads it: as the DOM tree, with nothing run inside.
- * The frame may live in its own process (Chromium isolates sandboxed frames), so its own session
- * is tried first; otherwise its document is part of the page's tree.
+ * What a `sandbox=""` frame holds: every artifact frame, a design's included. Nothing can run in
+ * one, Playwright's own injected script included, so it is read the way DevTools reads it: as the
+ * DOM tree, with nothing run inside. The frame may live in its own process (Chromium isolates
+ * sandboxed frames), so its own session is tried first; otherwise its document is part of the
+ * page's tree.
  */
 async function stillFrame(page: Page, frame: Locator): Promise<FrameContents> {
   const title = await frame.getAttribute('title');
@@ -340,7 +433,45 @@ async function stillFrame(page: Page, frame: Locator): Promise<FrameContents> {
   } finally {
     await pageSession.detach();
   }
-  return { elements: [], text: '', root: {} };
+  return { url: '', elements: [], tags: [], text: '', root: {}, body: {} };
+}
+
+/**
+ * Where a frame's document is now, read from the document itself: about:srcdoc until something
+ * moves it. (Playwright's own Frame.url() is empty for a sandboxed srcdoc frame.) Null when the
+ * frame is gone: the panel takes down a frame that loads twice.
+ */
+async function frameUrl(page: Page, frame: Locator): Promise<string | null> {
+  if ((await frame.count()) === 0) return null;
+  return (await stillFrame(page, frame)).url || null;
+}
+
+/**
+ * Time for anything a frame would do once it has loaded: its handlers, its script's timers, and
+ * the ICE gathering behind a STUN request (the control sees one well inside this).
+ */
+const SETTLE_MS = 1_500;
+
+const STOPPED = 'This design tried to open another page, so it was stopped.';
+
+/**
+ * Every way out a frame's markup still holds: a link a person can follow, an attribute that sends
+ * a form, a ping or a target, a <base>, a refresh, or an animation that would write a link back.
+ */
+function waysOut(contents: FrameContents): string[] {
+  const found: string[] = [];
+  for (const { name, attributes } of contents.tags) {
+    for (const attribute of Object.keys(attributes)) {
+      const local = attribute.toLowerCase().split(':').at(-1) ?? '';
+      if ((local === 'href' && (name === 'a' || name === 'area')) || ['action', 'formaction', 'ping', 'target'].includes(local))
+        found.push(`<${name} ${attribute}="${attributes[attribute]}">`);
+    }
+    if (name === 'base') found.push('<base>');
+    if (name === 'meta' && /refresh/i.test(attributes['http-equiv'] ?? '')) found.push('<meta http-equiv="refresh">');
+    const writes = (attributes.attributeName ?? attributes.attributename ?? '').toLowerCase();
+    if (/(^|:)href$/.test(writes.trim())) found.push(`<${name} attributeName="${writes}">`);
+  }
+  return found;
 }
 
 /** Which delivery-check version a diagram frame is drawing, read from its srcdoc. */
@@ -353,24 +484,34 @@ async function drawnVersion(frame: Locator): Promise<string> {
 // ---- the tests --------------------------------------------------------------------------------
 
 test('the observers see what a frame without a policy does: the control for every "nothing" below', async ({ page, tunnels }) => {
-  // "Nothing was requested" is only worth something if a request would have been seen. The same
-  // two kinds of frame the panel draws in, with no policy in them, are seen asking for files, and
-  // a script's mark is found by the same DOM read the tests below use to say that none ran.
-  const project = await freshProject('Guard control');
-  await openConsole(page, project);
-  await page.evaluate(() => {
-    const scripted = document.createElement('iframe');
-    scripted.title = 'Control: script';
-    scripted.setAttribute('sandbox', 'allow-scripts');
-    scripted.srcdoc =
-      '<img src="https://control-img.example.com/x.png" alt=""><script>document.documentElement.setAttribute("data-ran", "yes"); fetch("https://control-fetch.example.com/x").catch(() => undefined);</script>';
-    const still = document.createElement('iframe');
-    still.title = 'Control: picture';
-    still.setAttribute('sandbox', '');
-    still.srcdoc =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><image href="https://control-still.example.com/x.png" width="10" height="10"/></svg>';
-    document.body.append(scripted, still);
-  });
+  // "Nothing was requested" is only worth something if a request would have been seen. Frames of
+  // the kind the panel draws, with no policy in them and one with its scripts on, are seen asking
+  // for files, sending STUN requests and following a link to the spec's server, and a script's
+  // mark is found by the same DOM read the tests below use to say that none ran. They are made on
+  // a page of the spec's own server with no policy: a srcdoc frame takes its parent's policy with
+  // it, and the Console now has one.
+  await page.goto(`${url}/control`);
+  await page.evaluate(
+    ({ stunTarget, leakTarget }) => {
+      const scripted = document.createElement('iframe');
+      scripted.title = 'Control: script';
+      scripted.setAttribute('sandbox', 'allow-scripts');
+      scripted.srcdoc =
+        '<img src="https://control-img.example.com/x.png" alt=""><script>document.documentElement.setAttribute("data-ran", "yes"); fetch("https://control-fetch.example.com/x").catch(() => undefined);' +
+        `const peer = new RTCPeerConnection({ iceServers: [{ urls: "${stunTarget}" }] }); peer.createDataChannel("control"); peer.createOffer().then((offer) => peer.setLocalDescription(offer)).catch(() => undefined);</script>`;
+      const still = document.createElement('iframe');
+      still.title = 'Control: picture';
+      still.setAttribute('sandbox', '');
+      still.srcdoc =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><image href="https://control-still.example.com/x.png" width="10" height="10"/></svg>';
+      const leaving = document.createElement('iframe');
+      leaving.title = 'Control: link';
+      leaving.setAttribute('sandbox', 'allow-scripts');
+      leaving.srcdoc = `<script>location.href = "${leakTarget}?control=frame";</script>`;
+      document.body.append(scripted, still, leaving);
+    },
+    { stunTarget: probes.stun, leakTarget: probes.leak },
+  );
   // Sandboxed frames run out of process, where the proxy is what sees them and what stops them.
   await expect
     .poll(() => [...new Set(tunnelsSince(tunnels).filter((target) => !browserOwn(target)))].sort())
@@ -378,9 +519,28 @@ test('the observers see what a frame without a policy does: the control for ever
   await expect
     .poll(async () => (await stillFrame(page, page.locator('iframe[title="Control: script"]'))).root['data-ran'])
     .toBe('yes');
-  // The control's own requests were the point; the checks after it start from here.
+  // WebRTC goes around the proxy: a frame that runs script reaches the STUN listener directly.
+  await expect.poll(() => stun.length - stunMark, { message: 'a STUN request from the scripted frame' }).toBeGreaterThan(0);
+  // A frame that goes to the spec's server is written down there.
+  await expect.poll(() => leaks.slice(leakMark)).toEqual(['GET /leak?control=frame']);
+  // A policy this page is under, and one thing it refuses: the violation reaches the spec.
+  await page.evaluate(() => {
+    const policy = document.createElement('meta');
+    policy.httpEquiv = 'Content-Security-Policy';
+    policy.content = "img-src 'none'";
+    document.head.append(policy);
+    new Image().src = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+  });
+  await expect.poll(() => violations.map((line) => line.split(' ')[0])).toEqual(['img-src']);
+  // The control's own traffic was the point; the checks after it start from here. Its frames go
+  // first, so the peer connection stops sending STUN retransmissions.
+  await page.goto('about:blank');
+  await page.waitForTimeout(500);
   externals = [];
   tunnelMark = tunnels.opened.length;
+  stunMark = stun.length;
+  leakMark = leaks.length;
+  violations = [];
 });
 
 test('a diagram opens in the panel, drawn in a frame that runs nothing', async ({ page }, testInfo) => {
@@ -407,9 +567,11 @@ test('a diagram opens in the panel, drawn in a frame that runs nothing', async (
   await expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
   const srcdoc = (await frame.getAttribute('srcdoc')) ?? '';
   expect(
-    srcdoc.startsWith(`<!doctype html><meta http-equiv="Content-Security-Policy" content="${STATIC_CSP}">`),
+    srcdoc.startsWith(`<!doctype html><meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">`),
   ).toBe(true);
   expect(srcdoc).toContain('<svg');
+  // The scan of what Mermaid drew keeps its arrowheads: a same-document fragment is not a fetch.
+  expect(srcdoc).toMatch(/marker-end="url\(#[^)"]+\)"/);
   // The drawing is an SVG inside the frame's own document.
   await expect.poll(async () => (await stillFrame(page, frame)).elements).toContain('svg');
   const drawn = await stillFrame(page, frame);
@@ -602,35 +764,68 @@ test('a table stays readable in the turn, and Chart this draws any of its number
   await page.screenshot({ path: testInfo.outputPath('table-charted.png'), animations: 'disabled' });
 });
 
-test('a hostile design runs only inside its own frame: no parent, no network, no popup, no storage', async ({ page, tunnels }, testInfo) => {
+test('a hostile design runs nothing: no script, no handler, no javascript: URL, no WebRTC', async ({ page, tunnels }, testInfo) => {
   const project = await freshProject('Offer page');
+  // First with nothing behind the frame's own sandbox and policy, as a browser on the development
+  // server has the Console. (The app's policy, which a srcdoc frame inherits, refuses inline script
+  // by itself, so it would hide a sandbox that let script run.)
+  const bare = await withoutAppPolicy(page);
   await openConsole(page, project);
+  expect(bare.served(), 'the served document had a policy to take out').toBeGreaterThan(0);
+  await expect(page.locator('meta[http-equiv="Content-Security-Policy"]')).toHaveCount(0);
   const title = await page.title();
   const address = page.url();
   await send(page, 'DESIGN the offer page');
-  await chips(page, 'Design', 'Spring offer').click();
   const panel = pane(page);
   const frame = panel.locator('iframe[title="Design: Spring offer"]');
-  await expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
-  await expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
-  const srcdoc = (await frame.getAttribute('srcdoc')) ?? '';
-  expect(
-    srcdoc.startsWith(`<!doctype html><meta http-equiv="Content-Security-Policy" content="${DESIGN_CSP}">`),
-  ).toBe(true);
+  // The checks are soft, so a frame that lets something run reports everything that ran, in both
+  // phases, rather than only the first thing found.
+  const expectNothingRan = async () => {
+    await chips(page, 'Design', 'Spring offer').click();
+    await expect.soft(frame).toHaveAttribute('sandbox', '');
+    await expect.soft(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
+    const srcdoc = (await frame.getAttribute('srcdoc')) ?? '';
+    expect
+      .soft(srcdoc.startsWith(`<!doctype html><meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">`))
+      .toBe(true);
 
-  const body = page.frameLocator('iframe[title="Design: Spring offer"]').locator('body');
-  // Its own script runs, inside its own frame...
-  await expect(body).toHaveAttribute('data-ran', 'yes');
-  await expect(body.getByRole('heading', { name: 'Spring offer', exact: true })).toBeVisible();
-  // ...and every way out of that frame is closed.
-  for (const avenue of ['parent', 'top', 'popup', 'storage', 'cookie', 'fetch', 'img'])
-    await expect(body, `the design reached ${avenue}`).toHaveAttribute(`data-${avenue}`, 'blocked');
-  await expect(page).toHaveTitle(title);
-  expect(page.url()).toBe(address);
-  expect(page.context().pages()).toHaveLength(1);
-  // Every attempt above has settled, so anything it asked for has already been written down.
-  expect(externals).toEqual([]);
-  expect(tunnelsSince(tunnels).filter((target) => !browserOwn(target))).toEqual([]);
+    // The page is drawn, and everything it would run is in its document as written...
+    await expect.poll(async () => (await stillFrame(page, frame)).text).toContain('Ten percent off every order this week.');
+    const drawn = await stillFrame(page, frame);
+    expect(drawn.text).toContain('Spring offer');
+    expect(drawn.elements).toContain('script');
+    expect(drawn.body.onload).toContain('dataset.onload');
+    expect(drawn.tags.filter((tag) => tag.name === 'img' && tag.attributes.onerror)).toHaveLength(1);
+    expect(drawn.tags.find((tag) => tag.name === 'iframe')?.attributes.src).toMatch(/^javascript:/);
+
+    // ...and, given time to do all of it, none of it ran. The inline script would have set `ran`,
+    // then a mark for each way out it tried (parent, top, popup, storage, cookie, fetch) and one for
+    // the WebRTC connection it built (`rtc`); the body's onload, the images' onload and onerror, and
+    // the nested frame's javascript: URL each set one of their own.
+    await page.waitForTimeout(SETTLE_MS);
+    const settled = await stillFrame(page, frame);
+    const marks = ['ran', 'onload', 'img', 'pixel', 'js', 'rtc', 'parent', 'top', 'popup', 'storage', 'cookie', 'fetch'];
+    expect
+      .soft(
+        marks.filter((mark) => settled.body[`data-${mark}`] !== undefined).map((mark) => `${mark}=${settled.body[`data-${mark}`]}`),
+        'marks left by something in the design that ran',
+      )
+      .toEqual([]);
+    // No STUN request reached the listener its peer connection named.
+    expect.soft(stun.slice(stunMark), 'STUN requests from the design').toEqual([]);
+    await expect(page).toHaveTitle(title);
+    expect(page.url()).toBe(address);
+    expect(page.context().pages()).toHaveLength(1);
+    expect(externals).toEqual([]);
+    expect(tunnelsSince(tunnels).filter((target) => !browserOwn(target))).toEqual([]);
+  };
+  await expectNothingRan();
+
+  // Then as the built app is served, with its policy in force as well.
+  await bare.restore();
+  await openConsole(page, project);
+  await expect(page.locator('meta[http-equiv="Content-Security-Policy"]')).toHaveAttribute('content', APP_CSP);
+  await expectNothingRan();
 
   // A design is laid out at the chosen width and scaled into the panel.
   await panel.getByRole('button', { name: 'Desktop', exact: true }).click();
@@ -638,15 +833,148 @@ test('a hostile design runs only inside its own frame: no parent, no network, no
   await page.screenshot({ path: testInfo.outputPath('hostile-design.png'), animations: 'disabled' });
 });
 
-test('a design that sends its own frame elsewhere is taken down, not shown', async ({ page }) => {
+test('a design whose script would send its frame elsewhere stays put, and a frame that loads twice is taken down', async ({ page }) => {
   const project = await freshProject('Wandering page');
+  // Without the app's policy, which would refuse the inline script by itself: the sandbox alone
+  // keeps it from running.
+  const bare = await withoutAppPolicy(page);
   await openConsole(page, project);
+  expect(bare.served(), 'the served document had a policy to take out').toBeGreaterThan(0);
   await send(page, 'WANDER off somewhere');
   await chips(page, 'Design', 'Wandering page').click();
   const panel = pane(page);
-  await expect(panel.getByText('This design tried to open another page, so it was stopped.')).toBeVisible();
-  await expect(panel.locator('iframe[title="Design: Wandering page"]')).toHaveCount(0);
-  await expect(panel.getByRole('button', { name: 'Load it again', exact: true })).toBeVisible();
+  const frame = panel.locator('iframe[title="Design: Wandering page"]');
+  await expect.poll(async () => (await stillFrame(page, frame)).text).toContain('This page leaves.');
+  // Its script would have replaced the page after 50 ms. It never runs, so the frame stays.
+  await page.waitForTimeout(SETTLE_MS);
+  expect(await frameUrl(page, frame)).toBe('about:srcdoc');
+  await expect(frame).toHaveCount(1);
+  await expect(panel.getByText(STOPPED)).toHaveCount(0);
+
+  // Should a design's frame load a second time anyway, however that came about, the panel takes it
+  // down rather than show what it loaded. Here the spec loads it again from outside.
+  await frame.evaluate((element: HTMLIFrameElement) => {
+    element.srcdoc = `${element.srcdoc} `;
+  });
+  await expect(panel.getByText(STOPPED)).toBeVisible();
+  await expect(frame).toHaveCount(0);
+  await panel.getByRole('button', { name: 'Load it again', exact: true }).click();
+  await expect(frame).toHaveCount(1);
+  await expect.poll(async () => (await stillFrame(page, frame)).text).toContain('This page leaves.');
+});
+
+test('a link in a design goes nowhere: a click sends nothing, with the app policy or without it', async ({ page }, testInfo) => {
+  const project = await freshProject('Price list');
+  // First as a browser on the development server has the Console, with no policy of its own: only
+  // the links' removal stands between a click and the spec's server.
+  const bare = await withoutAppPolicy(page);
+  await openConsole(page, project);
+  expect(bare.served(), 'the served document had a policy to take out').toBeGreaterThan(0);
+  await expect(page.locator('meta[http-equiv="Content-Security-Policy"]')).toHaveCount(0);
+  await send(page, 'LINK the price list');
+
+  const panel = pane(page);
+  const frame = panel.locator('iframe[title="Design: Price list"]');
+  // The checks are soft, so a link that survives is also clicked, and what the click did is
+  // reported in both phases, rather than only the markup that let it.
+  const clickTheLink = async () => {
+    await chips(page, 'Design', 'Price list').click();
+    await expect.soft(frame).toHaveAttribute('sandbox', '');
+    await expect.poll(async () => (await stillFrame(page, frame)).text).toContain('Open the price list');
+    // Every link's text is still there, and nothing in the frame leads anywhere.
+    const list = await stillFrame(page, frame);
+    for (const words of ['Open the price list', 'Chart link', 'Animated link', 'Send the order', 'Shadow link'])
+      expect(list.text).toContain(words);
+    expect.soft(waysOut(list), 'ways out of the frame left in its markup').toEqual([]);
+    expect.soft(await frame.getAttribute('srcdoc')).not.toContain('/leak');
+    // A person clicks the page's big link.
+    await frame.scrollIntoViewIfNeeded();
+    const box = await frame.boundingBox();
+    expect(box).not.toBeNull();
+    const before = leaks.length;
+    await page.mouse.click(box!.x + 60, box!.y + 60);
+    await page.waitForTimeout(SETTLE_MS);
+    expect.soft(leaks.slice(before), 'requests the click sent to the spec server').toEqual([]);
+    expect.soft(await frameUrl(page, frame)).toBe('about:srcdoc');
+    await expect.soft(panel.getByText(STOPPED)).toHaveCount(0);
+  };
+  await clickTheLink();
+  await page.screenshot({ path: testInfo.outputPath('linked-design.png'), animations: 'disabled' });
+
+  // Then as the built app is served, its policy in force: a live link would now also be refused
+  // there, and the refusal reported.
+  await bare.restore();
+  await openConsole(page, project);
+  await expect(page.locator('meta[http-equiv="Content-Security-Policy"]')).toHaveAttribute('content', APP_CSP);
+  await clickTheLink();
+  // Taking the links out means reading the design in the Console's own document, with DOMParser,
+  // which runs and loads nothing. Its <base> is read there too, and the app's policy refuses it
+  // (`base-uri 'none'`) and says so (Chromium reports it once with its address and once without):
+  // the policy doing its job on the model's markup. Those reports are expected here; no other is.
+  const expected = new RegExp(`^base-uri refused (${escaped(probes.leak)}/base/|\\(inline\\)) at `);
+  expect(violations.filter((line) => !expected.test(line))).toEqual([]);
+  violations = [];
+});
+
+test('the Console runs under its own policy, and nothing on its main surfaces trips it', async ({ page }, testInfo) => {
+  // Every test in this file fails on a violation the Console's document reports (afterEach), so
+  // each surface they use is covered already: a thread, the artifact panel, Files beside it, and
+  // the conversation on the Nectovia page. This one walks the rest.
+  const project = await freshProject('Policy walk');
+  await page.goto(url);
+  const policy = page.locator('head > meta[http-equiv="Content-Security-Policy"]');
+  await expect(policy).toHaveAttribute('content', APP_CSP);
+  // First in the head, so it is in force before anything else in the document is read.
+  expect(await page.evaluate(() => document.head.firstElementChild?.getAttribute('http-equiv'))).toBe(
+    'Content-Security-Policy',
+  );
+  // Home: the Nectovia page.
+  await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
+
+  // A thread with a diagram and an ordinary design in the panel.
+  await page.getByRole('button', { name: project.name, exact: true }).click();
+  await expect(composer(page)).toBeVisible();
+  await send(page, 'HOURS for the shop');
+  await chips(page, 'Design', 'Opening hours').click();
+  const panel = pane(page);
+  const hours = panel.locator('iframe[title="Design: Opening hours"]');
+  await expect.poll(async () => (await stillFrame(page, hours)).text).toContain('Monday to Friday');
+  await send(page, 'DIAGRAM of the delivery check');
+  await chips(page, 'Diagram', 'Delivery check').click();
+  await expect.poll(async () => (await stillFrame(page, panel.locator('iframe[title="Diagram: Delivery check"]'))).elements).toContain('svg');
+
+  // Files: the saved artifact's preview, rendered and raw.
+  await panel.getByRole('button', { name: 'Save to Files', exact: true }).click();
+  await expect(panel.locator('.art-status')).toContainText('Saved to Files as');
+  await panel.getByRole('button', { name: 'Show in Files', exact: true }).click();
+  const files = filesPane(page);
+  await expect(files).toBeVisible();
+  await expect(files.getByRole('button', { name: 'Open in panel', exact: true })).toBeVisible();
+  await files.getByRole('button', { name: 'Raw', exact: true }).click();
+  await expect(files.locator('pre.files-raw')).toContainText('flowchart TD');
+
+  // Settings, every section this build offers.
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  const rail = page.getByRole('navigation', { name: 'Settings', exact: true });
+  const names = (await rail.getByRole('button').allTextContents()).map((name) => name.trim());
+  expect(names).toContain('Appearance');
+  for (const name of names) {
+    await rail.getByRole('button', { name, exact: true }).click();
+    await expect(page.getByRole('heading', { level: 1, name, exact: true })).toBeVisible();
+  }
+  // The Design Center, from its section. The Console offers it (this project's settings put the
+  // person on the Console), and no other spec opens it under the built app's policy.
+  expect(names).toContain('Design Center');
+  await rail.getByRole('button', { name: 'Design Center', exact: true }).click();
+  await page.getByRole('button', { name: 'Open Design Center' }).click();
+  await expect(page.locator('.design-center')).toBeVisible();
+  await expect(page.locator('.dc-stage')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('design-center-under-policy.png'), animations: 'disabled' });
+  await page.locator('.design-center').getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.locator('.design-center')).toHaveCount(0);
+  // Anything reported late (a font, a picture) has arrived by now.
+  await page.waitForTimeout(500);
+  expect(violations).toEqual([]);
 });
 
 test('a hostile picture and hostile diagram labels load nothing and run nothing', async ({ page, tunnels }, testInfo) => {
@@ -660,6 +988,10 @@ test('a hostile picture and hostile diagram labels load nothing and run nothing'
   await expect.poll(async () => (await stillFrame(page, picture)).elements).toContain('image');
   const sign = await stillFrame(page, picture);
   expect(sign.text).toContain('Linen Co.');
+  // Its links keep their words and lose their way out, xlink:href included.
+  expect(sign.text).toContain('Since 1998');
+  expect(waysOut(sign)).toEqual([]);
+  expect(await picture.getAttribute('srcdoc')).not.toContain('/leak');
   // Its script is in the frame's document and never ran: nothing set the mark it writes.
   expect(sign.elements).toContain('script');
   expect(sign.root['data-ran']).toBeUndefined();

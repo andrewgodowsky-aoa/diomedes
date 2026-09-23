@@ -11,14 +11,20 @@ import {
   type DesignWidth,
   type FrameTokens,
 } from './artifact-frame';
+import { withoutNavigation } from './artifact-links';
 import { shortDigest, withoutDeclaration, type ArtifactRecord } from './artifacts';
 import { renderDiagram, type DiagramResult } from './mermaid-render';
 
 // What the panel shows for the three kinds a model writes as markup: a
 // Mermaid diagram, an SVG image and an HTML design. Each is shown only inside
-// an iframe whose srcdoc artifact-frame.ts builds, CSP first. A diagram and an
-// image are pictures (sandbox="", no pointer events); a design runs its own
-// script in an opaque origin (sandbox="allow-scripts") and can reach nothing.
+// an iframe whose srcdoc artifact-frame.ts builds, CSP first, from a source
+// whose links artifact-links.ts has made inert. Every frame is sandbox="": no
+// script runs in any of them, a design's included, and each has an opaque
+// origin. A diagram and an image are pictures (no pointer events); a design is
+// a static page a person can scroll and read at the width they choose.
+
+/** Why a source whose links cannot be made inert is not shown. */
+const UNSETTLED = 'Its links could not be switched off: its markup reads differently each time it is read.';
 
 /** The artifact as written: mono, unwrapped, scrollable, focusable. */
 export function SourceView({ source, label = 'Source' }: { source: string; label?: string }) {
@@ -94,10 +100,26 @@ function useFrameTokens(ref: RefObject<HTMLElement | null>): FrameTokens | null 
 }
 
 /** A picture: a diagram or an image, drawn at the panel's width and as tall as it needs. */
-function StillFrame({ kind, svg, tokens, label }: { kind: 'diagram' | 'image'; svg: string; tokens: FrameTokens; label: string }) {
+function StillFrame({
+  kind,
+  svg,
+  source,
+  tokens,
+  label,
+}: {
+  kind: 'diagram' | 'image';
+  svg: string;
+  /** What the model wrote, shown instead of the picture if its links cannot be made inert. */
+  source: string;
+  tokens: FrameTokens;
+  label: string;
+}) {
   const [ref, size] = useElementSize<HTMLDivElement>({ width: 440, height: 0 });
   const box = useMemo(() => svgBox(svg), [svg]);
-  const srcdoc = useMemo(() => frameDocument(kind, svg, tokens), [kind, svg, tokens]);
+  const inert = useMemo(() => withoutNavigation(svg, 'picture'), [svg]);
+  const srcdoc = useMemo(() => (inert === null ? null : frameDocument(kind, inert, tokens)), [kind, inert, tokens]);
+  if (srcdoc === null)
+    return <ArtifactError heading={`This ${kind} was not shown.`} problem={UNSETTLED} source={source} />;
   return (
     <div ref={ref}>
       <iframe
@@ -135,7 +157,7 @@ function DiagramView({ source, title }: { source: string; title: string }) {
           Drawing the diagram…
         </p>
       ) : result.ok ? (
-        <StillFrame kind="diagram" svg={result.svg} tokens={tokens} label={`Diagram: ${title}`} />
+        <StillFrame kind="diagram" svg={result.svg} source={source} tokens={tokens} label={`Diagram: ${title}`} />
       ) : (
         <ArtifactError heading="This diagram could not be drawn." problem={result.problem} source={source} />
       )}
@@ -148,7 +170,7 @@ function ImageView({ svg, title }: { svg: string; title: string }) {
   const tokens = useFrameTokens(probe);
   return (
     <div ref={probe}>
-      <StillFrame kind="image" svg={svg} tokens={tokens ?? NECTOVIA_TOKENS} label={`Image: ${title}`} />
+      <StillFrame kind="image" svg={svg} source={svg} tokens={tokens ?? NECTOVIA_TOKENS} label={`Image: ${title}`} />
     </div>
   );
 }
@@ -156,10 +178,10 @@ function ImageView({ svg, title }: { svg: string; title: string }) {
 const WIDTH_LABEL: Record<DesignWidth, string> = { fit: 'Fit', phone: 'Phone', desktop: 'Desktop' };
 
 /**
- * A design: the model's page, running its own script inside an opaque origin
- * with no network. If it navigates its own frame away (a sandbox cannot stop a
- * frame leaving itself; the desktop shell refuses it outright), the frame is
- * taken down rather than showing whatever it went to.
+ * A design: the model's page, drawn with no script in an opaque origin with no
+ * network, its links made inert. Nothing in it can move its frame. Should the
+ * frame load a second time anyway, it is taken down rather than showing
+ * whatever it went to (the desktop shell also refuses any such navigation).
  */
 function DesignView({ html, title }: { html: string; title: string }) {
   const [mode, setMode] = useState<DesignWidth>('fit');
@@ -168,11 +190,13 @@ function DesignView({ html, title }: { html: string; title: string }) {
   const loads = useRef(0);
   const [ref, size] = useElementSize<HTMLDivElement>({ width: 440, height: 480 });
   const layout = designLayout(mode, size.width);
-  const srcdoc = useMemo(() => frameDocument('design', html), [html]);
+  const inert = useMemo(() => withoutNavigation(html, 'page'), [html]);
+  const srcdoc = useMemo(() => (inert === null ? null : frameDocument('design', inert)), [inert]);
   useEffect(() => {
     loads.current = 0;
     setStopped(false);
   }, [srcdoc, generation]);
+  if (srcdoc === null) return <ArtifactError heading="This design was not shown." problem={UNSETTLED} source={html} />;
   return (
     <div className="art-design">
       <div className="art-design-bar">

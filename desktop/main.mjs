@@ -222,6 +222,12 @@ async function createMainWindow() {
     },
   });
   const win = window;
+  // Nothing in this window uses WebRTC, and no artifact frame runs script
+  // (client/console/artifact-frame.ts): the sandbox is what stops a frame. ICE
+  // traffic is outside every Content-Security-Policy, so as a second wall WebRTC
+  // here may not use UDP except through a proxy (no STUN requests, no local or
+  // public address exposed). It narrows WebRTC to TCP; it does not remove it.
+  win.webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
   win.webContents.setZoomFactor(1);
   void win.webContents.setVisualZoomLevelLimits(1, 1);
   win.webContents.on('before-input-event', (event, input) => {

@@ -1,3 +1,4 @@
+import '../zod-config.js';
 import { createRoot } from 'react-dom/client';
 import '@fontsource/schibsted-grotesk/400';
 import '@fontsource/schibsted-grotesk/600';

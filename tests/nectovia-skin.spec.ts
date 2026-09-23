@@ -331,3 +331,42 @@ test('Field: today’s Field, with no plate and no bust', async ({ page }) => {
   await shot(page, 'field-home');
   await shootScreens(page, 'field');
 });
+
+test('Field: the Projects register keeps its segment bars, in Field’s own colours', async ({ page }) => {
+  // The segment bar is a product feature in every scheme (integrator decision, hostile review H5),
+  // styled by each scheme's tokens. Under Field that means Field's lead, and nothing of the
+  // Nectovia layer: no plate, no brief, no art, no bust.
+  await chooseScheme(page, 'Field', 'field');
+  expect(await rootVar(page, '--chrome')).toBe('#121417');
+  expect(await rootVar(page, '--light')).toBe('#3fd6df');
+  // The Nectovia layer's own tokens are not defined at all.
+  expect(await rootVar(page, '--seam-lead')).toBe('');
+  expect(await rootVar(page, '--plate')).toBe('');
+
+  await openHome(page);
+  await expect(page.locator('.nv-brief')).toHaveCount(0);
+  await expect(page.locator('.nv-art')).toHaveCount(0);
+  await expect(page.locator('img[src*="nectovia-bust"]')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Projects', exact: true }).first().click();
+  await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
+  const row = page.locator('.home-register .home-row').filter({ hasText: WORK });
+  const bar = row.locator('.seg-bar');
+  await expect(bar).toBeVisible();
+  await expect(bar.locator('span.seg')).toHaveCount(4);
+  await expect(bar.locator('span.seg.done')).toHaveCount(2);
+  await expect(bar).toContainText('2 of 4 tasks done');
+  // A finished task is lit in Field's lead (#3fd6df), not Nectovia's (#44d2c9).
+  const lit = await bar
+    .locator('span.seg.done')
+    .first()
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
+  expect(lit).toBe('rgb(63, 214, 223)');
+  // The page's own composer is not a plate.
+  const plate = await page
+    .locator('.home-ask .composer')
+    .evaluate((element) => getComputedStyle(element, '::before').content);
+  expect(plate).toBe('none');
+  await expect(page.locator('.nv-brief, .nv-art, img[src*="nectovia-bust"]')).toHaveCount(0);
+  await shot(page, 'field-projects-register');
+});

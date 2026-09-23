@@ -57,9 +57,21 @@ export const LAUNCH_STEPS = {
 export const PACKING = { type: 'progress', title: 'Boxes packed', done: 7, total: 12, label: 'boxes' };
 
 /**
- * A page that tries every way out of its frame and writes down, in its own DOM, what happened.
- * Every attempt is caught: an uncaught error in a frame is reported as a page error, which would
- * fail the spec on the attack failing rather than on the interface.
+ * Where the hostile fixtures below point, set by tests/artifacts-ui.spec.ts once its observers
+ * are listening: a UDP socket that records any STUN request, and a path on the spec's own server
+ * that records any request made to it. `{{STUN}}` and `{{LEAK}}` in an answer are replaced by them.
+ */
+export const probes = { stun: 'stun:127.0.0.1:9', leak: 'http://127.0.0.1:9/leak' };
+
+/** A 1x1 GIF: an image that loads under the frame's policy, so its onload would fire if it could. */
+const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+/**
+ * A page that tries every way out of its frame, and writes in its own DOM what it did. No script
+ * runs in a design (sandbox=""), so none of its marks may appear: its inline script, its
+ * onload and onerror handlers, a javascript: URL and a WebRTC connection to the spec's STUN
+ * listener all stay unrun. Every attempt is caught, so that if one ever ran, the spec would fail
+ * on the mark it left rather than on an uncaught error.
  */
 const HOSTILE_DESIGN = [
   '<!-- artifact: id=spring-offer title="Spring offer" -->',
@@ -68,29 +80,78 @@ const HOSTILE_DESIGN = [
   '<head>',
   '<style>@import url("https://example.com/import.css"); body { font: 16px sans-serif; background: url("https://example.com/bg.png"); }</style>',
   '<link rel="stylesheet" href="https://example.com/sheet.css">',
+  '<link rel="preconnect" href="https://preconnect.example.com">',
+  '<link rel="dns-prefetch" href="https://dns-prefetch.example.com">',
   '</head>',
-  '<body>',
+  '<body onload="document.body.dataset.onload = \'ran\'">',
   '<h1>Spring offer</h1>',
   '<p>Ten percent off every order this week.</p>',
-  '<img src="https://example.com/x.png" alt="" onerror="document.body.dataset.img = \'blocked\'" onload="document.body.dataset.img = \'loaded\'">',
+  '<img src="https://example.com/x.png" alt="" onerror="document.body.dataset.img = \'error ran\'" onload="document.body.dataset.img = \'load ran\'">',
+  `<img src="${PIXEL}" alt="" onload="document.body.dataset.pixel = 'ran'">`,
+  '<iframe title="Nested" src="javascript:parent.document.body.dataset.js = \'ran\'"></iframe>',
   '<script>',
   '  const mark = (name, value) => { document.body.dataset[name] = value; };',
+  '  mark("ran", "yes");',
   '  try { window.parent.document.title = "owned"; mark("parent", "reached"); } catch (error) { mark("parent", "blocked"); }',
   '  try { mark("top", window.top.document ? "reached" : "blocked"); } catch (error) { mark("top", "blocked"); }',
   '  try { mark("popup", window.open("https://example.com/popup") ? "opened" : "blocked"); } catch (error) { mark("popup", "blocked"); }',
   '  try { mark("storage", typeof window.localStorage.length === "number" ? "reached" : "blocked"); } catch (error) { mark("storage", "blocked"); }',
   '  try { mark("cookie", typeof document.cookie === "string" ? "reached" : "blocked"); } catch (error) { mark("cookie", "blocked"); }',
   '  fetch("https://example.com/data").then(() => mark("fetch", "reached"), () => mark("fetch", "blocked"));',
-  '  mark("ran", "yes");',
+  '  try {',
+  '    const peer = new RTCPeerConnection({ iceServers: [{ urls: "{{STUN}}" }] });',
+  '    peer.createDataChannel("probe");',
+  '    peer.createOffer().then((offer) => peer.setLocalDescription(offer)).catch(() => undefined);',
+  '    mark("rtc", "constructed");',
+  '  } catch (error) { mark("rtc", "blocked"); }',
   '</script>',
   '</body>',
   '</html>',
 ];
 
 /**
- * A page that sends its own frame somewhere else once it has loaded. A sandbox cannot stop a frame
- * navigating itself; the desktop shell refuses it (desktop/main.mjs), and in a browser the panel
- * takes the frame down on its second load. It goes to about:blank, so the test needs no network.
+ * A page whose every link points at the spec's own server with a secret in the query, in every
+ * form a link can take: an anchor, an image-map area, SVG links (xlink:href, and one an SVG
+ * animation would write back), a form and its button, a ping, a target, a <base>, a refresh, and
+ * an anchor inside a declarative shadow root. Its links are made inert before its srcdoc is built
+ * (client/console/artifact-links.ts), so clicking the first one sends nothing anywhere.
+ */
+const LINKED_DESIGN = [
+  '<!-- artifact: id=price-list title="Price list" -->',
+  '<!doctype html>',
+  '<html>',
+  '<head>',
+  '<base href="{{LEAK}}/base/">',
+  '<meta http-equiv="refresh" content="60;url={{LEAK}}?via=refresh">',
+  '<style>body { margin: 0; font: 18px sans-serif; } a.big { display: block; box-sizing: border-box; height: 180px; padding: 24px; background: #dfe7f0; color: #123456; }</style>',
+  '</head>',
+  '<body>',
+  '<a class="big" href="{{LEAK}}?secret=from-design" ping="{{LEAK}}?via=ping" target="_self">Open the price list</a>',
+  `<img src="${PIXEL}" alt="Area map" usemap="#prices" width="40" height="40"><map name="prices"><area shape="rect" coords="0,0,40,40" href="{{LEAK}}?via=area" alt="Area link"></map>`,
+  '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="260" height="60">',
+  '  <a xlink:href="{{LEAK}}?via=svg"><text x="4" y="20">Chart link</text></a>',
+  '  <a><text x="4" y="48">Animated link</text><set attributeName="href" to="{{LEAK}}?via=animation"/></a>',
+  '</svg>',
+  '<form action="{{LEAK}}?via=form"><button formaction="{{LEAK}}?via=formaction">Send the order</button></form>',
+  '<div><template shadowrootmode="open"><a href="{{LEAK}}?via=shadow">Shadow link</a></template></div>',
+  '</body>',
+  '</html>',
+];
+
+/** An ordinary page: what a design is for. */
+const PLAIN_DESIGN = [
+  '<!-- artifact: id=opening-hours title="Opening hours" -->',
+  '<!doctype html>',
+  '<html>',
+  '<head><style>body { margin: 0; padding: 24px; font: 16px system-ui, sans-serif; color: #1a1d21; background: #ffffff; } td { padding: 4px 16px 4px 0; }</style></head>',
+  '<body><h1>Opening hours</h1><table><tr><td>Monday to Friday</td><td>8:00 to 18:00</td></tr><tr><td>Saturday</td><td>9:00 to 13:00</td></tr></table></body>',
+  '</html>',
+];
+
+/**
+ * A page whose script sends its own frame somewhere else once it has loaded. No script runs in a
+ * design, so it stays where it is. (Should a frame ever navigate itself anyway, the desktop shell
+ * refuses it, and in a browser the panel takes the frame down on its second load.)
  */
 const WANDERING_DESIGN = [
   '<!-- artifact: id=wandering-page title="Wandering page" -->',
@@ -98,13 +159,14 @@ const WANDERING_DESIGN = [
   '<script>setTimeout(() => location.replace("about:blank"), 50);</script>',
 ];
 
-/** A picture that would load three files and run a script if anything let it. */
+/** A picture that would load three files, run a script and link away if anything let it. */
 const HOSTILE_PICTURE = [
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" width="240" height="120" style="background: url(https://example.com/bg.png)">',
+  '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 240 120" width="240" height="120" style="background: url(https://example.com/bg.png)">',
   '  <style>@import url("https://example.com/import.css"); text { font: 20px sans-serif; }</style>',
   '  <rect x="0" y="0" width="240" height="120" fill="#44d2c9" style="mask-image: url(https://example.com/mask.png)"/>',
   '  <image href="https://example.com/x.png" x="0" y="0" width="240" height="120"/>',
-  '  <text x="24" y="68">Linen Co.</text>',
+  '  <a href="{{LEAK}}?via=picture"><text x="24" y="68">Linen Co.</text></a>',
+  '  <a xlink:href="{{LEAK}}?via=picture-xlink"><text x="24" y="100">Since 1998</text></a>',
   '  <script>document.documentElement.setAttribute("data-ran", "yes");</script>',
   '</svg>',
 ];
@@ -141,6 +203,8 @@ export const ANSWERS: Readonly<Record<string, string>> = {
     ['| Region | Sent | Replies |', '|---|---:|---:|', '| North | 120 | 9 |', '| South | 80 | 4 |', '| East | 150 | 20 |'].join('\n'),
   ),
   DESIGN: answer('Here is the offer page.', fence('html', HOSTILE_DESIGN)),
+  LINK: answer('Here is the price list.', fence('html', LINKED_DESIGN)),
+  HOURS: answer('Here are the opening hours.', fence('html', PLAIN_DESIGN)),
   WANDER: answer('Here is a page.', fence('html', WANDERING_DESIGN)),
   PICTURE: answer('## Shop sign', fence('svg', HOSTILE_PICTURE)),
   LABEL: answer('## Hostile labels', fence('mermaid', HOSTILE_LABELS)),
@@ -149,7 +213,8 @@ export const ANSWERS: Readonly<Record<string, string>> = {
 
 export function artifactAnswer(prompt: string): string {
   const word = /^[A-Z]+/.exec(prompt.trim())?.[0] ?? '';
-  return ANSWERS[word] ?? `You said: ${prompt}`;
+  const text = ANSWERS[word] ?? `You said: ${prompt}`;
+  return text.replaceAll('{{STUN}}', probes.stun).replaceAll('{{LEAK}}', probes.leak);
 }
 
 // ---- the home conversation: AWS Bedrock (Luna) at its provider boundary ---------------------

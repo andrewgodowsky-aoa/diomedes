@@ -30,14 +30,17 @@ export function projectProgress(project: Pick<Project, 'status'>): SegmentInput 
 /**
  * One task's place in its plan, read from the same projection the Board's
  * columns render (`taskEvidence`), never from `task.state` alone: done is done,
- * a run in progress is active, anything waiting on the person takes the
- * needs-you colour, a failed run is a failure, and the rest is still ahead.
+ * a run in progress is active, a failed run is a failure, and the rest is
+ * still ahead. The needs-you colour means a person is needed, so only Review
+ * takes it: an open Need, or changes or a task record waiting on the person.
+ * The Board's Blocked column also holds a run waiting on its engine, a task
+ * with no run recorded and a stopped run, and none of those waits on anyone.
  */
 export function stepState(column: TaskColumn, session: Pick<Session, 'state'> | null): SegmentState {
   if (column === 'Done') return 'done';
   if (column === 'Working') return 'active';
   if (column === 'Review') return 'blocked';
-  if (column === 'Blocked') return session?.state === 'failed' ? 'failed' : 'blocked';
+  if (column === 'Blocked' && session?.state === 'failed') return 'failed';
   return 'pending';
 }
 
