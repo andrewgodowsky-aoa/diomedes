@@ -3,6 +3,7 @@ import type { Project, Route, Turn } from '../../shared/types';
 import { routeDisplayName } from '../../shared/engines';
 import type { EverythingItem } from './Everything';
 import { Rail } from './Rail';
+import { ReplyBody } from './ReplyBody';
 import { useWorkingWord, workingLine } from './working-words';
 import {
   ALL_PROJECTS,
@@ -219,9 +220,11 @@ export function Diomedes({
                       <b>{turn.role === 'you' ? 'You' : 'Diomedes'}</b>
                     </div>
                     <div className="body">
-                      {paragraphs(turn.text).map((p, i) => (
-                        <p key={i}>{p}</p>
-                      ))}
+                      {turn.role === 'you' ? (
+                        paragraphs(turn.text).map((p, i) => <p key={i}>{p}</p>)
+                      ) : (
+                        <ReplyBody text={turn.text} />
+                      )}
                     </div>
                   </div>
                 ))}

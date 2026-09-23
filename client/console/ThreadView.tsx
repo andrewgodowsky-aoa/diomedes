@@ -30,6 +30,7 @@ import { FollowUpQueue } from './FollowUpQueue';
 import { StopMenu, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
 import { ChangeReview } from './ChangeReview';
+import { ReplyBody } from './ReplyBody';
 import { useWorkingWord, workingLine } from './working-words';
 
 function fmtDur(ms: number): string {
@@ -235,9 +236,11 @@ export function ThreadView({
                 )}
               </div>
               <div className="body">
-                {paragraphs(t.text).map((p, j) => (
-                  <p key={j}>{p}</p>
-                ))}
+                {t.role === 'you' ? (
+                  paragraphs(t.text).map((p, j) => <p key={j}>{p}</p>)
+                ) : (
+                  <ReplyBody text={t.text} session={live ?? last} />
+                )}
               </div>
             </div>
           ))}
@@ -465,7 +468,7 @@ export function ThreadView({
                 </div>
                 <div className="body">
                   {streaming.text ? (
-                    paragraphs(streaming.text).map((p, j) => <p key={j}>{p}</p>)
+                    <ReplyBody text={streaming.text} streaming session={live ?? last} />
                   ) : (
                     <p className="caption">{workingLine(streamWord)}</p>
                   )}
