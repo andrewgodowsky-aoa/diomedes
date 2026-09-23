@@ -700,7 +700,7 @@ describe('capability commands keep the route their driver needs', () => {
 });
 
 describe('the add-member form offers connected routes and "Nectovia chooses"', () => {
-  test('only ready routes are offered beside "Nectovia chooses", with the styles to choose from', async () => {
+  test('the form offers the tiers only: no route and no model, even when routes are ready', async () => {
     const { createElement } = await import('react');
     const { renderToStaticMarkup } = await import('react-dom/server');
     const { AddMember } = await import('../client/console/TeamView');
@@ -724,11 +724,13 @@ describe('the add-member form offers connected routes and "Nectovia chooses"', (
         onCancel: () => undefined,
       }),
     );
-    expect(html).toContain('<option value="auto" selected="">Nectovia chooses</option>');
-    expect(html).toContain('>Claude Code</option>');
-    expect(html).toContain('>OpenRouter</option>');
-    expect(html).not.toContain('>ChatGPT</option>');
-    expect(html).toContain('>Thorough</option>');
-    expect(html).toContain('a leader works one step above it');
+    const options = [...html.matchAll(/<option value="([^"]*)"[^>]*>([^<]*)<\/option>/g)].map((m) => m[2]);
+    // Role, then the three tiers. Nothing else is choosable.
+    expect(options).toEqual(['Leader', 'Member', 'Efficient', 'Focused', 'Thorough']);
+    expect(html).not.toContain('aria-label="Route"');
+    expect(html).not.toContain('aria-label="Model"');
+    for (const word of ['Claude Code', 'OpenRouter', 'ChatGPT', 'Opus', OR_MODEL, 'Nectovia chooses</option>'])
+      expect(html).not.toContain(word);
+    expect(html).toContain('a leader works one tier above it');
   });
 });

@@ -6,6 +6,7 @@ import { ENGINE_NAMES, EXTERNAL_ENGINES, TEXT_ROUTE_CONTROLS } from '../shared/e
 import { ENGINE_ROUTE_PROFILES, routeCaption } from '../shared/engine-routes';
 import { AwsBedrockSetup } from './AwsBedrockSetup';
 import { AzureOpenAISetup, OpenRouterSetup } from './ProviderSetup';
+import { TierSetup } from './TierSetup';
 import {
   advanceSetup,
   continueChoice,
@@ -1134,6 +1135,9 @@ export function AIConnections({
         <AwsBedrockSetup settings={settings} save={save} busy={busy} />
         <AzureOpenAISetup settings={settings} save={save} busy={busy} />
         <OpenRouterSetup settings={settings} save={save} busy={busy} />
+        {/* The Google Vertex AI card, landing on its own branch, mounts here, after OpenRouter. */}
+        {/* The owner's tier map: the one place that decides which route serves each tier. */}
+        <TierSetup settings={settings} save={save} busy={busy} />
       </div>
     </div>
   );

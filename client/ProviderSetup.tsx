@@ -131,8 +131,6 @@ function ProviderCard<V extends ProviderView>({
     void run(async () => {
       setReadiness(await api<ModelApiReadiness>(`${base}/test`, 'POST', {}));
     });
-  const makeDefault = () =>
-    void run(() => save({ ...settings, services: { ...settings.services, defaultEngine: route } }));
   const turnOn = () =>
     void run(async () => {
       await save({ ...settings, services: { ...settings.services, [route]: true } });
@@ -289,11 +287,8 @@ function ProviderCard<V extends ProviderView>({
               Turn on
             </Button>
           )}
-          {connection && !providerIsDefault(route, settings.services) && view.enabled && (
-            <Button onClick={makeDefault} disabled={disabled}>
-              Use {shortName} for new work
-            </Button>
-          )}
+          {/* No "use for new work" here: the owner's tier map is the one place that decides
+              which route serves each tier (Tiers, below). */}
           {connection && (
             <Button tone="quiet" onClick={disconnect} disabled={disabled}>
               Disconnect

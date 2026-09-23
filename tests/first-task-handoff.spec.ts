@@ -300,7 +300,8 @@ test('A verified route carries the person to a composer, chooses itself for the 
         return { engine: thread?.engine, model: thread?.requested?.model };
       })
       .toEqual({ engine: 'opencode', model: MODEL });
-    await expect(page.locator('.model-picker > button')).toContainText(MODEL);
+    // The thread header offers tiers only; a thread pinned to one model says so by name.
+    await expect(page.locator('.style-picker > button')).toContainText('Chosen model');
 
     // Nothing was sent: no provider call, and no turn on the thread.
     expect(calls).toHaveLength(generated);

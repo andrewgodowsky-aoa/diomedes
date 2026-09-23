@@ -274,22 +274,25 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(page.locator('.console')).toBeVisible();
-  const picker = page.locator('.model-picker > button');
+  // The thread header offers tiers only (owner decision 2026-09-23), so each engine and model
+  // is pinned on the thread through the same route an API client uses, and the header then
+  // names the pin as a chosen model.
+  const picker = page.locator('.style-picker > button');
+  const pinThread = async (engine: string, model: string) => {
+    const { threads } = await api<{ threads: Conversation[] }>(`/projects/${project.id}/threads`);
+    const thread = threads.find((item) => item.name === 'Engine UI thread')!;
+    await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', {
+      engine,
+      requested: { model, effort: null },
+    });
+    await expect(picker).toContainText('Chosen model');
+  };
   const documentScope = [
     { path: 'Scoped notes.md', text: 'Only this selected note belongs in scope.\n' },
   ];
 
   for (const engine of Object.keys(versions) as ExternalEngine[]) {
-    await picker.click();
-    const menu = page.getByRole('menu');
-    await expect(
-      menu.getByRole('menuitemradio').filter({ hasText: `${engine}/fixture-model` }),
-    ).toBeVisible();
-    await menu
-      .getByRole('menuitemradio')
-      .filter({ hasText: `${engine}/fixture-model` })
-      .click();
-    await expect(picker).toContainText(`${engine}/fixture-model`);
+    await pinThread(engine, `${engine}/fixture-model`);
     await page
       .getByRole('textbox', { name: 'Message this thread', exact: true })
       .fill(`ASK ${engine}`);
@@ -312,13 +315,7 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
     expect(call?.input.accountRoute).toBe(`${engine}:fixture-account`);
   }
 
-  await picker.click();
-  await page
-    .getByRole('menu')
-    .getByRole('menuitemradio')
-    .filter({ hasText: 'claude-code/fixture-model' })
-    .click();
-  await expect(picker).toContainText('claude-code/fixture-model');
+  await pinThread('claude-code', 'claude-code/fixture-model');
   await page
     .getByRole('textbox', { name: 'Message this thread', exact: true })
     .fill('CANCEL fixture request');
@@ -1485,74 +1482,6 @@ test('Onboarding says which of the three things continuing actually does', async
     await api('/settings', 'PUT', {
       services: (saved.services ?? {}) as Record<string, unknown>,
       onboarding: { resumeAt: 'done', completedAt: new Date().toISOString() },
-    });
-  }
-});
-
-/**
- * The thread menu and the setup screen answer the same question the same way.
- * This account is real, signed in and lists models, and it is on an account
- * route this adapter does not use — the one case where "OpenCode is connected"
- * and "this route can run" come apart.
- */
-test('The thread picker refuses a route whose account is on another route', async ({ page }) => {
-  const saved = await api<{ services?: Record<string, unknown> }>('/settings');
-  let issue = true;
-  await page.route('**/api/ai/status', (route) =>
-    route.fulfill({
-      json: {
-        connections: [
-          wire(
-            issue
-              ? {
-                  nextAction: 'explain-account-route',
-                  routeIssue: { required: 'opencode-go', connected: ['zen'] },
-                }
-              : {},
-          ),
-        ],
-      },
-    }),
-  );
-  try {
-    await api('/settings', 'PUT', {
-      surface: 'console',
-      openProjects: [project.id],
-      services: {
-        opencode: true,
-        defaultEngine: 'opencode',
-        opencodeModel: 'opencode/fixture-model',
-      },
-      onboarding: { resumeAt: 'done', completedAt: new Date().toISOString() },
-    });
-    await page.goto(baseURL);
-    await reopenLastProject(page);
-    await expect(page.locator('.console')).toBeVisible();
-    // The Console opens on Home, and the picker belongs to a thread.
-    await page
-      .getByRole('navigation', { name: 'Threads and views' })
-      .getByRole('button', { name: /Engine UI thread/ })
-      .click();
-    const picker = page.locator('.model-picker > button');
-    await picker.click();
-    const menu = page.getByRole('menu');
-    // Not offered, and the menu says which of the reasons it is.
-    await expect(menu.getByRole('menuitemradio')).toHaveCount(0);
-    await expect(
-      menu.getByText(/the account it reported is not the one this route uses/),
-    ).toBeVisible();
-
-    // The same account on the route this adapter does use is offered.
-    issue = false;
-    await page.keyboard.press('Escape');
-    await picker.click();
-    await expect(
-      menu.getByRole('menuitemradio').filter({ hasText: 'opencode/fixture-model' }),
-    ).toBeVisible();
-  } finally {
-    await page.unrouteAll({ behavior: 'wait' });
-    await api('/settings', 'PUT', {
-      services: (saved.services ?? {}) as Record<string, unknown>,
     });
   }
 });

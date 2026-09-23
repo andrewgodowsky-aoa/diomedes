@@ -14,14 +14,11 @@ import {
   type PendingMessage,
 } from '../conversation-send';
 import { answerTurnId } from '../conversation-turn';
-import { awsPickerState } from '../aws-bedrock-view';
-import { providerPickerState, type ProviderView } from '../provider-setup-view';
-import type { AwsConnectionView, ModelApiRoute } from '../../shared/model-api';
 import type { MessageResult } from '../../shared/conversation';
 import { CONVERSATION_DEFAULT_ROUTE } from '../../shared/engines';
 import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
 import type { WorkStyle } from '../../shared/work-style';
-import { Diomedes, routeOptions } from './Diomedes';
+import { Diomedes } from './Diomedes';
 import { stepLiveReply, type LiveBinding, type LiveEvent, type LiveReply } from './live-reply';
 import type { EverythingItem } from './Everything';
 import {
@@ -123,22 +120,16 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const [cardBusy, setCardBusy] = useState(false);
   const [unread, setUnread] = useState(false);
   // The route the scoped thread is recorded on, or null until one is read: the caption then
-  // names the default a first send takes. The AWS view feeds only what the Route control offers.
+  // names the default a first send takes. There is no Route control; a tier decides the route.
   const [route, setRoute] = useState<Route | null>(null);
   // The scoped thread's own WorkStyle, or null to follow the Settings default.
   const [workStyle, setWorkStyle] = useState<WorkStyle | null>(null);
-  const [aws, setAws] = useState<AwsConnectionView | null>(null);
-  const [providers, setProviders] = useState<ProviderView[]>([]);
   const delivery = useRef<ActiveDelivery | null>(null);
   // Whose turn it is to paint. A scope change, a read and a send each take the next number, so
   // an answer for a visit the person has left, or for a message they have since followed with
   // another, finds the number moved and is dropped. Leaving a scope and coming back is a new
   // visit: the scope's id alone could not tell the two apart.
   const turn = useRef(0);
-  // Route presses are numbered within a visit: two choices can share one visit, and only the
-  // latest one's answer may repaint the control or restore what was there before it. The visit
-  // fence alone cannot tell them apart.
-  const routePick = useRef(0);
   const lastRef = useRef(last);
   lastRef.current = last;
   // The answer streaming for the message in flight, and the one command it may belong to. The
@@ -243,22 +234,6 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       setUnread(false);
       setPending(false);
       setCardBusy(false);
-      // The AWS view is a read from memory. It refreshes what the Route control may offer
-      // whenever the conversation is read, and a failed read leaves the last answer in place.
-      void api<AwsConnectionView>('/ai/model-api/aws-bedrock').then(
-        (view) => {
-          if (owns()) setAws(view);
-        },
-        () => undefined,
-      );
-      // Azure OpenAI and OpenRouter, by the same rule, each from its own view.
-      void Promise.all(
-        (['azure-openai', 'openrouter'] as const).map((id) =>
-          api<ProviderView>(`/ai/model-api/${id}`).catch(() => null),
-        ),
-      ).then((views) => {
-        if (owns()) setProviders(views.filter((view): view is ProviderView => view !== null));
-      });
       try {
         let found: Binding | null;
         let conversation: Conversation | null = null;
@@ -493,40 +468,9 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   };
 
   /**
-   * The person's route choice for the scoped thread, written to the thread so the provisioner
-   * keeps it. The saved thread answers what it now is; a refused write puts the record's answer
-   * back and says why.
-   */
-  const pickRoute = (next: Route) => {
-    const found = binding;
-    if (!found || pending) return;
-    const visit = turn.current;
-    const mine = ++routePick.current;
-    const before = route;
-    setRoute(next);
-    void api<Conversation>(
-      `/projects/${encodeURIComponent(found.projectId)}/threads/${encodeURIComponent(found.threadId)}`,
-      'PUT',
-      { engine: next },
-    ).then(
-      (conversation) => {
-        // A choice another press superseded is not this control's to repaint: its own saved
-        // answer already spoke, or its own refusal is already owed.
-        if (turn.current === visit && routePick.current === mine)
-          setRoute(conversation.engine ?? next);
-      },
-      (error) => {
-        if (turn.current !== visit || routePick.current !== mine) return;
-        setRoute(before);
-        setNotice(words(error));
-      },
-    );
-  };
-
-  /**
-   * The person's WorkStyle for the scoped thread, written to the thread. It changes which
-   * offered model leads and how hard it thinks from the next message; never the Mode, the
-   * route or who pays. A refused write puts the record's answer back and says why.
+   * The person's WorkStyle for the scoped thread, written to the thread. From the next message
+   * the owner's tier map decides the route and the model it runs on; never the Mode. A refused
+   * write puts the record's answer back and says why.
    */
   const pickStyle = (next: WorkStyle | null) => {
     const found = binding;
@@ -583,17 +527,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     }
   };
 
-  // What the caption names: the recorded route, or the default a first send takes. The Route
-  // control itself is only ever a home-scope thing, and only once the thread it writes to is
-  // real. Its entries always include the route the thread is on, offered or not.
+  // What the caption names without a tier: the recorded route, or the default a first send takes.
   const effective = route ?? CONVERSATION_DEFAULT_ROUTE;
-  const routeChoices =
-    scopeId === null && binding !== null
-      ? routeOptions(effective, [
-          ...(awsPickerState(aws).offered ? (['aws-bedrock'] as ModelApiRoute[]) : []),
-          ...providers.filter((view) => providerPickerState(view).offered).map((view) => view.route),
-        ])
-      : null;
 
   return (
     <Diomedes
@@ -616,8 +551,6 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       onSend={send}
       onStop={stopDelivery}
       route={effective}
-      routeChoices={routeChoices}
-      onRoute={pickRoute}
       workStyle={binding !== null ? workStyle : undefined}
       onWorkStyle={pickStyle}
       unavailable={unavailable}

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { Project, Route, Turn } from '../../shared/types';
 import { routeDisplayName } from '../../shared/engines';
-import { MODEL_API_ROUTES, type ModelApiRoute } from '../../shared/model-api';
 import { WORK_STYLES, WORK_STYLE_DESCRIPTIONS, WORK_STYLE_LABELS, isWorkStyle, type WorkStyle } from '../../shared/work-style';
 import type { EverythingItem } from './Everything';
 import { Rail } from './Rail';
@@ -51,17 +50,11 @@ export interface DiomedesPageProps {
   onSend(text: string): Promise<boolean>;
   onStop(): void;
   /**
-   * The route this conversation's messages take: the thread's recorded engine, or the default a
-   * first send takes. The caption names it even when the route is not currently usable.
+   * The route this conversation's messages take without a tier: the thread's recorded engine,
+   * or the default a first send takes. There is no Route control: a customer chooses a tier,
+   * never a route (owner decision 2026-09-23).
    */
   route: Route;
-  /**
-   * What the Route control may offer on this scope, or null while there is no thread to write a
-   * choice to. The route the thread is on is always in it, offered or not.
-   */
-  routeChoices: Route[] | null;
-  /** The person's route choice, written to the thread. */
-  onRoute(next: Route): void;
   /**
    * The thread's WorkStyle, null to follow the Settings default, or undefined while there is no
    * thread to write a choice to (the Style control is then not shown).
@@ -120,19 +113,6 @@ export function routeName(route: Route): string {
 }
 
 /**
- * The entries the Route control offers: Claude Code is always a conversation route, and each
- * model-API route (AWS Bedrock, Azure OpenAI, OpenRouter) joins it while its availability rule
- * holds, or stays while it is the route the thread is on, offered or not, because the control
- * must keep naming the truth. A route outside these stays listed as itself.
- */
-export function routeOptions(current: Route, offered: readonly ModelApiRoute[]): Route[] {
-  const entries: Route[] = ['claude-code'];
-  for (const id of MODEL_API_ROUTES) if (offered.includes(id) || current === id) entries.push(id);
-  if (!entries.includes(current)) entries.push(current);
-  return entries;
-}
-
-/**
  * The primary Diomedes page: the app opens here, to a conversation rather
  * than a project chooser. It is the Console's three regions (docs/
  * implementation/2026-09-20-console-design-language.md): the rail lists
@@ -159,8 +139,6 @@ export function Diomedes({
   onSend,
   onStop,
   route,
-  routeChoices,
-  onRoute,
   workStyle,
   onWorkStyle,
   unavailable,
@@ -234,7 +212,9 @@ export function Diomedes({
             </div>
             <div className="col instr" aria-label="This conversation">
               <span>{instrumentLine(scopeId, projects, restriction)}</span>
-              <span className="dio-route">{routeName(route)}</span>
+              {/* A tier decides the route and the model (owner decision 2026-09-23), so a
+                  thread on a tier is named by its tier; the route shows only without one. */}
+              <span className="dio-route">{workStyle ? WORK_STYLE_LABELS[workStyle] : routeName(route)}</span>
             </div>
 
             <div className="transcript">
@@ -379,23 +359,6 @@ export function Diomedes({
                         ))}
                       </select>
                     </label>
-                    {routeChoices !== null && (
-                      <label className="dio-field">
-                        <span>Route</span>
-                        <select
-                          aria-label="Route"
-                          value={route}
-                          disabled={pending}
-                          onChange={(e) => onRoute(e.target.value as Route)}
-                        >
-                          {routeChoices.map((choice) => (
-                            <option key={choice} value={choice}>
-                              {routeName(choice)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
                     {workStyle !== undefined && onWorkStyle && (
                       <label className="dio-field">
                         <span>Style</span>

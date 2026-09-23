@@ -240,6 +240,20 @@ describe('the owner’s tier map sends each tier to its mapped Azure or OpenRout
     expect(efficient).toMatchObject({ route: 'openrouter', resolution: { outcome: 'run', model: 'vendor/gpt-6-luna', effort: null } });
   });
 
+  test('the host refuses a tier mapped to anything but a company account, or a malformed model id', async () => {
+    const settings = await ok<{ services?: Record<string, unknown> }>('/settings');
+    for (const [key, value] of [
+      ['focusedRoute', 'codex'],
+      ['focusedRoute', 'google-vertex-typo'],
+      ['thoroughModel', 'has spaces'],
+      ['ownerPinRoute', 'sample'],
+    ] as const) {
+      const refused = await call('/settings', 'PUT', { services: { ...settings.services, [key]: value } });
+      expect(refused.status, `${key}=${value}`).toBe(400);
+    }
+    expect((await ok<{ services?: Record<string, unknown> }>('/settings')).services).toEqual(settings.services);
+  });
+
   test('a model the mapped route does not offer is a refusal that names it, not another model', async () => {
     const parsed = openRouterConnectBody({
       models: [{ id: 'vendor/gpt-6-luna', upstreams: 'upstream-one', rates: prices }],
