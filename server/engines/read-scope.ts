@@ -19,6 +19,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { RawToolActivity } from '../../shared/adapter-contract.js';
+import { CONNECTOR_DATA_KINDS } from '../../shared/read-connectors.js';
 
 /** One MCP server the owner approved, with the only tools a read turn may call. */
 export interface ApprovedMcpServer {
@@ -52,20 +53,43 @@ const ENV = /^[A-Z][A-Z0-9_]{0,63}$/;
 const FORBIDDEN_ENV =
   /^(PATH|PATHEXT|NODE_OPTIONS|NODE_PATH|LD_PRELOAD|DYLD_.*|HTTPS?_PROXY|ALL_PROXY|NO_PROXY|OPENAI_.*|ANTHROPIC_.*|CODEX_.*|CLAUDE_.*|DIOMEDES_.*)$/;
 
-const serverSchema = z.strictObject({
-  name: z.string().regex(NAME),
+/**
+ * One approved connector entry in `read-connectors.json`. Exported so the
+ * routes that add, change and remove entries validate with exactly these
+ * rules; the messages are what the owner reads when an entry is refused.
+ */
+export const approvedReadServerSchema = z.strictObject({
+  name: z.string().regex(NAME, 'Name the connector with lowercase letters, digits, - or _, starting with a letter (up to 32).'),
   /** Explicit owner approval. An entry without it is ignored, never half-loaded. */
   approved: z.literal(true),
   transport: z.literal('stdio'),
-  command: z.string().min(1).max(1000),
-  args: z.array(z.string().max(1000)).max(32).default([]),
+  command: z.string().min(1, 'Enter the command that starts the connector.').max(1000),
+  args: z.array(z.string().max(1000)).max(32, 'Use at most 32 arguments.').default([]),
   envFrom: z
-    .array(z.string().regex(ENV).refine((name) => !FORBIDDEN_ENV.test(name)))
-    .max(16)
+    .array(
+      z
+        .string()
+        .regex(ENV, 'Environment variable names are capital letters, digits and _, starting with a letter.')
+        .refine((name) => !FORBIDDEN_ENV.test(name), {
+          error: (issue) => `${String(issue.input)} cannot be forwarded: it would change how the connector or its host runs.`,
+        }),
+    )
+    .max(16, 'Forward at most 16 environment variables.')
     .default([]),
-  readTools: z.array(z.string().regex(TOOL)).min(1).max(64),
+  readTools: z
+    .array(z.string().regex(TOOL, 'Name each read tool exactly, with no spaces or wildcards.'))
+    .min(1, 'List at least one read tool.')
+    .max(64, 'List at most 64 read tools.'),
+  /**
+   * The kinds of business data it reads, in the Small Business pack's words
+   * (`shared/read-connectors.ts`). Descriptive only: it grants nothing and no
+   * read turn consults it.
+   */
+  provides: z.array(z.enum(CONNECTOR_DATA_KINDS)).max(CONNECTOR_DATA_KINDS.length).optional(),
   note: z.string().max(500).optional(),
 });
+/** Where the approved connectors live, under the host's data folder. */
+export const READ_CONNECTORS_FILE = 'read-connectors.json';
 export const approvedReadServersSchema = z.strictObject({
   version: z.literal(1),
   servers: z.array(z.unknown()).max(16),
@@ -90,7 +114,7 @@ export function loadApprovedReadServers(file: string): ApprovedMcpServer[] {
   const seen = new Set<string>();
   const servers: ApprovedMcpServer[] = [];
   for (const entry of parsed.data.servers) {
-    const server = serverSchema.safeParse(entry);
+    const server = approvedReadServerSchema.safeParse(entry);
     if (!server.success || seen.has(server.data.name)) continue;
     seen.add(server.data.name);
     servers.push(
