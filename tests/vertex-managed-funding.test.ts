@@ -142,7 +142,7 @@ describe('a managed Gemini call spends the customer’s credits', () => {
 
     const card = vertexRateCard(NOW);
     // 10,000 fresh input at $0.75, 10,000 cached at $0.075 and 2,000 output (thinking included) at $3.75.
-    const cost = Math.ceil((10_000 * 750_000 + 10_000 * 75_000 + 2_000 * 3_750_000) / 1_000_000);
+    const cost = Math.ceil((10_000 * 1_500_000 + 10_000 * 150_000 + 2_000 * 7_500_000) / 1_000_000);
     const projection = await usage();
     expect(projection.settledMicroUsd).toBe(cost);
     expect(projection.pendingMicroUsd).toBe(0);
@@ -151,7 +151,7 @@ describe('a managed Gemini call spends the customer’s credits', () => {
     const [hold] = local.list(CONNECTION.id);
     expect(hold).toMatchObject({ state: 'settled', settledMicroUsd: cost, rateCardVersion: card.version });
     expect(fundedUsage(result.usage)).toEqual({ inputTokens: 10_000, cacheReadTokens: 10_000, cacheWriteTokens: 0, outputTokens: 2_000, reasoningTokens: 500 });
-    expect(rateSnapshotOf(card)).toMatchObject({ version: card.version, inputMicroUsdPerMillion: 750_000, cacheReadMicroUsdPerMillion: 75_000, outputMicroUsdPerMillion: 3_750_000 });
+    expect(rateSnapshotOf(card)).toMatchObject({ version: card.version, inputMicroUsdPerMillion: 1_500_000, cacheReadMicroUsdPerMillion: 150_000, outputMicroUsdPerMillion: 7_500_000 });
   });
 
   test('a child call (worker, reviewer, advisor, retry) debits the same parent job', async () => {

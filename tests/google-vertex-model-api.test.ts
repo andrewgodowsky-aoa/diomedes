@@ -243,9 +243,9 @@ describe('the request the real SDK sends to Vertex', () => {
       reasoningTokens: 50,
     }).microUsd;
     // 800 fresh at $0.75, 100 cached at $0.075, 200 output (150 answer + 50 thinking) at $3.75.
-    expect(expected).toBe(Math.ceil((800 * 750_000 + 100 * 75_000 + 200 * 3_750_000) / 1_000_000));
+    expect(expected).toBe(Math.ceil((800 * 1_500_000 + 100 * 150_000 + 200 * 7_500_000) / 1_000_000));
     expect(result.reservation.state).toBe('settled');
-    expect(result.reservation.rateCardVersion).toBe('google-vertex:gemini-3.8-flash:global:standard:intro-2026.1');
+    expect(result.reservation.rateCardVersion).toBe('google-vertex:gemini-3.8-flash:global:standard:gross-2026.1');
     expect(result.reservation.settledMicroUsd).toBe(expected);
     expect(result.reservation.providerRequestId).toBe('goog-req-1');
     expect(result.reportedModel).toBe('gemini-3.8-flash');
@@ -359,16 +359,45 @@ describe('the request the real SDK sends to Vertex', () => {
 });
 
 describe('refusals before anything is sent', () => {
-  test('a price that is no longer in force refuses; an expired introductory price is never carried forward', async () => {
-    const net = transport([]);
-    const error = await failure(call(net.fetch, { now: () => new Date('2027-01-02T00:00:00.000Z') }));
-    expect(error.code).toBe('vertex_rate_card_expired');
-    expect(error.dispatched).toBe(false);
-    expect(net.sent).toHaveLength(0);
-    expect(vertexRateCard(new Date('2027-01-02T00:00:00.000Z')).short).toMatchObject({ input: 1_500_000, output: 7_500_000, cacheRead: 150_000 });
+  test('every call is priced at the gross standard rate; stale evidence refuses with nothing sent', async () => {
+    // Google's "introductory" figure is a later credit-back, not a lower invoice line, so no card carries it.
+    for (const at of ['2026-09-23T12:00:00.000Z', '2026-12-31T23:00:00.000Z', '2027-01-02T00:00:00.000Z'])
+      expect(vertexRateCard(new Date(at)).short).toMatchObject({ input: 1_500_000, output: 7_500_000, cacheRead: 150_000 });
+    expect(VERTEX_RATE_CARDS).toHaveLength(1);
+    expect(VERTEX_RATE_CARDS[0].card.long).toEqual(VERTEX_RATE_CARDS[0].card.short);
     expect(() => vertexRateCard(new Date('2027-03-01T00:00:00.000Z'))).toThrow(/needs re-checking/);
     expect(() => vertexRateCard(new Date('2026-01-01T00:00:00.000Z'))).toThrow(/No Gemini 3.8 Flash price/);
-    expect(VERTEX_RATE_CARDS[0].until).toBe('2027-01-01T00:00:00.000Z');
+    const net = transport([]);
+    const error = await failure(call(net.fetch, { now: () => new Date('2027-03-01T00:00:00.000Z') }));
+    expect(error.code).toBe('vertex_rate_card_stale');
+    expect(error.dispatched).toBe(false);
+    expect(net.sent).toHaveLength(0);
+  });
+
+  test('the expected promotion is reported apart and never lowers the gross, the debit or the invoice', async () => {
+    const { vertexAccounting, vertexExpectedPromotionMicroUsd, VERTEX_EXPECTED_PROMOTION } = await import('../server/engines/google-vertex.js');
+    expect(VERTEX_EXPECTED_PROMOTION).toMatchObject({ status: 'expected-unconfirmed', percent: 50, stacksWithFreeTrial: 'unknown' });
+    expect(vertexExpectedPromotionMicroUsd(2_001, new Date('2026-10-01T00:00:00.000Z'))).toBe(1_000);
+    expect(vertexExpectedPromotionMicroUsd(2_001, new Date('2027-01-01T08:00:00.000Z'))).toBe(0);
+    const summary = {
+      capMicroUsd: 5_000_000,
+      settledMicroUsd: 3_000,
+      pendingMicroUsd: 400,
+      uncertainMicroUsd: 600,
+      writtenOffMicroUsd: 0,
+      availableMicroUsd: 4_996_000,
+    } as Parameters<typeof vertexAccounting>[1];
+    const view = vertexAccounting('nectovia-owner-test', summary, new Date('2026-10-01T00:00:00.000Z'));
+    expect(view).toMatchObject({
+      payer: { kind: 'owner-google-cloud-project', projectId: 'nectovia-owner-test' },
+      grossEstimateMicroUsd: 3_000,
+      unresolvedEstimateMicroUsd: 1_000,
+      expectedPromotion: { status: 'expected-unconfirmed', expectedMicroUsd: 1_500 },
+      confirmedCredits: { known: false },
+      customerDebitMicroUsd: 0,
+      invoice: { known: false },
+    });
+    expect(view.confirmedCredits.where).toMatch(/nectovia-owner-test/);
   });
 
   test('a server-side Google tool is refused before it leaves', async () => {

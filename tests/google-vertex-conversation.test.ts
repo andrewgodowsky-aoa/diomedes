@@ -179,7 +179,7 @@ describe('setup over HTTP', () => {
       endpoint: `https://aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/global/publishers/google`,
       payer: { kind: 'google-cloud-project', projectId: PROJECT },
       credential: { kind: 'google-adc', source: 'gcloud-user', matches: true },
-      rateCard: { version: 'google-vertex:gemini-3.8-flash:global:standard:intro-2026.1', stale: false },
+      rateCard: { version: 'google-vertex:gemini-3.8-flash:global:standard:gross-2026.1', stale: false },
       accountRoute: `google-vertex:google-vertex-1:${PROJECT}@r1`,
       lastVerified: null,
     });
@@ -252,8 +252,8 @@ describe('a native Nectovia conversation on Gemini 3.8 Flash', () => {
     expect(status).toMatchObject({ requestedModel: 'gemini-3.8-flash', reportedModel: 'gemini-3.8-flash-001' });
     const holds = service.modelApi!.exposure.list('google-vertex-1');
     expect(holds.map((hold) => [hold.state, hold.route, hold.modelId, hold.rateCardVersion, hold.reconciledFrom])).toEqual([
-      ['settled', 'google-vertex', 'gemini-3.8-flash', 'google-vertex:gemini-3.8-flash:global:standard:intro-2026.1', 'response'],
-      ['settled', 'google-vertex', 'gemini-3.8-flash', 'google-vertex:gemini-3.8-flash:global:standard:intro-2026.1', 'response'],
+      ['settled', 'google-vertex', 'gemini-3.8-flash', 'google-vertex:gemini-3.8-flash:global:standard:gross-2026.1', 'response'],
+      ['settled', 'google-vertex', 'gemini-3.8-flash', 'google-vertex:gemini-3.8-flash:global:standard:gross-2026.1', 'response'],
     ]);
     expect(holds.every((hold) => hold.providerRequestId?.startsWith('goog-'))).toBe(true);
     // One provider exchange is one recorded model attempt: two calls, two holds, one token each.

@@ -25,6 +25,7 @@ export const TEAM_CARRIAGE: Record<TeamRoute, 'mcp' | 'host'> = {
   'aws-bedrock': 'host',
   'azure-openai': 'host',
   openrouter: 'host',
+  'google-vertex': 'host',
 };
 export function isTeamRoute(value: unknown): value is TeamRoute {
   return typeof value === 'string' && (TEAM_ROUTES as readonly string[]).includes(value);

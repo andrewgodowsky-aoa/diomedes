@@ -34,7 +34,8 @@ import type { ModelMessage } from 'ai';
 import { GoogleAuth } from 'google-auth-library';
 import { z } from 'zod';
 import type { ToolDescriptor } from '../../shared/harness.js';
-import type { ModelRateCard, ProviderUsage } from '../spend-exposure.js';
+import type { ExposureSummary, ModelRateCard, ProviderUsage } from '../spend-exposure.js';
+import type { VertexAccountingView } from '../../shared/model-api.js';
 import { ConnectionFile } from './connection-file.js';
 import {
   bounded,
@@ -101,41 +102,79 @@ const band = (input: number, cacheRead: number, output: number) => ({
 });
 
 /**
- * Google's introductory price runs "through December 31, 2026". Billing uses
- * Pacific time; this card ends at midnight UTC, eight hours early, so the last
- * hours of 2026 are priced at the higher standard rate. It can only overstate.
+ * The gross card: Google's standard Global price, used for every date. Google's
+ * page shows a lower "introductory" figure through 2026-12-31, but its footnote
+ * says that figure is delivered as "50% credits back on net spend", so the
+ * invoice line is at the standard rate and any credit arrives afterwards. A hold
+ * and a settlement are therefore priced at the standard rate: a conservative
+ * provider-cost bound that the expected promotion can only lower.
  */
 export const VERTEX_RATE_CARDS: readonly DatedRateCard[] = Object.freeze([
   {
     card: {
-      version: 'google-vertex:gemini-3.8-flash:global:standard:intro-2026.1',
+      version: 'google-vertex:gemini-3.8-flash:global:standard:gross-2026.1',
       route: GOOGLE_VERTEX_ROUTE,
       modelId: VERTEX_GEMINI_MODEL,
-      source: `${PRICE_SOURCE} Introductory price through 2026-12-31.`,
-      shortContextMaxInputTokens: 200_000,
-      short: band(750_000, 75_000, 3_750_000),
-      long: band(750_000, 75_000, 3_750_000),
-    },
-    from: '2026-09-23T00:00:00.000Z',
-    until: '2027-01-01T00:00:00.000Z',
-    verifiedUntil: '2027-01-01T00:00:00.000Z',
-  },
-  {
-    card: {
-      version: 'google-vertex:gemini-3.8-flash:global:standard:2027.1',
-      route: GOOGLE_VERTEX_ROUTE,
-      modelId: VERTEX_GEMINI_MODEL,
-      source: `${PRICE_SOURCE} Standard price Google announced from 2027-01-01.`,
+      source: `${PRICE_SOURCE} Gross standard rate; the introductory credit-back is recorded separately and never lowers this estimate.`,
       shortContextMaxInputTokens: 200_000,
       short: band(1_500_000, 150_000, 7_500_000),
       long: band(1_500_000, 150_000, 7_500_000),
     },
-    from: '2027-01-01T00:00:00.000Z',
+    from: '2026-09-23T00:00:00.000Z',
     until: null,
-    // An announced price is re-read once it is in force: after this, nothing is priced on it.
+    // Re-read once the standard price is the only one Google shows: after this, nothing is priced on it.
     verifiedUntil: '2027-02-01T00:00:00.000Z',
   },
 ]);
+
+/**
+ * What Google's pricing footnote says it may return later, kept apart from the
+ * gross estimate. It is an expectation, never a confirmed credit: whether it
+ * applies to a given account, and whether it stacks with a Free Trial or
+ * welcome credit, is known only from the billing account's credits report.
+ * Nothing in Nectovia subtracts it from a hold, a settlement or a customer debit.
+ */
+export const VERTEX_EXPECTED_PROMOTION = Object.freeze({
+  status: 'expected-unconfirmed' as const,
+  kind: 'credit-back-on-net-spend' as const,
+  percent: 50,
+  appliesThrough: '2026-12-31',
+  stacksWithFreeTrial: 'unknown' as const,
+  source:
+    'https://cloud.google.com/vertex-ai/generative-ai/pricing, Gemini 3.8 Flash footnote, read 2026-09-23: "Promotional pricing provided through 50% credits back on net spend on select models within a given period." Net spend is after other credits, so a call paid by Free Trial credit is expected to earn nothing back.',
+});
+
+/** The expected credit-back on a gross estimate, for display only; never a confirmed credit. */
+export function vertexExpectedPromotionMicroUsd(grossMicroUsd: number, at: Date): number {
+  if (at.getTime() >= Date.parse('2027-01-01T08:00:00.000Z')) return 0;
+  return Math.floor((grossMicroUsd * VERTEX_EXPECTED_PROMOTION.percent) / 100);
+}
+
+/**
+ * The owner route's five cost figures from the local ledger. The owner's own
+ * Google project pays, so no Nectovia credit is debited; confirmed credits and
+ * the invoice exist only in the Cloud Billing account and are pointed to, never
+ * guessed.
+ */
+export function vertexAccounting(projectId: string, summary: ExposureSummary, at: Date): VertexAccountingView {
+  const billing = `Google Cloud console, Billing, the account linked to project ${projectId}`;
+  return {
+    payer: { kind: 'owner-google-cloud-project', projectId },
+    grossEstimateMicroUsd: summary.settledMicroUsd,
+    unresolvedEstimateMicroUsd: summary.pendingMicroUsd + summary.uncertainMicroUsd,
+    expectedPromotion: {
+      status: VERTEX_EXPECTED_PROMOTION.status,
+      percent: VERTEX_EXPECTED_PROMOTION.percent,
+      appliesThrough: VERTEX_EXPECTED_PROMOTION.appliesThrough,
+      stacksWithFreeTrial: VERTEX_EXPECTED_PROMOTION.stacksWithFreeTrial,
+      expectedMicroUsd: vertexExpectedPromotionMicroUsd(summary.settledMicroUsd, at),
+      source: VERTEX_EXPECTED_PROMOTION.source,
+    },
+    confirmedCredits: { known: false, where: `${billing}, Reports, with credits shown` },
+    customerDebitMicroUsd: 0,
+    invoice: { known: false, where: `${billing}, Documents` },
+  };
+}
 
 /**
  * The card in force at `at`. A date no card covers, or one past its evidence,
@@ -446,7 +485,10 @@ export function classifyVertex(envelope: StreamEnvelope, callIdBase: string): { 
     }
     result.responseId = str(value.responseId) ?? result.responseId;
     result.reportedModel = str(value.modelVersion) ?? result.reportedModel;
-    if (value.usageMetadata !== undefined) result.usage = vertexUsage(value.usageMetadata);
+    if (value.usageMetadata !== undefined) {
+      result.usage = vertexUsage(value.usageMetadata);
+      result.rawUsage = structuredClone(value.usageMetadata);
+    }
     const feedback = value.promptFeedback as { blockReason?: unknown } | undefined;
     if (feedback && str(feedback.blockReason)) blocked = str(feedback.blockReason);
     const candidates = Array.isArray(value.candidates) ? value.candidates : [];

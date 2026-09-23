@@ -278,6 +278,8 @@ export interface ClassifiedEnvelope {
   responseId: string | null;
   reportedModel: string | null;
   usage: ProviderUsage | null;
+  /** The provider's own usage record, exactly as reported, kept beside the one normalization. */
+  rawUsage?: unknown;
   text: string;
   refusal: string | null;
   functionCalls: { callId: string; name: string; arguments: string }[];
@@ -479,6 +481,8 @@ export type RespondOutcome =
 export interface RespondResult {
   outcome: RespondOutcome;
   usage: ProviderUsage;
+  /** The provider's usage record as reported, when the route keeps it. Evidence, never re-priced. */
+  rawUsage?: unknown;
   reportedModel: string | null;
   responseId: string | null;
   providerRequestId: string | null;
@@ -940,6 +944,7 @@ export async function respondStream(input: {
   return {
     outcome,
     usage: classified.usage,
+    ...(classified.rawUsage !== undefined ? { rawUsage: classified.rawUsage } : {}),
     reportedModel: classified.reportedModel,
     responseId: classified.responseId,
     providerRequestId: seen.providerRequestId,

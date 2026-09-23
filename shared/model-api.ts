@@ -174,7 +174,36 @@ export interface VertexConnectionView {
     lastVerified: { at: string; state: string; providerRequestId: string | null } | null;
   } | null;
   spend: ModelApiSpendView | null;
+  /**
+   * Five figures that are never merged. Only the gross estimate comes from this
+   * computer; the others are an expectation, or live in Google's billing account.
+   */
+  accounting: VertexAccountingView | null;
   next: string | null;
+}
+
+export interface VertexAccountingView {
+  /** Who pays Google for these calls: the owner's own project, not Nectovia credits. */
+  payer: { kind: 'owner-google-cloud-project'; projectId: string };
+  /** Settled calls at Google's standard rate: the conservative provider-cost bound. */
+  grossEstimateMicroUsd: number;
+  /** Calls whose cost is not yet known (pending or uncertain), also at the standard rate. */
+  unresolvedEstimateMicroUsd: number;
+  /** What Google's pricing footnote says may come back later. Never subtracted from anything. */
+  expectedPromotion: {
+    status: 'expected-unconfirmed';
+    percent: number;
+    appliesThrough: string;
+    stacksWithFreeTrial: 'unknown';
+    expectedMicroUsd: number;
+    source: string;
+  };
+  /** Credits Google actually applied. Only the billing account knows; this computer never does. */
+  confirmedCredits: { known: false; where: string };
+  /** Nectovia credits debited for these calls. Zero on the owner route: the owner's project pays. */
+  customerDebitMicroUsd: 0;
+  /** The invoice is Google's, in the billing account; this is where to read it. */
+  invoice: { known: false; where: string };
 }
 
 /**

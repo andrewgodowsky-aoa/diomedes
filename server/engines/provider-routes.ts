@@ -75,6 +75,7 @@ import {
   VERTEX_LOCATION,
   VERTEX_PROJECT,
   VERTEX_RATE_CARDS,
+  vertexAccounting,
   vertexAccountRoute,
   vertexBaseUrl,
   vertexConnectionSchema,
@@ -610,6 +611,10 @@ export function mountProviderRoutes(
                     uncertainReason: hold.uncertainReason,
                   })),
               }
+            : null,
+        accounting:
+          connection && summary
+            ? vertexAccounting(connection.payer.projectId, summary, services().now?.() ?? new Date())
             : null,
         next,
       };
