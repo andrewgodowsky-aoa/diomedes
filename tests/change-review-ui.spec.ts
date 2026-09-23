@@ -44,7 +44,6 @@ test.beforeAll(async ({ request }) => {
         detail: 'guided',
         familiarity: 'comfortable',
       },
-      surface: 'console',
       detail: 'guided',
     },
   });
@@ -132,7 +131,7 @@ test.afterAll(async ({ request }) => {
 async function openConsole(page: Page) {
   const opened = await page.request.put('/api/settings', {
     headers: HEADERS,
-    data: { surface: 'console', openProjects: [projectId] },
+    data: { openProjects: [projectId] },
   });
   expect(opened.ok()).toBe(true);
   await page.goto('/');

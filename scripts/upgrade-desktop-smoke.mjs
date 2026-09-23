@@ -68,7 +68,9 @@ try {
   const after = await api(`${base}/state`), sameNeed = after.needs.find(n => n.id === need.id);
   expect(sameNeed.approval).toEqual(need.approval); expect(sameNeed.harness).toEqual(need.harness);
   expect(after.history).toEqual(before.history);
-  expect((await api('/settings')).surface).toBe(settings.surface);
+  // The prior build stored the Workbook's keys; this build drops them on load and keeps the rest.
+  for (const key of ['surface', 'lastPage', 'tasksView'])
+    expect(Object.keys(await api('/settings'))).not.toContain(key);
   expect((await api('/settings')).openProjects).toEqual(settings.openProjects);
   expect(await fs.readFile(sentinel, 'utf8')).toBe('User project data survives the application upgrade.');
   proof.checks.push(`Actual ${priorVersion} profile upgraded to ${appVersion} with project, preferences, History and exact pending Need preserved`);

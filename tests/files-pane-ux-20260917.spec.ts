@@ -91,7 +91,6 @@ test.beforeAll(async () => {
     }
   }
   await api('/settings', 'PUT', {
-    surface: 'console',
     detail: 'technical',
     openProjects: projects.map((p) => p.id),
     onboarding: {

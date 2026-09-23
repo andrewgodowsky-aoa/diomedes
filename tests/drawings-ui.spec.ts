@@ -173,7 +173,6 @@ test.beforeAll(async () => {
     shareReviewPackets: false,
   });
   await api('/settings', 'PUT', {
-    surface: 'console',
     detail: 'technical',
     openProjects: [project.id],
     services: { codex: true },

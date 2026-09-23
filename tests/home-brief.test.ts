@@ -46,7 +46,6 @@ function project(
     plans: [],
     references: [],
     repository: { present: false },
-    leftOff: null,
     counts: { running: 0, changesWaiting: 0, waitingForYou: 0, historyToday: 0 },
     status: { needsYou: 0, working: 0, tasksDone: 0, tasksTotal: 0, ...status },
     ...over,

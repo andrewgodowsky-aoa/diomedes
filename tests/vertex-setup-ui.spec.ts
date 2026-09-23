@@ -120,7 +120,6 @@ test.beforeEach(async ({ page }) => {
     headers: { 'X-Diomedes-Client': '1' },
     data: {
       // Engines, and the model-API cards on it, show on the Console at the technical detail level.
-      surface: 'console',
       detail: 'technical',
       onboarding: { work: 'personal', detail: 'technical', familiarity: 'comfortable', resumeAt: 'done', completedAt: new Date().toISOString() },
     },

@@ -3,12 +3,9 @@ import type {
   Change,
   Detail,
   IntegrationStatus,
-  Mode,
   Need,
   Session,
   Settings,
-  Surface,
-  TaskState,
   UsageMeter,
   UsageSnapshot,
   UsageWindow,
@@ -16,50 +13,13 @@ import type {
 import { formatOrigin, originForNeed, originForSession } from './attribution-display';
 import './attribution.css';
 
-export const pages = [
-  'home',
-  'ask',
-  'plan',
-  'work',
-  'review',
-  'tasks',
-  'documents',
-  'history',
-] as const;
-export const stateNames: Record<TaskState, string> = {
-  todo: 'To do',
-  working: 'Working',
-  waiting: 'Waiting for you',
-  done: 'Done',
-};
 export const detailDescriptions = {
   guided: 'Plain words, fewer numbers, an explanation on everything that needs a decision.',
   standard: 'Plain words, plus counts, times and which kind of service did the work.',
   technical: 'Engines, models, logs, version ids, and developer tools where they apply.',
 };
-export const surfaceDescriptions = {
-  workbook:
-    'One page at a time. Ask, plan, work and review, and Nectovia asks before anything that matters.',
-  console:
-    'Every thread, every helper and every change on one screen. For people who work with these tools every day.',
-};
-export function surfaceOf(settings: Settings): Surface {
-  return settings.surface === 'console' ||
-    (settings.surface === undefined && settings.detail === 'technical')
-    ? 'console'
-    : 'workbook';
-}
 export function titleCase(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-export function ModeChip({ mode, attempt }: { mode: Mode; attempt?: { n: number; of: number } }) {
-  const label =
-    attempt && mode === 'fix' ? `Fix, try ${attempt.n} of ${attempt.of}` : titleCase(mode);
-  return (
-    <span className="mode-chip" data-mode={mode}>
-      {label}
-    </span>
-  );
 }
 export function time(s: string) {
   return new Date(s).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -503,65 +463,6 @@ export function Notice({
     </section>
   );
 }
-export function SessionStatus({
-  session,
-  detail,
-  name,
-  stop,
-}: {
-  session: Session;
-  detail: Detail;
-  name?: string;
-  stop?: () => void;
-}) {
-  const label = {
-    queued: 'Getting ready',
-    working: 'Working',
-    waiting: 'Waiting for your OK',
-    done: 'Finished',
-    stopped: 'Stopped',
-    failed: 'Something went wrong',
-  }[session.state];
-  const sessionOrigin = originForSession(session);
-  return (
-    <div className="session-status">
-      <Mark
-        state={
-          session.state === 'waiting'
-            ? 'waiting'
-            : session.state === 'failed'
-              ? 'fault'
-              : session.state === 'done'
-                ? 'done'
-                : 'working'
-        }
-      />
-      <div>
-        <strong>
-          {label}
-          {name ? ` on ${name}` : ''}.
-        </strong>{' '}
-        <OriginLine origin={sessionOrigin} />
-        <span className="muted">
-          {' '}
-          {session.sample ? 'Scripted example. ' : ''}Started at {time(session.startedAt)}.
-        </span>
-        {detail === 'technical' && (
-          <div className="code caption">
-            {session.engine.name}, {session.engine.model ?? 'no model'}, session {session.id},{' '}
-            {session.engine.events} events
-          </div>
-        )}
-      </div>
-      {stop && ['queued', 'working', 'waiting'].includes(session.state) && (
-        <Button className="push-right" onClick={stop}>
-          <Icon name="stop" />
-          Stop
-        </Button>
-      )}
-    </div>
-  );
-}
 export function askDraftKey(projectId: string) {
   return `diomedes.ask-draft.${projectId}`;
 }
@@ -587,7 +488,7 @@ export function countK(value: number): string {
   return String(Math.round(value));
 }
 
-/** One line for a reported thread meter in the Workbook. */
+/** One line for a reported thread meter. */
 export function meterLine(meter: UsageMeter): string {
   const written = `${countK(meter.output)} written`;
   const cost = meter.costUsd !== null ? `, $${meter.costUsd.toFixed(2)}` : '';

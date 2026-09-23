@@ -212,7 +212,6 @@ try {
   const connections = `${base}/connections`;
   await api('/settings', 'PUT', {
     detail: 'technical',
-    surface: 'console',
     openProjects: [project.id],
     onboarding: {
       work: 'business',

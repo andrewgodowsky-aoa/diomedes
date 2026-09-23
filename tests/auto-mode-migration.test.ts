@@ -10,7 +10,6 @@ import { AgentRegistry, resolutionSchema } from '../server/agents.js';
 import { AGENT_CATALOG, AUTO_AGENT, AUTO_BY_MODE } from '../shared/agents.js';
 import type { Conversation, Mode, ProjectState } from '../shared/types.js';
 import { MODE_ORDER as COMPOSER_MODE_ORDER } from '../client/console/Composer.js';
-import { MODE_ORDER as WORKSPACE_MODE_ORDER } from '../client/Workspace.js';
 
 /**
  * O1/F3-O1: `auto` becomes a real conversation Mode that round trips through
@@ -49,9 +48,8 @@ describe('modeOf and the Ask/Plan instruction text', () => {
 });
 
 describe('the picker arrays and worker enums stay exactly four-mode', () => {
-  test('both Console/Workbook mode-strip orders are exactly ask, plan, build, fix', () => {
+  test('the Console mode strip is exactly ask, plan, build, fix', () => {
     expect(COMPOSER_MODE_ORDER).toEqual(['ask', 'plan', 'build', 'fix']);
-    expect(WORKSPACE_MODE_ORDER).toEqual(['ask', 'plan', 'build', 'fix']);
   });
   test('no built-in Agent lists auto among the modes it fits', () => {
     for (const definition of AGENT_CATALOG) expect(definition.modes).not.toContain('auto');
