@@ -16,13 +16,15 @@ import {
   oneJobRaise,
   overrunCopy,
   worstCaseNote,
-  type CapWarningCopy,
   type JobEstimate,
+  type JobEstimateView,
   type JobRates,
   type JobShape,
+  type JobStatusView,
   type JobTier,
 } from '../shared/job-caps.js';
 import type { MicroUsd } from '../shared/managed-usage.js';
+export type { JobEstimateView, JobStatusView } from '../shared/job-caps.js';
 import type { Mode } from '../shared/types.js';
 import { modeOf } from './modes.js';
 import { ApiError } from './paths.js';
@@ -65,16 +67,6 @@ export function jobRatesOf(card: ModelRateCard | null): JobRates | null {
   return { input: pick('input'), output: pick('output'), cacheRead: pick('cacheRead'), cacheWrite: pick('cacheWrite') };
 }
 
-export interface JobEstimateView {
-  estimate: JobEstimate;
-  /** The pre-send warning. Present exactly when the estimate warns. */
-  warning: CapWarningCopy | null;
-  /** The worst-case line a send may show. It never blocks. */
-  note: string | null;
-  /** What "Go over this once" would raise this job's cap to. */
-  raisedToMicroUsd: MicroUsd;
-}
-
 /** What the estimate says a job needs, for sizing a raise: likely when known, else nothing. */
 const neededOf = (estimate: JobEstimate): MicroUsd | null =>
   estimate.kind === 'estimate' ? estimate.likelyMicroUsd : null;
@@ -94,16 +86,6 @@ export function estimateView(tier: JobTier, plan: JobPlan): JobEstimateView {
     note: worstCaseNote(estimate),
     raisedToMicroUsd,
   };
-}
-
-export interface JobStatusView {
-  jobId: string;
-  tier: JobTier;
-  capMicroUsd: MicroUsd;
-  raised: boolean;
-  stop: { usedMicroUsd: MicroUsd; capMicroUsd: MicroUsd; neededMicroUsd: MicroUsd; consumed: boolean } | null;
-  /** The mid-run dialog's words, when the job stopped at its cap and the stop is still open. */
-  overrun: CapWarningCopy | null;
 }
 
 export function statusView(record: JobRecord): JobStatusView {

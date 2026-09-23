@@ -395,8 +395,15 @@ export async function sendMessage(
   input: MessageInput,
   signal?: AbortSignal,
   onClaim?: (identity: DispatchIdentity) => void,
+  /**
+   * The command id to send a new message under, when one was issued before the send: "Go over
+   * this once" records its one-job raise against exactly this id. A message already pending
+   * keeps its own id.
+   */
+  presetCommandId?: string,
 ): Promise<MessageResult> {
   if (!id(projectId) || !id(threadId)) throw invalid();
+  if (presetCommandId !== undefined && !commandPattern.test(presetCommandId)) throw invalid();
   const normalized = normalize(input);
   const inputJson = JSON.stringify(normalized);
   const key = keyOf(PENDING, projectId, threadId);
@@ -437,7 +444,7 @@ export async function sendMessage(
     // nothing is saved and nothing is sent.
     if (signal?.aborted) throw stopped();
     const pending =
-      claim ?? { commandId: mintCommandId(), projectId, threadId, input: normalized };
+      claim ?? { commandId: presetCommandId ?? mintCommandId(), projectId, threadId, input: normalized };
     save(pending, claim === null);
     // The dispatch identity, issued once this send owns the claim: minted now, or the pending
     // command this window found and is sending again. The sender and every same-window join

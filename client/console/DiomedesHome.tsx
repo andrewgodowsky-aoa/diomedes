@@ -14,6 +14,22 @@ import {
   type PendingMessage,
 } from '../conversation-send';
 import { answerTurnId } from '../conversation-turn';
+import {
+  afterStop,
+  beforeSend,
+  CapDeclined,
+  estimateMessage,
+  goOverAfterStop,
+  goOverBeforeSend,
+  isJobCapStop,
+  jobStatus,
+  setThreadTier,
+  type CapChoice,
+  type CapPrompt,
+  type GateResult,
+} from '../job-cap-gate';
+import { mintCommandId } from '../work-start';
+import type { JobTier } from '../../shared/job-caps';
 import { awsPickerState } from '../aws-bedrock-view';
 import { providerPickerState, type ProviderView } from '../provider-setup-view';
 import type { AwsConnectionView, ModelApiRoute } from '../../shared/model-api';
@@ -22,6 +38,7 @@ import { CONVERSATION_DEFAULT_ROUTE } from '../../shared/engines';
 import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
 import type { WorkStyle } from '../../shared/work-style';
 import { Diomedes, routeOptions } from './Diomedes';
+import { JobCapWarning } from './JobCapWarning';
 import { stepLiveReply, type LiveBinding, type LiveEvent, type LiveReply } from './live-reply';
 import type { EverythingItem } from './Everything';
 import {
@@ -127,6 +144,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const [route, setRoute] = useState<Route | null>(null);
   // The scoped thread's own WorkStyle, or null to follow the Settings default.
   const [workStyle, setWorkStyle] = useState<WorkStyle | null>(null);
+  /** The job-cap decision on screen, and how to answer the send waiting on it. */
+  const [capPrompt, setCapPrompt] = useState<(CapPrompt & { answer(choice: CapChoice): void }) | null>(null);
+  /** The command a job-cap stop refused, told from inside the delivery to the send that awaits it. */
+  const capStop = useRef<DispatchIdentity | null>(null);
   const [aws, setAws] = useState<AwsConnectionView | null>(null);
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const delivery = useRef<ActiveDelivery | null>(null);
@@ -393,6 +414,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         setKept(keptOf(found ? retained(found) : null));
         return false;
       }
+      // Cancel at a job-cap question sent nothing and saved nothing: the words go back, unremarked.
+      if (error instanceof CapDeclined) return false;
+      // A job that reached its cap stopped before its next step; the send decides what follows.
+      if (isJobCapStop(error) && current.issued) capStop.current = current.issued;
       setNotice(words(error));
       // A refusal after an uncertain attempt may be about the retry, not the original, and the
       // saved message is kept for exactly that case. It is shown with its own words so it can
@@ -409,15 +434,79 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     }
   };
 
-  const send = (text: string): Promise<boolean> => {
+  /**
+   * Ask the person a job-cap question; the send waits until one of the three is chosen. A Stop
+   * while it is on screen answers it as Cancel.
+   */
+  const askCap = (prompt: CapPrompt, signal?: AbortSignal) =>
+    new Promise<CapChoice>((answer) => {
+      setCapPrompt({ ...prompt, answer });
+      signal?.addEventListener(
+        'abort',
+        () => {
+          setCapPrompt(null);
+          answer('cancel');
+        },
+        { once: true },
+      );
+    });
+  const answerCap = (choice: CapChoice) => {
+    const shown = capPrompt;
+    setCapPrompt(null);
+    shown?.answer(choice);
+  };
+  const tierUp = async (where: Binding, tier: JobTier) => {
+    await setThreadTier(where.projectId, where.threadId, tier);
+    setWorkStyle(tier);
+  };
+
+  /**
+   * A new message. Once the conversation is found and before anything is sent, the host
+   * estimates the job; when it will likely pass its cap (or cannot say), nothing is sent until
+   * the person chooses the tier above, going over this once for this message's own command id,
+   * or Cancel. A job that stops at its cap mid-way asks the same two choices, and either one
+   * sends the message again as a new job.
+   */
+  const send = async (text: string, presetCommandId?: string): Promise<boolean> => {
     const scope = scopeId;
     const mode = modeFor(restriction);
-    return deliver(
+    const draft = { text, mode, sources: [] };
+    capStop.current = null;
+    const sent = await deliver(
       text,
       () => ensure(scope),
-      (found, signal, onClaim) =>
-        sendMessage(found.projectId, found.threadId, { text, mode, sources: [] }, signal, onClaim),
+      async (found, signal, onClaim) => {
+        let commandId = presetCommandId;
+        if (commandId === undefined) {
+          const gate = await beforeSend({
+            estimate: () => estimateMessage(found.projectId, found.threadId, draft),
+            ask: (prompt) => askCap(prompt, signal),
+            upgrade: (tier) => tierUp(found, tier),
+            goOver: (id) => goOverBeforeSend(found.projectId, found.threadId, id, draft),
+            mint: mintCommandId,
+          });
+          if (!gate.send || signal.aborted) throw new CapDeclined();
+          commandId = gate.commandId;
+        }
+        return sendMessage(found.projectId, found.threadId, draft, signal, onClaim, commandId);
+      },
     );
+    // Set inside the delivery, which TypeScript cannot see from here.
+    const stop = capStop.current as DispatchIdentity | null;
+    capStop.current = null;
+    if (!stop) return sent;
+    const again: GateResult = await afterStop({
+      status: () => jobStatus(stop.projectId, stop.commandId),
+      ask: (prompt) => askCap(prompt),
+      upgrade: (tier) => tierUp(stop, tier),
+      goOverAfter: (id) => goOverAfterStop(stop.projectId, stop.threadId, id, stop.commandId),
+      mint: mintCommandId,
+    }).catch((error: unknown) => {
+      setNotice(words(error));
+      return { send: false } as const;
+    });
+    if (!again.send) return sent;
+    return send(text, again.commandId);
   };
 
   const resend = () => {
@@ -596,47 +685,57 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       : null;
 
   return (
-    <Diomedes
-      projects={projects}
-      scopeId={scopeId}
-      onScope={(id) => {
-        if (id === scopeId) return;
-        endDelivery();
-        dropLive();
-        turn.current += 1;
-        setPending(false);
-        setScopeId(id);
-      }}
-      turns={turns}
-      pending={pending}
-      live={live ? { text: live.text, activity: live.activity?.lines ?? [] } : null}
-      technical={props.detail === 'technical'}
-      restriction={restriction}
-      onRestriction={setRestriction}
-      onSend={send}
-      onStop={stopDelivery}
-      route={effective}
-      routeChoices={routeChoices}
-      onRoute={pickRoute}
-      workStyle={binding !== null ? workStyle : undefined}
-      onWorkStyle={pickStyle}
-      unavailable={unavailable}
-      card={card}
-      cardBusy={cardBusy}
-      onCardAction={() => void act()}
-      unconfirmed={kept?.text ?? null}
-      onResend={resend}
-      onDiscard={discard}
-      notice={notice}
-      onReadAgain={unread ? () => void load(scopeId) : null}
-      results={props.results}
-      onOpenResult={props.onOpenResult}
-      destinations={props.destinations}
-      pinned={props.pinned}
-      groups={props.groups}
-      onDestination={props.onDestination}
-      onTogglePin={props.onTogglePin}
-      onNewProject={props.onNewProject}
-    />
+    <>
+      <Diomedes
+        projects={projects}
+        scopeId={scopeId}
+        onScope={(id) => {
+          if (id === scopeId) return;
+          endDelivery();
+          dropLive();
+          turn.current += 1;
+          setPending(false);
+          setScopeId(id);
+        }}
+        turns={turns}
+        pending={pending}
+        live={live ? { text: live.text, activity: live.activity?.lines ?? [] } : null}
+        technical={props.detail === 'technical'}
+        restriction={restriction}
+        onRestriction={setRestriction}
+        onSend={send}
+        onStop={stopDelivery}
+        route={effective}
+        routeChoices={routeChoices}
+        onRoute={pickRoute}
+        workStyle={binding !== null ? workStyle : undefined}
+        onWorkStyle={pickStyle}
+        unavailable={unavailable}
+        card={card}
+        cardBusy={cardBusy}
+        onCardAction={() => void act()}
+        unconfirmed={kept?.text ?? null}
+        onResend={resend}
+        onDiscard={discard}
+        notice={notice}
+        onReadAgain={unread ? () => void load(scopeId) : null}
+        results={props.results}
+        onOpenResult={props.onOpenResult}
+        destinations={props.destinations}
+        pinned={props.pinned}
+        groups={props.groups}
+        onDestination={props.onDestination}
+        onTogglePin={props.onTogglePin}
+        onNewProject={props.onNewProject}
+      />
+      {capPrompt && (
+        <JobCapWarning
+          copy={capPrompt.copy}
+          onUpgrade={() => answerCap('upgrade')}
+          onGoOver={() => answerCap('over')}
+          onCancel={() => answerCap('cancel')}
+        />
+      )}
+    </>
   );
 }

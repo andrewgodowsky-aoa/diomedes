@@ -407,3 +407,27 @@ export function overrunCopy(input: {
     raise: `Going over raises the new job's cap to ${capCredits(input.raisedToMicroUsd)} credits, for that job only.`,
   };
 }
+
+// --- what the routes answer -----------------------------------------------------------
+
+/** The pre-send estimate as `/job-estimate` answers it. */
+export interface JobEstimateView {
+  estimate: JobEstimate;
+  /** The pre-send warning. Present exactly when the estimate warns. */
+  warning: CapWarningCopy | null;
+  /** The worst-case line a send may show. It never blocks. */
+  note: string | null;
+  /** What "Go over this once" would raise this job's cap to. */
+  raisedToMicroUsd: MicroUsd;
+}
+
+/** One job as `/jobs/:jobId` answers it. */
+export interface JobStatusView {
+  jobId: string;
+  tier: JobTier;
+  capMicroUsd: MicroUsd;
+  raised: boolean;
+  stop: { usedMicroUsd: MicroUsd; capMicroUsd: MicroUsd; neededMicroUsd: MicroUsd; consumed: boolean } | null;
+  /** The mid-run dialog's words, when the job stopped at its cap and the stop is still open. */
+  overrun: CapWarningCopy | null;
+}
