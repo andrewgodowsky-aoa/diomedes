@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { selectedEngine } from '../../shared/ai-selection';
 import { formatOrigin, originForNeed, originForSession } from '../../shared/attribution';
 import type { ScopeGrantView } from '../../shared/permissions';
-import { isRoute, isExternalEngine } from '../../shared/engines';
+import { isRoute, isExternalEngine, routeDisplayName } from '../../shared/engines';
 import type { EngineConnection } from '../../shared/engines';
 import {
   mayNameDocument,
@@ -1250,6 +1250,12 @@ export function Shell({
           skill,
         );
         if (plan.kind === 'refuse') throw new Error(plan.reason);
+        // The composer confirmed (and named) the route it last read. A route that moved since
+        // is never sent to under that confirmation.
+        if (plan.route !== route)
+          throw new Error(
+            `This thread now runs on ${routeDisplayName(plan.route)}, not ${routeDisplayName(route)}. Nothing was sent. Send again to use it.`,
+          );
         askEngine.current = plan.route;
         if (plan.kind === 'conversation')
           return sendThreadConversation({
