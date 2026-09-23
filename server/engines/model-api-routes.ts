@@ -14,6 +14,9 @@
  * The key goes one way: into protected storage. No route reads it back, no
  * Settings field holds it and no response contains it. Spend records are never
  * deleted by disconnecting, reconnecting or reinstalling.
+ *
+ * The Azure OpenAI and OpenRouter routes' setup mirrors this and is mounted from
+ * here (`provider-routes.ts`), so the app mounts every model-API route in one place.
  */
 import type { Express, NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
@@ -35,6 +38,7 @@ import {
   type AwsConnection,
 } from './aws-bedrock.js';
 import { EngineError } from './process.js';
+import { mountProviderRoutes } from './provider-routes.js';
 import type { EngineService } from './service.js';
 
 const BASE = `/api/ai/model-api/${AWS_BEDROCK_ROUTE}`;
@@ -277,4 +281,6 @@ export function mountModelApiRoutes(app: Express, deps: { store: Store; engines:
       return sessions().control(projectId, runId, body.commandId, 'interrupt');
     }),
   );
+
+  mountProviderRoutes(app, deps, route);
 }
