@@ -18,8 +18,8 @@
  * refusal is an observation the model reads, not an exception, so one bad path
  * does not end the person's turn. A stop is an abort and does end it.
  *
- * Web search is not offered: none of the three routes has a search tool that
- * needs no new credential or paid add-on (QUESTIONS.md O10).
+ * Web search is not offered: search stays on the subscription engines, and
+ * Nectovia buys no search API (QUESTIONS.md R8, the owner's answer to O10).
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
