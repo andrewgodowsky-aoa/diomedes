@@ -119,6 +119,7 @@ import {
 } from '../shared/engines.js';
 import { EngineService } from './engines/service.js';
 import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
+import { loadApprovedReadServers, type ReadScope } from './engines/read-scope.js';
 import { mountInteractionRoutes } from './engines/interaction-routes.js';
 import {
   InteractionTurns,
@@ -2555,6 +2556,32 @@ export async function createApp(options: AppOptions) {
       reason: resolved.reason,
     };
   };
+  /**
+   * The read-only tools an Ask or Plan turn gets (owner decision 2026-09-23):
+   * the project folder through the path trust funnel, web search, and the MCP
+   * read tools the owner approved in `<data>/read-connectors.json`. Only the
+   * host builds it, from its own project record; a missing folder means text.
+   */
+  const readScopeFor = async (
+    projectId: string,
+    mode: string,
+  ): Promise<{ readScope?: ReadScope }> => {
+    if (mode !== 'ask' && mode !== 'plan') return {};
+    // A folder the path funnel refuses, or one that is gone, leaves the turn text-only.
+    const root = await safeAbsolute(store.state(projectId).project.folder).catch(() => null);
+    if (!root || !(await fs.stat(root).then((entry) => entry.isDirectory(), () => false)))
+      return {};
+    let mcp: ReadScope['mcp'];
+    try {
+      mcp = loadApprovedReadServers(path.join(store.dataDir, 'read-connectors.json'));
+    } catch {
+      throw new ApiError(
+        409,
+        'The approved read connectors file (read-connectors.json) is malformed. Fix or remove it, then send again.',
+      );
+    }
+    return { readScope: { root, web: true, mcp } };
+  };
   const nativeChoice = (
     engine: Exclude<Route, 'sample'>,
     projectId: string,
@@ -2670,6 +2697,7 @@ export async function createApp(options: AppOptions) {
           instructions: MODES[command.mode].instructions,
           model: selection.model,
           accountRoute,
+          ...(await readScopeFor(projectId, command.mode)),
         };
       });
       const runId =
@@ -3114,6 +3142,7 @@ export async function createApp(options: AppOptions) {
             model: selection.model as string,
             ...(modelRoute && selection.effort ? { effort: selection.effort } : {}),
             accountRoute,
+            ...(modelRoute ? {} : await readScopeFor(projectId, command.mode)),
             signal: options.signal,
             onPreview: (frame: TransientPreview) =>
               progress('delta', { ...frame, text: gate(frame.text) }),
@@ -3788,6 +3817,7 @@ export async function createApp(options: AppOptions) {
             instructions: instructionsForRequest,
             model: requestedModel,
             accountRoute,
+            ...(await readScopeFor(projectId, mode)),
             signal: connectionSignal(res),
             onPreview: (frame) => progress('delta', frame.text, frame),
             onActivity: (frame) => store.emit('engine-activity', frame),
@@ -3853,6 +3883,7 @@ export async function createApp(options: AppOptions) {
             // Stop closes the request, and this ends the ChatGPT turn with it.
             signal,
             onDelta,
+            ...(await readScopeFor(projectId, mode)),
           });
           answer = result.text;
           helper = codexHelper(result);

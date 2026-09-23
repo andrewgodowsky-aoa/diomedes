@@ -8,6 +8,7 @@ import type { EngineModel, ExternalEngine } from '../../shared/types.js';
 import type { AccountRouteIssue } from '../../shared/engines.js';
 import type { NativeSessionRef } from '../../shared/contract-revision.js';
 import type { Json } from '../../shared/harness.js';
+import type { ReadScope } from './read-scope.js';
 /**
  * One message of a Diomedes conversation, as the host admitted it. Set by the host's own
  * prepare step and never taken from a client or a model. It rides on the request the way
@@ -70,6 +71,13 @@ export interface TextRequest {
    * starts and once when it finishes or fails, with a plain one-line summary.
    */
   onToolActivity?: (raw: RawToolActivity) => void;
+  /**
+   * Read-only tools for an Ask or Plan turn: the project folder, web search and
+   * the owner's approved MCP read tools (server/engines/read-scope.ts). Set only
+   * by the host from its own project record, never from a client or a model.
+   * Absent means the text-only route, unchanged. Writes never ride on it.
+   */
+  readScope?: ReadScope;
 }
 export interface TextResponse {
   text: string;

@@ -28,6 +28,19 @@ import {
   type EngineProcess,
   type ProcessFactory,
 } from './process.js';
+import {
+  approvedMcpTool,
+  displayPath,
+  emitActivity,
+  insideRoot,
+  isWebUrl,
+  readDetail,
+  readScopeNote,
+  readSummary,
+  serverEnvironment,
+  type ReadKind,
+  type ReadScope,
+} from './read-scope.js';
 
 export const CLAUDE_VERSION = '2.1.252';
 const ACCOUNT_ROUTE = 'claude-code:claude.ai';
@@ -40,13 +53,56 @@ const ACCOUNT_ROUTE = 'claude-code:claude.ai';
  * by name. Both are observed in this repository; nothing is listed from memory.
  */
 const NAMEABLE_AUTH_METHODS = ['api_key'] as const;
+/** Claude Code's built-in read tools. Nothing that edits, writes or runs a command. */
+export const CLAUDE_READ_TOOLS = ['Read', 'Grep', 'Glob', 'LS'] as const;
+export const CLAUDE_WEB_TOOLS = ['WebSearch', 'WebFetch'] as const;
+/** Tool steps a read turn may take before Claude Code itself stops it. */
+export const CLAUDE_READ_MAX_TURNS = 16;
+/** The built-in tools a scope allows, in the order they are passed to `--tools`. */
+export function claudeBuiltinTools(scope: ReadScope): string[] {
+  return [...CLAUDE_READ_TOOLS, ...(scope.web ? CLAUDE_WEB_TOOLS : [])];
+}
+/** Every tool a scope allows: the built-ins plus `mcp__<server>__<tool>` for approved read tools. */
+export function claudeAllowedTools(scope: ReadScope): string[] {
+  return [
+    ...claudeBuiltinTools(scope),
+    ...(scope.mcp ?? []).flatMap((server) =>
+      server.readTools.map((tool) => `mcp__${server.name}__${tool}`),
+    ),
+  ];
+}
+/**
+ * The `--mcp-config` document for a scope: approved servers only. A forwarded
+ * secret is written as a `${NAME}` reference that Claude Code expands from its
+ * own environment, so no value lands in a configuration file.
+ */
+export function claudeMcpConfig(scope?: ReadScope): string {
+  return JSON.stringify({
+    mcpServers: Object.fromEntries(
+      (scope?.mcp ?? []).map((server) => [
+        server.name,
+        {
+          type: 'stdio',
+          command: server.command,
+          args: [...server.args],
+          env: Object.fromEntries(server.envFrom.map((name) => [name, '${' + name + '}'])),
+        },
+      ]),
+    ),
+  });
+}
 /**
  * `persistent` is the native-session transport's one difference: a session keeps
  * one process across turns, so it must not carry the single-turn guards. Every
  * other argument, including the closed tool and MCP configuration, is identical
  * for both, because a persistent process must not be a less restricted one.
+ *
+ * A read scope swaps the empty tool list for an explicit read allow-list, denies
+ * everything else without asking (`dontAsk`), confines the file tools to the
+ * working directory (`--restricted`) and lets a turn take a bounded number of
+ * tool steps. Without a scope the arguments are exactly the text-only ones.
  */
-export function claudeArguments(persistent = false): string[] {
+export function claudeArguments(persistent = false, scope?: ReadScope): string[] {
   const args = [
     '--print',
     '--input-format',
@@ -59,22 +115,213 @@ export function claudeArguments(persistent = false): string[] {
     '--setting-sources',
     '',
     '--tools',
-    '',
+    scope ? claudeBuiltinTools(scope).join(',') : '',
     '--strict-mcp-config',
     '--mcp-config',
-    '{"mcpServers":{}}',
+    scope ? claudeMcpConfig(scope) : '{"mcpServers":{}}',
     '--disable-slash-commands',
   ];
-  if (!persistent) args.push('--no-session-persistence', '--max-turns', '1');
+  if (scope)
+    args.push(
+      '--allowedTools',
+      claudeAllowedTools(scope).join(','),
+      '--permission-mode',
+      'dontAsk',
+      '--restricted',
+    );
+  if (!persistent)
+    args.push(
+      '--no-session-persistence',
+      '--max-turns',
+      scope ? String(CLAUDE_READ_MAX_TURNS) : '1',
+    );
   args.push(
     '--settings',
     '{"disableAllHooks":true,"autoUpdatesChannel":"stable","enabledPlugins":{}}',
   );
   return args;
 }
-function environment() {
+const stringField = (value: Record<string, unknown>, key: string) =>
+  typeof value[key] === 'string' ? (value[key] as string) : undefined;
+/**
+ * One Claude Code tool call against a read scope: the plain sentence and the
+ * technical line to show, or a refusal. A tool outside the allow-list, a path
+ * outside the project folder, a web call without web access or an MCP tool the
+ * owner did not approve stops the request.
+ */
+export function claudeToolCall(
+  scope: ReadScope,
+  name: string,
+  raw: unknown,
+): { kind: ReadKind; summary: string; detail?: string } {
+  const input = record(raw);
+  const refuse = (why: string) =>
+    new EngineError(
+      'POLICY_MISMATCH',
+      `Claude Code ${why}; the read-only request was stopped.`,
+      true,
+      'stream',
+    );
+  const within = (candidate: string | undefined, optional: boolean) => {
+    if (candidate === undefined) {
+      if (optional) return scope.root;
+      throw refuse(`called ${name} without a path`);
+    }
+    if (!insideRoot(scope.root, candidate)) throw refuse('tried to read outside the project folder');
+    return candidate;
+  };
+  const detail = readDetail(input);
+  switch (name) {
+    case 'Read': {
+      const file = within(stringField(input, 'file_path'), false);
+      return {
+        kind: 'read',
+        summary: readSummary('read', { path: displayPath(scope.root, file) }),
+        detail,
+      };
+    }
+    case 'LS': {
+      const folder = within(stringField(input, 'path'), true);
+      return {
+        kind: 'list',
+        summary: readSummary('list', { path: displayPath(scope.root, folder) }),
+        detail,
+      };
+    }
+    case 'Glob':
+    case 'Grep': {
+      within(stringField(input, 'path'), true);
+      const query = stringField(input, 'pattern');
+      // An absolute pattern names its own folder; judge the part before any wildcard.
+      if (name === 'Glob' && query && path.isAbsolute(query)) {
+        const wild = query.search(/[*?[{]/);
+        within(wild < 0 ? query : query.slice(0, wild) || query, false);
+      }
+      return name === 'Glob'
+        ? {
+            kind: 'list',
+            summary: query ? `Finding files matching ${query}` : readSummary('list', {}),
+            detail,
+          }
+        : { kind: 'search', summary: readSummary('search', { query }), detail };
+    }
+    case 'WebSearch':
+      if (!scope.web) throw refuse('tried to search the web without web access');
+      return {
+        kind: 'web-search',
+        summary: readSummary('web-search', { query: stringField(input, 'query') }),
+        detail,
+      };
+    case 'WebFetch': {
+      const url = stringField(input, 'url');
+      if (!scope.web || !isWebUrl(url)) throw refuse('tried to open a page without web access');
+      return { kind: 'web-fetch', summary: readSummary('web-fetch', { url }), detail };
+    }
+  }
+  const mcp = /^mcp__([a-z][a-z0-9_-]{0,31})__(.+)$/.exec(name);
+  if (mcp && approvedMcpTool(scope, mcp[1], mcp[2]))
+    return { kind: 'mcp', summary: readSummary('mcp', { server: mcp[1], tool: mcp[2] }), detail };
+  throw refuse(
+    `attempted ${/^[A-Za-z0-9_.-]{1,80}$/.test(name) ? name : 'a tool'} outside the read allow-list`,
+  );
+}
+/**
+ * Whether an init frame's tools and MCP servers fit the route: none at all for
+ * the text-only route; for a scope, a subset of its built-ins and approved
+ * servers. A server's unapproved tools may be listed — `dontAsk` denies them
+ * and a call to one stops the request — but no unapproved server may be.
+ */
+export function claudeInitAllowed(
+  scope: ReadScope | undefined,
+  frame: Record<string, unknown>,
+): boolean {
+  if (!Array.isArray(frame.tools) || !Array.isArray(frame.mcp_servers)) return false;
+  if (!scope) return frame.tools.length === 0 && frame.mcp_servers.length === 0;
+  const builtins = new Set<string>(claudeBuiltinTools(scope));
+  const servers = new Set((scope.mcp ?? []).map((server) => server.name));
+  return (
+    frame.tools.every((tool) => {
+      if (typeof tool !== 'string') return false;
+      if (builtins.has(tool)) return true;
+      const mcp = /^mcp__([a-z][a-z0-9_-]{0,31})__/.exec(tool);
+      return Boolean(mcp && servers.has(mcp[1]));
+    }) &&
+    frame.mcp_servers.every((entry) => {
+      const name = typeof entry === 'string' ? entry : record(entry).name;
+      return typeof name === 'string' && servers.has(name);
+    })
+  );
+}
+/**
+ * Tool-call and tool-result activity from one stream-json frame. Without a
+ * scope any tool call stops the request, exactly as before. Returns true when
+ * the frame carried a web call, which lets a scoped turn account for the helper
+ * model Claude Code runs inside its web tools.
+ */
+export function claudeObserveTools(
+  scope: ReadScope | undefined,
+  frame: Record<string, unknown>,
+  sink: TextRequest['onToolActivity'],
+  open: Map<string, string>,
+): boolean {
+  const content = record(frame.message).content;
+  if (!Array.isArray(content)) return false;
+  let web = false;
+  if (frame.type === 'assistant')
+    for (const part of content.map(record)) {
+      if (part.type !== 'tool_use') continue;
+      if (!scope)
+        throw new EngineError(
+          'POLICY_MISMATCH',
+          'Claude Code attempted a tool call on the text-only route.',
+          true,
+          'stream',
+        );
+      const name = typeof part.name === 'string' ? part.name : '';
+      const call = claudeToolCall(scope, name, part.input);
+      if (call.kind === 'web-search' || call.kind === 'web-fetch') web = true;
+      const callId = typeof part.id === 'string' && part.id ? part.id : `call-${open.size + 1}`;
+      open.set(callId, name);
+      emitActivity(sink, {
+        callId,
+        phase: 'started',
+        tool: name,
+        summary: call.summary,
+        ...(call.detail ? { detail: call.detail } : {}),
+      });
+    }
+  if (frame.type === 'user' && scope)
+    for (const part of content.map(record)) {
+      if (part.type !== 'tool_result' || typeof part.tool_use_id !== 'string') continue;
+      const tool = open.get(part.tool_use_id);
+      if (!tool) continue;
+      open.delete(part.tool_use_id);
+      const failed = part.is_error === true;
+      const detail = readDetail(part.content, 300);
+      emitActivity(sink, {
+        callId: part.tool_use_id,
+        phase: failed ? 'failed' : 'finished',
+        tool,
+        summary: failed ? `${tool} did not complete` : `${tool} finished`,
+        ...(detail ? { detail } : {}),
+      });
+    }
+  return web;
+}
+/**
+ * The helper model Claude Code runs inside its own web tools to read a fetched
+ * page. Accepted in `modelUsage` only on a scoped turn that made a web call;
+ * the answer is still attributed to the requested model alone.
+ */
+export const claudeWebHelperModel = (value: string) => /^claude-(3-5-)?haiku-/.test(value);
+/** The approved MCP servers' forwarded variables, for Claude Code to expand into their config. */
+function mcpEnvironment(scope?: ReadScope): Record<string, string> {
+  return Object.assign({}, ...(scope?.mcp ?? []).map((server) => serverEnvironment(server)));
+}
+function environment(scope?: ReadScope) {
   return {
     ...engineEnvironment(),
+    ...mcpEnvironment(scope),
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
     DISABLE_AUTOUPDATER: '1',
     CLAUDE_CODE_MAX_RETRIES: '0',
@@ -200,10 +447,20 @@ export class ClaudeAdapter implements TextEngineAdapter {
   ): Promise<ClaudeNativeSession> {
     contextMessage(input);
     const account = await this.claudeAccount(input.signal);
-    const prepared = prepareClaudeSession(input, options, account, this.cwd, CLAUDE_VERSION);
+    // A read session works in the project folder, and its checkpoint names that
+    // folder, so a saved session never resumes in another project or scope.
+    const workingDirectory = input.readScope?.root ?? this.cwd;
+    const prepared = prepareClaudeSession(input, options, account, workingDirectory, CLAUDE_VERSION);
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
-    const process = await this.start(signal, prepared.args, 30 * 60_000, input.instructions, true);
+    const process = await this.start(
+      signal,
+      prepared.args,
+      30 * 60_000,
+      input.instructions,
+      true,
+      input.readScope,
+    );
     try {
       await this.initialize(process.child);
       return new ClaudeNativeSession(
@@ -215,7 +472,7 @@ export class ClaudeAdapter implements TextEngineAdapter {
             input,
             { ...options, restore: undefined, fork: false },
             await this.claudeAccount(signal),
-            this.cwd,
+            workingDirectory,
             CLAUDE_VERSION,
             prepared.checkpoint.accountDigest,
           );
@@ -233,10 +490,14 @@ export class ClaudeAdapter implements TextEngineAdapter {
     timeoutMs = 120_000,
     instructions?: string,
     persistent = false,
+    scope?: ReadScope,
   ) {
+    // The request files stay in the engine's own folder, never the project's.
     const directory = await fs.mkdtemp(path.join(this.cwd, '.claude-request-'));
     try {
-      const args = claudeArguments(persistent);
+      const args = claudeArguments(persistent, scope);
+      if (scope && instructions !== undefined)
+        instructions = `${instructions}\n\n${readScopeNote(scope)}`;
       for (const flag of ['--mcp-config', '--settings']) {
         const index = args.indexOf(flag) + 1,
           file = path.join(directory, `${flag.slice(2)}.json`);
@@ -251,8 +512,10 @@ export class ClaudeAdapter implements TextEngineAdapter {
       const child = this.launch({
         file: this.file,
         args: [...args, ...extra],
-        cwd: this.cwd,
-        env: environment(),
+        // A read turn works in the project folder; `--restricted` keeps its
+        // file tools there. A text turn keeps the engine's empty folder.
+        cwd: scope ? scope.root : this.cwd,
+        env: environment(scope),
         signal,
         timeoutMs,
       });
@@ -388,15 +651,20 @@ export class ClaudeAdapter implements TextEngineAdapter {
       const prompt = contextMessage(input);
       if ((await this.accountMethod(input.signal)) !== 'claude.ai') throw signInRequired();
       phase = 'launch';
+      const scope = input.readScope;
       const process = await this.start(
           input.signal,
           ['--model', input.model],
-          120_000,
+          scope ? 300_000 : 120_000,
           input.instructions,
+          false,
+          scope,
         ),
         child = process.child;
       let model: string | undefined;
       let nativeSession: string | undefined;
+      const open = new Map<string, string>();
+      let webUsed = false;
       try {
         phase = 'local-handshake';
         await this.initialize(child);
@@ -418,10 +686,7 @@ export class ClaudeAdapter implements TextEngineAdapter {
             );
           if (frame.type === 'system' && frame.subtype === 'init') {
             if (
-              !Array.isArray(frame.tools) ||
-              frame.tools.length ||
-              !Array.isArray(frame.mcp_servers) ||
-              frame.mcp_servers.length ||
+              !claudeInitAllowed(scope, frame) ||
               typeof frame.model !== 'string' ||
               !sameModel(input.model, frame.model)
             )
@@ -441,15 +706,8 @@ export class ClaudeAdapter implements TextEngineAdapter {
               input.onDelta?.(delta.text);
             }
           }
-          if (frame.type === 'assistant' && Array.isArray(record(frame.message).content)) {
-            for (const part of record(frame.message).content as unknown[])
-              if (record(part).type === 'tool_use')
-                throw new EngineError(
-                  'POLICY_MISMATCH',
-                  'Claude Code attempted a tool call on the text-only route.',
-                  true,
-                  'stream',
-                );
+          if (frame.type === 'assistant' || frame.type === 'user') {
+            if (claudeObserveTools(scope, frame, input.onToolActivity, open)) webUsed = true;
           }
           if (frame.type !== 'result') continue;
           if (frame.is_error === true || frame.subtype !== 'success')
@@ -468,7 +726,13 @@ export class ClaudeAdapter implements TextEngineAdapter {
               'stream',
             );
           const used = Object.keys(record(frame.modelUsage));
-          if (used.some((value) => !sameModel(input.model, value)))
+          if (
+            used.some(
+              (value) =>
+                !sameModel(input.model, value) &&
+                !(scope && webUsed && claudeWebHelperModel(value)),
+            )
+          )
             throw new EngineError(
               'POLICY_MISMATCH',
               'Claude Code reported an unexpected model call.',
