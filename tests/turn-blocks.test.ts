@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { paragraphs } from '../client/console/diomedes-view';
 import {
   artifactKindOf,
+  DRAWING,
   fenceKind,
   gatePreview,
   inlineSpans,
+  KIND_LABEL,
   parseBlocks,
   plainText,
   splitRow,
@@ -186,12 +188,23 @@ describe('headings and lists', () => {
 describe('artifact detection', () => {
   it('maps fence languages to artifact kinds and leaves everything else code', () => {
     expect(fenceKind('mermaid', 'graph TD')).toBe('diagram');
-    expect(fenceKind('chart', '{}')).toBe('chart');
     expect(fenceKind('svg', '<svg/>')).toBe('image');
     expect(fenceKind('html', '<p>x</p>')).toBe('design');
     expect(fenceKind('markdown', '# x')).toBe('document');
     expect(fenceKind('md', '# x')).toBe('document');
     for (const lang of ['', 'ts', 'json', 'htm', 'mmd', 'xhtml']) expect(fenceKind(lang, '<svg/>')).toBeNull();
+  });
+
+  it('reads a retired ```chart fence as the code block it is, and leaves a visual to its own renderer', () => {
+    const chart = '{"type":"bar","x":["a"],"series":[{"name":"n","values":[1]}]}';
+    expect(fenceKind('chart', chart)).toBeNull();
+    expect(fenceKind('visual', '{"kind":"bar"}')).toBeNull();
+    const [block] = parseBlocks(`\`\`\`chart\n${chart}\n\`\`\``);
+    expect(block).toMatchObject({ type: 'code', lang: 'chart', source: chart, closed: true });
+    expect(artifactKindOf(block)).toBeNull();
+    expect(Object.keys(KIND_LABEL)).not.toContain('chart');
+    expect(Object.keys(DRAWING)).not.toContain('chart');
+    expect(KIND_LABEL.visual).toBe('Visual');
   });
 
   it('treats xml as an image only when its root element is svg', () => {
@@ -234,7 +247,8 @@ describe('the preview gate', () => {
       text: 'Here is the flow:\n',
       pending: 'diagram',
     });
-    expect(gatePreview('Chart:\n```chart\n{"type":')).toEqual({ text: 'Chart:', pending: 'chart' });
+    // A retired chart fence is code, so it streams as code rather than being held back.
+    expect(gatePreview('Chart:\n```chart\n{"type":')).toEqual({ text: 'Chart:\n```chart\n{"type":', pending: null });
   });
 
   it('holds back a last line that could still become a fence', () => {

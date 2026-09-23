@@ -13,7 +13,11 @@ export function readUpdateStatus(): Promise<UpdateStatusSnapshot> {
 
 /** True while the host reports a phase that will change without anyone pressing anything. */
 export function updateInMotion(status: UpdateStatusSnapshot | null): boolean {
-  return status?.check.phase === 'checking' || status?.install.phase === 'installing';
+  return (
+    status?.check.phase === 'checking' ||
+    status?.install.phase === 'installing' ||
+    !!status?.download.progress
+  );
 }
 
 /**

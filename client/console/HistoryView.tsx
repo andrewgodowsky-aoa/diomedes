@@ -8,6 +8,7 @@ import type {
   RestoreConflict,
   Session,
 } from '../../shared/types';
+import { AGENT_NAME } from '../../shared/agent-name';
 import { formatOrigin, originForSession } from '../attribution-display';
 import { api, ApiError } from '../api';
 import { ApprovalStatus, Button, ChangeCard, Modal, date, time } from '../components';
@@ -189,7 +190,7 @@ function fileOutcome(file: FileRecord, savedVersion: boolean, cause: string): st
  */
 function actorWord(actor: string): string {
   if (actor === 'you') return 'you';
-  if (actor === 'diomedes' || actor === 'diomedes-with-ok') return 'Nectovia';
+  if (actor === 'diomedes' || actor === 'diomedes-with-ok') return AGENT_NAME;
   return actor;
 }
 
@@ -971,7 +972,7 @@ export function HistoryView({
             [
               ['all', 'All'],
               ['saved', 'Saved versions'],
-              ['diomedes', 'Nectovia'],
+              ['diomedes', AGENT_NAME],
               ['you', 'You'],
             ] as [HistoryFilter, string][]
           ).map(([value, text]) => (

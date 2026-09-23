@@ -12,10 +12,15 @@ import {
   InlineVisual,
   RunStatusView,
   UpdateProgressView,
+  VisualBoundary,
   formatValue,
   niceDomain,
+  pieShares,
+  shareOfDomain,
 } from '../client/console/InlineVisual';
 import { ReplyBody } from '../client/console/ReplyBody';
+import { updateBar } from '../client/update-progress';
+import { updateInMotion } from '../client/use-update-status';
 import { ThreadView } from '../client/console/ThreadView';
 import { MODES, VISUAL_INSTRUCTIONS } from '../server/modes';
 import { parseProposal } from '../server/native-work';
@@ -255,15 +260,32 @@ describe('rendering each kind', () => {
     expect(out).toContain('<td>—</td>');
   });
 
-  test('progress exposes a progressbar, determinate or busy', () => {
+  test('progress is the segment bar: a share of the track, or indeterminate', () => {
     const out = html(valid({ kind: 'progress', label: 'Counted', value: 0.4, detail: '40 of 100 items' }));
+    // Marked as the reply's own (contract A15): drawn apart from a bar a record keeps.
+    expect(out).toContain('<div class="seg-bar panel fraction words" data-source="reply">');
     expect(out).toContain('role="progressbar"');
+    expect(out).toContain('aria-label="Counted"');
+    expect(out).toContain('aria-valuemin="0"');
+    expect(out).toContain('aria-valuemax="100"');
     expect(out).toContain('aria-valuenow="40"');
-    expect(out).toContain('40 of 100 items');
-    const busy = html(valid({ kind: 'progress', label: 'Counting' }));
-    expect(busy).toContain('aria-busy="true"');
-    expect(busy).not.toContain('aria-valuenow');
-    expect(busy).toContain('indeterminate');
+    expect(out).toContain('<span class="seg-caption" aria-hidden="true">Counted · 40 of 100 items</span>');
+    // The model's value, never a count the model did not write.
+    expect(html(valid({ kind: 'progress', label: 'Counted', value: 0.4 }))).toContain(
+      '<span class="seg-caption" aria-hidden="true">Counted</span>',
+    );
+    for (const busy of [
+      html(valid({ kind: 'progress', label: 'Counting' })),
+      html(valid({ kind: 'progress', label: 'Counting', value: null })),
+    ]) {
+      expect(busy).toContain('<div class="seg-bar panel indeterminate words" data-source="reply">');
+      expect(busy).not.toContain('aria-valuenow');
+      expect(busy).toContain('seg-scan');
+      expect(busy).toContain('<span class="seg-caption" aria-hidden="true">Counting</span>');
+    }
+    // The superseded bar is gone.
+    expect(out).not.toContain('iv-track');
+    expect(out).not.toContain('iv-fillbar');
   });
 
   test('formatting helpers', () => {
@@ -273,6 +295,81 @@ describe('rendering each kind', () => {
     expect(formatValue(125000, 'number', undefined, true)).toBe('125K');
     expect(niceDomain([0, 1540]).ticks).toEqual([0, 500, 1000, 1500, 2000]);
     expect(niceDomain([-20, 30]).min).toBeLessThan(0);
+  });
+});
+
+describe('a visual never throws, hangs or draws NaN, whatever finite numbers it holds', () => {
+  const finiteDomain = (values: number[]) => {
+    const domain = niceDomain(values);
+    expect([domain.min, domain.max, ...domain.ticks].every(Number.isFinite), JSON.stringify(values)).toBe(true);
+    expect(domain.max).toBeGreaterThan(domain.min);
+    expect(domain.ticks.length).toBeGreaterThanOrEqual(2);
+    expect(domain.ticks.length).toBeLessThanOrEqual(12);
+    return domain;
+  };
+
+  test('the tiny value that made the old chart throw draws as a chart', () => {
+    const spec = valid({ kind: 'bar', labels: ['a'], series: [{ name: 's', values: [1e-120] }] });
+    let out = '';
+    expect(() => {
+      out = html(spec);
+    }).not.toThrow();
+    expect(out).toContain('role="img"');
+    expect(out).toContain('<rect class="iv-mark"');
+    expect(out).not.toMatch(/NaN|Infinity/);
+    finiteDomain([1e-120]);
+  });
+
+  test('ranges that overflow or vanish stay finite and bounded', () => {
+    for (const values of [[1.7e308], [-1.7e308, 1.7e308], [5e-324], [-5e-324], [0], [1e308, -1e-308]]) {
+      finiteDomain(values);
+      const spec = valid({ kind: 'line', labels: values.map((_, at) => `p${at}`), series: [{ name: 's', values }] });
+      const out = html(spec);
+      expect(out, JSON.stringify(values)).not.toMatch(/NaN|Infinity/);
+    }
+    expect(shareOfDomain(1.7e308, -1.7e308, 1.7e308)).toBe(1);
+    expect(shareOfDomain(0, -1.7e308, 1.7e308)).toBe(0.5);
+    expect(shareOfDomain(5, 5, 5)).toBe(0);
+  });
+
+  test('a pie whose total overflows keeps every share and shows no total it cannot hold', () => {
+    const big = pieShares([1.5e308, 1.5e308]);
+    expect(big.total).toBeNull();
+    expect(big.shares).toEqual([0.5, 0.5]);
+    expect(pieShares([1, 1, 2])).toEqual({ total: 4, shares: [0.25, 0.25, 0.5] });
+    const spec = valid({ kind: 'pie', labels: ['a', 'b'], series: [{ name: 's', values: [1.5e308, 1.5e308] }] });
+    const out = html(spec);
+    expect(out).not.toMatch(/NaN|Infinity|∞/);
+    expect(out).not.toContain('class="iv-total"');
+    expect(out).toContain('2 slices. Largest: a, 50%.');
+  });
+
+  test('a visual that throws becomes one plain line through its boundary', () => {
+    const boundary = new VisualBoundary({ children: createElement('p', null, 'the chart') });
+    expect(renderToStaticMarkup(createElement('div', null, boundary.render()))).toBe('<div><p>the chart</p></div>');
+    boundary.state = VisualBoundary.getDerivedStateFromError();
+    expect(renderToStaticMarkup(createElement('div', null, boundary.render()))).toBe(
+      '<div><p class="iv-note">A visual could not be shown: something in it could not be drawn.</p></div>',
+    );
+    const hosted = new VisualBoundary({ children: null, fallback: createElement('p', null, 'Host words.') });
+    hosted.state = VisualBoundary.getDerivedStateFromError();
+    expect(renderToStaticMarkup(createElement('div', null, hosted.render()))).toBe('<div><p>Host words.</p></div>');
+  });
+
+  test('a chart is drawn at the width its host measured, with fewer labels where it is narrow', () => {
+    const labels = Array.from({ length: 16 }, (_, at) => `d${at + 1}`);
+    const spec = valid({ kind: 'bar', labels, series: [{ name: 's', values: labels.map((_, at) => at) }] });
+    const shownLabels = (out: string) => (out.match(/<text x="[\d.]+" y="232" text-anchor="middle">/g) ?? []).length;
+    const turn = html(spec);
+    expect(turn).toContain('viewBox="0 0 640 240"');
+    expect(shownLabels(turn)).toBe(8);
+    const panel = renderToStaticMarkup(createElement(InlineVisual, { spec, width: 448 }));
+    expect(panel).toContain('viewBox="0 0 448 240"');
+    expect(shownLabels(panel)).toBeLessThan(8);
+    expect(renderToStaticMarkup(createElement(InlineVisual, { spec, width: 90 }))).toContain('viewBox="0 0 280 240"');
+    expect(renderToStaticMarkup(createElement(InlineVisual, { spec, width: Number.NaN }))).toContain(
+      'viewBox="0 0 640 240"',
+    );
   });
 });
 
@@ -318,25 +415,76 @@ describe('app cards read live client state, never the spec', () => {
   });
 
   test('update-progress shows what the host snapshot says', () => {
-    const out = renderToStaticMarkup(
-      createElement(UpdateProgressView, { status: snapshot, failed: false, loading: false }),
-    );
+    const card = (status: UpdateStatusSnapshot | null, failed = false) =>
+      renderToStaticMarkup(createElement(UpdateProgressView, { status, failed, loading: false }));
+    // Downloaded and verified is a sentence. Nothing moves, so nothing is drawn as a share.
+    const out = card(snapshot);
     expect(out).toContain('Version 0.1.7 downloaded and verified');
     expect(out).toContain('Installed 0.1.6');
-    expect(out).toContain('role="progressbar"');
-    const checking = renderToStaticMarkup(
-      createElement(UpdateProgressView, {
-        status: { ...snapshot, check: { ...snapshot.check, phase: 'checking' } },
-        failed: false,
-        loading: false,
-      }),
-    );
-    expect(checking).toContain('Checking for updates');
-    expect(checking).toContain('aria-busy="true"');
-    const failed = renderToStaticMarkup(
-      createElement(UpdateProgressView, { status: null, failed: true, loading: false }),
-    );
-    expect(failed).toContain('could not be read');
+    expect(out).not.toContain('role="progressbar"');
+    const checking = card({ ...snapshot, check: { ...snapshot.check, phase: 'checking' } });
+    expect(checking).toContain('aria-label="Checking for updates"');
+    expect(checking).toContain('seg-scan');
+    expect(checking).not.toContain('aria-valuenow');
+    expect(card(null, true)).toContain('could not be read');
+  });
+
+  test('update-progress draws bytes as a share only while the host reports them', () => {
+    const card = (status: UpdateStatusSnapshot) =>
+      renderToStaticMarkup(createElement(UpdateProgressView, { status, failed: false, loading: false }));
+    const mb = 1024 * 1024;
+    const available: UpdateStatusSnapshot = {
+      ...snapshot,
+      download: { ready: false, version: '0.1.7', assetName: null, bytes: null, sha256: null, verified: null },
+    };
+    // Offered, not moving: a sentence, no bar and no invented quarter.
+    const offered = card(available);
+    expect(offered).toContain('Version 0.1.7 is available');
+    expect(offered).not.toContain('role="progressbar"');
+    // Mid-download with a declared size: the bytes, as a share and in words.
+    const mid = card({
+      ...available,
+      download: { ...available.download, progress: { transferred: Math.round(12.3 * mb), total: 80 * mb } },
+    });
+    expect(mid).toContain('aria-label="Downloading version 0.1.7"');
+    expect(mid).toContain('aria-valuenow="15"');
+    expect(mid).toContain('aria-valuetext="15%, 12.3 of 80.0 MB"');
+    expect(mid).toContain('<span class="seg-caption" aria-hidden="true">Downloading version 0.1.7 · 12.3 of 80.0 MB</span>');
+    // No size declared: indeterminate, with what did arrive and no guessed total.
+    const open = card({
+      ...available,
+      download: { ...available.download, progress: { transferred: Math.round(12.3 * mb), total: null } },
+    });
+    expect(open).toContain('seg-scan');
+    expect(open).not.toContain('aria-valuenow');
+    expect(open).toContain('Downloading version 0.1.7 · 12.3 MB received');
+    expect(open).not.toContain(' of ');
+    // Handed to the installer: said, not drawn as a whole bar.
+    const launched = card({ ...snapshot, install: { phase: 'launched', version: '0.1.7' } });
+    expect(launched).toContain('Installer for 0.1.7 started.');
+    expect(launched).not.toContain('role="progressbar"');
+  });
+
+  test('the update rule is one rule for the card and Settings', () => {
+    const available: UpdateStatusSnapshot = {
+      ...snapshot,
+      download: { ready: false, version: '0.1.7', assetName: null, bytes: null, sha256: null, verified: null },
+    };
+    expect(updateBar(available)).toBeNull();
+    expect(updateBar(snapshot)).toBeNull();
+    expect(updateBar(null)).toBeNull();
+    // A request Settings has sent and not heard back from moves too, with no number until the host has one.
+    expect(updateBar(available, 'downloading')).toEqual({
+      label: 'Downloading version 0.1.7',
+      fraction: null,
+      detail: null,
+    });
+    expect(
+      updateBar({ ...available, download: { ...available.download, progress: { transferred: 512, total: 2048 } } }, 'downloading'),
+    ).toMatchObject({ fraction: 0.25, detail: '0.0 of 0.0 MB' });
+    expect(updateBar({ ...snapshot, install: { phase: 'installing', version: null } })?.label).toBe('Starting the installer');
+    expect(updateInMotion({ ...available, download: { ...available.download, progress: { transferred: 0, total: null } } })).toBe(true);
+    expect(updateInMotion(available)).toBe(false);
   });
 
   test('run-status reads the session, or says it is not available here', () => {
@@ -344,7 +492,9 @@ describe('app cards read live client state, never the spec', () => {
     const live = html(valid({ kind: 'app', key: 'run-status' }), session());
     expect(live).toContain('Working');
     expect(live).toContain('Reading the inventory export.');
-    expect(live).toContain('aria-busy="true"');
+    // A run has no known total: indeterminate, never a made-up share.
+    expect(live).toContain('seg-scan');
+    expect(live).not.toContain('aria-valuenow');
     const done = renderToStaticMarkup(
       createElement(RunStatusView, {
         session: session({ state: 'done', endedAt: '2026-09-23T14:05:00.000Z' }),

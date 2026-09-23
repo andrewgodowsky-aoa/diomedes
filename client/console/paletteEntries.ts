@@ -12,6 +12,7 @@ import type {
   TeamMember,
 } from '../../shared/types';
 import type { PackSkill } from '../../shared/capability-packs';
+import { AGENT_NAME } from '../../shared/agent-name';
 import type { PaletteEntry, PalettePoint, ShellView } from './types';
 
 /**
@@ -132,7 +133,7 @@ function taskWorker(task: Task, ctx: PaletteContext): string {
     const member = ctx.members.find((m) => m.slotId === task.assignedTo);
     return member ? member.name : task.assignedTo;
   }
-  return task.owner === 'you' ? 'You' : 'Nectovia';
+  return task.owner === 'you' ? 'You' : AGENT_NAME;
 }
 
 function ageOf(iso: string | undefined): string {

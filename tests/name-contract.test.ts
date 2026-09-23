@@ -15,6 +15,7 @@ import {
   speakerName,
 } from '../client/attribution-display';
 import { formatOrigin as formatRecordedOrigin } from '../shared/attribution';
+import { AGENT_NAME } from '../shared/agent-name';
 import { routeDisplayName } from '../shared/engines';
 
 // The name contract (contract §1, A2, A3). The product a person reads about is
@@ -207,6 +208,39 @@ describe('the brand', () => {
     expect(read('client/console/Shell.tsx')).toMatch(/<header className="top">\s*<NectoviaMark \/>/);
     expect(read('client/console/TopStrip.tsx')).toMatch(/aria-label="Nectovia projects"[\s\S]{0,80}<NectoviaMark \/>/);
     expect(read('client/App.tsx')).toContain('<NectoviaGlyph size={18} />');
+  });
+});
+
+describe('the agent’s name comes from one place (shared/agent-name.ts)', () => {
+  /** Where the name standing alone is the product, the brand or the skin, not the agent. */
+  const PRODUCT_WORD = new Map<string, string>([
+    ['client/console/Home.tsx', "the product's own settings group heading"],
+    ['client/console/Shell.tsx', "the product's own destinations group heading"],
+    ['client/console/schemes.ts', "a scheme's name is the skin's (contract A2)"],
+    ['client/console/NectoviaMark.tsx', 'the wordmark is the brand (contract A2)'],
+  ]);
+
+  it('is the name the product gives its own actions', () => {
+    expect(PRODUCT_NAME).toBe(AGENT_NAME);
+    expect(read('client/attribution-display.ts')).toContain('export const PRODUCT_NAME = AGENT_NAME;');
+  });
+
+  it('is read from AGENT_NAME wherever the Console names the agent on its own', () => {
+    const files = sourceFiles('client/console');
+    expect(files.length).toBeGreaterThan(40);
+    const shown = files.flatMap((file) => shownStrings(file, read(file), ts.ScriptKind.TSX));
+    const bare = shown.filter((hit) => hit.text === AGENT_NAME);
+    expect(bare.filter((hit) => !PRODUCT_WORD.has(hit.file)).map((hit) => `${hit.file}:${hit.line}`)).toEqual([]);
+    // Every allowance still matches something, or it is stale.
+    for (const [file, why] of PRODUCT_WORD) expect(bare.some((hit) => hit.file === file), `${file} (${why})`).toBe(true);
+    // The phrases that address the agent are built from the name, never spelled out.
+    for (const phrase of ['Message ', 'Ask ', 'What ', 'Talk to '])
+      expect(
+        shown.filter((hit) => hit.text.startsWith(`${phrase}${AGENT_NAME}`)).map((hit) => `${hit.file}:${hit.line}`),
+        phrase,
+      ).toEqual([]);
+    expect(read('client/console/Diomedes.tsx')).toContain('aria-label={`Message ${AGENT_NAME}`}');
+    expect(read('client/console/Composer.tsx')).toContain('auto: `Ask ${AGENT_NAME}`,');
   });
 });
 

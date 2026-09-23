@@ -264,6 +264,15 @@ export interface UpdateStatusSnapshot {
     /** Echoed back on install as an identifier; the host re-verifies it, never trusts it. */
     sha256: string | null;
     verified: 'size-origin-digest' | null;
+    /**
+     * Present only while a download runs: the bytes received so far, and the
+     * size the server declared for them (its Content-Length), or null when it
+     * declared none, so no total is ever guessed. The host records it at most
+     * every 250 ms and every 1%, whichever comes later, plus the last byte, and
+     * drops it when the download ends however it ends. Optional: a snapshot
+     * from before it existed has none.
+     */
+    progress?: { transferred: number; total: number | null };
   };
   install: {
     phase: 'idle' | 'installing' | 'launched';
