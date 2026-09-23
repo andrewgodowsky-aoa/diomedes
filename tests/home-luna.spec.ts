@@ -7,7 +7,7 @@ import { createApp } from '../server/app';
 import { EngineService } from '../server/engines/service';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import type { Store } from '../server/store';
-import type { Project, ProjectState } from '../shared/types';
+import type { CloudSharingPolicy, Project, ProjectState } from '../shared/types';
 import { AWS_CONNECT_BODY, AWS_TEST_KEY, awsTransport, seen } from './fixtures/scripted-home-luna';
 import { AWS_LUNA_MODEL } from '../server/engines/aws-bedrock';
 import { shareAfter } from './fixtures/cloud-sharing-grant';
@@ -25,6 +25,8 @@ const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' }
 let application: Awaited<ReturnType<typeof createApp>> | undefined;
 let server: Server | undefined;
 let pageErrors: string[] = [];
+/** This run's own folder, so a test can set up a record an earlier build left. */
+let dataRoot = '';
 
 async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T> {
   const response = await fetch(`${baseURL}/api${route}`, {
@@ -140,6 +142,7 @@ test.beforeAll(async () => {
   const results = path.resolve('test-results');
   await fs.mkdir(results, { recursive: true });
   const root = await fs.mkdtemp(path.join(results, 'home-luna-'));
+  dataRoot = root;
   application = await createApp({
     dataDir: path.join(root, 'data'),
     projectRoot: path.join(root, 'projects'),
@@ -774,4 +777,250 @@ test('a tier change that starts the conversation fresh says so in the thread', a
     'And the invoice?',
     'You said: And the invoice?',
   ]);
+});
+
+/**
+ * The conversation menu's dry runs in one project, as this page read them: how many conversations
+ * each said an update would start fresh.
+ */
+function dryRuns(page: Page, projectId: string) {
+  const read: number[] = [];
+  page.on('response', (response) => {
+    if (response.request().method() !== 'GET') return;
+    const { pathname } = new URL(response.url());
+    if (!pathname.includes(`/projects/${projectId}/`) || !pathname.endsWith('/answer-format')) return;
+    void response.json().then(
+      (body: { retiring: number }) => read.push(body.retiring),
+      () => undefined,
+    );
+  });
+  return read;
+}
+/** The project's history grant, with the rest of its sharing as it stands. */
+async function shareHistory(projectId: string, on: boolean) {
+  const policy = await api<CloudSharingPolicy>(`/projects/${projectId}/cloud-sharing`);
+  await api(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: policy.version,
+    routes: policy.routes,
+    documents: policy.documents,
+    shareConversationHistory: on,
+    shareReviewPackets: policy.shareReviewPackets,
+  });
+}
+/**
+ * One exchange in its own scope, then the lineage as 0.1.8 left it: its run records main's 0.1.8
+ * Automatic text, which this build still knows and keeps, so without the update every message
+ * would stay on it. The page is opened again, as after the update to this build.
+ */
+async function openedBefore(page: Page, name: string, words: string, answer: string) {
+  const project = await api<Project>('/projects', 'POST', { name });
+  const read = dryRuns(page, project.id);
+  await open(page);
+  await page.getByRole('combobox', { name: 'In' }).selectOption({ label: name });
+  await say(page, words);
+  await expect(answers(page).last()).toContainText(answer);
+  await expect(page.locator('.dio-pending')).toHaveCount(0);
+  // Opened on this build's own text, it has nothing to update: the dry run says so, and the
+  // conversation has no menu.
+  await expect.poll(() => read.length).toBeGreaterThan(0);
+  await painted(page);
+  expect(read.every((retiring) => retiring === 0)).toBe(true);
+  await expect(page.getByRole('button', { name: 'Conversation menu' })).toHaveCount(0);
+  const opened = (await api<ProjectState>(`/projects/${project.id}/state`)).conversations[0];
+  const [lineage] = opened.lineages ?? [];
+  expect(lineage).toMatchObject({ mode: 'auto', generation: 1 });
+  const fixture = JSON.parse(
+    await fs.readFile(path.resolve('tests/fixtures/instruction-texts.json'), 'utf8'),
+  ) as { texts: { build: string; mode: string; text: string }[] };
+  const runFile = path.join(dataRoot, 'data', 'projects', project.id, 'harness', 'runs', `${lineage.runId}.json`);
+  const run = JSON.parse(await fs.readFile(runFile, 'utf8')) as { input: { instructions: string } };
+  run.input.instructions = fixture.texts.find((row) => row.build === '0.1.8' && row.mode === 'auto')!.text;
+  await fs.writeFile(runFile, JSON.stringify(run));
+  await open(page);
+  await page.getByRole('combobox', { name: 'In' }).selectOption({ label: name });
+  await expect(answers(page).last()).toContainText(answer);
+  return { project, opened, lineage };
+}
+const updatePost = (response: Response) =>
+  response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/answer-format');
+
+test('"Update this conversation" moves a conversation opened before this build, says so once, and the next answer continues', async ({
+  page,
+}) => {
+  const { project, opened, lineage } = await openedBefore(
+    page,
+    'Format update',
+    'Where is the linen order?',
+    'You said: Where is the linen order?',
+  );
+
+  // The conversation's own menu, then a confirmation that says what the update does to memory,
+  // in the server's words: the route the next message takes, and whether history goes with it.
+  await page.getByRole('button', { name: 'Conversation menu' }).click();
+  await page.getByRole('menuitem', { name: 'Update this conversation' }).click();
+  const dialog = page.getByRole('alertdialog', { name: 'Update this conversation?' });
+  await expect(dialog).toContainText(
+    'History sharing is on for AWS Bedrock, so Nectovia will carry over your most recent messages.',
+  );
+
+  // The first answer is lost on the way back, after the server carried the update out.
+  const commands: string[] = [];
+  let lose = true;
+  const loseOnce = async (route: Route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    commands.push((route.request().postDataJSON() as { commandId: string }).commandId);
+    if (!lose) return route.continue();
+    lose = false;
+    await route.fetch();
+    await route.abort('failed');
+  };
+  await page.route('**/answer-format', loseOnce);
+  try {
+    await dialog.getByRole('button', { name: 'Update', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toHaveText(
+      "The update's answer didn't arrive. Press Update again to check whether it went through; it's never done twice.",
+    );
+    // Closed and opened again: the menu is still there, and asks about that same update.
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toHaveCount(0);
+    await page.getByRole('button', { name: 'Conversation menu' }).click();
+    await page.getByRole('menuitem', { name: 'Update this conversation' }).click();
+    await expect(dialog).toContainText('Your last update may have gone through already. Press Update to check; nothing is done twice.');
+    const posted = page.waitForResponse(updatePost);
+    await dialog.getByRole('button', { name: 'Update', exact: true }).click();
+    const answered = await posted;
+    expect(answered.status()).toBe(200);
+    // The same command both times, so the second press read back what the first did.
+    expect(commands).toHaveLength(2);
+    expect(commands[1]).toBe(commands[0]);
+    expect(await answered.json()).toEqual({ updated: true, noteId: expect.stringMatching(/^Nlineage-/) });
+  } finally {
+    await page.unroute('**/answer-format', loseOnce);
+  }
+  await expect(dialog).toHaveCount(0);
+
+  // One note, in plain words, after the exchange it ended.
+  const note =
+    'Nectovia started this conversation fresh because you updated it to the current instructions. Your earlier messages are still here, and it carried over the most recent ones.';
+  const notes = page.locator('.turn.dio').filter({ hasText: 'started this conversation fresh' });
+  await expect(notes).toHaveCount(1);
+  await expect(notes.locator('.body')).toHaveText(note);
+  // Nothing is left to update, so the menu goes.
+  await expect(page.getByRole('button', { name: 'Conversation menu' })).toHaveCount(0);
+
+  // The next answer continues, on a new lineage that carried the earlier exchange but not the note.
+  const callsBefore = seen.length;
+  await say(page, 'And the invoice?');
+  await expect(answers(page).last()).toHaveText('You said: And the invoice?');
+  await expect(page.locator('.transcript .turn .body')).toHaveText([
+    'Where is the linen order?',
+    'You said: Where is the linen order?',
+    note,
+    'And the invoice?',
+    'You said: And the invoice?',
+  ]);
+  const after = (await api<ProjectState>(`/projects/${project.id}/state`)).conversations.find(
+    (item) => item.id === opened.id,
+  )!;
+  expect(after.lineages).toEqual([
+    expect.objectContaining({ runId: lineage.runId, retired: 'format-change', carry: { route: 'aws-bedrock' } }),
+    expect.objectContaining({ mode: 'auto', generation: 2, carriedFrom: lineage.runId }),
+  ]);
+  const sent = JSON.stringify(seen.slice(callsBefore).at(-1)!.body.input);
+  expect(sent).toContain('Earlier in this conversation');
+  expect(sent).toContain('Person: Where is the linen order?');
+  expect(sent).not.toContain('started this conversation fresh');
+});
+
+test('with history sharing off, the update says the conversation won\'t be remembered, and a grant given afterwards carries nothing', async ({
+  page,
+}) => {
+  const { project, opened, lineage } = await openedBefore(
+    page,
+    'Format update without history',
+    'Where is the linen order?',
+    'You said: Where is the linen order?',
+  );
+  await shareHistory(project.id, false);
+
+  // The confirmation says what the server decided: nothing is carried, and updating turns nothing on.
+  await page.getByRole('button', { name: 'Conversation menu' }).click();
+  await page.getByRole('menuitem', { name: 'Update this conversation' }).click();
+  const dialog = page.getByRole('alertdialog', { name: 'Update this conversation?' });
+  await expect(dialog).toContainText(
+    "History sharing is off for AWS Bedrock, so your earlier messages stay on screen but Nectovia won't remember them. Updating doesn't turn sharing on.",
+  );
+  const posted = page.waitForResponse(updatePost);
+  await dialog.getByRole('button', { name: 'Update', exact: true }).click();
+  expect((await posted).status()).toBe(200);
+  await expect(dialog).toHaveCount(0);
+
+  // The note says the same.
+  const note =
+    "Nectovia started this conversation fresh because you updated it to the current instructions. Your earlier messages are still here, but it won't remember them.";
+  const notes = page.locator('.turn.dio').filter({ hasText: 'started this conversation fresh' });
+  await expect(notes).toHaveCount(1);
+  await expect(notes.locator('.body')).toHaveText(note);
+
+  // Sharing turned on afterwards changes nothing the update decided: the next answer starts fresh,
+  // without a second note.
+  await shareHistory(project.id, true);
+  const callsBefore = seen.length;
+  await say(page, 'And the invoice?');
+  await expect(answers(page).last()).toHaveText('You said: And the invoice?');
+  await expect(page.locator('.transcript .turn .body')).toHaveText([
+    'Where is the linen order?',
+    'You said: Where is the linen order?',
+    note,
+    'And the invoice?',
+    'You said: And the invoice?',
+  ]);
+  const sent = JSON.stringify(seen.slice(callsBefore).at(-1)!.body.input);
+  expect(sent).toContain('And the invoice?');
+  expect(sent).not.toContain('Earlier in this conversation');
+  expect(sent).not.toContain('Where is the linen order?');
+  const after = (await api<ProjectState>(`/projects/${project.id}/state`)).conversations.find(
+    (item) => item.id === opened.id,
+  )!;
+  expect(after.lineages).toEqual([
+    expect.objectContaining({ runId: lineage.runId, retired: 'format-change' }),
+    expect.objectContaining({ mode: 'auto', generation: 2 }),
+  ]);
+  expect(after.lineages![0].carry).toBeUndefined();
+  expect(after.lineages![1].carriedFrom).toBeUndefined();
+});
+
+test('an update the server refuses says why in the confirmation, which stays open, and changes nothing', async ({
+  page,
+}) => {
+  // A proposal waiting for the person's choice: updating would strand it, so the server refuses.
+  const { project, lineage } = await openedBefore(page, 'Format refusal', 'ACT order the usual', 'I can start that.');
+  await expect(page.locator('.dio-card').getByRole('button', { name: 'Start', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Conversation menu' }).click();
+  await page.getByRole('menuitem', { name: 'Update this conversation' }).click();
+  const dialog = page.getByRole('alertdialog', { name: 'Update this conversation?' });
+  await expect(dialog).toContainText(
+    'History sharing is on for AWS Bedrock, so Nectovia will carry over your most recent messages.',
+  );
+  const posted = page.waitForResponse(updatePost);
+  await dialog.getByRole('button', { name: 'Update', exact: true }).click();
+  const refused = await posted;
+  expect(refused.status()).toBe(409);
+  expect(await refused.json()).toMatchObject({ code: 'proposal_waiting' });
+
+  // The server's reason, in its own words, in the confirmation, which stays open to try again.
+  await expect(dialog.getByRole('alert')).toHaveText(
+    'Nectovia is waiting for your choice on what it proposed. Start it, or send another message, before you update this conversation.',
+  );
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Update', exact: true })).toBeEnabled();
+
+  // Nothing changed: no note, the lineage still open, and the proposal still there to start.
+  await expect(page.locator('.turn.dio').filter({ hasText: 'started this conversation fresh' })).toHaveCount(0);
+  const [kept] = (await api<ProjectState>(`/projects/${project.id}/state`)).conversations;
+  expect(kept.lineages).toEqual([expect.objectContaining({ runId: lineage.runId, generation: 1 })]);
+  expect(kept.lineages![0].retired).toBeUndefined();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.locator('.dio-card').getByRole('button', { name: 'Start', exact: true })).toBeVisible();
 });

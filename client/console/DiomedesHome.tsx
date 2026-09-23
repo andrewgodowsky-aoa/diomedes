@@ -44,6 +44,8 @@ import {
 } from './home-history';
 import { HomeHistorySharing } from './HomeHistorySharing';
 import { JobCapWarning } from './JobCapWarning';
+import { ThreadMenu } from './ThreadMenu';
+import { readRecordedArtifacts } from './artifact-evidence';
 import { stepLiveReply, type LiveBinding, type LiveEvent, type LiveReply } from './live-reply';
 import { saveArtifact } from './artifact-save';
 import { HomeArt } from './HomeArt';
@@ -714,6 +716,22 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   // What the caption names without a tier: the recorded route, or the default a first send takes.
   const effective = route ?? CONVERSATION_DEFAULT_ROUTE;
 
+  /**
+   * Reads the transcript again once "Update this conversation" has added its note. The outcome
+   * card belonged to the answer that ended the transcript, which the note now follows.
+   */
+  const updated = async (found: Binding) => {
+    const visit = turn.current;
+    try {
+      const conversation = await thread(found);
+      if (turn.current !== visit || !conversation) return;
+      setTurns(conversation.turns);
+      setLast(null);
+    } catch (error) {
+      if (turn.current === visit) setNotice(words(error));
+    }
+  };
+
   // A refusal for want of history already says the line's sentence, with its button, so the line
   // steps aside while it is up.
   const refusalShown = notice !== null && notice === refusal;
@@ -783,6 +801,28 @@ export function DiomedesHome(props: DiomedesHomeProps) {
           ) : undefined
         }
         art={props.scheme === 'nectovia' ? <HomeArt /> : undefined}
+        menu={
+          binding ? (
+            <ThreadMenu
+              projectId={binding.projectId}
+              threadId={binding.threadId}
+              revision={turns.length}
+              onUpdated={() => void updated(binding)}
+            />
+          ) : undefined
+        }
+        recorded={
+          binding
+            ? {
+                key: `${binding.projectId}|${binding.threadId}|${turns.length}`,
+                read: async (signal) => {
+                  const conversation = await listedThread(binding);
+                  const runIds = (conversation?.lineages ?? []).map((lineage) => lineage.runId);
+                  return readRecordedArtifacts(binding.projectId, runIds, signal);
+                },
+              }
+            : null
+        }
       />
       {capPrompt && (
         <JobCapWarning

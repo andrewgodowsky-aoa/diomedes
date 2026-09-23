@@ -134,6 +134,8 @@ interface ThreadViewProps {
   onOpenArtifact?(record: ArtifactRecord): void;
   /** The artifact the panel is showing, so its chip can say so. */
   openArtifactKey?: string | null;
+  /** The conversation's "···" menu (ThreadMenu.tsx), at the end of the head. */
+  menu?: ReactNode;
 }
 
 /**
@@ -184,6 +186,7 @@ export function ThreadView({
   artifacts,
   onOpenArtifact,
   openArtifactKey = null,
+  menu = null,
 }: ThreadViewProps) {
   const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
@@ -453,6 +456,7 @@ export function ThreadView({
         {projectId && instructionFiles.length > 0 && (
           <ProjectInstructions projectId={projectId} files={instructionFiles} />
         )}
+        {menu}
       </div>
       <div className="col instr" aria-label="Thread instruments">
         {style ? (

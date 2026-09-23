@@ -45,6 +45,11 @@ export const KNOWN_INSTRUCTION_DIGESTS: ReadonlyMap<string, KnownInstructions> =
   ],
   ['78350c2f27c9f5c8da93eec26edd85f3bd85530a0ad090a106a68e2fcb0a4d9c', { mode: 'ask', label: 'Ask, 0.1.8' }],
   ['a84d062e38dcbbe25f45e736ee750bf86fb01f7f66ca394853af07e1eddacfd2', { mode: 'plan', label: 'Plan, 0.1.8' }],
+  // 0.1.9: each mode's text and then the answer format (server/answer-format.ts); Automatic also
+  // gains the visual instructions, with the decision format still last.
+  ['a63f0bf66f53a24da85b3473afd3921b3e8ece5f21f35e77ca9cf1dea7b828e1', { mode: 'ask', label: 'Ask, 0.1.9' }],
+  ['8cdfca1b93844d5a8f993a53674d39ed7ca3a3fdbc0f42d13cf1f169c03075c9', { mode: 'plan', label: 'Plan, 0.1.9' }],
+  ['e19fd738cc3fddb78ee8e12c271c59f3b820daf4d774f6122ab00321ced99dd5', { mode: 'auto', label: 'Automatic, 0.1.9' }],
 ]);
 
 /**

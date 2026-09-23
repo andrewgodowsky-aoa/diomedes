@@ -438,8 +438,26 @@ export interface ConversationLineage {
   /** Counts every lineage the thread ever had, retired ones included. Starts at 1. */
   generation: number;
   runId: string;
-  /** Absent means current. The guard that refused a new message names the reason. */
-  retired?: 'scope-change' | 'terminated' | 'budget';
+  /**
+   * Absent means current. The guard that refused a new message names the reason, except
+   * `format-change`: the person moved the thread to the current instructions with "Update this
+   * conversation".
+   */
+  retired?: 'scope-change' | 'terminated' | 'budget' | 'format-change';
+  /**
+   * What "Update this conversation" promised when it retired this lineage: that its recent
+   * messages come along to the next generation on `route`, the route the next message was taking.
+   * Absent when it promised nothing (history not shared there, another route, or instructions this
+   * build does not know); then nothing ever carries from it, whatever changes later.
+   */
+  carry?: { route: string };
+  /**
+   * The run of the lineage "Update this conversation" retired just before this one, in this mode,
+   * set only when that update promised to carry its messages to the route this lineage opened on.
+   * Each send still checks the route's history grant, so this lineage's history starts with that
+   * run's recent messages (bounded as any history is) only while history sharing allows it.
+   */
+  carriedFrom?: string;
   /**
    * The reasoning level a model-API lineage was opened with, when a WorkStyle
    * chose one. That route binds the level into its saved context, so a style
