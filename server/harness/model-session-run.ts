@@ -43,6 +43,8 @@ import { RunService, Suspended, type StepContext, type StepDefinition } from './
 import { ToolRegistry } from './tools.js';
 import { TEAM_TOOL_NAMES } from '../../shared/team-routes.js';
 import { contextMessage } from '../engines/contract.js';
+import { carriedRun, conversationHistory } from './conversation-history.js';
+import { artifactSteps, unrecordedArtifacts } from './artifact-steps.js';
 
 export const MODEL_CONVERSATION_CAPABILITY: CapabilityManifest = {
   id: 'model-api-conversation',
@@ -160,8 +162,6 @@ export interface ModelSessionTurnResult {
   answerText?: string;
 }
 
-const MAX_HISTORY_TURNS = 12;
-const MAX_HISTORY_CHARS = 24_000;
 /** Per message, enforced here: the run budget's wallMs is recorded, not enforced. */
 const TURN_WALL_MS = 8 * 60_000;
 
@@ -202,12 +202,6 @@ const waitDefinition = (id: string): StepDefinition => ({
   maxAttempts: 2,
   destination: 'local',
 });
-
-/** The answer without its decision block, for the history a later turn is given. */
-const spoken = (text: string) => {
-  const at = text.lastIndexOf('```diomedes-decision');
-  return (at >= 0 ? text.slice(0, at) : text).trim();
-};
 
 type ToolPhase = 'finished' | 'failed';
 
@@ -417,16 +411,52 @@ export class ModelSessionRuns {
         'This command was already used for a different message. Send this one as a new message.',
       );
     const decided = this.decide(request, structuredClone(turn.output) as unknown as ModelSessionTurnResult);
-    if (decided.phase && !terminal(run)) await this.append(input.projectId, run.id, [decided.phase]);
+    // A live run gets the first phase, and the recorded artifacts, a crash may have left unwritten.
+    if (!terminal(run)) {
+      const sourceMessageId = input.interaction?.sourceMessageId;
+      const artifacts = sourceMessageId
+        ? unrecordedArtifacts(run, sourceMessageId, this.artifacts(request, run.id, decided.result))
+        : [];
+      if (decided.phase || artifacts.length)
+        await this.append(input.projectId, run.id, decided.phase ? [decided.phase] : [], artifacts);
+    }
     return decided.result;
   }
 
   private async write(runId: string, projectId: string, phases: readonly InteractionPhase[]) {
-    for (const phase of phases)
-      await this.runs.step(runId, this.owner, phaseDefinition(phase), () => ({ recorded: true }), localHarnessPrincipal(projectId));
+    await this.writeSteps(runId, projectId, phases.map(phaseDefinition));
   }
 
-  private async append(projectId: string, runId: string, phases: readonly InteractionPhase[]) {
+  /** Assumes the lease is held and no wait is open. Each step is pure and records nothing but its input. */
+  private async writeSteps(runId: string, projectId: string, definitions: readonly StepDefinition[]) {
+    for (const definition of definitions)
+      await this.runs.step(runId, this.owner, definition, () => ({ recorded: true }), localHarnessPrincipal(projectId));
+  }
+
+  /**
+   * The index-only steps that record the artifacts in one answered conversation message
+   * (`artifact-steps.ts`): none for a message that is not a conversation message, was not
+   * answered, or holds no artifact.
+   */
+  private artifacts(request: ModelSessionTurn, runId: string, result: ModelSessionTurnResult): StepDefinition[] {
+    const interaction = request.input.interaction;
+    if (!interaction || !result.response) return [];
+    return artifactSteps({
+      runId,
+      threadId: request.input.threadId,
+      commandId: request.input.requestId,
+      sourceMessageId: interaction.sourceMessageId,
+      turnStepId: stepKey('turn', request.input.requestId),
+      answer: result.answerText ?? result.response.text,
+    });
+  }
+
+  private async append(
+    projectId: string,
+    runId: string,
+    phases: readonly InteractionPhase[],
+    extra: readonly StepDefinition[] = [],
+  ) {
     const run = await this.get(projectId, runId);
     const missing = phases.filter((phase) => {
       const definition = phaseDefinition(phase);
@@ -436,14 +466,18 @@ export class ModelSessionRuns {
         throw new HarnessError('intent_mismatch', 'This interaction phase is already recorded with different contents.');
       return false;
     });
-    if (!missing.length) return;
+    const unwritten = extra.filter(
+      (definition) => run.steps.find((step) => step.intent.stepId === definition.id)?.state !== 'succeeded',
+    );
+    if (!missing.length && !unwritten.length) return;
     if (terminal(run))
       throw new EngineError('RUN_SETTLED', 'This conversation run is settled. Nothing more can be recorded on it.');
     await this.claimLive(runId);
     await this.resolveWaits(runId, projectId);
     await this.write(runId, projectId, missing);
+    await this.writeSteps(runId, projectId, unwritten);
     const last = missing[missing.length - 1];
-    await this.park(runId, projectId, `${last.sourceMessageId}:${last.phase}`);
+    await this.park(runId, projectId, last ? `${last.sourceMessageId}:${last.phase}` : `${unwritten[0].id}`);
   }
 
   /**
@@ -586,21 +620,19 @@ export class ModelSessionRuns {
     }
   }
 
-  /** Earlier answered messages in this lineage, oldest first, bounded. Read from the durable record. */
-  private history(run: HarnessRun, turnId: string): string {
-    const turns = run.steps.filter(
-      (step) => step.intent.stepId.startsWith('turn:') && step.intent.stepId !== turnId && step.state === 'succeeded',
-    );
-    const lines: string[] = [];
-    for (const step of turns.slice(-MAX_HISTORY_TURNS)) {
-      const prompt = (step.intent.input as { prompt?: unknown } | null)?.prompt;
-      const response = (step.output as { response?: { text?: unknown } | null } | null)?.response;
-      if (typeof prompt === 'string') lines.push(`Person: ${prompt}`);
-      if (typeof response?.text === 'string') lines.push(`Diomedes: ${spoken(response.text)}`);
-    }
-    let text = lines.join('\n\n');
-    if (text.length > MAX_HISTORY_CHARS) text = `…${text.slice(text.length - MAX_HISTORY_CHARS)}`;
-    return text;
+  /**
+   * Earlier answered messages in this lineage, oldest first, bounded. Read from the durable record.
+   * A lineage "Update this conversation" started begins with the recent messages of the run it
+   * carries from, inside the same bounds, so they give way to this lineage's own as it grows.
+   */
+  private async history(run: HarnessRun, turnId: string, input: TextRequest): Promise<string> {
+    const carried = await carriedRun(this.runs, input);
+    return conversationHistory(carried ? [carried, run] : [run], turnId);
+  }
+
+  /** Whether a message is being answered on this run right now, in this process. */
+  busy(runId: string): boolean {
+    return this.active.has(runId);
   }
 
   private compose(input: TextRequest, history: string): string {
@@ -705,8 +737,9 @@ export class ModelSessionRuns {
         const stop = AbortSignal.any([context.signal, wall, ...(input.signal ? [input.signal] : [])]);
         const childId = turnRunId(runId, input.requestId);
         // The host policy is read for each turn. A saved lineage does not grant
-        // permission to send previous turns to the next model call.
-        const history = this.historyPolicy(input.projectId, route) ? this.history(run!, turnId) : '';
+        // permission to send previous turns to the next model call, and neither does a lineage
+        // it carries from.
+        const history = this.historyPolicy(input.projectId, route) ? await this.history(run!, turnId, input) : '';
         this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), history.length > 0, route);
         const preview = request.activity?.(context, turnId);
         // Pairs the host's finished/failed report with the call the model announced as started.
@@ -754,6 +787,9 @@ export class ModelSessionRuns {
               conversationRunId: runId,
               commandId: input.requestId,
               historyShared: history.length > 0,
+              // The lineage this turn's history may start with, as evidence. Its messages were
+              // sent only when history was shared.
+              ...(input.carriedFrom && history ? { carriedFrom: input.carriedFrom } : {}),
               sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
               // What this turn could read, as evidence. Never a path or a connector's command.
               ...(input.readScope ? { read: readScopeRecord(input.readScope) } : {}),
@@ -824,6 +860,8 @@ export class ModelSessionRuns {
     });
     const decided = this.decide(request, response);
     if (decided.phase) await this.write(runId, input.projectId, [decided.phase]);
+    // The answer's artifacts, as index-only evidence, before the run parks (artifact-steps.ts).
+    await this.writeSteps(runId, input.projectId, this.artifacts(request, runId, decided.result));
     await this.park(runId, input.projectId, input.requestId);
     return decided.result;
   }

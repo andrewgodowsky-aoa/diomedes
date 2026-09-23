@@ -408,10 +408,17 @@ export function createHarnessHost({
   });
   const claudeSessions = new ClaudeSessionRuns(runs);
   const modelSessions = new ModelSessionRuns(runs, AWS_BEDROCK_ROUTE);
-  claudeSessions.setSharingPolicy((projectId, documents, prior) =>
-    requireCloudSharing(store.state(projectId), 'claude-code', documents, prior, {
-      home: store.isHomeProject(projectId),
-    }),
+  claudeSessions.setSharingPolicy(
+    (projectId, documents, prior) =>
+      requireCloudSharing(store.state(projectId), 'claude-code', documents, prior, {
+        home: store.isHomeProject(projectId),
+      }),
+    // Whether a lineage "Update this conversation" started may carry the earlier messages to
+    // Claude Code: the same per-route history grant the model-API routes read below.
+    (projectId) => {
+      const policy = cloudSharing(store.state(projectId));
+      return policy.shareConversationHistory && (policy.routes as string[]).includes('claude-code');
+    },
   );
   modelSessions.setSharingPolicy(
     (projectId, documents, history, route) => {

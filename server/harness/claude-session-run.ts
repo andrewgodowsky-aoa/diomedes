@@ -17,6 +17,12 @@ import { EngineError } from '../engines/process.js';
 import { localHarnessPrincipal } from './bridge.js';
 import { digest, HarnessError } from './policy.js';
 import { RunService, Suspended, type StepContext, type StepDefinition } from './run-service.js';
+import { carriedRun, conversationHistory } from './conversation-history.js';
+import { artifactSteps, unrecordedArtifacts } from './artifact-steps.js';
+
+/** A first prompt that carries an earlier conversation, laid out as the model-API driver lays out history. */
+export const carriedPrompt = (history: string, prompt: string) =>
+  `Earlier in this conversation:\n\n${history}\n\n---\n\nThe person's message:\n\n${prompt}`;
 
 export const CLAUDE_SESSION_CAPABILITY: CapabilityManifest = {
   id: 'claude-native-session',
@@ -160,6 +166,8 @@ export class ClaudeSessionRuns {
   private sharingPolicy: (projectId: string, documents: readonly string[], priorConversation: boolean) => void = () => {
     throw new HarnessError('cloud_sharing_unconfigured', 'Project cloud sharing is not configured for this native session.');
   };
+  /** Whether conversation history may go to Claude Code for this project now. Off until the host says. */
+  private historyPolicy: (projectId: string) => boolean = () => false;
   private readonly owner = `claude-session-${randomUUID()}`;
   private readonly connections = new Map<string, Connection>();
   private readonly active = new Map<
@@ -184,8 +192,29 @@ export class ClaudeSessionRuns {
       throw new Error('Native connection lifetime must be positive and at most 30 minutes.');
     this.lifetimeMs = lifetime;
   }
-  setSharingPolicy(check: (projectId: string, documents: readonly string[], priorConversation: boolean) => void) {
+  setSharingPolicy(
+    check: (projectId: string, documents: readonly string[], priorConversation: boolean) => void,
+    shareHistory: (projectId: string) => boolean = () => false,
+  ) {
     this.sharingPolicy = check;
+    this.historyPolicy = shareHistory;
+  }
+  /** Whether a message is being answered on this run right now, in this process. */
+  busy(runId: string): boolean {
+    return this.active.has(runId);
+  }
+  /**
+   * The earlier conversation a new lineage's first turn starts with, after "Update this
+   * conversation": the retired lineage's recent messages, bounded as any history is (draft a.3).
+   * A native session cannot resume under new instructions, so this is a transcript in the first
+   * prompt, and the session keeps it from then on. Empty where history sharing is off for Claude
+   * Code at send time, and on every later turn.
+   */
+  private async carried(request: ClaudeSessionTurn): Promise<string> {
+    if (request.mode !== 'start' || !request.input.carriedFrom || !this.historyPolicy(request.input.projectId))
+      return '';
+    const run = await carriedRun(this.runs, request.input);
+    return run ? conversationHistory([run]) : '';
   }
   private dispose(runId: string, connection: Connection, reason?: unknown): Promise<void> {
     if (connection.closing) return connection.closing;
@@ -368,29 +397,56 @@ export class ClaudeSessionRuns {
     );
     // A replay returns exactly what the first request returned, so nothing here marks it as a
     // replay. A settled run is read and left alone: not claimed, not written, not charged. A
-    // live one gets the first phase a crash may have left unwritten.
-    if (decided.phase && !terminal(run))
-      await this.append(input.projectId, run.id, [decided.phase]);
+    // live one gets the first phase, and the recorded artifacts, a crash may have left unwritten.
+    if (!terminal(run)) {
+      const sourceMessageId = input.interaction?.sourceMessageId;
+      const artifacts = sourceMessageId
+        ? unrecordedArtifacts(run, sourceMessageId, this.artifacts(request, run.id, decided.result))
+        : [];
+      if (decided.phase || artifacts.length)
+        await this.append(input.projectId, run.id, decided.phase ? [decided.phase] : [], artifacts);
+    }
     return decided.result;
   }
   /** Assumes the lease is held and no wait is open, as it is inside `drive`. */
   private async write(runId: string, projectId: string, phases: readonly InteractionPhase[]) {
-    for (const phase of phases)
-      await this.runs.step(
-        runId,
-        this.owner,
-        phaseDefinition(phase),
-        () => ({ recorded: true }),
-        localHarnessPrincipal(projectId),
-      );
+    await this.writeSteps(runId, projectId, phases.map(phaseDefinition));
+  }
+  /** Assumes the lease is held and no wait is open. Each step is pure and records nothing but its input. */
+  private async writeSteps(runId: string, projectId: string, definitions: readonly StepDefinition[]) {
+    for (const definition of definitions)
+      await this.runs.step(runId, this.owner, definition, () => ({ recorded: true }), localHarnessPrincipal(projectId));
+  }
+  /**
+   * The index-only steps that record the artifacts in one answered conversation message
+   * (`artifact-steps.ts`): none for a message that is not a conversation message, was not
+   * answered, or holds no artifact.
+   */
+  private artifacts(request: ClaudeSessionTurn, runId: string, result: ClaudeSessionTurnResult): StepDefinition[] {
+    const interaction = request.input.interaction;
+    if (!interaction || !result.response) return [];
+    return artifactSteps({
+      runId,
+      threadId: request.input.threadId,
+      commandId: request.input.requestId,
+      sourceMessageId: interaction.sourceMessageId,
+      turnStepId: stepKey('turn', request.input.requestId),
+      answer: result.answerText ?? result.response.text,
+    });
   }
   /**
    * Saves the phases that are not saved yet. A phase already saved with the same body is left
    * alone, so reaching here twice writes once; the same phase with a different body is refused.
+   * `extra` steps (a message's recorded artifacts) are written after them when not written yet.
    * When nothing is missing the run is not claimed, woken or parked. A settled run is never
    * written to: the caller reports what the record already says.
    */
-  private async append(projectId: string, runId: string, phases: readonly InteractionPhase[]) {
+  private async append(
+    projectId: string,
+    runId: string,
+    phases: readonly InteractionPhase[],
+    extra: readonly StepDefinition[] = [],
+  ) {
     const run = await this.get(projectId, runId);
     const missing = phases.filter((phase) => {
       const definition = phaseDefinition(phase);
@@ -403,7 +459,10 @@ export class ClaudeSessionRuns {
         );
       return false;
     });
-    if (!missing.length) return;
+    const unwritten = extra.filter(
+      (definition) => run.steps.find((step) => step.intent.stepId === definition.id)?.state !== 'succeeded',
+    );
+    if (!missing.length && !unwritten.length) return;
     if (terminal(run))
       throw new EngineError(
         'RUN_SETTLED',
@@ -415,8 +474,9 @@ export class ClaudeSessionRuns {
     await this.claimLive(runId);
     await this.resolveWaits(runId, projectId);
     await this.write(runId, projectId, missing);
+    await this.writeSteps(runId, projectId, unwritten);
     const last = missing[missing.length - 1];
-    await this.park(runId, projectId, `${last.sourceMessageId}:${last.phase}`);
+    await this.park(runId, projectId, last ? `${last.sourceMessageId}:${last.phase}` : `${unwritten[0].id}`);
   }
   /**
    * Saves interaction phases under this driver's own lease. The app never touches a step.
@@ -685,7 +745,7 @@ export class ClaudeSessionRuns {
       maxAttempts: 1,
     };
     // What an adapter is given. The conversation identity is the host's and stays here.
-    const wire: TextRequest = { ...input, binding: undefined, interaction: undefined };
+    const wire: TextRequest = { ...input, binding: undefined, interaction: undefined, carriedFrom: undefined };
     if (request.mode === 'fork') {
       const pinned = run.steps.find(
         (step) => step.intent.stepId === 'fork:source',
@@ -770,7 +830,11 @@ export class ClaudeSessionRuns {
         this.owner,
         turnDefinition,
         async (context) => {
-          this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), request.mode !== 'start');
+          // Carried messages are an earlier conversation reaching the provider, so the same
+          // history grant a follow-up needs is required for them, checked here and again below.
+          const carried = await this.carried(request);
+          const prior = request.mode !== 'start' || carried.length > 0;
+          this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), prior);
           const save = context.saveNativeCheckpoint;
           if (!save)
             throw new HarnessError(
@@ -832,9 +896,12 @@ export class ClaudeSessionRuns {
             let result: TextResponse | null = null;
             let interrupted = false;
             try {
-              this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), request.mode !== 'start');
+              this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), prior);
               result = await connection.session.turn({
                 ...wire,
+                // The person's message goes last, so the decision format's "last line" is still
+                // this message's own. The turn step keeps the message as sent by the person.
+                ...(carried ? { prompt: carriedPrompt(carried, input.prompt) } : {}),
                 signal: AbortSignal.any([context.signal, ...(input.signal ? [input.signal] : [])]),
                 onDelta: preview?.onDelta,
                 // Caller-facing frames never reach the adapter; it gets the fenced raw sink.
@@ -899,6 +966,8 @@ export class ClaudeSessionRuns {
     // for the same command, which reads the answer back and arrives here again.
     const decided = this.decide(request, response);
     if (decided.phase) await this.write(runId, input.projectId, [decided.phase]);
+    // The answer's artifacts, as index-only evidence, before the run parks (artifact-steps.ts).
+    await this.writeSteps(runId, input.projectId, this.artifacts(request, runId, decided.result));
     await this.park(runId, input.projectId, input.requestId);
     return decided.result;
   }

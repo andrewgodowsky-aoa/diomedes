@@ -18,6 +18,7 @@ import { conversationCommandIds } from '../server/interaction-admission';
 import type { MessageResult } from '../server/interaction-service';
 import { DECISION_FORMAT } from '../server/interaction-turn';
 import { MODES } from '../server/modes';
+import { answerInstructions } from '../server/answer-format';
 import type { Project, Conversation } from '../shared/types';
 
 // The conversation seam through the real app over HTTP: the real Store, RunService, session
@@ -287,8 +288,11 @@ test('C01: a greeting is answered and creates nothing', async () => {
   // The identity line went to the model and is nowhere in the transcript.
   expect(dispatches[0].prompt).toContain('[[diomedes source_message_id=sm.');
   expect(turnsOf().join('\n')).not.toContain('diomedes source_message_id');
-  // The model was told how to propose: the Mode text, then the format, at open and on the turn.
-  expect(opened).toEqual([`${MODES.auto.instructions}\n\n${DECISION_FORMAT}`]);
+  // The model was told how to propose: the Mode text first and the decision format last, at open
+  // and on the turn, with the answer format between them (server/answer-format.ts).
+  expect(opened).toEqual([answerInstructions('auto')]);
+  expect(opened[0].startsWith(`${MODES.auto.instructions}\n\n`)).toBe(true);
+  expect(opened[0].endsWith(`\n\n${DECISION_FORMAT}`)).toBe(true);
   expect(dispatches[0].instructions).toBe(opened[0]);
 });
 
@@ -365,8 +369,9 @@ test('Answer only and Plan only never show or start work, whatever the model pro
     expect(limited.outcome).toEqual({ status: 'answered' });
     expect(workFor(limited.sourceMessageId)).toEqual({ tasks: [], sessions: [] });
   }
-  // Neither is told about a decision block: each is sent exactly its own Mode text.
-  expect(opened).toEqual([MODES.ask.instructions, MODES.plan.instructions]);
+  // Neither is told about a decision block: each is sent its own Mode text and the answer format.
+  expect(opened).toEqual([answerInstructions('ask'), answerInstructions('plan')]);
+  for (const sent of opened) expect(sent).not.toContain('diomedes-decision');
   expect(dispatches.map((turn) => turn.instructions)).toEqual(opened);
   // Each mode is its own lineage and its own run.
   const lineages = store().state(project.id).conversations.find((item) => item.id === thread.id)!

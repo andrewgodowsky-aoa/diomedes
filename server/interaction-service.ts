@@ -14,7 +14,7 @@ import { EngineError } from './engines/process.js';
 import type { EngineService } from './engines/service.js';
 import { isModelApiRoute, type ModelApiRoute } from '../shared/model-api.js';
 import { ApiError } from './paths.js';
-import type { InterruptResponse, MessageResult } from '../shared/conversation.js';
+import type { ConversationUpdate, InterruptResponse, MessageResult } from '../shared/conversation.js';
 import type { InteractionDecision } from '../shared/interaction.js';
 import {
   admitInteraction,
@@ -47,8 +47,11 @@ export interface RequestContext {
   signal?: AbortSignal;
   whenDone?(end: () => void): void;
 }
-/** Why the current lineage could not take a new message. The guard that refused it names the reason. */
-export type LineageRetirement = 'scope-change' | 'terminated' | 'budget';
+/**
+ * Why a lineage retired. The guard that refused a new message names the first three;
+ * `format-change` is the person's own "Update this conversation".
+ */
+export type LineageRetirement = 'scope-change' | 'terminated' | 'budget' | 'format-change';
 
 /** One message, resolved by the host under its own lock before anything is generated. */
 export interface ResolvedMessage {
@@ -176,8 +179,21 @@ export interface InteractionHost {
     projectId: string,
     threadId: string,
     command: MessageCommand,
-    options: RequestContext & { replace?: LineageRetirement },
+    options: RequestContext & { replace?: Exclude<LineageRetirement, 'format-change'> },
   ): Promise<ResolvedMessage | UnfinishedElsewhere>;
+  /**
+   * "Update this conversation", under the same lock as `resolve`. A command already carried out
+   * is read back first. Then it refuses with 409 while `busy` says a message or a choice is being
+   * handled, or a driver is answering on one of the thread's lineages, or an Automatic proposal
+   * is waiting for the person's choice. Otherwise it retires, with `format-change`, each current
+   * lineage whose recorded text is not today's, and writes one note in the same mutation.
+   */
+  answerFormat(
+    projectId: string,
+    threadId: string,
+    commandId: string,
+    guard: { busy(): boolean },
+  ): Promise<ConversationUpdate>;
   locate(projectId: string, threadId: string, commandId: string): Promise<LocatedMessage | null>;
   /** Idempotent transcript projection of a committed answer. */
   project(
@@ -245,7 +261,7 @@ const workInput = (phases: readonly InteractionPhase[]) =>
     | undefined;
 
 /** Which guard refused a new message, if it is one a fresh lineage answers. */
-function retirement(error: unknown): LineageRetirement | null {
+function retirement(error: unknown): Exclude<LineageRetirement, 'format-change'> | null {
   if (error instanceof EngineError && error.code === 'SESSION_MISMATCH') return 'scope-change';
   if (error instanceof EngineError && error.code === 'RECONCILE_REQUIRED') return 'terminated';
   // The Runtime refuses with `blocked: budget exceeded`. The engine service hands every Runtime
@@ -260,6 +276,14 @@ function retirement(error: unknown): LineageRetirement | null {
 }
 
 export class InteractionTurns {
+  /**
+   * The messages and choices this service is handling, counted per thread. "Update this
+   * conversation" is refused while any is: retiring a lineage under a message in flight would
+   * strand its answer. Counted on entry, before the first await, so the host's check under its
+   * lock sees every message that has arrived.
+   */
+  private readonly handling = new Map<string, number>();
+
   constructor(
     private readonly engines: Pick<
       EngineService,
@@ -267,6 +291,29 @@ export class InteractionTurns {
     >,
     private readonly host: InteractionHost,
   ) {}
+
+  private hold(projectId: string, threadId: string): () => void {
+    const key = JSON.stringify([projectId, threadId]);
+    this.handling.set(key, (this.handling.get(key) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const left = (this.handling.get(key) ?? 1) - 1;
+      if (left > 0) this.handling.set(key, left);
+      else this.handling.delete(key);
+    };
+  }
+
+  /**
+   * "Update this conversation": the person moves this thread to today's instructions and answer
+   * format. Each conversation whose lineage recorded another text starts fresh on its next
+   * message, carrying the recent messages where history sharing allows it (frozen item 3).
+   */
+  async answerFormat(projectId: string, threadId: string, commandId: string): Promise<ConversationUpdate> {
+    const key = JSON.stringify([projectId, threadId]);
+    return this.host.answerFormat(projectId, threadId, commandId, { busy: () => this.handling.has(key) });
+  }
 
   /** The driver that owns a run. Model-API conversation runs are named `model-...`. */
   private driver(runId?: string): ConversationDriver {
@@ -296,6 +343,20 @@ export class InteractionTurns {
     threadId: string,
     command: MessageCommand,
     context: RequestContext = {},
+  ): Promise<MessageResult> {
+    const release = this.hold(projectId, threadId);
+    try {
+      return await this.answer(projectId, threadId, command, context);
+    } finally {
+      release();
+    }
+  }
+
+  private async answer(
+    projectId: string,
+    threadId: string,
+    command: MessageCommand,
+    context: RequestContext,
   ): Promise<MessageResult> {
     this.driver();
     let resolved = await this.host.resolve(projectId, threadId, command, context);
@@ -357,6 +418,20 @@ export class InteractionTurns {
    * is admitted, so it cannot apply to another message, to reworded work or to another project.
    */
   async select(
+    projectId: string,
+    threadId: string,
+    commandId: string,
+    chosen: { proposalDigest: string; projectId: string },
+  ): Promise<MessageResult> {
+    const release = this.hold(projectId, threadId);
+    try {
+      return await this.choose(projectId, threadId, commandId, chosen);
+    } finally {
+      release();
+    }
+  }
+
+  private async choose(
     projectId: string,
     threadId: string,
     commandId: string,

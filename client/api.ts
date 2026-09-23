@@ -14,6 +14,7 @@ export class ApiError extends Error {
   }
 }
 import type { DocumentContent, DocumentInfo, Settings } from '../shared/types';
+import type { ConversationUpdate, ConversationUpdateRequest } from '../shared/conversation';
 import type { EngineConnection } from '../shared/engines';
 import type { ReadinessProjection } from '../shared/readiness';
 
@@ -158,6 +159,21 @@ export const stopWork = (
   projectId: string,
   request: { scope: StopReceipt['scope']; taskId: string; sessionId?: string | null },
 ) => api<StopReceipt>(`${base(projectId)}/stop`, 'POST', request);
+
+/**
+ * "Update this conversation": moves one thread onto the current instructions and answer format,
+ * with one note in the thread saying what it carried. The caller mints `commandId` once per
+ * confirmation, so a second click or a lost response names the same command, and a retry reads
+ * back what the first did. `updated: false` means the thread was already current and nothing
+ * changed. While a message is being answered, or an Automatic proposal waits for the person's
+ * choice, it is refused with a 409 whose message is the reason, in the server's own words.
+ */
+export const updateConversation = (projectId: string, threadId: string, commandId: string) =>
+  api<ConversationUpdate>(
+    `${base(projectId)}/threads/${encodeURIComponent(threadId)}/answer-format`,
+    'POST',
+    { commandId } satisfies ConversationUpdateRequest,
+  );
 
 /**
  * The engine connections AI setup reads (`GET /ai/status`): installation,

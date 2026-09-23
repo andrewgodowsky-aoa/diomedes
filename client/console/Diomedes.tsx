@@ -11,6 +11,7 @@ import { toolRunning, type ToolLine } from './engine-activity';
 import { ToolActivityList } from './ToolActivity';
 import { TurnBody } from './TurnBody';
 import { ArtifactPane } from './ArtifactPane';
+import { RecordedArtifacts, type RecordedSource } from './RecordedArtifacts';
 import { useArtifactSelection, useArtifactWidth } from './artifact-panel';
 import type { SaveOutcome } from './artifact-save';
 import { turnKeyOf, type ArtifactRecord } from './artifacts';
@@ -99,6 +100,10 @@ export interface DiomedesPageProps {
   brief?: ReactNode;
   /** The page's art, beside the conversation, when the scheme draws it. */
   art?: ReactNode;
+  /** The conversation's "···" menu (ThreadMenu.tsx), at the end of the head, once there is a thread. */
+  menu?: ReactNode;
+  /** Where the conversation's recorded artifacts are read from, for the artifact panel. */
+  recorded?: RecordedSource | null;
 }
 
 /** Why Save is not offered on the All projects conversation. */
@@ -182,6 +187,8 @@ export function Diomedes({
   onSaveArtifact,
   brief,
   art,
+  menu = null,
+  recorded = null,
 }: DiomedesPageProps) {
   const [text, setText] = useState('');
   // Only a message in flight streams, and what streamed is shown under it. The waiting line
@@ -240,6 +247,7 @@ export function Diomedes({
           <main className="work" aria-label={AGENT_NAME}>
             <div className="col head">
               <h1>{AGENT_NAME}</h1>
+              {menu}
             </div>
             <div className="col instr" aria-label="This conversation">
               <span>{instrumentLine(scopeId, projects, restriction)}</span>
@@ -483,6 +491,17 @@ export function Diomedes({
             onClose={artifacts.close}
             onSave={onSaveArtifact}
             saveUnavailable={SAVE_NEEDS_PROJECT}
+            recorded={
+              recorded ? (
+                <RecordedArtifacts
+                  source={recorded}
+                  index={artifacts.index}
+                  turns={turns}
+                  current={artifacts.record.key}
+                  onOpen={(next) => artifacts.open(next)}
+                />
+              ) : null
+            }
           />
         )}
       </div>

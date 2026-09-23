@@ -41,6 +41,12 @@ export const selectionBody = z.strictObject({
   consent: z.literal(true),
 });
 
+/**
+ * "Update this conversation". The client mints `commandId` once, when the person confirms, and
+ * retries with the same one; the server decides everything else.
+ */
+export const answerFormatBody = z.strictObject({ commandId: commandIdSchema });
+
 export interface InteractionRouteDependencies {
   /** Existing request and project authority. */
   authorize(req: Request): Promise<void>;
@@ -112,6 +118,14 @@ export function mountInteractionRoutes(
   app.get(
     `${base}/:commandId`,
     route((req) => turns.outcome(String(req.params.id), String(req.params.threadId), command(req))),
+  );
+  app.post(
+    '/api/projects/:id/threads/:threadId/answer-format',
+    route(async (req) => {
+      const body = answerFormatBody.safeParse(req.body);
+      if (!body.success) throw new ApiError(400, 'Provide the update command.');
+      return turns.answerFormat(String(req.params.id), String(req.params.threadId), body.data.commandId);
+    }),
   );
   app.post(
     `${base}/:commandId/interrupt`,

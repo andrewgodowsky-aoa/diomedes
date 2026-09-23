@@ -25,6 +25,8 @@ const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' }
 let application: Awaited<ReturnType<typeof createApp>> | undefined;
 let server: Server | undefined;
 let pageErrors: string[] = [];
+/** This run's own folder, so a test can set up a record an earlier build left. */
+let dataRoot = '';
 
 async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T> {
   const response = await fetch(`${baseURL}/api${route}`, {
@@ -140,6 +142,7 @@ test.beforeAll(async () => {
   const results = path.resolve('test-results');
   await fs.mkdir(results, { recursive: true });
   const root = await fs.mkdtemp(path.join(results, 'home-luna-'));
+  dataRoot = root;
   application = await createApp({
     dataDir: path.join(root, 'data'),
     projectRoot: path.join(root, 'projects'),
@@ -775,4 +778,74 @@ test('a tier change that starts the conversation fresh says so in the thread', a
     'And the invoice?',
     'You said: And the invoice?',
   ]);
+});
+
+test('"Update this conversation" moves a conversation opened before this build, says so once, and the next answer continues', async ({
+  page,
+}) => {
+  // Its own scope, so the only lineage this test moves is one it opened itself.
+  const project = await api<Project>('/projects', 'POST', { name: 'Format update' });
+  await open(page);
+  await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'Format update' });
+  await say(page, 'Where is the linen order?');
+  await expect(answers(page).last()).toHaveText('You said: Where is the linen order?');
+  await expect(page.locator('.dio-pending')).toHaveCount(0);
+
+  // The conversation as 0.1.8 left it: its lineage records main's 0.1.8 Automatic text, which
+  // this build still knows and keeps, so without the update every message would stay on it.
+  const opened = (await api<ProjectState>(`/projects/${project.id}/state`)).conversations[0];
+  const [lineage] = opened.lineages ?? [];
+  expect(lineage).toMatchObject({ mode: 'auto', generation: 1 });
+  const fixture = JSON.parse(
+    await fs.readFile(path.resolve('tests/fixtures/instruction-texts.json'), 'utf8'),
+  ) as { texts: { build: string; mode: string; text: string }[] };
+  const runFile = path.join(dataRoot, 'data', 'projects', project.id, 'harness', 'runs', `${lineage.runId}.json`);
+  const run = JSON.parse(await fs.readFile(runFile, 'utf8')) as { input: { instructions: string } };
+  run.input.instructions = fixture.texts.find((row) => row.build === '0.1.8' && row.mode === 'auto')!.text;
+  await fs.writeFile(runFile, JSON.stringify(run));
+
+  // The conversation's own menu, then a confirmation that says what the update does to memory.
+  await page.getByRole('button', { name: 'Conversation menu' }).click();
+  await page.getByRole('menuitem', { name: 'Update this conversation' }).click();
+  const dialog = page.getByRole('alertdialog', { name: 'Update this conversation?' });
+  await expect(dialog).toContainText(
+    'History sharing is on for AWS Bedrock (Luna), so Nectovia will carry over your most recent messages.',
+  );
+  const posted = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/answer-format'),
+  );
+  await dialog.getByRole('button', { name: 'Update', exact: true }).click();
+  expect((await posted).status()).toBe(200);
+  await expect(dialog).toHaveCount(0);
+
+  // One note, in plain words, after the exchange it ended.
+  const note =
+    'Nectovia started this conversation fresh because you updated it to the current instructions. Your earlier messages are still here, and it carried over the most recent ones.';
+  const notes = page.locator('.turn.dio').filter({ hasText: 'started this conversation fresh' });
+  await expect(notes).toHaveCount(1);
+  await expect(notes.locator('.body')).toHaveText(note);
+
+  // The next answer continues, on a new lineage that carried the earlier exchange but not the note.
+  const callsBefore = seen.length;
+  await say(page, 'And the invoice?');
+  await expect(answers(page).last()).toHaveText('You said: And the invoice?');
+  await expect(page.locator('.transcript .turn .body')).toHaveText([
+    'Where is the linen order?',
+    'You said: Where is the linen order?',
+    note,
+    'And the invoice?',
+    'You said: And the invoice?',
+  ]);
+  const after = (await api<ProjectState>(`/projects/${project.id}/state`)).conversations.find(
+    (item) => item.id === opened.id,
+  )!;
+  expect(after.lineages).toEqual([
+    expect.objectContaining({ runId: lineage.runId, retired: 'format-change' }),
+    expect.objectContaining({ mode: 'auto', generation: 2, carriedFrom: lineage.runId }),
+  ]);
+  const sent = JSON.stringify(seen.slice(callsBefore).at(-1)!.body.input);
+  expect(sent).toContain('Earlier in this conversation');
+  expect(sent).toContain('Person: Where is the linen order?');
+  expect(sent).not.toContain('started this conversation fresh');
 });

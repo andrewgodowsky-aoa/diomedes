@@ -85,3 +85,24 @@ export interface InterruptResponse {
   runId: string | null;
   state: InterruptState;
 }
+
+/**
+ * `POST /api/projects/:id/threads/:threadId/answer-format`: "Update this conversation". The client
+ * mints `commandId` once, when the person confirms, and retries with the same one.
+ */
+export interface ConversationUpdateRequest {
+  commandId: string;
+}
+
+/**
+ * What "Update this conversation" did. `updated` is false when every open conversation in the
+ * thread already runs on the current instructions: nothing was retired and no note was written.
+ * `noteId` names the one note turn the update wrote; a retry of the same command reads it back.
+ */
+export interface ConversationUpdate {
+  updated: boolean;
+  noteId: string | null;
+}
+
+/** Why "Update this conversation" was refused with 409, as the error's `code`. */
+export type ConversationUpdateRefusal = 'conversation_busy' | 'proposal_waiting';

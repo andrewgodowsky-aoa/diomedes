@@ -435,8 +435,18 @@ export interface ConversationLineage {
   /** Counts every lineage the thread ever had, retired ones included. Starts at 1. */
   generation: number;
   runId: string;
-  /** Absent means current. The guard that refused a new message names the reason. */
-  retired?: 'scope-change' | 'terminated' | 'budget';
+  /**
+   * Absent means current. The guard that refused a new message names the reason, except
+   * `format-change`: the person moved the thread to the current instructions with "Update this
+   * conversation".
+   */
+  retired?: 'scope-change' | 'terminated' | 'budget' | 'format-change';
+  /**
+   * The run of the lineage "Update this conversation" retired just before this one, in this mode.
+   * Where history sharing allows it for the route, this lineage's history starts with that run's
+   * recent messages (bounded as any history is), so the update keeps what was said.
+   */
+  carriedFrom?: string;
   /**
    * The reasoning level a model-API lineage was opened with, when a WorkStyle
    * chose one. That route binds the level into its saved context, so a style

@@ -9,7 +9,7 @@
  * interaction-seam.test.ts. Its checkpoints carry no read-scope digest, which is exactly what a
  * v0.1.7 session saved. `close()` then `open()` is the update's restart.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -24,10 +24,22 @@ import { EngineError } from '../server/engines/process';
 import { routeContractFor } from '../server/harness/route-contract';
 import { hash, type Store } from '../server/store';
 import type { MessageResult } from '../server/interaction-service';
-import { instructionsFor } from '../server/interaction-turn';
-import { MODES } from '../server/modes';
-import type { Conversation, ConversationLineage, Project, Turn } from '../shared/types';
+import { answerInstructions } from '../server/answer-format';
+import type { ClaudeSessionRuns } from '../server/harness/claude-session-run';
+import type { ConversationUpdate } from '../shared/conversation';
+import type { CloudSharingPolicy, Conversation, ConversationLineage, Project, Turn } from '../shared/types';
 import fixture from './fixtures/instruction-texts.json';
+
+// Another build's composer. A mode set here is composed as that build composed it; the rest are
+// this build's own (server/answer-format.ts).
+const composedFor = vi.hoisted(() => new Map<string, string>());
+vi.mock('../server/answer-format', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../server/answer-format')>();
+  return {
+    ...actual,
+    answerInstructions: (mode: 'ask' | 'plan' | 'auto') => composedFor.get(mode) ?? actual.answerInstructions(mode),
+  };
+});
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const model = 'claude-fixture';
@@ -36,7 +48,6 @@ const text = (build: string, mode: string) =>
   (fixture.texts as { build: string; mode: string; text: string }[]).find(
     (row) => row.build === build && row.mode === mode,
   )!.text;
-const shipped = { ask: MODES.ask.instructions, auto: MODES.auto.instructions };
 
 let root: string;
 let app: Awaited<ReturnType<typeof createApp>>;
@@ -230,19 +241,18 @@ beforeEach(async () => {
   await store().persist(state);
 });
 afterEach(async () => {
-  MODES.ask.instructions = shipped.ask;
-  MODES.auto.instructions = shipped.auto;
+  composedFor.clear();
   await close();
   await fs.rm(root, { recursive: true, force: true });
 });
 
 describe('an open Claude Code conversation after an update that changed its instructions', () => {
   test('on a turn with no read scope it continues, and the resumed session is opened with its recorded text byte for byte', async () => {
-    const recorded = instructionsFor('auto', MODES.auto.instructions);
+    const recorded = answerInstructions('auto');
     const first = await send('m-first', 'Good morning', 'auto');
     expect(opened).toEqual([{ instructions: recorded, resumed: false }]);
     // A later build changes the Automatic text.
-    MODES.auto.instructions = `${shipped.auto} Keep every answer short.`;
+    composedFor.set('auto', `${recorded} Keep every answer short.`);
     await update();
 
     const second = await send('m-second', 'What is on today?', 'auto');
@@ -258,11 +268,32 @@ describe('an open Claude Code conversation after an update that changed its inst
     expect(notes()).toEqual([]);
   });
 
+  test("an Automatic lineage opened under main's 0.1.8 text continues under this build, resumed with that text byte for byte", async () => {
+    const main = text('0.1.8', 'auto');
+    expect(main).not.toBe(answerInstructions('auto'));
+    composedFor.set('auto', main);
+    const first = await send('m-first', 'Good morning', 'auto');
+    composedFor.delete('auto');
+    await update();
+
+    const second = await send('m-second', 'What is on today?', 'auto');
+    expect(second.answerText).toBe('answer:What is on today?');
+    expect(second.runId).toBe(first.runId);
+    expect(lineages()).toEqual([expect.objectContaining({ mode: 'auto', generation: 1, runId: first.runId })]);
+    expect(lineages()[0].retired).toBeUndefined();
+    expect(opened).toEqual([
+      { instructions: main, resumed: false },
+      { instructions: main, resumed: true },
+    ]);
+    expect(dispatches.at(-1)!.instructions).toBe(main);
+    expect(notes()).toEqual([]);
+  });
+
   test('a v0.1.7 Ask lineage, which a read scope now covers, retires before anything is sent, with one note, and answers on a fresh session', async () => {
     const v017 = text('v0.1.7', 'ask');
-    MODES.ask.instructions = v017;
+    composedFor.set('ask', v017);
     const first = await send('m-first', 'Where is the linen order?', 'ask');
-    MODES.ask.instructions = shipped.ask;
+    composedFor.delete('ask');
     await update();
 
     const second = await send('m-second', 'And the invoice?', 'ask');
@@ -274,9 +305,9 @@ describe('an open Claude Code conversation after an update that changed its inst
     // The old session was never resumed: the new generation opened a fresh one under today's text.
     expect(opened).toEqual([
       { instructions: v017, resumed: false },
-      { instructions: shipped.ask, resumed: false },
+      { instructions: answerInstructions('ask'), resumed: false },
     ]);
-    expect(dispatches.map((turn) => turn.instructions)).toEqual([v017, shipped.ask]);
+    expect(dispatches.map((turn) => turn.instructions)).toEqual([v017, answerInstructions('ask')]);
     expect(notes().map((note) => note.text)).toEqual([
       "Nectovia started this conversation fresh because its instructions changed. Your earlier messages are still here, but it won't remember them.",
     ]);
@@ -303,5 +334,75 @@ describe('an open Claude Code conversation after an update that changed its inst
     expect(notes().map((note) => note.text)).toEqual([
       "Nectovia started this conversation fresh because the earlier conversation stopped and could not be picked up again. Your earlier messages are still here, but it won't remember them.",
     ]);
+  });
+});
+
+describe('"Update this conversation" on Claude Code', () => {
+  const CARRIED =
+    'Nectovia started this conversation fresh because you updated it to the current instructions. Your earlier messages are still here, and it carried over the most recent ones.';
+  const NOT_CARRIED =
+    "Nectovia started this conversation fresh because you updated it to the current instructions. Your earlier messages are still here, but it won't remember them.";
+  const updateConversation = (commandId: string) =>
+    api<ConversationUpdate>(`/projects/${project.id}/threads/${thread.id}/answer-format`, 'POST', { commandId });
+  const sessions = () => app.locals.harness.claudeSessions as ClaudeSessionRuns;
+  /** Two Automatic messages as main's build sent them, so the lineage records main's 0.1.8 text. */
+  async function onMain() {
+    composedFor.set('auto', text('0.1.8', 'auto'));
+    try {
+      const first = await send('m-first', 'Good morning', 'auto');
+      await send('m-second', 'What is on today?', 'auto');
+      return first;
+    } finally {
+      composedFor.delete('auto');
+    }
+  }
+
+  test('with history sharing on, the new session starts with the recent messages in its first prompt, and only there', async () => {
+    const first = await onMain();
+    expect(await updateConversation('u-1')).toEqual({ updated: true, noteId: expect.stringMatching(/^Nlineage-/) });
+    expect(notes().map((note) => note.text)).toEqual([CARRIED]);
+    expect(lineages()).toEqual([expect.objectContaining({ runId: first.runId, retired: 'format-change' })]);
+
+    const next = await send('m-third', 'Thanks', 'auto');
+    expect(next.runId).not.toBe(first.runId);
+    expect(lineages()[1]).toMatchObject({ runId: next.runId, carriedFrom: first.runId });
+    // A native session cannot resume under new instructions: a fresh one opens under today's.
+    expect(opened.at(-1)).toEqual({ instructions: answerInstructions('auto'), resumed: false });
+    const prompt = dispatches.at(-1)!.prompt;
+    expect(prompt.startsWith('Earlier in this conversation:\n\n')).toBe(true);
+    expect(prompt).toContain('Person: Good morning');
+    expect(prompt).toContain('Diomedes: answer:Good morning');
+    expect(prompt).toContain('Person: What is on today?');
+    expect(prompt).not.toContain('started this conversation fresh');
+    // The person's message comes last, still ending in its own identity line.
+    expect(prompt).toMatch(/\n---\n\nThe person's message:\n\nThanks\n\n\[\[diomedes source_message_id=sm\.[0-9a-f]{32}\]\]$/);
+    // The adapter is never handed the pointer.
+    expect(dispatches.at(-1)!).not.toHaveProperty('carriedFrom', expect.anything());
+    // The turn records what the person sent, not the carried transcript.
+    const run = await sessions().get(project.id, next.runId);
+    const turn = run.steps.find((step) => step.intent.stepId.startsWith('turn:'))!;
+    expect((turn.intent.input as { prompt: string }).prompt.startsWith('Thanks\n\n[[diomedes')).toBe(true);
+
+    // The session keeps what it was given, so the next turn carries nothing more.
+    await send('m-fourth', 'Bye', 'auto');
+    expect(dispatches.at(-1)!.prompt.startsWith('Bye\n\n[[diomedes')).toBe(true);
+  });
+
+  test('with history sharing off, nothing is carried and the note says so', async () => {
+    await onMain();
+    const policy = await api<CloudSharingPolicy>(`/projects/${project.id}/cloud-sharing`);
+    await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+      expectedVersion: policy.version,
+      routes: ['claude-code'],
+      documents: [],
+      shareConversationHistory: false,
+      shareReviewPackets: false,
+    });
+    await updateConversation('u-1');
+    expect(notes().map((note) => note.text)).toEqual([NOT_CARRIED]);
+
+    const next = await send('m-third', 'Thanks', 'auto');
+    expect(next.answerText).toBe('answer:Thanks');
+    expect(dispatches.at(-1)!.prompt.startsWith('Thanks\n\n[[diomedes')).toBe(true);
   });
 });
