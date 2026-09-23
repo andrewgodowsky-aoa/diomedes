@@ -63,6 +63,7 @@ http.createServer(async(req,res)=>{
  if(req.url==='/session/session-1/prompt_async'){res.writeHead(204);res.end();setTimeout(()=>{
   send({type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}});
   tools.forEach((t,i)=>{part(i,'pending',{});part(i,'running',t.input);part(i,'completed',t.input,{output:'ok '+i});});
+  send({type:'message.part.updated',properties:{part:{id:'text-1',sessionID:'session-1',messageID:'assistant-1',type:'text',text:''}}});
   send({type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'text-1',field:'text',delta:'Opens at 11.'}});
   send({type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1,completed:2},finish:'stop'}}});
   send({type:'session.status',properties:{sessionID:'session-1',status:{type:'idle'}}});

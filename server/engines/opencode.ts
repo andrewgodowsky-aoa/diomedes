@@ -53,6 +53,16 @@ const MAX_SSE_EVENT_BYTES = 1024 * 1024;
 // sentence that follows a miss names the wait and asks for a recheck.
 const STARTUP_TIMEOUT_MS = 45_000;
 const REQUEST_TIMEOUT_MS = 120_000;
+// One readiness probe. Measured 2026-09-23 on Windows with opencode 1.18.4:
+// about one launch in four, the first /provider request never reached a server
+// that was already listening, and it held the whole startup budget. A fresh
+// connection answered in under half a second. Each probe now has its own
+// short bound inside the startup deadline; a slow first instance keeps
+// building server-side between probes, so a later one finds it ready.
+const HANDSHAKE_ATTEMPT_MS = 5_000;
+// The models.dev catalogue a person's own OpenCode keeps refreshed. Bounded:
+// the file is about 5 MB today.
+const MAX_CATALOGUE_BYTES = 32 * 1024 * 1024;
 
 type Json = Record<string, unknown>;
 type Fetcher = typeof globalThis.fetch;
@@ -63,6 +73,53 @@ export interface OpenCodeAdapterDeps {
   reservePort?: () => Promise<number>;
   startupTimeoutMs?: number;
   requestTimeoutMs?: number;
+  handshakeAttemptMs?: number;
+}
+
+/**
+ * Where the person's own OpenCode keeps its models.dev catalogue: the same
+ * `<XDG_CACHE_HOME or ~/.cache>/opencode/models.json` opencode v1.18.4 reads
+ * and refreshes (ModelsDev.populate reads that file first, then the catalogue
+ * bundled in the binary). It is the public model catalogue, not account data.
+ */
+export function nativeCatalogueFile(source: NodeJS.ProcessEnv = process.env): string {
+  const home = source.USERPROFILE ?? source.HOME ?? process.cwd();
+  return path.join(source.XDG_CACHE_HOME || path.join(home, '.cache'), 'opencode', 'models.json');
+}
+
+/**
+ * Give the isolated server the catalogue the person's own OpenCode last
+ * refreshed. Without it the server starts from an empty cache and answers from
+ * the catalogue bundled in the binary unless its own background fetch lands
+ * first, so a check and the dispatch after it could list different models
+ * (live, 2026-09-23: MiMo 2.6 on some checks and not others). A copy, never a
+ * link: the server may rewrite or delete its cache file, and that must never
+ * reach the person's own. Anything unusual leaves the old behaviour in place.
+ */
+async function seedCatalogue(
+  cache: string,
+  source: NodeJS.ProcessEnv,
+  binary: string,
+): Promise<void> {
+  const to = path.join(cache, 'opencode', 'models.json');
+  try {
+    const from = nativeCatalogueFile(source);
+    // lstat: a link is not followed; only a plain file is copied.
+    const stat = await fs.lstat(from);
+    if (!stat.isFile() || stat.size === 0 || stat.size > MAX_CATALOGUE_BYTES) return;
+    // A catalogue last refreshed before this OpenCode was built is probably
+    // older than the one bundled inside it, and OpenCode reads the cache file
+    // first, so seeding it would hide newer models. Leave the bundled one.
+    const built = await fs.stat(binary).catch(() => undefined);
+    if (built && built.mtimeMs > stat.mtimeMs) return;
+    await fs.mkdir(path.dirname(to), { recursive: true });
+    await fs.copyFile(from, to);
+    // The bound is checked before the copy; hold it for a file that grew meanwhile.
+    if ((await fs.stat(to)).size > MAX_CATALOGUE_BYTES) await fs.rm(to, { force: true });
+  } catch {
+    /* No refreshed catalogue: OpenCode falls back to its own, as before. */
+    await fs.rm(to, { force: true }).catch(() => {});
+  }
 }
 
 const object = (value: unknown): Json =>
@@ -525,6 +582,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
   private readonly reserve: NonNullable<OpenCodeAdapterDeps['reservePort']>;
   private readonly startupTimeout: number;
   private readonly requestTimeout: number;
+  private readonly handshakeAttempt: number;
   constructor(
     private readonly file: string,
     private readonly cwd: string,
@@ -537,6 +595,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     this.reserve = deps.reservePort ?? ephemeralPort;
     this.startupTimeout = deps.startupTimeoutMs ?? STARTUP_TIMEOUT_MS;
     this.requestTimeout = deps.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+    this.handshakeAttempt = deps.handshakeAttemptMs ?? HANDSHAKE_ATTEMPT_MS;
   }
 
   private async isolatedEnvironment(root: string, scope?: ReadScope): Promise<NodeJS.ProcessEnv> {
@@ -548,6 +607,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     const source = process.env;
     const nativeHome = source.USERPROFILE ?? source.HOME ?? process.cwd();
     const nativeData = source.XDG_DATA_HOME ?? path.join(nativeHome, '.local', 'share');
+    await seedCatalogue(cache, source, this.file);
     return {
       ...engineEnvironment(source),
       HOME: home,
@@ -638,7 +698,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
           // Diomedes generated for it. Nothing here has reached an account yet.
           const response = await this.fetcher(`${base}/provider`, {
             headers: this.headers(auth, directory),
-            signal: ready.signal,
+            signal: AbortSignal.any([ready.signal, AbortSignal.timeout(this.handshakeAttempt)]),
           });
           const body = await cappedText(response, MAX_JSON_BYTES, 'local-handshake');
           if (response.status === 401 || response.status === 403)
@@ -928,6 +988,12 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       let assistantMessageId: string | undefined;
       let assistantInfo = false;
       let assistantTerminal = false;
+      // The answer is built from text parts only. OpenCode 1.18.4 streams a
+      // reasoning part's deltas with the same `field: "text"`, so a delta is
+      // accepted only for a part it has already announced as text. A text
+      // delta that arrives before its announcement is recovered from the
+      // part's full text when that part is next updated.
+      const textParts = new Map<string, string>();
       try {
         for (;;) {
           const part = await reader.read();
@@ -1045,15 +1111,22 @@ export class OpenCodeAdapter implements TextEngineAdapter {
               text(partValue.messageID) === assistantMessageId
             ) {
               if (partType !== 'text') continue;
+              const partId = text(partValue.id);
+              if (partId && !textParts.has(partId)) textParts.set(partId, '');
               const delta = text(props.delta);
               if (delta) {
                 answer += delta;
+                if (partId) textParts.set(partId, (textParts.get(partId) ?? '') + delta);
                 input.onDelta?.(delta);
               } else {
+                // Recover what this part has that the answer does not, per part,
+                // so a later part's early deltas are not lost either.
                 const full = text(partValue.text);
-                if (full && full.startsWith(answer)) {
-                  const next = full.slice(answer.length);
-                  answer = full;
+                const prior = partId ? (textParts.get(partId) ?? '') : answer;
+                if (full && full.startsWith(prior)) {
+                  const next = full.slice(prior.length);
+                  answer += next;
+                  if (partId) textParts.set(partId, full);
                   if (next) input.onDelta?.(next);
                 }
               }
@@ -1062,11 +1135,13 @@ export class OpenCodeAdapter implements TextEngineAdapter {
               kind === 'message.part.delta' &&
               assistantMessageId &&
               text(props.messageID) === assistantMessageId &&
-              text(props.field) === 'text'
+              text(props.field) === 'text' &&
+              textParts.has(text(props.partID))
             ) {
               const delta = text(props.delta);
               if (delta) {
                 answer += delta;
+                textParts.set(text(props.partID), (textParts.get(text(props.partID)) ?? '') + delta);
                 input.onDelta?.(delta);
               }
             }
