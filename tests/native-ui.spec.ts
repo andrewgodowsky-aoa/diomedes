@@ -694,7 +694,7 @@ test('Cloud sharing selects an exact future path before AI review can send it', 
   await page.getByRole('button', { name: 'Cloud sharing' }).click();
   const dialog = page.getByRole('dialog', { name: 'Cloud sharing' });
   await expect(dialog.getByRole('checkbox', { name: 'Reopening plan.md' })).toBeChecked();
-  await dialog.getByLabel('Document path').fill('notes/Planned.md');
+  await dialog.getByRole('textbox', { name: 'Document path' }).fill('notes/Planned.md');
   await dialog.getByRole('button', { name: 'Add path' }).click();
   await expect(dialog.getByRole('checkbox', { name: 'notes/Planned.md' })).toBeChecked();
   await dialog.getByRole('checkbox', { name: /Share proposed changes with the AI reviewer/ }).check();
