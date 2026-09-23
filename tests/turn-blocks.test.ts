@@ -17,7 +17,7 @@ import {
   type CodeBlock,
   type ListBlock,
   type TableBlock,
-} from '../client/console/turn-blocks';
+} from '../shared/turn-blocks';
 import { TurnBody } from '../client/console/TurnBody';
 
 const code = (text: string, at = 0) => {

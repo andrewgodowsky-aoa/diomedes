@@ -22,8 +22,8 @@ import {
   visualOf,
   visualTitle,
   withoutDeclaration,
-} from '../client/console/artifacts';
-import { parseBlocks, type TableBlock } from '../client/console/turn-blocks';
+} from '../shared/artifacts';
+import { parseBlocks, type TableBlock } from '../shared/turn-blocks';
 import { savedPath } from '../client/console/artifact-save';
 import { parseVisualSpec, VISUAL_MAX_PER_REPLY } from '../shared/visual-spec';
 
@@ -254,6 +254,32 @@ describe('files', () => {
     expect(fileHasArtifacts('Saved artifacts/Sales.json', BAR)).toBe(true);
     for (const text of ['{"name":"diomedes","version":"0.1.6"}', '{"kind":"bar"}', 'not json', '[]'])
       expect(fileHasArtifacts('package.json', text), text).toBe(false);
+  });
+
+  it('reads a .svg file as one image and a .mmd file as one diagram, in the shape their fence gives', () => {
+    const svg = indexFile('mocks/Logo.svg', '<svg viewBox="0 0 1 1"/>');
+    expect(svg.list.map((record) => [record.kind, record.lang, record.title])).toEqual([
+      ['image', 'svg', 'Logo'],
+    ]);
+    const declaredSvg = indexFile(
+      'mocks/Logo.svg',
+      '<!-- artifact: id=logo title="Logo mark" -->\n<svg viewBox="0 0 1 1"/>',
+    );
+    expect(declaredSvg.list[0]).toMatchObject({ declaredId: 'logo', title: 'Logo mark' });
+
+    const mmd = indexFile('Saved artifacts/Flow.mmd', 'graph TD\n  A-->B');
+    expect(mmd.list.map((record) => [record.kind, record.lang, record.title])).toEqual([
+      ['diagram', 'mermaid', 'Flow'],
+    ]);
+    const declaredMmd = indexFile(
+      'Saved artifacts/Flow.mmd',
+      '%% artifact: id=flow title="Delivery"\ngraph TD\n  A-->B',
+    );
+    expect(declaredMmd.list[0]).toMatchObject({ declaredId: 'flow', title: 'Delivery' });
+
+    expect(fileHasArtifacts('mocks/Logo.svg', '<svg viewBox="0 0 1 1"/>')).toBe(true);
+    expect(fileHasArtifacts('Saved artifacts/Flow.mmd', 'graph TD')).toBe(true);
+    expect(fileHasArtifacts('mocks/Logo.svg.bak', '<svg/>')).toBe(false);
   });
 });
 
