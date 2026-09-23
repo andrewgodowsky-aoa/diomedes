@@ -68,7 +68,7 @@ lives, or does not yet).
 | Model | `gemini-3.8-flash` only; `modelVersion` reported by Vertex recorded as the reported model |
 | Location | `global` (`aiplatform.googleapis.com`), Standard tier; Priority/Flex headers are stripped |
 | Endpoint | `https://aiplatform.googleapis.com/v1/projects/<project>/locations/global/publishers/google/models/gemini-3.8-flash:streamGenerateContent?alt=sse`, the only URL the credential may reach |
-| Payer | the Google Cloud project in the URL, also sent as `x-goog-user-project` |
+| Payer | the Google Cloud project in the URL; with ADC also sent as `x-goog-user-project`; with an API key, the key's own project, which must be that project (not checkable locally) |
 | Account route | `google-vertex:google-vertex-1:<project>@r<revision>` |
 | Auth | Application Default Credentials from one exact file, fingerprinted at setup |
 
@@ -89,7 +89,8 @@ multiple candidates.
   refused until the owner connects again.
 - The SDK never loads a credential: it is handed a placeholder auth client, and the guarded
   transport attaches the real bearer token only after the destination checks.
-- Quota project: the request names the billed project in `x-goog-user-project`, so an ambient
+- Quota project (ADC only; the key path sends no `x-goog-user-project`, since a key bills its own
+  project): the request names the billed project in `x-goog-user-project`, so an ambient
   quota project in the ADC file cannot move billing. The signed-in user therefore needs
   `serviceusage.services.use` on that project (Owner or Editor has it). If the first live call
   answers 403 with a quota-project message, run

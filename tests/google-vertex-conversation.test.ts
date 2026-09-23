@@ -406,13 +406,40 @@ describe('an API key from the billed project', () => {
     await approve(10);
     await service.modelApi!.secrets.put('google-vertex-1', 'AQ.a-different-key-put-behind-the-record-9');
     const input = turnInput({ accountRoute: view.connection!.accountRoute });
-    await expect(service.modelSession('google-vertex', 'start', modelSessionRunId(project.id, input.requestId), input)).rejects.toThrow(/not the one that was connected/);
+    await expect(service.modelSession('google-vertex', 'start', modelSessionRunId(project.id, input.requestId), input)).rejects.toThrow(/not the one (that was )?connected/);
+    expect((await api<VertexConnectionView>('/ai/model-api/google-vertex')).connection?.credential.matches).toBe(false);
     expect(seen).toHaveLength(0);
 
     const adc = await connect();
     expect(adc.connection?.credential.kind).toBe('google-adc');
     expect(adc.connection!.revision).toBe(view.connection!.revision + 1);
     await expect(service.modelApi!.secrets.get('google-vertex-1')).rejects.toThrow();
+  });
+
+  test('disconnecting removes the key; a record that cannot be written leaves no key behind', async () => {
+    await connectWithKey();
+    const secrets = service.modelApi!.secrets;
+    expect(await secrets.get('google-vertex-1')).toBe(KEY);
+    await api<VertexConnectionView>('/ai/model-api/google-vertex', 'DELETE');
+    await expect(secrets.get('google-vertex-1')).rejects.toThrow();
+
+    const connections = service.modelApi!.vertex!.connections;
+    const write = connections.write.bind(connections);
+    connections.write = async () => {
+      throw new Error('simulated rename EPERM');
+    };
+    try {
+      const response = await fetch(`${base}/api/ai/model-api/google-vertex`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ projectId: PROJECT, location: 'global', model: 'gemini-3.8-flash', consent: true, apiKey: KEY }),
+      });
+      expect(response.ok).toBe(false);
+    } finally {
+      connections.write = write;
+    }
+    await expect(secrets.get('google-vertex-1')).rejects.toThrow();
+    expect(await connections.read()).toBeNull();
   });
 
   test('a malformed key is refused and nothing is stored', async () => {
@@ -423,5 +450,6 @@ describe('an API key from the billed project', () => {
     });
     expect(response.status).toBe(400);
     expect(await service.modelApi!.vertex!.connections.read()).toBeNull();
+    await expect(service.modelApi!.secrets.get('google-vertex-1')).rejects.toThrow();
   });
 });

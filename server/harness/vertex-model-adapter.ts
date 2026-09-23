@@ -79,7 +79,9 @@ export function createVertexModelAdapter(options: VertexModelAdapterOptions): Mo
     transcripts: options.transcripts,
     notes: [
       'One streamed generateContent call per model step to the project’s global Vertex endpoint, for gemini-3.8-flash only; SDK retries off, one function call at most; tools are function declarations run only by the harness.',
-      'A short-lived token minted from the verified Application Default Credentials file is attached only to that endpoint, with the project as x-goog-user-project; redirects are refused.',
+      connection.credential.kind === 'google-api-key'
+        ? 'The API key from the billed project, held in protected storage, is attached as x-goog-api-key only to that endpoint and never placed in a URL; redirects are refused.'
+        : 'A short-lived token minted from the verified Application Default Credentials file is attached only to that endpoint, with the project as x-goog-user-project; redirects are refused.',
       'The reported model is Vertex’s modelVersion, recorded beside the requested model and the project.',
       'Stopping a call closes the HTTP read. It does not prove Google stopped processing, so the spend hold stays uncertain.',
     ],

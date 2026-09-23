@@ -2333,7 +2333,12 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute): Promi
             }
             if (connection.credential.kind === 'google-api-key') {
               if (!api.secrets.available()) return 'Protected credential storage is not available in this process.';
-              return null;
+              try {
+                if (secretFingerprint(await api.secrets.get(connection.id)) === connection.credential.fingerprint) return null;
+              } catch {
+                // Missing or unreadable: said below.
+              }
+              return 'The saved Google Vertex AI key is missing or not the one connected. Connect it again in AI setup. Nothing was sent.';
             }
             const identity = await readAdcIdentity(services.env);
             if (!identity)

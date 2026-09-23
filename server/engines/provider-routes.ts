@@ -516,6 +516,15 @@ export function mountProviderRoutes(
       if (!found) throw new ApiError(503, 'The Google Vertex AI route is not available in this process.');
       return found;
     };
+    /** Whether protected storage still holds the key this record was connected with. Never returns the key. */
+    const storedKeyMatches = async (connection: VertexConnection) => {
+      if (connection.credential.kind !== 'google-api-key' || !api().secrets.available()) return false;
+      try {
+        return secretFingerprint(await api().secrets.get(connection.id)) === connection.credential.fingerprint;
+      } catch {
+        return false;
+      }
+    };
     const currentCard = () => {
       try {
         return { card: vertexRateCard(services().now?.() ?? new Date()), message: null as string | null };
@@ -531,7 +540,7 @@ export function mountProviderRoutes(
       const summary = connection ? exposure.summary(connection.id) : null;
       const allowance = connection ? exposure.allowance(connection.id) : null;
       const keyed = connection?.credential.kind === 'google-api-key';
-      const matches = !!connection && (keyed ? api().secrets.available() : !!identity && identity.fingerprint === connection.credential.fingerprint);
+      const matches = !!connection && (keyed ? await storedKeyMatches(connection) : !!identity && identity.fingerprint === connection.credential.fingerprint);
       const price = currentCard();
       const holds = connection ? exposure.list(connection.id) : [];
       const answered = [...holds].reverse().find((hold) => hold.state === 'settled' && hold.reconciledFrom === 'response');
@@ -541,7 +550,7 @@ export function mountProviderRoutes(
           : 'Connect Google Vertex AI with the billed project and an API key from it, or sign in with `gcloud auth application-default login` first.'
         : !matches
           ? keyed
-            ? 'Protected credential storage is not available here, so the saved key cannot be used.'
+            ? 'The saved Google Vertex AI key is missing or not the one connected. Connect it again.'
             : 'The Google credential on this computer changed. Connect Google Vertex AI again to verify it.'
             : !price.card
               ? price.message
@@ -683,14 +692,22 @@ export function mountProviderRoutes(
             createdAt: previous?.createdAt ?? at,
             updatedAt: at,
           });
-          // Validated first; the key is stored only for a record that will be saved, and removed
-          // when the owner switches back to ADC.
+          // Validated first. A key is stored for the record about to be written, and taken back out
+          // if that write fails, unless the previous record still uses a key there. Connecting
+          // with ADC always clears the slot, so no key outlives the record that named it.
+          let connection: VertexConnection;
           if (body.apiKey) {
-            const stored = await secrets.put(VERTEX_CONNECTION_ID, body.apiKey);
-            if (stored.fingerprint !== credential.fingerprint)
-              throw new ApiError(500, 'The saved credential does not match what was entered.');
-          } else if (previous?.credential.kind === 'google-api-key') await secrets.remove(VERTEX_CONNECTION_ID);
-          const connection = await services().connections.write(draft);
+            await secrets.put(VERTEX_CONNECTION_ID, body.apiKey);
+            try {
+              connection = await services().connections.write(draft);
+            } catch (error) {
+              if (previous?.credential.kind !== 'google-api-key') await secrets.remove(VERTEX_CONNECTION_ID).catch(() => undefined);
+              throw error;
+            }
+          } else {
+            await secrets.remove(VERTEX_CONNECTION_ID);
+            connection = await services().connections.write(draft);
+          }
           await store.saveSettings({
             ...store.settings,
             services: {
@@ -715,13 +732,7 @@ export function mountProviderRoutes(
         const check = (id: string, ok: boolean, detail: string) => checks.push({ id, ok, detail });
         check('connection', !!connection, connection ? `Connection ${vertexAccountRoute(connection)} bills project ${connection.projectId}.` : 'No Google Vertex AI connection is saved.');
         if (connection?.credential.kind === 'google-api-key') {
-          const { secrets } = api();
-          let ok = false;
-          try {
-            ok = secrets.available() && secretFingerprint(await secrets.get(connection.id)) === connection.credential.fingerprint;
-          } catch {
-            ok = false;
-          }
+          const ok = await storedKeyMatches(connection);
           check('credential', ok, ok ? 'The saved API key is the one connected.' : 'The saved API key is missing or not the one connected. Connect again.');
         } else {
           check('adc', !!identity, identity ? `Application Default Credentials found (${identity.source}).` : 'No Application Default Credentials file was found.');
@@ -794,9 +805,8 @@ export function mountProviderRoutes(
       BASE,
       route(() =>
         store.locked(async () => {
-          const previous = await services().connections.read();
+          await api().secrets.remove(VERTEX_CONNECTION_ID);
           await services().connections.remove();
-          if (previous?.credential.kind === 'google-api-key') await api().secrets.remove(VERTEX_CONNECTION_ID);
           const settings: Record<string, boolean | string> = { ...store.settings.services, [GOOGLE_VERTEX_ROUTE]: false };
           delete settings[`${GOOGLE_VERTEX_ROUTE}AccountRoute`];
           await store.saveSettings({ ...store.settings, services: settings });
