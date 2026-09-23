@@ -345,3 +345,83 @@ describe('what is refused before anything is sent', () => {
     expect(mints).toBe(0);
   });
 });
+
+describe('an API key from the billed project', () => {
+  const KEY = 'AQ.synthetic-vertex-key-for-tests-only-0123';
+  const connectWithKey = (apiKey = KEY) =>
+    api<VertexConnectionView>('/ai/model-api/google-vertex', 'PUT', {
+      projectId: PROJECT,
+      location: 'global',
+      model: 'gemini-3.8-flash',
+      consent: true,
+      apiKey,
+    });
+
+  test('connects without any sign-in, keeps the key out of every view and file, and sends it as a header only', async () => {
+    await fs.rm(adcFile);
+    const view = await connectWithKey();
+    expect(view.connection?.credential).toEqual({ kind: 'google-api-key', savedAt: expect.any(String), matches: true });
+    expect(view.connection?.payer).toEqual({ kind: 'google-cloud-project', projectId: PROJECT });
+    expect(JSON.stringify(view)).not.toContain(KEY);
+    // No file this host writes holds the key in the clear: protected storage keeps it sealed.
+    const files = (await fs.readdir(path.join(root, 'data'), { recursive: true, withFileTypes: true })).filter((entry) => entry.isFile());
+    expect(files.length).toBeGreaterThan(0);
+    for (const entry of files) expect(await fs.readFile(path.join(entry.parentPath, entry.name), 'utf8'), entry.name).not.toContain(KEY);
+    expect(seen).toHaveLength(0);
+
+    const check = await api<ModelApiReadiness>('/ai/model-api/google-vertex/test', 'POST', {});
+    expect(check.checks.find((entry) => entry.id === 'credential')).toMatchObject({ ok: true });
+    expect(check.sent).toBe(false);
+
+    await approve(10);
+    const input = turnInput({ accountRoute: view.connection!.accountRoute });
+    const result = await service.modelSession('google-vertex', 'start', modelSessionRunId(project.id, input.requestId), input);
+    expect(result.response?.text).toBe('Tomato soup and a grilled cheese (menu.md).');
+    expect(mints).toBe(0);
+    for (const request of seen) {
+      expect(request.url).toBe(STREAM_URL);
+      expect(request.url).not.toContain(KEY);
+      expect(request.headers.get('x-goog-api-key')).toBe(KEY);
+      expect(request.headers.get('authorization')).toBeNull();
+      expect(request.headers.get('x-goog-user-project')).toBeNull();
+    }
+  });
+
+  test('an ambient GOOGLE_VERTEX_API_KEY is never the connection key', async () => {
+    process.env.GOOGLE_VERTEX_API_KEY = 'ambient-key-must-never-be-sent-000000';
+    try {
+      const view = await connectWithKey();
+      await approve(10);
+      const input = turnInput({ accountRoute: view.connection!.accountRoute });
+      await service.modelSession('google-vertex', 'start', modelSessionRunId(project.id, input.requestId), input);
+      expect(seen.length).toBeGreaterThan(0);
+      for (const request of seen) expect(request.headers.get('x-goog-api-key')).toBe(KEY);
+    } finally {
+      delete process.env.GOOGLE_VERTEX_API_KEY;
+    }
+  });
+
+  test('a replaced stored key is refused before anything is sent; switching back to sign-in removes the key', async () => {
+    const view = await connectWithKey();
+    await approve(10);
+    await service.modelApi!.secrets.put('google-vertex-1', 'AQ.a-different-key-put-behind-the-record-9');
+    const input = turnInput({ accountRoute: view.connection!.accountRoute });
+    await expect(service.modelSession('google-vertex', 'start', modelSessionRunId(project.id, input.requestId), input)).rejects.toThrow(/not the one that was connected/);
+    expect(seen).toHaveLength(0);
+
+    const adc = await connect();
+    expect(adc.connection?.credential.kind).toBe('google-adc');
+    expect(adc.connection!.revision).toBe(view.connection!.revision + 1);
+    await expect(service.modelApi!.secrets.get('google-vertex-1')).rejects.toThrow();
+  });
+
+  test('a malformed key is refused and nothing is stored', async () => {
+    const response = await fetch(`${base}/api/ai/model-api/google-vertex`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ projectId: PROJECT, location: 'global', model: 'gemini-3.8-flash', consent: true, apiKey: 'has spaces in it and is not a key' }),
+    });
+    expect(response.status).toBe(400);
+    expect(await service.modelApi!.vertex!.connections.read()).toBeNull();
+  });
+});

@@ -29,18 +29,27 @@ export function vertexStateRows(view: VertexConnectionView): VertexStateRow[] {
   const spend = view.spend;
   const credential = connection?.credential ?? null;
   return [
-    {
-      key: 'credential',
-      label: 'Google sign-in on this computer',
-      text: !view.detected.adc
-        ? 'None found: run gcloud auth application-default login'
-        : credential
-          ? credential.matches
-            ? `Verified${credential.principal ? `: ${credential.principal}` : ''} (${credential.namedBy})`
-            : 'Changed since it was verified: connect again'
-          : `Found (${view.detected.namedBy ?? view.detected.source ?? 'default location'})${view.detected.quotaProject ? `, quota project ${view.detected.quotaProject}` : ', no quota project set'}`,
-      value: !view.detected.adc ? 'waiting' : credential && !credential.matches ? 'blocked' : credential ? 'ok' : 'waiting',
-    },
+    credential?.kind === 'google-api-key'
+      ? {
+          key: 'credential',
+          label: 'Google credential',
+          text: credential.matches
+            ? `API key saved in protected storage on ${new Date(credential.savedAt).toLocaleDateString()}`
+            : 'API key saved, but protected storage is not available here',
+          value: credential.matches ? 'ok' : 'blocked',
+        }
+      : {
+          key: 'credential',
+          label: 'Google credential',
+          text: credential
+            ? credential.matches
+              ? `Signed in${credential.principal ? `: ${credential.principal}` : ''} (${credential.namedBy})`
+              : 'Sign-in changed since it was verified: connect again'
+            : view.detected.adc
+              ? `Sign-in found (${view.detected.namedBy ?? view.detected.source ?? 'default location'})${view.detected.quotaProject ? `, quota project ${view.detected.quotaProject}` : ', no quota project set'}; or enter an API key`
+              : 'Enter an API key from the billed project, or run gcloud auth application-default login',
+          value: credential && !credential.matches ? 'blocked' : credential ? 'ok' : 'waiting',
+        },
     {
       key: 'project',
       label: 'Billed project',
@@ -78,19 +87,37 @@ export function vertexStateRows(view: VertexConnectionView): VertexStateRow[] {
 
 export interface VertexConnectInput {
   projectId: string;
+  /** Empty: use this computer's gcloud sign-in instead. */
+  apiKey: string;
   consent: boolean;
 }
 
-export type VertexConnectBody = { projectId: string; location: 'global'; model: 'gemini-3.8-flash'; consent: true };
+export type VertexConnectBody = {
+  projectId: string;
+  location: 'global';
+  model: 'gemini-3.8-flash';
+  consent: true;
+  apiKey?: string;
+};
 
 /** The exact body the host accepts. Location and model are fixed: there is nothing else to choose. */
-export function vertexConnectBody(input: VertexConnectInput): { ok: true; body: VertexConnectBody } | { ok: false; message: string } {
+export function vertexConnectBody(
+  input: VertexConnectInput,
+  adcFound: boolean,
+): { ok: true; body: VertexConnectBody } | { ok: false; message: string } {
   const projectId = input.projectId.trim();
+  const apiKey = input.apiKey.trim();
   if (!projectId) return { ok: false, message: 'Enter the Google Cloud project id that pays for these calls.' };
   if (!PROJECT.test(projectId))
     return { ok: false, message: 'A project id is 6 to 30 lowercase letters, digits and hyphens, starting with a letter.' };
+  if (!apiKey && !adcFound)
+    return { ok: false, message: 'Enter an API key from this project, or sign in with gcloud on this computer first.' };
+  if (apiKey && apiKey.length < 20) return { ok: false, message: 'That API key is too short.' };
   if (!input.consent) return { ok: false, message: 'Confirm that this project, and no other, is billed for every call.' };
-  return { ok: true, body: { projectId, location: 'global', model: 'gemini-3.8-flash', consent: true } };
+  return {
+    ok: true,
+    body: { projectId, location: 'global', model: 'gemini-3.8-flash', consent: true, ...(apiKey ? { apiKey } : {}) },
+  };
 }
 
 export interface VertexMoneyLine {

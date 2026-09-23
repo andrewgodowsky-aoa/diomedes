@@ -11,18 +11,26 @@
  * It is the Vertex route and nothing else. The request URL is built from the
  * saved project, the `global` location and the one approved model, and the
  * guarded transport refuses any other destination: the Gemini API (AI Studio)
- * host, an Express Mode API key, a partner model under `publishers/anthropic`
- * and any other project all fail before anything is sent. The SDK never loads
- * a credential: it is handed a placeholder client, and the real bearer token is
- * attached only after the destination checks, together with the project as
- * `x-goog-user-project`, so an ambient quota project cannot move the bill.
+ * host, the project-less Express Mode endpoint, a partner model under
+ * `publishers/anthropic` and any other project all fail before anything is
+ * sent. The SDK never loads a credential: it is handed a placeholder client and
+ * an empty key, and the connection's own credential is attached only after the
+ * destination checks.
  *
- * The credential is Google Application Default Credentials from one exact file
- * (the owner's `gcloud auth application-default login`, or a file named by
- * GOOGLE_APPLICATION_CREDENTIALS), fingerprinted by its identity fields at
- * setup. A different ADC file at send time is a different credential and is
- * refused until the owner verifies it again. Nothing reads the metadata server,
- * and no token, refresh token or key is logged, saved or shown.
+ * The credential is one of two, chosen by the owner at setup:
+ * - Google Application Default Credentials from one exact file (the owner's
+ *   `gcloud auth application-default login`, or a file named by
+ *   GOOGLE_APPLICATION_CREDENTIALS), fingerprinted by its identity fields. The
+ *   minted bearer token goes with the project as `x-goog-user-project`, so an
+ *   ambient quota project cannot move the bill. A different ADC file at send
+ *   time is refused until the owner verifies it again.
+ * - A Vertex API key created in the billed project, held in protected storage
+ *   and sent as `x-goog-api-key` (never in the URL) to that project's URL. A key
+ *   bills the project it belongs to; a stored key whose fingerprint differs from
+ *   the connected one is refused. An ambient GOOGLE_VERTEX_API_KEY is never read.
+ *
+ * Nothing reads the metadata server, and no token, refresh token or key is
+ * logged, saved in the clear or shown.
  */
 import { createHash } from 'node:crypto';
 import fsSync from 'node:fs';
@@ -362,17 +370,30 @@ export const vertexConnectionSchema = z
     processing: z.literal('google-global'),
     /** Who the provider bills: always the project in the URL, never the credential's own project. */
     payer: z.strictObject({ kind: z.literal('google-cloud-project'), projectId: z.string().regex(VERTEX_PROJECT) }),
-    credential: z.strictObject({
-      kind: z.literal('google-adc'),
-      source: z.enum(['gcloud-user', 'service-account', 'impersonated-service-account', 'external-account']),
-      namedBy: z.enum(['GOOGLE_APPLICATION_CREDENTIALS', 'gcloud-default']),
-      fingerprint: z.string().regex(/^[a-f0-9]{16}$/),
-      principal: z.string().max(320).nullable(),
-      quotaProject: z.string().max(64).nullable(),
-      savedAt: iso,
-      /** ADC is renewed by Google's token endpoint; the record itself does not expire. */
-      expiresAt: z.null(),
-    }),
+    credential: z.discriminatedUnion('kind', [
+      z.strictObject({
+        kind: z.literal('google-adc'),
+        source: z.enum(['gcloud-user', 'service-account', 'impersonated-service-account', 'external-account']),
+        namedBy: z.enum(['GOOGLE_APPLICATION_CREDENTIALS', 'gcloud-default']),
+        fingerprint: z.string().regex(/^[a-f0-9]{16}$/),
+        principal: z.string().max(320).nullable(),
+        quotaProject: z.string().max(64).nullable(),
+        savedAt: iso,
+        /** ADC is renewed by Google's token endpoint; the record itself does not expire. */
+        expiresAt: z.null(),
+      }),
+      /**
+       * A Vertex API key the owner created in the billed project, held in protected
+       * storage under the connection id. Only its fingerprint is recorded here. An
+       * ambient GOOGLE_VERTEX_API_KEY is never read.
+       */
+      z.strictObject({
+        kind: z.literal('google-api-key'),
+        fingerprint: z.string().regex(/^[a-f0-9]{12}$/),
+        savedAt: iso,
+        expiresAt: z.null(),
+      }),
+    ]),
     /** Bumped by every change: part of the account route, so it fences saved context and results. */
     revision: z.number().int().min(1),
     createdAt: iso,
@@ -560,20 +581,35 @@ export function vertexEnvelopeUsage(envelope: StreamEnvelope): ProviderUsage | n
 const VERTEX_REQUEST_ID_HEADERS = ['x-goog-request-id', 'x-request-id', 'x-cloud-trace-context'] as const;
 
 /**
- * Only the minted bearer token reaches Vertex, after the destination checks, and
- * the project it names is the one billed. Headers that would pick a priced tier
- * (Priority, Flex) or another credential are removed.
+ * Only the connection's own credential reaches Vertex, after the destination
+ * checks: a minted bearer token for ADC, or the stored key as `x-goog-api-key`
+ * (a header, never the URL, so it stays out of logs). The request names the
+ * billed project either way. Headers that would pick a priced tier (Priority,
+ * Flex) or another credential are removed.
  */
+function attachVertexCredential(connection: VertexConnection) {
+  return connection.credential.kind === 'google-api-key' ? attachVertexKey() : attachVertexToken(connection.projectId);
+}
+
+const STRIPPED_HEADERS = [
+  'authorization',
+  'x-goog-api-key',
+  'x-goog-user-project',
+  'x-vertex-ai-llm-shared-request-type',
+  'x-vertex-ai-llm-request-type',
+] as const;
+
+function attachVertexKey() {
+  return (headers: Headers, secret: string) => {
+    for (const name of STRIPPED_HEADERS) headers.delete(name);
+    // A key bills the project it belongs to; the URL names that same project.
+    headers.set('x-goog-api-key', secret);
+  };
+}
+
 function attachVertexToken(projectId: string) {
   return (headers: Headers, secret: string) => {
-    for (const name of [
-      'authorization',
-      'x-goog-api-key',
-      'x-goog-user-project',
-      'x-vertex-ai-llm-shared-request-type',
-      'x-vertex-ai-llm-request-type',
-    ])
-      headers.delete(name);
+    for (const name of STRIPPED_HEADERS) headers.delete(name);
     headers.set('authorization', `Bearer ${secret}`);
     headers.set('x-goog-user-project', projectId);
   };
@@ -650,7 +686,7 @@ export function vertexBinding(
     guard: {
       expectedUrl: vertexStreamUrl(connection.projectId),
       expectedQuery: '?alt=sse',
-      attach: attachVertexToken(connection.projectId),
+      attach: attachVertexCredential(connection),
       inspectBody: inspectVertexBody,
       requestIdHeaders: VERTEX_REQUEST_ID_HEADERS,
     },
@@ -679,7 +715,7 @@ export function vertexBinding(
 export async function respondVertex(
   input: {
     connection: VertexConnection;
-    /** A short-lived access token minted for this call. */
+    /** A short-lived access token minted for this call, or the stored API key. */
     secret: string;
     card: ModelRateCard;
     exposure: CallExposure;

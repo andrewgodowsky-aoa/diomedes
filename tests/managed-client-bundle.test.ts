@@ -58,7 +58,9 @@ describe('customer builds carry no company Google credential', () => {
   test('the saved Vertex connection admits identifiers only: no token or key field exists', () => {
     const serialized = JSON.stringify(Object.keys(vertexConnectionSchema.shape));
     expect(serialized).not.toMatch(/token|secret|private|key"/i);
-    const credential = vertexConnectionSchema.shape.credential.shape;
-    expect(Object.keys(credential).sort()).toEqual(['expiresAt', 'fingerprint', 'kind', 'namedBy', 'principal', 'quotaProject', 'savedAt', 'source']);
+    const [adc, key] = vertexConnectionSchema.shape.credential.options;
+    expect(Object.keys(adc.shape).sort()).toEqual(['expiresAt', 'fingerprint', 'kind', 'namedBy', 'principal', 'quotaProject', 'savedAt', 'source']);
+    // The key itself lives in protected storage; the record holds its fingerprint only.
+    expect(Object.keys(key.shape).sort()).toEqual(['expiresAt', 'fingerprint', 'kind', 'savedAt']);
   });
 });

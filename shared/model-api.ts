@@ -156,17 +156,25 @@ export interface VertexConnectionView {
     processing: string;
     /** Who Google bills: the project the request names. */
     payer: { kind: 'google-cloud-project'; projectId: string };
-    credential: {
-      kind: 'google-adc';
-      source: string;
-      namedBy: string;
-      fingerprint: string;
-      principal: string | null;
-      quotaProject: string | null;
-      savedAt: string;
-      /** False when the ADC file on this computer is no longer the one that was verified. */
-      matches: boolean;
-    };
+    credential:
+      | {
+          kind: 'google-adc';
+          source: string;
+          namedBy: string;
+          fingerprint: string;
+          principal: string | null;
+          quotaProject: string | null;
+          savedAt: string;
+          /** False when the ADC file on this computer is no longer the one that was verified. */
+          matches: boolean;
+        }
+      | {
+          /** A key from the billed project, in protected storage. Nothing about it is shown. */
+          kind: 'google-api-key';
+          savedAt: string;
+          /** False when protected storage is not available to use it. */
+          matches: boolean;
+        };
     rateCard: { version: string; source: string; stale: boolean; message: string | null };
     revision: number;
     accountRoute: string;

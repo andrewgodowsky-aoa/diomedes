@@ -200,11 +200,31 @@ test('errors: a host refusal is shown as sent; a changed sign-in and a stale pri
   await expect(again.locator('[data-state="price"]')).toContainText('needs re-checking');
 });
 
-test('no sign-in: Connect stays disabled and the card names the command to run', async ({ page }) => {
-  await page.route(BASE, (route: Route) =>
-    route.fulfill({ json: { ...detected, detected: { adc: false, source: null, namedBy: null, quotaProject: null } } }),
-  );
+test('no sign-in: the card asks for a key, and the key is sent once and never shown', async ({ page }) => {
+  const KEY = 'AQ.synthetic-browser-key-0123456789abcdef';
+  const bodies: Record<string, unknown>[] = [];
+  let view: unknown = { ...detected, detected: { adc: false, source: null, namedBy: null, quotaProject: null } };
+  await page.route(BASE, async (route: Route) => {
+    if (route.request().method() === 'PUT') {
+      bodies.push(route.request().postDataJSON());
+      const base = connected();
+      view = { ...base, connection: { ...base.connection, credential: { kind: 'google-api-key', savedAt: '2026-09-23T08:00:00.000Z', matches: true } } };
+    }
+    await route.fulfill({ json: view });
+  });
   const card = await openEngines(page);
-  await expect(card.locator('[data-state="credential"]')).toContainText('gcloud auth application-default login');
-  await expect(card.getByRole('button', { name: 'Connect' })).toBeDisabled();
+  await expect(card.locator('[data-state="credential"]')).toContainText('Enter an API key');
+  await card.getByLabel('Google Cloud project id').fill(PROJECT);
+  await card.getByLabel(/Bill this project, and no other/).check();
+  await card.getByRole('button', { name: 'Connect' }).click();
+  await expect(card.getByRole('alert')).toContainText('API key');
+  expect(bodies).toHaveLength(0);
+
+  const field = card.getByLabel(/API key from this project/);
+  await expect(field).toHaveAttribute('type', 'password');
+  await field.fill(KEY);
+  await card.getByRole('button', { name: 'Connect' }).click();
+  await expect(card.locator('[data-state="credential"]')).toContainText('API key saved in protected storage');
+  expect(bodies).toEqual([{ projectId: PROJECT, location: 'global', model: 'gemini-3.8-flash', consent: true, apiKey: KEY }]);
+  await expect(card).not.toContainText(KEY);
 });

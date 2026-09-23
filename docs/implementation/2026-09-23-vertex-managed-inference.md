@@ -12,6 +12,17 @@ Three milestones, never interchangeable:
   `docs/implementation/2026-09-23-vertex-customer-backend-design.md`.
 - **Packaged release**: not built, not run.
 
+## Owner decisions, 2026-09-23
+
+- Project `diomedes-dev` pays. A Vertex API key from it is acceptable; ADC stays as the
+  alternative. The key is held in protected storage (the Azure/OpenRouter store), recorded by
+  fingerprint only, sent as `x-goog-api-key` to the project's own global endpoint, never in a URL,
+  and never read from an ambient `GOOGLE_VERTEX_API_KEY`. The project-less Express Mode endpoint
+  stays refused. Whether Google accepts an unbound key on the project endpoint is known only from
+  the first call (a 401/403 costs nothing).
+- Test spend limits: $10 on each of Vertex, OpenRouter, AWS Bedrock and Azure OpenAI, approved by
+  the owner in each card; no code default changes.
+
 ## Base and ancestry
 
 Checked 2026-09-23 after `git fetch`: `origin/main` = `1da6917` (PR #38 merged; contains `475fb11`).

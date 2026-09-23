@@ -75,7 +75,7 @@ describe('Google Vertex AI setup card', () => {
 
   test('no sign-in says exactly what to run', () => {
     const rows = vertexStateRows({ ...detectedOnly, detected: { adc: false, source: null, namedBy: null, quotaProject: null } });
-    expect(rows[0].text).toMatch(/gcloud auth application-default login/);
+    expect(rows[0].text).toMatch(/API key .*gcloud auth application-default login/);
   });
 
   test('a changed credential blocks, and a stale price blocks', () => {
@@ -104,12 +104,32 @@ describe('Google Vertex AI setup card', () => {
   });
 
   test('the connect body is exactly what the host accepts, and consent is required', () => {
-    expect(vertexConnectBody({ projectId: '', consent: true })).toMatchObject({ ok: false });
-    expect(vertexConnectBody({ projectId: 'Bad_Project', consent: true })).toMatchObject({ ok: false });
-    expect(vertexConnectBody({ projectId: 'nectovia-owner-test', consent: false })).toMatchObject({ ok: false, message: expect.stringMatching(/no other/) });
-    expect(vertexConnectBody({ projectId: ' nectovia-owner-test ', consent: true })).toEqual({
+    const input = (over: Partial<{ projectId: string; apiKey: string; consent: boolean }> = {}) => ({ projectId: 'diomedes-dev', apiKey: '', consent: true, ...over });
+    expect(vertexConnectBody(input({ projectId: '' }), true)).toMatchObject({ ok: false });
+    expect(vertexConnectBody(input({ projectId: 'Bad_Project' }), true)).toMatchObject({ ok: false });
+    expect(vertexConnectBody(input({ consent: false }), true)).toMatchObject({ ok: false, message: expect.stringMatching(/no other/) });
+    expect(vertexConnectBody(input({ projectId: ' diomedes-dev ' }), true)).toEqual({
       ok: true,
-      body: { projectId: 'nectovia-owner-test', location: 'global', model: 'gemini-3.8-flash', consent: true },
+      body: { projectId: 'diomedes-dev', location: 'global', model: 'gemini-3.8-flash', consent: true },
     });
   });
+
+  test('an API key is sent only when entered, and is required when there is no sign-in', () => {
+    const key = 'AQ.synthetic-test-key-0123456789';
+    expect(vertexConnectBody({ projectId: 'diomedes-dev', apiKey: '', consent: true }, false)).toMatchObject({ ok: false, message: expect.stringMatching(/API key/) });
+    expect(vertexConnectBody({ projectId: 'diomedes-dev', apiKey: 'short', consent: true }, false)).toMatchObject({ ok: false });
+    expect(vertexConnectBody({ projectId: 'diomedes-dev', apiKey: ` ${key} `, consent: true }, false)).toEqual({
+      ok: true,
+      body: { projectId: 'diomedes-dev', location: 'global', model: 'gemini-3.8-flash', consent: true, apiKey: key },
+    });
+  });
+
+  test('a key connection says the key is saved and never shows it', () => {
+    const keyed = { ...connected, connection: { ...connected.connection!, credential: { kind: 'google-api-key' as const, savedAt: '2026-09-23T08:00:00.000Z', matches: true } } };
+    const row = vertexStateRows(keyed)[0];
+    expect(row).toMatchObject({ value: 'ok', text: expect.stringMatching(/^API key saved in protected storage/) });
+    const blocked = { ...keyed, connection: { ...keyed.connection, credential: { ...keyed.connection.credential, matches: false } } };
+    expect(vertexStateRows(blocked)[0].value).toBe('blocked');
+  });
+
 });

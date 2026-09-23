@@ -27,6 +27,7 @@ export function GoogleVertexSetup({ settings, save, busy = false }: { settings: 
   const [error, setError] = useState('');
   const [working, setWorking] = useState(false);
   const [projectId, setProjectId] = useState('');
+  const [apiKey, setApiKey] = useState('');
   const [consent, setConsent] = useState(false);
   const [editing, setEditing] = useState(false);
   const [limit, setLimit] = useState('');
@@ -66,13 +67,15 @@ export function GoogleVertexSetup({ settings, save, busy = false }: { settings: 
   const showForm = !!view && (!connection || editing);
 
   const connect = () => {
-    const parsed = vertexConnectBody({ projectId, consent });
+    const parsed = vertexConnectBody({ projectId, apiKey, consent }, !!view?.detected.adc);
     if (!parsed.ok) {
       setError(parsed.message);
       return;
     }
     void run(async () => {
       const next = await api<VertexConnectionView>(BASE, 'PUT', parsed.body);
+      // The key is in protected storage now; the form never keeps a copy.
+      setApiKey('');
       setConsent(false);
       setEditing(false);
       return next;
@@ -132,8 +135,8 @@ export function GoogleVertexSetup({ settings, save, busy = false }: { settings: 
         <h3>{name}</h3>
       </div>
       <p className="caption ai-route">
-        Owner route: Gemini 3.8 Flash on Google’s global endpoint, billed to your own Google Cloud project with the
-        Google sign-in on this computer. {AGENT_NAME} keeps no Google key or token. Which work runs here is set by
+        Owner route: Gemini 3.8 Flash on Google’s global endpoint, billed to your own Google Cloud project, with an
+        API key from that project (kept in protected storage) or the Google sign-in on this computer. Which work runs here is set by
         the Focused tier, not by this card.
       </p>
       {view && (
@@ -178,12 +181,22 @@ export function GoogleVertexSetup({ settings, save, busy = false }: { settings: 
               spellCheck={false}
             />
           </label>
+          <label>
+            API key from this project (leave empty to use this computer’s gcloud sign-in)
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
           <label className="check">
             <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
             Bill this project, and no other, for every {name} call {AGENT_NAME} sends.
           </label>
           <div className="actions">
-            <Button type="submit" disabled={disabled || !view?.detected.adc}>
+            <Button type="submit" disabled={disabled}>
               Connect
             </Button>
             {connection && (

@@ -11,87 +11,57 @@ Nothing in this runbook has been run by an agent. The owner runs every step that
 Google or spends money. Steps marked **APPROVAL** need Andrew's explicit go-ahead at that
 moment.
 
-## 0. What you need to decide first
+## 0. Decisions (Andrew, 2026-09-23)
 
-1. **Which project pays.** Pick one Google Cloud project whose billing account you are willing
-   to charge. Record its id as `PROJECT_ID` below.
-2. **Which credit you expect to cover it.** Check what the billing account has:
-   - the new-customer Free Trial credit;
-   - the Gemini 3.8 Flash introductory promotion. This is "50% credits back on net spend"
-     through 2026-12-31, applied after the fact. It is expected not to stack with Free Trial
-     spend.
+- **Project that pays:** `diomedes-dev`.
+- **Credential:** a Vertex API key from `diomedes-dev`. The app keeps it in protected storage and
+  sends it as the `x-goog-api-key` header to `diomedes-dev`'s own global endpoint. The gcloud
+  sign-in (ADC) stays available as the alternative.
+- **Spend limit:** $10 while testing (the same on OpenRouter, AWS Bedrock and Azure OpenAI). It is
+  Nectovia's own estimate cap, not a Google budget.
+- **Credits:** the app assumes none. It estimates every call at Google's standard rate ($1.50 /
+  $0.15 cached / $7.50 per 1M tokens) and shows the introductory "50% credits back on net spend"
+  separately, as unconfirmed; it is expected not to stack with Free Trial spend.
 
-   The app assumes neither. It estimates every call at Google's standard rate ($1.50 / $0.15
-   cached / $7.50 per 1M tokens) and shows the promotion separately, as unconfirmed.
-3. **A spend limit.** A few cents covers the whole live sequence below; $1.00 is ample. The
-   limit is Nectovia's own estimate cap, not a Google budget.
-4. **Auth method.** This runbook uses Application Default Credentials (ADC) from `gcloud`,
-   which the route supports.
-   - Someone has mentioned a Vertex API key (Express Mode). The route refuses Express Mode
-     keys today on purpose.
-   - Tell the lead if you want a key path instead; that is a separate change.
+## 1. Project, billing and API
 
-## 1. Project, billing and API (Google Cloud console or `gcloud`)
+In the Google Cloud console, with project `diomedes-dev` selected:
 
-Install the Google Cloud CLI (https://cloud.google.com/sdk/docs/install), then:
+1. Billing › confirm the project is linked to a billing account.
+2. **APPROVAL: enable a paid API.** APIs & Services › Enable APIs › *Vertex AI API*
+   (`aiplatform.googleapis.com`) › Enable.
+3. Optional, recommended: Billing › Budgets & alerts, for example $10 with alerts at 50/90/100%.
+   It alerts; it does not cap. The app's spend limit is the hard stop on this computer.
 
-```bash
-gcloud init
-```
+## 2. Create the API key
 
-```bash
-gcloud config set project PROJECT_ID
-```
+1. APIs & Services › Credentials › Create credentials › API key, in `diomedes-dev`.
+   Google may offer to bind it to a service account; accept, and give that service account the
+   *Vertex AI User* role on `diomedes-dev`.
+2. Edit the key › API restrictions › *Restrict key* › Vertex AI API only.
+3. Copy it once, straight into the app (next step). Do not paste it into chat, email, a file or a
+   terminal.
 
-```bash
-gcloud billing projects describe PROJECT_ID
-```
-
-The output must show `billingEnabled: true`. If it doesn't, link a billing account in the
-console under Billing › Account management.
-
-**APPROVAL: enable a paid API on the project.**
-
-```bash
-gcloud services enable aiplatform.googleapis.com --project PROJECT_ID
-```
-
-Optional, recommended: a Google budget alert under Billing › Budgets & alerts, for example
-$5 with alerts at 50/90/100%. It alerts; it does not cap. The app's spend limit is the
-hard stop on this computer.
-
-## 2. Local sign-in: complete it before connecting the app
-
-The app fingerprints the ADC file when you connect. If you change the sign-in afterwards,
-the app refuses to send until you connect again. So finish this whole section first.
-
-```bash
-gcloud auth application-default login
-```
-
-```bash
-gcloud auth application-default set-quota-project PROJECT_ID
-```
-
-Don't run `print-access-token` or paste the ADC file anywhere; the app's card confirms the file was found.
-
-The app reads only `%APPDATA%\gcloud\application_default_credentials.json`, or the file
-`GOOGLE_APPLICATION_CREDENTIALS` names. It never uploads or logs the file.
+Unverified until the first call: whether Google accepts this key type on the project endpoint.
+If step 4.1 answers 401 or 403, the key needs the service-account binding above, and the call
+costs nothing (Google bills only HTTP 200).
 
 ## 3. Connect in the app (no spend yet)
 
 AI setup › Google Vertex AI:
 
-1. The **Google sign-in on this computer** row says *Found … quota project PROJECT_ID*.
-2. Enter `PROJECT_ID`, tick *Bill this project, and no other…*, then press **Connect**.
-   Nothing is sent to Google.
-3. The rows now read Verified / `PROJECT_ID · gemini-3.8-flash · global` / price card
+1. Project id `diomedes-dev`; paste the key into *API key from this project*; tick *Bill this
+   project, and no other…*; **Connect**. Nothing is sent to Google. The key field clears; the card
+   shows *API key saved in protected storage*.
+2. The rows read `diomedes-dev · gemini-3.8-flash · global` and the price card
    `google-vertex:gemini-3.8-flash:global:standard:gross-2026.1`.
-4. **APPROVAL: spend limit.** Enter the limit from step 0, tick the approval, then press
-   **Save limit**.
-5. Press **Check setup**. Every line should say Yes. This check sends nothing.
-6. Routing: select the **Focused** tier, which maps to Google Vertex once the tier lane lands.
-   Or use the owner override in AI setup › Advanced. The Vertex card itself sets no default.
+3. **APPROVAL: spend limit.** Enter `10.00`, tick the approval, **Save limit**.
+4. **Check setup**: every line says Yes. This check sends nothing.
+5. Routing is the Focused tier (maps to Google Vertex), or the owner override in AI setup ›
+   Advanced. The card itself sets no default.
+
+The same $10 limit goes on the OpenRouter, AWS Bedrock and Azure OpenAI cards: *Spend limit for
+this connection* › `10.00` › tick › **Save limit**, once each connection exists.
 
 ## 4. Live sequence (APPROVAL: paid calls; synthetic data only)
 
@@ -111,7 +81,7 @@ Synthetic proof file. Codeword: HELIOTROPE-47. No real data.
 | 6 | For any **uncertain** call: next day, find its cost in Billing › Reports and record it, or accept it at its ceiling | Hold resolves | Note |
 
 The next day, confirm in Billing › Reports (group by SKU, credits shown) that:
-- the charges are on `PROJECT_ID`;
+- the charges are on `diomedes-dev`;
 - the SKUs are Gemini 3.8 Flash Global;
 - the totals are at or below the app's gross estimate.
 
@@ -126,7 +96,7 @@ Leave out tokens and file contents.
 
 Stop and tell the lead if:
 - any call answers from a model other than `gemini-3.8-flash`;
-- a charge lands on a project other than `PROJECT_ID`;
+- a charge lands on a project other than `diomedes-dev`;
 - a Stop does not stop streaming;
 - the card shows a debit of Nectovia credits;
 - the Google bill exceeds the app's gross estimate.

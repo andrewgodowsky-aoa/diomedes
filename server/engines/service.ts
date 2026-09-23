@@ -33,6 +33,7 @@ import { CursorAdapter, cursorCommand, resolveCursorEntry } from './cursor.js';
 import { DevinAdapter } from './devin.js';
 import { managedBinary, verifyManagedBinary } from './install.js';
 import { capture, engineEnvironment, EngineError } from './process.js';
+import { secretFingerprint } from '../connection-secrets.js';
 import {
   activitySink,
   commandGate,
@@ -2323,12 +2324,16 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute): Promi
         serving: connection.model,
         serves: (model) => model === connection.model,
         credential: {
-          // Offline: a price must be in force and the ADC file must be the one verified.
+          // Offline: a price must be in force, and the credential must be the one verified.
           check: async () => {
             try {
               vertexRateCard(now());
             } catch (error) {
               return error instanceof Error ? error.message : 'No current Gemini price is recorded.';
+            }
+            if (connection.credential.kind === 'google-api-key') {
+              if (!api.secrets.available()) return 'Protected credential storage is not available in this process.';
+              return null;
             }
             const identity = await readAdcIdentity(services.env);
             if (!identity)
@@ -2337,7 +2342,13 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute): Promi
               return 'The Google credential on this computer is not the one Google Vertex AI was verified with. Verify it again in AI setup. Nothing was sent.';
             return null;
           },
-          open: async () => (await mint(connection)).token,
+          open: async () => {
+            if (connection.credential.kind !== 'google-api-key') return (await mint(connection)).token;
+            const key = await api.secrets.get(connection.id);
+            if (secretFingerprint(key) !== connection.credential.fingerprint)
+              throw new EngineError('RUNTIME_UNAVAILABLE', 'The saved Google Vertex AI key is not the one that was connected. Connect it again in AI setup. Nothing was sent.', false);
+            return key;
+          },
         },
         exposure: (base, runId) => (services.funding ? services.funding(base, runId) : base),
         adapter: (options) =>
