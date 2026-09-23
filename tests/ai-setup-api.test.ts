@@ -124,8 +124,9 @@ describe('first-run AI setup and the existing Work pipeline', () => {
       createElement(AIConnections, { settings: initial, save: async () => {} }),
     );
     // One card per installed engine, then the company-account routes: AWS Bedrock, Azure OpenAI
-    // and OpenRouter.
-    expect(markup.match(/<section class="service"/g)).toHaveLength(8);
+    // and OpenRouter, then the owner's tier map.
+    expect(markup.match(/<section class="service"/g)).toHaveLength(9);
+    expect(markup).toContain('aria-label="Tiers"');
     expect(markup).toContain('aria-label="Cursor"');
     expect(markup).toContain('aria-label="Devin"');
     expect(markup).toContain('aria-label="AWS Bedrock (GPT-5.6 Luna)"');
