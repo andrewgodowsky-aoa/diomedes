@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
-import { MODES, modeOf } from '../server/modes.js';
+import { MODES, VISUAL_INSTRUCTIONS, modeOf } from '../server/modes.js';
 import { migrateConversation } from '../server/store.js';
 import { AgentRegistry, resolutionSchema } from '../server/agents.js';
 import { AGENT_CATALOG, AUTO_AGENT, AUTO_BY_MODE } from '../shared/agents.js';
@@ -34,9 +34,10 @@ describe('modeOf and the Ask/Plan instruction text', () => {
     expect(modeOf('fix')).toBe('fix');
     expect(modeOf('nonsense')).toBeUndefined();
   });
-  test('Ask and Plan instructions are byte-identical to before the migration', () => {
-    expect(MODES.ask.instructions).toBe(ASK_INSTRUCTIONS_BEFORE);
-    expect(MODES.plan.instructions).toBe(PLAN_INSTRUCTIONS_BEFORE);
+  test('Ask and Plan instructions keep their text from before the migration', () => {
+    // The only later addition is the inline visual format, appended whole.
+    expect(MODES.ask.instructions).toBe(`${ASK_INSTRUCTIONS_BEFORE} ${VISUAL_INSTRUCTIONS}`);
+    expect(MODES.plan.instructions).toBe(`${PLAN_INSTRUCTIONS_BEFORE} ${VISUAL_INSTRUCTIONS}`);
   });
   test('auto is a real, non-writing mode with its own instructions', () => {
     expect(MODES.auto.id).toBe('auto');

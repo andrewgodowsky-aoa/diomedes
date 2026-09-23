@@ -637,7 +637,7 @@ html[data-surface='console'] body {
   font-size: var(--dm-type-code);
 }
 @container app (min-width: 1600px) {
-  .console .work:has(.body pre, .body table) {
+  .console .work:has(.body pre, .body table:not(.iv-data)) {
     --dm-work-measure: var(--dm-measure-wide);
   }
 }

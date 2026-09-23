@@ -30,6 +30,7 @@ import { FollowUpQueue } from './FollowUpQueue';
 import { StopMenu, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
 import { ChangeReview } from './ChangeReview';
+import { ReplyBody } from './ReplyBody';
 import { useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
 import { ToolActivityList } from './ToolActivity';
@@ -252,9 +253,11 @@ export function ThreadView({
                 )}
               </div>
               <div className="body">
-                {paragraphs(t.text).map((p, j) => (
-                  <p key={j}>{p}</p>
-                ))}
+                {t.role === 'you' ? (
+                  paragraphs(t.text).map((p, j) => <p key={j}>{p}</p>)
+                ) : (
+                  <ReplyBody text={t.text} session={live} />
+                )}
               </div>
             </div>
           ))}
@@ -484,9 +487,11 @@ export function ThreadView({
                 </div>
                 <ToolActivityList lines={streaming.activity} technical={technical} />
                 <div className="body">
-                  {streaming.text
-                    ? paragraphs(streaming.text).map((p, j) => <p key={j}>{p}</p>)
-                    : streamWaiting && <p className="caption">{workingLine(streamWord)}</p>}
+                  {streaming.text ? (
+                    <ReplyBody text={streaming.text} streaming session={live} />
+                  ) : (
+                    streamWaiting && <p className="caption">{workingLine(streamWord)}</p>
+                  )}
                 </div>
                 {onCancelText && (
                   <div>
