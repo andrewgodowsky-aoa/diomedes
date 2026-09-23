@@ -15,6 +15,12 @@
 //     text stays where it was, it just goes nowhere);
 //   - action, formaction, ping and target, on any element;
 //   - <base>, and <meta http-equiv="refresh">;
+//   - every <link>: under the frame's policy none of them can load a
+//     stylesheet, but Chromium does not hold dns-prefetch or preconnect to
+//     that policy, and a lookup of SECRET.attacker.example tells the
+//     attacker's nameserver the secret;
+//   - srcdoc on any element, because a nested frame's document is only a
+//     string here, one this reading never looks inside;
 //   - SVG animation (<set>, <animate>) that would write one of those back;
 //   - and all of that inside every <template> too, because a template with
 //     `shadowrootmode` becomes live content when the frame parses it.
@@ -28,6 +34,9 @@ export type MarkupContext = 'page' | 'picture';
 
 /** Attributes that send a frame, or a request, somewhere when a person clicks or a form is sent. */
 export const LEAVING_ATTRIBUTES: readonly string[] = ['action', 'formaction', 'ping', 'target'];
+
+/** An attribute that holds a whole nested document, which is never read here. */
+const NESTED_DOCUMENT = 'srcdoc';
 
 /** Elements whose href is a link a person can follow. */
 const LINKS = new Set(['a', 'area']);
@@ -48,13 +57,13 @@ function strip(root: ParentNode): void {
   for (const element of root.querySelectorAll('*')) {
     const name = element.localName;
     const refresh = name === 'meta' && /^\s*refresh\s*$/i.test(element.getAttribute('http-equiv') ?? '');
-    if (name === 'base' || refresh || writesLeaving(element)) {
+    if (name === 'base' || name === 'link' || refresh || writesLeaving(element)) {
       element.remove();
       continue;
     }
     for (const attribute of [...element.attributes]) {
       const local = attribute.localName.toLowerCase();
-      if ((local === 'href' && LINKS.has(name)) || LEAVING_ATTRIBUTES.includes(local))
+      if ((local === 'href' && LINKS.has(name)) || local === NESTED_DOCUMENT || LEAVING_ATTRIBUTES.includes(local))
         element.removeAttributeNode(attribute);
     }
     if (element instanceof HTMLTemplateElement) strip(element.content);
