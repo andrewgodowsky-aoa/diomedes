@@ -755,6 +755,9 @@ Lane 2 lands after this lane and merges main then. This lane's hunks it may meet
 
 ## Open items (not blocking)
 
+P2-B follow-up (2026-09-23): the [content-sniffing repair and verification record](../implementation/2026-09-23-drawing-content-sniffing.md)
+supersedes the original P2-B disposition below. The other open items retain their scope.
+
 - **Other code files, for the Trust owner.** Proposals for `.js`, `.bat`, `.ps1`, `.sh`, `.py` and
   `.css` are still text a grant can cover. None of them runs when opened in the app, but each is
   code. Whether they join `exactReviewOnly` is the owner's call.

@@ -37,6 +37,7 @@ import {
   projectFile,
   readTextOrNull,
   relativeName,
+  rejectMarkupText,
   safeAbsolute,
   textKind,
 } from './paths.js';
@@ -1243,6 +1244,9 @@ export class Store extends EventEmitter {
         (Buffer.byteLength(input.text) > MAX_TEXT_BYTES || input.text.includes('\0'))
       )
         throw new ApiError(413, 'Write UTF-8 text of no more than 8 MB.');
+      // Also covers Plan and model writes outside NativeWork proposals. The
+      // person's editor/Save to Files writes retain their existing contract.
+      if ((options.actor ?? 'you') !== 'you') rejectMarkupText(name, input.text);
       const beforeText = await this.current(id, name);
       const before = hash(beforeText);
       if (before !== input.expected)
