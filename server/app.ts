@@ -1143,9 +1143,12 @@ export async function createApp(options: AppOptions) {
     choice(String(req.params.engine), EXTERNAL_ENGINES, 'engine');
   const connectionSignal = (res: Response) => {
     const controller = new AbortController();
-    res.once('close', () => {
-      if (!res.writableEnded) controller.abort();
-    });
+    // A client that left before this was asked for has already fired 'close'.
+    if (res.closed && !res.writableEnded) controller.abort();
+    else
+      res.once('close', () => {
+        if (!res.writableEnded) controller.abort();
+      });
     return controller.signal;
   };
   // The next action is derived on the host, beside the facts it rests on: the
@@ -3806,8 +3809,11 @@ export async function createApp(options: AppOptions) {
               : {}),
             ...(text === undefined ? {} : { text }),
           });
+        // The signal exists before Stop is shown, so a Stop during the read-scope lookup still lands.
+        const signal = connectionSignal(res);
         progress('started');
         try {
+          const readScope = await readScopeFor(projectId, mode);
           const result = await engines.generate(serviceRoute, {
             projectId,
             threadId: prepared.conversationId,
@@ -3817,8 +3823,8 @@ export async function createApp(options: AppOptions) {
             instructions: instructionsForRequest,
             model: requestedModel,
             accountRoute,
-            ...(await readScopeFor(projectId, mode)),
-            signal: connectionSignal(res),
+            ...readScope,
+            signal,
             onPreview: (frame) => progress('delta', frame.text, frame),
             onActivity: (frame) => store.emit('engine-activity', frame),
           });
