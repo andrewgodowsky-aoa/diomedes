@@ -195,7 +195,6 @@ try {
       engine: 'codex',
     });
     await fixtureApi('/settings', 'PUT', {
-      surface: 'console',
       detail: 'technical',
       services: { codex: true, defaultEngine: 'codex' },
       onboarding: {

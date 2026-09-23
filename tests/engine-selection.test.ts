@@ -24,8 +24,6 @@ function settings(services: Record<string, boolean | string>): Settings {
     appearance: { package: 'default', motion: 'normal' },
     seen: { onlineServiceNotice: false, guidedDescriptors: {}, firstUse: [] },
     openProjects: [],
-    lastPage: {},
-    tasksView: {},
     services,
   };
 }
@@ -40,7 +38,6 @@ function project(ai?: Project['ai']): Project {
     plans: [],
     references: [],
     repository: { present: false },
-    leftOff: null,
     counts: { running: 0, changesWaiting: 0, waitingForYou: 0, historyToday: 0 },
     status: { needsYou: 0, working: 0, tasksDone: 0, tasksTotal: 0 },
     ...(ai ? { ai } : {}),
