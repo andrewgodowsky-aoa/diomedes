@@ -55,7 +55,22 @@ async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T>
     body: data === undefined ? undefined : JSON.stringify(data),
   });
   if (!response.ok) throw new Error(`Native UI fixture request ${route} failed (${response.status}): ${await response.text()}`);
-  return response.json();
+  const value = await response.json() as T;
+  if (route === '/projects/sample' && method === 'POST') {
+    const project = value as { id: string };
+    const grant = await fetch(`${baseURL}/api/projects/${project.id}/cloud-sharing`, {
+      method: 'PUT', headers,
+      body: JSON.stringify({
+        expectedVersion: 0,
+        routes: ['codex'],
+        documents: ['Reopening plan.md'],
+        shareConversationHistory: false,
+        shareReviewPackets: false,
+      }),
+    });
+    if (!grant.ok) throw new Error(`Native UI fixture cloud sharing failed (${grant.status}): ${await grant.text()}`);
+  }
+  return value;
 }
 
 test.beforeAll(async () => {
