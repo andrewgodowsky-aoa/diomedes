@@ -1,7 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { ApprovalStatus, Notice, OriginLine, SessionStatus } from '../client/components';
+import { ApprovalStatus, Notice, OriginLine } from '../client/components';
+import { originForSession } from '../client/attribution-display';
 import { Ledger } from '../client/console/Ledger';
 import { TeamView } from '../client/console/TeamView';
 import { directOrigin } from '../shared/attribution.js';
@@ -73,7 +74,6 @@ function baseProject(): Project {
     plans: [],
     references: [],
     repository: { present: false },
-    leftOff: null,
     counts: { running: 0, changesWaiting: 0, waitingForYou: 0, historyToday: 0 },
     status: { needsYou: 0, working: 0, tasksDone: 0, tasksTotal: 0 },
   };
@@ -241,9 +241,11 @@ describe('shared attribution presentation', () => {
     expect(html).not.toContain('scope grant');
   });
 
+  // The Workbook's SessionStatus line is gone; the Console draws a session's
+  // origin with the same OriginLine over originForSession.
   it('shows the session origin instead of picker prose', () => {
     const html = renderToStaticMarkup(
-      createElement(SessionStatus, { session: baseSession(), detail: 'standard' }),
+      createElement(OriginLine, { origin: originForSession(baseSession()) }),
     );
     expect(html).toContain('<b>s-model</b>');
     expect(html).not.toContain('new-picker-model');
@@ -251,13 +253,9 @@ describe('shared attribution presentation', () => {
 
   it('keeps scripted example sessions on the application copy, under the product name', () => {
     const html = renderToStaticMarkup(
-      createElement(SessionStatus, {
-        session: baseSession({ sample: true }),
-        detail: 'standard',
-      }),
+      createElement(OriginLine, { origin: originForSession(baseSession({ sample: true })) }),
     );
     expect(html).toContain('Nectovia');
-    expect(html).toContain('Scripted example.');
   });
 
   it('ledger recent history carries the recorded actor', () => {

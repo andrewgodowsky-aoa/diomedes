@@ -217,7 +217,6 @@ test.beforeAll(async () => {
     attachedTo: { kind: 'document', ref: 'Scoped notes.md' },
   });
   await api('/settings', 'PUT', {
-    surface: 'console',
     detail: 'technical',
     openProjects: [project.id],
     services: { 'claude-code': false, opencode: false, 'oh-my-pi': false, cursor: false },
@@ -443,7 +442,7 @@ test('Console Ask revision confirms the named task documents, preserves Cancel, 
   const thread = await api<Conversation>(`/projects/${fixture.id}/threads`, 'POST', {
     name: 'Revise the brief', taskId: task.id, mode: 'ask', permission: 'task',
   });
-  await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id] });
+  await api('/settings', 'PUT', { openProjects: [fixture.id] });
   const before = await api<ProjectState>(`/projects/${fixture.id}/state`);
   const count = calls.length;
   const instruction = 'Shorten the brief to the three things that changed most, and keep the source markers.';
@@ -497,7 +496,7 @@ test('Console standalone Ask includes only documents named in the message and re
   for (const name of ['brief.md', 'weekly-brief.md'])
     await api(`/projects/${fixture.id}/documents/create`, 'POST', { path: name, text: name });
   await api(`/projects/${fixture.id}/threads`, 'POST', { name: 'Standalone Ask', mode: 'ask' });
-  await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id] });
+  await api('/settings', 'PUT', { openProjects: [fixture.id] });
   await page.goto(baseURL);
   await reopenLastProject(page);
   const composer = page.getByRole('textbox', { name: 'Message this thread', exact: true });
@@ -543,7 +542,7 @@ test('Console keeps the Codex sending preference and sample route separate from 
   ]) {
     await api(`/projects/${fixture.id}/threads/${thread.id}`, 'PUT', { engine: scenario.route, mode: scenario.mode });
     await api('/settings', 'PUT', {
-      surface: 'console', openProjects: [fixture.id], services: { codex: true }, permissions: { sending: scenario.sending },
+      openProjects: [fixture.id], services: { codex: true }, permissions: { sending: scenario.sending },
     });
     await page.goto(baseURL);
     await reopenLastProject(page);
@@ -1501,7 +1500,7 @@ test('Console drops a late source listing when the person changes threads', asyn
   const fixture = await api<Project>('/projects', 'POST', { name: 'Late listing fixture' });
   await api(`/projects/${fixture.id}/threads`, 'POST', { name: 'First composer', mode: 'ask' });
   await api(`/projects/${fixture.id}/threads`, 'POST', { name: 'Second composer', mode: 'ask' });
-  await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id], services: { defaultEngine: 'opencode' } });
+  await api('/settings', 'PUT', { openProjects: [fixture.id], services: { defaultEngine: 'opencode' } });
   await page.goto(baseURL);
   await reopenLastProject(page);
   const rail = page.getByRole('navigation', { name: 'Threads and views' });

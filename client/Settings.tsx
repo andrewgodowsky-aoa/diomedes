@@ -26,7 +26,6 @@ import {
   tightestWindow,
   detailDescriptions,
   meterLine,
-  surfaceOf,
   titleCase,
 } from './components';
 
@@ -147,15 +146,7 @@ export function SettingsPage({
       refresh();
     }
   }, [helpersOpen, integrations, refresh, settings.onboarding.discoveryConsentAt]);
-  // Which surface this is. Read here rather than further down because the
-  // Design Center is a desktop-only section and the request below is too.
-  const surface = surfaceOf(settings);
-  const isDesk = surface === 'console';
   useEffect(() => {
-    // The Design Center is not listed outside the Console, so nothing on this
-    // page reads the answer there. Asking anyway spent a request on every
-    // Settings open for every person on the browser surface.
-    if (!isDesk) return;
     let live = true;
     void readCustomizationStatus()
       .then((status) => {
@@ -167,7 +158,7 @@ export function SettingsPage({
     return () => {
       live = false;
     };
-  }, [isDesk]);
+  }, []);
   // What each engine says it can run. Only engines with a ready adapter are
   // asked, and the key is the id list so an unchanged roster does not refetch.
   const [catalogs, setCatalogs] = useState<Record<string, EngineCatalog>>({});
@@ -207,7 +198,7 @@ export function SettingsPage({
       ...settings,
       services: { ...settings.services, codexModel: model, codexEffort: effort },
     });
-  const helpersSection = isDesk ? 'Engines' : 'Helpers on this computer';
+  const helpersSection = 'Engines';
   // The top-bar chip asks for the helpers section by raising this signal.
   useEffect(() => {
     if (openHelpersSignal) setSection(helpersSection);
@@ -219,16 +210,19 @@ export function SettingsPage({
   useEffect(() => {
     if (!requested) return;
     const known = requested === 'Engines' ? helpersSection : requested;
-    if (!isDesk && ['Design Center', 'App updates', 'Rules', 'Developer'].includes(known)) return;
     setSection(known);
-  }, [requested, requestCount, helpersSection, isDesk]);
+  }, [requested, requestCount, helpersSection]);
   const sections = [
     'Interface detail',
     'Helpers on this computer',
     'Permissions',
     'Appearance',
     'About',
-    ...(isDesk ? ['Design Center', 'Engines', 'App updates', 'Rules', 'Developer'] : []),
+    'Design Center',
+    'Engines',
+    'App updates',
+    'Rules',
+    'Developer',
   ];
   return (
     <div className="settings-layout">
@@ -290,13 +284,11 @@ export function SettingsPage({
                     one sends.
                   </p>
                 )}
-                {isDesk && (
-                  <AIConnections
-                    settings={settings}
-                    save={save}
-                    onStartFirstTask={onStartFirstTask}
-                  />
-                )}
+                <AIConnections
+                  settings={settings}
+                  save={save}
+                  onStartFirstTask={onStartFirstTask}
+                />
                 <p className="caption">
                   Check connections runs bounded local version, account and status checks. It sends
                   no model prompts and opens no sign-in pages.
@@ -317,11 +309,8 @@ export function SettingsPage({
                 </Button>
                 {connectionError && <p role="alert">{connectionError}</p>}
                 <div className="service-list">
-                  {(settings.detail === 'guided' && !isDesk
-                    ? integrations.filter((s) => s.adapter === 'ready')
-                    : integrations
-                  )
-                    .filter((s) => s.kind !== 'sample' && (!isDesk || !isExternalEngine(s.id)))
+                  {integrations
+                    .filter((s) => s.kind !== 'sample' && !isExternalEngine(s.id))
                     .map((s) => (
                       <section className="service" key={s.id}>
                         <div className="row">
@@ -374,25 +363,23 @@ export function SettingsPage({
                             </div>
                           );
                         })()}
-                        {isDesk && (
-                          <p className="code caption">
-                            {s.installedVersion ?? 'Version not reported'}
-                            <br />
-                            {s.provenVersion ? (
-                              <>
-                                proven on {s.provenVersion}
-                                <br />
-                              </>
-                            ) : null}
-                            {s.location ? (
-                              <>
-                                {s.location}
-                                <br />
-                              </>
-                            ) : null}
-                            {s.capabilities.join(', ') || 'No execution capabilities'}
-                          </p>
-                        )}
+                        <p className="code caption">
+                          {s.installedVersion ?? 'Version not reported'}
+                          <br />
+                          {s.provenVersion ? (
+                            <>
+                              proven on {s.provenVersion}
+                              <br />
+                            </>
+                          ) : null}
+                          {s.location ? (
+                            <>
+                              {s.location}
+                              <br />
+                            </>
+                          ) : null}
+                          {s.capabilities.join(', ') || 'No execution capabilities'}
+                        </p>
                         {settings.services?.[s.id] === true &&
                           (catalogs[s.id]?.models.length ?? 0) > 0 &&
                           (() => {
@@ -464,8 +451,8 @@ export function SettingsPage({
                       </section>
                     ))}
                 </div>
-                {/* What Ask and Plan may read beyond the project folder. Console only. */}
-                {isDesk && <ReadConnectors />}
+                {/* What Ask and Plan may read beyond the project folder. */}
+                <ReadConnectors />
               </>
             )}
             {section === 'Design Center' && (
@@ -769,7 +756,7 @@ export function SettingsPage({
           </div>
           <aside className="margin">
             <section className="block">
-              <h3>{isDesk ? 'Engines' : 'Helpers on this computer'}</h3>
+              <h3>Engines</h3>
               {integrations
                 .filter((s) => s.kind !== 'sample' && (s.kind !== 'local' || s.available))
                 .slice(0, 3)
@@ -787,7 +774,7 @@ export function SettingsPage({
                           <span className={`engine-meter-fill${s.available ? ' on' : ''}`} />
                         </span>
                       )}
-                      <span className="engine-row-name">{isDesk ? s.name : 'Online service'}</span>
+                      <span className="engine-row-name">{s.name}</span>
                       <span className="caption push-right engine-state">
                         <Mark state={s.available ? 'working' : 'todo'} />
                         {s.available ? 'Available' : 'Unavailable'}

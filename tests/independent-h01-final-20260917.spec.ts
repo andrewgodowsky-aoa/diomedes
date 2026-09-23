@@ -80,7 +80,7 @@ test.beforeEach(async () => {
   await api('/ai/select', 'POST', { engine, model });
   project = await api('/projects', 'POST', { name: 'Independent H01 Console' });
   thread = await api(`/projects/${project.id}/threads`, 'POST', { name: 'H01 preview ownership', mode: 'ask' });
-  await api('/settings', 'PUT', { surface: 'console', detail: 'technical', openProjects: [project.id],
+  await api('/settings', 'PUT', { detail: 'technical', openProjects: [project.id],
     onboarding: { work: 'business', detail: 'technical', familiarity: 'comfortable', resumeAt: 'done', completedAt: new Date().toISOString() } });
 });
 test.afterEach(async () => {

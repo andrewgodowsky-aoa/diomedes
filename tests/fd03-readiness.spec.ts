@@ -70,7 +70,6 @@ test.beforeAll(async () => {
   first = await api<Project>('/projects', 'POST', { name: 'North shop' });
   second = await api<Project>('/projects', 'POST', { name: 'South shop' });
   await api('/settings', 'PUT', {
-    surface: 'console',
     openProjects: [first.id, second.id],
     onboarding: {
       work: 'business',
