@@ -145,6 +145,8 @@ const spoken = (text: string) => {
 
 export class ModelSessionRuns {
   private closed = false;
+  private sharingPolicy: (projectId: string, documents: readonly string[], history: boolean) => void = () => {};
+  private historyPolicy: (projectId: string) => boolean;
   private readonly owner = `model-session-${randomUUID()}`;
   private readonly active = new Map<
     string,
@@ -153,7 +155,18 @@ export class ModelSessionRuns {
   constructor(
     private readonly runs: RunService,
     private readonly route: string,
-  ) {}
+    shareHistory: (projectId: string) => boolean = () => true,
+  ) {
+    this.historyPolicy = shareHistory;
+  }
+
+  setSharingPolicy(
+    check: (projectId: string, documents: readonly string[], history: boolean) => void,
+    shareHistory: (projectId: string) => boolean,
+  ) {
+    this.sharingPolicy = check;
+    this.historyPolicy = shareHistory;
+  }
 
   async get(projectId: string, runId: string): Promise<HarnessRun> {
     const run = await this.runs.get(runId);
@@ -523,6 +536,10 @@ export class ModelSessionRuns {
         const stop = AbortSignal.any([context.signal, wall, ...(input.signal ? [input.signal] : [])]);
         const childId = turnRunId(runId, input.requestId);
         const registry = sourceTools(input.documents);
+        // The host policy is read for each turn. A saved lineage does not grant
+        // permission to send previous turns to the next model call.
+        const history = this.historyPolicy(input.projectId) ? this.history(run!, turnId) : '';
+        this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), history.length > 0);
         await this.runs.start({
           id: childId,
           projectId: input.projectId,
@@ -537,6 +554,7 @@ export class ModelSessionRuns {
             model: input.model,
             conversationRunId: runId,
             commandId: input.requestId,
+            historyShared: history.length > 0,
             sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
           },
           budget: { units: 32, modelCalls: 8, toolCalls: 16, wallMs: TURN_WALL_MS },
@@ -547,7 +565,8 @@ export class ModelSessionRuns {
         const agent = new NativeAgent(this.runs, adapter, registry);
         let text: string;
         try {
-          text = await agent.run(childId, this.owner, this.compose(input, this.history(run!, turnId)), principal, {
+          this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), history.length > 0);
+          text = await agent.run(childId, this.owner, this.compose(input, history), principal, {
             maxTurns: MODEL_TURN_CAPABILITY.maxTurns,
           });
         } catch (error) {

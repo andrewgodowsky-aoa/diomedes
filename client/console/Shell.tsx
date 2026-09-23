@@ -54,6 +54,7 @@ import { ThreadView } from './ThreadView';
 import { acceptPreview, type PreviewPosition } from './engine-text-preview';
 import { SendConfirmation } from './SendConfirmation';
 import { PermissionPanel } from './PermissionPanel';
+import { CloudSharing } from './CloudSharing';
 import { Ledger } from './Ledger';
 import { Picker } from './Picker';
 import { COMPOSER_LABEL } from './Composer';
@@ -163,6 +164,7 @@ export function Shell({
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
+  const [cloudSharingOpen, setCloudSharingOpen] = useState(false);
   const [scopeGrants, setScopeGrants] = useState<ScopeGrantView[]>([]);
   const [sendTask, setSendTask] = useState<{
     task: Task;
@@ -1430,6 +1432,9 @@ export function Shell({
           <button type="button" onClick={onOpenSettings}>
             Settings
           </button>
+          <button type="button" onClick={() => setCloudSharingOpen(true)}>
+            Cloud sharing
+          </button>
           <div className="surface-menu">
             <button
               type="button"
@@ -1871,6 +1876,18 @@ export function Shell({
             }}
           />
         </Modal>
+      )}
+      {cloudSharingOpen && (
+        <CloudSharing
+          key={projectId}
+          projectId={projectId}
+          projectName={project.name}
+          onClose={() => setCloudSharingOpen(false)}
+          onSaved={() => {
+            void load().catch(report);
+            setCloudSharingOpen(false);
+          }}
+        />
       )}
       {previewNeed && (
         <Modal

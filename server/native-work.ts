@@ -34,6 +34,7 @@ import {
   productKnowledgeSentence,
 } from './readiness/instructions.js';
 import type { Route } from '../shared/types.js';
+import { cloudSharing, requireCloudSharing } from './cloud-sharing.js';
 
 export type NativeGenerator = (input: {
   engine?: Exclude<Route, 'sample'>;
@@ -347,6 +348,7 @@ export class NativeWorkService {
         'Select no more than eight source documents. An empty selection may create new files only.',
       );
     const names = input.sources.map(relativeName);
+    requireCloudSharing(state, engine, names);
     if (new Set(names.map((name) => name.toLowerCase())).size !== names.length)
       throw new ApiError(400, 'Select each source document only once.');
     const instruction = (input.instruction?.trim() || task.description.trim() || task.name).trim();
@@ -395,6 +397,7 @@ export class NativeWorkService {
       routeId: engine,
       agentRole: `Diomedes ${input.mode ?? 'build'} file proposal writer`,
       budgetBytes: instructionSectionBudget(bytes),
+      allowedDocuments: cloudSharing(state).documents,
     });
     const team = input.team;
     const member = team
