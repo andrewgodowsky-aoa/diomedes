@@ -121,6 +121,8 @@ measures what `steps: 2` changes.
 Material: `evidence/mimo-opencode-evaluation/synthetic-project/`, an invented three-location
 restaurant group, plus `outside-secret.txt` as a canary outside the project. Nothing real.
 
+The live runs used the candidate as it stood **before** the review repairs (F1 without the binary-mtime guard or `lstat`; F3 recovering late deltas from the whole answer). Andrew's native catalogue was newer than the binary, and 1.18.4 announced every part first, so neither repair would have changed a run; the repaired candidate has not been run live.
+
 Every Diomedes-route row carries `routeBuild`: base 1da6917 plus uncommitted F1, F2 and F3, with
 steps unchanged. So these are **candidate-route results, not results for current main**. Main
 would have leaked reasoning into every MiMo answer (F3), and would sometimes have refused MiMo 2.6
