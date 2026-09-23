@@ -452,7 +452,8 @@ describe('4. a scope that changes after the turn was built is not widened', () =
     await fs.rm(reports, { recursive: true });
     await fs.symlink(outside, reports, 'junction');
     expect(await readAllowed(scope, 'read', path.join(reports, 'secret.txt'))).toMatchObject({ ok: false });
-    await fs.rmdir(reports);
+    // A Windows junction is removed as a directory; a POSIX symlink is unlinked.
+    await (process.platform === 'win32' ? fs.rmdir(reports) : fs.unlink(reports));
   });
   it('never carries one turn\'s whole-project consent into the next turn', async () => {
     const { project } = await projectFixture();

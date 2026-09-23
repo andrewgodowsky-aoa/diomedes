@@ -139,6 +139,11 @@ export function readScopeTools(scope: ReadScope, options: { stop: AbortSignal; d
   const deps = options.deps ?? {};
   const connectors = scope.mcp?.length ? new McpReadClients(scope, deps.mcpTransport, MAX_TOOL_CHARS) : null;
   let gathered = 0;
+  // Entries are judged by their own names under the folder's resolved spelling. The folder
+  // itself already passed the path funnel, and a Windows 8.3 alias in its spelling (a
+  // RUNNER~1 profile) must not make every entry inside it look private.
+  let resolvedRoot: Promise<string> | undefined;
+  const shownRoot = () => (resolvedRoot ??= fs.realpath(root).catch(() => root));
   const signalOf = (step: AbortSignal) => AbortSignal.any([step, options.stop]);
   /** Counts an answer against the turn's allowance; an answer past it is not returned. */
   const spend = (answer: Json): Json => {
@@ -185,10 +190,11 @@ export function readScopeTools(scope: ReadScope, options: { stop: AbortSignal; d
         const entries: Json[] = [];
         let truncated = false;
         const names = (await fs.readdir(found.absolute, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
+        const shown = await shownRoot();
         for (const entry of names) {
           stop.throwIfAborted();
           const relative = join(found.relative, entry.name);
-          if (!visible(root, relative, entry)) continue;
+          if (!visible(shown, relative, entry)) continue;
           if (entries.length >= MAX_LIST_ENTRIES) {
             truncated = true;
             break;
@@ -260,6 +266,7 @@ export function readScopeTools(scope: ReadScope, options: { stop: AbortSignal; d
         if (!allowed.ok) return refused(notAllowed(allowed.reason));
         const needle = input.query.toLowerCase();
         const deadline = Date.now() + SEARCH.wallMs;
+        const shown = await shownRoot();
         const matches: Json[] = [];
         let files = 0;
         let dirs = 0;
@@ -282,7 +289,7 @@ export function readScopeTools(scope: ReadScope, options: { stop: AbortSignal; d
               break walk;
             }
             const relative = join(dir.relative, entry.name);
-            if (!visible(root, relative, entry)) continue;
+            if (!visible(shown, relative, entry)) continue;
             const absolute = path.join(dir.absolute, entry.name);
             if (entry.isDirectory()) {
               if (dir.depth + 1 <= SEARCH.maxDepth) queue.push({ relative, absolute, depth: dir.depth + 1 });
