@@ -36,6 +36,12 @@ export const WORK_STYLE_DESCRIPTIONS: Record<WorkStyle, string> = {
  */
 export const DEFAULT_WORK_STYLE: WorkStyle | null = null;
 
+/** "Choose Efficient, Focused or Thorough.", from the labels, so a rename carries through. */
+export function chooseWorkStyleSentence(): string {
+  const labels = WORK_STYLES.map((style) => WORK_STYLE_LABELS[style]);
+  return `Choose ${labels.slice(0, -1).join(', ')} or ${labels.at(-1)}.`;
+}
+
 export function isWorkStyle(value: unknown): value is WorkStyle {
   return typeof value === 'string' && (WORK_STYLES as readonly string[]).includes(value);
 }
@@ -379,13 +385,19 @@ export function resolveWorkStyle(input: WorkStyleInput): WorkStyleResolution {
     };
 
   const wanted = leads.map((l) => LOGICAL_MODEL_NAMES[l]).join(' or ');
+  // Nothing listed is not the same as the preferred model missing: an engine's list is observed
+  // afresh after each start, so it may simply not have been checked yet.
+  const reason =
+    models.length === 0
+      ? `${label} needs ${wanted}, and ${routeLabel(input.route)} has not reported its models since it was last checked. Check it in Settings > Engines, or choose a model under Advanced.`
+      : `${label} needs ${wanted}, which ${routeLabel(input.route)} does not offer. Choose a model under Advanced, another style or another route.`;
   return {
     ...base,
     escalation,
     outcome: 'ask',
     model: null,
     effort: null,
-    reason: `${label} needs ${wanted}, which ${routeLabel(input.route)} does not offer. Choose a model under Advanced, another style or another route.`,
+    reason,
     pinScope: null,
     substituted: false,
     selection: 'automatic',

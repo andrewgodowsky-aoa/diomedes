@@ -78,6 +78,7 @@ import { AUTO_AGENT, agentCompatibility } from '../shared/agents.js';
 import { effortFor } from '../shared/effort.js';
 import {
   DEFAULT_WORK_STYLE,
+  chooseWorkStyleSentence,
   isWorkStyle,
   resolveWorkStyle,
   type WorkStyle,
@@ -445,7 +446,7 @@ function validateSettings(current: Settings, body: unknown): Settings {
       // The WorkStyle a thread follows when it names none. A style is not a
       // switch and grants nothing; only the three names are accepted.
       if (key === 'workStyle') {
-        if (!isWorkStyle(on)) throw new ApiError(400, 'Choose Efficient, Focused or Thorough.');
+        if (!isWorkStyle(on)) throw new ApiError(400, chooseWorkStyleSentence());
         services[key] = on;
         continue;
       }
@@ -2397,7 +2398,7 @@ export async function createApp(options: AppOptions) {
         throw new ApiError(400, 'Provide a thread name, permission mode, mode or helper choice.');
       // Checked before any field is touched, so a refused style leaves nothing half applied.
       if (b.workStyle !== undefined && b.workStyle !== null && !isWorkStyle(b.workStyle))
-        throw new ApiError(400, 'Choose Efficient, Focused or Thorough.');
+        throw new ApiError(400, chooseWorkStyleSentence());
       // The home conversation runs on the routes a Diomedes conversation supports: Claude
       // Code or a model-API route. Anything else is refused before any field is touched, so a
       // request that also renames or narrows the Mode leaves nothing half applied. Its name,

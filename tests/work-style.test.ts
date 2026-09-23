@@ -4,6 +4,7 @@ import {
   WORK_STYLES,
   WORK_STYLE_DESCRIPTIONS,
   WORK_STYLE_LABELS,
+  chooseWorkStyleSentence,
   classifyTask,
   isWorkStyle,
   resolveWorkStyle,
@@ -72,7 +73,10 @@ function resolve(overrides: Partial<WorkStyleInput> & Pick<WorkStyleInput, 'rout
 describe('the WorkStyle vocabulary', () => {
   it('has three styles, each with one label and one plain line', () => {
     expect(WORK_STYLES).toEqual(['efficient', 'focused', 'thorough']);
-    expect(Object.values(WORK_STYLE_LABELS)).toEqual(['Efficient', 'Focused', 'Thorough']);
+    // Labels are the owner's to rename; each style has exactly one, and they are distinct.
+    expect(new Set(WORK_STYLES.map((style) => WORK_STYLE_LABELS[style])).size).toBe(3);
+    const sentence = chooseWorkStyleSentence();
+    for (const style of WORK_STYLES) expect(sentence).toContain(WORK_STYLE_LABELS[style]);
     for (const style of WORK_STYLES) {
       expect(WORK_STYLE_DESCRIPTIONS[style].length).toBeGreaterThan(10);
       expect(WORK_STYLE_DESCRIPTIONS[style]).not.toContain('\n');
@@ -110,7 +114,7 @@ describe('every style × mode × route catalogue', () => {
             if (listed && listed.efforts.length === 0) expect(result.effort).toBeNull();
           } else {
             expect(result.model).toBeNull();
-            expect(result.reason).toMatch(/Choose/);
+            expect(result.reason).toMatch(/choose/i);
           }
           // A style result is about models only: it names no mode, permission or tool.
           for (const key of Object.keys(result))
@@ -262,7 +266,9 @@ describe('pins and missing models', () => {
       selection: 'runtime-default',
       substituted: true,
     });
-    expect(resolve({ route: 'cursor', style: 'thorough' }).outcome).toBe('ask');
+    const unchecked = resolve({ route: 'cursor', style: 'thorough' });
+    expect(unchecked.outcome).toBe('ask');
+    expect(unchecked.reason).toContain('has not reported its models');
   });
 
   it('no style keeps the route’s own default', () => {

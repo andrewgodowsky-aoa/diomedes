@@ -12,6 +12,7 @@ import {
 import { ThreadView } from '../client/console/ThreadView';
 import { Diomedes } from '../client/console/Diomedes';
 import type { Conversation, Settings } from '../shared/types';
+import { WORK_STYLES, WORK_STYLE_DESCRIPTIONS, WORK_STYLE_LABELS } from '../shared/work-style';
 
 const noAction = () => {};
 const thread = (over: Partial<Conversation> = {}): Conversation => ({
@@ -64,10 +65,14 @@ function picker(props: Partial<Parameters<typeof WorkStylePicker>[0]> = {}) {
 describe('the style picker', () => {
   it('offers the three styles with one plain line each, and Advanced', () => {
     const html = picker({ thread: thread({ workStyle: 'focused' }) });
-    for (const label of ['Efficient', 'Focused', 'Thorough']) expect(html).toContain(`<span>${label}</span>`);
-    expect(html).toContain('Everyday conversation, brainstorming and intake.');
+    for (const style of WORK_STYLES) {
+      expect(html).toContain(`<span>${WORK_STYLE_LABELS[style]}</span>`);
+      expect(html).toContain(WORK_STYLE_DESCRIPTIONS[style]);
+    }
     expect(html).toContain('Advanced: choose model');
-    expect(html).toMatch(/class="m on"[^>]*aria-checked="true"[^>]*><span>Focused<\/span>/);
+    expect(html).toMatch(
+      new RegExp(`class="m on"[^>]*aria-checked="true"[^>]*><span>${WORK_STYLE_LABELS.focused}</span>`),
+    );
     // No model id is shown to a plain user.
     expect(html).not.toContain('gpt-');
   });
@@ -92,7 +97,7 @@ describe('the style picker', () => {
 
   it('follows the Settings default and offers no separate default-model row then', () => {
     const s = settings({ services: { workStyle: 'thorough' } });
-    expect(styleButtonLabel(thread(), s)).toBe('Thorough');
+    expect(styleButtonLabel(thread(), s)).toBe(WORK_STYLE_LABELS.thorough);
     expect(picker({ settings: s })).not.toContain('Default model');
     expect(styleButtonLabel(thread(), settings())).toBe('Default model');
   });
@@ -127,7 +132,7 @@ function instruments(t: Conversation, s: Settings) {
 describe('the instrument line', () => {
   it('names the style for a plain user and keeps the model behind details', () => {
     const html = instruments(thread({ workStyle: 'thorough' }), settings({ detail: 'guided' }));
-    expect(html).toContain('<span class="lc">Thorough</span>');
+    expect(html).toContain(`<span class="lc">${WORK_STYLE_LABELS.thorough}</span>`);
     expect(html).toContain('>details</button>');
     expect(html).not.toContain('engine default');
   });
@@ -136,7 +141,7 @@ describe('the instrument line', () => {
     expect(instruments(thread(), settings())).toContain('engine default');
     const pinned = instruments(thread({ workStyle: 'efficient', requested: { model: 'gpt-6-astra', effort: 'high' } }), settings());
     expect(pinned).toContain('gpt-6-astra');
-    expect(pinned).not.toContain('>Efficient<');
+    expect(pinned).not.toContain(`>${WORK_STYLE_LABELS.efficient}<`);
   });
 });
 
