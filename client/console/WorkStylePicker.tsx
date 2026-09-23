@@ -10,13 +10,15 @@ import {
 } from '../../shared/work-style';
 import { routeDisplayName } from '../../shared/engines';
 import { api } from '../api';
-import { Picker, type PickerProps } from './Picker';
+import type { PickerProps } from './Picker';
 
 /** What `GET /projects/:id/threads/:threadId/work-style` answers. */
 export interface WorkStyleView {
   route: string;
   style: WorkStyle | null;
   source: 'thread' | 'settings' | 'default' | 'none';
+  /** The host's sentence when the next request would be refused before anything is sent. */
+  refusal?: string | null;
   resolution: WorkStyleResolution | null;
 }
 
@@ -34,16 +36,7 @@ export function threadStyle(thread: Conversation, settings: Settings): WorkStyle
 export function styleButtonLabel(thread: Conversation, settings: Settings): string {
   if (thread.requested?.model) return 'Chosen model';
   const style = threadStyle(thread, settings);
-  return style ? WORK_STYLE_LABELS[style] : 'Default model';
-}
-
-/**
- * Whether the model and reasoning picker shows beside the style. Technical
- * detail shows it; so does a thread that already pins a model, so the pin can
- * always be seen and cleared; otherwise only when the person opens Advanced.
- */
-export function showAdvanced(settings: Settings, thread: Conversation, opened: boolean): boolean {
-  return opened || settings.detail === 'technical' || Boolean(thread.requested?.model);
+  return style ? WORK_STYLE_LABELS[style] : 'Choose a style';
 }
 
 /**
@@ -95,18 +88,18 @@ export interface WorkStylePickerProps {
   live: boolean;
   busy: boolean;
   view: WorkStyleView | null;
-  advanced: boolean;
   onStyle(style: WorkStyle | null): void;
-  onAdvanced(): void;
   /** Render with the menu open. For render tests; the header starts closed. */
   initialOpen?: boolean;
 }
 
 /**
- * The thread header's plain control: Efficient, Focused or Thorough, each in
- * one line. It says how much care the thread takes; the mode still says what
- * the thread may do, and nothing chosen here changes that. The model and level
- * are inferred, and named only under Advanced and in the details line.
+ * The thread header's one model control: Efficient, Focused or Thorough, each in
+ * one line. A customer never chooses a route or a model (owner decision
+ * 2026-09-23): the owner's tier map decides both, and they are named only in
+ * the details line. The mode still says what the thread may do, and nothing
+ * chosen here changes that. The owner's route pin for testing lives in AI
+ * setup, under Advanced, never here.
  */
 export function WorkStylePicker({
   thread,
@@ -114,9 +107,7 @@ export function WorkStylePicker({
   live,
   busy,
   view,
-  advanced,
   onStyle,
-  onAdvanced,
   initialOpen = false,
 }: WorkStylePickerProps) {
   const [open, setOpen] = useState(initialOpen);
@@ -141,7 +132,7 @@ export function WorkStylePicker({
     };
   }, [open]);
 
-  function choose(style: WorkStyle | null) {
+  function choose(style: WorkStyle) {
     if (live || busy) return;
     onStyle(style);
     setOpen(false);
@@ -157,7 +148,7 @@ export function WorkStylePicker({
         onClick={() => setOpen(!open)}
       >
         <span className="mdl">{styleButtonLabel(thread, settings)}</span>
-        {asks && <span className="eff capped">needs a choice</span>}
+        {asks && <span className="eff capped">needs setup</span>}
       </button>
       {open && (
         <div className="pmenu open" role="menu">
@@ -179,47 +170,17 @@ export function WorkStylePicker({
                   <small>{WORK_STYLE_DESCRIPTIONS[style]}</small>
                 </button>
               ))}
-              {/* With a style saved as the default, clearing the thread's own returns it to
-                  that style, so there is no separate model-default row to offer. */}
-              {!isWorkStyle(settings.services?.workStyle) && (
-                <button
-                  type="button"
-                  className={`m ${!pinned && current === null ? 'on' : ''}`}
-                  role="menuitemradio"
-                  aria-checked={!pinned && current === null}
-                  onClick={() => choose(null)}
-                >
-                  <span>Default model</span>
-                  <span className="id" />
-                  <small>Runs the model saved in Settings, or the engine’s own.</small>
-                </button>
-              )}
               {pinned && (
                 <p className="note">
-                  A chosen model runs every call in this thread, with no substitute. Picking a
-                  style or the default clears it.
+                  This thread was pinned to one model before styles decided the model. Picking a
+                  style clears the pin.
                 </p>
               )}
               {asks && view?.resolution && <p className="note">{view.resolution.reason}</p>}
               <p className="note">
-                The mode still decides what this thread may do. A style only changes which model
-                leads and how hard it thinks, from the next request.
+                Nectovia picks the model for the style you choose. The mode still decides what
+                this thread may do.
               </p>
-              {!advanced && (
-                <button
-                  type="button"
-                  className="m"
-                  role="menuitem"
-                  onClick={() => {
-                    onAdvanced();
-                    setOpen(false);
-                  }}
-                >
-                  <span>Advanced: choose model</span>
-                  <span className="id" />
-                  <small>Pick the exact model and reasoning level yourself.</small>
-                </button>
-              )}
             </>
           )}
         </div>
@@ -234,32 +195,25 @@ export interface ThreadModelControlsProps extends PickerProps {
 }
 
 /**
- * The header pair: the style control always, and the existing model and level
- * picker when Advanced is open, the detail level is technical, or a model is
- * pinned.
+ * The header's model control: the style picker only. It takes the thread
+ * picker's props so its callers need not change; no route or model list is
+ * rendered from them.
  */
 export function ThreadModelControls(props: ThreadModelControlsProps) {
   const { projectId, onStyle, ...picker } = props;
-  const [opened, setOpened] = useState(false);
   const view = useWorkStyleView(projectId, picker.thread, [
     picker.route,
     picker.mode,
     picker.settings.services?.workStyle,
   ]);
-  const advanced = showAdvanced(picker.settings, picker.thread, opened);
   return (
-    <>
-      <WorkStylePicker
-        thread={picker.thread}
-        settings={picker.settings}
-        live={picker.live}
-        busy={picker.busy}
-        view={view}
-        advanced={advanced}
-        onStyle={onStyle}
-        onAdvanced={() => setOpened(true)}
-      />
-      {advanced && <Picker {...picker} />}
-    </>
+    <WorkStylePicker
+      thread={picker.thread}
+      settings={picker.settings}
+      live={picker.live}
+      busy={picker.busy}
+      view={view}
+      onStyle={onStyle}
+    />
   );
 }

@@ -123,11 +123,15 @@ describe('first-run AI setup and the existing Work pipeline', () => {
     const markup = renderToStaticMarkup(
       createElement(AIConnections, { settings: initial, save: async () => {} }),
     );
-    // One card per installed engine, then the company-account AWS Bedrock route.
-    expect(markup.match(/<section class="service"/g)).toHaveLength(6);
+    // One card per installed engine, then the company-account routes: AWS Bedrock, Azure OpenAI,
+    // OpenRouter and Google Vertex AI, then the owner's tier map.
+    expect(markup.match(/<section class="service"/g)).toHaveLength(10);
+    expect(markup).toContain('aria-label="Tiers"');
     expect(markup).toContain('aria-label="Cursor"');
     expect(markup).toContain('aria-label="Devin"');
     expect(markup).toContain('aria-label="AWS Bedrock (GPT-5.6 Luna)"');
+    expect(markup).toContain('aria-label="Azure OpenAI"');
+    expect(markup).toContain('aria-label="OpenRouter"');
     expect(
       (await api('/ai/status')).data.connections.map((c: { engine: string }) => c.engine),
     ).toEqual(['claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin']);
@@ -196,6 +200,10 @@ describe('first-run AI setup and the existing Work pipeline', () => {
       const { api, generate } = await fixture(engine);
       await connected(api, engine);
       const project = (await api('/projects', 'POST', { name: 'Test' })).data;
+      expect((await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0, routes: [engine], documents: [],
+        shareConversationHistory: false, shareReviewPackets: false,
+      })).status).toBe(200);
       const thread = (await api(`/projects/${project.id}/threads`, 'POST', {})).data;
       const body = {
         text: 'Question',
@@ -233,6 +241,10 @@ describe('first-run AI setup and the existing Work pipeline', () => {
       const { api } = await fixture(engine);
       await connected(api, engine);
       const project = (await api('/projects', 'POST', { name: 'Proposals' })).data;
+      expect((await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0, routes: [engine], documents: [],
+        shareConversationHistory: false, shareReviewPackets: false,
+      })).status).toBe(200);
       const thread = (await api(`/projects/${project.id}/threads`, 'POST', {})).data;
       const target = `/projects/${project.id}`;
       const plan = await api(`${target}/ask`, 'POST', {

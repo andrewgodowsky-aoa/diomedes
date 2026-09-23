@@ -24,6 +24,7 @@ import {
   periodIdFor,
   type AllowanceView,
   type ChargeKind,
+  type UsageState,
 } from '../shared/managed-usage.js';
 import type { BillingEvent, BillingEventProcessor } from './billing-events.js';
 import type { ManagedGateway } from './managed-gateway.js';
@@ -38,6 +39,9 @@ const body = (req: Request): Record<string, unknown> =>
     : {};
 
 const organizationId = (req: Request) => String(req.params.organizationId ?? '');
+
+export const NOT_CONNECTED_REASON =
+  'This app is not signed in to a Nectovia account, so it cannot read this business’s credit usage. Nothing is estimated in its place.';
 
 const invalid = (message: string, code: string) => new ApiError(400, message, { code });
 
@@ -117,15 +121,41 @@ export function mountManagedUsageRoutes(
     }, false),
   );
 
+  /**
+   * Nectovia usage, as this host can honestly report it. Tenant credit usage
+   * is owned by the control plane and read with an authenticated account
+   * session. This desktop host holds no control-plane session and no client
+   * for one, so it says so rather than drawing numbers. The local allowance
+   * ledger above is not the tenant allowance and is never relabelled as it.
+   */
+  app.get(
+    '/api/workspace/organizations/:organizationId/usage',
+    route(async (req) => {
+      const id = assertMine(req);
+      const state: UsageState = {
+        state: 'not-connected',
+        organizationId: id,
+        reason: NOT_CONNECTED_REASON,
+      };
+      return state;
+    }, false),
+  );
+
   app.post(
     '/api/workspace/organizations/:organizationId/allowance/admit',
     route(async (req) => {
       const id = assertMine(req);
       const value = body(req);
       const at = new Date().toISOString();
+      // A job's cap comes from the host's tier map. A body that names its own envelope is
+      // refused outright rather than ignored, so a caller relying on it learns it never applied.
+      if ('parentEnvelopeMicroUsd' in value)
+        throw new ApiError(400, "A job's cap comes from its tier on this computer. Remove parentEnvelopeMicroUsd.", {
+          code: 'client_envelope_refused',
+        });
       // Everything authoritative is read from the host: the person, the tenant,
-      // the entitlement, the policy. What arrives in the body is the shape of
-      // the work, and a `paid` flag in it is just a word.
+      // the entitlement, the policy, the job's cap. What arrives in the body is
+      // the shape of the work, and a `paid` flag in it is just a word.
       return gateway.admit({
         organizationId: id,
         personId: workspaces.currentPerson().id,
@@ -133,10 +163,6 @@ export function mountManagedUsageRoutes(
         kind: chargeKind(value.kind),
         parentTaskId: value.parentTaskId == null ? null : String(value.parentTaskId).slice(0, 100),
         maxMicroUsd: amount(value.maxMicroUsd, 'the most this call may cost'),
-        parentEnvelopeMicroUsd:
-          value.parentEnvelopeMicroUsd == null
-            ? null
-            : amount(value.parentEnvelopeMicroUsd, "the parent task's remaining envelope"),
         requestDigest: text(value.requestDigest, 'the digest of the request being authorized', 200),
         reservationId: text(value.reservationId, 'an identifier for this attempt', 120),
         periodId: periodIdFor(at),

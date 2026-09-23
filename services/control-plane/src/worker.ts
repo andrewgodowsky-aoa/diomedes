@@ -5,6 +5,8 @@ import { AccountError } from './errors.js';
 import { readBytes } from './crypto.js';
 import { WorkOSIdentityVerifier } from './identity-workos.js';
 import { PostgresRepository, neonClientFactory } from './postgres.js';
+import { FundingService, UsageService } from './funding.js';
+import { PostgresFundingRepository } from './funding-postgres.js';
 import type { WorkerEnv } from '../worker-configuration.js';
 import { accountId } from './domain.js';
 
@@ -31,7 +33,11 @@ async function body<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
 
 /** Factory injection is only a test seam; no environment flag enables fake identity/storage. */
 export function createHandler(create: (config: Configuration) => AccountService = (config) =>
-  new AccountService(new PostgresRepository(neonClientFactory(config.databaseUrl)), new WorkOSIdentityVerifier(config.identity))) {
+  new AccountService(new PostgresRepository(neonClientFactory(config.databaseUrl)), new WorkOSIdentityVerifier(config.identity)),
+  // The usage read verifies membership first, then reads funding rows under the
+  // organization's own tenant. There is no funding write route in this Worker.
+  createUsage: (config: Configuration, accounts: AccountService) => Pick<UsageService, 'usage'> = (config, accounts) =>
+    new UsageService(accounts, new FundingService(new PostgresFundingRepository(neonClientFactory(config.databaseUrl))))) {
   return async (request: Request, env: Record<string, unknown>): Promise<Response> => {
     const headers = new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', Vary: 'Origin' });
     const json = (value: unknown, status = 200) => Response.json(value, { status, headers });
@@ -67,6 +73,8 @@ export function createHandler(create: (config: Configuration) => AccountService 
       }
       if (url.pathname === '/account/organizations' && request.method === 'POST')
         return json(await accounts.createOrganization(token, (await body(request, organizationInput)).name), 201);
+      const usage = /^\/account\/organizations\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/usage$/.exec(url.pathname);
+      if (usage && request.method === 'GET') return json(await createUsage(config, accounts).usage(token, usage[1]));
       const invite = /^\/account\/organizations\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/invitations$/.exec(url.pathname);
       if (invite && request.method === 'POST') return json(await accounts.invite(token, invite[1], await body(request, invitationInput)), 201);
       const accept = /^\/account\/organizations\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/invitations\/accept$/.exec(url.pathname);

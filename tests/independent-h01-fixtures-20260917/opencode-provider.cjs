@@ -29,6 +29,9 @@ const server = http.createServer(async (req, res) => {
     setTimeout(() => {
       send({ type: 'message.updated', properties: { info: { id: 'assistant-1', sessionID: 'local-session',
         role: 'assistant', providerID: 'opencode-go', modelID: 'fixture-model', time: { created: 1 } } } });
+      // opencode 1.18.4 announces a part, with its type, before streaming its deltas.
+      send({ type: 'message.part.updated', properties: { part: { id: 'part-1', sessionID: 'local-session',
+        messageID: 'assistant-1', type: 'text', text: '' } } });
       send({ type: 'message.part.delta', properties: { sessionID: 'local-session', messageID: 'assistant-1',
         partID: 'part-1', field: 'text', delta: 'Partial fixture answer' } });
       trace({ event: 'partial-output' });

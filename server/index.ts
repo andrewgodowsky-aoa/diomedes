@@ -13,6 +13,8 @@ const projectRoot = path.resolve(
 );
 const port = Number(process.env.DIOMEDES_PORT ?? 47631);
 const clientPort = Number(process.env.DIOMEDES_CLIENT_PORT ?? 5173);
+if (process.env.DIOMEDES_ALLOW_UNPROTECTED_BROWSER !== '1')
+  throw new Error('The standalone browser service has no desktop session authentication. Use the desktop app, or start the local development launcher with test data.');
 if (![port, clientPort].every((p) => Number.isInteger(p) && p >= 1024 && p <= 65535))
   throw new Error('Diomedes ports must be whole numbers between 1024 and 65535.');
 await safeAbsolute(dataDir);

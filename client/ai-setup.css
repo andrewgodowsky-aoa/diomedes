@@ -231,3 +231,59 @@
     display: block;
   }
 }
+
+/* The Azure OpenAI and OpenRouter connection forms: one labelled field per
+   line, and one thin-ruled group per deployment or model. */
+.ai-connections .service .ai-provider-connect label:not(.check) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 8px;
+  min-width: 0;
+}
+
+.ai-connections .service .ai-provider-model {
+  border: 1px solid var(--dm-rule-2);
+  border-radius: var(--rb);
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+
+.ai-connections .service .ai-provider-model legend {
+  padding: 0 4px;
+  color: var(--dm-text-3);
+}
+
+.ai-connections .service .ai-readiness {
+  margin: 6px 0;
+  padding-left: 18px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Approved read connectors: one ruled block per connector. A name, command or
+   tool list is a machine string and wraps inside its row. */
+.read-connectors .read-connector {
+  border-top: 1px solid var(--dm-rule-2);
+  padding-top: 8px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.read-connectors .read-connector-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.read-connectors .read-connectors-ignored {
+  margin: 8px 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+
+.read-connectors .ai-provider-model {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}

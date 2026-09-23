@@ -43,7 +43,9 @@ async function savedThread(): Promise<Conversation> {
 async function open(page: Page) {
   await page.goto(baseURL);
   await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
-  await expect(page.getByRole('combobox', { name: 'Route' })).toBeVisible();
+  // A tier, never a route, is the conversation's model control (owner decision 2026-09-23).
+  await expect(page.getByRole('combobox', { name: 'Style' })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Route' })).toHaveCount(0);
 }
 
 async function expectFreshBundle(dist: string): Promise<void> {
@@ -118,58 +120,6 @@ test.afterEach(async () => {
   expect(pageErrors).toEqual([]);
 });
 
-test('HLR-01: an older route response cannot repaint a newer saved choice', async ({ page }) => {
-  await open(page);
-  const routeControl = page.getByRole('combobox', { name: 'Route' });
-  await expect(routeControl).toHaveValue('aws-bedrock');
-  const firstCommitted = gate();
-  const releaseFirst = gate();
-  const firstHandled = gate();
-  let held = false;
-  const url = `${baseURL}/api${threadPath()}`;
-  await page.route(url, async (route) => {
-    if (route.request().method() !== 'PUT' || held) return route.fallback();
-    held = true;
-    try {
-      const response = await route.fetch();
-      firstCommitted.release();
-      await releaseFirst.promise;
-      await route.fulfill({ response });
-    } finally {
-      firstHandled.release();
-    }
-  });
-  try {
-    await routeControl.selectOption('claude-code');
-    await firstCommitted.promise;
-    expect((await savedThread()).engine).toBe('claude-code');
-    await expect(routeControl.locator('option[value="aws-bedrock"]')).toHaveCount(1);
-    const secondResponse = page.waitForResponse((response) =>
-      response.url() === url && response.request().method() === 'PUT' &&
-      response.request().postDataJSON()?.engine === 'aws-bedrock');
-    await routeControl.selectOption('aws-bedrock');
-    await secondResponse;
-    expect((await savedThread()).engine).toBe('aws-bedrock');
-    const oldResponse = page.waitForResponse((response) =>
-      response.url() === url && response.request().method() === 'PUT' &&
-      response.request().postDataJSON()?.engine === 'claude-code');
-    releaseFirst.release();
-    await (await oldResponse).finished();
-    await firstHandled.promise;
-    // Let the received response and React's resulting render pass through the
-    // browser's frame boundary before asserting the display, without a timer.
-    await page.evaluate(() => new Promise<void>((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-    expect((await savedThread()).engine).toBe('aws-bedrock');
-    await expect(routeControl).toHaveValue('aws-bedrock');
-    await expect(page.locator('.instr')).toContainText('AWS Bedrock (Luna)');
-  } finally {
-    releaseFirst.release();
-    if (held) await firstHandled.promise;
-    await page.unroute(url);
-  }
-});
-
 test('HLR-02: a migrated conversation names the route serving its pending message', async ({ page }) => {
   const store = app.locals.store as Store;
   const state = store.state(binding.projectId);
@@ -188,7 +138,6 @@ test('HLR-02: a migrated conversation names the route serving its pending messag
     expect((await savedThread()).engine).toBe('aws-bedrock');
     await expect(page.locator('.dio-pending')).toBeVisible();
     await expect(page.locator('.instr')).toContainText('AWS Bedrock (Luna)');
-    await expect(page.getByRole('combobox', { name: 'Route' })).toHaveValue('aws-bedrock');
   } finally {
     const stop = page.getByRole('button', { name: 'Stop', exact: true });
     if (await stop.isVisible()) await stop.click();

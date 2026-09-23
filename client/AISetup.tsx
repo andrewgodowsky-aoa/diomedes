@@ -5,6 +5,9 @@ import type { ConnectionReceipt, EngineConnection, InstallOffer } from '../share
 import { ENGINE_NAMES, EXTERNAL_ENGINES, TEXT_ROUTE_CONTROLS } from '../shared/engines';
 import { ENGINE_ROUTE_PROFILES, routeCaption } from '../shared/engine-routes';
 import { AwsBedrockSetup } from './AwsBedrockSetup';
+import { AzureOpenAISetup, OpenRouterSetup } from './ProviderSetup';
+import { GoogleVertexSetup } from './VertexSetup';
+import { TierSetup } from './TierSetup';
 import {
   advanceSetup,
   continueChoice,
@@ -1129,8 +1132,13 @@ export function AIConnections({
             </section>
           );
         })}
-        {/* A model-API route: the company's own AWS account, not an installed engine. */}
+        {/* Model-API routes: the company's own provider accounts, not installed engines. */}
         <AwsBedrockSetup settings={settings} save={save} busy={busy} />
+        <AzureOpenAISetup settings={settings} save={save} busy={busy} />
+        <OpenRouterSetup settings={settings} save={save} busy={busy} />
+        <GoogleVertexSetup settings={settings} save={save} busy={busy} />
+        {/* The owner's tier map: the one place that decides which route serves each tier. */}
+        <TierSetup settings={settings} save={save} busy={busy} />
       </div>
     </div>
   );

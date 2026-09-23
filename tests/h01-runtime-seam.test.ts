@@ -27,6 +27,7 @@ import { isTerminalEventType, type TransientPreview } from '../shared/adapter-co
 import { streamChecks } from '../server/harness/conformance.js';
 import type { Store } from '../server/store.js';
 import type { HarnessHost } from '../server/harness/host.js';
+import { changeCloudSharing } from '../server/cloud-sharing.js';
 
 const ENGINE = 'claude-code' as const;
 const VERSION = TESTED_VERSIONS[ENGINE];
@@ -122,6 +123,18 @@ async function open(
   store().on('engine-text', (frame: unknown) => frames.push(frame as Record<string, unknown>));
   const project = await store().locked(() => store().createProject('H01 seam'));
   projectId = project.id;
+  // Default-deny cloud sharing: grant the claude-code route with no source
+  // documents so synthetic dispatch fixtures (documents []) keep their prior behavior.
+  await store().locked(async () => {
+    changeCloudSharing(store().state(projectId), {
+      expectedVersion: 0,
+      routes: ['claude-code'],
+      documents: [],
+      shareConversationHistory: false,
+      shareReviewPackets: false,
+    });
+    await store().persist(store().state(projectId));
+  });
   store().settings.services = {
     'claude-code': true,
     'claude-codeModel': 'sonnet',

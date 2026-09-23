@@ -101,6 +101,13 @@ beforeEach(async () => {
     path: 'Brief.md',
     text: original,
   });
+  expect((await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0,
+    routes: ['codex'],
+    documents: ['Brief.md'],
+    shareConversationHistory: false,
+    shareReviewPackets: false,
+  })).status).toBe(200);
   taskId = (
     await request<Task>(`/projects/${projectId}/tasks`, 'POST', {
       name: 'Append a sentence',

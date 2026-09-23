@@ -9,6 +9,8 @@ import type {
 } from '../../shared/types';
 import { formatOrigin, originForSession } from '../attribution-display';
 import type { TeamProps } from './types';
+import type { NewTeamMember, TeamRoutesView } from '../../shared/team-routes';
+import { WORK_STYLE_LABELS, WORK_STYLES } from '../../shared/work-style';
 import './team.css';
 
 const KIND_WORDS = new Set([
@@ -188,8 +190,10 @@ export function TeamView({
   onStop,
   onWake,
   onOpenThread,
+  teamRoutes,
   onAddMember,
 }: TeamProps) {
+  const [adding, setAdding] = useState(false);
   const ordered = useMemo(
     () =>
       [...members].sort((a, b) => {
@@ -360,16 +364,35 @@ export function TeamView({
           {lead ? ` · ${lead.name} leads` : ''}
         </span>
         <span className="hands">{handsLabel}</span>
+        {onAddMember && ordered.length > 0 && !adding && (
+          <button type="button" className="addmember-open" onClick={() => setAdding(true)}>
+            Add member
+          </button>
+        )}
       </div>
+      {onAddMember && adding && (
+        <AddMember
+          routes={teamRoutes ?? null}
+          firstIsLead={ordered.length === 0}
+          busy={busy}
+          onAdd={async (input) => {
+            await onAddMember(input);
+            setAdding(false);
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      )}
       {ordered.length === 0 ? (
-        <div className="lane-empty" aria-label="No team yet">
-          <p className="caption">No team yet. Add a leader, then members.</p>
-          {onAddMember && (
-            <button type="button" onClick={onAddMember}>
-              Add
-            </button>
-          )}
-        </div>
+        !adding && (
+          <div className="lane-empty" aria-label="No team yet">
+            <p className="caption">No team yet. Add a leader, then members.</p>
+            {onAddMember && (
+              <button type="button" onClick={() => setAdding(true)}>
+                Add
+              </button>
+            )}
+          </div>
+        )
       ) : (
         <div
           className="lanes"
@@ -449,6 +472,98 @@ export function TeamView({
         </form>
       </div>
     </div>
+  );
+}
+
+const AUTO = 'auto';
+
+/**
+ * Add one member: a name, a role and a tier. Nectovia chooses the route and the
+ * model on the host from the owner's tier map (the leader one tier above); a
+ * tier whose route is not connected is refused there by name, so this form is
+ * never the authority and never offers a route or a model.
+ */
+export function AddMember({
+  routes,
+  firstIsLead,
+  busy,
+  onAdd,
+  onCancel,
+}: {
+  routes: TeamRoutesView | null;
+  firstIsLead: boolean;
+  busy: boolean;
+  onAdd(input: NewTeamMember): Promise<void>;
+  onCancel(): void;
+}) {
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<'lead' | 'member'>(firstIsLead ? 'lead' : 'member');
+  const [style, setStyle] = useState<NonNullable<NewTeamMember['style']>>('focused');
+  const [failure, setFailure] = useState<string | null>(null);
+  // A customer picks the tier only; the owner's tier map decides the route and the model
+  // (owner decision 2026-09-23), so no route or model is ever offered here.
+  const caption =
+    role === 'lead'
+      ? 'Nectovia runs this member on the tier you choose; a leader works one tier above it.'
+      : 'Nectovia runs this member on the tier you choose.';
+  const submit = async () => {
+    if (!name.trim() || busy) return;
+    setFailure(null);
+    try {
+      await onAdd({ name: name.trim(), role, engine: AUTO, style });
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : 'This member could not be added.');
+    }
+  };
+  return (
+    <form
+      className="addmember"
+      aria-label="Add a team member"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <label>
+        <span>Name</span>
+        <input value={name} maxLength={120} onChange={(e) => setName(e.target.value)} autoFocus />
+      </label>
+      <label>
+        <span>Role</span>
+        <select value={role} onChange={(e) => setRole(e.target.value as 'lead' | 'member')}>
+          <option value="lead">Leader</option>
+          <option value="member">Member</option>
+        </select>
+      </label>
+      <label>
+        <span>Style</span>
+        <select
+          aria-label="Style"
+          value={style}
+          onChange={(e) => setStyle(e.target.value as NonNullable<NewTeamMember['style']>)}
+        >
+          {(routes?.styles ?? WORK_STYLES.map((s) => ({ style: s, label: WORK_STYLE_LABELS[s] }))).map((s) => (
+            <option key={s.style} value={s.style}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {caption && <p className="caption">{caption}</p>}
+      {failure && (
+        <p className="caption failure" role="alert">
+          {failure}
+        </p>
+      )}
+      <div className="actions">
+        <button type="submit" className="go" disabled={busy || !name.trim()}>
+          Add
+        </button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -546,7 +661,16 @@ function Lane({
         <span className={ptClass} data-pt={member.slotId} aria-hidden="true" />
         <b>{member.name}</b>
         <span className="role">{member.role === 'lead' ? 'leads' : 'member'}</span>
-        <span className="mono" title={workerAttribution.detail}>
+        <span
+          className="mono"
+          title={[
+            workerAttribution.detail,
+            // How the request was chosen, never what ran: the label above is the record.
+            member.selection?.by === 'nectovia' ? `Nectovia chose: ${member.selection.reason}` : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
           {workerAttribution.label}
         </span>
         <span className="state">{STATE_WORD[lane]}</span>

@@ -92,6 +92,16 @@ export interface ModelApiAdapterSpec {
   ): Promise<RespondResult>;
   /** The raw preview sinks this turn's calls feed. */
   sinks?: StreamSinks;
+  /**
+   * The step boundary: runs before each model step, outside it, and refuses the
+   * step when it would pass the job's cap (`admitJobStep`). Absent when the
+   * route's ledger is not scoped to a job.
+   */
+  admitStep?(input: {
+    attempt: ExposureAttempt;
+    tools: readonly ToolDescriptor[];
+    messages: () => Promise<ModelMessage[]>;
+  }): Promise<void>;
 }
 
 type Prepared = ModelRequest & {
@@ -130,6 +140,64 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
         false,
       );
   };
+  /** The provider-format messages one step sends: its private continuation plus the new portable tail. */
+  const providerMessages = async (request: ModelRequest): Promise<ModelMessage[]> => {
+    let messages: ModelMessage[];
+    if (request.transcript) {
+      const saved = await spec.transcripts.read(request.transcript);
+      if (
+        saved.runId !== request.runId ||
+        saved.capabilityId !== request.capabilityId ||
+        saved.profileHash !== profileHash ||
+        digest(request.messages.slice(0, saved.portablePrefix.length)) !== digest(saved.portablePrefix)
+      )
+        throw new ModelApiError(
+          `${prefix}_transcript_mismatch`,
+          'The private continuation does not match this run, context, model or account. Nothing was sent.',
+          false,
+        );
+      messages = copy(saved.messages) as ModelMessage[];
+      const tail = request.messages.slice(saved.portablePrefix.length);
+      if (saved.pendingTool) {
+        const observation = tail.shift();
+        if (
+          !observation ||
+          observation.role !== 'tool' ||
+          observation.name !== saved.pendingTool.name ||
+          observation.output === undefined
+        )
+          throw new ModelApiError(
+            `${prefix}_transcript_mismatch`,
+            'The pending tool call has no matching recorded result. Nothing was sent.',
+            false,
+          );
+        // The provider's own call id, recorded when it asked, answers it now.
+        messages.push({
+          role: 'tool',
+          content: [
+            {
+              type: 'tool-result',
+              toolCallId: saved.pendingTool.callId,
+              toolName: saved.pendingTool.name,
+              output: { type: 'json', value: observation.output as never },
+            },
+          ],
+        });
+      }
+      messages.push(...ordinary(tail));
+    } else messages = ordinary(request.messages);
+    return messages;
+  };
+  /** A spend hold's identity for one step, fixed before anything is sent. */
+  const attemptFor = (request: ModelRequest): ExposureAttempt =>
+    exposureAttempt(request.runId, `model@${digest(request.messages).slice(0, 24)}`, {
+      runId: request.runId,
+      capabilityId: request.capabilityId,
+      messages: request.messages,
+      tools: request.tools,
+      transcript: request.transcript,
+      profileHash,
+    });
   return {
     id: spec.route,
     version: spec.sdk,
@@ -167,63 +235,19 @@ export function createModelApiAdapter(spec: ModelApiAdapterSpec): ModelAdapter &
     },
     async validatePrepared(request) {
       boundProfile(request);
+      // The job's cap is checked here, between steps, so a step it refuses is never started.
+      await spec.admitStep?.({
+        attempt: attemptFor(request),
+        tools: request.tools,
+        messages: () => providerMessages(request),
+      });
     },
     async complete(request, signal): Promise<ModelResult> {
       signal.throwIfAborted();
       boundProfile(request);
-      let messages: ModelMessage[];
-      if (request.transcript) {
-        const saved = await spec.transcripts.read(request.transcript);
-        if (
-          saved.runId !== request.runId ||
-          saved.capabilityId !== request.capabilityId ||
-          saved.profileHash !== profileHash ||
-          digest(request.messages.slice(0, saved.portablePrefix.length)) !== digest(saved.portablePrefix)
-        )
-          throw new ModelApiError(
-            `${prefix}_transcript_mismatch`,
-            'The private continuation does not match this run, context, model or account. Nothing was sent.',
-            false,
-          );
-        messages = copy(saved.messages) as ModelMessage[];
-        const tail = request.messages.slice(saved.portablePrefix.length);
-        if (saved.pendingTool) {
-          const observation = tail.shift();
-          if (
-            !observation ||
-            observation.role !== 'tool' ||
-            observation.name !== saved.pendingTool.name ||
-            observation.output === undefined
-          )
-            throw new ModelApiError(
-              `${prefix}_transcript_mismatch`,
-              'The pending tool call has no matching recorded result. Nothing was sent.',
-              false,
-            );
-          // The provider's own call id, recorded when it asked, answers it now.
-          messages.push({
-            role: 'tool',
-            content: [
-              {
-                type: 'tool-result',
-                toolCallId: saved.pendingTool.callId,
-                toolName: saved.pendingTool.name,
-                output: { type: 'json', value: observation.output as never },
-              },
-            ],
-          });
-        }
-        messages.push(...ordinary(tail));
-      } else messages = ordinary(request.messages);
+      const messages = await providerMessages(request);
+      const attempt = attemptFor(request);
 
-      const attempt = exposureAttempt(request.runId, `model@${digest(request.messages).slice(0, 24)}`, {
-        runId: request.runId,
-        capabilityId: request.capabilityId,
-        messages: request.messages,
-        tools: request.tools,
-        transcript: request.transcript,
-        profileHash,
-      });
       const result = await spec.respond({
         messages,
         tools: request.tools,

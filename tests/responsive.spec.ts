@@ -164,7 +164,7 @@ for (const [width, height, scale] of [
       await nav.getByRole('button', { name: new RegExp(`^${name}\\b`) }).click();
       await fits(page);
     }
-    await page.locator('.model-picker > button').click();
+    await page.locator('.style-picker > button').click();
     await expect(page.getByRole('menu')).toBeVisible();
     await fits(page);
     await page.keyboard.press('Escape');

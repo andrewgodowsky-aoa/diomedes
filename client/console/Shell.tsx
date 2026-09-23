@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { selectedEngine } from '../../shared/ai-selection';
 import { formatOrigin, originForNeed, originForSession } from '../attribution-display';
 import type { ScopeGrantView } from '../../shared/permissions';
-import { isRoute, isExternalEngine } from '../../shared/engines';
+import { isRoute, isExternalEngine, routeDisplayName } from '../../shared/engines';
 import type { EngineConnection } from '../../shared/engines';
 import {
   mayNameDocument,
@@ -53,13 +53,32 @@ import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
 import { acceptPreview, type PreviewPosition } from './engine-text-preview';
 import {
+  discardPendingMessage,
+  pendingMessage,
+  resendPending,
+  UnconfirmedMessage,
+  type DispatchIdentity,
+  type PendingMessage,
+} from '../conversation-send';
+import type { MessageResult } from '../../shared/conversation';
+import {
+  directAskBody,
+  planThreadSend,
+  readThreadRoute,
+  sendThreadConversation,
+  stopThreadMessage,
+} from './thread-send';
+import {
   acceptActivity,
   activityTarget,
   rememberRunActivity,
   type ActivityState,
 } from './engine-activity';
 import { SendConfirmation } from './SendConfirmation';
+import { JobCapWarning } from './JobCapWarning';
+import { beforeWake, estimateWake, setThreadTier, wakeOverCap, type CapChoice, type CapPrompt } from '../job-cap-gate';
 import { PermissionPanel } from './PermissionPanel';
+import { CloudSharing } from './CloudSharing';
 import { Ledger } from './Ledger';
 import { ThreadModelControls } from './WorkStylePicker';
 import type { WorkStyle } from '../../shared/work-style';
@@ -82,6 +101,7 @@ import { WorkspaceMark, WorkspacePanel, useWorkspace } from './Workspaces';
 import { applyQuery, buildEntries, type PaletteContext } from './paletteEntries';
 import { useTravelOnView } from './motion';
 import type { ShellView } from './types';
+import type { NewTeamMember, TeamRoutesView } from '../../shared/team-routes';
 import './console.css';
 import './artifacts.css';
 import './nectovia.css';
@@ -94,6 +114,8 @@ import {
   SMALL_BUSINESS_PACK,
   type PackSkill,
 } from '../../shared/capability-packs';
+import type { ReadConnectorsView } from '../../shared/read-connectors';
+import { skillConnectorNote } from './skill-connectors';
 
 interface ShellProps {
   projectId: string;
@@ -172,6 +194,8 @@ export function Shell({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<ShellView>('Thread');
   const [workspacesOpen, setWorkspacesOpen] = useState(false);
+  /** A team wake's job-cap question, and how to answer the wake waiting on it. */
+  const [capPrompt, setCapPrompt] = useState<(CapPrompt & { answer(choice: CapChoice): void }) | null>(null);
   const [workspace, setWorkspace] = useWorkspace(report);
   const [mode, setMode] = useState<Mode>('ask');
   // The playbook a person picked for their next message in one thread. It lives here, not in
@@ -181,11 +205,30 @@ export function Shell({
     threadId: string;
     n: number;
   } | null>(null);
+  // The approved read connectors, read each time a playbook is picked, so its launch can say
+  // which of them cover what it reads. An unreadable answer shows nothing rather than a guess.
+  const [skillConnectors, setSkillConnectors] = useState<ReadConnectorsView | null>(null);
+  useEffect(() => {
+    if (!skillDraft) return;
+    let alive = true;
+    void api<ReadConnectorsView>('/ai/read-connectors').then(
+      (view) => {
+        if (alive) setSkillConnectors(view);
+      },
+      () => {
+        if (alive) setSkillConnectors(null);
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [skillDraft?.n]);
   const [route, setRoute] = useState<Route>(selectedEngine(settings));
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
+  const [cloudSharingOpen, setCloudSharingOpen] = useState(false);
   const [scopeGrants, setScopeGrants] = useState<ScopeGrantView[]>([]);
   const [sendTask, setSendTask] = useState<{
     task: Task;
@@ -196,6 +239,7 @@ export function Shell({
   } | null>(null);
   const [team, setTeam] = useState<TeamState>(emptyTeam);
   const [teamAvailable, setTeamAvailable] = useState(false);
+  const [teamRoutes, setTeamRoutes] = useState<TeamRoutesView | null>(null);
   const [toast, setToast] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -253,6 +297,10 @@ export function Shell({
   const askControl = useRef<AbortController | null>(null);
   const askThreadId = useRef<string | null>(null);
   const askEngine = useRef<Route | null>(null);
+  // The one command a conversation send was issued, so its Stop names that command and no other.
+  const askIssued = useRef<DispatchIdentity | null>(null);
+  // Bumped when a conversation send ends, so the thread's unconfirmed message is read again.
+  const [pendingTick, setPendingTick] = useState(0);
   const streamingId = useRef<string | null>(null);
   const streamingRunId = useRef<string | null>(null);
   const streamingPosition = useRef<PreviewPosition>(null);
@@ -300,6 +348,22 @@ export function Shell({
       if (currentId.current === projectId) setTeamAvailable(false);
     }
   }, [projectId, report]);
+  // What the add-member form may offer, read when Team opens: routes that can carry the
+  // team tools, whether each is connected, and the models it reported.
+  useEffect(() => {
+    if (view !== 'Team' || !teamAvailable) return;
+    let alive = true;
+    api<TeamRoutesView>(`/projects/${projectId}/team/routes`)
+      .then((value) => {
+        if (alive) setTeamRoutes(value);
+      })
+      .catch(() => {
+        if (alive) setTeamRoutes(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [view, projectId, teamAvailable, team.members.length]);
   const perform = useCallback(
     async (fn: () => Promise<void>) => {
       setBusy(true);
@@ -519,6 +583,7 @@ export function Shell({
       askControl.current?.abort();
       askControl.current = null;
       askThreadId.current = null;
+      askIssued.current = null;
       streamingId.current = null;
       streamingRunId.current = null;
       streamingPosition.current = null;
@@ -700,6 +765,17 @@ export function Shell({
           activity: streaming.activity?.lines,
         }
       : undefined;
+  // A conversation message this thread sent and never had confirmed, read from the shared claim
+  // whenever a send ends or another thread is opened. Unreadable storage reads as none.
+  const unconfirmedMessage = useMemo(() => {
+    if (!selected) return null;
+    try {
+      return pendingMessage(projectId, selected.id);
+    } catch {
+      return null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, selected?.id, pendingTick]);
   // Tool calls for this project's work runs, by session id, as ThreadView reads them.
   const runActivityLines = useMemo(
     () =>
@@ -1014,6 +1090,11 @@ export function Shell({
   async function messageMember(member: TeamMember, content: string) {
     await postMessage(member.slotId, content);
   }
+  // Errors reach the add-member form, which says them in place, so this skips perform().
+  async function addMember(input: NewTeamMember) {
+    await api(`${base}/team/members`, 'POST', input);
+    await load();
+  }
   async function stopMember(member: TeamMember) {
     await perform(async () => {
       await api(`${base}/team/members/${encodeURIComponent(member.slotId)}/stop`, 'POST', {});
@@ -1023,7 +1104,18 @@ export function Shell({
   // A helper parked on "Show me first" waits for the person to start it on its messages.
   async function wakeMember(member: TeamMember) {
     await perform(async () => {
-      await api(`${base}/team/members/${encodeURIComponent(member.slotId)}/wake`, 'POST', {});
+      // A wake whose job will likely pass its cap asks first; nothing wakes until a choice.
+      const threadId = member.threadId;
+      const decided = threadId
+        ? await beforeWake({
+            estimate: () => estimateWake(projectId, member.slotId),
+            ask: (prompt) => new Promise<CapChoice>((answer) => setCapPrompt({ ...prompt, answer })),
+            upgrade: (tier) => setThreadTier(projectId, threadId, tier),
+          })
+        : 'wake';
+      if (decided === 'cancel') return;
+      if (decided === 'over') await wakeOverCap(projectId, member.slotId);
+      else await api(`${base}/team/members/${encodeURIComponent(member.slotId)}/wake`, 'POST', {});
       await load();
       if (member.threadId) {
         setSelectedId(member.threadId);
@@ -1118,6 +1210,59 @@ export function Shell({
       await load();
     });
   }
+  /**
+   * One request from a thread, whichever path carries it. `transport` sends it and answers the
+   * conversation's result, or null for the direct request path; everything around it — the
+   * live text, Stop, the refresh and the errors — is the same for both, so a turn looks the
+   * same on screen whichever path it took.
+   */
+  async function deliver(
+    thread: Conversation,
+    route: Route,
+    transport: (control: AbortController) => Promise<MessageResult | null>,
+    onSent?: () => void,
+  ) {
+    askControl.current?.abort();
+    const control = new AbortController();
+    askControl.current = control;
+    askThreadId.current = thread.id;
+    askEngine.current = route;
+    askIssued.current = null;
+    const dropPreview = () => {
+      streamingId.current = null;
+      streamingRunId.current = null;
+      streamingPosition.current = null;
+      setStreaming((prev) => (prev && prev.threadId === thread.id ? null : prev));
+    };
+    await perform(async () => {
+      try {
+        const result = await transport(control);
+        onSent?.();
+        await load();
+        // The persisted turn is in; drop the ephemeral text if still ours.
+        dropPreview();
+        if (result?.interrupted)
+          report(new Error('Request stopped. The provider may still consume usage.'));
+      } catch (e) {
+        dropPreview();
+        if (control.signal.aborted || isAbortError(e)) {
+          report(new Error('Request stopped. The provider may still consume usage.'));
+          return;
+        }
+        // The message may have been accepted; it stays on the thread to be sent again, which
+        // reads what the record says, or discarded.
+        if (e instanceof UnconfirmedMessage) await load().catch(() => undefined);
+        throw e;
+      } finally {
+        if (askControl.current === control) {
+          askControl.current = null;
+          askThreadId.current = null;
+          askIssued.current = null;
+        }
+        setPendingTick((n) => n + 1);
+      }
+    });
+  }
   async function send(
     thread: Conversation,
     mode: Mode,
@@ -1126,57 +1271,66 @@ export function Shell({
     failing?: { document?: string; text?: string },
     sources?: string[],
     skill?: string,
+    readAccess?: import('../../shared/read-access').ReadAccess,
   ) {
-    askControl.current?.abort();
-    const control = new AbortController();
-    askControl.current = control;
-    askThreadId.current = thread.id;
-    askEngine.current = route;
-    await perform(async () => {
-      try {
+    await deliver(
+      thread,
+      route,
+      async (control) => {
+        // The route is the host's to say: the owner's tier map, else the thread's own route.
+        // A tier that cannot run is refused here, in the host's words, before anything is sent.
+        const plan = planThreadSend(
+          await readThreadRoute(projectId, thread.id, control.signal),
+          mode,
+          skill,
+        );
+        if (plan.kind === 'refuse') throw new Error(plan.reason);
+        // The composer confirmed (and named) the route it last read. A route that moved since
+        // is never sent to under that confirmation.
+        if (plan.route !== route)
+          throw new Error(
+            `This thread now runs on ${routeDisplayName(plan.route)}, not ${routeDisplayName(route)}. Nothing was sent. Send again to use it.`,
+          );
+        askEngine.current = plan.route;
+        if (plan.kind === 'conversation')
+          return sendThreadConversation({
+            projectId,
+            threadId: thread.id,
+            text,
+            mode: plan.mode,
+            paths: sources ?? [],
+            signal: control.signal,
+            onClaim: (identity) => {
+              if (askControl.current === control) askIssued.current = identity;
+            },
+          });
         await api(
           `${base}/ask`,
           'POST',
-          {
-            mode,
-            text,
-            route,
-            consent: true,
-            threadId: thread.id,
-            attachedTo: thread.attachedTo,
-            ...(sources ? { sources } : {}),
-            ...(mode === 'fix' && failing ? { failing } : {}),
-            ...(skill ? { skill } : {}),
-          },
+          directAskBody({ thread, mode, text, route: plan.route, failing, sources, skill, readAccess }),
           control.signal,
         );
-        if (skill) setSkillDraft((prev) => (prev?.threadId === thread.id ? null : prev));
-        await load();
-        // The persisted turn is in; drop the ephemeral text if still ours.
-        streamingId.current = null;
-        streamingRunId.current = null;
-        streamingPosition.current = null;
-        setStreaming((prev) => (prev && prev.threadId === thread.id ? null : prev));
-      } catch (e) {
-        if (control.signal.aborted || isAbortError(e)) {
-          streamingId.current = null;
-          streamingRunId.current = null;
-          streamingPosition.current = null;
-          setStreaming((prev) => (prev && prev.threadId === thread.id ? null : prev));
-          report(new Error('Request stopped. The provider may still consume usage.'));
-          return;
-        }
-        streamingId.current = null;
-        streamingRunId.current = null;
-        streamingPosition.current = null;
-        setStreaming((prev) => (prev && prev.threadId === thread.id ? null : prev));
-        throw e;
-      } finally {
-        if (askControl.current === control) {
-          askControl.current = null;
-          askThreadId.current = null;
-        }
-      }
+        return null;
+      },
+      skill ? () => setSkillDraft((prev) => (prev?.threadId === thread.id ? null : prev)) : undefined,
+    );
+  }
+  /** Send again, for the conversation message this thread holds unconfirmed. Never a new command. */
+  function resendUnconfirmed(thread: Conversation, saved: PendingMessage) {
+    void deliver(thread, route, async (control) => {
+      // Only the live answer's name reads this; the host decides where the saved command runs.
+      const view = await readThreadRoute(projectId, thread.id, control.signal).catch(() => null);
+      if (view && isRoute(view.route)) askEngine.current = view.route;
+      return resendPending(projectId, thread.id, saved.commandId, control.signal, (identity) => {
+        if (askControl.current === control) askIssued.current = identity;
+      });
+    });
+  }
+  function discardUnconfirmed(thread: Conversation, saved: PendingMessage) {
+    void perform(async () => {
+      await discardPendingMessage(projectId, thread.id, saved.commandId);
+      setPendingTick((n) => n + 1);
+      await load();
     });
   }
   async function messageSources(
@@ -1220,7 +1374,12 @@ export function Shell({
     return sources;
   }
   function cancelAsk() {
-    askControl.current?.abort();
+    const control = askControl.current;
+    const issued = askIssued.current;
+    // A direct request is abandoned as before. A conversation message the host holds is
+    // interrupted by its command, so the send returns the recorded, stopped turn.
+    if (!issued) return control?.abort();
+    void stopThreadMessage(issued, () => control?.abort());
   }
 
   function scrollToNeed(need: Need) {
@@ -1574,6 +1733,9 @@ export function Shell({
           <button type="button" onClick={onOpenSettings}>
             Settings
           </button>
+          <button type="button" onClick={() => setCloudSharingOpen(true)}>
+            Cloud sharing
+          </button>
           <div className="surface-menu">
             <button
               type="button"
@@ -1742,11 +1904,19 @@ export function Shell({
               prepareSources={(m, text, doc) => messageSources(selected, m, text, doc)}
               skill={
                 skillDraft?.threadId === selected.id && (mode === 'ask' || mode === 'plan')
-                  ? { name: skillDraft.skill.name, starter: skillDraft.skill.starter, n: skillDraft.n }
+                  ? {
+                      name: skillDraft.skill.name,
+                      starter: skillDraft.skill.starter,
+                      n: skillDraft.n,
+                      connectors: (() => {
+                        const note = skillConnectorNote(skillDraft.skill, skillConnectors);
+                        return note && { text: note.text, onAdd: note.offerAdd ? openEngineSettings : undefined };
+                      })(),
+                    }
                   : null
               }
               onClearSkill={() => setSkillDraft(null)}
-              onSend={(m, text, r, failing, sources) =>
+              onSend={(m, text, r, failing, sources, readAccess) =>
                 void send(
                   selected,
                   m,
@@ -1757,6 +1927,7 @@ export function Shell({
                   skillDraft?.threadId === selected.id && (m === 'ask' || m === 'plan')
                     ? skillDraft.skill.id
                     : undefined,
+                  readAccess,
                 )
               }
               onResolve={(n, res, allow) => void resolveNeed(n, res, allow)}
@@ -1766,6 +1937,15 @@ export function Shell({
               streaming={streamingForSelected}
               runActivity={runActivityLines}
               onCancelText={cancelAsk}
+              unconfirmed={
+                unconfirmedMessage
+                  ? {
+                      text: unconfirmedMessage.input.text,
+                      onResend: () => resendUnconfirmed(selected, unconfirmedMessage),
+                      onDiscard: () => discardUnconfirmed(selected, unconfirmedMessage),
+                    }
+                  : null
+              }
               artifacts={artifactHost.selection.index}
               onOpenArtifact={(record) => artifactHost.selection.open(record)}
               openArtifactKey={artifactHost.selection.openKey}
@@ -1943,6 +2123,8 @@ export function Shell({
                   setView('Thread');
                 }
               }}
+              teamRoutes={teamRoutes}
+              onAddMember={teamAvailable ? addMember : undefined}
             />
           </section>
         )}
@@ -1988,6 +2170,23 @@ export function Shell({
           onClose={() => setWorkspacesOpen(false)}
           onChanged={setWorkspace}
           report={report}
+        />
+      )}
+      {capPrompt && (
+        <JobCapWarning
+          copy={capPrompt.copy}
+          onUpgrade={() => {
+            setCapPrompt(null);
+            capPrompt.answer('upgrade');
+          }}
+          onGoOver={() => {
+            setCapPrompt(null);
+            capPrompt.answer('over');
+          }}
+          onCancel={() => {
+            setCapPrompt(null);
+            capPrompt.answer('cancel');
+          }}
         />
       )}
       {sendTask && (
@@ -2039,6 +2238,18 @@ export function Shell({
             }}
           />
         </Modal>
+      )}
+      {cloudSharingOpen && (
+        <CloudSharing
+          key={projectId}
+          projectId={projectId}
+          projectName={project.name}
+          onClose={() => setCloudSharingOpen(false)}
+          onSaved={() => {
+            void load().catch(report);
+            setCloudSharingOpen(false);
+          }}
+        />
       )}
       {previewNeed && (
         <Modal

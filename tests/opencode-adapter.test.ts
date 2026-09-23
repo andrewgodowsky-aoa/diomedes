@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,11 +19,18 @@ import {
   OPENCODE_ACCOUNT_ROUTE,
   OPENCODE_VERSION,
   opencodeArguments,
+  type OpenCodeAdapterDeps,
 } from '../server/engines/opencode.js';
 import type { TextRequest } from '../server/engines/contract.js';
 
 const roots: string[] = [];
+// No test reads the developer's own OpenCode cache: the catalogue seed finds
+// nothing here unless a test puts a catalogue there itself.
+beforeEach(() => {
+  vi.stubEnv('XDG_CACHE_HOME', path.join(os.tmpdir(), 'diomedes-no-opencode-cache'));
+});
 afterEach(async () => {
+  vi.unstubAllEnvs();
   cleanup.fail = false;
   vi.useRealTimers();
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
@@ -39,7 +46,13 @@ const request: TextRequest = {
   documents: [],
 };
 
-async function fixture(mode = 'ok', startupTimeoutMs = 5_000, framing = 'lf') {
+async function fixture(
+  mode = 'ok',
+  startupTimeoutMs = 5_000,
+  framing = 'lf',
+  extra: Partial<OpenCodeAdapterDeps> = {},
+  binary = 'opencode',
+) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes opencode '));
   roots.push(root);
   const file = path.join(root, 'fixture.mjs');
@@ -47,6 +60,7 @@ async function fixture(mode = 'ok', startupTimeoutMs = 5_000, framing = 'lf') {
     file,
     `import http from 'node:http';
 import fs from 'node:fs';
+import path from 'node:path';
 const mode=${JSON.stringify(mode)}; const framing=${JSON.stringify(framing)}; let stream;
 const catalogues={
  zen:{connected:['opencode'],all:[{id:'opencode',models:{'zen-model':{id:'zen-model',name:'Zen model'}}}]},
@@ -54,7 +68,16 @@ const catalogues={
  'zero-models':{connected:['opencode-go'],all:[{id:'opencode-go',models:{}}]},
  'wrong-model':{connected:['opencode-go'],all:[{id:'opencode-go',models:{'other-model':{id:'other-model',name:'Other model'}}}]},
  'dirty-route':{connected:['opencode','someone@example.com','a'.repeat(200),'',...Array.from({length:40},(v,i)=>'provider-'+i)],all:[]}};
-const raw=catalogues[mode]||{connected:['opencode-go'],all:[{id:'opencode-go',models:{'go-model':{id:'go-model',name:'Go model',description:'fixture'}}}]};
+// 'models-dev' follows opencode v1.18.4's ModelsDev.populate: read
+// OPENCODE_MODELS_PATH, else <XDG_CACHE_HOME>/opencode/models.json; a cache it
+// cannot parse is deleted (only when OPENCODE_MODELS_PATH is unset) and the
+// catalogue bundled in the binary answers instead. The bundled one predates
+// MiMo 2.6, so it offers only MiMo V2.5.
+const bundled={'opencode-go':{id:'opencode-go',models:{'mimo-v2.5':{id:'mimo-v2.5',name:'MiMo V2.5'}}}};
+function modelsDev(){const file=process.env.OPENCODE_MODELS_PATH||path.join(process.env.XDG_CACHE_HOME||'.','opencode','models.json');
+ try{return JSON.parse(fs.readFileSync(file,'utf8'));}catch(error){if(!process.env.OPENCODE_MODELS_PATH&&error.code!=='ENOENT')fs.rmSync(file,{force:true});return bundled;}}
+const devCatalogue=mode==='models-dev'?modelsDev():undefined;
+const raw=devCatalogue?{connected:['opencode-go'],all:[{id:'opencode-go',models:(devCatalogue['opencode-go']||{}).models||{}}]}:catalogues[mode]||{connected:['opencode-go'],all:[{id:'opencode-go',models:{'go-model':{id:'go-model',name:'Go model',description:'fixture'}}}]};
 // Diomedes starts this server with enabled_providers: ["opencode-go"], and
 // opencode v1.18.4 prunes every other provider out of its own state before it
 // answers (packages/opencode/src/provider/provider.ts:1606-1611, and the
@@ -76,14 +99,23 @@ let tail=Promise.resolve();
 const send=(res,value)=>{const payload=JSON.stringify(value);
  if(framing!=='split'){res.write(frame(payload));return;}
  tail=tail.then(()=>new Promise(done=>{res.write('data: '+payload+'\\r',()=>{res.write('\\n\\r\\n');done();});}));};
+let promptModel='go-model';
+// opencode 1.18.4 announces each part (message.part.updated, with its type)
+// before streaming that part's deltas; a reasoning part's deltas also carry
+// field "text". Captured live 2026-09-23.
+const announce=()=>send(stream,{type:'message.part.updated',properties:{part:{id:'part-1',sessionID:'session-1',messageID:'assistant-1',type:'text',text:''}}});
+let hungOnce=false;
 const server=http.createServer(async(req,res)=>{
  const auth=req.headers.authorization||''; if(!auth.startsWith('Basic ')){res.writeHead(401);return res.end();}
- if(req.url==='/provider'){if(mode==='local-401'){res.writeHead(401);return res.end('the local server rejected this password');} if(mode==='start-hang')return; res.setHeader('content-type','application/json');return res.end(JSON.stringify(catalogue));}
+ if(req.url==='/provider'){if(mode==='handshake-hang-once'&&!hungOnce){hungOnce=true;return;} if(mode==='local-401'){res.writeHead(401);return res.end('the local server rejected this password');} if(mode==='start-hang')return; res.setHeader('content-type','application/json');return res.end(JSON.stringify(catalogue));}
  if(req.url==='/event'){res.writeHead(200,{'content-type':'text/event-stream'});stream=res;send(res,{type:'server.connected',properties:{}});return;}
  if(req.url==='/session'&&req.method==='POST'){let b='';for await(const c of req)b+=c; if(mode==='session-401'){res.writeHead(401);return res.end('this account is not authorized for that model');} res.setHeader('content-type','application/json');return res.end(JSON.stringify({id:'session-1'}));}
- if(req.url==='/session/session-1/prompt_async'){if(mode==='dispatch-hang')return; if(mode==='dispatch-500'){res.writeHead(500);return res.end('the server failed');} if(mode==='disk-quota-500'){res.writeHead(500);return res.end('over quota on the local cache disk, retry later');} if(mode==='usage-429'){res.writeHead(429);return res.end('rate limit exceeded for this account');} res.writeHead(204);res.end(); if(mode==='hang')return; setTimeout(()=>{if(!stream)return; if(mode==='malformed'){stream.write('data: {bad\\n\\n');return;} if(mode==='retry'){send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'retry',attempt:1,message:'retry',next:1}}});return;} if(mode==='flood'){stream.write('data: '+'x'.repeat(1_500_000));return;} if(mode==='session-denied'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'ProviderAuthError',data:{message:'unauthorized for this account'}}}});return;} if(mode==='session-failed'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'UnknownError',data:{message:'the model stopped responding'}}}});return;} if(mode==='assistant-denied'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1},error:{name:'APIError',data:{message:'The upstream service refused this account.',statusCode:401,isRetryable:false,responseBody:'{"secret-echo":"sk-live-do-not-publish"}'}}}}});return;}
+ if(req.url==='/session/session-1/prompt_async'){if(mode==='models-dev'){let b='';for await(const c of req)b+=c;try{promptModel=JSON.parse(b).model.modelID;}catch{}} if(mode==='dispatch-hang')return; if(mode==='dispatch-500'){res.writeHead(500);return res.end('the server failed');} if(mode==='disk-quota-500'){res.writeHead(500);return res.end('over quota on the local cache disk, retry later');} if(mode==='usage-429'){res.writeHead(429);return res.end('rate limit exceeded for this account');} res.writeHead(204);res.end(); if(mode==='hang')return; setTimeout(()=>{if(!stream)return; if(mode==='malformed'){stream.write('data: {bad\\n\\n');return;} if(mode==='retry'){send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'retry',attempt:1,message:'retry',next:1}}});return;} if(mode==='flood'){stream.write('data: '+'x'.repeat(1_500_000));return;} if(mode==='session-denied'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'ProviderAuthError',data:{message:'unauthorized for this account'}}}});return;} if(mode==='session-failed'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'UnknownError',data:{message:'the model stopped responding'}}}});return;} if(mode==='assistant-denied'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1},error:{name:'APIError',data:{message:'The upstream service refused this account.',statusCode:401,isRetryable:false,responseBody:'{"secret-echo":"sk-live-do-not-publish"}'}}}}});return;}
   if(mode==='api-limit'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'APIError',data:{message:'Slow down.',statusCode:429,isRetryable:true}}}});return;}
-  if(mode==='context-overflow'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'ContextOverflowError',data:{message:'Too long.',responseBody:'sk-live-do-not-publish'}}}});return;} if(mode==='tools'){send(stream,{type:'message.part.updated',properties:{part:{sessionID:'session-1',messageID:'assistant-1',type:'tool',text:''}}});return;} if(mode==='stall'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}}); return;} if(mode==='stream-drop'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); stream.write('data: '+JSON.stringify({type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}})+'\\n\\n',()=>{if(stream.socket)stream.socket.destroy();}); return;} if(mode==='noise'){send(stream,{type:'message.updated',properties:{info:{id:'noise',sessionID:'other-session',role:'assistant',providerID:'other',modelID:'other'}}});} const provider=mode==='mismatch'?'other':'opencode-go'; send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1}}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Answer'}}); if(mode==='truncated'){stream.write('data: {"type":"session.status","properties":{"sessionID":"session-1"',()=>{if(stream.socket)stream.socket.destroy();});return;} send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:'go-model',time:{created:1,completed:2},finish:'stop'}}}); send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'idle'}}});},5);return;}
+  if(mode==='context-overflow'){send(stream,{type:'session.error',properties:{sessionID:'session-1',error:{name:'ContextOverflowError',data:{message:'Too long.',responseBody:'sk-live-do-not-publish'}}}});return;} if(mode==='tools'){send(stream,{type:'message.part.updated',properties:{part:{sessionID:'session-1',messageID:'assistant-1',type:'tool',text:''}}});return;} if(mode==='stall'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); announce(); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}}); return;} if(mode==='stream-drop'){send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:'opencode-go',modelID:'go-model',time:{created:1}}}}); announce(); stream.write('data: '+JSON.stringify({type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Partial '}})+'\\n\\n',()=>{if(stream.socket)stream.socket.destroy();}); return;} if(mode==='noise'){send(stream,{type:'message.updated',properties:{info:{id:'noise',sessionID:'other-session',role:'assistant',providerID:'other',modelID:'other'}}});} const provider=mode==='mismatch'?'other':'opencode-go'; send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:promptModel,time:{created:1}}}}); if(mode==='reasoning'){send(stream,{type:'message.part.updated',properties:{part:{id:'part-r',sessionID:'session-1',messageID:'assistant-1',type:'reasoning',text:''}}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-r',field:'text',delta:'Private reasoning. '}});}
+  if(mode==='late-second'){announce(); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Answer'}}); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-2',field:'text',delta:' more'}}); send(stream,{type:'message.part.updated',properties:{part:{id:'part-2',sessionID:'session-1',messageID:'assistant-1',type:'text',text:' more'}}});}
+  else if(mode==='late-announce'){send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Answer'}}); send(stream,{type:'message.part.updated',properties:{part:{id:'part-1',sessionID:'session-1',messageID:'assistant-1',type:'text',text:'Answer'}}});}
+  else {announce(); send(stream,{type:'message.part.delta',properties:{sessionID:'session-1',messageID:'assistant-1',partID:'part-1',field:'text',delta:'Answer'}});} if(mode==='truncated'){stream.write('data: {"type":"session.status","properties":{"sessionID":"session-1"',()=>{if(stream.socket)stream.socket.destroy();});return;} send(stream,{type:'message.updated',properties:{info:{id:'assistant-1',sessionID:'session-1',role:'assistant',providerID:provider,modelID:promptModel,time:{created:1,completed:2},finish:'stop'}}}); send(stream,{type:'session.status',properties:{sessionID:'session-1',status:{type:'idle'}}});},5);return;}
  if(req.url==='/session/session-1/abort'||req.url==='/session/session-1'){fs.appendFileSync('drop-seen.log',req.url+'\\n');res.writeHead(200);return res.end('true');}
  res.writeHead(404);res.end();
 }); server.listen(Number(process.argv[2]),'127.0.0.1');`,
@@ -97,10 +129,11 @@ const server=http.createServer(async(req,res)=>{
       options,
     ) as ChildProcessWithoutNullStreams;
   };
-  const adapter = new OpenCodeAdapter('opencode', root, {
+  const adapter = new OpenCodeAdapter(binary, root, {
     spawn: launch,
     startupTimeoutMs,
     requestTimeoutMs: mode === 'hang' ? 30 : 1_000,
+    ...extra,
   });
   return { adapter, launches, root };
 }
@@ -563,5 +596,133 @@ describe('OpenCode failure stages', () => {
     const { adapter } = await fixture();
     await expect(adapter.inspect()).resolves.toMatchObject({ authentication: 'signed-in' });
     await expect(adapter.generate(request)).resolves.toMatchObject({ text: 'Answer' });
+  });
+});
+
+describe('OpenCode Go catalogue freshness (MiMo 2.6, 2026-09-23)', () => {
+  // Live finding on opencode 1.18.4: the isolated server starts with an empty
+  // XDG_CACHE_HOME, so /provider answers from the catalogue bundled in the
+  // binary unless OpenCode's own background models.dev fetch lands first. The
+  // route then offered MiMo 2.6 on some checks and not on others, and a check
+  // and the dispatch after it could disagree.
+  const fresh = {
+    'opencode-go': {
+      id: 'opencode-go',
+      models: {
+        'mimo-v2.6-flash': { id: 'mimo-v2.6-flash', name: 'MiMo-V2.6-Flash' },
+        'mimo-v2.6-pro': { id: 'mimo-v2.6-pro', name: 'MiMo-V2.6-Pro' },
+        'mimo-v2.5': { id: 'mimo-v2.5', name: 'MiMo V2.5' },
+      },
+    },
+  };
+  async function nativeCache(body: string | null) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes native cache '));
+    roots.push(dir);
+    const file = path.join(dir, 'opencode', 'models.json');
+    if (body !== null) {
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, body);
+    }
+    vi.stubEnv('XDG_CACHE_HOME', dir);
+    return { dir, file };
+  }
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('lists the catalogue the person\'s own OpenCode last refreshed, not the bundled one', async () => {
+    const body = JSON.stringify(fresh);
+    const native = await nativeCache(body);
+    const before = await fs.stat(native.file);
+    const { adapter, launches } = await fixture('models-dev');
+    const status = await adapter.inspect();
+    expect(status.models.map((m) => [m.slug, m.name])).toEqual([
+      ['opencode-go/mimo-v2.6-flash', 'MiMo-V2.6-Flash'],
+      ['opencode-go/mimo-v2.6-pro', 'MiMo-V2.6-Pro'],
+      ['opencode-go/mimo-v2.5', 'MiMo V2.5'],
+    ]);
+    // The server still runs in its own cache; the person's is read, never used as the child's.
+    expect(launches[0].env.XDG_CACHE_HOME).toContain('.opencode-cache-');
+    expect(launches[0].env.XDG_CACHE_HOME).not.toBe(native.dir);
+    // Nothing is written back to the person's own OpenCode cache.
+    expect(await fs.readFile(native.file, 'utf8')).toBe(body);
+    expect((await fs.stat(native.file)).mtimeMs).toBe(before.mtimeMs);
+  });
+
+  it('dispatches the exact MiMo 2.6 slug a check listed and attributes the answer to it', async () => {
+    await nativeCache(JSON.stringify(fresh));
+    const { adapter } = await fixture('models-dev');
+    for (const model of ['opencode-go/mimo-v2.6-flash', 'opencode-go/mimo-v2.6-pro']) {
+      await expect(adapter.generate({ ...request, model })).resolves.toMatchObject({
+        text: 'Answer',
+        model,
+      });
+    }
+  });
+
+  it('leaves a person with no refreshed catalogue on the bundled one and refuses MiMo 2.6 before dispatch', async () => {
+    await nativeCache(null);
+    const { adapter } = await fixture('models-dev');
+    const status = await adapter.inspect();
+    expect(status.models.map((m) => m.slug)).toEqual(['opencode-go/mimo-v2.5']);
+    await expect(
+      adapter.generate({ ...request, model: 'opencode-go/mimo-v2.6-flash' }),
+    ).rejects.toMatchObject({ code: 'MODEL_UNAVAILABLE', stage: 'model-list' });
+  });
+
+  it('leaves the bundled catalogue when the person\'s cache is older than the installed OpenCode', async () => {
+    const native = await nativeCache(JSON.stringify(fresh));
+    const old = new Date('2026-01-01T00:00:00Z');
+    await fs.utimes(native.file, old, old);
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'diomedes opencode binary '));
+    roots.push(dir);
+    const binary = path.join(dir, 'opencode.exe');
+    await fs.writeFile(binary, '');
+    const { adapter } = await fixture('models-dev', 5_000, 'lf', {}, binary);
+    const status = await adapter.inspect();
+    expect(status.models.map((m) => m.slug)).toEqual(['opencode-go/mimo-v2.5']);
+  });
+
+  it('never deletes the person\'s cache when it cannot be parsed', async () => {
+    const native = await nativeCache('{not json');
+    const { adapter } = await fixture('models-dev');
+    const status = await adapter.inspect();
+    expect(status.models.map((m) => m.slug)).toEqual(['opencode-go/mimo-v2.5']);
+    expect(await fs.readFile(native.file, 'utf8')).toBe('{not json');
+  });
+});
+
+describe('OpenCode route repairs found by the MiMo 2.6 evaluation (2026-09-23)', () => {
+  it('keeps a reasoning part out of the answer and out of the stream', async () => {
+    const { adapter } = await fixture('reasoning');
+    const deltas: string[] = [];
+    const result = await adapter.generate({ ...request, onDelta: (value) => deltas.push(value) });
+    expect(result.text).toBe('Answer');
+    expect(deltas).toEqual(['Answer']);
+  });
+  it('recovers a text delta that arrived before its part was announced', async () => {
+    const { adapter } = await fixture('late-announce');
+    const deltas: string[] = [];
+    const result = await adapter.generate({ ...request, onDelta: (value) => deltas.push(value) });
+    expect(result.text).toBe('Answer');
+    expect(deltas).toEqual(['Answer']);
+  });
+  it('recovers an early delta for a later text part as well', async () => {
+    const { adapter } = await fixture('late-second');
+    const deltas: string[] = [];
+    const result = await adapter.generate({ ...request, onDelta: (value) => deltas.push(value) });
+    expect(result.text).toBe('Answer more');
+    expect(deltas).toEqual(['Answer', ' more']);
+  });
+  it('tries readiness again when one probe never reaches a listening server', async () => {
+    const { adapter } = await fixture('handshake-hang-once', 4_000, 'lf', { handshakeAttemptMs: 300 });
+    await expect(adapter.inspect()).resolves.toMatchObject({
+      authentication: 'signed-in',
+      accountRoute: OPENCODE_ACCOUNT_ROUTE,
+    });
+  });
+  it('still gives up at the startup deadline when no probe is ever answered', async () => {
+    const { adapter } = await fixture('start-hang', 1_200, 'lf', { handshakeAttemptMs: 200 });
+    await expect(adapter.inspect()).rejects.toMatchObject({ code: 'TIMEOUT', stage: 'launch' });
   });
 });

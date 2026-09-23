@@ -365,3 +365,59 @@
   color: var(--t2);
   overflow-wrap: anywhere;
 }
+
+/* Nectovia usage (NC-2026-09-22.1). The panel's own section and fact list;
+   the only new pieces are the head row, the meter and the unknown state. The
+   meter uses the accent once, and never --attn: usage is a fact, not a need. */
+.console .nu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.console .nu-summary {
+  margin: 0 0 8px;
+  color: var(--t1);
+  font-variant-numeric: tabular-nums;
+}
+.console .nu-summary.nu-unknown {
+  color: var(--t2);
+}
+.console .nu-meter {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--hair);
+  overflow: hidden;
+  margin-bottom: 12px;
+  max-width: 520px;
+}
+.console .nu-fill {
+  display: block;
+  height: 100%;
+  background: var(--seam-lead, var(--light));
+}
+.console .nu-facts dd.mono {
+  font-variant-numeric: tabular-nums;
+}
+/* A receipt reference is a machine string: it truncates where it is written. */
+.console .nu-machine {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .nu-reconcile {
+  margin-top: 10px;
+  color: var(--t2);
+  max-width: 62ch;
+}
+.console .nu-when {
+  margin-top: 10px;
+  color: var(--t3);
+}
+.console .nu-when.nu-stale {
+  color: var(--t2);
+}

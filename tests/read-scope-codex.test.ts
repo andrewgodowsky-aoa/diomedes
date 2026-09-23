@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import os from 'node:os';
 import type { RawToolActivity } from '../shared/adapter-contract.js';
-import { createIntegrations, type NativeRpc } from '../server/integrations.js';
+import { CODEX_WORKSPACE, createIntegrations, type NativeRpc } from '../server/integrations.js';
 import type { ReadScope } from '../server/engines/read-scope.js';
 
 type Params = Record<string, unknown>;
@@ -107,10 +107,9 @@ const pos = {
 };
 
 describe('Codex read scope', () => {
-  it('reads the project folder under the read-only sandbox and streams activity', async () => {
+  it('searches the web under the read-only sandbox with no shell, and streams activity', async () => {
     const native = new ScriptedNative();
     native.items = [
-      readItem('menu.md'),
       {
         type: 'webSearch',
         id: 'web-1',
@@ -130,13 +129,15 @@ describe('Codex read scope', () => {
     // The write-denial proof still runs before any read turn.
     expect(integration.verifySandbox).toHaveBeenCalledOnce();
     const [, config] = integration.createClient.mock.calls[0] as unknown as [unknown, Params];
-    expect(config).toMatchObject({ 'features.shell_tool': true, web_search: 'live' });
+    expect(config).toMatchObject({ web_search: 'live' });
+    expect(config['features.shell_tool']).toBeUndefined();
     const thread = native.sent('thread/start');
-    expect(thread.cwd).toBe(root);
+    // No turn works in the project folder: there is no file tool to use it.
+    expect(thread.cwd).toBe(CODEX_WORKSPACE);
     expect(thread.sandbox).toBe('read-only');
     expect(thread.config).toMatchObject({
       sandbox_mode: 'read-only',
-      'features.shell_tool': true,
+      'features.shell_tool': false,
       web_search: 'live',
       'features.apps': false,
       'features.computer_use': false,
@@ -144,13 +145,11 @@ describe('Codex read scope', () => {
       project_doc_max_bytes: 0,
       mcp_servers: { inherited: { enabled: false } },
     });
-    expect(String(thread.baseInstructions)).toContain(root);
+    expect(String(thread.baseInstructions)).toMatch(/no file tools/i);
     const turn = native.sent('turn/start');
-    expect(turn.cwd).toBe(root);
+    expect(turn.cwd).toBe(CODEX_WORKSPACE);
     expect(turn.sandboxPolicy).toEqual({ type: 'readOnly', networkAccess: false });
     expect(activity.map((a) => [a.phase, a.summary])).toEqual([
-      ['started', 'Reading menu.md'],
-      ['finished', 'Read finished'],
       ['started', 'Searching the web for Harbor Street opening hours'],
       ['finished', 'Read finished'],
     ]);
@@ -174,6 +173,8 @@ describe('Codex read scope', () => {
       },
     ],
     ['a command with no parsed actions', { ...readItem('menu.md'), commandActions: [] }],
+    // The shell is off: even a parsed read inside the project folder is beyond the boundary.
+    ['a parsed read inside the project folder', readItem('menu.md')],
     ['a read outside the project folder', readItem(path.join(other, 'secret.txt'))],
     ['a command run from outside the project folder', { ...readItem('menu.md'), cwd: other }],
     ['a file change', { type: 'fileChange', id: 'f1', changes: [], status: 'completed' }],
@@ -224,7 +225,6 @@ describe('Codex read scope', () => {
     await integration.askCodex({ ...request, readScope: scope({ root: other }) });
     expect(integration.createClient).toHaveBeenCalledTimes(2);
     expect(first.closed).toBe(true);
-    expect(second.sent('thread/start').cwd).toBe(other);
     // Nor does a process kept for a read scope serve a text-only turn.
     await integration.askCodex(request);
     expect(integration.createClient).toHaveBeenCalledTimes(3);

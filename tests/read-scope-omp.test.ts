@@ -75,24 +75,20 @@ const scopeFor = (root: string, extra: Partial<ReadScope> = {}): ReadScope => ({
 });
 
 describe('oh-my-pi read scope', () => {
-  it('names only the read tools instead of --no-tools', () => {
+  it('names only web search, never a file tool', () => {
     const text = ompArguments('overlay.yml');
     expect(text).toContain('--no-tools');
     expect(text.some((arg) => arg.startsWith('--tools'))).toBe(false);
     const read = ompArguments('overlay.yml', { root: 'C:\\p', web: true });
     expect(read).not.toContain('--no-tools');
-    expect(read).toContain('--tools=read,grep,glob,web_search');
+    expect(read).toContain('--tools=web_search');
     for (const flag of ['--no-extensions', '--no-skills', '--no-rules', '--no-lsp', '--no-pty'])
       expect(read).toContain(flag);
-    expect(ompArguments('overlay.yml', { root: 'C:\\p', web: false })).toContain(
-      '--tools=read,grep,glob',
-    );
+    // Without web access there is nothing left to load.
+    expect(ompArguments('overlay.yml', { root: 'C:\\p', web: false })).toContain('--no-tools');
   });
-  it('starts in the project folder and streams activity for each read', async () => {
-    const { adapter, launches, project } = await fixture((root) => [
-      { name: 'read', args: { path: path.join(root, 'menu.md:1-20') } },
-      { name: 'grep', args: { pattern: 'Opens', path: 'docs; notes' } },
-      { name: 'read', args: { path: 'https://example.com/hours' } },
+  it('starts in its own folder and streams web activity', async () => {
+    const { adapter, launches, project } = await fixture(() => [
       { name: 'web_search', args: { query: 'Harbor Street hours' } },
     ]);
     const activity: RawToolActivity[] = [];
@@ -102,14 +98,11 @@ describe('oh-my-pi read scope', () => {
       onToolActivity: (raw) => activity.push(raw),
     });
     expect(result.text).toBe('Answer');
-    expect(launches[0].cwd).toBe(project);
+    expect(launches[0].cwd).not.toBe(project);
     expect(activity.filter((a) => a.phase === 'started').map((a) => a.summary)).toEqual([
-      'Reading menu.md',
-      'Searching project files for Opens',
-      'Opening https://example.com/hours',
       'Searching the web for Harbor Street hours',
     ]);
-    expect(activity.filter((a) => a.phase === 'finished')).toHaveLength(4);
+    expect(activity.filter((a) => a.phase === 'finished')).toHaveLength(1);
   });
   it.each([
     ['bash', { command: 'echo hi' }],
@@ -127,6 +120,8 @@ describe('oh-my-pi read scope', () => {
     ['a read outside the project folder', { path: path.join(os.homedir(), 'secret.txt') }],
     ['an internal URI', { path: 'memory://root' }],
     ['a climb out of the folder', { path: '../outside.txt' }],
+    ['a read inside the project folder', { path: 'menu.md' }],
+    ['a URL read, since the read tool is never loaded', { path: 'https://example.com' }],
   ])('stops %s', async (_label, args) => {
     const { adapter, project } = await fixture(() => [{ name: 'read', args }]);
     await expect(

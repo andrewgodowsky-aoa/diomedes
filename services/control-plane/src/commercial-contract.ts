@@ -1,13 +1,14 @@
-import type { MicroUsd, SettledCharge, Reservation } from '../../../shared/managed-usage.js';
 import type { EntitlementSnapshot } from '../contract/contract.js';
 
-/** Future adapters consume the existing B00/micro-USD contracts, not new money semantics. */
-export interface FundingRepositoryContract {
-  available(tenantId: string, accountId: string): Promise<MicroUsd>;
-  reservation(tenantId: string, reservationId: string): Promise<Reservation | undefined>;
-  settlement(tenantId: string, reservationId: string): Promise<SettledCharge | undefined>;
-}
+/**
+ * The funding contract is `FundingRepository` / `FundingTransaction` in
+ * ./funding.ts (NC-2026-09-22.1, migration 003). It consumes the existing
+ * B00/micro-USD, reservation and credit contracts in shared/managed-usage.ts;
+ * it adds no money semantics of its own.
+ */
+export type { FundingRepository as FundingRepositoryContract, FundingTransaction } from './funding.js';
+
 export interface EntitlementRepositoryContract {
   current(tenantId: string, organizationId: string): Promise<EntitlementSnapshot>;
 }
-// Deliberately no implementation, payment client, grant writer or model dispatch.
+// Still no payment client, grant-writer route or model dispatch in this package.

@@ -57,6 +57,8 @@ import {
   type ReservationEvent,
   type ReservationState,
 } from '../shared/managed-usage.js';
+import { decideJobStep } from '../shared/job-caps.js';
+import { normalizeUsage, type UsageCounts } from '../shared/usage-contract.js';
 import { digest } from './harness/policy.js';
 import { absent } from './paths.js';
 import { jsonWrite, readJson } from './store.js';
@@ -88,19 +90,12 @@ export interface ModelRateCard {
   long: ModelRateBand;
 }
 
-/** What the provider reported one call used. */
-export interface ProviderUsage {
-  /** Total input, including the cache-read and cache-write tokens. */
-  inputTokens: number;
-  /** Part of `inputTokens`. */
-  cacheReadTokens: number;
-  /** Part of `inputTokens`. */
-  cacheWriteTokens: number;
-  /** Total output, including reasoning. */
-  outputTokens: number;
-  /** Part of `outputTokens` and priced as output; kept so a person can see it. */
-  reasoningTokens: number;
-}
+/**
+ * What the provider reported one call used, in the `nectovia-usage/1` meanings
+ * (`shared/usage-contract.ts`): total input with its cache reads and writes as
+ * parts, and total output with its reasoning as a part, priced once as output.
+ */
+export type ProviderUsage = UsageCounts;
 
 /** Which call is about to be sent. Persisted before the request leaves. */
 export interface ExposureAttempt {
@@ -112,6 +107,16 @@ export interface ExposureAttempt {
   requestDigest: string;
 }
 
+/**
+ * The parent job a hold is made for, and that job's cap. The id is the job's
+ * key from `server/job-caps.ts`; the cap is its tier's approved cap plus any
+ * one-job raise, resolved by the host and never by a request.
+ */
+export interface JobScope {
+  id: string;
+  capMicroUsd: MicroUsd;
+}
+
 /** One hold on the cap, from before the call until what it cost is known. */
 export interface ExposureReservation {
   /** `exp-` and the first 40 hex of `digest({ connectionId, attempt })`. */
@@ -121,6 +126,12 @@ export interface ExposureReservation {
   modelId: string;
   rateCardVersion: string;
   attempt: ExposureAttempt;
+  /**
+   * The parent job this hold counts against, or null for a hold made outside
+   * any job. Every hold a job's children and retries make carries the same key,
+   * which is how a job's cap sees them all.
+   */
+  jobId: string | null;
   /** The conservative ceiling held while the call is in flight or unknown. */
   maxMicroUsd: MicroUsd;
   state: ReservationState;
@@ -177,6 +188,26 @@ export class SpendExposureError extends Error {
   }
 }
 
+/**
+ * A job's next hold would pass its cap. Nothing was held and nothing was sent.
+ * It carries the figures so the host can record the stop and offer the choices.
+ */
+export class JobCapReached extends SpendExposureError {
+  constructor(
+    readonly jobId: string,
+    readonly usedMicroUsd: MicroUsd,
+    readonly capMicroUsd: MicroUsd,
+    readonly neededMicroUsd: MicroUsd,
+  ) {
+    super(
+      'job_cap_reached',
+      `This job has used or holds ${formatMoney(usedMicroUsd)} of its ${formatMoney(capMicroUsd)} cap, and its next step could take it to ${formatMoney(neededMicroUsd)}. It stopped before that step; nothing more was sent.`,
+      402,
+    );
+    this.name = 'JobCapReached';
+  }
+}
+
 // --- validation ---------------------------------------------------------------
 
 const refuse = (code: string, message: string, status = 400) =>
@@ -191,6 +222,7 @@ const CONNECTION_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
  */
 const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/;
 const RESERVATION_ID = /^exp-[0-9a-f]{40}$/;
+const JOB_KEY = /^job-[0-9a-f]{40}$/;
 /** Lower case only, so one request cannot have two spellings and two identities. */
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 const LABEL_MAX = 200;
@@ -297,16 +329,16 @@ function attemptOf(value: unknown): ExposureAttempt {
 const reservationIdFor = (connectionId: string, attempt: ExposureAttempt): string =>
   `exp-${digest({ connectionId, attempt: pickAttempt(attempt) }).slice(0, 40)}`;
 
+/**
+ * The usage contract's own verdict on the five counts. Only those fields are
+ * read here: a stored record may carry more, and an extra key must never change
+ * what a call cost.
+ */
 function usageProblem(value: unknown): string | null {
   if (!isRecord(value)) return 'there is no usage record.';
-  for (const key of USAGE_KEYS)
-    if (!isCount(value[key])) return `${key} must be a whole number of tokens, zero or more.`;
-  const usage = value as unknown as ProviderUsage;
-  if (BigInt(usage.cacheReadTokens) + BigInt(usage.cacheWriteTokens) > BigInt(usage.inputTokens))
-    return 'cache reads and cache writes are part of the input, so together they cannot exceed it.';
-  if (usage.reasoningTokens > usage.outputTokens)
-    return 'reasoning is part of the output, so it cannot exceed it.';
-  return null;
+  const evidence = normalizeUsage(Object.fromEntries(USAGE_KEYS.map((key) => [key, value[key]])));
+  if (evidence.state === 'known') return null;
+  return evidence.reason.charAt(0).toLowerCase() + evidence.reason.slice(1);
 }
 
 const pickUsage = (usage: ProviderUsage): ProviderUsage => ({
@@ -507,6 +539,8 @@ function readReservation(
     throw bad('has an id that does not match its attempt.');
   for (const key of ['route', 'modelId', 'rateCardVersion'] as const)
     if (!isLabel(value[key])) throw bad(`has no ${key}.`);
+  if (value.jobId !== undefined && value.jobId !== null && (typeof value.jobId !== 'string' || !JOB_KEY.test(value.jobId)))
+    throw bad('names a job it cannot belong to.');
   if (!isMoney(value.maxMicroUsd) || value.maxMicroUsd <= 0) throw bad('has no usable ceiling.');
   if (!STATES.includes(value.state as ReservationState)) throw bad('is in no known state.');
   if (!isTime(value.createdAt)) throw bad('has no readable creation time.');
@@ -539,6 +573,8 @@ function readReservation(
     modelId: value.modelId as string,
     rateCardVersion: value.rateCardVersion as string,
     attempt,
+    // A hold written before job caps belongs to no job.
+    jobId: typeof value.jobId === 'string' ? value.jobId : null,
     maxMicroUsd: value.maxMicroUsd,
     state: value.state as ReservationState,
     createdAt: value.createdAt,
@@ -624,6 +660,25 @@ function summarize(connectionId: string, stored: StoredExposure): ExposureSummar
     overCapMicroUsd: micro(Math.max(0, exposure - cap)),
     counts,
   };
+}
+
+/**
+ * What one job has put at risk, across every connection: settled holds at what
+ * they cost, and pending, uncertain and written-off holds at their ceiling, the
+ * same terms the connection cap counts them on. Released holds count nothing.
+ */
+function jobExposure(files: ReadonlyMap<string, StoredExposure>, jobId: string): MicroUsd {
+  const amounts: MicroUsd[] = [];
+  for (const [connectionId, stored] of files)
+    for (const reservation of stored.reservations) {
+      if (reservation.jobId !== jobId || reservation.state === 'released') continue;
+      if (reservation.state === 'settled') {
+        if (reservation.settledMicroUsd === null)
+          throw corrupt(`${connectionId}.json`, `reservation ${reservation.id} is settled with no amount.`);
+        amounts.push(reservation.settledMicroUsd);
+      } else amounts.push(reservation.maxMicroUsd);
+    }
+  return sumMoney(amounts);
 }
 
 /**
@@ -885,6 +940,48 @@ export class SpendExposure {
     return found ? structuredClone(found.reservation) : null;
   }
 
+  /** Whether this exact attempt already holds (or held) money on this connection. */
+  hasAttempt(connectionId: string, attempt: ExposureAttempt): boolean {
+    this.assertReady();
+    return this.locate(reservationIdFor(connectionIdOf(connectionId), attemptOf(attempt))) !== null;
+  }
+
+  /** What one job has put at risk so far, across every connection. */
+  jobUsed(jobId: string): MicroUsd {
+    this.assertReady();
+    return jobExposure(this.files, jobId);
+  }
+
+  /** The job this view holds for, or null on the ledger itself. */
+  get jobScope(): JobScope | null {
+    return null;
+  }
+
+  /**
+   * The same ledger, held to one job's cap: every `reserve` through the view
+   * carries the job, and is refused when the job's next hold would pass its cap.
+   * Everything else is the ledger itself, with the same queue and the same files.
+   */
+  forJob(scope: JobScope): SpendExposure {
+    if (!scope || typeof scope.id !== 'string' || !JOB_KEY.test(scope.id))
+      throw refuse('invalid_job', 'A job scope needs the job key the host issued.');
+    const job = Object.freeze({ id: scope.id, capMicroUsd: moneyOf(scope.capMicroUsd, 'invalid_job', 'That job cap') });
+    const ledger = this;
+    return new Proxy(ledger, {
+      get(target, property) {
+        if (property === 'jobScope') return job;
+        if (property === 'reserve')
+          return (input: Parameters<SpendExposure['reserve']>[0]) => target.reserve({ ...input, job });
+        if (property === 'forJob')
+          return () => {
+            throw refuse('invalid_job', 'A job view cannot be re-scoped to another job.');
+          };
+        const value = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+  }
+
   /**
    * Hold `maxMicroUsd` before a call is sent. The hold is on disk before this
    * resolves, so a call dispatched after it can never be forgotten by a
@@ -898,6 +995,8 @@ export class SpendExposure {
     card: ModelRateCard;
     attempt: ExposureAttempt;
     maxMicroUsd: MicroUsd;
+    /** The parent job this hold counts against. Its cap is checked in the same queue as the hold. */
+    job?: JobScope;
   }): Promise<ExposureReservation> {
     this.assertReady();
     return this.exclusive(async () => {
@@ -933,6 +1032,17 @@ export class SpendExposure {
           'No spending cap has been approved for this connection, so no paid call can be sent on it.',
           402,
         );
+      const job = input.job ?? null;
+      if (job) {
+        if (!JOB_KEY.test(job.id)) throw refuse('invalid_job', 'A job scope needs the job key the host issued.');
+        const decision = decideJobStep({
+          capMicroUsd: job.capMicroUsd,
+          usedMicroUsd: jobExposure(this.files, job.id),
+          nextMicroUsd: maxMicroUsd,
+        });
+        if (!decision.ok)
+          throw new JobCapReached(job.id, decision.usedMicroUsd, decision.capMicroUsd, decision.neededMicroUsd);
+      }
       const available = summarize(connectionId, current).availableMicroUsd;
       if (maxMicroUsd > available)
         throw refuse(
@@ -947,6 +1057,7 @@ export class SpendExposure {
         modelId: card.modelId,
         rateCardVersion: card.version,
         attempt,
+        jobId: job?.id ?? null,
         maxMicroUsd,
         state: 'pending',
         createdAt: this.stamp(),

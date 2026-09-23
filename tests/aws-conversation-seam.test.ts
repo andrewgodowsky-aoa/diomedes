@@ -272,6 +272,16 @@ beforeEach(async () => {
   // Work started from this conversation follows the thread's route.
   const chosen = await api<Conversation>(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
   expect(chosen.engine).toBe('aws-bedrock');
+  // Default-deny cloud sharing stays on in production: this synthetic project
+  // explicitly grants the aws-bedrock route, the three linen sources this seam
+  // sends, and conversation history for follow-up turns on the same lineage.
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0,
+    routes: ['aws-bedrock'],
+    documents: [DOCS.order.path, DOCS.delivery.path, DOCS.invoice.path],
+    shareConversationHistory: true,
+    shareReviewPackets: false,
+  });
 });
 afterEach(async () => {
   await close();
@@ -421,6 +431,35 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
       DOCS.invoice.path,
     ])).toEqual(asked);
     expect(seen).toHaveLength(2);
+
+    // Job caps (owner decision 2026-09-23): the message is one job, named by its command id and
+    // pinned under the host's tier; with no style set, the placeholder default of 20 credits.
+    const job = await api<{ jobId: string; tier: string; capMicroUsd: number; stop: unknown }>(
+      `/projects/${project.id}/jobs/m-linen`,
+    );
+    expect(job).toMatchObject({ jobId: 'm-linen', tier: 'efficient', capMicroUsd: 2_000_000, stop: null });
+    // The pre-send estimate for the next message prices it from the route's declared card.
+    const estimate = await api<{ estimate: { kind: string; capMicroUsd: number; warn: boolean } }>(
+      `/projects/${project.id}/threads/${thread.id}/job-estimate`,
+      'POST',
+      { text: 'And the tablecloths?', mode: 'auto', sources: [] },
+    );
+    expect(estimate.estimate).toMatchObject({ kind: 'estimate', capMicroUsd: 2_000_000 });
+
+    // A route with no model chosen cannot spend: the estimate does not warn, so the send's own
+    // refusal ("Connect AWS Bedrock and choose its model") is what the person sees.
+    const { services } = await api<{ services: Record<string, boolean | string> }>('/settings');
+    const narrowed = { ...services };
+    delete narrowed['aws-bedrockModel'];
+    await api('/settings', 'PUT', { services: narrowed });
+    const unready = await api<{ estimate: { kind: string; warn: boolean }; warning: unknown }>(
+      `/projects/${project.id}/threads/${thread.id}/job-estimate`,
+      'POST',
+      { text: 'And the tablecloths?', mode: 'auto', sources: [] },
+    );
+    expect(unready.estimate).toMatchObject({ kind: 'not-metered', warn: false });
+    expect(unready.warning ?? null).toBeNull();
+    await api('/settings', 'PUT', { services });
   });
 
   test('request a draft checklist: deny one exact proposal and nothing changes; approve a new one and it is written', async () => {
@@ -544,7 +583,7 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
     expect((await view()).spend!.recent[0]).toMatchObject({ state: 'uncertain' });
   });
 
-  test('a new key is a new connection generation: the old lineage is retired and the direct route is refused', async () => {
+  test('a new key is a new connection generation: the old lineage is retired, and Build from the thread runs on the new key', async () => {
     await connected();
     const first = await send('m-one', 'Good morning');
     await connect('test-only-bedrock-key-second-generation-0000');
@@ -554,13 +593,53 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
     expect(second.runId).not.toBe(first.runId);
     expect(seen.at(-1)?.authorization).toBe('Bearer test-only-bedrock-key-second-generation-0000');
 
+    // Owner decision 2026-09-23: a thread runs Build and Fix on every connected route, AWS
+    // included, reversing CD-01 Decision 5's refusal. Ask and Plan still answer through the
+    // conversation, so the direct route refuses them as before.
+    const plan = await request(`/projects/${project.id}/ask`, 'POST', {
+      text: 'Plan it now',
+      threadId: thread.id,
+      mode: 'plan',
+      consent: true,
+    });
+    expect(plan.status).toBe(409);
+    expect(await plan.text()).toMatch(/answers through the conversation/);
+
+    const calls = seen.length;
     const direct = await request(`/projects/${project.id}/ask`, 'POST', {
       text: 'Draft it now',
       threadId: thread.id,
       mode: 'build',
       consent: true,
     });
-    expect(direct.status).toBe(409);
-    expect(await direct.text()).toMatch(/answers through the conversation/);
+    expect(direct.status, await direct.clone().text()).toBe(200);
+    const { session: work } = (await direct.json()) as { session: { id: string; route: string } };
+    expect(work.route).toBe('aws-bedrock');
+    await openNeed();
+    // One Work call, on the new key, with no tools and the strict proposal contract.
+    expect(seen).toHaveLength(calls + 1);
+    expect(seen.at(-1)?.authorization).toBe('Bearer test-only-bedrock-key-second-generation-0000');
+    expect(seen.at(-1)?.body.tools ?? []).toEqual([]);
+    expect(userText(seen.at(-1)!.body)).toContain('Return STRICT JSON only');
+    const folder = store().state(project.id).project.folder;
+    await expect(fs.stat(path.join(folder, CHECKLIST))).rejects.toMatchObject({ code: 'ENOENT' });
+    await resolveNeed('go-ahead');
+    const written = await until(
+      () => fs.readFile(path.join(folder, CHECKLIST), 'utf8').catch(() => null),
+      (text) => text !== null,
+      'the approved checklist',
+    );
+    expect(written).toContain('# Linen delivery checklist');
+    const done = await until(
+      state,
+      (value) => value.sessions.find((session) => session.id === work.id)?.state === 'done',
+      'the Build to finish',
+    );
+    expect(done.sessions.find((session) => session.id === work.id)?.origin).toMatchObject({
+      engine: { id: 'aws-bedrock' },
+      model: { requested: AWS_LUNA_MODEL, reported: AWS_LUNA_MODEL, source: 'runtime' },
+      accountRoute: 'aws-bedrock:aws-bedrock-1@r2',
+      executorId: 'diomedes:recorded-writer',
+    });
   });
 });

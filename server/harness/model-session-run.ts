@@ -30,10 +30,19 @@ import { EngineError } from '../engines/process.js';
 import { localHarnessPrincipal } from './bridge.js';
 import type { InteractionPhase } from './claude-session-run.js';
 import { SOURCE_TOOLS, sourceSha, sourceTools } from './capabilities/conversation-sources.js';
+import {
+  readScopeRecord,
+  readScopeTools,
+  readToolOutcome,
+  readToolsNote,
+  type ReadToolDeps,
+} from './capabilities/read-scope-tools.js';
 import { NativeAgent, type ModelAdapter } from './native-agent.js';
 import { digest, HarnessError } from './policy.js';
 import { RunService, Suspended, type StepContext, type StepDefinition } from './run-service.js';
 import { ToolRegistry } from './tools.js';
+import { TEAM_TOOL_NAMES } from '../../shared/team-routes.js';
+import { contextMessage } from '../engines/contract.js';
 
 export const MODEL_CONVERSATION_CAPABILITY: CapabilityManifest = {
   id: 'model-api-conversation',
@@ -48,13 +57,18 @@ export const MODEL_CONVERSATION_CAPABILITY: CapabilityManifest = {
   supportedPlatforms: ['win32', 'darwin', 'linux'],
 };
 
-/** One message's native loop: model calls on the admitted route and read-only source tools. */
+/**
+ * One message's native loop: model calls on the admitted route and read-only source tools. An
+ * Ask or Plan turn with a host-set read scope also names the scope's read tools
+ * (`read-scope-tools.ts`) in its own run's manifest; the id stays the same, so recovery and the
+ * egress authorizer treat both alike, and a turn without a scope is exactly this manifest.
+ */
 export const MODEL_TURN_CAPABILITY: CapabilityManifest = {
   id: 'model-api-turn',
   version: '1',
   label: 'Conversation turn on a model-API route',
   description:
-    'One conversation message answered by NativeAgent: model steps on the admitted route and the two read tools over the attached sources. No writes.',
+    'One conversation message answered by NativeAgent: model steps on the admitted route and the two read tools over the attached sources, plus the host-set read-only tools on an Ask or Plan turn. No writes.',
   tools: [...SOURCE_TOOLS],
   requestedPermissions: [],
   approvalPolicy: 'show-first',
@@ -62,7 +76,35 @@ export const MODEL_TURN_CAPABILITY: CapabilityManifest = {
   supportedPlatforms: ['win32', 'darwin', 'linux'],
 };
 
-export const MODEL_SESSION_CAPABILITIES = [MODEL_CONVERSATION_CAPABILITY.id, MODEL_TURN_CAPABILITY.id] as const;
+/**
+ * One team member's Work turn on a model-API route: model steps on the admitted
+ * route and the Diomedes team tools, which the host runs as that member. No
+ * file tool at all: a file change is still only the proposal the answer carries,
+ * and only the person's exact approval writes it.
+ */
+export const TEAM_WORK_CAPABILITY: CapabilityManifest = {
+  id: 'model-api-team-work',
+  version: '1',
+  label: 'Team member Work turn on a model-API route',
+  description:
+    'One team member’s Work proposal answered by NativeAgent: model steps on the admitted route and the host-run Diomedes team tools for that member. No file tools; no writes.',
+  tools: [...TEAM_TOOL_NAMES],
+  requestedPermissions: [],
+  approvalPolicy: 'show-first',
+  maxTurns: 24,
+  supportedPlatforms: ['win32', 'darwin', 'linux'],
+};
+
+export const MODEL_SESSION_CAPABILITIES = [
+  MODEL_CONVERSATION_CAPABILITY.id,
+  MODEL_TURN_CAPABILITY.id,
+  TEAM_WORK_CAPABILITY.id,
+] as const;
+
+export const teamWorkRunId = (projectId: string, requestId: string) =>
+  `model-work-${digest({ projectId, requestId })}`;
+
+const TEAM_WORK_NOTE = `You are working as a member of a Diomedes team. Use the team tools to read your messages, see the board and report back; the host runs each call for you. You have no file, shell or web tools. Your final answer must still be the file proposal the request asks for.`;
 
 export const modelSessionRunId = (projectId: string, commandId: string) =>
   `model-${digest({ projectId, commandId })}`;
@@ -98,6 +140,8 @@ export interface ModelSessionTurn {
     signal: AbortSignal,
     sinks?: StreamSinks,
   ): Promise<ModelAdapter>;
+  /** What tests substitute below the read tools (DNS, page transport, connector transport). */
+  readTools?: ReadToolDeps;
   /**
    * The caller's preview channel for this turn, stamped with the turn step's
    * identity: raw text deltas and raw tool activity in, fenced frames out.
@@ -170,11 +214,50 @@ type ToolPhase = 'finished' | 'failed';
 /**
  * The same tools, each reporting when the host finishes or fails running it. The
  * descriptors are unchanged, so what the model is offered (and NativeAgent's check
- * of it) is identical; only the host's own execution is narrated.
+ * of it) is identical; only the host's own execution is narrated. A read the host
+ * refused is reported as failed, though the model still reads the refusal.
  */
+/**
+ * The adapter with Cloud sharing checked again around every provider call, so a policy
+ * changed mid-turn stops the next call rather than letting the loop run on
+ * (security pass 2026-09-23).
+ */
+function sharingGuarded(adapter: ModelAdapter, check: () => void): ModelAdapter {
+  return {
+    id: adapter.id,
+    version: adapter.version,
+    destination: adapter.destination,
+    contract: adapter.contract,
+    capabilities: () => adapter.capabilities(),
+    ...(adapter.prepare ? { prepare: async (value, signal) => {
+      check();
+      const prepared = await adapter.prepare!(value, signal);
+      check();
+      return prepared;
+    } } : {}),
+    ...(adapter.validatePrepared ? { validatePrepared: async (value) => {
+      check();
+      await adapter.validatePrepared!(value);
+      check();
+    } } : {}),
+    ...(adapter.inspect ? { inspect: async (value, answer, signal) => {
+      check();
+      const inspected = await adapter.inspect!(value, answer, signal);
+      check();
+      return inspected;
+    } } : {}),
+    complete: async (value, signal) => {
+      check();
+      const answer = await adapter.complete(value, signal);
+      check();
+      return answer;
+    },
+  };
+}
+
 function narrated(
   registry: ToolRegistry,
-  report: (phase: ToolPhase, tool: string, input: unknown, output: unknown) => void,
+  report: (phase: ToolPhase, summary: string, tool: string) => void,
 ): ToolRegistry {
   const out = new ToolRegistry();
   for (const { name } of registry.describe()) {
@@ -186,10 +269,11 @@ function narrated(
         try {
           output = await tool.execute(context);
         } catch (error) {
-          report('failed', tool.name, context.input, null);
+          report('failed', toolOutcome('failed', tool.name, context.input, null).summary, tool.name);
           throw error;
         }
-        report('finished', tool.name, context.input, output);
+        const outcome = toolOutcome('finished', tool.name, context.input, output);
+        report(outcome.phase, outcome.summary, tool.name);
         return output;
       },
     });
@@ -198,24 +282,40 @@ function narrated(
 }
 
 /** One plain sentence for a finished or failed host tool, from its name, input and output. */
-function toolOutcome(phase: ToolPhase, tool: string, input: unknown, output: unknown): string {
+function toolOutcome(
+  phase: ToolPhase,
+  tool: string,
+  input: unknown,
+  output: unknown,
+): { phase: ToolPhase; summary: string } {
   const args = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
   const result = output && typeof output === 'object' ? (output as Record<string, unknown>) : {};
   const target = typeof args.path === 'string' && args.path ? args.path : null;
   const words = tool.replace(/_/g, ' ');
-  if (phase === 'failed') return target ? `Could not read ${target}` : `Could not finish ${words}`;
+  if (phase === 'failed') return { phase, summary: target ? `Could not read ${target}` : `Could not finish ${words}` };
+  const read = readToolOutcome(tool, input, output);
+  if (read) return { phase: read.failed ? 'failed' : 'finished', summary: read.summary };
   if (tool === 'read_source')
-    return result.found === false ? `No attached file named ${target ?? 'that'}` : `Read ${target ?? 'an attached file'}`;
+    return {
+      phase,
+      summary: result.found === false ? `No attached file named ${target ?? 'that'}` : `Read ${target ?? 'an attached file'}`,
+    };
   if (tool === 'list_sources') {
     const count = Array.isArray(result.sources) ? result.sources.length : 0;
-    return count === 1 ? 'Found 1 attached file' : `Found ${count} attached files`;
+    return { phase, summary: count === 1 ? 'Found 1 attached file' : `Found ${count} attached files` };
   }
-  return `Finished ${words}`;
+  return { phase, summary: `Finished ${words}` };
 }
 
 export class ModelSessionRuns {
   private closed = false;
+  private sharingPolicy: (projectId: string, documents: readonly string[], history: boolean, route: string) => void = () => {
+    throw new HarnessError('cloud_sharing_unconfigured', 'Project cloud sharing is not configured for this model session.');
+  };
+  private historyPolicy: (projectId: string, route: string) => boolean;
   private readonly owner = `model-session-${randomUUID()}`;
+  /** Stop handles for team Work turns in flight, so a shutdown reaches them too. */
+  private readonly work = new Set<AbortController>();
   private readonly active = new Map<
     string,
     { commandId: string; intent: string; controller: AbortController; promise: Promise<ModelSessionTurnResult> }
@@ -223,7 +323,18 @@ export class ModelSessionRuns {
   constructor(
     private readonly runs: RunService,
     private readonly route: string,
-  ) {}
+    shareHistory: (projectId: string, route: string) => boolean = () => false,
+  ) {
+    this.historyPolicy = shareHistory;
+  }
+
+  setSharingPolicy(
+    check: (projectId: string, documents: readonly string[], history: boolean, route: string) => void,
+    shareHistory: (projectId: string, route: string) => boolean,
+  ) {
+    this.sharingPolicy = check;
+    this.historyPolicy = shareHistory;
+  }
 
   async get(projectId: string, runId: string): Promise<HarnessRun> {
     const run = await this.runs.get(runId);
@@ -593,6 +704,10 @@ export class ModelSessionRuns {
         const wall = AbortSignal.timeout(TURN_WALL_MS);
         const stop = AbortSignal.any([context.signal, wall, ...(input.signal ? [input.signal] : [])]);
         const childId = turnRunId(runId, input.requestId);
+        // The host policy is read for each turn. A saved lineage does not grant
+        // permission to send previous turns to the next model call.
+        const history = this.historyPolicy(input.projectId, route) ? this.history(run!, turnId) : '';
+        this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), history.length > 0, route);
         const preview = request.activity?.(context, turnId);
         // Pairs the host's finished/failed report with the call the model announced as started.
         // One tool call per step and a sequential loop make the last announcement the one running.
@@ -608,47 +723,71 @@ export class ModelSessionRuns {
               },
             }
           : undefined;
-        const registry = narrated(sourceTools(input.documents), (phase, tool, toolInput, output) => {
+        // The attached sources always; the host-set read tools only on an Ask or Plan turn.
+        const offered = sourceTools(input.documents);
+        const reads = input.readScope ? readScopeTools(input.readScope, { stop, deps: request.readTools }) : null;
+        for (const tool of reads?.tools ?? []) offered.register(tool);
+        const registry = narrated(offered, (phase, summary, tool) => {
           if (!preview) return;
           const current = announced as { callId: string; tool: string } | null;
           const callId = current?.tool === tool ? current.callId : `${tool}-${++unannounced}`;
           announced = null;
-          preview.onToolActivity({ callId, phase, tool, summary: toolOutcome(phase, tool, toolInput, output) });
+          preview.onToolActivity({ callId, phase, tool, summary });
         });
-        await this.runs.start({
-          id: childId,
-          projectId: input.projectId,
-          tenantId: principal.tenantId,
-          principal,
-          capability: MODEL_TURN_CAPABILITY,
-          tools: registry,
-          input: {
-            engine: route,
-            route,
-            accountRoute: input.accountRoute,
-            model: input.model,
-            conversationRunId: runId,
-            commandId: input.requestId,
-            sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
-          },
-          budget: { units: 32, modelCalls: 8, toolCalls: 16, wallMs: TURN_WALL_MS },
-        });
-        // The lease outlives the turn's own wall clock, which aborts the loop first.
-        await this.runs.claim(childId, this.owner, TURN_WALL_MS + 60_000);
-        const adapter = await request.adapter(admission, `${input.instructions}\n\n${TOOL_NOTE}`, stop, sinks);
-        const agent = new NativeAgent(this.runs, adapter, registry);
         let text: string;
+        let version: string;
         try {
-          text = await agent.run(childId, this.owner, this.compose(input, this.history(run!, turnId)), principal, {
-            maxTurns: MODEL_TURN_CAPABILITY.maxTurns,
+          await this.runs.start({
+            id: childId,
+            projectId: input.projectId,
+            tenantId: principal.tenantId,
+            principal,
+            capability: reads
+              ? { ...MODEL_TURN_CAPABILITY, tools: [...SOURCE_TOOLS, ...reads.names] }
+              : MODEL_TURN_CAPABILITY,
+            tools: registry,
+            input: {
+              engine: route,
+              route,
+              accountRoute: input.accountRoute,
+              model: input.model,
+              conversationRunId: runId,
+              commandId: input.requestId,
+              historyShared: history.length > 0,
+              sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
+              // What this turn could read, as evidence. Never a path or a connector's command.
+              ...(input.readScope ? { read: readScopeRecord(input.readScope) } : {}),
+            },
+            budget: { units: 32, modelCalls: 8, toolCalls: 16, wallMs: TURN_WALL_MS },
           });
-        } catch (error) {
-          await preview?.finish().catch(() => undefined);
-          // The person stopped it, or its time ran out: say so. The child run and the spend ledger
-          // keep what is actually known about the call that was in flight.
-          if (input.signal?.aborted || wall.aborted)
-            return { runId, response: null, interrupted: true, nativeSession: null };
-          throw error;
+          // The lease outlives the turn's own wall clock, which aborts the loop first.
+          await this.runs.claim(childId, this.owner, TURN_WALL_MS + 60_000);
+          const note = input.readScope ? `${TOOL_NOTE}\n\n${readToolsNote(input.readScope)}` : TOOL_NOTE;
+          const adapter = await request.adapter(admission, `${input.instructions}\n\n${note}`, stop, sinks);
+          version = adapter.version;
+          const check = () => this.sharingPolicy(
+            input.projectId,
+            input.documents.map((doc) => doc.path),
+            history.length > 0,
+            route,
+          );
+          const agent = new NativeAgent(this.runs, sharingGuarded(adapter, check), registry);
+          try {
+            check();
+            text = await agent.run(childId, this.owner, this.compose(input, history), principal, {
+              maxTurns: MODEL_TURN_CAPABILITY.maxTurns,
+            });
+          } catch (error) {
+            await preview?.finish().catch(() => undefined);
+            // The person stopped it, or its time ran out: say so. The child run and the spend ledger
+            // keep what is actually known about the call that was in flight.
+            if (input.signal?.aborted || wall.aborted)
+              return { runId, response: null, interrupted: true, nativeSession: null };
+            throw error;
+          }
+        } finally {
+          // Every connector process this turn started ends with the turn, answered or stopped.
+          await reads?.close();
         }
         // Every queued preview is published, or the turn fails, before its answer is committed.
         await preview?.finish();
@@ -659,7 +798,7 @@ export class ModelSessionRuns {
         context.reportOrigin?.({
           protocolVersion: 1,
           mode: 'direct',
-          engine: { id: route, version: adapter.version },
+          engine: { id: route, version },
           model: { requested: input.model, reported, source: reported ? 'runtime' : 'not-recorded' },
           accountRoute: input.accountRoute,
         });
@@ -668,7 +807,7 @@ export class ModelSessionRuns {
           response: {
             text,
             model: reported ?? input.model,
-            version: adapter.version,
+            version,
             threadId: input.threadId,
             projectId: input.projectId,
             requestId: input.requestId,
@@ -726,9 +865,92 @@ export class ModelSessionRuns {
       await this.runs.recover(run.id, localHarnessPrincipal(run.projectId));
   }
 
+  /**
+   * One team member's Work turn: its own run under TEAM_WORK_CAPABILITY, with no
+   * conversation lineage. Admission is read fresh, then NativeAgent drives model
+   * steps on the admitted route (external, never resent, reconciled when
+   * uncertain) and host tool steps from `registry`, each recorded in the run.
+   * The answer is the proposal text; the model is only what the provider
+   * reported, empty when it reported none, never the requested one standing in.
+   */
+  async workTurn(request: {
+    route: string;
+    input: TextRequest;
+    admit(signal?: AbortSignal): Promise<ModelSessionAdmission>;
+    adapter(admission: ModelSessionAdmission, instructions: string, signal: AbortSignal): Promise<ModelAdapter>;
+    registry: ToolRegistry;
+  }): Promise<{ runId: string; text: string; model: string; version: string }> {
+    if (this.closed) throw new EngineError('SESSION_CLOSED', 'The conversation runtime is shutting down.');
+    const { input, route } = request;
+    const principal = localHarnessPrincipal(input.projectId);
+    const runId = teamWorkRunId(input.projectId, input.requestId);
+    const known = await this.runs.get(runId).catch((error: unknown) => {
+      if (error instanceof HarnessError && error.code === 'unknown_run') return null;
+      throw error;
+    });
+    if (known)
+      throw new EngineError(
+        'REQUEST_ACTIVE',
+        'This Work request was already sent once. It is never sent twice; start the work again for a new proposal.',
+      );
+    const controller = new AbortController();
+    this.work.add(controller);
+    const wall = AbortSignal.timeout(TURN_WALL_MS);
+    const stop = AbortSignal.any([controller.signal, wall, ...(input.signal ? [input.signal] : [])]);
+    try {
+      const admission = await request.admit(stop);
+      if (admission.accountRoute !== input.accountRoute || admission.model !== input.model)
+        throw new EngineError('ACCOUNT_CHANGED', 'The connection changed after this request was admitted. Nothing was sent.');
+      await this.runs.start({
+        id: runId,
+        projectId: input.projectId,
+        tenantId: principal.tenantId,
+        principal,
+        capability: TEAM_WORK_CAPABILITY,
+        tools: request.registry,
+        input: {
+          engine: route,
+          route,
+          accountRoute: input.accountRoute,
+          model: input.model,
+          commandId: input.requestId,
+          sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
+        },
+        budget: { units: 96, modelCalls: 24, toolCalls: 48, wallMs: TURN_WALL_MS },
+      });
+      await this.runs.claim(runId, this.owner, TURN_WALL_MS + 60_000);
+      const adapter = await request.adapter(admission, `${input.instructions}\n\n${TEAM_WORK_NOTE}`, stop);
+      const check = () =>
+        this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), false, route);
+      check();
+      const agent = new NativeAgent(this.runs, sharingGuarded(adapter, check), request.registry);
+      let text: string;
+      try {
+        text = await agent.run(runId, this.owner, contextMessage(input), principal, {
+          maxTurns: TEAM_WORK_CAPABILITY.maxTurns,
+        });
+      } catch (error) {
+        if (stop.aborted)
+          throw new EngineError('CANCELLED', 'The request was stopped. No late response was saved.', true);
+        throw error;
+      }
+      const run = await this.runs.get(runId);
+      const lastModel = [...run.steps]
+        .reverse()
+        .find((step) => step.intent.kind === 'model' && step.state === 'succeeded');
+      const reported =
+        (lastModel?.output as { transcript?: { modelId?: string | null } } | null)?.transcript?.modelId ?? null;
+      return { runId, text, model: reported ?? '', version: adapter.version };
+    } finally {
+      this.work.delete(controller);
+      controller.abort();
+    }
+  }
+
   async closeAll() {
     this.closed = true;
     for (const active of this.active.values()) active.controller.abort();
+    for (const controller of this.work) controller.abort();
     await Promise.allSettled([...this.active.values()].map((value) => value.promise));
   }
 }
@@ -736,13 +958,29 @@ export class ModelSessionRuns {
 /**
  * Egress for both conversation capabilities: the route must be switched on and
  * the run's admitted account route must still be the one Settings selects, at
- * dispatch and again when the result is committed.
+ * dispatch and again when the result is committed. A read tool that leaves this
+ * computer (a page or a connector) is admitted only on a turn whose recorded
+ * read scope allowed it and whose manifest names it.
  */
 export function modelApiDispatchAuthorizer(services: () => Record<string, unknown> | undefined) {
-  return async (run: HarnessRun, intent: { destination: string }, phase: 'dispatch' | 'result') => {
+  return async (
+    run: HarnessRun,
+    intent: { destination: string; kind?: string; name?: string | null },
+    phase: 'dispatch' | 'result',
+  ) => {
     if (!(MODEL_SESSION_CAPABILITIES as readonly string[]).includes(run.capabilityId))
       throw new HarnessError('egress_denied', 'This run is not a model-API conversation run.');
     if (intent.destination !== 'external') return;
+    if (intent.kind !== 'model') {
+      const read = (run.input as { read?: { web?: unknown; connectors?: unknown } } | null)?.read;
+      const allowed =
+        run.capabilityId === MODEL_TURN_CAPABILITY.id &&
+        typeof intent.name === 'string' &&
+        run.capabilityTools.includes(intent.name) &&
+        ((intent.name === 'fetch_page' && read?.web === true) ||
+          (intent.name === 'connector_read' && Array.isArray(read?.connectors) && read.connectors.length > 0));
+      if (!allowed) throw new HarnessError('egress_denied', 'This turn was not given that read access.');
+    }
     const input = run.input as { route?: unknown; accountRoute?: unknown } | null;
     const route = input?.route;
     const settings = services();

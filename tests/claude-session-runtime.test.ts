@@ -120,6 +120,9 @@ async function runtime(options: { connectionLifetimeMs?: number } = {}) {
       authorize(await runs.get(runId), intent, phase),
   });
   const driver = new ClaudeSessionRuns(runs, options);
+  // Synthetic test policy for this standalone driver fixture: allow cloud
+  // sharing so the session behaviors under test are exercised.
+  driver.setSharingPolicy(() => {});
   let opened = 0,
     sent = 0,
     closed = 0;
@@ -286,6 +289,8 @@ test('unknown dispatch stays uncertain across restart and refuses resume without
   const restarted = new ClaudeSessionRuns(
     new RunService(f.storage, { validateNativeCheckpoint: validateClaudeNativeCheckpoint }),
   );
+  // Same synthetic fixture policy for the restarted driver.
+  restarted.setSharingPolicy(() => {});
   await restarted.recover(saved);
   await expect(restarted.request(f.request('resume', 'two'))).rejects.toMatchObject({
     code: 'RECONCILE_REQUIRED',

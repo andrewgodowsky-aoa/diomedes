@@ -28,10 +28,9 @@ import { SseLimitError, SseParser, type SseEvent } from './sse.js';
 import { killOwnedProcess } from '../integrations.js';
 import {
   approvedMcpTool,
-  displayPath,
   emitActivity,
-  insideRoot,
   isWebUrl,
+  readAccessOf,
   readDetail,
   readScopeNote,
   readSummary,
@@ -54,6 +53,16 @@ const MAX_SSE_EVENT_BYTES = 1024 * 1024;
 // sentence that follows a miss names the wait and asks for a recheck.
 const STARTUP_TIMEOUT_MS = 45_000;
 const REQUEST_TIMEOUT_MS = 120_000;
+// One readiness probe. Measured 2026-09-23 on Windows with opencode 1.18.4:
+// about one launch in four, the first /provider request never reached a server
+// that was already listening, and it held the whole startup budget. A fresh
+// connection answered in under half a second. Each probe now has its own
+// short bound inside the startup deadline; a slow first instance keeps
+// building server-side between probes, so a later one finds it ready.
+const HANDSHAKE_ATTEMPT_MS = 5_000;
+// The models.dev catalogue a person's own OpenCode keeps refreshed. Bounded:
+// the file is about 5 MB today.
+const MAX_CATALOGUE_BYTES = 32 * 1024 * 1024;
 
 type Json = Record<string, unknown>;
 type Fetcher = typeof globalThis.fetch;
@@ -64,6 +73,53 @@ export interface OpenCodeAdapterDeps {
   reservePort?: () => Promise<number>;
   startupTimeoutMs?: number;
   requestTimeoutMs?: number;
+  handshakeAttemptMs?: number;
+}
+
+/**
+ * Where the person's own OpenCode keeps its models.dev catalogue: the same
+ * `<XDG_CACHE_HOME or ~/.cache>/opencode/models.json` opencode v1.18.4 reads
+ * and refreshes (ModelsDev.populate reads that file first, then the catalogue
+ * bundled in the binary). It is the public model catalogue, not account data.
+ */
+export function nativeCatalogueFile(source: NodeJS.ProcessEnv = process.env): string {
+  const home = source.USERPROFILE ?? source.HOME ?? process.cwd();
+  return path.join(source.XDG_CACHE_HOME || path.join(home, '.cache'), 'opencode', 'models.json');
+}
+
+/**
+ * Give the isolated server the catalogue the person's own OpenCode last
+ * refreshed. Without it the server starts from an empty cache and answers from
+ * the catalogue bundled in the binary unless its own background fetch lands
+ * first, so a check and the dispatch after it could list different models
+ * (live, 2026-09-23: MiMo 2.6 on some checks and not others). A copy, never a
+ * link: the server may rewrite or delete its cache file, and that must never
+ * reach the person's own. Anything unusual leaves the old behaviour in place.
+ */
+async function seedCatalogue(
+  cache: string,
+  source: NodeJS.ProcessEnv,
+  binary: string,
+): Promise<void> {
+  const to = path.join(cache, 'opencode', 'models.json');
+  try {
+    const from = nativeCatalogueFile(source);
+    // lstat: a link is not followed; only a plain file is copied.
+    const stat = await fs.lstat(from);
+    if (!stat.isFile() || stat.size === 0 || stat.size > MAX_CATALOGUE_BYTES) return;
+    // A catalogue last refreshed before this OpenCode was built is probably
+    // older than the one bundled inside it, and OpenCode reads the cache file
+    // first, so seeding it would hide newer models. Leave the bundled one.
+    const built = await fs.stat(binary).catch(() => undefined);
+    if (built && built.mtimeMs > stat.mtimeMs) return;
+    await fs.mkdir(path.dirname(to), { recursive: true });
+    await fs.copyFile(from, to);
+    // The bound is checked before the copy; hold it for a file that grew meanwhile.
+    if ((await fs.stat(to)).size > MAX_CATALOGUE_BYTES) await fs.rm(to, { force: true });
+  } catch {
+    /* No refreshed catalogue: OpenCode falls back to its own, as before. */
+    await fs.rm(to, { force: true }).catch(() => {});
+  }
 }
 
 const object = (value: unknown): Json =>
@@ -104,10 +160,14 @@ export const OPENCODE_WEB_TOOLS = ['webfetch', 'websearch'] as const;
 export const OPENCODE_READ_STEPS = 16;
 /** OpenCode names an MCP tool `<server>_<tool>`. */
 const mcpToolName = (server: string, tool: string) => `${server}_${tool}`;
-/** Every tool a scope allows, in OpenCode's vocabulary. */
+/**
+ * Every tool a scope allows, in OpenCode's vocabulary: web and the approved MCP read tools.
+ * No file tool (security pass 2026-09-23): OpenCode's read permission is not checked by
+ * Diomedes before a read runs, so the documents the person chose travel inline instead,
+ * and a whole-project turn is refused on this route.
+ */
 export function opencodeAllowedTools(scope: ReadScope): string[] {
   return [
-    ...OPENCODE_READ_TOOLS,
     ...(scope.web ? OPENCODE_WEB_TOOLS : []),
     ...(scope.mcp ?? []).flatMap((server) =>
       server.readTools.map((tool) => mcpToolName(server.name, tool)),
@@ -116,10 +176,10 @@ export function opencodeAllowedTools(scope: ReadScope): string[] {
 }
 /**
  * The whole configuration, passed inline. Without a scope it is the text-only
- * route: every tool off and denied, one step. With one, the read tools (and the
- * owner's approved MCP read tools) are the only ones on and allowed; edit, bash,
- * task and everything else stay off and denied, reads outside the project
- * folder are denied, and a turn may take a bounded number of steps.
+ * route: every tool off and denied, one step. With one, the web tools and the
+ * owner's approved MCP read tools are the only ones on and allowed; file reads,
+ * edit, bash, task and everything else stay off and denied, and a turn may take
+ * a bounded number of steps.
  */
 export function configContent(scope?: ReadScope): string {
   const allowed = scope ? opencodeAllowedTools(scope) : [];
@@ -173,8 +233,8 @@ const stringField = (value: Json, ...keys: string[]) => {
 };
 /**
  * One OpenCode tool part against a read scope: the activity to show, or a
- * refusal. A tool outside the allow-list, a path outside the project folder, a
- * web call without web access or an unapproved MCP tool stops the request.
+ * refusal. A file tool, a tool outside the allow-list, a web call without web
+ * access or an unapproved MCP tool stops the request.
  */
 export function opencodeToolCall(
   scope: ReadScope,
@@ -189,27 +249,10 @@ export function opencodeToolCall(
       true,
       'stream',
     );
-  const where = stringField(input, 'filePath', 'path');
-  if (where !== undefined && ['read', 'glob', 'grep', 'list'].includes(tool) && !insideRoot(scope.root, where))
-    throw refuse();
+  // No read turn is given a file tool; one reported anyway is beyond the boundary.
+  if ((OPENCODE_READ_TOOLS as readonly string[]).includes(tool)) throw refuse();
   const detail = readDetail(input);
-  const shown = where ? displayPath(scope.root, where) : undefined;
   switch (tool) {
-    case 'read':
-      if (!where) throw refuse();
-      return { kind: 'read', summary: readSummary('read', { path: shown }), detail };
-    case 'list':
-      return { kind: 'list', summary: readSummary('list', { path: shown }), detail };
-    case 'glob': {
-      const pattern = stringField(input, 'pattern');
-      return {
-        kind: 'list',
-        summary: pattern ? `Finding files matching ${pattern}` : readSummary('list', { path: shown }),
-        detail,
-      };
-    }
-    case 'grep':
-      return { kind: 'search', summary: readSummary('search', { query: stringField(input, 'pattern') }), detail };
     case 'websearch':
       if (!scope.web) throw refuse();
       return { kind: 'web-search', summary: readSummary('web-search', { query: stringField(input, 'query') }), detail };
@@ -539,6 +582,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
   private readonly reserve: NonNullable<OpenCodeAdapterDeps['reservePort']>;
   private readonly startupTimeout: number;
   private readonly requestTimeout: number;
+  private readonly handshakeAttempt: number;
   constructor(
     private readonly file: string,
     private readonly cwd: string,
@@ -551,6 +595,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     this.reserve = deps.reservePort ?? ephemeralPort;
     this.startupTimeout = deps.startupTimeoutMs ?? STARTUP_TIMEOUT_MS;
     this.requestTimeout = deps.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+    this.handshakeAttempt = deps.handshakeAttemptMs ?? HANDSHAKE_ATTEMPT_MS;
   }
 
   private async isolatedEnvironment(root: string, scope?: ReadScope): Promise<NodeJS.ProcessEnv> {
@@ -562,6 +607,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     const source = process.env;
     const nativeHome = source.USERPROFILE ?? source.HOME ?? process.cwd();
     const nativeData = source.XDG_DATA_HOME ?? path.join(nativeHome, '.local', 'share');
+    await seedCatalogue(cache, source, this.file);
     return {
       ...engineEnvironment(source),
       HOME: home,
@@ -641,9 +687,9 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     });
     const base = `http://127.0.0.1:${port}`;
     const auth = `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}`;
-    // The instance directory: the project folder for a read turn, where
-    // `external_directory: deny` keeps its reads; the engine's own otherwise.
-    const directory = scope ? scope.root : this.cwd;
+    // The engine's own folder for every turn: no turn has a file tool, and a project's
+    // own OpenCode configuration must never be loaded into a Diomedes turn.
+    const directory = this.cwd;
     const ready = deadline(signal, this.startupTimeout);
     try {
       for (;;) {
@@ -652,7 +698,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
           // Diomedes generated for it. Nothing here has reached an account yet.
           const response = await this.fetcher(`${base}/provider`, {
             headers: this.headers(auth, directory),
-            signal: ready.signal,
+            signal: AbortSignal.any([ready.signal, AbortSignal.timeout(this.handshakeAttempt)]),
           });
           const body = await cappedText(response, MAX_JSON_BYTES, 'local-handshake');
           if (response.status === 401 || response.status === 403)
@@ -818,6 +864,13 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     const selection = parseSelection(input.model);
     const prompt = contextMessage(input);
     const scope = input.readScope;
+    if (scope && readAccessOf(scope) === 'project')
+      throw new EngineError(
+        'POLICY_MISMATCH',
+        'OpenCode cannot read the whole project folder, because its reads cannot be checked before they run. Choose the documents to include instead.',
+        false,
+        'dispatch',
+      );
     const server = await this.start(input.signal, scope);
     const control = deadline(input.signal, this.requestTimeout);
     const calls = new Map<string, { tool: string; started: boolean }>();
@@ -935,6 +988,12 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       let assistantMessageId: string | undefined;
       let assistantInfo = false;
       let assistantTerminal = false;
+      // The answer is built from text parts only. OpenCode 1.18.4 streams a
+      // reasoning part's deltas with the same `field: "text"`, so a delta is
+      // accepted only for a part it has already announced as text. A text
+      // delta that arrives before its announcement is recovered from the
+      // part's full text when that part is next updated.
+      const textParts = new Map<string, string>();
       try {
         for (;;) {
           const part = await reader.read();
@@ -1052,15 +1111,22 @@ export class OpenCodeAdapter implements TextEngineAdapter {
               text(partValue.messageID) === assistantMessageId
             ) {
               if (partType !== 'text') continue;
+              const partId = text(partValue.id);
+              if (partId && !textParts.has(partId)) textParts.set(partId, '');
               const delta = text(props.delta);
               if (delta) {
                 answer += delta;
+                if (partId) textParts.set(partId, (textParts.get(partId) ?? '') + delta);
                 input.onDelta?.(delta);
               } else {
+                // Recover what this part has that the answer does not, per part,
+                // so a later part's early deltas are not lost either.
                 const full = text(partValue.text);
-                if (full && full.startsWith(answer)) {
-                  const next = full.slice(answer.length);
-                  answer = full;
+                const prior = partId ? (textParts.get(partId) ?? '') : answer;
+                if (full && full.startsWith(prior)) {
+                  const next = full.slice(prior.length);
+                  answer += next;
+                  if (partId) textParts.set(partId, full);
                   if (next) input.onDelta?.(next);
                 }
               }
@@ -1069,11 +1135,13 @@ export class OpenCodeAdapter implements TextEngineAdapter {
               kind === 'message.part.delta' &&
               assistantMessageId &&
               text(props.messageID) === assistantMessageId &&
-              text(props.field) === 'text'
+              text(props.field) === 'text' &&
+              textParts.has(text(props.partID))
             ) {
               const delta = text(props.delta);
               if (delta) {
                 answer += delta;
+                textParts.set(text(props.partID), (textParts.get(text(props.partID)) ?? '') + delta);
                 input.onDelta?.(delta);
               }
             }

@@ -39,6 +39,8 @@ export interface MessageCommand {
   text: string;
   mode: ConversationMode;
   sources: { path: string; sha: string }[];
+  /** Absent means the selected documents only. Never saved; it binds this one message. */
+  readAccess?: 'selected' | 'project';
 }
 /** What one request lends the sequence: when to stop, and when the response has ended. */
 export interface RequestContext {

@@ -11,6 +11,7 @@ import type { TextRequest } from '../server/engines/contract';
 import type { Store } from '../server/store';
 import type { HarnessHost } from '../server/harness/host';
 import type { Project, Conversation } from '../shared/types';
+import { shareAfter } from './fixtures/cloud-sharing-grant';
 
 // Actual built Console, HTTP/SSE, createApp, EngineService and host RunService.
 // Only discovery and the provider's transport callback are scripted; no inference.
@@ -35,7 +36,9 @@ async function api<T>(endpoint: string, method = 'GET', body?: unknown): Promise
     headers: { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' },
     body: body === undefined ? undefined : JSON.stringify(body) });
   expect(response.ok, `${endpoint}: ${response.status}`).toBe(true);
-  return response.json() as Promise<T>;
+  const value = (await response.json()) as T;
+  await shareAfter(api, endpoint, method, value);
+  return value;
 }
 test.beforeEach(async () => {
   await fs.mkdir(path.resolve('test-results'), { recursive: true });

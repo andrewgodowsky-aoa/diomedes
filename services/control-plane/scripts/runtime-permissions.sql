@@ -10,3 +10,9 @@ GRANT SELECT, INSERT, UPDATE ON control_plane.sessions, control_plane.organizati
   control_plane.memberships, control_plane.invitations TO cp_runtime;
 -- B01 runtime does not yet consume the later commercial tables. A separately
 -- reviewed receiver role can receive only the inbox/customer privileges it needs.
+-- NC-2026-09-22.1: the Worker's usage projection only reads funding rows.
+GRANT SELECT ON control_plane.credit_periods, control_plane.funding_reservations,
+  control_plane.funding_settlements, control_plane.credit_adjustments,
+  control_plane.credit_topups TO cp_runtime;
+-- Funding writes (reserve, dispatch, settle, grants, top-ups, cap decisions)
+-- belong to a separately reviewed runtime role, never to the Worker login.

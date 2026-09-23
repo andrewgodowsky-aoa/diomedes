@@ -345,8 +345,6 @@ describe('Diomedes home live reply', () => {
     onSend: async () => true,
     onStop: noAction,
     route: 'claude-code',
-    routeChoices: null,
-    onRoute: noAction,
     unavailable: null,
     card: null,
     cardBusy: false,

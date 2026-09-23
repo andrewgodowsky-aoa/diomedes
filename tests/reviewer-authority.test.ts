@@ -131,6 +131,18 @@ beforeEach(async () => {
     })
   ).data.id;
   await request('/settings', 'PUT', { services: { codex: true } });
+  // Allow the proposed new path explicitly. Other source paths need their own grants.
+  expect(
+    (
+      await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0,
+        routes: ['codex'],
+        documents: ['Reviewed.md'],
+        shareConversationHistory: false,
+        shareReviewPackets: true,
+      })
+    ).status,
+  ).toBe(200);
   proposal('Reviewed.md');
 });
 afterEach(async () => {
@@ -162,6 +174,21 @@ describe('Approve for me: a reviewer gates authority the person already granted'
     const event = current.history.find((entry) => entry.id === record.eventId)!;
     expect(event.kind).toBe('model-review');
     expect(event.sentence).toContain('not your approval');
+  });
+  test('a proposed path outside the document allowlist never reaches the reviewer', async () => {
+    expect((await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+      expectedVersion: 1,
+      routes: ['codex'],
+      documents: [],
+      shareConversationHistory: false,
+      shareReviewPackets: true,
+    })).status).toBe(200);
+    expect((await grant()).status).toBe(200);
+    expect((await start()).status).toBe(200);
+    const current = await settled();
+    expect(seen).toHaveLength(0);
+    expect(current.needs.at(-1)?.execution?.state).not.toBe('applied');
+    await expect(fs.stat(path.join(current.project.folder, 'Reviewed.md'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
   test('the reviewer is a separate invocation and its runtime model outranks the request', async () => {
     review = async () => ({
@@ -369,6 +396,13 @@ describe('Approve for me never approves what it should not', () => {
     expect(need.authorization).toBeUndefined();
   }, 20_000);
   test('the reviewer budget is spent, not exceeded', async () => {
+    expect((await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+      expectedVersion: 1,
+      routes: ['codex'],
+      documents: ['First.md', 'Second.md'],
+      shareConversationHistory: false,
+      shareReviewPackets: true,
+    })).status).toBe(200);
     expect(
       (await grant(grantBody({ reviewer: { requestedModel: null, maxReviews: 1 } }))).status,
     ).toBe(200);
@@ -412,6 +446,18 @@ describe('the reviewer cannot reach past the scope the person confirmed', () => 
   test('an approve cannot delete a file or apply an unsupported kind', async () => {
     const folder = (await state()).project.folder;
     await fs.writeFile(path.join(folder, 'Keep.md'), 'keep me');
+    // The selected source must be an explicitly granted cloud document.
+    expect(
+      (
+        await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+          expectedVersion: 1,
+          routes: ['codex'],
+          documents: ['Keep.md'],
+          shareConversationHistory: false,
+          shareReviewPackets: true,
+        })
+      ).status,
+    ).toBe(200);
     await grant();
     proposal('Keep.md', null);
     await start(['Keep.md']);
@@ -475,6 +521,18 @@ describe('the reviewer cannot reach past the scope the person confirmed', () => 
     await close();
     await launch();
     await request('/settings', 'PUT', { services: { codex: true } });
+    // The selected source must be an explicitly granted cloud document.
+    expect(
+      (
+        await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+          expectedVersion: 1,
+          routes: ['codex'],
+          documents: ['Base.md', 'Reviewed.md'],
+          shareConversationHistory: false,
+          shareReviewPackets: true,
+        })
+      ).status,
+    ).toBe(200);
     await grant();
     proposal('Reviewed.md');
     await start(['Base.md']);

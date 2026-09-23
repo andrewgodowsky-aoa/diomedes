@@ -118,6 +118,18 @@ beforeEach(async () => {
     await request(`/projects/${projectId}/threads`, 'POST', { taskId, name: 'Agent thread' })
   ).data.id;
   await request('/settings', 'PUT', { services: { codex: true } });
+  // Grant the proposed file path for the model-reviewer scope below.
+  expect(
+    (
+      await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0,
+        routes: ['codex'],
+        documents: ['Result.md'],
+        shareConversationHistory: false,
+        shareReviewPackets: true,
+      })
+    ).status,
+  ).toBe(200);
 });
 afterEach(async () => {
   // Held before the first await: a hook that outlives its timeout keeps running,

@@ -23,6 +23,7 @@ import { directOrigin, applicationOrigin } from '../shared/attribution.js';
 import express, { type ErrorRequestHandler, type Request, type Response } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import type {
   Conversation,
@@ -81,8 +82,18 @@ import {
   chooseWorkStyleSentence,
   isWorkStyle,
   resolveWorkStyle,
+  WORK_STYLE_LABELS,
+  WORK_STYLES,
   type WorkStyle,
+  type WorkStyleResolution,
 } from '../shared/work-style.js';
+import {
+  TEAM_ROUTES,
+  teamRouteRefusal,
+  type TeamRoute,
+  type TeamRouteCandidate,
+} from '../shared/team-routes.js';
+import { teamToolRegistry } from './team/tools.js';
 import type { UsageSnapshot } from '../shared/types.js';
 import { mountTeamRoutes } from './team/routes.js';
 import { createHarnessHost } from './harness/host.js';
@@ -97,6 +108,12 @@ import {
 import { FIXTURE_ENGINE } from './harness/approval.js';
 import { CODEX_ENGINE, type ResolveHarnessAuthority } from './harness/codex-engine.js';
 import { roleInstructions } from './team/prompts.js';
+import { unreadForSlot } from './team/mailbox.js';
+import { JobCaps } from './job-caps.js';
+import { jobRatesOf, mountJobCapRoutes, type JobPlan } from './job-cap-routes.js';
+import { approvedJobCap, jobTierOf, type JobShape } from '../shared/job-caps.js';
+import { CONVERSATION_LIMITS, WORK_LIMITS as MODEL_WORK_LIMITS } from './engines/model-api-core.js';
+import { MODEL_TURN_CAPABILITY, TEAM_WORK_CAPABILITY } from './harness/model-session-run.js';
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
 import { parseTaskCommand } from './task-admission.js';
 import { WorkControl } from './work-control.js';
@@ -113,13 +130,22 @@ import {
   isExternalEngine,
   isRoute,
   isConversationRoute,
+  CONVERSATION_ROUTE_LIST,
   ROUTES,
   routeDisplayName,
   type EngineConnection,
 } from '../shared/engines.js';
-import { EngineService } from './engines/service.js';
+import { EngineService, HOST_TEST_PROJECT } from './engines/service.js';
 import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
+import { mountJevAdvisorRoutes } from './jev-advisor-routes.js';
+import type { JevAdvisor } from './harness/jev-advisor.js';
 import { loadApprovedReadServers, type ReadScope } from './engines/read-scope.js';
+import {
+  buildTurnReadScope,
+  closeReadGrant,
+  parseReadAccess,
+  revokeProjectReadGrants,
+} from './engines/turn-scope.js';
 import { mountInteractionRoutes } from './engines/interaction-routes.js';
 import {
   InteractionTurns,
@@ -146,20 +172,32 @@ import { AWS_BEDROCK_ROUTE, AwsConnections } from './engines/aws-bedrock.js';
 import { AZURE_OPENAI_ROUTE, AzureConnections } from './engines/azure-openai.js';
 import { OPENROUTER_ROUTE, OpenRouterConnections } from './engines/openrouter.js';
 import { mountModelApiRoutes } from './engines/model-api-routes.js';
+import { mountReadConnectorRoutes } from './engines/read-connector-routes.js';
 import { ConnectionSecrets, type SecretBox } from './connection-secrets.js';
 import { SpendExposure } from './spend-exposure.js';
-import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_ROUTES } from '../shared/model-api.js';
+import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_ROUTES, type ModelApiRoute } from '../shared/model-api.js';
 import { baselineRedact } from './secrets.js';
 import { EngineError } from './engines/process.js';
 import { selectedEngine, selectedModel } from '../shared/ai-selection.js';
+import {
+  ownerPinFrom,
+  resolveTier,
+  tierMapFrom,
+  TIER_SETTING_KEYS,
+  tierSettingRefusal,
+  type TierResolution,
+} from '../shared/tier-map.js';
 import { projectedTurnIds, turnIdentityText } from '../shared/conversation-turn-id.js';
 import { AppUpdateService, mountAppUpdateRoutes, type UpdateTransport } from './app-updates.js';
 import { EngineInstaller } from './engines/install.js';
 import { NativeLogin } from './engines/login.js';
+import { changeCloudSharing, cloudSharing, requireCloudSharing } from './cloud-sharing.js';
 import { assembleSkillSection, instructionSectionBudget } from './harness/instruction-delivery.js';
 
 interface AppOptions {
   dataDir: string;
+  /** Fresh per-launch secret held by the desktop main process, never persisted. */
+  loopbackToken?: string;
   projectRoot?: string;
   stepMs?: number;
   port?: number;
@@ -171,6 +209,12 @@ interface AppOptions {
    * synthetic reviewer to prove authority without a provider call.
    */
   reviewerAdapter?: ReviewerAdapter | null;
+  /**
+   * The Jev preflight (NC-2026-09-22.1, Phase F). Off unless given: omitted or
+   * null mounts no preflight route and no provider is ever asked. Tests inject
+   * a fixture advisor; no build constructs a real one yet.
+   */
+  jevAdvisor?: JevAdvisor | null;
   engineService?: EngineService;
   /** How a native sign-in window is opened; tests pass a fake so none opens. */
   nativeLoginLaunch?: ConstructorParameters<typeof NativeLogin>[1];
@@ -459,6 +503,15 @@ function validateSettings(current: Settings, body: unknown): Settings {
         services[key] = on;
         continue;
       }
+      // The owner's tier map and the owner-testing pin: which route and model serve each
+      // tier. Checked here, on the host, key by key; a route that is not connected is
+      // refused when a tier is used, never silently swapped.
+      if (TIER_SETTING_KEYS.includes(key)) {
+        const refusal = tierSettingRefusal(key, on);
+        if (refusal) throw new ApiError(400, refusal);
+        services[key] = String(on).trim();
+        continue;
+      }
       if (
         ['codex', ...EXTERNAL_ENGINES, ...MODEL_API_ROUTES].some(
           (engine) =>
@@ -536,7 +589,9 @@ function validateSettings(current: Settings, body: unknown): Settings {
 }
 
 export async function createApp(options: AppOptions) {
-  const store = new Store(path.resolve(options.dataDir), options.projectRoot);
+  if (options.loopbackToken !== undefined && !/^[0-9a-f]{64}$/.test(options.loopbackToken))
+    throw new Error('The desktop local-service token is invalid.');
+  const store = new Store(path.resolve(options.dataDir), options.projectRoot, options.secretBox ?? null);
   await store.init();
   // Automatic Change Review: deterministic per-run evidence. Constructed before
   // the work services so every run can capture its baseline from the start.
@@ -653,6 +708,9 @@ export async function createApp(options: AppOptions) {
     memberOf: (organizationId, personId) =>
       isActiveMember(workspaces.membershipOf(organizationId, personId)),
     billingStatusFor: (organizationId) => billing.statusOf(organizationId),
+    // The allowance path is not bound to a thread, so its jobs run under the Settings default
+    // tier's approved cap. No request field can move it.
+    jobCapFor: () => approvedJobCap(jobTierOf(styleOf(null))),
     policyFor: (organizationId) => {
       const active = configuration.active(organizationId);
       return {
@@ -688,12 +746,47 @@ export async function createApp(options: AppOptions) {
   const nativeWork = new NativeWorkService(
     store,
     options.nativeGenerator ??
-      (async (input) => {
+      (async ({ team, onTeamToolCall, ...input }) => {
+        // A request that names no project or route has no sharing scope to check, so it is
+        // refused rather than sent unchecked.
+        if (!input.projectId || !input.engine)
+          throw new ApiError(403, 'This cloud request has no valid project sharing scope.');
+        requireCloudSharing(store.state(input.projectId), input.engine, [
+          ...input.documents.map((doc) => doc.path),
+          ...(input.sharingPaths ?? []),
+        ]);
         if (isModelApiRoute(input.engine)) {
           if (!input.projectId || !input.threadId || !input.requestId || !input.model)
             throw new ApiError(409, 'Select a model and thread before requesting work.');
           if (typeof input.accountRoute !== 'string')
             throw new ApiError(409, 'Connect this route in AI setup first.');
+          if (team) {
+            // A model-API route carries the team tools by running them here, as the member
+            // whose run this is. Native Work already matched the run to this member.
+            const member = store
+              .state(input.projectId)
+              .team?.members.find((item) => item.slotId === team.slotId);
+            if (!member) throw new ApiError(409, 'This team member was not found.');
+            return engines.generateModelApiTools(
+              input.engine,
+              {
+                ...input,
+                projectId: input.projectId,
+                threadId: input.threadId,
+                requestId: input.requestId,
+                model: input.model,
+                instructions: `${input.instructions ?? ''}\n\n${team.roleInstructions}`.trim(),
+                accountRoute: input.accountRoute,
+              },
+              teamToolRegistry(
+                { projectId: input.projectId, member, store, service: teamService },
+                onTeamToolCall,
+              ),
+            );
+          }
+          // Tool activity reaches the run card as on every external route. No preview sink:
+          // a proposal is strict JSON, and the fenced preview channel fails the whole paid
+          // call on one over-long frame, which a large proposal sent as one delta would be.
           return engines.generateModelApi(input.engine, {
             ...input,
             projectId: input.projectId,
@@ -702,9 +795,11 @@ export async function createApp(options: AppOptions) {
             model: input.model,
             instructions: input.instructions ?? '',
             accountRoute: input.accountRoute,
+            onActivity: (frame) => store.emit('engine-activity', frame),
           });
         }
-        if (!isExternalEngine(input.engine)) return askCodex(input);
+        if (!isExternalEngine(input.engine))
+          return askCodex({ ...input, ...(team ? { team, onTeamToolCall } : {}) });
         if (!input.projectId || !input.threadId || !input.requestId || !input.model)
           throw new ApiError(409, 'Select a model and thread before requesting work.');
         const accountRoute = input.accountRoute;
@@ -718,6 +813,8 @@ export async function createApp(options: AppOptions) {
           model: input.model,
           instructions: input.instructions ?? '',
           accountRoute,
+          // Only an MCP-carrying adapter accepts this; the engine service refuses it elsewhere.
+          ...(team ? { team: { ...team, onToolCall: onTeamToolCall } } : {}),
           // A work run's requestId is its session id, which is how its run card finds these.
           onActivity: (frame) => store.emit('engine-activity', frame),
         });
@@ -734,11 +831,43 @@ export async function createApp(options: AppOptions) {
   });
   // External text turns run through the host's RunService: the adapter is only
   // the provider transport inside the fenced dispatch step.
-  engines.dispatch = harness.textRoute.request;
+  engines.dispatch = (request) => {
+    const intent = request.intent as { projectId?: unknown; engine?: unknown; documents?: unknown };
+    if (intent.projectId !== HOST_TEST_PROJECT) {
+      if (
+        typeof intent.projectId !== 'string' || !isRoute(intent.engine) ||
+        !Array.isArray(intent.documents) ||
+        !intent.documents.every((doc) => doc && typeof doc === 'object' && typeof doc.path === 'string')
+      ) throw new ApiError(403, 'This cloud request has no valid project sharing scope.');
+      const names = intent.documents.map((doc: { path: string }) => doc.path);
+      requireCloudSharing(store.state(intent.projectId), intent.engine, names);
+      return harness.textRoute.request({
+        ...request,
+        send: (context, admission) => {
+          requireCloudSharing(store.state(intent.projectId as string), intent.engine as Route, names);
+          return request.send(context, admission);
+        },
+      });
+    }
+    return harness.textRoute.request(request);
+  };
   engines.nativeSessions = harness.claudeSessions;
   engines.modelSessions = harness.modelSessions;
   const exposure = new SpendExposure(store.dataDir);
   await exposure.init();
+  // Parent-job caps (owner decision 2026-09-23): each job's tier is its thread's WorkStyle, else
+  // the Settings default, read here by the host; the engine service holds every model-API call
+  // to its job's cap as well as the connection's.
+  const jobCaps = new JobCaps(store.dataDir, {
+    tierOf: (projectId, threadId) => {
+      const thread = threadId
+        ? store.state(projectId).conversations.find((item) => item.id === threadId)
+        : null;
+      return jobTierOf(styleOf(thread));
+    },
+  });
+  await jobCaps.init();
+  engines.jobCaps = jobCaps;
   engines.modelApi = {
     connections: new AwsConnections(store.dataDir),
     secrets: new ConnectionSecrets(store.dataDir, options.secretBox ?? null),
@@ -787,13 +916,17 @@ export async function createApp(options: AppOptions) {
     threadId: string | undefined,
     // The socket is the listening service, even when listen(0) selected the port.
     port: number | undefined,
+    // The route this request runs on. A member's team tools ride only on the member's own
+    // route; the same thread sent to another route is ordinary work with no team service.
+    runRoute: Route,
   ): NativeTeamOptions | undefined => {
     if (!threadId) return undefined;
     const state = store.state(projectId);
-    const member = state.team?.members.find(
-      (item) => item.threadId === threadId && item.engine === 'codex',
-    );
-    if (!member) return undefined;
+    // Any member on any route carries its team options when the run is on that route;
+    // Native Work checks the route can carry them and refuses by name otherwise.
+    const member = state.team?.members.find((item) => item.threadId === threadId);
+    if (!member || member.engine === 'probe' || member.engine === 'sample') return undefined;
+    if (member.engine !== runRoute) return undefined;
     return teamForMember(projectId, member, port);
   };
   const serviceFor = (projectId: string, sessionId: string) => {
@@ -807,17 +940,32 @@ export async function createApp(options: AppOptions) {
   };
   const port = options.port ?? Number(process.env.DIOMEDES_PORT ?? 47631),
     clientPort = options.clientPort ?? Number(process.env.DIOMEDES_CLIENT_PORT ?? 5173);
+  const loopbackToken = options.loopbackToken
+    ? Buffer.from(options.loopbackToken, 'hex')
+    : null;
   const origins = new Set([`http://127.0.0.1:${port}`, `http://127.0.0.1:${clientPort}`]);
   app.disable('x-powered-by');
   app.use((req, res, next) => {
     if (req.socket.localPort) listeningPort = req.socket.localPort;
-    if (req.path.startsWith('/mcp/team/')) return next();
+    const teamRequest = req.path.startsWith('/mcp/team/');
     const origin = req.headers.origin;
     const host = req.headers.host;
     if (!host || !/^127\.0\.0\.1:\d+$/.test(host))
       return next(new ApiError(403, 'This service accepts connections on 127.0.0.1 only.'));
     if (origin && !origins.has(origin))
       return next(new ApiError(403, 'This page cannot access the local service.'));
+    // Team helpers use their own scoped bearer token, but must still obey the
+    // same loopback Host and browser-Origin boundary as the desktop UI.
+    if (teamRequest) return next();
+    if (loopbackToken) {
+      const supplied = req.headers['x-diomedes-session'];
+      if (
+        typeof supplied !== 'string' ||
+        !/^[0-9a-f]{64}$/.test(supplied) ||
+        !timingSafeEqual(Buffer.from(supplied, 'hex'), loopbackToken)
+      )
+        return next(new ApiError(401, 'This local-service session is not authorized.'));
+    }
     res.setHeader('Vary', 'Origin');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -994,22 +1142,36 @@ export async function createApp(options: AppOptions) {
   // Accepted close-and-install latches before the desktop handoff; new
   // mutating work pauses after that point. Assigned once updates exist;
   // route handlers run later, so the late binding is safe.
-  // A member wakes on team mail (see server/team/service.ts): the run is the same Codex Work
-  // run a person starts from the thread, on the member's open task when it has one. Only
-  // Codex members run; other engines park as waiting until they exist.
+  // A member wakes on team mail (see server/team/service.ts): the run is the same Work run a
+  // person starts from the thread, on the member's own route and model, on the member's open
+  // task when it has one. Every route that can carry the team tools runs (shared/team-routes.ts).
   teamService.setRunStarter(async ({ projectId, member, threadId, text }) => {
     if (isUpdateClosing())
       throw new ApiError(409, 'The app update is accepted. New work pauses until restart.');
     pendingMutations += 1;
     try {
-      if (member.engine !== 'codex') throw new ApiError(409, 'This helper cannot run here yet.');
+      // A demo member has no provider behind it; a real route that cannot carry the team
+      // tools is named. Every route that can carries them runs the member's own Work.
+      if (member.engine === 'probe' || member.engine === 'sample')
+        throw new ApiError(409, 'This helper cannot run here yet.');
+      const refusal = teamRouteRefusal(member.engine);
+      if (refusal) throw new ApiError(409, refusal);
       const state = store.state(projectId);
+      // A wake runs the member as recorded: its own route and requested model. The person may
+      // have sent the same thread to another route since, which clears the thread's pick; the
+      // member stays the authority for its own wake, so the run never asks for another model.
+      const memberThread = state.conversations.find((item) => item.id === threadId);
+      if (memberThread) {
+        memberThread.engine = member.engine as TeamRoute;
+        memberThread.requested = member.model ? { model: member.model, effort: null } : null;
+      }
       const openTask = state.tasks.find(
         (item) => item.assignedTo === member.slotId && !item.deletedAt && item.state !== 'done',
       );
       const started = await startCodexWork(
         {
           projectId,
+          engine: member.engine as TeamRoute,
           threadId,
           attachedTo: { kind: 'project', ref: projectId },
           text,
@@ -1026,6 +1188,34 @@ export async function createApp(options: AppOptions) {
       pendingMutations -= 1;
     }
   });
+  /**
+   * The routes a team member may run on right now: turned on in Settings and connected (an
+   * account route recorded; ChatGPT needs only to be on), with exactly the models each one
+   * reported. The project's default route comes first, so "Nectovia chooses" prefers it when
+   * two routes serve a style equally well.
+   */
+  const teamCandidates = (projectId: string): TeamRouteCandidate[] => {
+    const services = store.settings.services ?? {};
+    const preferred = selectedEngine(store.settings, store.state(projectId).project, null);
+    const ordered = [...TEAM_ROUTES].sort((a, b) =>
+      a === preferred ? -1 : b === preferred ? 1 : 0,
+    );
+    return ordered.flatMap((teamRoute) => {
+      if (services[teamRoute] !== true) return [];
+      if (teamRoute !== 'codex' && typeof services[`${teamRoute}AccountRoute`] !== 'string')
+        return [];
+      const saved = teamRoute === 'codex' ? codexModelSetting() : services[`${teamRoute}Model`];
+      return [
+        {
+          route: teamRoute,
+          models: routeModels(teamRoute),
+          savedModel: typeof saved === 'string' && saved ? saved : null,
+          routeDefaultAllowed: teamRoute === 'codex',
+        },
+      ];
+    });
+  };
+  teamService.setRouteCandidates(teamCandidates);
   const route =
     (action: (req: Request, res: Response) => Promise<unknown>, locked = true) =>
     async (req: Request, res: Response, next: express.NextFunction) => {
@@ -1467,6 +1657,24 @@ export async function createApp(options: AppOptions) {
   app.get(
     '/api/projects/:id/state',
     route(async (req) => store.projectState(id(req))),
+  );
+  app.get(
+    '/api/projects/:id/cloud-sharing',
+    route(async (req) => cloudSharing(store.state(id(req)))),
+  );
+  app.put(
+    '/api/projects/:id/cloud-sharing',
+    route(async (req) => {
+      const projectId = id(req);
+      const state = store.state(projectId);
+      const candidate = structuredClone(state);
+      const policy = changeCloudSharing(candidate, body(req));
+      state.cloudSharing = policy;
+      await store.persist(state);
+      // A turn admitted under the old sharing, even one still queued, reads nothing more.
+      revokeProjectReadGrants(projectId);
+      return policy;
+    }),
   );
   /**
    * What an engine can be asked to run. Read from the engine's own list on this
@@ -1962,15 +2170,16 @@ export async function createApp(options: AppOptions) {
       if (!thread) throw new ApiError(404, 'This thread was not found.');
       threadPermission = thread.permission ?? 'show-first';
     }
+    // The thread's tier, when one applies, decides the route Build runs on; a tier whose
+    // route is not ready is refused here by name, never moved to the recorded route.
     const selectedRoute =
       b.route === undefined
-        ? selectedEngine(
-            store.settings,
-            state.project,
-            state.conversations.find((c) => c.id === threadId),
-          )
+        ? threadRoute(projectId, state.conversations.find((c) => c.id === threadId), {
+            mode: 'build',
+            text: typeof b.instruction === 'string' ? b.instruction : null,
+          })
         : choice(b.route, ROUTES, 'service');
-    const team = teamForThread(projectId, threadId, port);
+    const team = teamForThread(projectId, threadId, port, selectedRoute);
     if (command && team)
       throw new ApiError(409, 'Saved Work commands for team helpers are not available yet.', {
         code: 'unsupported_work_target',
@@ -1989,6 +2198,7 @@ export async function createApp(options: AppOptions) {
           400,
           'Provide the explicitly selected source documents, or an empty list to propose new files.',
         );
+      requireCloudSharing(state, selectedRoute, b.sources.map(relativeName));
     }
     // Recheck the current local scope and service consent before returning a cached
     // receipt. Replay never scans source files or dispatches another adapter call.
@@ -2436,7 +2646,7 @@ export async function createApp(options: AppOptions) {
       if (b.engine !== undefined && store.isHomeProject(id(req)) && !isConversationRoute(b.engine))
         throw new ApiError(
           409,
-          'The Diomedes conversation runs on Claude Code or AWS Bedrock. Its engine cannot be changed to that.',
+          `The Diomedes conversation runs on ${CONVERSATION_ROUTE_LIST}. Its engine cannot be changed to that.`,
         );
       if (b.name !== undefined) {
         if (typeof b.name !== 'string' || !b.name.trim() || b.name.trim().length > 120)
@@ -2517,11 +2727,86 @@ export async function createApp(options: AppOptions) {
    */
   const routeModels = (engine: string): EngineModel[] => {
     const listed = engineCatalog(engine).models;
-    if (listed.length > 0 || engine !== AWS_BEDROCK_ROUTE) return listed;
+    if (listed.length > 0) return listed;
+    // Azure and OpenRouter offer exactly the models the owner connected: each Azure deployment
+    // (with levels only where the owner declared it a reasoning model) and each allow-listed
+    // OpenRouter model, which this route sends no level for.
+    const levels = ['low', 'medium', 'high'].map((level) => ({ id: level, description: '' }));
+    if (engine === AZURE_OPENAI_ROUTE)
+      return (engines.modelApi?.azure?.connections.peek()?.deployments ?? []).map((entry) => ({
+        slug: entry.model,
+        name: entry.model,
+        description: '',
+        defaultEffort: entry.reasoning ? 'low' : null,
+        efforts: entry.reasoning ? levels : [],
+      }));
+    if (engine === OPENROUTER_ROUTE)
+      return (engines.modelApi?.openrouter?.connections.peek()?.models ?? []).map((entry) => ({
+        slug: entry.id,
+        name: entry.id,
+        description: '',
+        defaultEffort: null,
+        efforts: [],
+      }));
+    if (engine !== AWS_BEDROCK_ROUTE) return listed;
     const saved = store.settings.services?.[`${engine}Model`];
     if (typeof saved !== 'string' || !saved) return [];
     const efforts = ['low', 'medium', 'high'].map((level) => ({ id: level, description: '' }));
     return [{ slug: saved, name: saved, description: '', defaultEffort: 'low', efforts }];
+  };
+  /** What the host knows about one route when a tier resolves: on, connected, and what it lists. */
+  const tierRouteState = (route: string) => {
+    // A mapped route this build does not have (Google Vertex AI before its branch lands) is
+    // simply not ready, so its tier is refused by name.
+    if (!ROUTES.some((known) => known === route) || route === 'sample')
+      return { ready: false, models: [], savedModel: null };
+    const services = store.settings.services ?? {};
+    const ready =
+      services[route] === true &&
+      (route === 'codex' || typeof services[`${route}AccountRoute`] === 'string');
+    const saved = route === 'codex' ? codexModelSetting() : services[`${route}Model`];
+    return {
+      ready,
+      models: ready ? routeModels(route) : [],
+      savedModel: typeof saved === 'string' && saved ? saved : null,
+    };
+  };
+  /**
+   * The tier seam (owner decisions 2026-09-23). When a tier applies and the thread pins no
+   * model, the owner's tier map decides the route and the model together; the owner-testing
+   * pin, when set, wins over the map and says so. Null when no tier applies, so the caller
+   * keeps the thread's recorded route. A refusal names the tier and its route.
+   */
+  const tierFor = (
+    conversation: Conversation | null | undefined,
+    options: RunHints = {},
+  ): TierResolution | null => {
+    if (conversation?.requested?.model) return null;
+    const style = styleOf(conversation);
+    if (!style) return null;
+    return resolveTier({
+      style,
+      mode: options.mode ?? conversation?.mode ?? 'ask',
+      map: tierMapFrom(store.settings.services),
+      pin: ownerPinFrom(store.settings.services),
+      state: tierRouteState,
+      hints: { text: options.text ?? null },
+    });
+  };
+  /**
+   * The route a thread's next request takes: its tier's route when a tier applies, else the
+   * route the thread is recorded on. A tier that cannot run is refused here, by name, before
+   * anything is sent; it never falls back to the recorded route or another payer.
+   */
+  const threadRoute = (
+    projectId: string,
+    conversation: Conversation | null | undefined,
+    options: RunHints = {},
+  ): Route => {
+    const tier = tierFor(conversation, options);
+    if (tier?.outcome === 'refuse') throw new ApiError(409, tier.reason);
+    if (tier) return tier.route as Route;
+    return selectedEngine(store.settings, store.state(projectId).project, conversation);
   };
   /**
    * The WorkStyle seam (NC-2026-09-22.1). Null when the thread pins a model (the pin always
@@ -2538,6 +2823,17 @@ export async function createApp(options: AppOptions) {
     if (conversation?.requested?.model) return null;
     const style = styleOf(conversation);
     if (!style) return null;
+    // The owner's tier map decides the model on the tier's own route. A caller that named
+    // another engine itself (a team member's own route, a native Claude session) keeps the
+    // style's choice within that engine; the route was not the tier's to decide there.
+    const tier = tierFor(conversation, options);
+    if (tier?.outcome === 'run' && tier.route === engine)
+      return {
+        model: tier.model,
+        ...(tier.effort ? { effort: tier.effort } : {}),
+        selection: 'automatic',
+        reason: tier.reason,
+      };
     const savedModel =
       engine === 'codex'
         ? codexModelSetting()
@@ -2561,20 +2857,39 @@ export async function createApp(options: AppOptions) {
     };
   };
   /**
-   * The read-only tools an Ask or Plan turn gets (owner decision 2026-09-23):
-   * the project folder through the path trust funnel, web search, and the MCP
-   * read tools the owner approved in `<data>/read-connectors.json`. Only the
-   * host builds it, from its own project record; a missing folder means text.
+   * The read-only tools one Ask or Plan turn gets, bound to that turn and its route
+   * (`server/engines/turn-scope.ts`): web search, the MCP read tools the owner approved in
+   * `<data>/read-connectors.json`, and from the project only what this message may read. By
+   * default that is the documents the person chose, already sent inline; the whole folder only
+   * when the person asked for it on this message, on a route whose reads are answered before
+   * they run, and then only the files Cloud sharing lets that route receive. Only the host
+   * builds it, from its own project record; a missing folder means text.
    */
   const readScopeFor = async (
     projectId: string,
     mode: string,
+    turn: { route: Route; access?: unknown; documents: readonly { path: string }[] },
   ): Promise<{ readScope?: ReadScope }> => {
-    if (mode !== 'ask' && mode !== 'plan') return {};
-    // A folder the path funnel refuses, or one that is gone, leaves the turn text-only.
-    const root = await safeAbsolute(store.state(projectId).project.folder).catch(() => null);
-    if (!root || !(await fs.stat(root).then((entry) => entry.isDirectory(), () => false)))
+    const access = parseReadAccess(turn.access);
+    if (mode !== 'ask' && mode !== 'plan') {
+      if (access === 'project')
+        throw new ApiError(400, 'Only Ask and Plan can look through the project folder.');
       return {};
+    }
+    const state = store.state(projectId);
+    if (access === 'project' && !(cloudSharing(state).routes as string[]).includes(turn.route))
+      // Listing the folder shows every file name to the route, so it needs the route's grant
+      // even where a typed message alone does not (Home).
+      throw new ApiError(403, 'Cloud sharing for this route is off in this project.', {
+        code: 'cloud_sharing_denied',
+      });
+    // A folder the path funnel refuses, or one that is gone, leaves the turn text-only.
+    const root = await safeAbsolute(state.project.folder).catch(() => null);
+    if (!root || !(await fs.stat(root).then((entry) => entry.isDirectory(), () => false))) {
+      if (access === 'project')
+        throw new ApiError(409, 'This project folder is not available. Choose the documents to include instead.');
+      return {};
+    }
     let mcp: ReadScope['mcp'];
     try {
       mcp = loadApprovedReadServers(path.join(store.dataDir, 'read-connectors.json'));
@@ -2584,7 +2899,28 @@ export async function createApp(options: AppOptions) {
         'The approved read connectors file (read-connectors.json) is malformed. Fix or remove it, then send again.',
       );
     }
-    return { readScope: { root, web: true, mcp } };
+    const policy = cloudSharing(state);
+    const readScope = await buildTurnReadScope({
+      projectId,
+      mode,
+      root,
+      route: turn.route,
+      access,
+      documents: turn.documents,
+      web: true,
+      mcp,
+      shared: (policy.routes as string[]).includes(turn.route) ? policy.documents : [],
+    });
+    return readScope ? { readScope } : {};
+  };
+  /** A route with no read scope: a whole-project read asked of it is refused, not dropped. */
+  const refuseWholeProjectRead = (access: unknown): Record<string, never> => {
+    if (parseReadAccess(access) === 'project')
+      throw new ApiError(
+        409,
+        'Reading the whole project folder is not available on this route. Choose the documents to include instead.',
+      );
+    return {};
   };
   const nativeChoice = (
     engine: Exclude<Route, 'sample'>,
@@ -2610,6 +2946,34 @@ export async function createApp(options: AppOptions) {
     return { model };
   };
   /**
+   * What the add-member form may offer: every route that can carry the team tools, whether
+   * it is ready (on and connected) and the models it reported. Read-only; the member route
+   * resolves and refuses again when a member is created, so this is never the authority.
+   */
+  app.get(
+    '/api/projects/:id/team/routes',
+    route(async (req) => {
+      const projectId = id(req);
+      const ready = new Map(teamCandidates(projectId).map((item) => [item.route, item]));
+      return {
+        routes: TEAM_ROUTES.map((teamRoute) => {
+          const candidate = ready.get(teamRoute);
+          return {
+            route: teamRoute,
+            name: routeDisplayName(teamRoute),
+            ready: Boolean(candidate),
+            models: (candidate?.models ?? []).map((model) => ({ slug: model.slug, name: model.name })),
+            savedModel: candidate?.savedModel ?? null,
+            ...(candidate
+              ? {}
+              : { reason: `Turn ${routeDisplayName(teamRoute)} on and connect it in AI setup.` }),
+          };
+        }),
+        styles: WORK_STYLES.map((style) => ({ style, label: WORK_STYLE_LABELS[style] })),
+      };
+    }, false),
+  );
+  /**
    * What the thread's next request would run with, for the style picker and the details line.
    * Read-only: it resolves exactly as dispatch does, minus the message itself, and changes
    * nothing. A pin is reported as the pin; a style that would ask says so here first.
@@ -2621,8 +2985,11 @@ export async function createApp(options: AppOptions) {
       const state = store.state(projectId);
       const thread = state.conversations.find((c) => c.id === req.params.threadId);
       if (!thread) throw new ApiError(404, 'This thread was not found.');
-      const engine = selectedEngine(store.settings, state.project, thread);
       const style = styleOf(thread);
+      // A tier decides the route and the model; its answer is shown as it would be sent,
+      // including a refusal, which reads as a choice the owner has to make.
+      const tier = tierFor(thread, { mode: thread.mode });
+      const engine = tier ? (tier.route as Route) : selectedEngine(store.settings, state.project, thread);
       const source = isWorkStyle(thread.workStyle)
         ? 'thread'
         : isWorkStyle(store.settings.services?.workStyle)
@@ -2630,7 +2997,31 @@ export async function createApp(options: AppOptions) {
           : style
             ? 'default'
             : 'none';
-      if (engine === 'sample') return { route: engine, style, source, resolution: null };
+      // What the next request would be refused with before anything is sent, in the host's own
+      // words: a tier whose route cannot run. A client refuses by this, never by its own guess.
+      const refusal = tier?.outcome === 'refuse' ? tier.reason : null;
+      if (engine === 'sample') return { route: engine, style, source, refusal, resolution: null };
+      if (tier)
+        return {
+          route: engine,
+          style,
+          source,
+          refusal,
+          ownerPin: tier.ownerPin,
+          resolution: {
+            outcome: tier.outcome === 'run' ? 'run' : 'ask',
+            model: tier.outcome === 'run' ? tier.model : null,
+            effort: tier.outcome === 'run' ? tier.effort : null,
+            reason: tier.reason,
+            pinScope: null,
+            substituted: false,
+            selection: tier.ownerPin ? 'manual' : 'automatic',
+            style: tier.style,
+            logical: null,
+            kind: tier.kind,
+            escalation: null,
+          } satisfies WorkStyleResolution,
+        };
       const pin = thread.requested?.model
         ? { model: thread.requested.model, effort: thread.requested.effort ?? null }
         : null;
@@ -2648,9 +3039,48 @@ export async function createApp(options: AppOptions) {
         routeDefaultAllowed: engine === 'codex',
         stableEffort: isModelApiRoute(engine),
       });
-      return { route: engine, style, source, resolution };
+      return { route: engine, style, source, refusal, resolution };
     }),
   );
+  // A preview of the Jev preflight for a thread's next message, beside the resolution above.
+  // The thread is read under the lock; the provider is asked after it is released.
+  if (options.jevAdvisor)
+    mountJevAdvisorRoutes(app, options.jevAdvisor, (projectId, threadId) =>
+      store.locked(async () => {
+        const state = store.state(projectId);
+        const thread = state.conversations.find((c) => c.id === threadId);
+        if (!thread) throw new ApiError(404, 'This thread was not found.');
+        const style = styleOf(thread);
+        // The preflight reads the route the tier would send on, never the recorded one.
+        const tier = tierFor(thread, { mode: thread.mode });
+        const engine =
+          tier?.outcome === 'run'
+            ? (tier.route as Route)
+            : selectedEngine(store.settings, state.project, thread);
+        if (engine === 'sample') return { tenant: 'local', mode: thread.mode, style, workStyle: null };
+        const savedModel =
+          engine === 'codex'
+            ? codexModelSetting()
+            : selectedModel(engine, store.settings, state.project, { ...thread, requested: null });
+        return {
+          tenant: 'local',
+          mode: thread.mode,
+          style,
+          workStyle: {
+            style,
+            mode: thread.mode,
+            route: engine,
+            availableModels: routeModels(engine),
+            pin: thread.requested?.model
+              ? { model: thread.requested.model, effort: thread.requested.effort ?? null }
+              : null,
+            savedModel: savedModel ?? null,
+            routeDefaultAllowed: engine === 'codex',
+            stableEffort: isModelApiRoute(engine),
+          },
+        };
+      }),
+    );
   mountClaudeSessionRoutes(app, engines, {
     authorize: async (req) => {
       store.state(String(req.params.id));
@@ -2675,6 +3105,12 @@ export async function createApp(options: AppOptions) {
         });
         if (!selection.model || typeof accountRoute !== 'string')
           throw new ApiError(409, 'Select the Claude account and model in Settings first.');
+        requireCloudSharing(
+          state,
+          'claude-code',
+          command.sources.map((source) => source.path),
+          !!req.params.runId,
+        );
         const paths = new Set<string>();
         const documents = [];
         for (const source of command.sources) {
@@ -2701,7 +3137,11 @@ export async function createApp(options: AppOptions) {
           instructions: MODES[command.mode].instructions,
           model: selection.model,
           accountRoute,
-          ...(await readScopeFor(projectId, command.mode)),
+          ...(await readScopeFor(projectId, command.mode, {
+            route: 'claude-code',
+            access: command.readAccess,
+            documents,
+          })),
         };
       });
       const runId =
@@ -2999,12 +3439,18 @@ export async function createApp(options: AppOptions) {
           return { unfinished: true as const, runId: sent.runId, sourceMessageId };
         // CD-01 Decision 5: a conversation runs on the native Claude session or on a
         // model-API route through its own driver. Any other route is refused here, by
-        // name, through the same predicate the thread update guards with.
-        const conversationRoute = selectedEngine(store.settings, state.project, thread);
+        // name, through the same predicate the thread update guards with. This is about
+        // which driver answers a message; Build and Fix on a thread run on every connected
+        // route through /ask (owner decision 2026-09-23). The tier decides the route when one
+        // applies; a tier whose route cannot run is refused by name before anything is sent.
+        const conversationRoute = threadRoute(projectId, thread, {
+          mode: command.mode,
+          text: command.text,
+        });
         if (!isConversationRoute(conversationRoute))
           throw new ApiError(
             409,
-            'Select Claude Code or AWS Bedrock for this conversation before sending.',
+            `${routeDisplayName(conversationRoute) || 'This route'} does not answer conversations. Select ${CONVERSATION_ROUTE_LIST} for this conversation before sending.`,
           );
         const routeName =
           conversationRoute === 'claude-code' ? 'Claude Code' : MODEL_API_NAMES[conversationRoute];
@@ -3026,6 +3472,9 @@ export async function createApp(options: AppOptions) {
             : { model: store.settings.services?.[`${conversationRoute}Model`] });
         if (typeof selection.model !== 'string' || !selection.model || typeof accountRoute !== 'string')
           throw new ApiError(409, `Connect ${routeName} and choose its model in AI setup first.`);
+        requireCloudSharing(state, conversationRoute, command.sources.map((source) => source.path), false, {
+          home: store.isHomeProject(projectId),
+        });
         const paths = new Set<string>();
         const documents = [];
         for (const source of command.sources) {
@@ -3065,6 +3514,21 @@ export async function createApp(options: AppOptions) {
           current = undefined;
           changed = true;
         }
+        // A tier moves the route and the model together (Efficient on AWS, Focused on Google
+        // Cloud). The saved context is bound to both, so a change starts the next generation
+        // rather than failing the follow-up; a lineage written before either was recorded is
+        // left as it is.
+        if (
+          current &&
+          !sent &&
+          modelRoute &&
+          ((current.route !== undefined && current.route !== conversationRoute) ||
+            (current.model !== undefined && current.model !== selection.model))
+        ) {
+          current.retired = 'scope-change';
+          current = undefined;
+          changed = true;
+        }
         // The lineages are searched newest first, so once the replacement holds this command
         // it is the one a retry or a restart finds, and the refused turn stays as evidence.
         if (current && options.replace && !sent) {
@@ -3082,6 +3546,7 @@ export async function createApp(options: AppOptions) {
               `lineage.${evidenceDigest({ threadId, mode: command.mode, generation }).slice(0, 40)}`,
             ),
             ...(lineageEffort ? { effort: lineageEffort } : {}),
+            ...(modelRoute ? { route: conversationRoute, model: selection.model as string } : {}),
           };
           thread.lineages = [...lineages, current];
           changed = true;
@@ -3101,6 +3566,10 @@ export async function createApp(options: AppOptions) {
             : known.nativeSession
               ? ('resume' as const)
               : ('start' as const);
+        if (conversationRoute === 'claude-code' && action !== 'start')
+          requireCloudSharing(state, conversationRoute, command.sources.map((source) => source.path), true, {
+            home: store.isHomeProject(projectId),
+          });
         // One resolved identity: progress, execution and projection all name the run that ran.
         const progress = (kind: 'started' | 'delta' | 'ended', frame?: TransientPreview) =>
           store.emit('engine-text', {
@@ -3146,7 +3615,16 @@ export async function createApp(options: AppOptions) {
             model: selection.model as string,
             ...(modelRoute && selection.effort ? { effort: selection.effort } : {}),
             accountRoute,
-            ...(modelRoute ? {} : await readScopeFor(projectId, command.mode)),
+            // Ask and Plan get the read-only tools on every conversation route, bound to this
+            // message's chosen documents. On a model-API route the host runs them itself
+            // (server/harness/capabilities/read-scope-tools.ts) and a whole-project read is
+            // refused. Automatic, Build and Fix get none: `readScopeFor` answers only for Ask and Plan.
+            ...(modelRoute ? refuseWholeProjectRead(command.readAccess) : {}),
+            ...(await readScopeFor(projectId, command.mode, {
+              route: modelRoute ? conversationRoute : 'claude-code',
+              access: command.readAccess,
+              documents,
+            })),
             signal: options.signal,
             onPreview: (frame: TransientPreview) =>
               progress('delta', { ...frame, text: gate(frame.text) }),
@@ -3371,6 +3849,7 @@ export async function createApp(options: AppOptions) {
     route(async (req) => store.provisionProjectConversation(id(req)), false),
   );
   mountModelApiRoutes(app, { store, engines });
+  mountReadConnectorRoutes(app, { store });
   mountInteractionRoutes(app, new InteractionTurns(engines, interactionHost), {
     authorize: async (req) => {
       store.state(String(req.params.id));
@@ -3397,7 +3876,7 @@ export async function createApp(options: AppOptions) {
     verified: true,
   });
   /**
-   * A Codex Work run from a thread: a task from the text (or the given task), the person's
+   * A Work run from a thread, on any route: a task from the text (or the given task), the person's
    * turn, the native run with any team options, and the reply turn. `held` says the caller
    * already holds the store lock (the lock is a queue, not reentrant): the team service's
    * wake runs inside a locked route, the /ask route does not.
@@ -3425,6 +3904,7 @@ export async function createApp(options: AppOptions) {
     const engine = input.engine ?? 'codex';
     const run = async () => {
       const state = store.state(projectId);
+      requireCloudSharing(state, engine, sources, wake === true);
       if (
         state.sessions.some((session) => ['queued', 'working', 'waiting'].includes(session.state))
       )
@@ -3508,7 +3988,18 @@ export async function createApp(options: AppOptions) {
       // The turn id is fixed before the run so the native worker can mark the
       // turn verified once the runtime reports its engine.
       const turnId = identifier('U');
-      const choice = nativeChoice(engine, projectId, conversation, { mode: runMode, text });
+      const resolvedChoice = nativeChoice(engine, projectId, conversation, { mode: runMode, text });
+      // A member whose model Nectovia chose runs it as an automatic selection, so the run's
+      // record says who chose it; a person's own pick stays theirs.
+      const teamMember = team
+        ? state.team?.members.find((item) => item.slotId === team.slotId)
+        : undefined;
+      const choice: RunChoice =
+        teamMember?.selection?.by === 'nectovia' &&
+        resolvedChoice.model &&
+        resolvedChoice.model === teamMember.model
+          ? { ...resolvedChoice, selection: 'automatic' }
+          : resolvedChoice;
       const session = await nativeWork.start(projectId, task.id, {
         instruction,
         sources,
@@ -3561,17 +4052,12 @@ export async function createApp(options: AppOptions) {
         text = asString(b.text, 'an instruction', 16000),
         serviceRoute =
           b.route === undefined
-            ? selectedEngine(
-                store.settings,
-                store.state(projectId).project,
+            ? threadRoute(
+                projectId,
                 store.state(projectId).conversations.find((c) => c.id === b.threadId),
+                { mode: modeOf(b.mode) ?? undefined, text },
               )
             : choice(b.route, ROUTES, 'service');
-      if (isModelApiRoute(serviceRoute))
-        throw new ApiError(
-          409,
-          `${MODEL_API_NAMES[serviceRoute]} answers through the conversation. Send your message there.`,
-        );
       // Home is reached through its messages route alone. This direct route would start work
       // there, write a plan into it, or re-route the one thread that has to stay on Claude
       // Code, so it is refused for every mode before anything is changed, any source file is
@@ -3589,6 +4075,23 @@ export async function createApp(options: AppOptions) {
           'Automatic is a conversation mode. Direct execution does not accept it.',
         );
       const mode = parsedMode;
+      // What this message may read from the project, bound to it alone. Parsed before consent is
+      // asked for or anything is read; only Ask and Plan take a whole-project read.
+      const readAccess = parseReadAccess(b.readAccess);
+      if (readAccess === 'project' && mode !== 'ask' && mode !== 'plan')
+        throw new ApiError(400, 'Only Ask and Plan can look through the project folder.');
+      if (readAccess === 'project' && serviceRoute === 'sample')
+        throw new ApiError(409, 'The sample route reads nothing from the project folder.');
+      // Build and Fix run on every connected route, the model-API routes included (owner
+      // decision 2026-09-23, reversing CD-01 Decision 5's refusal of them on a thread). They
+      // take the one guarded proposal path below. Ask and Plan on a model-API route still
+      // answer through the conversation, which is where that route's read tools and lineage
+      // live.
+      if (isModelApiRoute(serviceRoute) && mode !== 'build' && mode !== 'fix')
+        throw new ApiError(
+          409,
+          `${MODEL_API_NAMES[serviceRoute]} answers through the conversation. Send your message there.`,
+        );
       // A Small Business skill the person picked. Checked here, before consent is asked for or
       // anything is read, so a skill that cannot run says why instead of a send being confirmed
       // for nothing. The section itself is assembled once the selected documents are known,
@@ -3626,6 +4129,9 @@ export async function createApp(options: AppOptions) {
         throw new ApiError(409, 'Turn the selected engine on in Settings before using it.');
       const needsConsent =
         isExternalEngine(serviceRoute) ||
+        // A model-API route reaches /ask only for Build or Fix, and sends the selected
+        // documents to the company's provider account.
+        isModelApiRoute(serviceRoute) ||
         (serviceRoute === 'codex' &&
           (mode === 'build' || mode === 'fix' || store.settings.permissions.sending));
       if (needsConsent && b.consent !== true)
@@ -3645,6 +4151,7 @@ export async function createApp(options: AppOptions) {
       sources = [...new Set(sources)];
       if (sources.length > 8)
         throw new ApiError(400, 'Select no more than eight source documents.');
+      requireCloudSharing(store.state(projectId), serviceRoute, sources);
       // Fix binds to one failing thing: a selected document and/or pasted text.
       let failing: { document?: string; text?: string } | undefined;
       if (mode === 'fix') {
@@ -3681,12 +4188,13 @@ export async function createApp(options: AppOptions) {
           text,
           sources,
           consent: b.consent === true,
-          team: teamForThread(projectId, threadId, req.socket.localPort),
+          team: teamForThread(projectId, threadId, req.socket.localPort, serviceRoute),
           mode,
           ...(failing ? { failing } : {}),
         });
       const prepared = await store.locked(async () => {
         const state = store.state(projectId);
+        requireCloudSharing(state, serviceRoute, sources);
         let conversation =
           threadId !== undefined
             ? state.conversations.find((c) => c.id === threadId)!
@@ -3813,8 +4321,16 @@ export async function createApp(options: AppOptions) {
         // The signal exists before Stop is shown, so a Stop during the read-scope lookup still lands.
         const signal = connectionSignal(res);
         progress('started');
+        // The turn's read grant ends with the turn.
+        let grant: string | undefined;
         try {
-          const readScope = await readScopeFor(projectId, mode);
+          requireCloudSharing(store.state(projectId), serviceRoute, prepared.documents.map((doc) => doc.path));
+          const readScope = await readScopeFor(projectId, mode, {
+            route: serviceRoute,
+            access: readAccess,
+            documents: prepared.documents,
+          });
+          grant = readScope.readScope?.grant;
           const result = await engines.generate(serviceRoute, {
             projectId,
             threadId: prepared.conversationId,
@@ -3837,6 +4353,7 @@ export async function createApp(options: AppOptions) {
             verified: true,
           };
         } finally {
+          closeReadGrant(grant);
           progress('ended');
         }
       } else if (serviceRoute === 'codex') {
@@ -3879,6 +4396,7 @@ export async function createApp(options: AppOptions) {
         });
         progress('started');
         try {
+          requireCloudSharing(store.state(projectId), serviceRoute, prepared.documents.map((doc) => doc.path));
           const result = await askCodex({
             prompt: text,
             documents: prepared.documents,
@@ -3890,7 +4408,11 @@ export async function createApp(options: AppOptions) {
             // Stop closes the request, and this ends the ChatGPT turn with it.
             signal,
             onDelta,
-            ...(await readScopeFor(projectId, mode)),
+            ...(await readScopeFor(projectId, mode, {
+              route: 'codex',
+              access: readAccess,
+              documents: prepared.documents,
+            })),
           });
           answer = result.text;
           helper = codexHelper(result);
@@ -4100,8 +4622,111 @@ export async function createApp(options: AppOptions) {
   mountAppUpdateRoutes(app, updates, {
     onInstallAccepted: options.updateOverrides?.onInstallAccepted,
   });
+  // The job-cap estimate, the one-job raise and a stopped job's status. Every figure is the host's.
+  const noMeteredShape: JobShape = {
+    inputBytes: 0,
+    messages: 0,
+    maxOutputTokensPerStep: 0,
+    maxSteps: 1,
+    maxRequestBytes: 0,
+    toolResultBytesPerStep: 0,
+  };
+  const meteredPlan = async (
+    threadId: string,
+    route: ModelApiRoute,
+    model: unknown,
+    shape: JobShape,
+  ): Promise<JobPlan> => {
+    const card = typeof model === 'string' && model ? await engines.modelApiCard(route, model) : null;
+    return {
+      threadId,
+      metering: 'metered',
+      rates: jobRatesOf(card),
+      shape,
+      ...(card
+        ? {}
+        : { reason: 'This route has no declared price for its model, so the cost is not known.' }),
+    };
+  };
+  mountJobCapRoutes(app, {
+    jobCaps,
+    // The same route, style and model a send resolves, and the same limits the turn runs under.
+    messagePlan: async (projectId, threadId, draft) => {
+      const state = store.state(projectId);
+      const thread = state.conversations.find((item) => item.id === threadId);
+      if (!thread) throw new ApiError(404, 'This thread was not found.');
+      const route = selectedEngine(store.settings, state.project, thread);
+      if (!isModelApiRoute(route))
+        return { threadId, metering: 'not-metered', rates: null, shape: noMeteredShape };
+      const styled = styleChoice(route, projectId, thread, {
+        mode: draft.mode,
+        text: draft.text,
+        stableEffort: true,
+      });
+      const model = styled?.model ?? store.settings.services?.[`${route}Model`];
+      // A route that is off or not set up cannot spend: the send refuses it by name, so no cap
+      // warning stands in front of that refusal.
+      if (
+        store.settings.services?.[route] !== true ||
+        typeof store.settings.services?.[`${route}AccountRoute`] !== 'string' ||
+        typeof model !== 'string' ||
+        !model
+      )
+        return { threadId, metering: 'not-metered', rates: null, shape: noMeteredShape };
+      let sourceBytes = 0;
+      for (const source of draft.sources) {
+        const document = await store.readDocument(projectId, relativeName(source.path)).catch(() => null);
+        sourceBytes += document ? Buffer.byteLength(document.text) : 0;
+      }
+      const conversationMode = draft.mode === 'plan' || draft.mode === 'auto' ? draft.mode : 'ask';
+      const instructions = instructionsFor(conversationMode, MODES[draft.mode].instructions);
+      const history = thread.turns.reduce((bytes, turn) => bytes + Buffer.byteLength(turn.text), 0);
+      return meteredPlan(threadId, route, model, {
+        inputBytes: Buffer.byteLength(instructions) + Buffer.byteLength(draft.text) + sourceBytes + history,
+        messages: thread.turns.length + 1,
+        maxOutputTokensPerStep: CONVERSATION_LIMITS.maxOutputTokens,
+        maxSteps: MODEL_TURN_CAPABILITY.maxTurns,
+        maxRequestBytes: CONVERSATION_LIMITS.maxRequestBytes,
+        toolResultBytesPerStep: CONVERSATION_LIMITS.maxRequestBytes,
+      });
+    },
+    teamWakePlan: async (projectId, slotId) => {
+      const state = store.state(projectId);
+      const member = state.team?.members.find((item) => item.slotId === slotId);
+      if (!member) throw new ApiError(404, 'This team member was not found.');
+      if (!member.threadId) throw new ApiError(400, 'This helper has no thread to wake.');
+      const threadId = member.threadId;
+      if (!isModelApiRoute(member.engine))
+        return { threadId, metering: 'not-metered', rates: null, shape: noMeteredShape };
+      const waiting = unreadForSlot(state.team?.messages ?? [], member.slotId);
+      const text = waiting.reduce((bytes, message) => bytes + Buffer.byteLength(message.content), 0);
+      const role = roleInstructions(member.role, member, state.project);
+      const plan = await meteredPlan(
+        threadId,
+        member.engine,
+        member.model ?? store.settings.services?.[`${member.engine}Model`],
+        {
+          inputBytes: Buffer.byteLength(MODES.build.instructions) + Buffer.byteLength(role) + text,
+          messages: 1,
+          maxOutputTokensPerStep: MODEL_WORK_LIMITS.maxOutputTokens,
+          maxSteps: TEAM_WORK_CAPABILITY.maxTurns,
+          maxRequestBytes: MODEL_WORK_LIMITS.maxRequestBytes,
+          toolResultBytesPerStep: MODEL_WORK_LIMITS.maxRequestBytes,
+        },
+      );
+      return { ...plan, threadId };
+    },
+    wake: (projectId, slotId) =>
+      store.locked(() => teamService.wakeMember(projectId, slotId as TeamMember['slotId'])),
+  });
   app.use('/api', (_req, _res, next) => next(new ApiError(404, 'This action was not found.')));
   const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, _next) => {
+    if (error instanceof EngineError && error.code === 'JOB_CAP') {
+      // A job stopped before a step that would pass its cap. Nothing of that step was sent; the
+      // person chooses a higher tier or going over once, and the message is sent as a new job.
+      res.status(402).json({ error: error.message, code: 'job_cap_reached', ambiguous: false });
+      return;
+    }
     if (error instanceof EngineError) {
       res
         .status(

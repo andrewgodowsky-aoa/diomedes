@@ -22,8 +22,13 @@ import { z } from 'zod';
 import type { RawToolActivity } from '../../shared/adapter-contract.js';
 import type { Json, ToolDescriptor } from '../../shared/harness.js';
 import { HarnessError } from '../harness/policy.js';
+import { readToolSummary } from '../harness/capabilities/read-scope-tools.js';
+import { normalizeUsage } from '../../shared/usage-contract.js';
+import { decideJobStep, inputTokenBound } from '../../shared/job-caps.js';
+import type { MicroUsd } from '../../shared/managed-usage.js';
 import { secretScrubber } from '../secrets.js';
 import {
+  JobCapReached,
   ceilingCost,
   type ExposureAttempt,
   type ExposureReservation,
@@ -49,6 +54,8 @@ export class ModelApiError extends HarnessError {
       providerRequestId?: string | null;
       responseId?: string | null;
       partialText?: string | null;
+      /** Set when the job's cap stopped the call at a step boundary. */
+      job?: { id: string; usedMicroUsd: number; capMicroUsd: number; neededMicroUsd: number } | null;
     } = {},
   ) {
     super(code, message);
@@ -102,6 +109,11 @@ export interface GuardedFetchOptions {
   label: string;
   /** The one URL (origin and path, no query) the credential may reach. */
   expectedUrl: string;
+  /**
+   * The exact query string that URL must carry, `?` included (Vertex streams only with
+   * `?alt=sse`). Empty, the default, refuses any query at all.
+   */
+  expectedQuery?: string;
   secret: string;
   /** Replaces whatever credential header the SDK set with the real one. */
   attach(headers: Headers, secret: string): void;
@@ -113,6 +125,12 @@ export interface GuardedFetchOptions {
   signal: AbortSignal;
   transport?: typeof globalThis.fetch;
   onDispatch: () => void;
+  /**
+   * The last admission before bytes leave, awaited after every other check: a funded route
+   * commits its dispatch here and re-checks that the payer still allows the send. Throwing
+   * refuses the call with nothing sent.
+   */
+  beforeDispatch?: () => Promise<void>;
   onEnvelope: (envelope: StreamEnvelope) => void;
   /** A refusal the transport raised after dispatch, recorded even when the SDK wraps or swallows it. */
   onFailure?: (error: ModelApiError) => void;
@@ -137,7 +155,7 @@ export function guardedStreamFetch(options: GuardedFetchOptions): typeof globalT
     if (
       url.origin !== expected.origin ||
       url.pathname !== expected.pathname ||
-      url.search ||
+      url.search !== (options.expectedQuery ?? '') ||
       url.hash ||
       url.username ||
       url.password
@@ -157,6 +175,22 @@ export function guardedStreamFetch(options: GuardedFetchOptions): typeof globalT
       );
     options.inspectBody?.(init.body);
     options.signal.throwIfAborted();
+    if (options.beforeDispatch) {
+      try {
+        await options.beforeDispatch();
+      } catch (error) {
+        throw refuse(
+          error instanceof ModelApiError && !error.dispatched
+            ? error
+            : new ModelApiError(
+                `${prefix}_dispatch_refused`,
+                `${error instanceof Error ? error.message : 'The payer refused this call.'} Nothing was sent.`,
+                false,
+              ),
+        );
+      }
+      options.signal.throwIfAborted();
+    }
     const headers = new Headers(init.headers);
     // The SDK was given a placeholder key; the real credential is attached here, after the checks.
     options.attach(headers, options.secret);
@@ -249,6 +283,8 @@ export interface ClassifiedEnvelope {
   responseId: string | null;
   reportedModel: string | null;
   usage: ProviderUsage | null;
+  /** The provider's own usage record, exactly as reported, kept beside the one normalization. */
+  rawUsage?: unknown;
   text: string;
   refusal: string | null;
   functionCalls: { callId: string; name: string; arguments: string }[];
@@ -274,14 +310,16 @@ const responsesUsageSchema = z.object({
   output_tokens_details: z.object({ reasoning_tokens: count.nullish() }).nullish(),
 });
 
-/** Refuses usage whose parts do not add up: any repair would be a guess about money. */
+/**
+ * A route's mapping into the five counts, through the `nectovia-usage/1`
+ * boundary (`shared/usage-contract.ts`). Usage whose parts do not add up, or
+ * that is missing a count, is null: any repair would be a guess about money.
+ */
 export function consistentUsage(usage: ProviderUsage): ProviderUsage | null {
-  if (
-    usage.cacheReadTokens + usage.cacheWriteTokens > usage.inputTokens ||
-    usage.reasoningTokens > usage.outputTokens
-  )
-    return null;
-  return usage;
+  const evidence = normalizeUsage(usage);
+  if (evidence.state !== 'known') return null;
+  const { contract: _contract, raw: _raw, ...counts } = evidence.usage;
+  return counts;
 }
 
 /** Responses usage in the ledger's structure: cache reads and writes and reasoning stay distinct. */
@@ -396,6 +434,8 @@ const quoted = (value: unknown) => (typeof value === 'string' && value.trim() ? 
  */
 export function toolSummary(name: string, input: unknown): string {
   const args = input && typeof input === 'object' && !Array.isArray(input) ? (input as Record<string, unknown>) : {};
+  const read = readToolSummary(name, input);
+  if (read) return read;
   const target = quoted(args.path) ?? quoted(args.file) ?? quoted(args.name);
   switch (name) {
     case 'read_source':
@@ -446,6 +486,8 @@ export type RespondOutcome =
 export interface RespondResult {
   outcome: RespondOutcome;
   usage: ProviderUsage;
+  /** The provider's usage record as reported, when the route keeps it. Evidence, never re-priced. */
+  rawUsage?: unknown;
   reportedModel: string | null;
   responseId: string | null;
   providerRequestId: string | null;
@@ -457,9 +499,75 @@ export interface RespondResult {
   servedBy?: string | null;
 }
 
-/** The input-token ceiling a request can reach, from its bytes: a token never covers less than one byte. */
-export function inputTokenBound(bytes: number, messages: number) {
-  return bytes + 1_024 + messages * 16;
+/** The input-token ceiling a request can reach, from its bytes. One rule, shared with the job estimate. */
+export { inputTokenBound };
+
+/**
+ * The most one call can cost: its request's bytes as the input bound, its output
+ * ceiling, and the card's dearest rates. The reservation and the step-boundary
+ * job check both use exactly this, so they can never disagree about a step.
+ */
+export function callCeiling(input: {
+  prefix: string;
+  card: ModelRateCard;
+  instructions: string;
+  messages: ModelMessage[];
+  tools: readonly ToolDescriptor[];
+  limits: RespondLimits;
+}): MicroUsd {
+  const estimateBytes = Buffer.byteLength(
+    JSON.stringify({ instructions: input.instructions, messages: input.messages, tools: input.tools }),
+  );
+  if (estimateBytes > input.limits.maxRequestBytes)
+    throw new ModelApiError(
+      `${input.prefix}_input_too_large`,
+      'The conversation and its sources are larger than this route allows. Nothing was sent.',
+      false,
+    );
+  return ceilingCost(input.card, {
+    maxInputTokens: inputTokenBound(estimateBytes, input.messages.length + 1),
+    maxOutputTokens: input.limits.maxOutputTokens,
+  });
+}
+
+const jobCapError = (prefix: string, stop: JobCapReached) =>
+  new ModelApiError(`${prefix}_job_cap_reached`, stop.message, false, {
+    job: { id: stop.jobId, usedMicroUsd: stop.usedMicroUsd, capMicroUsd: stop.capMicroUsd, neededMicroUsd: stop.neededMicroUsd },
+  });
+
+/**
+ * The step boundary. Before a model step starts, a ledger scoped to a job
+ * refuses the step when the job's used and held amount plus this step's ceiling
+ * would pass the job's cap. It runs outside the step, so a refusal is a plain
+ * failure that provably sent nothing, never an uncertain dispatch. A step this
+ * attempt already reserved (a replay) is not checked again. The reservation
+ * inside the step enforces the same rule in the ledger's own queue.
+ */
+export async function admitJobStep(input: {
+  prefix: string;
+  connectionId: string;
+  exposure: SpendExposure;
+  card: ModelRateCard;
+  instructions: string;
+  limits: RespondLimits;
+  attempt: ExposureAttempt;
+  tools: readonly ToolDescriptor[];
+  messages: () => Promise<ModelMessage[]>;
+}): Promise<void> {
+  const job = input.exposure.jobScope;
+  if (!job) return;
+  if (input.exposure.hasAttempt(input.connectionId, input.attempt)) return;
+  const next = callCeiling({
+    prefix: input.prefix,
+    card: input.card,
+    instructions: input.instructions,
+    messages: await input.messages(),
+    tools: input.tools,
+    limits: input.limits,
+  });
+  const decision = decideJobStep({ capMicroUsd: job.capMicroUsd, usedMicroUsd: input.exposure.jobUsed(job.id), nextMicroUsd: next });
+  if (!decision.ok)
+    throw jobCapError(input.prefix, new JobCapReached(job.id, decision.usedMicroUsd, decision.capMicroUsd, decision.neededMicroUsd));
 }
 
 /** The adapter-facing raw sinks a streamed call feeds. Both are previews; neither is the answer. */
@@ -467,6 +575,21 @@ export interface StreamSinks {
   onDelta?: (text: string) => void;
   onToolActivity?: (raw: RawToolActivity) => void;
 }
+
+/**
+ * The ledger one call is held on. The local `SpendExposure` is the owner's own
+ * cap; a managed route passes a funded ledger that also holds the customer's
+ * parent-job credits. `beforeDispatch`, when present, is awaited once, after
+ * every request check and immediately before the bytes leave.
+ */
+export type CallExposure = Pick<SpendExposure, 'reserve' | 'release' | 'markUncertain'> & {
+  /** As the local ledger's settle, plus the provider's raw usage as evidence (`nectovia-usage/1` `raw`). */
+  settle(
+    id: string,
+    input: Parameters<SpendExposure['settle']>[1] & { raw?: unknown },
+  ): Promise<ExposureReservation>;
+  beforeDispatch?(reservation: ExposureReservation): Promise<void>;
+};
 
 /** What one route contributes to a call. Everything else is the same for every route. */
 export interface RouteBinding {
@@ -481,7 +604,7 @@ export interface RouteBinding {
   /** The explicit SDK model instance, built on the guarded fetch it is handed. */
   model(fetch: typeof globalThis.fetch): LanguageModel;
   /** The guarded transport's route-specific parts. */
-  guard: Pick<GuardedFetchOptions, 'expectedUrl' | 'attach' | 'inspectBody' | 'requestIdHeaders'>;
+  guard: Pick<GuardedFetchOptions, 'expectedUrl' | 'expectedQuery' | 'attach' | 'inspectBody' | 'requestIdHeaders'>;
   providerOptions: Record<string, Record<string, unknown>>;
   /** Reads a finished envelope. `readable: false` when it holds no complete answer. */
   classify(envelope: StreamEnvelope): { readable: boolean; classified: ClassifiedEnvelope | null };
@@ -536,7 +659,7 @@ export async function respondStream(input: {
   binding: RouteBinding;
   secret: string;
   card: ModelRateCard;
-  exposure: SpendExposure;
+  exposure: CallExposure;
   attempt: ExposureAttempt;
   instructions: string;
   messages: ModelMessage[];
@@ -559,19 +682,13 @@ export async function respondStream(input: {
       false,
     );
   const tools = descriptorTools(prefix, input.tools);
-  const estimateBytes = Buffer.byteLength(
-    JSON.stringify({ instructions: input.instructions, messages: input.messages, tools: input.tools }),
-  );
-  if (estimateBytes > input.limits.maxRequestBytes)
-    throw new ModelApiError(
-      `${prefix}_input_too_large`,
-      'The conversation and its sources are larger than this route allows. Nothing was sent.',
-      false,
-    );
-  const maxInputTokens = inputTokenBound(estimateBytes, input.messages.length + 1);
-  const ceiling = ceilingCost(input.card, {
-    maxInputTokens,
-    maxOutputTokens: input.limits.maxOutputTokens,
+  const ceiling = callCeiling({
+    prefix,
+    card: input.card,
+    instructions: input.instructions,
+    messages: input.messages,
+    tools: input.tools,
+    limits: input.limits,
   });
   let reservation: ExposureReservation;
   try {
@@ -584,6 +701,7 @@ export async function respondStream(input: {
       maxMicroUsd: ceiling,
     });
   } catch (error) {
+    if (error instanceof JobCapReached) throw jobCapError(prefix, error);
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'spend_refused';
     const message = error instanceof Error ? error.message : 'The spend limit refused this call.';
     throw new ModelApiError(
@@ -622,12 +740,13 @@ export async function respondStream(input: {
    * the hold uncertain, never pending and never zero; a hold even that cannot
    * record is left for the startup sweep, which parks every pending hold.
    */
-  const settleOrLose = async (usage: ProviderUsage, why: string) => {
+  const settleOrLose = async (usage: ProviderUsage, why: string, raw?: unknown) => {
     try {
       reservation = await input.exposure.settle(reservation.id, {
         usage,
         card: input.card,
         providerRequestId: envelope?.providerRequestId ?? null,
+        ...(raw !== undefined ? { raw } : {}),
       });
       return true;
     } catch {
@@ -691,6 +810,9 @@ export async function respondStream(input: {
       maxResponseBytes: input.limits.maxResponseBytes,
       signal,
       transport: input.transport,
+      ...(input.exposure.beforeDispatch
+        ? { beforeDispatch: () => input.exposure.beforeDispatch!(reservation) }
+        : {}),
       onDispatch: () => {
         dispatched = true;
       },
@@ -759,6 +881,8 @@ export async function respondStream(input: {
     sdkError ??= error;
   }
   if (!dispatched) {
+    const refusedEarly = transportError as ModelApiError | null;
+    if (refusedEarly) return fail(refusedEarly.code, refusedEarly.message);
     if (sdkError instanceof ModelApiError) return fail(sdkError.code, sdkError.message);
     return fail(`${prefix}_request_not_prepared`, 'The model request could not be prepared. Nothing was sent.');
   }
@@ -878,7 +1002,7 @@ export async function respondStream(input: {
       );
     outcome = { kind: 'final', text: classified.text };
   }
-  if (!(await settleOrLose(classified.usage, 'settle refused'))) {
+  if (!(await settleOrLose(classified.usage, 'settle refused', classified.rawUsage))) {
     for (const started_ of started)
       activity({ callId: started_.callId, phase: 'failed', tool: started_.tool, summary: `Not run: ${started_.tool}` });
     // Fail closed: an answer whose cost is not on the ledger is not used.
@@ -892,6 +1016,7 @@ export async function respondStream(input: {
   return {
     outcome,
     usage: classified.usage,
+    ...(classified.rawUsage !== undefined ? { rawUsage: classified.rawUsage } : {}),
     reportedModel: classified.reportedModel,
     responseId: classified.responseId,
     providerRequestId: seen.providerRequestId,

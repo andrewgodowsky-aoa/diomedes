@@ -14,6 +14,7 @@ import type { ClaudeSessionCheckpoint } from '../server/engines/claude-session.j
 import type { TextRequest } from '../server/engines/contract.js';
 import { openProcess, type ProcessFactory } from '../server/engines/process.js';
 import type { ReadScope } from '../server/engines/read-scope.js';
+import { openReadGrant } from '../server/engines/turn-scope.js';
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -100,6 +101,9 @@ const scopeFor = (root: string, extra: Partial<ReadScope> = {}): ReadScope => ({
   web: true,
   ...extra,
 });
+/** A whole-project turn under a live host grant, sharing the fixture's one document. */
+const wholeProject = (root: string, extra: Partial<ReadScope> = {}): ReadScope =>
+  scopeFor(root, { access: 'project', grant: openReadGrant('p1'), shared: ['menu.md'], ...extra });
 
 describe('Claude Code read scope arguments', () => {
   it('keeps the text-only arguments byte-identical without a scope', () => {
@@ -111,22 +115,38 @@ describe('Claude Code read scope arguments', () => {
     expect(args).not.toContain('--restricted');
     expect(args[args.indexOf('--max-turns') + 1]).toBe('1');
   });
-  it('names an explicit read allow-list, denies the rest and confines file tools', () => {
+  it('gives a selected-only turn web and approved MCP tools, no file tool, and denies the rest', () => {
     const args = claudeArguments(false, { root: 'C:\\p', web: true, mcp: [pos] });
-    expect(args[args.indexOf('--tools') + 1]).toBe('Read,Grep,Glob,LS,WebSearch,WebFetch');
+    expect(args[args.indexOf('--tools') + 1]).toBe('WebSearch,WebFetch');
     expect(args[args.indexOf('--allowedTools') + 1]).toBe(
-      'Read,Grep,Glob,LS,WebSearch,WebFetch,mcp__pos__list_orders',
+      'WebSearch,WebFetch,mcp__pos__list_orders',
     );
     expect(args[args.indexOf('--permission-mode') + 1]).toBe('dontAsk');
     expect(args).toContain('--restricted');
     expect(args).toContain('--safe-mode');
     expect(args).toContain('--strict-mcp-config');
-    expect(args.join(' ')).not.toMatch(/\b(Bash|Edit|Write|NotebookEdit|MultiEdit)\b/);
+    expect(args).not.toContain('--permission-prompt-tool');
+    expect(args.join(' ')).not.toMatch(/\b(Read|Grep|Glob|LS|Bash|Edit|Write|NotebookEdit|MultiEdit)\b/);
     expect(Number(args[args.indexOf('--max-turns') + 1])).toBeGreaterThan(1);
   });
+  it('offers a whole-project turn the file tools but pre-approves none of them', () => {
+    const args = claudeArguments(false, { root: 'C:\\p', web: true, mcp: [pos], access: 'project' });
+    expect(args[args.indexOf('--tools') + 1]).toBe('Read,Grep,Glob,LS,WebSearch,WebFetch');
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe(
+      'WebSearch,WebFetch,mcp__pos__list_orders',
+    );
+    // Every file read asks the host before it runs.
+    expect(args[args.indexOf('--permission-mode') + 1]).toBe('default');
+    expect(args[args.indexOf('--permission-prompt-tool') + 1]).toBe('stdio');
+    expect(args).not.toContain('--restricted');
+    expect(args.join(' ')).not.toMatch(/\b(Bash|Edit|Write|NotebookEdit|MultiEdit)\b/);
+  });
   it('drops the web tools when the scope has no web access', () => {
-    const args = claudeArguments(false, { root: 'C:\\p', web: false });
-    expect(args[args.indexOf('--tools') + 1]).toBe('Read,Grep,Glob,LS');
+    const selected = claudeArguments(false, { root: 'C:\\p', web: false });
+    expect(selected[selected.indexOf('--tools') + 1]).toBe('');
+    expect(selected).not.toContain('--allowedTools');
+    const project = claudeArguments(false, { root: 'C:\\p', web: false, access: 'project' });
+    expect(project[project.indexOf('--tools') + 1]).toBe('Read,Grep,Glob,LS');
   });
   it('writes approved MCP servers with secrets by reference only', () => {
     const config = JSON.parse(claudeMcpConfig({ root: 'C:\\p', web: false, mcp: [pos] }));
@@ -140,7 +160,7 @@ describe('Claude Code read scope arguments', () => {
 });
 
 describe('Claude Code read turns', () => {
-  it('works in the project folder and streams activity for each read', async () => {
+  it('works from its own empty folder on a whole-project turn and streams activity for each read', async () => {
     const { adapter, launches, project, engine } = await fixture({
       calls: (project) => [
         { name: 'Read', input: { file_path: path.join(project, 'menu.md') } },
@@ -152,14 +172,16 @@ describe('Claude Code read turns', () => {
     const activity: RawToolActivity[] = [];
     const result = await adapter.generate({
       ...base,
-      readScope: scopeFor(project),
+      readScope: wholeProject(project),
       onToolActivity: (raw) => activity.push(raw),
     });
     expect(result.text).toBe('Opens at 11.');
-    expect(launches[0].cwd).toBe(project);
+    // An empty folder of the engine's own, so every project read asks the host first.
+    expect(path.dirname(launches[0].cwd)).toBe(path.join(engine, 'read-folders'));
+    expect(await fs.readdir(launches[0].cwd)).toEqual([]);
     // The request files are made in the engine's folder, never the project's.
     expect((await fs.readdir(project)).sort()).toEqual(['menu.md']);
-    expect(await fs.readdir(engine)).toEqual(['fixture.mjs']);
+    expect((await fs.readdir(engine)).sort()).toEqual(['fixture.mjs', 'read-folders']);
     expect(activity.map((a) => [a.phase, a.summary])).toEqual([
       ['started', 'Reading menu.md'],
       ['finished', 'Read finished'],
@@ -235,7 +257,7 @@ describe('Claude Code approved MCP read tools', () => {
     process.env.POS_TOKEN = 'pos-secret';
     try {
       const { adapter, project, launches } = await fixture({
-        tools: ['Read', 'mcp__pos__list_orders', 'mcp__pos__refund_order'],
+        tools: ['WebSearch', 'mcp__pos__list_orders', 'mcp__pos__refund_order'],
         mcpServers: ['pos'],
         calls: [{ name: 'mcp__pos__list_orders', input: { day: 'today' } }],
       });
@@ -281,12 +303,12 @@ describe('Claude Code native session read scope', () => {
       saved.push(checkpoint);
     },
   });
-  it('opens in the project folder, streams activity and pins the scope', async () => {
-    const { adapter, project, launches } = await fixture({
+  it('opens a whole-project session in its own folder, streams activity and pins the scope', async () => {
+    const { adapter, project, launches, engine } = await fixture({
       calls: (project) => [{ name: 'LS', input: { path: project } }],
     });
     const saved: ClaudeSessionCheckpoint[] = [];
-    const scope = scopeFor(project);
+    const scope = wholeProject(project);
     const session = await adapter.openSession({ ...base, readScope: scope }, options(saved));
     try {
       const activity: RawToolActivity[] = [];
@@ -296,10 +318,11 @@ describe('Claude Code native session read scope', () => {
         onToolActivity: (raw) => activity.push(raw),
       });
       expect(result.text).toBe('Opens at 11.');
-      expect(launches[0].cwd).toBe(project);
-      expect(launches[0].args).toContain('--restricted');
+      expect(path.dirname(launches[0].cwd)).toBe(path.join(engine, 'read-folders'));
+      expect(launches[0].args).toContain('--permission-prompt-tool');
+      expect(launches[0].args).not.toContain('--restricted');
       expect(activity[0].summary).toBe('Listing files in the project folder');
-      expect(session.checkpoint.cwd).toBe(path.resolve(project));
+      expect(session.checkpoint.cwd).toBe(path.resolve(launches[0].cwd));
       // A turn that drops or changes the scope is not this session's turn.
       await expect(
         session.turn({ ...base, requestId: randomUUID() }),
