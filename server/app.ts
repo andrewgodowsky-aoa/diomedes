@@ -109,7 +109,7 @@ import { roleInstructions } from './team/prompts.js';
 import { unreadForSlot } from './team/mailbox.js';
 import { JobCaps } from './job-caps.js';
 import { jobRatesOf, mountJobCapRoutes, type JobPlan } from './job-cap-routes.js';
-import { jobTierOf, type JobShape } from '../shared/job-caps.js';
+import { approvedJobCap, jobTierOf, type JobShape } from '../shared/job-caps.js';
 import { CONVERSATION_LIMITS, WORK_LIMITS as MODEL_WORK_LIMITS } from './engines/model-api-core.js';
 import { MODEL_TURN_CAPABILITY, TEAM_WORK_CAPABILITY } from './harness/model-session-run.js';
 import { parseWorkCommand, validateWorkCommandId } from './work-admission.js';
@@ -676,6 +676,9 @@ export async function createApp(options: AppOptions) {
     memberOf: (organizationId, personId) =>
       isActiveMember(workspaces.membershipOf(organizationId, personId)),
     billingStatusFor: (organizationId) => billing.statusOf(organizationId),
+    // The allowance path is not bound to a thread, so its jobs run under the Settings default
+    // tier's approved cap. No request field can move it.
+    jobCapFor: () => approvedJobCap(jobTierOf(styleOf(null))),
     policyFor: (organizationId) => {
       const active = configuration.active(organizationId);
       return {

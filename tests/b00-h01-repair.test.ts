@@ -231,6 +231,7 @@ describe('B00: managed admission with an unreadable clock refuses, never throws'
       memberOf: () => true,
       billingStatusFor: async () => ({ suspended: false, suspendedReason: null }),
       policyFor: () => ({ processing: 'may-leave', organizationRoute: 'managed' }),
+      jobCapFor: () => dollars(2),
     });
   beforeEach(async () => {
     const root = await tmp();
@@ -257,7 +258,6 @@ describe('B00: managed admission with an unreadable clock refuses, never throws'
     kind: 'generation' as const,
     parentTaskId: null,
     maxMicroUsd: dollars(1),
-    parentEnvelopeMicroUsd: null,
     requestDigest: 'digest-one',
     reservationId: 'res_1',
     periodId: '2026-09',
