@@ -3752,10 +3752,13 @@ export async function createApp(options: AppOptions) {
     };
     const settingsListener = (settings: Settings) => send('settings', settings);
     const textListener = (data: unknown) => send('engine-text', data);
+    // Tool activity rides the same stream as text previews: narration, never persisted.
+    const activityListener = (data: unknown) => send('engine-activity', data);
     const usageListener = (snapshots: UsageSnapshot[]) => send('usage', { usage: snapshots });
     store.on('change', listener);
     store.on('settings', settingsListener);
     store.on('engine-text', textListener);
+    store.on('engine-activity', activityListener);
     const offUsage: () => void = usageService.subscribe(usageListener);
     // The client re-fetches /api/usage on this event, like it does for settings.
     send('ready', { ok: true });
@@ -3768,6 +3771,7 @@ export async function createApp(options: AppOptions) {
       store.off('change', listener);
       store.off('settings', settingsListener);
       store.off('engine-text', textListener);
+      store.off('engine-activity', activityListener);
       offUsage();
     });
   });
