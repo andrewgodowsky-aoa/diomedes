@@ -188,10 +188,15 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await page.getByRole('button', { name: /^Try the sample project/ }).click();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
+  // A new person starts in the Conversation view (shared/onboarding.ts): the
+  // project is open, and its panel, which carries the project heading, is not.
+  await expect(page.locator('html')).toHaveAttribute('data-view', 'conversation');
   await expect(
-    page.getByRole('heading', { name: 'Harbor Street restaurants', exact: true }),
-  ).toBeVisible();
+    page.getByRole('navigation', { name: 'Open projects', exact: true }).locator('b'),
+  ).toHaveText('Harbor Street restaurants');
+  await expect(page.getByRole('complementary', { name: 'This project' })).toHaveCount(0);
   const comfortableSettings: Settings = await (await page.request.get('/api/settings')).json();
+  expect(comfortableSettings.view).toBe('conversation');
   expect(comfortableSettings.surface).toBe('console');
   expect(comfortableSettings.detail).toBe('technical');
   expect(comfortableSettings.permissions.changingFiles).toBe(true);

@@ -57,11 +57,10 @@ export function Setup({
           <>
             <h1>Your workspace is ready</h1>
             <p className="prose intro">
-              You&apos;ll work in the {settings.surface === 'workbook' ? 'Workbook' : 'Console'}{' '}
-              with {titleCase(settings.detail)} detail:{' '}
+              You&apos;ll start in the Conversation view, with {titleCase(settings.detail)} detail:{' '}
               {detailDescriptions[settings.detail].toLowerCase()} File proposals require review
-              before Nectovia applies them. Your other approval preferences are saved separately in
-              Settings.
+              before Nectovia applies them. Your other approval preferences are in Settings, where you
+              can also switch to the Architect view for the full workspace.
             </p>
             {usable ? (
               <p className="prose">

@@ -14,6 +14,7 @@ import { TaskDocumentSelect } from './TaskDocumentSelect';
 import type {
   Change,
   Conversation,
+  ConsoleView,
   DocumentInfo,
   EngineCatalog,
   ExternalEngine,
@@ -1406,6 +1407,18 @@ export function Shell({
     void stopThreadMessage(issued, () => control?.abort());
   }
 
+  // Conversation shows no Ledger, so a Need that waits outside the open thread
+  // is reached from the top bar instead: its thread opens, or, for work started
+  // without one, its task's thread, and the Need scrolls into view.
+  function reviewElsewhere(need: Need) {
+    const owner = state?.conversations.find((c) => threadOwnsNeed(c, need, state)) ?? null;
+    const task = need.taskId ? state?.tasks.find((t) => t.id === need.taskId) : undefined;
+    if (owner) {
+      setSelectedId(owner.id);
+      setView('Thread');
+    } else if (task) openTaskThread(task);
+    scrollToNeed(need);
+  }
   function scrollToNeed(need: Need) {
     window.setTimeout(() => {
       document.getElementById(`need-${need.id}`)?.scrollIntoView({ block: 'center' });
@@ -1648,6 +1661,7 @@ export function Shell({
     currentThread: selected,
     policy,
     view,
+    consoleView: settings.view ?? 'architect',
     focusTaskId: selectedTask?.id,
     focusTaskName: selectedTask?.name,
     pendingTaskId,
@@ -1690,6 +1704,7 @@ export function Shell({
         setView('Thread');
       },
       setView: (v) => setView(v),
+      setConsoleView: (v) => void saveSettings({ ...settings, view: v }),
       openProject: (p) => onOpenProject(p),
       openDocument,
       launchSkill: (skill) => void launchSkill(skill),
@@ -1698,8 +1713,23 @@ export function Shell({
   };
   const paletteEntries = (query: string) => applyQuery(buildEntries(paletteCtx), query);
 
+  // The two views (shared/types.ts ConsoleView). Conversation hides the Ledger,
+  // the pinned rail destinations and the worker picker; everything stays
+  // reachable from Everything, Ctrl K and the ··· menu.
+  const conversation = settings.view === 'conversation';
+  const elsewhere = conversation
+    ? waiting.filter((n) => !(selected && view === 'Thread' && threadOwnsNeed(selected, n, state)))
+    : [];
+  const chooseView = (next: ConsoleView) => {
+    setMenuOpen(false);
+    if (settings.view !== next) void saveSettings({ ...settings, view: next });
+  };
+
   return (
-    <div ref={rootRef} className={`console ${!online ? 'disconnected' : ''}`}>
+    <div
+      ref={rootRef}
+      className={`console${conversation ? ' conversation' : ''}${!online ? ' disconnected' : ''}`}
+    >
       <header className="top">
         <NectoviaMark />
         <nav className="crumb" aria-label="Open projects">
@@ -1719,7 +1749,12 @@ export function Shell({
           ))}
         </nav>
         <div className="top-right">
-          {selected && (
+          {elsewhere.length > 0 && (
+            <button type="button" className="needs-elsewhere" onClick={() => reviewElsewhere(elsewhere[0])}>
+              {elsewhere.length === 1 ? 'Something needs your OK' : `${elsewhere.length} things need your OK`}
+            </button>
+          )}
+          {selected && !conversation && (
             <AgentPicker
               projectId={projectId}
               thread={selected}
@@ -1759,9 +1794,11 @@ export function Shell({
           <button type="button" onClick={onOpenSettings}>
             Settings
           </button>
-          <button type="button" onClick={() => setCloudSharingOpen(true)}>
-            Cloud sharing
-          </button>
+          {!conversation && (
+            <button type="button" onClick={() => setCloudSharingOpen(true)}>
+              Cloud sharing
+            </button>
+          )}
           <div className="surface-menu">
             <button
               type="button"
@@ -1776,6 +1813,36 @@ export function Shell({
                 {/* The button opening this menu is labelled "Interface detail
                     menu" and held no detail control at all, because Detail was
                     gated on the Workbook. It is kept now, so the label is true. */}
+                <p className="caption">View</p>
+                {(
+                  [
+                    ['conversation', 'Conversation'],
+                    ['architect', 'Architect'],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={(settings.view ?? 'architect') === id}
+                    className={(settings.view ?? 'architect') === id ? 'on' : ''}
+                    onClick={() => chooseView(id)}
+                  >
+                    {label}
+                  </button>
+                ))}
+                {conversation && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setCloudSharingOpen(true);
+                    }}
+                  >
+                    Cloud sharing
+                  </button>
+                )}
                 <p className="caption">Detail</p>
                 {(['guided', 'standard', 'technical'] as const).map((d) => (
                   <button
@@ -1818,7 +1885,7 @@ export function Shell({
           onNew={() => void newThread()}
           destinations={destinations}
           groups={destinationGroups}
-          pinned={pins}
+          pinned={conversation ? [] : pins}
           currentId={currentDestination}
           onDestination={goTo}
           onTogglePin={(id) =>
@@ -1976,7 +2043,7 @@ export function Shell({
               onOpenArtifact={(record) => artifactHost.selection.open(record)}
               openArtifactKey={artifactHost.selection.openKey}
             />
-            <Ledger
+            {!conversation && <Ledger
               project={project}
               state={state}
               task={selectedTask}
@@ -1996,7 +2063,7 @@ export function Shell({
                 setView('Thread');
                 scrollToNeed(need);
               }}
-            />
+            />}
           </section>
         )}
         {!editing && view === 'History' && (
@@ -2050,7 +2117,7 @@ export function Shell({
                 </button>
               </div>
             </main>
-            <Ledger
+            {!conversation && <Ledger
               project={project}
               state={state}
               task={null}
@@ -2070,7 +2137,7 @@ export function Shell({
                 setView('Thread');
                 scrollToNeed(need);
               }}
-            />
+            />}
           </section>
         )}
         {!editing && view === 'Board' && (

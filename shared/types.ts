@@ -13,6 +13,12 @@ import type { FollowUpCommand, StopReceipt } from './work-control.js';
 export type Detail = 'guided' | 'standard' | 'technical';
 /** The two surfaces. The Workbook is one page at a time; the Console is every thread, helper and change at once. */
 export type Surface = 'workbook' | 'console';
+/**
+ * The Console's two views. Conversation shows the prompt box and the threads;
+ * Architect is the full Console. A view changes what is shown, never what
+ * Nectovia can do.
+ */
+export type ConsoleView = 'conversation' | 'architect';
 /** The four things a person can want to do; the Workbook's Home leads with these. */
 export type Intent = 'ask' | 'work' | 'plan' | 'review';
 export type Page =
@@ -36,6 +42,8 @@ export interface Settings {
   detail: Detail;
   /** Missing on settings written before 2026-09-06; the server fills it: 'technical' detail becomes the Console. */
   surface?: Surface;
+  /** Missing on settings written before 2026-09-23; the server fills it with 'architect'. */
+  view?: ConsoleView;
   onboarding: {
     setupVersion?: 2;
     discoveryConsentAt?: string | null;

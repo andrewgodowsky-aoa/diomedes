@@ -371,6 +371,8 @@ function validateSettings(current: Settings, body: unknown): Settings {
     );
     result.surface = named === 'book' ? 'workbook' : named === 'workbook' ? 'workbook' : 'console';
   }
+  if (supplied.view !== undefined)
+    result.view = choice(supplied.view, ['conversation', 'architect'], 'view');
   if (supplied.explanations !== undefined)
     result.explanations = choice(
       supplied.explanations,

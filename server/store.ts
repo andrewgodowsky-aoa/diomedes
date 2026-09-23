@@ -179,6 +179,9 @@ export function migrateSettings(
   // middle of a session, and a running session's surface is not something a
   // recovered transaction should move; there, only a missing value is filled.
   if (atLaunch || settings.surface === undefined) settings.surface = 'console';
+  // A profile from before the two views keeps the Console it knows. Unlike the
+  // surface, a chosen view is kept across launches: both views have a way out.
+  if (settings.view !== 'conversation' && settings.view !== 'architect') settings.view = 'architect';
   else if ((settings.surface as string) === 'book') settings.surface = 'workbook';
   else if ((settings.surface as string) === 'desk' || (settings.surface as string) === 'technical')
     settings.surface = 'console';
@@ -220,6 +223,9 @@ export const defaults = (): Settings => ({
   version: 1,
   detail: 'guided',
   surface: 'console',
+  // A new person is moved to Conversation when they finish setup
+  // (shared/onboarding.ts). Every other profile keeps the full Console.
+  view: 'architect',
   onboarding: {
     setupVersion: 2,
     discoveryConsentAt: null,
