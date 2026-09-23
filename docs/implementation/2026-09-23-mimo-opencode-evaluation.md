@@ -48,6 +48,10 @@ Committed on the branch (local only):
 - This record's commit: the scripts, the run files, the summaries and
   `pending-opencode-route-fix.patch`.
 
+**Update 2026-09-23: landed.** F1, F2 and F3 are on main as `d3cfad4` ("Give the OpenCode route
+the live catalogue, bounded probes and text-only answers"). The held-patch account below is kept as
+written.
+
 **Held, not committed.** `server/engines/opencode.ts` is claimed by NECTOVIA.SECURITY.PASS
 until its PR merges. The route fix and its tests exist uncommitted in the worktree and as
 `evidence/mimo-opencode-evaluation/pending-opencode-route-fix.patch` (sha256 `00120779…b4fea7`,
