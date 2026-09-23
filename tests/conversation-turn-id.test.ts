@@ -66,6 +66,10 @@ afterEach(async () => {
 
 test('the page names a command\'s answer exactly as the server projected it', async () => {
   const home = await api<{ projectId: string; threadId: string }>('/home/conversation', 'POST', {});
+  await api(`/projects/${home.projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0, routes: ['claude-code'], documents: [],
+    shareConversationHistory: true, shareReviewPackets: false,
+  });
   // A newly provisioned Home thread defaults to AWS under the Home contract; this fixture's
   // only scripted provider is Claude Code, so its route is chosen explicitly, the same way
   // the Route control writes it.

@@ -131,6 +131,20 @@ beforeEach(async () => {
     })
   ).data.id;
   await request('/settings', 'PUT', { services: { codex: true } });
+  // Default-deny cloud sharing: grant the codex route with no source documents
+  // and reviewer packets for model-reviewer scopes (sources [] except the two
+  // tests below that extend the grant to Keep.md / Base.md).
+  expect(
+    (
+      await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0,
+        routes: ['codex'],
+        documents: [],
+        shareConversationHistory: false,
+        shareReviewPackets: true,
+      })
+    ).status,
+  ).toBe(200);
   proposal('Reviewed.md');
 });
 afterEach(async () => {
@@ -412,6 +426,18 @@ describe('the reviewer cannot reach past the scope the person confirmed', () => 
   test('an approve cannot delete a file or apply an unsupported kind', async () => {
     const folder = (await state()).project.folder;
     await fs.writeFile(path.join(folder, 'Keep.md'), 'keep me');
+    // The selected source must be an explicitly granted cloud document.
+    expect(
+      (
+        await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+          expectedVersion: 1,
+          routes: ['codex'],
+          documents: ['Keep.md'],
+          shareConversationHistory: false,
+          shareReviewPackets: true,
+        })
+      ).status,
+    ).toBe(200);
     await grant();
     proposal('Keep.md', null);
     await start(['Keep.md']);
@@ -475,6 +501,18 @@ describe('the reviewer cannot reach past the scope the person confirmed', () => 
     await close();
     await launch();
     await request('/settings', 'PUT', { services: { codex: true } });
+    // The selected source must be an explicitly granted cloud document.
+    expect(
+      (
+        await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+          expectedVersion: 1,
+          routes: ['codex'],
+          documents: ['Base.md'],
+          shareConversationHistory: false,
+          shareReviewPackets: true,
+        })
+      ).status,
+    ).toBe(200);
     await grant();
     proposal('Reviewed.md');
     await start(['Base.md']);

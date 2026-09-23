@@ -222,6 +222,13 @@ const readHome = () => api<Binding | null>('/home/conversation');
 // an explicit choice through the thread update, which provisioning and restart then preserve.
 const provision = async (): Promise<Binding> => {
   const home = await api<Binding>('/home/conversation', 'POST');
+  const sharing = await api<{ version: number }>(`/projects/${home.projectId}/cloud-sharing`);
+  if (sharing.version === 0) {
+    await api(`/projects/${home.projectId}/cloud-sharing`, 'PUT', {
+      expectedVersion: 0, routes: ['claude-code'], documents: [],
+      shareConversationHistory: true, shareReviewPackets: false,
+    });
+  }
   await api<Conversation>(`/projects/${home.projectId}/threads/${home.threadId}`, 'PUT', {
     engine: 'claude-code',
   });

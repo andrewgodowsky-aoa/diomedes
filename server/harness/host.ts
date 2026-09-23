@@ -26,6 +26,7 @@ import {
 import { ENGINE_TEXT_TURN, TextRouteRuntime, textDispatchAuthorizer } from './text-route.js';
 import { MODEL_SESSION_CAPABILITIES, ModelSessionRuns, modelApiDispatchAuthorizer } from './model-session-run.js';
 import { AWS_BEDROCK_ROUTE } from '../engines/aws-bedrock.js';
+import { cloudSharing, requireCloudSharing } from '../cloud-sharing.js';
 
 export const HARNESS_POLICY_VERSION = 'diomedes-host-policy-v1';
 
@@ -406,6 +407,14 @@ export function createHarnessHost({
   });
   const claudeSessions = new ClaudeSessionRuns(runs);
   const modelSessions = new ModelSessionRuns(runs, AWS_BEDROCK_ROUTE);
+  claudeSessions.setSharingPolicy((projectId, documents, prior) =>
+    requireCloudSharing(store.state(projectId), 'claude-code', documents, prior),
+  );
+  modelSessions.setSharingPolicy(
+    (projectId, documents, history) =>
+      requireCloudSharing(store.state(projectId), AWS_BEDROCK_ROUTE, documents, history),
+    (projectId) => cloudSharing(store.state(projectId)).shareConversationHistory,
+  );
   const bridge = new HarnessBridge(store, runs, tools, adapter, redact, HOST_TEST_PROJECT, codex);
   const observers = new Set<{ runId: string; changed: () => void; closed: () => void }>();
   let closed = false;

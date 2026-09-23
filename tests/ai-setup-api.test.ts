@@ -196,6 +196,10 @@ describe('first-run AI setup and the existing Work pipeline', () => {
       const { api, generate } = await fixture(engine);
       await connected(api, engine);
       const project = (await api('/projects', 'POST', { name: 'Test' })).data;
+      expect((await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0, routes: [engine], documents: [],
+        shareConversationHistory: false, shareReviewPackets: false,
+      })).status).toBe(200);
       const thread = (await api(`/projects/${project.id}/threads`, 'POST', {})).data;
       const body = {
         text: 'Question',
@@ -233,6 +237,10 @@ describe('first-run AI setup and the existing Work pipeline', () => {
       const { api } = await fixture(engine);
       await connected(api, engine);
       const project = (await api('/projects', 'POST', { name: 'Proposals' })).data;
+      expect((await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0, routes: [engine], documents: [],
+        shareConversationHistory: false, shareReviewPackets: false,
+      })).status).toBe(200);
       const thread = (await api(`/projects/${project.id}/threads`, 'POST', {})).data;
       const target = `/projects/${project.id}`;
       const plan = await api(`${target}/ask`, 'POST', {

@@ -152,7 +152,9 @@ const waitDefinition = (id: string): StepDefinition => ({
 /** A capability driver over RunService. Only live transport handles are held here. */
 export class ClaudeSessionRuns {
   private closed = false;
-  private sharingPolicy: (projectId: string, documents: readonly string[], priorConversation: boolean) => void = () => {};
+  private sharingPolicy: (projectId: string, documents: readonly string[], priorConversation: boolean) => void = () => {
+    throw new HarnessError('cloud_sharing_unconfigured', 'Project cloud sharing is not configured for this native session.');
+  };
   private readonly owner = `claude-session-${randomUUID()}`;
   private readonly connections = new Map<string, Connection>();
   private readonly active = new Map<

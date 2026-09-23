@@ -107,6 +107,23 @@ const decision = async (needId: string, resolution: 'go-ahead' | 'declined', all
     actionDigest: need.approval!.actionDigest, baseDigest: need.approval!.baseDigest,
   });
 };
+// Default-deny cloud sharing: extend the suite's explicit grant to an
+// instruction file once that file exists on disk (the policy API only
+// allowlists documents currently listed in the project).
+const allowInstructionFile = async (name = 'AGENTS.md') => {
+  const current = (await request(`/projects/${projectId}/cloud-sharing`)).data as {
+    version: number; documents: string[];
+  };
+  if (current.documents.includes(name)) return;
+  const updated = await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: current.version,
+    routes: ['codex'],
+    documents: [...current.documents, name],
+    shareConversationHistory: true,
+    shareReviewPackets: false,
+  });
+  expect(updated.status).toBe(200);
+};
 
 // Protocol fake: exercises the real adapter without launching Codex.
 class TeamAppServer implements NativeRpc {
@@ -510,6 +527,17 @@ beforeEach(async () => {
     })
   ).data.id;
   await request('/settings', 'PUT', { services: { codex: true } });
+  // Default-deny cloud sharing stays on in production: this synthetic project
+  // explicitly grants the codex route, the two sample sources this suite sends,
+  // and conversation history for team-wake runs (sources [] with wake === true).
+  const sharing = await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0,
+    routes: ['codex'],
+    documents: ['Fall menu.md', 'Opening notes.txt'],
+    shareConversationHistory: true,
+    shareReviewPackets: false,
+  });
+  expect(sharing.status).toBe(200);
 });
 afterEach(async () => {
   // Hold this test's own app, server and folder. A hook that outlives its timeout
@@ -1224,6 +1252,7 @@ describe('project instructions reach the model', () => {
 
   test('a loaded instruction file arrives whole, delimited, and recorded on the session', async () => {
     await writeInstructions(body);
+    await allowInstructionFile();
     expect((await activate()).status).toBe(200);
     expect((await start()).status).toBe(200);
 
@@ -1337,6 +1366,7 @@ ${'A rule with an exception that must not be lost. '.repeat(600)}`;
 
   test('a file that changed since discovery is sent at its current sha and said to have changed', async () => {
     await writeInstructions(body);
+    await allowInstructionFile();
     expect((await activate()).status).toBe(200);
     const discovered = (await state()).instructionFiles!.find((file) => file.path === 'AGENTS.md')!;
     await writeInstructions(`${body}\nAnd never leave a TODO behind.\n`);

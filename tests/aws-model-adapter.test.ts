@@ -391,6 +391,12 @@ describe('the conversation driver under the Runtime admission fence', () => {
 
   test('commits a child inside the run queue, and refuses a settled run in its own words before the commit', async () => {
     const sessions = new ModelSessionRuns(runs, 'aws-bedrock');
+    // Synthetic test policy for this standalone driver fixture: allow cloud
+    // sharing; history stays off (no prior-history asserted here).
+    sessions.setSharingPolicy(
+      () => {},
+      () => false,
+    );
     await conversation('model-fence-1');
     expect(await sessions.fenced(PROJECT, 'model-fence-1', async () => 'committed')).toBe('committed');
 
@@ -414,6 +420,12 @@ describe('the conversation driver under the Runtime admission fence', () => {
 
   test('identical concurrent phase saves are one write', async () => {
     const sessions = new ModelSessionRuns(runs, 'aws-bedrock');
+    // Synthetic test policy for this standalone driver fixture: allow cloud
+    // sharing; history stays off (no prior-history asserted here).
+    sessions.setSharingPolicy(
+      () => {},
+      () => false,
+    );
     await conversation('model-fence-2');
     const phase = { phase: 'decision', sourceMessageId: 'sm.1', body: { block: 'none' } } as unknown as InteractionPhase;
     await Promise.all([

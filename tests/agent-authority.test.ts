@@ -118,6 +118,20 @@ beforeEach(async () => {
     await request(`/projects/${projectId}/threads`, 'POST', { taskId, name: 'Agent thread' })
   ).data.id;
   await request('/settings', 'PUT', { services: { codex: true } });
+  // Default-deny cloud sharing: this synthetic project explicitly grants the
+  // codex route with no source documents and reviewer packets for the
+  // model-reviewer scope below (sources [] throughout).
+  expect(
+    (
+      await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0,
+        routes: ['codex'],
+        documents: [],
+        shareConversationHistory: false,
+        shareReviewPackets: true,
+      })
+    ).status,
+  ).toBe(200);
 });
 afterEach(async () => {
   // Held before the first await: a hook that outlives its timeout keeps running,

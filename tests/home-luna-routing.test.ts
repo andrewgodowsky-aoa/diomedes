@@ -479,6 +479,10 @@ test('a send on the provisioned default reaches the model driver with no Claude 
   await connect();
   await approveSpend();
   const home = await provisionHome();
+  await api(`/projects/${home.projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0, routes: ['aws-bedrock'], documents: [],
+    shareConversationHistory: true, shareReviewPackets: false,
+  });
   const sent = await send(home, 'm-hello', 'Good morning');
   expect(sent.answerText).toBe('answer:Good morning');
   expect(sent.outcome).toEqual({ status: 'answered' });
@@ -501,6 +505,10 @@ test('a consequential proposal from home still needs an explicit target, and hom
   await connect();
   await approveSpend();
   const home = await provisionHome();
+  await api(`/projects/${home.projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0, routes: ['aws-bedrock'], documents: [],
+    shareConversationHistory: true, shareReviewPackets: false,
+  });
   const untargeted = await send(home, 'm-act', 'ACT order the usual');
   expect(untargeted.outcome).toMatchObject({ status: 'not-started', reason: 'needs-target' });
   const athome = await send(home, 'm-home', `TARGET ${home.projectId} order the usual`);
@@ -515,6 +523,10 @@ test('a project conversation answers on the default independent of the project W
   await connect();
   await approveSpend();
   const mine = await project('Linen service');
+  await api(`/projects/${mine.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0, routes: ['aws-bedrock'], documents: [],
+    shareConversationHistory: true, shareReviewPackets: false,
+  });
   const state = store().state(mine.id);
   state.project.ai = { engine: 'sample', model: null };
   await store().persist(state);

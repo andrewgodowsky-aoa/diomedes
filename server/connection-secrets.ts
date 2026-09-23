@@ -102,10 +102,10 @@ export class ConnectionSecrets {
     try {
       return this.box!.open(sealed);
     } catch {
-      // Another Windows user, a reset profile or a changed machine key: say so, never guess.
+      // Another OS account, a reset profile or a changed machine key: never guess.
       throw new HarnessError(
         'credential_unreadable',
-        'The saved credential cannot be opened by this Windows user. Enter it again.',
+        'The saved credential cannot be opened by this computer account. Enter it again.',
       );
     }
   }

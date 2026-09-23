@@ -193,6 +193,10 @@ beforeEach(async () => {
   await api('/ai/check/claude-code', 'POST', {});
   await api('/ai/select', 'POST', { engine: 'claude-code', model });
   project = await api<Project>('/projects', 'POST', { name: 'Linen service' });
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0, routes: ['claude-code'], documents: [],
+    shareConversationHistory: true, shareReviewPackets: false,
+  });
   thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
   const state = store().state(project.id);
   state.conversations.find((item) => item.id === thread.id)!.engine = 'claude-code';

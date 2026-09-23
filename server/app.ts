@@ -703,14 +703,6 @@ export async function createApp(options: AppOptions) {
     currentAuthority: options.harnessAuthority,
     textLeaseMs: options.harnessTextLeaseMs,
   });
-  harness.claudeSessions.setSharingPolicy((projectId, documents, prior) =>
-    requireCloudSharing(store.state(projectId), 'claude-code', documents, prior),
-  );
-  harness.modelSessions.setSharingPolicy(
-    (projectId, documents, history) =>
-      requireCloudSharing(store.state(projectId), AWS_BEDROCK_ROUTE, documents, history),
-    (projectId) => cloudSharing(store.state(projectId)).shareConversationHistory,
-  );
   // External text turns run through the host's RunService: the adapter is only
   // the provider transport inside the fenced dispatch step.
   engines.dispatch = (request) => {

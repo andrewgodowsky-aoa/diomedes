@@ -145,7 +145,9 @@ const spoken = (text: string) => {
 
 export class ModelSessionRuns {
   private closed = false;
-  private sharingPolicy: (projectId: string, documents: readonly string[], history: boolean) => void = () => {};
+  private sharingPolicy: (projectId: string, documents: readonly string[], history: boolean) => void = () => {
+    throw new HarnessError('cloud_sharing_unconfigured', 'Project cloud sharing is not configured for this model session.');
+  };
   private historyPolicy: (projectId: string) => boolean;
   private readonly owner = `model-session-${randomUUID()}`;
   private readonly active = new Map<
@@ -155,7 +157,7 @@ export class ModelSessionRuns {
   constructor(
     private readonly runs: RunService,
     private readonly route: string,
-    shareHistory: (projectId: string) => boolean = () => true,
+    shareHistory: (projectId: string) => boolean = () => false,
   ) {
     this.historyPolicy = shareHistory;
   }
@@ -573,9 +575,23 @@ export class ModelSessionRuns {
           destination: adapter.destination,
           contract: adapter.contract,
           capabilities: () => adapter.capabilities(),
-          ...(adapter.prepare ? { prepare: (value, signal) => adapter.prepare!(value, signal) } : {}),
-          ...(adapter.validatePrepared ? { validatePrepared: (value) => adapter.validatePrepared!(value) } : {}),
-          ...(adapter.inspect ? { inspect: (value, answer, signal) => adapter.inspect!(value, answer, signal) } : {}),
+          ...(adapter.prepare ? { prepare: async (value, signal) => {
+            check();
+            const prepared = await adapter.prepare!(value, signal);
+            check();
+            return prepared;
+          } } : {}),
+          ...(adapter.validatePrepared ? { validatePrepared: async (value) => {
+            check();
+            await adapter.validatePrepared!(value);
+            check();
+          } } : {}),
+          ...(adapter.inspect ? { inspect: async (value, answer, signal) => {
+            check();
+            const inspected = await adapter.inspect!(value, answer, signal);
+            check();
+            return inspected;
+          } } : {}),
           complete: async (value, signal) => {
             check();
             const answer = await adapter.complete(value, signal);
