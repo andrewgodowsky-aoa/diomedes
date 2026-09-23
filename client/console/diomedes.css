@@ -90,6 +90,26 @@
   animation: dm-view-in var(--dm-t-extend) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* The answer as it streams, with its tool calls: laid out as a Diomedes turn
+   and marked with the live point, but not a `.turn`, because it is not one of
+   the recorded turns until the record says so. */
+.console.diomedes .dio-live {
+  position: relative;
+  margin-top: 14px;
+  min-width: 0;
+}
+.console.diomedes .dio-live::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--light);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--light) 60%, transparent);
+}
+
 /* What the last message led to, beyond its answer. One flat box on the
    composer's own border, with a state rule down its left edge in the
    colours the Console's points already speak. It sits in the transcript,

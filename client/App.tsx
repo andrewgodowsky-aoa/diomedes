@@ -928,6 +928,7 @@ export function App() {
               ) : landing === 'diomedes' ? (
                 <DiomedesHome
                   projects={byRecency}
+                  detail={settings?.detail}
                   results={[]}
                   onOpenResult={() => undefined}
                   destinations={diomedesDestinations}

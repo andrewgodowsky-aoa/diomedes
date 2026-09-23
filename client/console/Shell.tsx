@@ -52,6 +52,12 @@ import { Mark } from './Mark';
 import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
 import { acceptPreview, type PreviewPosition } from './engine-text-preview';
+import {
+  acceptActivity,
+  activityTarget,
+  rememberRunActivity,
+  type ActivityState,
+} from './engine-activity';
 import { SendConfirmation } from './SendConfirmation';
 import { PermissionPanel } from './PermissionPanel';
 import { Ledger } from './Ledger';
@@ -221,7 +227,12 @@ export function Shell({
     threadId: string;
     text: string;
     engine: string;
+    /** Tool calls on the same run, applied by `acceptActivity`. */
+    activity: ActivityState | null;
   } | null>(null);
+  // Live tool calls for work runs in this project, by request id (a work run's
+  // session id). Ephemeral: a run card shows them only while the run is live.
+  const [runActivity, setRunActivity] = useState<Record<string, ActivityState>>({});
   const askControl = useRef<AbortController | null>(null);
   const askThreadId = useRef<string | null>(null);
   const askEngine = useRef<Route | null>(null);
@@ -414,6 +425,7 @@ export function Shell({
           threadId: data.threadId,
           text: '',
           engine: askEngine.current ?? '',
+          activity: null,
         });
         return;
       }
@@ -443,6 +455,41 @@ export function Shell({
       setStreaming((prev) => (prev && prev.requestId === data.requestId ? null : prev));
     };
     es.addEventListener('engine-text', onEngineText as EventListener);
+    // Live tool calls: the ask on screen owns frames that carry its exact
+    // request, run and thread; any other frame in this project may belong to a
+    // work run's card, found by its session id. Narration only, never saved.
+    const onEngineActivity = (ev: Event) => {
+      let data: unknown;
+      try {
+        data = JSON.parse((ev as MessageEvent).data);
+      } catch {
+        return;
+      }
+      const target = activityTarget(data, {
+        projectId: currentId.current,
+        ask:
+          streamingId.current != null &&
+          streamingRunId.current != null &&
+          askThreadId.current != null
+            ? {
+                requestId: streamingId.current,
+                runId: streamingRunId.current,
+                threadId: askThreadId.current,
+              }
+            : null,
+      });
+      if (target.kind === 'ask') {
+        const requestId = target.requestId;
+        setStreaming((prev) => {
+          if (!prev || prev.requestId !== requestId) return prev;
+          const activity = acceptActivity(prev.activity, data);
+          return activity === prev.activity ? prev : { ...prev, activity };
+        });
+      } else if (target.kind === 'run') {
+        setRunActivity((prev) => rememberRunActivity(prev, data));
+      }
+    };
+    es.addEventListener('engine-activity', onEngineActivity as EventListener);
     return () => {
       clearTimeout(timer);
       es.close();
@@ -459,6 +506,7 @@ export function Shell({
       streamingRunId.current = null;
       streamingPosition.current = null;
       setStreaming(null);
+      setRunActivity({});
     };
   }, [projectId]);
 
@@ -615,8 +663,19 @@ export function Shell({
   // never render elsewhere.
   const streamingForSelected =
     selected && streaming && streaming.threadId === selected.id
-      ? { requestId: streaming.requestId, text: streaming.text, engine: streaming.engine }
+      ? {
+          requestId: streaming.requestId,
+          text: streaming.text,
+          engine: streaming.engine,
+          activity: streaming.activity?.lines,
+        }
       : undefined;
+  // Tool calls for this project's work runs, by session id, as ThreadView reads them.
+  const runActivityLines = useMemo(
+    () =>
+      Object.fromEntries(Object.entries(runActivity).map(([id, value]) => [id, value.lines])),
+    [runActivity],
+  );
   const selectedMember = team.members.find((m) => m.threadId === selected?.id) ?? null;
   const selectedMail = team.messages.filter((m) => {
     const member = selected ? team.members.find((x) => x.threadId === selected.id) : undefined;
@@ -1604,6 +1663,7 @@ export function Shell({
               onStopSession={(id) => void stopSession(id)}
               onOpenBoard={() => setView('Board')}
               streaming={streamingForSelected}
+              runActivity={runActivityLines}
               onCancelText={cancelAsk}
             />
             <Ledger

@@ -1880,3 +1880,56 @@ html[data-motion='reduced'] .console .modes .ind b {
 .app:has(> .dm-texture-layer) .page-frame:has(> .console.home) {
   background: transparent;
 }
+
+/* ---- live tool calls ----
+   One plain line per tool call under a streaming reply or inside a live run
+   card. Narration only: the run record stays the authority. A tool detail can
+   carry a path or URL, so every line may shrink and wrap (decision 5), and the
+   run card's pre-wrap is reset at the list edge. */
+.console .tool-activity ul {
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+  white-space: normal;
+  color: var(--t3);
+}
+.console .tool-activity li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.console .tool-activity li + li {
+  margin-top: 2px;
+}
+.console .tool-activity .say,
+.console .tool-activity details {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.console .tool-activity summary {
+  cursor: pointer;
+}
+.console .tool-activity summary:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 2px;
+}
+.console .tool-activity pre {
+  margin: 4px 0 0;
+  max-height: 12em;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.console .tool-activity .tool-said {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}

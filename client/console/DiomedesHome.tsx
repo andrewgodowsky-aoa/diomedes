@@ -20,6 +20,7 @@ import type { MessageResult } from '../../shared/conversation';
 import { CONVERSATION_DEFAULT_ROUTE } from '../../shared/engines';
 import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
 import { Diomedes, routeOptions } from './Diomedes';
+import { stepLiveReply, type LiveBinding, type LiveEvent, type LiveReply } from './live-reply';
 import type { EverythingItem } from './Everything';
 import {
   diomedesThread,
@@ -49,6 +50,8 @@ export interface DiomedesHomeProps {
   onNewProject(): void;
   /** Go to the project where work that started is running. */
   onOpenWork(projectId: string): void;
+  /** The person's detail level. Technical also shows each tool call's tool and detail. */
+  detail?: 'guided' | 'standard' | 'technical';
 }
 
 const words = (error: unknown) =>
@@ -133,6 +136,44 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const routePick = useRef(0);
   const lastRef = useRef(last);
   lastRef.current = last;
+  // The answer streaming for the message in flight, and the one command it may belong to. The
+  // binding is the dispatch identity the send was issued, set before its request leaves, and
+  // cleared whenever the delivery ends or the visit moves on, so a frame for any other command,
+  // thread, project or run never paints here.
+  const [live, setLive] = useState<LiveReply | null>(null);
+  const liveBinding = useRef<LiveBinding | null>(null);
+  const dropLive = useCallback(() => {
+    liveBinding.current = null;
+    setLive(null);
+  }, []);
+  useEffect(() => {
+    const es = new EventSource('/api/events');
+    // The binding is read when the frame arrives: a frame that lands after the page has moved
+    // on finds none and is dropped with whatever was showing.
+    const step = (event: LiveEvent) => {
+      const bound = liveBinding.current;
+      if (!bound) return;
+      setLive((prev) => stepLiveReply(prev, bound, event));
+    };
+    const frame = (type: 'engine-text' | 'engine-activity') => (ev: Event) => {
+      let data: unknown;
+      try {
+        data = JSON.parse((ev as MessageEvent).data);
+      } catch {
+        return;
+      }
+      step({ type, data });
+    };
+    const onText = frame('engine-text');
+    const onActivity = frame('engine-activity');
+    // A reconnect replays nothing, so a missed text frame loses the preview; the recorded
+    // answer still replaces it.
+    const onLost = () => step({ type: 'lost' });
+    es.addEventListener('engine-text', onText);
+    es.addEventListener('engine-activity', onActivity);
+    es.addEventListener('error', onLost);
+    return () => es.close();
+  }, []);
 
   const thread = useCallback(async (found: Binding): Promise<Conversation | null> => {
     const state = await api<ProjectState>(`/projects/${encodeURIComponent(found.projectId)}/state`);
@@ -182,6 +223,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const load = useCallback(
     async (scope: string | null) => {
       endDelivery();
+      dropLive();
       const mine = ++turn.current;
       const owns = () => turn.current === mine;
       setBinding(null);
@@ -236,7 +278,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         );
       }
     },
-    [thread, show, endDelivery],
+    [thread, show, endDelivery, dropLive],
   );
   useEffect(() => {
     void load(scopeId);
@@ -269,6 +311,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   ): Promise<boolean> => {
     const mine = ++turn.current;
     const owns = () => turn.current === mine;
+    dropLive();
     setNotice(null);
     setLast(null);
     setUnread(false);
@@ -297,6 +340,13 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       if (owns() && !current.cancelled && provisioned) setRoute(provisioned.engine ?? null);
       const result = await transport(found, current.controller.signal, (identity) => {
         current.issued = identity;
+        // Told before the request leaves, so the started frame always finds its binding.
+        if (owns() && !current.cancelled)
+          liveBinding.current = {
+            projectId: identity.projectId,
+            threadId: identity.threadId,
+            requestId: identity.commandId,
+          };
       });
       // Confirmed. Nothing after this line may hand the text back or send it again: a
       // transcript that cannot be read is a failed read, not a failed send. What is shown as
@@ -336,7 +386,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       return saved?.input.text === text.trim();
     } finally {
       if (delivery.current === current) delivery.current = null;
-      if (owns()) setPending(false);
+      if (owns()) {
+        dropLive();
+        setPending(false);
+      }
     }
   };
 
@@ -406,6 +459,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     // the moment before the abort lands has nothing left to name and asks for nothing.
     endDelivery();
     delivery.current = null;
+    dropLive();
     const issued = active.issued;
     // A delivery stopped while it was still finding the conversation or waiting on the lock was
     // never dispatched, so there is nothing on the server to interrupt.
@@ -502,12 +556,15 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       onScope={(id) => {
         if (id === scopeId) return;
         endDelivery();
+        dropLive();
         turn.current += 1;
         setPending(false);
         setScopeId(id);
       }}
       turns={turns}
       pending={pending}
+      live={live ? { text: live.text, activity: live.activity?.lines ?? [] } : null}
+      technical={props.detail === 'technical'}
       restriction={restriction}
       onRestriction={setRestriction}
       onSend={send}

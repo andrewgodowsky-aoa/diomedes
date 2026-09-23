@@ -31,6 +31,8 @@ import { StopMenu, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
 import { ChangeReview } from './ChangeReview';
 import { useWorkingWord, workingLine } from './working-words';
+import { toolRunning, type ToolLine } from './engine-activity';
+import { ToolActivityList } from './ToolActivity';
 
 function fmtDur(ms: number): string {
   const s = ms / 1000;
@@ -96,7 +98,9 @@ interface ThreadViewProps {
   onStopSession(id: string): void;
   onOpenBoard(): void;
   /** Live streamed text for a new external-engine Ask/Plan: ephemeral, never saved. */
-  streaming?: { requestId: string; text: string; engine: string };
+  streaming?: { requestId: string; text: string; engine: string; activity?: ToolLine[] };
+  /** Live tool calls for a work run, by the run's session id. Ephemeral, never saved. */
+  runActivity?: Readonly<Record<string, ToolLine[]>>;
   onCancelText?(): void;
   /** Where a refused scoped Stop is reported; without it the refusal is silent. */
   onError?(error: Error): void;
@@ -141,9 +145,11 @@ export function ThreadView({
   onStopSession,
   onOpenBoard,
   streaming,
+  runActivity,
   onCancelText,
   onError,
 }: ThreadViewProps) {
+  const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
   const live = sessions.find((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? null;
   const ordered = [...sessions].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
@@ -186,15 +192,26 @@ export function ThreadView({
   }
 
   // While an answer is on its way and nothing has streamed yet, the agent
-  // says what it is up to. Display only; nothing here is recorded.
+  // says what it is up to. Display only; nothing here is recorded. A tool
+  // call in progress already says it, so the line waits behind it.
+  const streamWaiting = Boolean(
+    streaming && !streaming.text && !toolRunning(streaming.activity),
+  );
   const streamWord = useWorkingWord(
     mode === 'plan' ? 'drafting the plan' : 'replying',
-    Boolean(streaming && !streaming.text),
+    streamWaiting,
   );
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
     body.current?.scrollTo({ top: body.current.scrollHeight });
-  }, [thread.turns.length, live?.id, thread.id, streaming?.requestId, streaming?.text.length]);
+  }, [
+    thread.turns.length,
+    live?.id,
+    thread.id,
+    streaming?.requestId,
+    streaming?.text.length,
+    streaming?.activity?.length,
+  ]);
 
   const items: { at: string; seq: number; node: ReactNode }[] = [];
   exchanges.forEach((group, i) => {
@@ -289,6 +306,8 @@ export function ThreadView({
         <RunRecord
           key={s.id}
           session={s}
+          activity={runActivity?.[s.id]}
+          technical={technical}
           onStop={() => onStopSession(s.id)}
           stop={
             projectId && task ? (
@@ -463,12 +482,11 @@ export function ThreadView({
                   <b>{formatOrigin(undefined, { engine: streaming.engine }).primary}</b>
                   <span className="mono">live</span>
                 </div>
+                <ToolActivityList lines={streaming.activity} technical={technical} />
                 <div className="body">
-                  {streaming.text ? (
-                    paragraphs(streaming.text).map((p, j) => <p key={j}>{p}</p>)
-                  ) : (
-                    <p className="caption">{workingLine(streamWord)}</p>
-                  )}
+                  {streaming.text
+                    ? paragraphs(streaming.text).map((p, j) => <p key={j}>{p}</p>)
+                    : streamWaiting && <p className="caption">{workingLine(streamWord)}</p>}
                 </div>
                 {onCancelText && (
                   <div>
@@ -520,18 +538,24 @@ export function ThreadView({
 
 function RunRecord({
   session,
+  activity,
+  technical,
   onStop,
   stop,
   receipt,
 }: {
   session: Session;
+  /** Tool calls streamed for this run while it is live. Never saved; the log is the record. */
+  activity?: ToolLine[];
+  technical: boolean;
   onStop(): void;
   /** The scoped Stop cluster. Falls back to today's single button when absent. */
   stop?: ReactNode;
   receipt?: ReactNode;
 }) {
   const live = ['queued', 'working', 'waiting'].includes(session.state);
-  const word = useWorkingWord('on it', live && session.state !== 'waiting');
+  const waiting = live && session.state !== 'waiting' && !toolRunning(activity);
+  const word = useWorkingWord('on it', waiting);
   const [open, setOpen] = useState(live);
   const [details, setDetails] = useState(false);
   useEffect(() => {
@@ -560,7 +584,8 @@ function RunRecord({
           <b>{clockOf(l.time)}</b> <span>{l.sentence}</span>
         </div>
       ))}
-      {live && session.state !== 'waiting' && (
+      {live && <ToolActivityList lines={activity} technical={technical} />}
+      {waiting && (
         <div className="caption" aria-hidden="true">
           {workingLine(word)}
         </div>
