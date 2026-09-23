@@ -52,8 +52,11 @@ excluded at the owner's request.
   native session turns and each model-API completion check the live policy again.
   The AWS conversation excludes prior turns unless the history switch is on.
   Model review of a proposed change has its own off-by-default switch because
-  its packet includes project and task details, scope and file excerpts; when
-  off, the proposal falls back to human review.
+  its packet includes project and task details, scope and file excerpts. Every
+  changed path must also be on the document allowlist; the owner can add an
+  exact future path before a proposed create. Otherwise the proposal falls
+  back to human review. The text route sends only its current prompt and
+  selected documents; it does not attach prior Diomedes conversation turns.
 - A stopped team's bearer token is refused before MCP tool dispatch, and
   credential comparison uses fixed-length constant-time comparison. MCP also
   applies the Host/Origin boundary, returns the same 401 for an unknown
@@ -70,12 +73,11 @@ excluded at the owner's request.
 1. **Cloud egress acceptance (high).** The project allowlist is a source gate,
    not a content scanner: a person can paste sensitive text into a prompt or
    allowlist an ordinary file containing credentials. Work may include task names
-   and descriptions in the instruction sent to the selected provider. The per-message send
-   confirmation still shows the selected route and files. Existing cloud-work
-   test fixtures need explicit project grants before the default-deny migration
-   can pass the full suite; source checks here do not replace real-provider
-   traffic inspection. A native CLI process may inspect its own workspace and
-   account cache outside the Diomedes document selection. Test that boundary
+   and descriptions in the instruction sent to the selected provider. The per-message
+   confirmation still shows the selected route and files. Synthetic test projects
+   now grant their routes and documents explicitly. Source checks here do not replace
+   real-provider traffic inspection. A native CLI process may inspect its own
+   workspace and account cache outside the Diomedes document selection. Test that boundary
    with each real installed engine before promising exact-file egress.
 2. **Existing team token copies and revocation (high).** The packaged desktop
    now seals the active token file, but backups, sync copies and old disk

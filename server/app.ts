@@ -1465,9 +1465,6 @@ export async function createApp(options: AppOptions) {
       const state = store.state(projectId);
       const candidate = structuredClone(state);
       const policy = changeCloudSharing(candidate, body(req));
-      const available = new Set((await store.listDocuments(projectId)).map((doc) => doc.path));
-      if (policy.documents.some((name) => !available.has(name)))
-        throw new ApiError(400, 'Choose documents currently listed in this project.');
       state.cloudSharing = policy;
       await store.persist(state);
       return policy;

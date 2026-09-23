@@ -65,12 +65,13 @@ export function changeCloudSharing(state: ProjectState, input: Record<string, un
   return updated;
 }
 
-export function requireCloudReview(state: ProjectState): void {
+export function requireCloudReview(state: ProjectState, documents: readonly string[]): void {
   const policy = cloudSharing(state);
   if (!policy.routes.includes('codex') || !policy.shareReviewPackets)
     throw new ApiError(403, 'Sharing proposal excerpts with the AI reviewer is off in this project.', {
       code: 'cloud_sharing_denied',
     });
+  requireCloudSharing(state, 'codex', documents);
 }
 
 /** Check before any file read or provider dispatch. The sample route stays local. */

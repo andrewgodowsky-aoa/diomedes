@@ -58,12 +58,13 @@ test('a separate project switch is required for AI review packets', () => {
     expectedVersion: 0, routes: ['codex'], documents: [],
     shareConversationHistory: false, shareReviewPackets: false,
   });
-  expect(() => requireCloudReview(project)).toThrow('proposal excerpts');
+  expect(() => requireCloudReview(project, [])).toThrow('proposal excerpts');
   changeCloudSharing(project, {
-    expectedVersion: 1, routes: ['codex'], documents: [],
+    expectedVersion: 1, routes: ['codex'], documents: ['Planned.md'],
     shareConversationHistory: false, shareReviewPackets: true,
   });
-  expect(() => requireCloudReview(project)).not.toThrow();
+  expect(() => requireCloudReview(project, ['Planned.md'])).not.toThrow();
+  expect(() => requireCloudReview(project, ['Other.md'])).toThrow('Cloud sharing');
 });
 
 test('project instruction bodies and paths stay out of cloud prompts until allowlisted', async () => {
@@ -125,10 +126,10 @@ test('cloud sharing API persists an optimistic, project-scoped policy', async ()
     route: 'codex', mode: 'ask', text: 'Do not send this', sources: [], consent: true,
   })).status).toBe(403);
   const saved = await post(url, {
-    expectedVersion: 0, routes: ['codex'], documents: [], shareConversationHistory: false, shareReviewPackets: false,
+    expectedVersion: 0, routes: ['codex'], documents: ['Planned.md'], shareConversationHistory: false, shareReviewPackets: false,
   }, 'PUT');
   expect(saved.status).toBe(200);
-  expect(await saved.json()).toMatchObject({ version: 1, routes: ['codex'] });
+  expect(await saved.json()).toMatchObject({ version: 1, routes: ['codex'], documents: ['Planned.md'] });
   expect((await post(url, {
     expectedVersion: 0, routes: [], documents: [], shareConversationHistory: false, shareReviewPackets: false,
   }, 'PUT')).status).toBe(409);

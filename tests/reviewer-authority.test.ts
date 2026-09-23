@@ -131,15 +131,13 @@ beforeEach(async () => {
     })
   ).data.id;
   await request('/settings', 'PUT', { services: { codex: true } });
-  // Default-deny cloud sharing: grant the codex route with no source documents
-  // and reviewer packets for model-reviewer scopes (sources [] except the two
-  // tests below that extend the grant to Keep.md / Base.md).
+  // Allow the proposed new path explicitly. Other source paths need their own grants.
   expect(
     (
       await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
         expectedVersion: 0,
         routes: ['codex'],
-        documents: [],
+        documents: ['Reviewed.md'],
         shareConversationHistory: false,
         shareReviewPackets: true,
       })
@@ -176,6 +174,21 @@ describe('Approve for me: a reviewer gates authority the person already granted'
     const event = current.history.find((entry) => entry.id === record.eventId)!;
     expect(event.kind).toBe('model-review');
     expect(event.sentence).toContain('not your approval');
+  });
+  test('a proposed path outside the document allowlist never reaches the reviewer', async () => {
+    expect((await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+      expectedVersion: 1,
+      routes: ['codex'],
+      documents: [],
+      shareConversationHistory: false,
+      shareReviewPackets: true,
+    })).status).toBe(200);
+    expect((await grant()).status).toBe(200);
+    expect((await start()).status).toBe(200);
+    const current = await settled();
+    expect(seen).toHaveLength(0);
+    expect(current.needs.at(-1)?.execution?.state).not.toBe('applied');
+    await expect(fs.stat(path.join(current.project.folder, 'Reviewed.md'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
   test('the reviewer is a separate invocation and its runtime model outranks the request', async () => {
     review = async () => ({
@@ -507,7 +520,7 @@ describe('the reviewer cannot reach past the scope the person confirmed', () => 
         await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
           expectedVersion: 1,
           routes: ['codex'],
-          documents: ['Base.md'],
+          documents: ['Base.md', 'Reviewed.md'],
           shareConversationHistory: false,
           shareReviewPackets: true,
         })

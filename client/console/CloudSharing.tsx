@@ -39,6 +39,7 @@ export function CloudSharing({
 }) {
   const [version, setVersion] = useState<number | null>(null);
   const [paths, setPaths] = useState<string[]>([]);
+  const [futurePath, setFuturePath] = useState('');
   const [routes, setRoutes] = useState<string[]>([]);
   const [documents, setDocuments] = useState<string[]>([]);
   const [shareHistory, setShareHistory] = useState(false);
@@ -80,6 +81,13 @@ export function CloudSharing({
     selected.includes(value)
       ? selected.filter((entry) => entry !== value)
       : [...selected, value];
+  const shownPaths = [...new Set([...paths, ...documents])].sort((a, b) => a.localeCompare(b));
+  const addPath = () => {
+    const name = futurePath.trim();
+    if (!name) return;
+    setDocuments((next) => next.includes(name) ? next : [...next, name]);
+    setFuturePath('');
+  };
 
   const save = () => {
     if (version === null || saving) return;
@@ -138,10 +146,14 @@ export function CloudSharing({
           </section>
           <section aria-label="Documents">
             <h3>Documents</h3>
-            {paths.length === 0 ? (
-              <p className="caption muted">This project has no documents to share.</p>
+            <p className="caption muted">
+              Select existing files or add the exact path of a file you plan to create. Proposed
+              changes can reach the AI reviewer only when every changed path is selected here.
+            </p>
+            {shownPaths.length === 0 ? (
+              <p className="caption muted">No document paths selected yet.</p>
             ) : (
-              paths.map((path) => (
+              shownPaths.map((path) => (
                 <label key={path} className="check">
                   <input
                     type="checkbox"
@@ -152,6 +164,17 @@ export function CloudSharing({
                 </label>
               ))
             )}
+            <label className="field">
+              Document path
+              <input
+                value={futurePath}
+                onChange={(event) => setFuturePath(event.target.value)}
+                placeholder="notes/Planned.md"
+              />
+            </label>
+            <Button tone="quiet" onClick={addPath} disabled={!futurePath.trim()}>
+              Add path
+            </Button>
           </section>
           <label className="check">
             <input
@@ -167,7 +190,8 @@ export function CloudSharing({
               checked={shareReviews}
               onChange={(e) => setShareReviews(e.target.checked)}
             />
-            Share proposed changes with the AI reviewer, including task details and file excerpts
+            Share proposed changes with the AI reviewer, including task details, scope and excerpts
+            from the document paths selected above
           </label>
         </>
       )}

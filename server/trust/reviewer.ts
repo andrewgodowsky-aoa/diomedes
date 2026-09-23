@@ -436,7 +436,7 @@ export class ReviewerService {
       });
 
     try {
-      requireCloudReview(this.store.state(input.projectId));
+      requireCloudReview(this.store.state(input.projectId), input.writes.map((write) => write.path));
     } catch (error) {
       if (!(error instanceof ApiError && error.details.code === 'cloud_sharing_denied')) throw error;
       return settle('error', 'unavailable', {
@@ -502,7 +502,7 @@ export class ReviewerService {
         note: 'Codex was turned off while the reviewer was answering.',
       });
     try {
-      requireCloudReview(this.store.state(input.projectId));
+      requireCloudReview(this.store.state(input.projectId), input.writes.map((write) => write.path));
     } catch (error) {
       if (!(error instanceof ApiError && error.details.code === 'cloud_sharing_denied')) throw error;
       return settle('error', 'unavailable', {
