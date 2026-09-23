@@ -72,13 +72,23 @@ export type RetirementCause =
   | 'model'
   | 'settings'
   | 'terminated'
-  | 'budget';
+  | 'budget'
+  | 'format-change';
 
-function because(cause: RetirementCause, detail: { tier?: string; route?: string }): string {
+/** What a note may name. `carried` is read only for `format-change`: whether history came along. */
+export interface RetirementDetail {
+  tier?: string;
+  route?: string;
+  carried?: boolean;
+}
+
+function because(cause: RetirementCause, detail: RetirementDetail): string {
   switch (cause) {
     case 'instructions':
     case 'revoked':
       return 'its instructions changed';
+    case 'format-change':
+      return 'you updated it to the current instructions';
     case 'tier':
       return detail.tier
         ? `this conversation moved to the ${detail.tier} tier`
@@ -96,9 +106,16 @@ function because(cause: RetirementCause, detail: { tier?: string; route?: string
   }
 }
 
-/** The note's words. Plain, and the same for every route. */
-export function retirementNote(cause: RetirementCause, detail: { tier?: string; route?: string } = {}): string {
-  return `${AGENT_NAME} started this conversation fresh because ${because(cause, detail)}. Your earlier messages are still here, but it won't remember them.`;
+/**
+ * The note's words. Plain, and the same for every route. Only "Update this conversation" can carry
+ * the earlier messages over, and only where history sharing is on; it says which happened.
+ */
+export function retirementNote(cause: RetirementCause, detail: RetirementDetail = {}): string {
+  const memory =
+    cause === 'format-change' && detail.carried
+      ? 'and it carried over the most recent ones'
+      : "but it won't remember them";
+  return `${AGENT_NAME} started this conversation fresh because ${because(cause, detail)}. Your earlier messages are still here, ${memory}.`;
 }
 
 /** Names the note for one retirement and the message that caused it, so a retry finds it. */
@@ -115,7 +132,7 @@ export function lineageNoteTurn(input: {
   retiredRunId: string;
   commandId: string;
   cause: RetirementCause;
-  detail?: { tier?: string; route?: string };
+  detail?: RetirementDetail;
   mode: Mode;
   route: Route;
   at: string;

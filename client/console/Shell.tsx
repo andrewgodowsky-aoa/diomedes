@@ -52,6 +52,8 @@ import {
 import { NectoviaMark } from './NectoviaMark';
 import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
+import { ThreadMenu } from './ThreadMenu';
+import { readRecordedArtifacts } from './artifact-evidence';
 import { acceptPreview, type PreviewPosition } from './engine-text-preview';
 import {
   discardPendingMessage,
@@ -691,6 +693,8 @@ export function Shell({
         : null,
     [projectId, selected, started, state],
   );
+  // What the thread's conversation runs recorded about its artifacts, read once one is open.
+  const lineageRuns = selected?.lineages?.map((lineage) => lineage.runId) ?? [];
   // The third column also hosts the artifact panel: a chip in the thread opens
   // it, and Files and the panel keep their own state behind one another.
   const artifactHost = useArtifactHost({
@@ -705,6 +709,13 @@ export function Shell({
     session: threadRun(state?.sessions, selected),
     board,
     boardTitle: state && selected ? threadName(selected, state) : undefined,
+    recorded:
+      selected && lineageRuns.length > 0
+        ? {
+            key: `${selected.id}|${lineageRuns.join(',')}|${selected.turns.length}`,
+            read: (signal) => readRecordedArtifacts(projectId, lineageRuns, signal),
+          }
+        : null,
   });
   useEffect(() => {
     if (selected) setMode(selected.mode ?? 'ask');
@@ -1985,6 +1996,14 @@ export function Shell({
                     </button>
                   )}
                 </div>
+              }
+              menu={
+                <ThreadMenu
+                  projectId={projectId}
+                  threadId={selected.id}
+                  revision={selected.turns.length}
+                  onUpdated={() => void load()}
+                />
               }
               settings={settings}
               mode={mode}

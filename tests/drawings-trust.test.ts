@@ -19,6 +19,14 @@ import { ApprovalStatus } from '../client/components';
 import { NeedBlock } from '../client/console/Need';
 import { indexArtifacts, savedDocument } from '../client/console/artifacts';
 import { saveArtifact } from '../client/console/artifact-save';
+import { MARKUP_TEXT } from './fixtures/markup-text.js';
+
+// Only the provider reply is replaced; Plan uses the real route and recorded writer.
+vi.mock('../server/integrations.js', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../server/integrations.js')>(),
+  askCodex: async () => ({ text: planReply, model: 'test-model', version: 'test' }),
+}));
+let planReply = '# Plan\n';
 
 // Drawings in Files and the Trust checks on them (artifacts v2, lane 3): the
 // 'drawing' kind, drawings as proposal sources, svg-check on every SVG a
@@ -338,6 +346,53 @@ describe('svg-check on proposals', () => {
 });
 
 describe('grants and exact review', () => {
+  test.each(['unsafe.md', 'unsafe.mmd'])('%s cannot use a grant or leave a safe sibling written', async (name) => {
+    expect((await grant()).status).toBe(200);
+    propose([
+      { path: 'safe-notes.md', text: '# Notes\n' },
+      { path: name, text: MARKUP_TEXT[2][1] },
+    ]);
+    await start();
+    const { current, session, needs } = await settled();
+    expect(session.state).toBe('failed');
+    expect(session.parseError).toContain('starts with markup');
+    expect(needs).toEqual([]);
+    expect(current.history.some((entry) => entry.kind === 'changed' && entry.sessionId === session.id)).toBe(false);
+    expect(await exists(name)).toBe(false);
+    expect(await exists('safe-notes.md')).toBe(false);
+  });
+
+  test('markup cannot become an exact-review proposal when no grant exists', async () => {
+    proposal('unsafe.md', MARKUP_TEXT[0][1]);
+    await start();
+    const { session, needs } = await settled();
+    expect(session.state).toBe('failed');
+    expect(session.parseError).toContain('starts with markup');
+    expect(needs).toEqual([]);
+    expect(await exists('unsafe.md')).toBe(false);
+  });
+
+  test('Plan refuses markup without leaving a file, plan listing, or write history', async () => {
+    planReply = MARKUP_TEXT[1][1];
+    const before = await state();
+    const answer = await request(`/projects/${projectId}/ask`, 'POST', {
+      mode: 'plan', route: 'codex', text: 'Unsafe plan', sources: [], consent: true,
+    });
+    expect(answer.status).toBe(422);
+    expect(answer.data.error).toContain('starts with markup');
+    expect(await exists('Unsafe plan.md')).toBe(false);
+    const after = await state();
+    expect(after.project.plans).toEqual(before.project.plans);
+    expect(after.history.filter((entry) => entry.files.length)).toEqual(before.history.filter((entry) => entry.files.length));
+
+    planReply = '# Safe plan\n\n1. Review the drawing\n';
+    const safe = await request(`/projects/${projectId}/ask`, 'POST', {
+      mode: 'plan', route: 'codex', text: 'Safe plan', sources: [], consent: true,
+    });
+    expect(safe.status).toBe(200);
+    expect(await fs.readFile(path.join(folder, 'Safe plan.md'), 'utf8')).toBe(planReply);
+  });
+
   test.each([
     ['logo-2.svg', LOGO],
     ['page.html', '<!doctype html><p>Opening hours</p>'],

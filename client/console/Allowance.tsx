@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  ALLOWANCE_MEANING,
   CHARGE_KIND_TEXT,
   RATE_CARD_V1,
   chargeKindsBy,
@@ -69,48 +70,56 @@ export function Allowance({
 
   const { included, excluded } = coverage();
   const summary = view?.summary ?? null;
+  // The plan's sentence comes from the contract whether or not the host answered, so the
+  // fallback can never say something the served wording does not.
+  const meaning = <p className="caption ws-reason">{view?.meaning ?? ALLOWANCE_MEANING}</p>;
 
   return (
     <section className="ws-section">
       <h3>Managed model access</h3>
-      <p className="caption ws-reason">{view?.meaning ?? ALLOWANCE_TEXT}</p>
 
       {summary ? (
-        <dl className="ws-facts ws-allowance">
-          <div>
-            <dt>Left this period</dt>
-            <dd className="mono">{formatMoney(summary.availableMicroUsd)}</dd>
-          </div>
-          <div>
-            <dt>Held for work in flight</dt>
-            <dd className="mono">{formatMoney(summary.pendingMicroUsd)}</dd>
-          </div>
-          {summary.uncertainMicroUsd > 0 && (
+        <>
+          {meaning}
+          <dl className="ws-facts ws-allowance">
             <div>
-              <dt>Held, outcome not yet known</dt>
-              <dd className="mono">{formatMoney(summary.uncertainMicroUsd)}</dd>
-              {/* The one number people ask about. Say why it is not back. */}
-              <dd className="ws-why">
-                These calls may already have cost money upstream. The hold stays until the provider
-                says what happened, so nothing is spent twice and counted once.
-              </dd>
+              <dt>Left this period</dt>
+              <dd className="mono">{formatMoney(summary.availableMicroUsd)}</dd>
             </div>
-          )}
-          <div>
-            <dt>Used</dt>
-            <dd className="mono">{formatMoney(summary.settledMicroUsd)}</dd>
-          </div>
-          {summary.withdrawalsMicroUsd > 0 && (
             <div>
-              <dt>Taken back</dt>
-              <dd className="mono">{formatMoney(summary.withdrawalsMicroUsd)}</dd>
+              <dt>Held for work in flight</dt>
+              <dd className="mono">{formatMoney(summary.pendingMicroUsd)}</dd>
             </div>
-          )}
-        </dl>
+            {summary.uncertainMicroUsd > 0 && (
+              <div>
+                <dt>Held, outcome not yet known</dt>
+                <dd className="mono">{formatMoney(summary.uncertainMicroUsd)}</dd>
+                {/* The one number people ask about. Say why it is not back. */}
+                <dd className="ws-why">
+                  These calls may already have cost money upstream. The hold stays until the
+                  provider says what happened, so nothing is spent twice and counted once.
+                </dd>
+              </div>
+            )}
+            <div>
+              <dt>Used</dt>
+              <dd className="mono">{formatMoney(summary.settledMicroUsd)}</dd>
+            </div>
+            {summary.withdrawalsMicroUsd > 0 && (
+              <div>
+                <dt>Taken back</dt>
+                <dd className="mono">{formatMoney(summary.withdrawalsMicroUsd)}</dd>
+              </div>
+            )}
+          </dl>
+        </>
       ) : (
-        <p className="caption ws-boundary">
-          {view?.unavailableReason ?? UNREACHABLE_TEXT}
-        </p>
+        // With no allowance the host's reason comes first, so the plan's sentence after it reads
+        // as a description of a plan and never as a claim about this build (0.1.8 review).
+        <>
+          <p className="caption ws-boundary">{view?.unavailableReason ?? UNREACHABLE_TEXT}</p>
+          {meaning}
+        </>
       )}
 
       {summary?.exhausted && (
@@ -146,15 +155,6 @@ export function Allowance({
   );
 }
 
-/**
- * Drawn from the contract when the host has no allowance surface to ask.
- *
- * Kept in the same unit as `ALLOWANCE_MEANING`: a count of requests, never a
- * dollar figure (owner decision, 2026-09-19). This is the fallback wording, so
- * it must not say something the served wording does not.
- */
-const ALLOWANCE_TEXT =
-  'Managed model access includes a set number of requests each period, and we pay for them. A request is one thing you ask Nectovia to do, and it counts once however many model calls it takes to finish. It is not withdrawable money, not credit on a provider account, not a fixed number of words, and not a guaranteed number of jobs.';
-
+/** The host's reason when it has no allowance surface to ask. */
 const UNREACHABLE_TEXT =
   'This installation has no entitlement service, so there is no allowance to show and no managed usage to bill. What follows is what such an allowance would cover, so it can be read before there is anything to buy.';

@@ -27,14 +27,33 @@ function watchCsp(target) {
 const admissionProof = [];
 let desktop;
 let url;
+// The window the smoke is driving. `api` asks the local service from inside it.
+let current;
+// Marks the smoke's own delivery of a Work command, so its route lets it through.
+const REPLAY_HEADER = 'x-diomedes-smoke-replay';
+// The landing page's main landmark carries the agent's name (AGENT_NAME in
+// shared/agent-name.ts, labelled in client/console/Diomedes.tsx). The product is
+// named Nectovia in the app; the executable and its identifiers stay Diomedes.
+const AGENT_NAME = 'Nectovia';
+// The packaged local service answers only requests that carry this launch's
+// loopback session header (server/app.ts). The Electron main process adds it to
+// the app window's own requests and gives it to nothing else (desktop/main.mjs),
+// so a request from this Node process is refused with 401. The smoke therefore
+// asks from inside the window, the way the Console itself does.
 async function api(route, method = 'GET', data) {
-  const response = await fetch(`${url}/api${route}`, {
-    method,
-    headers: { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' },
-    body: data === undefined ? undefined : JSON.stringify(data),
-  });
-  if (!response.ok) throw new Error(`${route}: ${response.status} ${await response.text()}`);
-  return response.json();
+  const result = await current.evaluate(
+    async ({ route, method, body }) => {
+      const response = await fetch(`/api${route}`, {
+        method,
+        headers: { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' },
+        body,
+      });
+      return { ok: response.ok, status: response.status, text: await response.text() };
+    },
+    { route, method, body: data === undefined ? undefined : JSON.stringify(data) },
+  );
+  if (!result.ok) throw new Error(`${route}: ${result.status} ${result.text}`);
+  return JSON.parse(result.text);
 }
 // tests/fixtures/landing.ts does this for the browser suite and is TypeScript, so
 // the same pattern lives here: a launch opens on Diomedes even with openProjects
@@ -65,6 +84,7 @@ try {
   const executableSha256 = createHash('sha256').update(await fs.readFile(executablePath)).digest('hex');
   desktop = await electron.launch({ executablePath, env });
   const page = await desktop.firstWindow();
+  current = page;
   page.setDefaultTimeout(15_000);
   page.on('pageerror', (error) => errors.push(error.message));
   watchCsp(page);
@@ -101,7 +121,7 @@ try {
   // project keeps its place on reload (client/App.tsx keptPlace). Assert that
   // landing, enter the project through its bar button, then reach Tasks over the
   // rail the way a person does: openProject lands on the project's Home page.
-  await expect(page.getByRole('main', { name: 'Diomedes', exact: true })).toBeVisible();
+  await expect(page.getByRole('main', { name: AGENT_NAME, exact: true })).toBeVisible();
   await enterLastOpenProject(page);
   await page
     .getByRole('navigation', { name: 'Project pages' })
@@ -164,14 +184,30 @@ try {
     let admitted;
     const endpoint = `**/api/projects/${project.id}/work/start`;
     await page.route(endpoint, async route => {
+      // The smoke's own delivery of the first command, below, goes straight through.
+      if (route.request().headers()[REPLAY_HEADER] === '1') return route.continue();
       commands.push(route.request().postDataJSON().commandId);
-      const response = await route.fetch();
-      expect(response.status()).toBe(200);
       if (commands.length === 1) {
-        admitted = await response.json();
+        // Deliver the Console's command from inside the window, the one place
+        // that carries this launch's session (see `api`), then lose the response
+        // the Console is waiting for: the service has admitted a command whose
+        // answer never arrived.
+        const delivered = await page.evaluate(
+          async ({ path, body, header }) => {
+            const response = await fetch(path, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1', [header]: '1' },
+              body,
+            });
+            return { status: response.status, text: await response.text() };
+          },
+          { path: new URL(route.request().url()).pathname, body: route.request().postData(), header: REPLAY_HEADER },
+        );
+        expect(delivered.status).toBe(200);
+        admitted = JSON.parse(delivered.text);
         await route.abort('connectionreset');
       } else {
-        await route.fulfill({ response });
+        await route.continue();
       }
     });
     await click();
@@ -288,22 +324,24 @@ try {
     .toBe(false);
   desktop = await electron.launch({ executablePath, env });
   const reopened = await desktop.firstWindow();
+  current = reopened;
   watchCsp(reopened);
   await reopened.waitForURL('http://127.0.0.1:*/');
-  // The restarted service listens on a new port, so this window's origin must be
-  // recorded before the settings calls below and the receipt reads after them.
+  // The restarted service listens on a new port. api() runs inside `current`, so
+  // the settings calls below and the receipt reads after them reach it through
+  // this window; url is kept pointing at the live service.
   url = new URL(reopened.url()).origin;
   // A restart is a launch: the window opens on Diomedes, and migrateSettings
   // opens every stored surface on the Console at launch (server/store.ts). This
   // legacy smoke still exercises the Workbook, which the settings API accepts
   // for one more release, so it opts in again for this window before entering.
   await expect(reopened.locator('html[data-surface="console"]')).toHaveCount(1);
-  await expect(reopened.getByRole('main', { name: 'Diomedes', exact: true })).toBeVisible();
+  await expect(reopened.getByRole('main', { name: AGENT_NAME, exact: true })).toBeVisible();
   const reopenedSettings = await api('/settings');
   await api('/settings', 'PUT', { ...reopenedSettings, surface: 'workbook' });
   await reopened.reload();
   await expect(reopened.locator('html[data-surface="workbook"]')).toHaveCount(1);
-  await expect(reopened.getByRole('main', { name: 'Diomedes', exact: true })).toBeVisible();
+  await expect(reopened.getByRole('main', { name: AGENT_NAME, exact: true })).toBeVisible();
   await enterLastOpenProject(reopened);
   await reopened
     .getByRole('navigation', { name: 'Project pages' })

@@ -27,7 +27,7 @@ import { ENGINE_TEXT_TURN, TextRouteRuntime, textDispatchAuthorizer } from './te
 import { MODEL_SESSION_CAPABILITIES, ModelSessionRuns, modelApiDispatchAuthorizer } from './model-session-run.js';
 import { AWS_BEDROCK_ROUTE } from '../engines/aws-bedrock.js';
 import { isModelApiRoute } from '../../shared/model-api.js';
-import { cloudSharing, requireCloudSharing } from '../cloud-sharing.js';
+import { cloudSharing, requireCloudSharing, sharesHistory } from '../cloud-sharing.js';
 
 export const HARNESS_POLICY_VERSION = 'diomedes-host-policy-v1';
 
@@ -408,10 +408,14 @@ export function createHarnessHost({
   });
   const claudeSessions = new ClaudeSessionRuns(runs);
   const modelSessions = new ModelSessionRuns(runs, AWS_BEDROCK_ROUTE);
-  claudeSessions.setSharingPolicy((projectId, documents, prior) =>
-    requireCloudSharing(store.state(projectId), 'claude-code', documents, prior, {
-      home: store.isHomeProject(projectId),
-    }),
+  claudeSessions.setSharingPolicy(
+    (projectId, documents, prior) =>
+      requireCloudSharing(store.state(projectId), 'claude-code', documents, prior, {
+        home: store.isHomeProject(projectId),
+      }),
+    // Whether a lineage "Update this conversation" started may carry the earlier messages to
+    // Claude Code: the same per-route history grant the model-API routes read below.
+    (projectId) => sharesHistory(cloudSharing(store.state(projectId)), 'claude-code'),
   );
   modelSessions.setSharingPolicy(
     (projectId, documents, history, route) => {
@@ -422,10 +426,7 @@ export function createHarnessHost({
       });
     },
     // History is shared per route: a grant for one route's history never sends it on another.
-    (projectId, route) => {
-      const policy = cloudSharing(store.state(projectId));
-      return policy.shareConversationHistory && (policy.routes as string[]).includes(route);
-    },
+    (projectId, route) => sharesHistory(cloudSharing(store.state(projectId)), route),
   );
   const bridge = new HarnessBridge(store, runs, tools, adapter, redact, HOST_TEST_PROJECT, codex);
   const observers = new Set<{ runId: string; changed: () => void; closed: () => void }>();

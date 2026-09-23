@@ -6,6 +6,7 @@ import { clampArtifactWidth, remember, stored, storedArtifactWidth, viewportWidt
 import { indexArtifacts, indexFile, type ArtifactIndex, type ArtifactRecord, type TurnLike } from './artifacts';
 import type { Board } from './board-model';
 import { BoardPane, ProgressBoard } from './ProgressBoard';
+import { RecordedArtifacts, type RecordedSource } from './RecordedArtifacts';
 
 // Which artifact the panel shows, and where the panel sits. The selection is
 // UI state only: every record it points at is derived from a durable turn (or
@@ -218,6 +219,8 @@ export function useArtifactHost(input: {
   board?: Board | null;
   /** The board view's title: the thread's name. */
   boardTitle?: string;
+  /** Where the conversation's recorded artifacts are read from (RecordedArtifacts.tsx). */
+  recorded?: RecordedSource | null;
 }): ArtifactHost {
   const { filesOpen, setFilesOpen, filesWidth } = input;
   const selection = useArtifactSelection(input.reset, input.scope, input.turns);
@@ -283,6 +286,17 @@ export function useArtifactHost(input: {
         onShowFile={input.onShowFile}
         session={input.session ?? null}
         board={board ? <ProgressBoard board={board} compact /> : null}
+        recorded={
+          input.recorded ? (
+            <RecordedArtifacts
+              source={input.recorded}
+              index={selection.index}
+              turns={input.turns ?? NO_TURNS}
+              current={record.key}
+              onOpen={(next) => selection.open(next)}
+            />
+          ) : null
+        }
       />
     ) : holds === 'board' && board ? (
       <BoardPane

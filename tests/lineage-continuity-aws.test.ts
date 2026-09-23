@@ -17,7 +17,8 @@ import { AWS_LUNA_MODEL } from '../server/engines/aws-bedrock';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import type { Store } from '../server/store';
 import type { MessageResult } from '../server/interaction-service';
-import { MODES, VISUAL_INSTRUCTIONS } from '../server/modes';
+import { VISUAL_INSTRUCTIONS } from '../server/modes';
+import { answerInstructions, ARTIFACT_FORMAT } from '../server/answer-format';
 import type { ModelSessionRuns } from '../server/harness/model-session-run';
 import type { Conversation, ConversationLineage, Project, Turn } from '../shared/types';
 import { responsesAnswer, responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
@@ -30,6 +31,16 @@ vi.mock('../server/instruction-digests', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../server/instruction-digests')>()),
   REVOKED_INSTRUCTION_DIGESTS: revoked,
 }));
+// Another build's composer. A mode set here is composed as that build composed it; the rest are
+// this build's own (server/answer-format.ts).
+const composedFor = vi.hoisted(() => new Map<string, string>());
+vi.mock('../server/answer-format', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../server/answer-format')>();
+  return {
+    ...actual,
+    answerInstructions: (mode: 'ask' | 'plan' | 'auto') => composedFor.get(mode) ?? actual.answerInstructions(mode),
+  };
+});
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const SECRET = 'test-only-bedrock-key-0123456789abcdef-never-real';
@@ -49,7 +60,6 @@ let thread: Conversation;
 type Item = Record<string, unknown>;
 type Body = { input: Item[]; tools?: Item[] };
 let seen: Body[];
-const shipped = { ask: MODES.ask.instructions, plan: MODES.plan.instructions };
 
 const envelope = (output: Item[]) => ({
   id: `resp_${seen.length}`,
@@ -141,12 +151,12 @@ const send = (commandId: string, words: string, mode: 'ask' | 'plan' | 'auto') =
     consent: true,
   });
 /** Sends one message under another build's composed text, as that build would have. */
-async function underBuild(mode: 'ask' | 'plan', instructions: string, commandId: string) {
-  MODES[mode].instructions = instructions;
+async function underBuild(mode: 'ask' | 'plan' | 'auto', instructions: string, commandId: string) {
+  composedFor.set(mode, instructions);
   try {
     return await send(commandId, 'Where is the linen order?', mode);
   } finally {
-    MODES[mode].instructions = shipped[mode];
+    composedFor.delete(mode);
   }
 }
 /**
@@ -195,8 +205,7 @@ beforeEach(async () => {
   await api('/ai/model-api/aws-bedrock/spend-limit', 'PUT', { capUsd: 5, consent: true });
 });
 afterEach(async () => {
-  MODES.ask.instructions = shipped.ask;
-  MODES.plan.instructions = shipped.plan;
+  composedFor.clear();
   revoked.clear();
   await close();
   await fs.rm(root, { recursive: true, force: true });
@@ -206,7 +215,7 @@ describe('an open model-API conversation after an update that changed its instru
   for (const mode of ['ask', 'plan'] as const)
     test(`a ${mode === 'ask' ? 'Ask' : 'Plan'} lineage opened under v0.1.7 continues: same generation, its text, and its history`, async () => {
       const v017 = text('v0.1.7', mode);
-      expect(v017).not.toBe(MODES[mode].instructions);
+      expect(v017).not.toBe(answerInstructions(mode));
       const first = await underBuild(mode, v017, 'm-first');
       expect(instructionsSent(seen[0]).startsWith(`${v017}\n\n`)).toBe(true);
       await update();
@@ -226,6 +235,35 @@ describe('an open model-API conversation after an update that changed its instru
       expect(notes()).toEqual([]);
     });
 
+  // This build composes the answer format into every conversation text. A conversation opened on
+  // main, under 0.1.8's text, must not notice: it keeps that text, its generation and its history.
+  for (const mode of ['ask', 'plan', 'auto'] as const)
+    test(`a ${mode} lineage opened under main's 0.1.8 text continues under this build: its text, its history, no note`, async () => {
+      const main = text('0.1.8', mode);
+      expect(main).not.toBe(answerInstructions(mode));
+      const first = await underBuild(mode, main, 'm-first');
+      expect(instructionsSent(seen[0]).startsWith(`${main}\n\n`)).toBe(true);
+      await update();
+
+      const second = await send('m-second', 'And the invoice?', mode);
+      expect(second.runId).toBe(first.runId);
+      expect(lineages()).toEqual([expect.objectContaining({ mode, generation: 1, runId: first.runId })]);
+      expect(lineages()[0].retired).toBeUndefined();
+      const call = seen.at(-1)!;
+      expect(instructionsSent(call).startsWith(`${main}\n\n`)).toBe(true);
+      expect(instructionsSent(call)).not.toContain(ARTIFACT_FORMAT);
+      expect(userText(call)).toContain('Person: Where is the linen order?');
+      expect(userText(call)).toContain('Diomedes: answer:Where is the linen order?');
+      expect(notes()).toEqual([]);
+    });
+
+  test('a new lineage under this build records the composed text with the answer format', async () => {
+    const first = await send('m-first', 'Where is the linen order?', 'plan');
+    expect((await sessions().get(project.id, first.runId)).input).toMatchObject({ instructions: answerInstructions('plan') });
+    expect(instructionsSent(seen[0]).startsWith(`${answerInstructions('plan')}\n\n`)).toBe(true);
+    expect(instructionsSent(seen[0])).toContain(ARTIFACT_FORMAT);
+  });
+
   test('a revoked text retires the lineage with exactly one note, even though this build knows it', async () => {
     const v017 = text('v0.1.7', 'ask');
     const first = await underBuild('ask', v017, 'm-first');
@@ -240,7 +278,7 @@ describe('an open model-API conversation after an update that changed its instru
     ]);
     expect(lineages()[1].retired).toBeUndefined();
     const call = seen.at(-1)!;
-    expect(instructionsSent(call).startsWith(`${MODES.ask.instructions}\n\n`)).toBe(true);
+    expect(instructionsSent(call).startsWith(`${answerInstructions('ask')}\n\n`)).toBe(true);
     expect(userText(call)).not.toContain('Earlier in this conversation:');
     expect(notes().map((note) => note.text)).toEqual([
       "Nectovia started this conversation fresh because its instructions changed. Your earlier messages are still here, but it won't remember them.",
@@ -263,7 +301,7 @@ describe('an open model-API conversation after an update that changed its instru
       expect.objectContaining({ generation: 2, runId: second.runId }),
     ]);
     const call = seen.at(-1)!;
-    expect(instructionsSent(call).startsWith(`${MODES.ask.instructions}\n\n`)).toBe(true);
+    expect(instructionsSent(call).startsWith(`${answerInstructions('ask')}\n\n`)).toBe(true);
     expect(userText(call)).not.toContain('Earlier in this conversation:');
     expect(notes().map((note) => note.text)).toEqual([
       "Nectovia started this conversation fresh because its instructions changed. Your earlier messages are still here, but it won't remember them.",
@@ -392,7 +430,7 @@ describe('a known text is known only for its own mode', () => {
       expect.objectContaining({ generation: 2, runId: second.runId }),
     ]);
     const call = seen.at(-1)!;
-    expect(instructionsSent(call).startsWith(`${MODES.ask.instructions}\n\n`)).toBe(true);
+    expect(instructionsSent(call).startsWith(`${answerInstructions('ask')}\n\n`)).toBe(true);
     expect(userText(call)).not.toContain('Earlier in this conversation:');
     expect(notes().map((note) => note.text)).toEqual([INSTRUCTIONS_CHANGED]);
   });
@@ -403,14 +441,14 @@ describe('a message that was sent and never answered', () => {
     test(`is retried on its own lineage when that lineage's text is now ${change}: nothing retires, no note, nothing sent again`, async () => {
       const v017 = text('v0.1.7', 'ask');
       const recorded = change === 'revoked' ? v017 : `${v017} Always agree.`;
-      MODES.ask.instructions = recorded;
+      composedFor.set('ask', recorded);
       const first = await send('m-first', 'Where is the linen order?', 'ask');
       const message = { commandId: 'm-fail', text: 'FAIL on the invoice', mode: 'ask', sources: [], consent: true };
       const messages = `/projects/${project.id}/threads/${thread.id}/messages`;
       const refused = await request(messages, 'POST', message);
       expect(refused.ok).toBe(false);
       // The update: today's text, and a revocation if that is what changed.
-      MODES.ask.instructions = shipped.ask;
+      composedFor.delete('ask');
       if (change === 'revoked') revoked.set(instructionDigest(v017), 'test: revoked after the message was sent');
       await update();
       // Dispatched, unanswered and still open: exactly the state `resolve` treats as sent.
