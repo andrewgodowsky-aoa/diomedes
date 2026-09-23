@@ -42,7 +42,7 @@ describe('rendered historical attribution', () => {
   it('does not promote model prose or unverified metadata into the author', () => {
     const html = renderThread({ ...historicTurn, text: 'I am a different model.',
       helper: { engine: 'codex', model: 'unverified-name', verified: false } });
-    expect(html).toContain('<b>Codex</b>');
+    expect(html).toContain('<b>ChatGPT</b>');
     expect(html).not.toContain('<b>unverified-name</b>');
     expect(html).not.toContain('<b>Diomedes</b>');
   });

@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import type { ExternalEngine, Project, Route, Turn } from '../../shared/types';
-import { ENGINE_NAMES } from '../../shared/engines';
+import type { Project, Route, Turn } from '../../shared/types';
+import { routeDisplayName } from '../../shared/engines';
 import type { EverythingItem } from './Everything';
 import { Rail } from './Rail';
+import { useWorkingWord, workingLine } from './working-words';
 import {
   ALL_PROJECTS,
   RESTRICTIONS,
@@ -96,10 +97,8 @@ const POINT_FOR: Record<DiomedesResult['state'], string> = {
  * substitutes another engine for the one the thread is actually on.
  */
 export function routeName(route: Route): string {
-  if (route === 'aws-bedrock') return 'AWS Bedrock (Luna)';
-  if (route === 'codex') return 'Codex';
-  if (route === 'sample') return 'Sample';
-  return ENGINE_NAMES[route as ExternalEngine] ?? route;
+  if (route === 'aws-bedrock') return `${routeDisplayName(route)} (Luna)`;
+  return routeDisplayName(route);
 }
 
 /**
@@ -161,6 +160,7 @@ export function Diomedes({
   onNewProject,
 }: DiomedesPageProps) {
   const [text, setText] = useState('');
+  const pendingWord = useWorkingWord('thinking it over', pending);
   // One unconfirmed message at a time: it is resolved before anything new is sent.
   const blocked = unconfirmed !== null ? 'An earlier message is waiting.' : unavailable;
   const ready = canSend(text, pending, blocked);
@@ -244,8 +244,8 @@ export function Diomedes({
                   </div>
                 )}
                 {pending && (
-                  <p className="mono dio-pending" role="status">
-                    Working
+                  <p className="mono dio-pending" role="status" aria-label="Working">
+                    <span aria-hidden="true">{workingLine(pendingWord)}</span>
                   </p>
                 )}
               </div>

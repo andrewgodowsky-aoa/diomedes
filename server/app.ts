@@ -60,7 +60,12 @@ import { currentBuildIdentity } from './build-identity.js';
 import { WorkService } from './work.js';
 import { NativeWorkService, type NativeGenerator } from './native-work.js';
 import { ChangeReviewService } from './change-review/service.js';
-import { askCodex, getIntegrationStatuses, type NativeTeamOptions } from './integrations.js';
+import {
+  askCodex,
+  closeWarmCodex,
+  getIntegrationStatuses,
+  type NativeTeamOptions,
+} from './integrations.js';
 import { MODES, modeOf } from './modes.js';
 import { fakeCodexSnapshot, usageService } from './usage.js';
 import { engineCatalog, isKnownChoice } from './models.js';
@@ -74,8 +79,8 @@ import { mountTeamRoutes } from './team/routes.js';
 import { createHarnessHost } from './harness/host.js';
 import { mountHarnessRoutes } from './harness/routes.js';
 import { localHarnessPrincipal } from './harness/bridge.js';
-import { textRunId } from './harness/text-route.js';
-import type { TransientPreview } from '../shared/adapter-contract.js';
+import { TEXT_DISPATCH_STEP, textRunId } from './harness/text-route.js';
+import { previewSink, type TransientPreview } from '../shared/adapter-contract.js';
 import { FIXTURE_ENGINE } from './harness/approval.js';
 import { CODEX_ENGINE, type ResolveHarnessAuthority } from './harness/codex-engine.js';
 import { roleInstructions } from './team/prompts.js';
@@ -96,6 +101,7 @@ import {
   isRoute,
   isConversationRoute,
   ROUTES,
+  routeDisplayName,
   type EngineConnection,
 } from '../shared/engines.js';
 import { EngineService } from './engines/service.js';
@@ -3276,6 +3282,9 @@ export async function createApp(options: AppOptions) {
         sources,
         route: engine,
         ...(attempt ? { attempt } : {}),
+        // The run's own attribution from admission, so the holding line names the
+        // model it was sent to, as a request, until the runtime reports one.
+        ...(storedSession.origin ? { origin: structuredClone(storedSession.origin) } : {}),
         helper: {
           engine,
           model: nativeChoice(engine, projectId, conversation).model ?? null,
@@ -3358,7 +3367,7 @@ export async function createApp(options: AppOptions) {
       if (needsConsent && b.consent !== true)
         throw new ApiError(
           409,
-          `Your instruction and selected documents will be sent to ${isExternalEngine(serviceRoute) ? ENGINE_NAMES[serviceRoute] : 'Codex'}. Confirm before sending.`,
+          `Your instruction and selected documents will be sent to ${routeDisplayName(serviceRoute)}. Confirm before sending.`,
           { consentRequired: true },
         );
       let sources: string[] = [];
@@ -3535,6 +3544,44 @@ export async function createApp(options: AppOptions) {
           progress('ended');
         }
       } else if (serviceRoute === 'codex') {
+        // The same preview stream the other engines use: the answer shows as it
+        // is written, and the completed answer below replaces it.
+        const requestId = identifier('R');
+        const runId = textRunId(projectId, requestId);
+        const signal = connectionSignal(res);
+        const progress = (kind: 'started' | 'delta' | 'ended', frame?: TransientPreview) =>
+          store.emit('engine-text', {
+            projectId,
+            threadId: prepared.conversationId,
+            requestId,
+            runId,
+            kind,
+            ...(frame
+              ? {
+                  stepId: frame.stepId,
+                  attempt: frame.attempt,
+                  fence: frame.fence,
+                  seq: frame.seq,
+                  text: frame.text,
+                }
+              : {}),
+          });
+        const onDelta = previewSink({
+          identity: {
+            projectId,
+            threadId: prepared.conversationId,
+            requestId,
+            runId,
+            stepId: TEXT_DISPATCH_STEP,
+            attempt: 1,
+            fence: 1,
+          },
+          onPreview: (frame) => progress('delta', frame),
+          // An over-long frame ends the preview; the answer itself still arrives.
+          onInvalid: () => {},
+          signal,
+        });
+        progress('started');
         try {
           const result = await askCodex({
             prompt: text,
@@ -3544,14 +3591,21 @@ export async function createApp(options: AppOptions) {
             // A level chosen for the thread outranks the mode's own, up to the
             // mode's ceiling; only Fix has one, so Ask and Plan follow the choice.
             effort: effortFor(mode, runChoice.effort, MODES[mode].effort),
+            // Stop closes the request, and this ends the ChatGPT turn with it.
+            signal,
+            onDelta,
           });
           answer = result.text;
           helper = codexHelper(result);
         } catch (error) {
           throw new ApiError(
             503,
-            error instanceof Error ? error.message : 'Codex could not complete this request.',
+            error instanceof Error
+              ? error.message
+              : `${routeDisplayName('codex')} could not complete this request.`,
           );
+        } finally {
+          progress('ended');
         }
       } else {
         helper = sampleHelper();
@@ -3590,7 +3644,7 @@ export async function createApp(options: AppOptions) {
             kind: 'edited',
             sentence:
               helper.verified && helper.model
-                ? `Diomedes, with Codex ${helper.model}, wrote ${document}`
+                ? `Diomedes, with ${routeDisplayName(serviceRoute)} ${helper.model}, wrote ${document}`
                 : `Diomedes wrote ${document}`,
             sample: serviceRoute === 'sample',
             review: true,
@@ -3823,6 +3877,8 @@ export async function createApp(options: AppOptions) {
     await harness.close();
     await work.close();
     await nativeWork.close();
+    // The ChatGPT app-server kept between requests goes with the service.
+    await closeWarmCodex();
   };
   return app;
 }

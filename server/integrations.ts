@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
+import { ROUTE_NAMES } from '../shared/engines.js';
 import type { IntegrationStatus } from '../shared/types.js';
 import {
   createDiscovery,
@@ -485,6 +486,17 @@ interface IntegrationDependencies {
   turnTimeoutMs: number;
   discovery: () => Promise<DiscoveryResult>;
   usage: UsageService;
+  /**
+   * How long a finished app-server stays running for the next request. Zero
+   * closes it after every request. Only a person's own requests reuse one: a
+   * team run carries a token in its environment and always gets its own.
+   */
+  keepWarmMs: number;
+  /**
+   * How long a passed write-denial proof is trusted before it is run again.
+   * Zero proves on every request. A failed proof is never remembered.
+   */
+  sandboxProofTtlMs: number;
 }
 
 async function initialize(client: NativeRpc): Promise<string> {
@@ -524,8 +536,47 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     turnTimeoutMs: TURN_TIMEOUT_MS,
     discovery: () => createDiscovery({ fetch: dependencies.fetch }).discover(),
     usage: usageService,
+    keepWarmMs: 0,
+    sandboxProofTtlMs: 0,
     ...overrides,
   };
+  // One initialized app-server kept for the next request, and when the
+  // sandbox last passed its proof. Both exist only to skip a cold start; every
+  // per-request check (account, effective config, thread policy, MCP inventory)
+  // still runs against whichever process serves the request.
+  let warm: { client: NativeRpc; version: string; timer: NodeJS.Timeout } | undefined;
+  let sandboxProvenAt: number | undefined;
+  function takeWarm() {
+    const held = warm;
+    if (!held) return undefined;
+    warm = undefined;
+    clearTimeout(held.timer);
+    return held;
+  }
+  function park(client: NativeRpc, version: string) {
+    if (warm) {
+      void client.close().catch(() => {});
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (warm?.client !== client) return;
+      warm = undefined;
+      void client.close().catch(() => {});
+    }, dependencies.keepWarmMs);
+    timer.unref?.();
+    warm = { client, version, timer };
+  }
+  async function closeWarm() {
+    const held = takeWarm();
+    if (held) await held.client.close().catch(() => {});
+  }
+  async function proveSandbox() {
+    const ttl = dependencies.sandboxProofTtlMs;
+    if (ttl > 0 && sandboxProvenAt !== undefined && Date.now() - sandboxProvenAt < ttl) return;
+    sandboxProvenAt = undefined;
+    await dependencies.verifySandbox();
+    sandboxProvenAt = Date.now();
+  }
   let coreCache:
     | { at: number; result: Promise<[IntegrationStatus, IntegrationStatus]> }
     | undefined;
@@ -535,7 +586,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
   async function codexStatus(): Promise<IntegrationStatus> {
     const status: IntegrationStatus = {
       id: 'codex',
-      name: 'ChatGPT',
+      name: ROUTE_NAMES.codex,
       kind: 'online',
       found: true,
       available: false,
@@ -690,7 +741,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     const core =
       coreCache?.result ??
       Promise.resolve([
-        pending('codex', 'ChatGPT'),
+        pending('codex', ROUTE_NAMES.codex),
         pending('localai', 'LocalAI supervisor'),
       ]);
     const found = discoveryCache?.result ?? Promise.resolve(pendingDiscovery());
@@ -766,6 +817,12 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     team?: NativeTeamOptions;
     onTeamToolCall?: (tool: string) => void;
     /**
+     * Raw answer text as the runtime streams it (`item/agentMessage/delta`),
+     * for a preview only. The returned `text` stays the one authoritative
+     * answer; a caller wraps this in the preview contract before showing it.
+     */
+    onDelta?: (text: string) => void;
+    /**
      * Explicit model selection. Passed in the `thread/start` config when set;
      * otherwise the runtime default applies. Callers default it from
      * `settings.services.codexModel` when present.
@@ -813,27 +870,55 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
     let removeListener: (() => void) | undefined;
     let deadline: NodeJS.Timeout | undefined;
     let onAbort: (() => void) | undefined;
-    try {
-      await dependencies.verifySandbox();
-      if (input.signal?.aborted) throw abortError();
-      client = input.team
-        ? await dependencies.createClient(teamEnvironment(input.team), TEAM_CONFIG)
-        : await dependencies.createClient();
-      if (input.signal?.aborted) throw abortError();
-      const ownedClient = client;
-      // Finally awaits this same close promise and surfaces cleanup errors.
+    let succeeded = false;
+    let version = '';
+    // Stop closes whichever process is serving the request, which ends its turn.
+    const watchAbort = (serving: NativeRpc) => {
+      if (onAbort) input.signal?.removeEventListener('abort', onAbort);
       onAbort = () => {
-        void ownedClient.close().catch(() => {});
+        void serving.close().catch(() => {});
       };
       input.signal?.addEventListener('abort', onAbort, { once: true });
-      const version = await initialize(client);
-      const accountRoute = await requireChatGpt(client);
+    };
+    const fresh = async () => {
+      const created = input.team
+        ? await dependencies.createClient(teamEnvironment(input.team), TEAM_CONFIG)
+        : await dependencies.createClient();
+      client = created;
+      if (input.signal?.aborted) throw abortError();
+      watchAbort(created);
+      version = await initialize(created);
+      return created;
+    };
+    try {
+      await proveSandbox();
+      if (input.signal?.aborted) throw abortError();
+      // A team run never reuses a process: its token lives in the environment.
+      const kept = input.team || dependencies.keepWarmMs <= 0 ? undefined : takeWarm();
+      let accountRoute: string;
+      if (kept) {
+        client = kept.client;
+        version = kept.version;
+        watchAbort(kept.client);
+        try {
+          accountRoute = await requireChatGpt(kept.client);
+        } catch (error) {
+          if (input.signal?.aborted) throw error;
+          // The kept process went away or its account changed. Start over on a
+          // fresh one, which proves everything from the beginning.
+          await kept.client.close().catch(() => {});
+          accountRoute = await requireChatGpt(await fresh());
+        }
+      } else {
+        accountRoute = await requireChatGpt(await fresh());
+      }
+      const ownedClient: NativeRpc = client!;
 
       // Empty TOML tables merge with native config, so mcp_servers={} is NOT a
       // fence. Read the public effective-config protocol once, retain names only,
       // and disable each native MCP entry before starting any thread.
       const effective = object(
-        object(await client.request('config/read', { includeLayers: false })).config,
+        object(await ownedClient.request('config/read', { includeLayers: false })).config,
       );
       const threadConfig: JsonObject = {
         ...SAFE_CONFIG,
@@ -922,7 +1007,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       const checkDispatch = async () => {
         if (!input.beforeDispatch) return;
         input.signal?.throwIfAborted();
-        const currentRoute = await requireChatGpt(client!);
+        const currentRoute = await requireChatGpt(ownedClient);
         if (currentRoute !== accountRoute)
           throw new IntegrationError(
             'ACCOUNT_CHANGED',
@@ -941,7 +1026,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       };
       await checkDispatch();
       const started = object(
-        await client.request('thread/start', {
+        await ownedClient.request('thread/start', {
           cwd: CODEX_WORKSPACE,
           sandbox: 'read-only',
           approvalPolicy: 'never',
@@ -977,7 +1062,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       }
       for (let retry = 0; ; retry++) {
         if (input.signal?.aborted) throw abortError();
-        const mcp = object(await client.request('mcpServerStatus/list', { threadId }));
+        const mcp = object(await ownedClient.request('mcpServerStatus/list', { threadId }));
         const teamCount = Array.isArray(mcp.data)
           ? mcp.data.filter((value) => object(value).name === 'diomedes_team').length
           : 0;
@@ -1079,6 +1164,13 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
             return;
           }
           if (params.threadId && params.threadId !== threadId) return;
+          if (method === 'item/agentMessage/delta') {
+            // A preview of the answer as it is written. Only this thread's own
+            // deltas reach it; the answer returned below is still the completed item.
+            if (params.threadId === threadId && typeof params.delta === 'string' && params.delta)
+              input.onDelta?.(params.delta);
+            return;
+          }
           if (method === 'item/completed') {
             const item = object(params.item);
             // MCP execution belongs to app-server. These are lifecycle
@@ -1146,7 +1238,7 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       // disconnect during turn/start cannot become an unhandled rejection.
       void completed.catch(() => {});
       await checkDispatch();
-      await client.request('turn/start', {
+      await ownedClient.request('turn/start', {
         threadId,
         input: [{ type: 'text', text: prompt, text_elements: [] }],
         cwd: CODEX_WORKSPACE,
@@ -1158,8 +1250,10 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
         // to a person's own Ask, Plan, Build and Fix runs only.
         effort: input.team ? 'low' : (input.effort ?? 'low'),
       });
+      const text = await completed;
+      succeeded = true;
       return {
-        text: await completed,
+        text,
         model: reportedModel,
         version,
         threadId,
@@ -1172,7 +1266,13 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       removeListener?.();
       if (onAbort) input.signal?.removeEventListener('abort', onAbort);
       activeRequests--;
-      if (client) await client.close();
+      // Only a process that finished a person's request cleanly is kept. A
+      // failure, a Stop or a team run always closes it.
+      if (client) {
+        if (succeeded && !input.team && !input.signal?.aborted && dependencies.keepWarmMs > 0)
+          park(client, version);
+        else await client.close();
+      }
     }
   }
   async function readCodexAccountRoute(): Promise<string> {
@@ -1184,10 +1284,23 @@ export function createIntegrations(overrides: Partial<IntegrationDependencies> =
       await client.close();
     }
   }
-  return { getIntegrationStatuses, askCodex, readCodexAccountRoute };
+  return { getIntegrationStatuses, askCodex, readCodexAccountRoute, closeWarm };
 }
 
-const integrations = createIntegrations();
+/**
+ * The app's own adapter keeps one finished app-server for five minutes and
+ * trusts a passed sandbox proof for ten, so a follow-up message does not pay
+ * a second cold start. Account, config, thread policy and MCP checks still
+ * run on every request.
+ */
+const KEEP_WARM_MS = 5 * 60_000;
+const SANDBOX_PROOF_TTL_MS = 10 * 60_000;
+const integrations = createIntegrations({
+  keepWarmMs: KEEP_WARM_MS,
+  sandboxProofTtlMs: SANDBOX_PROOF_TTL_MS,
+});
 export const getIntegrationStatuses = integrations.getIntegrationStatuses;
 export const askCodex = integrations.askCodex;
 export const readCodexAccountRoute = integrations.readCodexAccountRoute;
+/** Closes the kept app-server, if any. The service calls this on shutdown. */
+export const closeWarmCodex = integrations.closeWarm;

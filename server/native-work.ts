@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
 import { directOrigin } from '../shared/attribution.js';
+import { routeDisplayName } from '../shared/engines.js';
+import { AGENT_NAME } from '../shared/agent-name.js';
 import { diffLines } from 'diff';
 import type { Change, Need, Session, ThreadPermission } from '../shared/types.js';
 import type { WorkAdmission } from './work-admission.js';
@@ -44,6 +46,8 @@ export type NativeGenerator = (input: {
   signal?: AbortSignal;
   team?: NativeTeamOptions;
   onTeamToolCall?: (tool: string) => void;
+  /** Raw answer text as it streams. A proposal run only notes that writing began. */
+  onDelta?: (text: string) => void;
   /** Explicit model selection, passed in the `thread/start` config when set. */
   model?: string;
   /** Per-mode system text, used as `baseInstructions` by the Codex adapter. */
@@ -453,7 +457,7 @@ export class NativeWorkService {
         needId: null,
         ...(member ? { slotId: member.slotId } : {}),
         engine: {
-          name: `${engine === 'codex' ? 'Codex' : engine}, guarded file proposals`,
+          name: `${routeDisplayName(engine)}, guarded file proposals`,
           model: null,
           worker: 1,
           branch: null,
@@ -472,8 +476,8 @@ export class NativeWorkService {
       this.log(
         session,
         sources.length
-          ? `Preparing a proposal with ${engine} from ${sources.length} ${sources.length === 1 ? 'document' : 'documents'}.`
-          : `Preparing a proposal with ${engine}.`,
+          ? `Preparing a proposal with ${routeDisplayName(engine)} from ${sources.length} ${sources.length === 1 ? 'document' : 'documents'}.`
+          : `Preparing a proposal with ${routeDisplayName(engine)}.`,
       );
       this.log(
         session,
@@ -536,6 +540,10 @@ export class NativeWorkService {
         ...tokenLease,
       };
       this.runs.set(projectId, run);
+      // Attributed from admission, not only once the answer lands: the card a
+      // person watches while the run works names the model it was sent to, as a
+      // request, instead of saying nothing was recorded.
+      session.origin = this.originFor(run, state, this.requestedModel(run), session);
       try {
         this.store.recordWorkAdmission(projectId, session, input.admission);
         if (member)
@@ -571,20 +579,80 @@ export class NativeWorkService {
       });
     return structuredClone(session);
   }
+  /**
+   * The model a run is sent to: the thread's own choice, else the saved default
+   * for this route, else none, which leaves the runtime its own default.
+   */
+  private requestedModel(run: NativeRun): string | undefined {
+    const settingsModel = (this.store.settings.services as Record<string, unknown> | undefined)?.[
+      `${run.engine}Model`
+    ];
+    const savedModel =
+      typeof settingsModel === 'string' && settingsModel.trim() && settingsModel.length <= 120
+        ? settingsModel.trim()
+        : undefined;
+    return run.requested?.model ?? savedModel;
+  }
+  /** The run's attribution, from host facts only; the reported model is whatever the runtime said so far. */
+  private originFor(
+    run: NativeRun,
+    state: ReturnType<Store['state']>,
+    requestedModel: string | undefined,
+    session: Session,
+  ) {
+    return directOrigin({
+      engine: run.engine,
+      ...(run.agent
+        ? {
+            agent: {
+              id: run.agent.agentId,
+              version: run.agent.agentVersion,
+              name: run.agent.agentName,
+              digest: run.agent.agentDigest,
+              selection: run.agent.agentSelection,
+            },
+          }
+        : {}),
+      requestedModel: requestedModel ?? null,
+      reportedModel: session.engine.model,
+      version: session.engine.version,
+      producerId: run.sessionId,
+      executorId: 'diomedes:recorded-writer',
+      accountRoute: run.accountRoute ?? (run.engine === 'codex' ? 'codex:chatgpt' : null),
+      ...(run.team
+        ? {
+            worker: {
+              id: run.team.slotId,
+              name:
+                state.team?.members.find((item) => item.slotId === run.team!.slotId)?.name ??
+                run.team.slotId,
+            },
+          }
+        : {}),
+    });
+  }
   private async prepare(run: NativeRun) {
     try {
       // An explicit selection rides in the thread config, never in prompt text.
       // The caller resolves the thread's own choice; the saved default still
       // applies on paths that start a run without passing one.
-      const settingsModel = (this.store.settings.services as Record<string, unknown> | undefined)?.[
-        `${run.engine}Model`
-      ];
-      const savedModel =
-        typeof settingsModel === 'string' && settingsModel.trim() && settingsModel.length <= 120
-          ? settingsModel.trim()
-          : undefined;
-      const requestedModel = run.requested?.model ?? savedModel;
+      const requestedModel = this.requestedModel(run);
       const modeDef = MODES[run.mode] ?? MODES.build;
+      // A proposal is strict JSON, so its text is not worth showing as it
+      // streams. The first piece is still news: the engine has started and
+      // answered, which is what a person watching the card is waiting to learn.
+      let writing = false;
+      const onDelta = () => {
+        if (writing) return;
+        writing = true;
+        void this.store
+          .locked(async () => {
+            if (this.runs.get(run.projectId) !== run || run.controller.signal.aborted) return;
+            this.log(this.session(run), `${AGENT_NAME} is writing the proposal.`);
+            await this.store.persist(this.store.state(run.projectId));
+          })
+          .catch(() => {});
+      };
       const result = await this.generate({
         engine: run.engine,
         accountRoute: run.accountRoute,
@@ -616,6 +684,9 @@ export class NativeWorkService {
         ].join('\n'),
         documents: run.sources.map(({ path, text }) => ({ path, text })),
         signal: run.controller.signal,
+        // Only the ChatGPT adapter takes a raw sink. The engine service refuses
+        // one from a caller and hands previews through its own contract.
+        ...(run.engine === 'codex' ? { onDelta } : {}),
         ...(run.team
           ? {
               team: run.team,
@@ -680,36 +751,7 @@ export class NativeWorkService {
             if (change.text !== null) change.text = run.redact(change.text);
           }
         }
-        session.origin = directOrigin({
-          engine: run.engine,
-          ...(run.agent
-            ? {
-                agent: {
-                  id: run.agent.agentId,
-                  version: run.agent.agentVersion,
-                  name: run.agent.agentName,
-                  digest: run.agent.agentDigest,
-                  selection: run.agent.agentSelection,
-                },
-              }
-            : {}),
-          requestedModel: requestedModel ?? null,
-          reportedModel: session.engine.model,
-          version: session.engine.version,
-          producerId: run.sessionId,
-          executorId: 'diomedes:recorded-writer',
-          accountRoute: run.accountRoute ?? (run.engine === 'codex' ? 'codex:chatgpt' : null),
-          ...(run.team
-            ? {
-                worker: {
-                  id: run.team.slotId,
-                  name:
-                    state.team?.members.find((item) => item.slotId === run.team!.slotId)?.name ??
-                    run.team.slotId,
-                },
-              }
-            : {}),
-        });
+        session.origin = this.originFor(run, state, requestedModel, session);
         if (run.turnId) {
           for (const conversation of state.conversations) {
             const turn = conversation.turns.find((item) => item.id === run.turnId);

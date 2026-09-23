@@ -350,10 +350,15 @@ export function Composer({
               <b ref={line} />
             </span>
           </div>
-          <span className="cap">
-            {mode === 'fix' && !fixReady
-              ? 'Pick the document or paste what went wrong to send.'
-              : CAPS[mode]}
+          {/* The box is locked while the message is prepared, so the caption says
+              why: a locked box with the text still in it reads as a send that
+              never happened. */}
+          <span className="cap" role={preparing ? 'status' : undefined}>
+            {preparing
+              ? 'Checking project documents before sending.'
+              : mode === 'fix' && !fixReady
+                ? 'Pick the document or paste what went wrong to send.'
+                : CAPS[mode]}
           </span>
           <button
             type="submit"

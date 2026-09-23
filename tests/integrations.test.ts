@@ -712,3 +712,119 @@ describe('per-mode harness values', () => {
     expect(turn.effort).toBe('low');
   });
 });
+
+describe('ChatGPT route speed and streaming', () => {
+  function warmSetup(clients: FakeNative[], options: { keepWarmMs?: number; sandboxProofTtlMs?: number } = {}) {
+    const verifySandbox = vi.fn(async () => {});
+    const queue = [...clients];
+    const createClient = vi.fn(async () => queue.shift() ?? new FakeNative());
+    return {
+      verifySandbox,
+      createClient,
+      ...createIntegrations({
+        platform: 'win32',
+        createClient,
+        verifySandbox,
+        turnTimeoutMs: 1000,
+        keepWarmMs: options.keepWarmMs ?? 60_000,
+        sandboxProofTtlMs: options.sandboxProofTtlMs ?? 0,
+      }),
+    };
+  }
+
+  it('forwards only this thread’s answer deltas and still returns the completed answer', async () => {
+    const client = new FakeNative();
+    const original = client.request.getMockImplementation()!;
+    client.request.mockImplementation(async (method: string, params: Params) => {
+      const result = await original(method, params);
+      if (method === 'turn/start') {
+        client.emit('item/agentMessage/delta', { threadId: 'other-thread', itemId: 'i', turnId: 't', delta: 'NOT MINE' });
+        client.emit('item/agentMessage/delta', { threadId: 'synthetic-thread', itemId: 'i', turnId: 't', delta: 'A native ' });
+        client.emit('item/agentMessage/delta', { threadId: 'synthetic-thread', itemId: 'i', turnId: 't', delta: 'answer.' });
+      }
+      return result;
+    });
+    const integration = setup(client);
+    const deltas: string[] = [];
+    const result = await integration.askCodex({ ...request, onDelta: (text) => deltas.push(text) });
+    expect(deltas).toEqual(['A native ', 'answer.']);
+    expect(result.text).toBe('A native answer.');
+  });
+
+  it('keeps a cleanly finished process for the next request, and still checks account, config, thread and MCP each time', async () => {
+    const first = new FakeNative();
+    const integration = warmSetup([first]);
+    await integration.askCodex(request);
+    expect(first.closed).toBe(false);
+    await integration.askCodex(request);
+    expect(integration.createClient).toHaveBeenCalledTimes(1);
+    const count = (method: string) => first.calls.filter((c) => c.method === method).length;
+    expect(count('initialize')).toBe(1);
+    for (const method of ['account/read', 'config/read', 'thread/start', 'mcpServerStatus/list', 'turn/start'])
+      expect(count(method)).toBe(2);
+    await integration.closeWarm();
+    expect(first.closed).toBe(true);
+  });
+
+  it('never keeps a process after a failure or for a team run', async () => {
+    const failing = new FakeNative();
+    failing.turnStatus = 'failed';
+    const integration = warmSetup([failing]);
+    await expect(integration.askCodex(request)).rejects.toThrow('did not complete');
+    expect(failing.closed).toBe(true);
+
+    process.env[team.tokenEnv] = 'test-token-value';
+    try {
+      const teamClient = new FakeNative();
+      teamClient.mcp = [disabledServer, teamServer];
+      const teamIntegration = warmSetup([teamClient]);
+      await teamIntegration.askCodex({ ...request, team });
+      expect(teamClient.closed).toBe(true);
+    } finally {
+      delete process.env[team.tokenEnv];
+    }
+  });
+
+  it('starts a fresh process when the kept one no longer answers', async () => {
+    const first = new FakeNative();
+    const second = new FakeNative();
+    const integration = warmSetup([first, second]);
+    await integration.askCodex(request);
+    first.request.mockImplementation(async () => {
+      throw new Error('The owned Codex process exited before the request completed.');
+    });
+    const result = await integration.askCodex(request);
+    expect(result.text).toBe('A native answer.');
+    expect(first.closed).toBe(true);
+    expect(integration.createClient).toHaveBeenCalledTimes(2);
+    expect(second.calls.some((c) => c.method === 'initialize')).toBe(true);
+    await integration.closeWarm();
+  });
+
+  it('trusts a passed sandbox proof only for its window, and never a failed one', async () => {
+    const integration = warmSetup([], { keepWarmMs: 0, sandboxProofTtlMs: 60_000 });
+    await integration.askCodex(request);
+    await integration.askCodex(request);
+    expect(integration.verifySandbox).toHaveBeenCalledTimes(1);
+
+    const refusing = warmSetup([], { keepWarmMs: 0, sandboxProofTtlMs: 60_000 });
+    refusing.verifySandbox.mockRejectedValueOnce(new IntegrationError('SANDBOX_UNPROVEN', 'no'));
+    await expect(refusing.askCodex(request)).rejects.toThrow('no');
+    await refusing.askCodex(request);
+    expect(refusing.verifySandbox).toHaveBeenCalledTimes(2);
+  });
+
+  it('a Stop closes the serving process and nothing is kept', async () => {
+    const client = new FakeNative();
+    client.complete = false;
+    const integration = warmSetup([client]);
+    const control = new AbortController();
+    const pending = integration.askCodex({ ...request, signal: control.signal });
+    await vi.waitFor(() => expect(client.calls.some((c) => c.method === 'turn/start')).toBe(true));
+    control.abort();
+    await expect(pending).rejects.toThrow('stopped');
+    expect(client.closed).toBe(true);
+    await integration.askCodex(request).catch(() => {});
+    expect(integration.createClient).toHaveBeenCalledTimes(2);
+  });
+});

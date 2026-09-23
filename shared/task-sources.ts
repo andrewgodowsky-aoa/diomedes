@@ -20,6 +20,28 @@ import type { DocumentInfo } from './types.js';
  */
 export const TASK_SOURCE_LIMITS = { files: 8, bytes: 128_000 } as const;
 
+/** File endings the service reads as Markdown. The server's `textKind` uses this same list. */
+export const MARKDOWN_EXTENSIONS = ['md', 'markdown'] as const;
+/** File endings the service reads as plain text. */
+export const TEXT_EXTENSIONS = [
+  'txt', 'json', 'csv', 'tsv', 'js', 'jsx', 'ts', 'tsx', 'css', 'html', 'py',
+  'toml', 'yaml', 'yml', 'xml', 'log', 'ini', 'bat', 'ps1', 'sh', 'sql',
+] as const;
+const NAMED_EXTENSION = new RegExp(
+  `\\.(${[...MARKDOWN_EXTENSIONS, ...TEXT_EXTENSIONS].join('|')})`,
+  'i',
+);
+
+/**
+ * Whether this text could name a document `selectTaskSources` would pick.
+ * Every candidate is Markdown or text, and every such name ends in one of the
+ * endings above, so text with none of them names nothing and the project
+ * listing, a walk of the whole folder, need not be read to find that out.
+ */
+export function mayNameDocument(text: string): boolean {
+  return NAMED_EXTENSION.test(text);
+}
+
 /** Validate an explicit selection against the same visible listing as Files. */
 export function taskDocumentProblem(
   path: string,

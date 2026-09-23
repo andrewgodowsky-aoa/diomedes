@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Mode, Route } from '../../shared/types';
-import { ENGINE_NAMES, isExternalEngine } from '../../shared/engines';
+import { routeDisplayName } from '../../shared/engines';
 import { Button, Modal } from '../components';
 
 /** Sending context and authorizing a later file proposal are separate decisions. */
@@ -18,7 +18,7 @@ export function SendConfirmation({
   onClose(): void;
   onSend(): void;
 }) {
-  const engine = isExternalEngine(route) ? ENGINE_NAMES[route] : route === 'codex' ? 'Codex' : route;
+  const engine = routeDisplayName(route);
   return (
     <Modal title={`Send this ${kind}?`} onClose={onClose}>
       <p className="prose" style={{ overflowWrap: 'anywhere', whiteSpace: 'normal' }}>{instruction}</p>

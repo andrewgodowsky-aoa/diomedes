@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { MARKDOWN_EXTENSIONS, TEXT_EXTENSIONS } from '../shared/task-sources.js';
 
 export class ApiError extends Error {
   constructor(
@@ -180,11 +181,7 @@ export async function readTextOrNull(absolute: string): Promise<string | null> {
   }
 }
 
+const MARKDOWN_NAME = new RegExp(`\\.(${MARKDOWN_EXTENSIONS.join('|')})$`, 'i');
+const TEXT_NAME = new RegExp(`\\.(${TEXT_EXTENSIONS.join('|')})$`, 'i');
 export const textKind = (name: string): 'markdown' | 'text' | 'unsupported' =>
-  /\.(md|markdown)$/i.test(name)
-    ? 'markdown'
-    : /\.(txt|json|csv|tsv|js|jsx|ts|tsx|css|html|py|toml|yaml|yml|xml|log|ini|bat|ps1|sh|sql)$/i.test(
-          name,
-        )
-      ? 'text'
-      : 'unsupported';
+  MARKDOWN_NAME.test(name) ? 'markdown' : TEXT_NAME.test(name) ? 'text' : 'unsupported';
