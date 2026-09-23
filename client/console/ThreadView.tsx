@@ -17,7 +17,7 @@ import type {
 } from '../../shared/types';
 import type { FollowUpCommand } from '../../shared/work-control';
 import { effortFor } from '../../shared/effort';
-import { isExternalEngine } from '../../shared/engines';
+import { isExternalEngine, isRoute } from '../../shared/engines';
 import { isModelApiRoute } from '../../shared/model-api';
 import type { InstructionFileRecord } from '../../shared/capability-packs';
 import { formatOrigin, originForSession, originForTurn } from '../../shared/attribution';
@@ -117,6 +117,11 @@ interface ThreadViewProps {
     connectors?: { text: string; onAdd?: () => void } | null;
   } | null;
   onClearSkill?(): void;
+  /**
+   * A conversation message this thread sent and never had confirmed. Sending it again reads
+   * what the record says and never asks twice; Discard gives it up.
+   */
+  unconfirmed?: { text: string; onResend(): void; onDiscard(): void } | null;
 }
 
 /**
@@ -163,6 +168,7 @@ export function ThreadView({
   onError,
   skill = null,
   onClearSkill,
+  unconfirmed = null,
 }: ThreadViewProps) {
   const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
@@ -186,6 +192,10 @@ export function ThreadView({
   // are details, shown at technical detail or on request. A pinned model is named as before.
   const style = thread.requested?.model ? null : threadStyle(thread, settings);
   const styleView = useWorkStyleView(projectId, thread, [route, mode, settings.services?.workStyle]);
+  // The route the host says the next request runs on (the owner's tier map, else the thread's
+  // own route). The confirmation names it and decides by it; the recorded route stands only
+  // until the host has answered.
+  const sendRoute: Route = styleView && isRoute(styleView.route) ? styleView.route : route;
   const [styleDetails, setStyleDetails] = useState(false);
   const showStyleDetails = settings.detail === 'technical' || styleDetails;
   const context =
@@ -369,13 +379,13 @@ export function ThreadView({
       onSend(
         mode,
         text,
-        route,
+        sendRoute,
         { ...(doc ? { document: doc } : {}), ...(txt ? { text: txt } : {}) },
         sources,
       );
       return;
     }
-    onSend(mode, text, route, undefined, sources);
+    onSend(mode, text, sendRoute, undefined, sources);
   }
 
   return (
@@ -545,6 +555,25 @@ export function ThreadView({
               </div>
             </div>
           )}
+          {unconfirmed && !streaming && !busy && (
+            <div role="group" aria-label="A message that was not confirmed">
+              <p className="caption">
+                Nectovia could not confirm your last message. Sending it again checks what
+                happened and never asks twice.
+              </p>
+              <p className="caption" title={unconfirmed.text}>
+                {unconfirmed.text}
+              </p>
+              <div>
+                <button type="button" onClick={unconfirmed.onResend}>
+                  Send again
+                </button>{' '}
+                <button type="button" onClick={unconfirmed.onDiscard}>
+                  Discard
+                </button>
+              </div>
+            </div>
+          )}
           {receiptNeeds.map((n) => (
             <ApprovalStatus key={n.id} need={n} />
           ))}
@@ -557,12 +586,12 @@ export function ThreadView({
         onMode={onMode}
         busy={busy}
         online={online}
-        route={route}
+        route={sendRoute}
         confirmSend={
-          isExternalEngine(route) ||
-          (route === 'codex' && (mode === 'build' || mode === 'fix' || settings.permissions.sending)) ||
+          isExternalEngine(sendRoute) ||
+          (sendRoute === 'codex' && (mode === 'build' || mode === 'fix' || settings.permissions.sending)) ||
           // Build and Fix send the selected documents to the company's provider account.
-          (isModelApiRoute(route) && (mode === 'build' || mode === 'fix'))
+          (isModelApiRoute(sendRoute) && (mode === 'build' || mode === 'fix'))
         }
         prepareSources={(text, doc) => prepareSources(mode, text, doc)}
         onSend={submit}
