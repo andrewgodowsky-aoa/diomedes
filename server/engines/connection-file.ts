@@ -5,6 +5,7 @@
  * lives in protected storage under the connection id.
  */
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import type { z } from 'zod';
 import { HarnessError } from '../harness/policy.js';
@@ -38,6 +39,18 @@ export class ConnectionFile<S extends z.ZodType> {
     if (!parsed.success)
       throw new HarnessError('connection_corrupt', `The saved ${this.label} connection record is not readable.`);
     return parsed.data;
+  }
+  /**
+   * The saved record for listing what the route offers, read synchronously. A missing or
+   * unreadable record lists nothing here; `read()` is where an unreadable one is reported.
+   */
+  peek(): z.infer<S> | null {
+    try {
+      const parsed = this.schema.safeParse(JSON.parse(fsSync.readFileSync(this.file, 'utf8')));
+      return parsed.success ? parsed.data : null;
+    } catch {
+      return null;
+    }
   }
   async write(connection: z.infer<S>): Promise<z.infer<S>> {
     const parsed = this.schema.parse(connection);

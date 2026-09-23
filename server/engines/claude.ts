@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { EngineModel } from '../../shared/types.js';
@@ -34,6 +34,7 @@ import {
   emitActivity,
   insideRoot,
   isWebUrl,
+  readAccessOf,
   readDetail,
   readScopeNote,
   readSummary,
@@ -41,6 +42,9 @@ import {
   type ReadKind,
   type ReadScope,
 } from './read-scope.js';
+import { TEAM_TOOL_NAMES } from '../../shared/team-routes.js';
+import { teamCarriageToken } from '../team/carriage.js';
+import { readAllowed, type ReadKindForFiles } from './turn-scope.js';
 
 export const CLAUDE_VERSION = '2.1.252';
 const ACCOUNT_ROUTE = 'claude-code:claude.ai';
@@ -58,14 +62,23 @@ export const CLAUDE_READ_TOOLS = ['Read', 'Grep', 'Glob', 'LS'] as const;
 export const CLAUDE_WEB_TOOLS = ['WebSearch', 'WebFetch'] as const;
 /** Tool steps a read turn may take before Claude Code itself stops it. */
 export const CLAUDE_READ_MAX_TURNS = 16;
-/** The built-in tools a scope allows, in the order they are passed to `--tools`. */
+/**
+ * The built-in tools a scope makes available, in the order they are passed to `--tools`.
+ * A selected-only turn has no file tool at all: its documents are already in the message.
+ */
 export function claudeBuiltinTools(scope: ReadScope): string[] {
-  return [...CLAUDE_READ_TOOLS, ...(scope.web ? CLAUDE_WEB_TOOLS : [])];
+  return [
+    ...(readAccessOf(scope) === 'project' ? CLAUDE_READ_TOOLS : []),
+    ...(scope.web ? CLAUDE_WEB_TOOLS : []),
+  ];
 }
-/** Every tool a scope allows: the built-ins plus `mcp__<server>__<tool>` for approved read tools. */
+/**
+ * The tools that run without asking: web tools and the approved MCP read tools. File tools
+ * are never pre-approved; on a whole-project turn each one asks the host first.
+ */
 export function claudeAllowedTools(scope: ReadScope): string[] {
   return [
-    ...claudeBuiltinTools(scope),
+    ...(scope.web ? CLAUDE_WEB_TOOLS : []),
     ...(scope.mcp ?? []).flatMap((server) =>
       server.readTools.map((tool) => `mcp__${server.name}__${tool}`),
     ),
@@ -91,18 +104,59 @@ export function claudeMcpConfig(scope?: ReadScope): string {
     ),
   });
 }
+/** Tool steps a team Work turn may take before Claude Code itself stops it. */
+export const CLAUDE_TEAM_MAX_TURNS = 24;
+/** The name the team service has inside Claude Code's MCP configuration. */
+export const CLAUDE_TEAM_SERVER = 'diomedes_team';
+export type ClaudeTeam = NonNullable<TextRequest['team']>;
+/** Every team tool as Claude Code names it: `mcp__diomedes_team__<tool>`. */
+export function claudeTeamTools(): string[] {
+  return TEAM_TOOL_NAMES.map((tool) => `mcp__${CLAUDE_TEAM_SERVER}__${tool}`);
+}
+/**
+ * The `--mcp-config` document for a team run: the loopback team service and
+ * nothing else. The bearer token is written as a `${NAME}` reference that
+ * Claude Code expands from its own environment (documented for the `url` and
+ * `headers` of an http server), so the value never lands in a file or on the
+ * command line. The slot rides in a header, as it does for Codex.
+ */
+export function claudeTeamMcpConfig(team: ClaudeTeam): string {
+  return JSON.stringify({
+    mcpServers: {
+      [CLAUDE_TEAM_SERVER]: {
+        type: 'http',
+        url: team.url,
+        headers: {
+          Authorization: 'Bearer ${' + team.tokenEnv + '}',
+          'X-Slot-Id': team.slotId,
+        },
+      },
+    },
+  });
+}
 /**
  * `persistent` is the native-session transport's one difference: a session keeps
  * one process across turns, so it must not carry the single-turn guards. Every
  * other argument, including the closed tool and MCP configuration, is identical
  * for both, because a persistent process must not be a less restricted one.
  *
- * A read scope swaps the empty tool list for an explicit read allow-list, denies
- * everything else without asking (`dontAsk`), confines the file tools to the
- * working directory (`--restricted`) and lets a turn take a bounded number of
- * tool steps. Without a scope the arguments are exactly the text-only ones.
+ * A selected-only scope offers web and approved MCP read tools, no file tool, and
+ * denies everything else without asking (`dontAsk`, `--restricted`). A whole-project
+ * scope also offers the file tools but pre-approves none of them: the process works in
+ * an empty folder of its own, so every project read is outside its working folder and
+ * asks the host over `--permission-prompt-tool stdio`, which answers only after
+ * resolving the path (`claudePermission`). `--restricted` is left off there because it
+ * would refuse those reads outright instead of asking. Either way a turn may take a
+ * bounded number of tool steps. Without a scope the arguments are the text-only ones.
  */
-export function claudeArguments(persistent = false, scope?: ReadScope): string[] {
+export function claudeArguments(persistent = false, scope?: ReadScope, team?: ClaudeTeam): string[] {
+  if (team && (scope || persistent))
+    throw new EngineError(
+      'POLICY_MISMATCH',
+      'Team tools ride only on a single Work turn, never with a read scope or a native session.',
+      false,
+      'launch',
+    );
   const args = [
     '--print',
     '--input-format',
@@ -118,22 +172,25 @@ export function claudeArguments(persistent = false, scope?: ReadScope): string[]
     scope ? claudeBuiltinTools(scope).join(',') : '',
     '--strict-mcp-config',
     '--mcp-config',
-    scope ? claudeMcpConfig(scope) : '{"mcpServers":{}}',
+    team ? claudeTeamMcpConfig(team) : scope ? claudeMcpConfig(scope) : '{"mcpServers":{}}',
     '--disable-slash-commands',
   ];
-  if (scope)
-    args.push(
-      '--allowedTools',
-      claudeAllowedTools(scope).join(','),
-      '--permission-mode',
-      'dontAsk',
-      '--restricted',
-    );
+  // A team turn keeps every built-in tool off (`--tools` above stays empty) and allows
+  // only the team service's tools, denying anything else without asking.
+  if (team)
+    args.push('--allowedTools', claudeTeamTools().join(','), '--permission-mode', 'dontAsk');
+  if (scope) {
+    const allowed = claudeAllowedTools(scope);
+    if (allowed.length) args.push('--allowedTools', allowed.join(','));
+    if (readAccessOf(scope) === 'project')
+      args.push('--permission-mode', 'default', '--permission-prompt-tool', 'stdio');
+    else args.push('--permission-mode', 'dontAsk', '--restricted');
+  }
   if (!persistent)
     args.push(
       '--no-session-persistence',
       '--max-turns',
-      scope ? String(CLAUDE_READ_MAX_TURNS) : '1',
+      team ? String(CLAUDE_TEAM_MAX_TURNS) : scope ? String(CLAUDE_READ_MAX_TURNS) : '1',
     );
   args.push(
     '--settings',
@@ -171,6 +228,8 @@ export function claudeToolCall(
     return candidate;
   };
   const detail = readDetail(input);
+  if ((CLAUDE_READ_TOOLS as readonly string[]).includes(name) && readAccessOf(scope) !== 'project')
+    throw refuse(`called ${name}, but this turn reads only the documents chosen for it`);
   switch (name) {
     case 'Read': {
       const file = within(stringField(input, 'file_path'), false);
@@ -225,6 +284,74 @@ export function claudeToolCall(
     `attempted ${/^[A-Za-z0-9_.-]{1,80}$/.test(name) ? name : 'a tool'} outside the read allow-list`,
   );
 }
+const CLAUDE_FILE_KIND: Record<string, ReadKindForFiles> = {
+  Read: 'read',
+  LS: 'list',
+  Glob: 'list',
+  Grep: 'search',
+};
+/** A path segment that climbs: a pattern or filter carrying one could search above its folder. */
+const climbs = (value: string | undefined) => Boolean(value && /(^|[\\/])\.\.([\\/]|$)/.test(value));
+/**
+ * The folders and files one file-tool call names. A relative path is the tool's own: it is
+ * judged against the process's working folder, which on a whole-project turn is an empty
+ * folder outside the project, so a relative read can never land on a project file unchecked.
+ */
+function claudeToolTargets(name: string, input: Record<string, unknown>): string[] | undefined {
+  const where = stringField(input, name === 'Read' ? 'file_path' : 'path');
+  if (name === 'Read' || name === 'LS') return where ? [where] : undefined;
+  const pattern = stringField(input, 'pattern');
+  if (climbs(pattern) || climbs(stringField(input, 'glob'))) return undefined;
+  const targets = [where ?? '.'];
+  // An absolute Glob pattern names its own folder: the part before the first wildcard.
+  if (name === 'Glob' && pattern && path.isAbsolute(pattern)) {
+    const wild = pattern.search(/[*?[{]/);
+    const prefix = wild < 0 ? pattern : pattern.slice(0, wild) || pattern;
+    targets.push(/[\\/]$/.test(prefix) || wild < 0 ? prefix : path.dirname(prefix));
+  }
+  return targets;
+}
+/**
+ * The host's answer to one Claude Code `can_use_tool` permission request, given before the
+ * tool runs. Only a whole-project turn asks at all; every file path the call names must pass
+ * `readAllowed` (resolved on disk, inside the project, under a live turn grant), and any
+ * other tool must already be on the read allow-list. A deny interrupts the turn.
+ */
+export async function claudePermission(
+  scope: ReadScope | undefined,
+  request: Record<string, unknown>,
+  cwd: string,
+): Promise<
+  | { behavior: 'allow'; updatedInput: Record<string, unknown> }
+  | { behavior: 'deny'; message: string; interrupt: true }
+> {
+  const deny = (message: string) => ({ behavior: 'deny' as const, message, interrupt: true as const });
+  if (request.subtype !== 'can_use_tool') return deny('requested a disabled capability');
+  if (!scope || readAccessOf(scope) !== 'project')
+    return deny('asked for a permission this turn cannot grant');
+  const name = typeof request.tool_name === 'string' ? request.tool_name : '';
+  const input = record(request.input);
+  try {
+    claudeToolCall(scope, name, input);
+  } catch (error) {
+    return deny(error instanceof EngineError ? error.message : 'attempted a tool outside the read allow-list');
+  }
+  const kind = CLAUDE_FILE_KIND[name];
+  if (kind) {
+    const targets = claudeToolTargets(name, input);
+    if (!targets) return deny(`called ${name} with a path that is not allowed`);
+    for (const target of targets) {
+      const check = await readAllowed(scope, kind, target, cwd);
+      if (!check.ok) return deny(`tried to read a path that is not allowed (${check.reason})`);
+    }
+  }
+  return { behavior: 'allow', updatedInput: input };
+}
+/** The frame that answers a control request. */
+export const claudeControlResponse = (requestId: string, response: unknown) => ({
+  type: 'control_response',
+  response: { subtype: 'success', request_id: requestId, response },
+});
 /**
  * Whether an init frame's tools and MCP servers fit the route: none at all for
  * the text-only route; for a scope, a subset of its built-ins and approved
@@ -234,8 +361,22 @@ export function claudeToolCall(
 export function claudeInitAllowed(
   scope: ReadScope | undefined,
   frame: Record<string, unknown>,
+  team?: ClaudeTeam,
 ): boolean {
   if (!Array.isArray(frame.tools) || !Array.isArray(frame.mcp_servers)) return false;
+  if (team) {
+    // Only the team service, and it must actually be connected: a team turn whose
+    // service did not come up would answer without the tools it was started for.
+    const allowed = new Set(claudeTeamTools());
+    return (
+      frame.tools.every((tool) => typeof tool === 'string' && allowed.has(tool)) &&
+      frame.mcp_servers.length === 1 &&
+      frame.mcp_servers.every((entry) => {
+        const value = record(entry);
+        return value.name === CLAUDE_TEAM_SERVER && value.status === 'connected';
+      })
+    );
+  }
   if (!scope) return frame.tools.length === 0 && frame.mcp_servers.length === 0;
   const builtins = new Set<string>(claudeBuiltinTools(scope));
   const servers = new Set((scope.mcp ?? []).map((server) => server.name));
@@ -263,6 +404,7 @@ export function claudeObserveTools(
   frame: Record<string, unknown>,
   sink: TextRequest['onToolActivity'],
   open: Map<string, string>,
+  team?: ClaudeTeam,
 ): boolean {
   const content = record(frame.message).content;
   if (!Array.isArray(content)) return false;
@@ -270,6 +412,31 @@ export function claudeObserveTools(
   if (frame.type === 'assistant')
     for (const part of content.map(record)) {
       if (part.type !== 'tool_use') continue;
+      if (team) {
+        const name = typeof part.name === 'string' ? part.name : '';
+        const match = /^mcp__diomedes_team__([a-z_]{1,64})$/.exec(name);
+        if (!match || !(TEAM_TOOL_NAMES as readonly string[]).includes(match[1]))
+          throw new EngineError(
+            'POLICY_MISMATCH',
+            'Claude Code attempted a tool outside the Diomedes team service on a team turn.',
+            true,
+            'stream',
+          );
+        const callId = typeof part.id === 'string' && part.id ? part.id : `call-${open.size + 1}`;
+        open.set(callId, match[1]);
+        try {
+          team.onToolCall?.(match[1]);
+        } catch {
+          // Narration never decides a call's outcome.
+        }
+        emitActivity(sink, {
+          callId,
+          phase: 'started',
+          tool: match[1],
+          summary: `Team: ${match[1].replace(/^team_/, '').replace(/_/g, ' ')}`,
+        });
+        continue;
+      }
       if (!scope)
         throw new EngineError(
           'POLICY_MISMATCH',
@@ -290,7 +457,7 @@ export function claudeObserveTools(
         ...(call.detail ? { detail: call.detail } : {}),
       });
     }
-  if (frame.type === 'user' && scope)
+  if (frame.type === 'user' && (scope || team))
     for (const part of content.map(record)) {
       if (part.type !== 'tool_result' || typeof part.tool_use_id !== 'string') continue;
       const tool = open.get(part.tool_use_id);
@@ -318,10 +485,24 @@ export const claudeWebHelperModel = (value: string) => /^claude-(3-5-)?haiku-/.t
 function mcpEnvironment(scope?: ReadScope): Record<string, string> {
   return Object.assign({}, ...(scope?.mcp ?? []).map((server) => serverEnvironment(server)));
 }
-function environment(scope?: ReadScope) {
+/** The member's leased token variable, for Claude Code to expand into the team header. */
+function teamEnvironment(team?: ClaudeTeam): Record<string, string> {
+  if (!team) return {};
+  const token = teamCarriageToken(team);
+  if (!token)
+    throw new EngineError(
+      'POLICY_MISMATCH',
+      'Team work requires a loopback team endpoint, a helper slot and role, and its leased token.',
+      false,
+      'launch',
+    );
+  return { [team.tokenEnv]: token };
+}
+function environment(scope?: ReadScope, team?: ClaudeTeam) {
   return {
     ...engineEnvironment(),
     ...mcpEnvironment(scope),
+    ...teamEnvironment(team),
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
     DISABLE_AUTOUPDATER: '1',
     CLAUDE_CODE_MAX_RETRIES: '0',
@@ -445,11 +626,18 @@ export class ClaudeAdapter implements TextEngineAdapter {
     input: TextRequest,
     options: ClaudeSessionOptions,
   ): Promise<ClaudeNativeSession> {
+    if (input.team)
+      throw new EngineError(
+        'POLICY_MISMATCH',
+        'Team tools ride only on a single Work turn.',
+        false,
+        'launch',
+      );
     contextMessage(input);
     const account = await this.claudeAccount(input.signal);
-    // A read session works in the project folder, and its checkpoint names that
-    // folder, so a saved session never resumes in another project or scope.
-    const workingDirectory = input.readScope?.root ?? this.cwd;
+    // The checkpoint names the working folder, so a saved session never resumes in
+    // another project or under another read choice.
+    const workingDirectory = await this.workingFolder(input.readScope);
     const prepared = prepareClaudeSession(input, options, account, workingDirectory, CLAUDE_VERSION);
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
@@ -460,6 +648,8 @@ export class ClaudeAdapter implements TextEngineAdapter {
       input.instructions,
       true,
       input.readScope,
+      undefined,
+      workingDirectory,
     );
     try {
       await this.initialize(process.child);
@@ -484,6 +674,23 @@ export class ClaudeAdapter implements TextEngineAdapter {
       throw error;
     }
   }
+  /**
+   * Where the process works. Text and selected-only turns keep the engine's own folder: a
+   * turn with no file tool has no reason to sit in the project. A whole-project turn gets
+   * an empty folder of its own, one per project, so no project file is inside its working
+   * folder and every read asks the host (`claudePermission`). The folder is stable so a
+   * native session can resume from it.
+   */
+  private async workingFolder(scope?: ReadScope): Promise<string> {
+    if (!scope || readAccessOf(scope) !== 'project') return this.cwd;
+    const folder = path.join(
+      this.cwd,
+      'read-folders',
+      createHash('sha256').update(path.resolve(scope.root).toLowerCase()).digest('hex').slice(0, 24),
+    );
+    await fs.mkdir(folder, { recursive: true });
+    return folder;
+  }
   private async start(
     signal?: AbortSignal,
     extra: string[] = [],
@@ -491,11 +698,18 @@ export class ClaudeAdapter implements TextEngineAdapter {
     instructions?: string,
     persistent = false,
     scope?: ReadScope,
+    team?: ClaudeTeam,
+    cwd: string = this.cwd,
   ) {
     // The request files stay in the engine's own folder, never the project's.
     const directory = await fs.mkdtemp(path.join(this.cwd, '.claude-request-'));
     try {
-      const args = claudeArguments(persistent, scope);
+      const args = claudeArguments(persistent, scope, team);
+      const env = environment(scope, team);
+      // The member's role, as Codex receives it in developer_instructions: session
+      // instructions, never mixed into the person's message.
+      if (team && instructions !== undefined)
+        instructions = `${instructions}\n\n${team.roleInstructions}`;
       if (scope && instructions !== undefined)
         instructions = `${instructions}\n\n${readScopeNote(scope)}`;
       for (const flag of ['--mcp-config', '--settings']) {
@@ -512,10 +726,9 @@ export class ClaudeAdapter implements TextEngineAdapter {
       const child = this.launch({
         file: this.file,
         args: [...args, ...extra],
-        // A read turn works in the project folder; `--restricted` keeps its
-        // file tools there. A text turn keeps the engine's empty folder.
-        cwd: scope ? scope.root : this.cwd,
-        env: environment(scope),
+        // Never the project folder: see workingFolder. Whole-project reads ask the host.
+        cwd,
+        env,
         signal,
         timeoutMs,
       });
@@ -652,13 +865,17 @@ export class ClaudeAdapter implements TextEngineAdapter {
       if ((await this.accountMethod(input.signal)) !== 'claude.ai') throw signInRequired();
       phase = 'launch';
       const scope = input.readScope;
+      const team = input.team;
+      const workingDirectory = await this.workingFolder(scope);
       const process = await this.start(
           input.signal,
           ['--model', input.model],
-          scope ? 300_000 : 120_000,
+          scope || team ? 300_000 : 120_000,
           input.instructions,
           false,
           scope,
+          team,
+          workingDirectory,
         ),
         child = process.child;
       let model: string | undefined;
@@ -677,16 +894,30 @@ export class ClaudeAdapter implements TextEngineAdapter {
         });
         for (;;) {
           const frame = await child.next();
-          if (frame.type === 'control_request')
-            throw new EngineError(
-              'POLICY_MISMATCH',
-              'Claude Code requested an unapproved capability.',
-              true,
-              'stream',
-            );
+          if (frame.type === 'control_request') {
+            const request = record(frame.request);
+            if (request.subtype !== 'can_use_tool' || typeof frame.request_id !== 'string')
+              throw new EngineError(
+                'POLICY_MISMATCH',
+                'Claude Code requested an unapproved capability.',
+                true,
+                'stream',
+              );
+            // Answered before the tool runs: nothing it would read has been read yet.
+            const answer = await claudePermission(scope, request, workingDirectory);
+            child.send(claudeControlResponse(frame.request_id, answer));
+            if (answer.behavior === 'deny')
+              throw new EngineError(
+                'POLICY_MISMATCH',
+                `Claude Code ${answer.message}; the read-only request was stopped.`,
+                true,
+                'stream',
+              );
+            continue;
+          }
           if (frame.type === 'system' && frame.subtype === 'init') {
             if (
-              !claudeInitAllowed(scope, frame) ||
+              !claudeInitAllowed(scope, frame, team) ||
               typeof frame.model !== 'string' ||
               !sameModel(input.model, frame.model)
             )
@@ -707,7 +938,7 @@ export class ClaudeAdapter implements TextEngineAdapter {
             }
           }
           if (frame.type === 'assistant' || frame.type === 'user') {
-            if (claudeObserveTools(scope, frame, input.onToolActivity, open)) webUsed = true;
+            if (claudeObserveTools(scope, frame, input.onToolActivity, open, team)) webUsed = true;
           }
           if (frame.type !== 'result') continue;
           if (frame.is_error === true || frame.subtype !== 'success')

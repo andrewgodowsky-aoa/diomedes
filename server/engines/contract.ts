@@ -1,3 +1,4 @@
+import type { TeamCarriageOptions } from '../team/carriage.js';
 import type {
   AdapterRouteContract,
   RawToolActivity,
@@ -78,6 +79,13 @@ export interface TextRequest {
    * Absent means the text-only route, unchanged. Writes never ride on it.
    */
   readScope?: ReadScope;
+  /**
+   * The Diomedes team tools for one member's Work run, reached over the loopback
+   * team MCP service with the member's leased token (server/team/carriage.ts).
+   * Set only by the host's Work path for a route that carries team tools by MCP;
+   * every other adapter refuses a request that carries it. Never with a read scope.
+   */
+  team?: TeamCarriageOptions & { onToolCall?: (tool: string) => void };
 }
 export interface TextResponse {
   text: string;

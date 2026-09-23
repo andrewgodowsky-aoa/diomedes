@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { migrate, type Migration } from '../src/migrations.js';
 import type { SqlClient } from '../src/postgres.js';
@@ -54,5 +56,43 @@ describe('versioned migration protocol', () => {
     await expect(migrate(changed.factory, migrations)).rejects.toThrow('Migration history');
     await expect(migrate(database(migrations).factory, [migrations[0]])).rejects.toThrow('Migration history');
     await expect(migrate(database().factory, [migrations[1]])).rejects.toThrow('Migration sequence');
+  });
+});
+
+describe('versioned migration source files', () => {
+  const names = ['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql'];
+  const load = () => Promise.all(names.map(async (name, index) => {
+    const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
+    return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
+  }));
+
+  it('are LF-only, contiguous and hash deterministically on every platform', async () => {
+    const files = await load();
+    for (const file of files) expect(file.sql.includes(String.fromCharCode(13))).toBe(false);
+    const db = database();
+    expect(await migrate(db.factory, files)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('003 extends the 002 funding seams without destroying data or granting public access', async () => {
+    const [, , funded] = await load();
+    expect(funded.sql).not.toMatch(/\b(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|DROP\s+SCHEMA)\b/i);
+    expect(funded.sql).toMatch(/ALTER TABLE control_plane\.funding_reservations/);
+    expect(funded.sql).toMatch(/ALTER TABLE control_plane\.funding_settlements/);
+    for (const table of ['credit_periods', 'funded_jobs', 'funded_job_refs', 'job_cap_requests', 'credit_adjustments', 'credit_topups'])
+      expect(funded.sql).toContain(`CREATE TABLE control_plane.${table}`);
+    // A period is funded only from a verified entitlement grant, and a top-up
+    // only from a verified billing event: no UI path can mint either.
+    expect(funded.sql).toMatch(/REFERENCES control_plane\.entitlement_grants\(tenant_id,grant_id\)/);
+    expect(funded.sql).toMatch(/REFERENCES control_plane\.webhook_inbox\(tenant_id,provider,event_id\)/);
+    expect(funded.sql.trim().endsWith('REVOKE ALL ON ALL TABLES IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
+  });
+
+  it('004 records a usage class on every attempt and pins settled usage to nectovia-usage/1', async () => {
+    const [, , , contract] = await load();
+    expect(contract.sql).not.toMatch(/(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|DROP\s+SCHEMA|DEFAULT)/i);
+    expect(contract.sql).toMatch(/ADD COLUMN usage_class text NOT NULL/);
+    expect(contract.sql).toContain("usage_class IN ('included-chat','metered-work','worker','automation')");
+    expect(contract.sql).toContain("usage->>'contract' = 'nectovia-usage/1'");
+    expect(contract.sql.trim().endsWith('REVOKE ALL ON ALL TABLES IN SCHEMA control_plane FROM PUBLIC;')).toBe(true);
   });
 });

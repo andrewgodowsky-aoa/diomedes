@@ -10,6 +10,7 @@ import type { Store } from '../server/store';
 import type { Project, ProjectState } from '../shared/types';
 import { AWS_CONNECT_BODY, AWS_TEST_KEY, awsTransport, seen } from './fixtures/scripted-home-luna';
 import { AWS_LUNA_MODEL } from '../server/engines/aws-bedrock';
+import { shareAfter } from './fixtures/cloud-sharing-grant';
 
 // The Diomedes page on AWS Bedrock (Luna), end to end in a real browser and with no Claude
 // installed at all: the engine service discovers nothing, so there is no login to fall back
@@ -35,7 +36,9 @@ async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T>
     throw new Error(
       `Luna page fixture request ${route} failed (${response.status}): ${await response.text()}`,
     );
-  return response.json() as Promise<T>;
+  const value = (await response.json()) as T;
+  await shareAfter(api, route, method, value);
+  return value;
 }
 
 async function expectFreshBundle(dist: string): Promise<void> {
@@ -72,7 +75,10 @@ const homeThread = async () => {
 };
 const composer = (page: Page) => page.getByRole('textbox', { name: 'Message Nectovia' });
 const answers = (page: Page) => page.locator('.turn.dio .body');
+// There is no Route control: a customer chooses a tier, never a route (owner decision
+// 2026-09-23). The locator stays so each test can say it is absent.
 const routeControl = (page: Page) => page.getByRole('combobox', { name: 'Route' });
+const styleControl = (page: Page) => page.getByRole('combobox', { name: 'Style' });
 const strip = (page: Page) =>
   page.getByRole('group', { name: 'A message that was not confirmed' });
 /** A message send is a POST to the collection; an interrupt POST ends in /interrupt. */
@@ -224,11 +230,9 @@ test('the home conversation opens on AWS Bedrock (Luna) and answers with no Clau
   expect(Array.isArray(call.body.tools)).toBe(true);
   expect(call.body.store).toBe(false);
 
-  // Now that the thread exists, the bounded control offers the two conversation routes.
-  const route = routeControl(page);
-  await expect(route).toBeVisible();
-  await expect(route).toHaveValue('aws-bedrock');
-  await expect(route.locator('option')).toHaveText(['Claude Code', 'AWS Bedrock (Luna)']);
+  // Now that the thread exists, the only model control offers the tiers, never a route.
+  await expect(routeControl(page)).toHaveCount(0);
+  await expect(styleControl(page).locator('option')).toHaveText(['Default', 'Efficient', 'Focused', 'Thorough']);
 });
 
 test('a project scope conversation is provisioned on AWS Bedrock too', async ({ page }) => {
@@ -240,8 +244,7 @@ test('a project scope conversation is provisioned on AWS Bedrock too', async ({ 
   const state = await api<ProjectState>(`/projects/${project.id}/state`);
   const thread = state.conversations.find((item) => item.name === 'Diomedes');
   expect(thread?.engine).toBe('aws-bedrock');
-  // The Route control is a home-scope thing. A project keeps its caption but chooses its
-  // route on its own Console surface.
+  // There is no Route control on any scope; the caption names the route without a tier.
   await expect(routeControl(page)).toHaveCount(0);
   await expect(page.locator('.instr')).toContainText('AWS Bedrock (Luna)');
 });
@@ -288,10 +291,9 @@ test('a pin saved before choices were marked is re-pinned to the default on the 
   await store.persist(saved);
 
   await open(page);
-  // The pin is still the truth while nothing has run: the caption names it, and the control
-  // keeps it listed even though this computer cannot send on it.
+  // The pin is still the truth while nothing has run: the caption names it even though this
+  // computer cannot send on it.
   await expect(page.locator('.instr')).toContainText('Claude Code');
-  await expect(routeControl(page)).toHaveValue('claude-code');
 
   await say(page, 'Still here after the upgrade');
   await expect(answers(page).last()).toHaveText('You said: Still here after the upgrade');
@@ -309,7 +311,7 @@ test('a route the person chose is kept, and its refusal names it', async ({ page
       engine: 'claude-code',
     });
     await open(page);
-    await expect(routeControl(page)).toHaveValue('claude-code');
+    await expect(page.locator('.instr')).toContainText('Claude Code');
     const callsBefore = seen.length;
     await say(page, 'On the route I chose');
     // The provisioner kept the choice, the send refused on it by name, and nothing was
@@ -327,34 +329,6 @@ test('a route the person chose is kept, and its refusal names it', async ({ page
   }
 });
 
-test('the Route control writes the choice to the thread, marked as the person\'s', async ({
-  page,
-}) => {
-  const bound = await home();
-  expect(bound).not.toBeNull();
-  await open(page);
-  const route = routeControl(page);
-  await expect(route).toHaveValue('aws-bedrock');
-  const wrote = () =>
-    page.waitForResponse(
-      (response) =>
-        response.url().endsWith(`/threads/${bound!.threadId}`) &&
-        response.request().method() === 'PUT',
-    );
-  let writing = wrote();
-  await route.selectOption('claude-code');
-  await writing;
-  let thread = await homeThread();
-  expect([thread?.engine, thread?.engineChoice]).toEqual(['claude-code', 'person']);
-  writing = wrote();
-  await route.selectOption('aws-bedrock');
-  await writing;
-  thread = await homeThread();
-  expect([thread?.engine, thread?.engineChoice]).toEqual(['aws-bedrock', 'person']);
-  await say(page, 'Back on Luna');
-  await expect(answers(page).last()).toHaveText('You said: Back on Luna');
-});
-
 test('Stop names only this message\'s command, and the record says what it came to', async ({
   page,
 }) => {
@@ -370,7 +344,7 @@ test('Stop names only this message\'s command, and the record says what it came 
   // starts, so the wait is deterministic.
   await expect.poll(() => seen.length).toBeGreaterThan(callsBefore);
   // The delivery that is on its way is the only one the choice and the Stop can name.
-  await expect(routeControl(page)).toBeDisabled();
+  await expect(styleControl(page)).toBeDisabled();
   // The claim was issued before the dispatch: it is the one command this Stop may name.
   const commandId = await claimedCommand(page);
   expect(commandId).not.toBeNull();
@@ -623,57 +597,6 @@ test('a late failed interrupt cannot paint a newer visit to the same scope', asy
   } finally {
     ack.release();
     await page.unroute('**/api/projects/*/threads/*/messages/*/interrupt', holdAck);
-  }
-});
-
-test('a superseded route choice that fails cannot restore what it replaced', async ({ page }) => {
-  const bound = await home();
-  expect(bound).not.toBeNull();
-  await open(page);
-  const route = routeControl(page);
-  await expect(route).toHaveValue('aws-bedrock');
-  // The older choice's write commits on the server but its response is held until the newer
-  // choice has been saved; the older response then arrives as a failure. A failure a newer
-  // press superseded is not the current choice's to answer for.
-  const first = gate();
-  let puts = 0;
-  const holdFirstPut = async (r: Route) => {
-    if (r.request().method() !== 'PUT') return r.continue();
-    puts += 1;
-    if (puts > 1) return r.continue();
-    await r.fetch();
-    first.reached();
-    await first.held;
-    await r.abort('failed');
-    first.delivered();
-  };
-  const pattern = `**/api/projects/${bound!.projectId}/threads/${bound!.threadId}`;
-  // The first PUT's answer is never a response, so the first response to arrive is the newer
-  // choice's own.
-  const secondPut = page.waitForResponse(
-    (response) =>
-      response.url().endsWith(`/threads/${bound!.threadId}`) &&
-      response.request().method() === 'PUT',
-  );
-  await page.route(pattern, holdFirstPut);
-  try {
-    await route.selectOption('claude-code');
-    await expect(route).toHaveValue('claude-code');
-    await first.recorded;
-    await route.selectOption('aws-bedrock');
-    await secondPut;
-    await expect(route).toHaveValue('aws-bedrock');
-    expect((await homeThread())?.engine).toBe('aws-bedrock');
-    first.release();
-    await first.arrived;
-    await painted(page);
-    // The failed older write neither repaints what it replaced nor complains into a choice the
-    // person no longer stands on.
-    await expect(route).toHaveValue('aws-bedrock');
-    await expect(page.locator('.dio-notice')).toHaveCount(0);
-  } finally {
-    first.release();
-    await page.unroute(pattern, holdFirstPut);
   }
 });
 

@@ -25,6 +25,11 @@ export const messageBody = z.strictObject({
     )
     .max(8),
   consent: z.literal(true),
+  /**
+   * What this Ask or Plan message may read from the project (`shared/read-access.ts`).
+   * Absent means the selected documents only; `project` is the person's per-message choice.
+   */
+  readAccess: z.enum(['selected', 'project']).optional(),
 });
 /**
  * The person's own choice to start what Diomedes proposed for one message. `consent` is the
@@ -56,7 +61,11 @@ export function mountInteractionRoutes(
         await dependencies.authorize(req);
         res.json(await action(req));
       } catch (error) {
-        if (error instanceof EngineError || error instanceof HarnessError)
+        // A job that reached its cap stopped at a step boundary, and the Console answers that
+        // with its own two choices, so it keeps the one shape every route gives it.
+        if (error instanceof EngineError && error.code === 'JOB_CAP')
+          next(new ApiError(402, error.message, { code: 'job_cap_reached' }));
+        else if (error instanceof EngineError || error instanceof HarnessError)
           next(
             new ApiError(error.code === 'unknown_run' ? 404 : 409, error.message, {
               code: error.code,

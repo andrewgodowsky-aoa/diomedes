@@ -3,9 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { defaults } from '../server/store';
 import {
+  ThreadModelControls,
   WorkStylePicker,
   resolvedDetail,
-  showAdvanced,
   styleButtonLabel,
   type WorkStyleView,
 } from '../client/console/WorkStylePicker';
@@ -53,9 +53,7 @@ function picker(props: Partial<Parameters<typeof WorkStylePicker>[0]> = {}) {
       live: false,
       busy: false,
       view: null,
-      advanced: false,
       onStyle: noAction,
-      onAdvanced: noAction,
       initialOpen: true,
       ...props,
     }),
@@ -63,50 +61,65 @@ function picker(props: Partial<Parameters<typeof WorkStylePicker>[0]> = {}) {
 }
 
 describe('the style picker', () => {
-  it('offers the three styles with one plain line each, and Advanced', () => {
+  it('offers the three styles with one plain line each, and nothing else to choose', () => {
     const html = picker({ thread: thread({ workStyle: 'focused' }) });
     for (const style of WORK_STYLES) {
       expect(html).toContain(`<span>${WORK_STYLE_LABELS[style]}</span>`);
       expect(html).toContain(WORK_STYLE_DESCRIPTIONS[style]);
     }
-    expect(html).toContain('Advanced: choose model');
     expect(html).toMatch(
       new RegExp(`class="m on"[^>]*aria-checked="true"[^>]*><span>${WORK_STYLE_LABELS.focused}</span>`),
     );
-    // No model id is shown to a plain user.
-    expect(html).not.toContain('gpt-');
+    // The only choices are the three tiers: no route, no model, no Advanced, no default-model row.
+    const choices = [...html.matchAll(/role="menuitem(?:radio)?"[^>]*><span>([^<]*)<\/span>/g)].map((m) => m[1]);
+    expect(choices).toEqual(WORK_STYLES.map((style) => WORK_STYLE_LABELS[style]));
+    for (const word of ['Advanced', 'Default model', 'gpt-', 'gemini', 'AWS', 'Bedrock', 'Azure', 'OpenRouter', 'Vertex', 'Claude', 'ChatGPT'])
+      expect(html).not.toContain(word);
   });
 
-  it('names a pinned model as a choice, and says it covers every call', () => {
+  it('names a pinned model as a choice, and says picking a style clears it', () => {
     const pinned = thread({ workStyle: 'efficient', requested: { model: 'gpt-6-astra', effort: 'high' } });
     expect(styleButtonLabel(pinned, settings())).toBe('Chosen model');
-    const html = picker({ thread: pinned, advanced: true });
-    expect(html).toContain('runs every call in this thread');
-    expect(html).not.toContain('Advanced: choose model');
+    const html = picker({ thread: pinned });
+    expect(html).toContain('Picking a style clears the pin');
+    expect(html).not.toContain('gpt-6-astra');
     expect(html).not.toMatch(/class="m on"/);
   });
 
-  it('says when the style needs a choice, with the reason', () => {
+  it('says when the tier needs setup, with the reason', () => {
     const html = picker({
       thread: thread({ workStyle: 'focused' }),
-      view: view({ outcome: 'ask', model: null, effort: null, reason: 'Focused needs Sol, which Claude Code does not offer.' }),
+      view: view({ outcome: 'ask', model: null, effort: null, reason: 'Focused runs on Google Vertex AI, which is not connected.' }),
     });
-    expect(html).toContain('needs a choice');
-    expect(html).toContain('Focused needs Sol');
+    expect(html).toContain('needs setup');
+    expect(html).toContain('Focused runs on Google Vertex AI');
   });
 
-  it('follows the Settings default and offers no separate default-model row then', () => {
+  it('follows the Settings default, and asks for a style when there is none', () => {
     const s = settings({ services: { workStyle: 'thorough' } });
     expect(styleButtonLabel(thread(), s)).toBe(WORK_STYLE_LABELS.thorough);
-    expect(picker({ settings: s })).not.toContain('Default model');
-    expect(styleButtonLabel(thread(), settings())).toBe('Default model');
+    expect(styleButtonLabel(thread(), settings())).toBe('Choose a style');
   });
 
-  it('shows the model picker at technical detail, on a pin, or when opened', () => {
-    expect(showAdvanced(settings({ detail: 'guided' }), thread(), false)).toBe(false);
-    expect(showAdvanced(settings({ detail: 'technical' }), thread(), false)).toBe(true);
-    expect(showAdvanced(settings({ detail: 'guided' }), thread({ requested: { model: 'x', effort: null } }), false)).toBe(true);
-    expect(showAdvanced(settings({ detail: 'guided' }), thread(), true)).toBe(true);
+  it('renders the header control as the style picker alone, at every detail level', () => {
+    for (const detail of ['guided', 'technical'] as const) {
+      const html = renderToStaticMarkup(
+        createElement(ThreadModelControls, {
+          projectId: 'project-style',
+          thread: thread({ workStyle: 'efficient', requested: { model: 'gpt-6-astra', effort: 'high' } }),
+          mode: 'ask',
+          route: 'codex',
+          live: false,
+          integrations: [],
+          settings: settings({ detail }),
+          busy: false,
+          onPick: noAction,
+          onStyle: noAction,
+        }),
+      );
+      expect(html).toContain('style-picker');
+      expect(html).not.toContain('model-picker');
+    }
   });
 
   it('writes the resolved model and level for the details line, level only where it is read', () => {
@@ -151,7 +164,7 @@ describe('the Home composer', () => {
       createElement(Diomedes, {
         projects: [], scopeId: null, onScope: noAction, turns: [], pending: false,
         restriction: 'automatic', onRestriction: noAction, onSend: async () => true, onStop: noAction,
-        route: 'aws-bedrock', routeChoices: ['claude-code', 'aws-bedrock'], onRoute: noAction,
+        route: 'aws-bedrock',
         workStyle, onWorkStyle: noAction,
         unavailable: null, card: null, cardBusy: false, onCardAction: noAction, unconfirmed: null,
         onResend: noAction, onDiscard: noAction, notice: null, onReadAgain: null, results: [],
@@ -161,11 +174,12 @@ describe('the Home composer', () => {
     );
   }
 
-  it('offers the style beside Mode and Route once there is a thread', () => {
+  it('offers the style beside Mode once there is a thread, and no Route', () => {
     const html = home('focused');
     expect(html).toContain('aria-label="Style"');
     expect(html).toMatch(/<option value="focused" [^>]*selected=""/);
     expect(html).toContain('aria-label="Mode"');
+    expect(html).not.toContain('aria-label="Route"');
     expect(home(undefined)).not.toContain('aria-label="Style"');
   });
 });

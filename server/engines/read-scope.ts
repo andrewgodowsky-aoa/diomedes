@@ -1,8 +1,13 @@
 /**
  * The read-only tool boundary for Ask and Plan (owner decision 2026-09-23).
  *
- * A request that carries a `ReadScope` may search the web, read the project's
- * files and call the read tools of MCP servers the owner has approved. Nothing
+ * A request that carries a `ReadScope` may search the web and call the read
+ * tools of MCP servers the owner has approved. Which project files it may read is
+ * the turn's own choice (security pass 2026-09-23): `selected`, the default, is
+ * exactly the documents sent inline and gives the engine no file tool at all;
+ * `project` is the person's explicit per-turn choice to allow the whole folder,
+ * offered only where the host answers each read before it runs
+ * (`server/engines/turn-scope.ts`). Nothing
  * here can write: file changes stay on the guarded proposal and exact-approval
  * path (Build/Fix), and shell commands, edits and arbitrary network posts stay
  * refused. The host sets the scope from its own project record for an Ask or
@@ -12,13 +17,24 @@
  * Each adapter maps the scope onto its tool's own vocabulary and keeps a second,
  * adapter-side check: a tool it did not allow, or a path outside `root`, stops
  * the request. That check observes what the tool reports, so it cannot stop the
- * one call it sees; the tool's own allow-list is what prevents the call.
+ * one call it sees. It is narration and a tripwire, never the boundary: the
+ * boundary is a tool the engine was never given, or a host answer given before
+ * the call runs.
+ *
+ * A model-API route (AWS Bedrock, Azure OpenAI, OpenRouter) has no tool of its
+ * own: the host executes every read itself (`server/harness/capabilities/
+ * read-scope-tools.ts`), so there the check happens before the read, not after.
+ * Those routes offer no web search (QUESTIONS.md R8: search stays on the
+ * subscription engines), only a guarded page fetch, so they write their own
+ * note instead of `readScopeNote`.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { RawToolActivity } from '../../shared/adapter-contract.js';
+import { CONNECTOR_DATA_KINDS } from '../../shared/read-connectors.js';
+import type { ReadAccess } from '../../shared/read-access.js';
 
 /** One MCP server the owner approved, with the only tools a read turn may call. */
 export interface ApprovedMcpServer {
@@ -43,7 +59,34 @@ export interface ReadScope {
   readonly web: boolean;
   /** Approved MCP servers and their read tools. Empty or absent means none. */
   readonly mcp?: readonly ApprovedMcpServer[];
+  /**
+   * The turn's own read choice. Absent reads as `selected`: a scope that does not
+   * say otherwise never reaches past the documents sent with the message.
+   */
+  readonly access?: ReadAccess;
+  /**
+   * The allowed source set of a `selected` turn: the chosen documents' resolved
+   * absolute paths. Host-run tools check it through `readAllowed`.
+   */
+  readonly files?: readonly string[];
+  /**
+   * The project documents Cloud sharing lets this route receive, as project-relative
+   * names, when the turn was built. A whole-project turn may read only these; the
+   * grant is revoked when the sharing policy changes.
+   */
+  readonly shared?: readonly string[];
+  /**
+   * The host grant this turn's reads are answered under (`openReadGrant`). A
+   * whole-project read needs a live one; revoking it ends the turn's reads.
+   */
+  readonly grant?: string;
 }
+
+export type { ReadAccess };
+
+/** The access a scope actually carries: anything but an explicit `project` is `selected`. */
+export const readAccessOf = (scope: ReadScope | undefined): ReadAccess =>
+  scope?.access === 'project' ? 'project' : 'selected';
 
 const NAME = /^[a-z][a-z0-9_-]{0,31}$/;
 const TOOL = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
@@ -52,20 +95,43 @@ const ENV = /^[A-Z][A-Z0-9_]{0,63}$/;
 const FORBIDDEN_ENV =
   /^(PATH|PATHEXT|NODE_OPTIONS|NODE_PATH|LD_PRELOAD|DYLD_.*|HTTPS?_PROXY|ALL_PROXY|NO_PROXY|OPENAI_.*|ANTHROPIC_.*|CODEX_.*|CLAUDE_.*|DIOMEDES_.*)$/;
 
-const serverSchema = z.strictObject({
-  name: z.string().regex(NAME),
+/**
+ * One approved connector entry in `read-connectors.json`. Exported so the
+ * routes that add, change and remove entries validate with exactly these
+ * rules; the messages are what the owner reads when an entry is refused.
+ */
+export const approvedReadServerSchema = z.strictObject({
+  name: z.string().regex(NAME, 'Name the connector with lowercase letters, digits, - or _, starting with a letter (up to 32).'),
   /** Explicit owner approval. An entry without it is ignored, never half-loaded. */
   approved: z.literal(true),
   transport: z.literal('stdio'),
-  command: z.string().min(1).max(1000),
-  args: z.array(z.string().max(1000)).max(32).default([]),
+  command: z.string().min(1, 'Enter the command that starts the connector.').max(1000),
+  args: z.array(z.string().max(1000)).max(32, 'Use at most 32 arguments.').default([]),
   envFrom: z
-    .array(z.string().regex(ENV).refine((name) => !FORBIDDEN_ENV.test(name)))
-    .max(16)
+    .array(
+      z
+        .string()
+        .regex(ENV, 'Environment variable names are capital letters, digits and _, starting with a letter.')
+        .refine((name) => !FORBIDDEN_ENV.test(name), {
+          error: (issue) => `${String(issue.input)} cannot be forwarded: it would change how the connector or its host runs.`,
+        }),
+    )
+    .max(16, 'Forward at most 16 environment variables.')
     .default([]),
-  readTools: z.array(z.string().regex(TOOL)).min(1).max(64),
+  readTools: z
+    .array(z.string().regex(TOOL, 'Name each read tool exactly, with no spaces or wildcards.'))
+    .min(1, 'List at least one read tool.')
+    .max(64, 'List at most 64 read tools.'),
+  /**
+   * The kinds of business data it reads, in the Small Business pack's words
+   * (`shared/read-connectors.ts`). Descriptive only: it grants nothing and no
+   * read turn consults it.
+   */
+  provides: z.array(z.enum(CONNECTOR_DATA_KINDS)).max(CONNECTOR_DATA_KINDS.length).optional(),
   note: z.string().max(500).optional(),
 });
+/** Where the approved connectors live, under the host's data folder. */
+export const READ_CONNECTORS_FILE = 'read-connectors.json';
 export const approvedReadServersSchema = z.strictObject({
   version: z.literal(1),
   servers: z.array(z.unknown()).max(16),
@@ -90,7 +156,7 @@ export function loadApprovedReadServers(file: string): ApprovedMcpServer[] {
   const seen = new Set<string>();
   const servers: ApprovedMcpServer[] = [];
   for (const entry of parsed.data.servers) {
-    const server = serverSchema.safeParse(entry);
+    const server = approvedReadServerSchema.safeParse(entry);
     if (!server.success || seen.has(server.data.name)) continue;
     seen.add(server.data.name);
     servers.push(
@@ -119,7 +185,13 @@ export function serverEnvironment(
   );
 }
 
-/** A stable identity for a scope: the process a scope was started with serves only it. */
+/**
+ * A stable identity for a scope: the process a scope was started with serves only it.
+ * The access choice is part of it, so a process or native session opened for selected
+ * documents never serves a whole-project turn, nor the reverse. The per-turn file set
+ * and grant are not: a selected-only process has no file tool for them to change, and a
+ * whole-project process asks the host about every read under the current turn's grant.
+ */
 export function readScopeDigest(scope: ReadScope | undefined): string {
   if (!scope) return 'text-only';
   return createHash('sha256')
@@ -127,6 +199,7 @@ export function readScopeDigest(scope: ReadScope | undefined): string {
       JSON.stringify({
         root: path.resolve(scope.root),
         web: scope.web,
+        access: readAccessOf(scope),
         mcp: (scope.mcp ?? []).map((server) => [
           server.name,
           server.command,
@@ -236,10 +309,15 @@ export function approvedMcpTool(
   return found && found.readTools.includes(tool) ? found : undefined;
 }
 
-/** Instructions appended for a read turn, so the model knows where the project is. */
+/**
+ * Instructions appended for a read turn. It does not vary with the chosen files, so a
+ * native session's fixed system prompt stays true for every turn it serves.
+ */
 export function readScopeNote(scope: ReadScope): string {
   const parts = [
-    `You may read files inside the project folder ${scope.root} using read-only tools.`,
+    readAccessOf(scope) === 'project'
+      ? `For this message you may read any file inside the project folder ${scope.root} using read-only tools. Use absolute paths inside that folder; each read is checked before it runs.`
+      : 'You have no file tools: the documents the person chose are included in the message, and no other project file can be read. If the answer needs another file, say which one so the person can include it.',
     scope.web ? 'You may search the web and open web pages.' : 'Web access is unavailable.',
     scope.mcp?.length
       ? `You may use the read tools of these approved connectors: ${scope.mcp.map((server) => server.name).join(', ')}.`

@@ -21,8 +21,12 @@ const blocked = new Set([
   '.ssh',
   '.aws',
   '.azure',
+  '.docker',
+  '.gnupg',
+  '.kube',
   '.config',
   '.omp',
+  'connection-secrets',
   'memories',
 ]);
 const privateNames = new Set([
@@ -30,10 +34,19 @@ const privateNames = new Set([
   '.credentials.json',
   'credentials.json',
   '.env',
+  '.netrc',
+  '.npmrc',
+  '.pypirc',
+  '.git-credentials',
+  'service-account.json',
+  'team-secrets.json',
+  'diomedes-native-auth.json',
   'soul.md',
   'id_rsa',
   'id_ed25519',
+  'id_ecdsa',
 ]);
+const privateSuffixes = ['.pem', '.key', '.p12', '.pfx', '.jks', '.keystore'] as const;
 export const absent = (error: unknown) =>
   error instanceof Error && 'code' in error && error.code === 'ENOENT';
 export const isContained = (root: string, candidate: string) => {
@@ -77,6 +90,9 @@ export function rejectForbidden(absolute: string) {
         blocked.has(part) ||
         privateNames.has(part) ||
         part.startsWith('.env.') ||
+        part.startsWith('team-secrets.json.') ||
+        part.startsWith('diomedes-native-auth.json.') ||
+        privateSuffixes.some((suffix) => part.endsWith(suffix)) ||
         plausibleDosShortName(part),
     ) ||
     /^f:[\\/]localai(?:[\\/]|$)/i.test(normalized)

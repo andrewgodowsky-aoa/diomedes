@@ -18,7 +18,8 @@ import type {
 import type { FollowUpCommand } from '../../shared/work-control';
 import { AGENT_NAME } from '../../shared/agent-name';
 import { effortFor } from '../../shared/effort';
-import { isExternalEngine } from '../../shared/engines';
+import { isExternalEngine, isRoute } from '../../shared/engines';
+import { isModelApiRoute } from '../../shared/model-api';
 import type { InstructionFileRecord } from '../../shared/capability-packs';
 import { formatOrigin, originForSession, originForTurn } from '../attribution-display';
 import { ApprovalStatus, time } from '../components';
@@ -97,6 +98,7 @@ interface ThreadViewProps {
     route: Route,
     failing?: { document?: string; text?: string },
     sources?: string[],
+    readAccess?: import('../../shared/read-access').ReadAccess,
   ): void;
   onResolve(need: Need, resolution: 'go-ahead' | 'declined', allow?: boolean): void;
   onPreview(need: Need): void;
@@ -110,8 +112,19 @@ interface ThreadViewProps {
   /** Where a refused scoped Stop is reported; without it the refusal is silent. */
   onError?(error: Error): void;
   /** A playbook picked for the next message, passed through to the composer. */
-  skill?: { name: string; starter: string; n: number } | null;
+  skill?: {
+    name: string;
+    starter: string;
+    n: number;
+    /** What approved read connectors cover for this playbook, and a way to add one. */
+    connectors?: { text: string; onAdd?: () => void } | null;
+  } | null;
   onClearSkill?(): void;
+  /**
+   * A conversation message this thread sent and never had confirmed. Sending it again reads
+   * what the record says and never asks twice; Discard gives it up.
+   */
+  unconfirmed?: { text: string; onResend(): void; onDiscard(): void } | null;
   /**
    * The thread's artifacts, read from its durable turns. With them an artifact
    * block leaves a chip that opens it in the panel; without them every block
@@ -167,6 +180,7 @@ export function ThreadView({
   onError,
   skill = null,
   onClearSkill,
+  unconfirmed = null,
   artifacts,
   onOpenArtifact,
   openArtifactKey = null,
@@ -193,6 +207,10 @@ export function ThreadView({
   // are details, shown at technical detail or on request. A pinned model is named as before.
   const style = thread.requested?.model ? null : threadStyle(thread, settings);
   const styleView = useWorkStyleView(projectId, thread, [route, mode, settings.services?.workStyle]);
+  // The route the host says the next request runs on (the owner's tier map, else the thread's
+  // own route). The confirmation names it and decides by it; the recorded route stands only
+  // until the host has answered.
+  const sendRoute: Route = styleView && isRoute(styleView.route) ? styleView.route : route;
   const [styleDetails, setStyleDetails] = useState(false);
   const showStyleDetails = settings.detail === 'technical' || styleDetails;
   const context =
@@ -380,20 +398,26 @@ export function ThreadView({
   });
   items.sort((a, b) => a.at.localeCompare(b.at) || a.seq - b.seq);
 
-  function submit(text: string, failingDocument: string, failingText: string, sources: string[]) {
+  function submit(
+    text: string,
+    failingDocument: string,
+    failingText: string,
+    sources: string[],
+    readAccess: import('../../shared/read-access').ReadAccess,
+  ) {
     if (mode === 'fix') {
       const doc = failingDocument.trim();
       const txt = failingText.trim();
       onSend(
         mode,
         text,
-        route,
+        sendRoute,
         { ...(doc ? { document: doc } : {}), ...(txt ? { text: txt } : {}) },
         sources,
       );
       return;
     }
-    onSend(mode, text, route, undefined, sources);
+    onSend(mode, text, sendRoute, undefined, sources, readAccess);
   }
 
   return (
@@ -563,6 +587,25 @@ export function ThreadView({
               </div>
             </div>
           )}
+          {unconfirmed && !streaming && !busy && (
+            <div role="group" aria-label="A message that was not confirmed">
+              <p className="caption">
+                Nectovia could not confirm your last message. Sending it again checks what
+                happened and never asks twice.
+              </p>
+              <p className="caption" title={unconfirmed.text}>
+                {unconfirmed.text}
+              </p>
+              <div>
+                <button type="button" onClick={unconfirmed.onResend}>
+                  Send again
+                </button>{' '}
+                <button type="button" onClick={unconfirmed.onDiscard}>
+                  Discard
+                </button>
+              </div>
+            </div>
+          )}
           {receiptNeeds.map((n) => (
             <ApprovalStatus key={n.id} need={n} />
           ))}
@@ -575,10 +618,12 @@ export function ThreadView({
         onMode={onMode}
         busy={busy}
         online={online}
-        route={route}
+        route={sendRoute}
         confirmSend={
-          isExternalEngine(route) ||
-          (route === 'codex' && (mode === 'build' || mode === 'fix' || settings.permissions.sending))
+          isExternalEngine(sendRoute) ||
+          (sendRoute === 'codex' && (mode === 'build' || mode === 'fix' || settings.permissions.sending)) ||
+          // Build and Fix send the selected documents to the company's provider account.
+          (isModelApiRoute(sendRoute) && (mode === 'build' || mode === 'fix'))
         }
         prepareSources={(text, doc) => prepareSources(mode, text, doc)}
         onSend={submit}

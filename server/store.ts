@@ -2,12 +2,14 @@ import { assertReplay, findCommand } from './command-admission.js';
 import { validateTaskReceipts } from './task-admission.js';
 import { ScopeGrants, validateScopeGrants } from './trust/scope-grants.js';
 import { validateAgentResolutions } from './agents.js';
+import { upgradeCloudSharing } from './cloud-sharing.js';
 import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/attribution.js';
 import { diomedesThread } from '../shared/diomedes-thread.js';
 import { CONVERSATION_DEFAULT_ROUTE, HOST_TEST_PROJECT } from '../shared/engines.js';
 import { CODEX_ENGINE, FIXTURE_ENGINE, harnessWrites } from './harness/approval.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { SecretBox } from './connection-secrets.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { diffLines } from 'diff';
@@ -335,6 +337,24 @@ export async function readJson<T>(target: string, initial: () => T): Promise<T> 
   }
 }
 
+const TEAM_SECRETS_PREFIX = Buffer.from('DIOMEDES-TEAM-SECRETS-V1\n');
+function parseTeamSecrets(text: string): Record<string, string> {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    // JSON parser diagnostics can quote the damaged input, which contains tokens.
+    throw new Error('The team credentials file is invalid.');
+  }
+  if (
+    !value || typeof value !== 'object' || Array.isArray(value) ||
+    Object.entries(value).some(([slot, token]) =>
+      !slot || typeof token !== 'string' || !/^[0-9a-f]{64}$/.test(token))
+  )
+    throw new Error('The team credentials file is invalid.');
+  return value as Record<string, string>;
+}
+
 interface StoredState extends ProjectState {
   autoUpdate: boolean;
   teamMeta?: TeamMeta;
@@ -386,6 +406,7 @@ export class Store extends EventEmitter {
   constructor(
     readonly dataDir: string,
     projectRoot?: string,
+    private readonly teamSecretBox: SecretBox | null = null,
   ) {
     super();
     this.projectRoot = path.resolve(
@@ -415,6 +436,9 @@ export class Store extends EventEmitter {
       for (const conversation of state.conversations ?? [])
         migrateConversation(conversation, state.tasks ?? [], loadTime);
       migrateTeam(state);
+      // Once, for a project an earlier build left without a sharing record: keep the routes it
+      // had already sent to, never widening what they received. Persisted with the loop below.
+      upgradeCloudSharing(state, loadTime, this.isHomeProject(project.id));
       state.teamMeta ??= emptyTeamMeta();
       state.teamMeta.idempotency ??= {};
       state.teamMeta.blockedBy ??= {};
@@ -472,6 +496,7 @@ export class Store extends EventEmitter {
       for (const conversation of fresh.conversations ?? [])
         migrateConversation(conversation, fresh.tasks ?? [], loadTime);
       migrateTeam(fresh);
+      upgradeCloudSharing(fresh, loadTime, this.isHomeProject(id));
       validateTaskReceipts(fresh);
       validateWorkReceipts(fresh);
       validateApprovalReceipts(fresh);
@@ -508,10 +533,47 @@ export class Store extends EventEmitter {
     return path.join(this.dataDir, 'projects', id, 'team-secrets.json');
   }
   async readTeamSecrets(id: string): Promise<Record<string, string>> {
-    return readJson<Record<string, string>>(this.teamSecretsPath(id), () => ({}));
+    let bytes: Buffer;
+    try {
+      bytes = await fs.readFile(this.teamSecretsPath(id));
+    } catch (error) {
+      if (absent(error)) return {};
+      throw error;
+    }
+    if (bytes.subarray(0, TEAM_SECRETS_PREFIX.length).equals(TEAM_SECRETS_PREFIX)) {
+      if (!this.teamSecretBox?.available())
+        throw new Error('Protected team token storage is unavailable.');
+      let plain: string;
+      try {
+        plain = this.teamSecretBox.open(bytes.subarray(TEAM_SECRETS_PREFIX.length));
+      } catch {
+        throw new Error('The protected team credentials cannot be opened by this account.');
+      }
+      return parseTeamSecrets(plain);
+    }
+    const secrets = parseTeamSecrets(bytes.toString('utf8'));
+    // Existing desktop profiles may have the old JSON file. An atomic replace
+    // migrates it before any helper receives the token again.
+    if (this.teamSecretBox) await this.writeTeamSecrets(id, secrets);
+    return secrets;
   }
   async writeTeamSecrets(id: string, secrets: Record<string, string>) {
-    await jsonWrite(this.teamSecretsPath(id), secrets);
+    const plain = JSON.stringify(parseTeamSecrets(JSON.stringify(secrets)));
+    if (!this.teamSecretBox) {
+      await durableWrite(this.teamSecretsPath(id), plain);
+      return;
+    }
+    if (!this.teamSecretBox.available())
+      throw new Error('Protected team token storage is unavailable.');
+    let sealed: Buffer;
+    try {
+      sealed = this.teamSecretBox.seal(plain);
+    } catch {
+      throw new Error('The team credentials could not be protected.');
+    }
+    if (!Buffer.isBuffer(sealed) || sealed.length === 0)
+      throw new Error('The team credentials could not be protected.');
+    await durableWrite(this.teamSecretsPath(id), Buffer.concat([TEAM_SECRETS_PREFIX, sealed]));
   }
   team(id: string) {
     return migrateTeam(this.state(id));

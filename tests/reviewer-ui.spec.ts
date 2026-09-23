@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import type { Project, ProjectState, TaskCandidate } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
+import { shareAfter, shareFixtureProject } from './fixtures/cloud-sharing-grant';
 
 /**
  * Deterministic browser proof for `Approve for me` using the real built UI and
@@ -70,7 +71,9 @@ async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T>
   });
   if (!response.ok)
     throw new Error(`Reviewer fixture ${route} failed (${response.status}): ${await response.text()}`);
-  return response.json() as Promise<T>;
+  const value = (await response.json()) as T;
+  await shareAfter(api, route, method, value);
+  return value;
 }
 
 test.beforeAll(async () => {
@@ -160,6 +163,8 @@ test.afterAll(async () => {
 
 async function makeTaskProject(taskName: string) {
   const project = await api<Project>('/projects/sample', 'POST', {});
+  // The reviewer receives a proposed file only when Cloud sharing names that exact path.
+  await shareFixtureProject(api, project.id, [proposalName]);
   const { found } = await api<{ found: TaskCandidate[] }>(
     `/projects/${project.id}/plans/find-tasks`,
     'POST',

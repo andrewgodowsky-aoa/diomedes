@@ -62,7 +62,21 @@ async function request(
 async function sample() {
   const result = await request('/projects/sample', 'POST', {});
   expect(result.status).toBe(200);
-  return result.data.id as string;
+  const id = result.data.id as string;
+  // Default-deny cloud sharing: grant the codex route with no source documents
+  // so synthetic codex ask/work fixtures (sources []) keep their prior behavior.
+  expect(
+    (
+      await request(`/projects/${id}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0,
+        routes: ['codex'],
+        documents: [],
+        shareConversationHistory: false,
+        shareReviewPackets: false,
+      })
+    ).status,
+  ).toBe(200);
+  return id;
 }
 async function state(id: string): Promise<ProjectState> {
   return (await request(`/projects/${id}/state`)).data;

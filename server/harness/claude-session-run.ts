@@ -157,6 +157,9 @@ const waitDefinition = (id: string): StepDefinition => ({
 /** A capability driver over RunService. Only live transport handles are held here. */
 export class ClaudeSessionRuns {
   private closed = false;
+  private sharingPolicy: (projectId: string, documents: readonly string[], priorConversation: boolean) => void = () => {
+    throw new HarnessError('cloud_sharing_unconfigured', 'Project cloud sharing is not configured for this native session.');
+  };
   private readonly owner = `claude-session-${randomUUID()}`;
   private readonly connections = new Map<string, Connection>();
   private readonly active = new Map<
@@ -180,6 +183,9 @@ export class ClaudeSessionRuns {
     if (!Number.isFinite(lifetime) || lifetime <= 0 || lifetime > 30 * 60_000)
       throw new Error('Native connection lifetime must be positive and at most 30 minutes.');
     this.lifetimeMs = lifetime;
+  }
+  setSharingPolicy(check: (projectId: string, documents: readonly string[], priorConversation: boolean) => void) {
+    this.sharingPolicy = check;
   }
   private dispose(runId: string, connection: Connection, reason?: unknown): Promise<void> {
     if (connection.closing) return connection.closing;
@@ -761,6 +767,7 @@ export class ClaudeSessionRuns {
         this.owner,
         turnDefinition,
         async (context) => {
+          this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), request.mode !== 'start');
           const save = context.saveNativeCheckpoint;
           if (!save)
             throw new HarnessError(
@@ -822,6 +829,7 @@ export class ClaudeSessionRuns {
             let result: TextResponse | null = null;
             let interrupted = false;
             try {
+              this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), request.mode !== 'start');
               result = await connection.session.turn({
                 ...wire,
                 signal: AbortSignal.any([context.signal, ...(input.signal ? [input.signal] : [])]),

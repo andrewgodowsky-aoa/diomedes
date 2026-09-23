@@ -23,7 +23,7 @@ import { Store } from '../server/store.js';
 import { AllowanceLedger } from '../server/managed-usage.js';
 import { ManagedGateway, verifyAuthorization } from '../server/managed-gateway.js';
 import { NO_ENTITLEMENT_REASON, type EntitlementView } from '../shared/workspaces.js';
-import { dollars } from '../shared/managed-usage.js';
+import { approvedJobCap, dollars, type MicroUsd } from '../shared/managed-usage.js';
 
 const AT = '2026-09-10T09:00:00.000Z';
 const ORG = 'org_gateway';
@@ -48,9 +48,15 @@ function gateway(options: {
   processing?: 'local-only' | 'non-sensitive-may-leave' | 'may-leave';
   organizationRoute?: 'managed' | 'byo' | 'personal-subscription';
   suspended?: boolean | string;
+  jobCap?: MicroUsd;
+  jobCapCalls?: string[];
 } = {}) {
   return new ManagedGateway({
     ledger,
+    jobCapFor: (_organizationId, jobId) => {
+      options.jobCapCalls?.push(jobId);
+      return options.jobCap ?? approvedJobCap('efficient');
+    },
     entitlementFor: () => options.entitlement ?? entitled,
     tenantFor: () => TENANT,
     memberOf: () => options.member ?? true,
@@ -72,7 +78,6 @@ const ask = (overrides: Record<string, unknown> = {}) => ({
   kind: 'generation' as const,
   parentTaskId: null,
   maxMicroUsd: dollars(1),
-  parentEnvelopeMicroUsd: null,
   requestDigest: 'digest-one',
   reservationId: 'res_1',
   periodId: PERIOD,
@@ -170,7 +175,7 @@ describe('the checks that come before money', () => {
   });
 
   test('a budget refusal passes through with the ledger’s own reason', async () => {
-    const decision = await gateway({ entitlement: paid }).admit(
+    const decision = await gateway({ entitlement: paid, jobCap: dollars(5000) }).admit(
       ask({ maxMicroUsd: dollars(1000) }),
     );
     expect(decision.admitted).toBe(false);
@@ -285,5 +290,45 @@ describe('the authorization it hands out', () => {
     });
     expect(check.valid).toBe(false);
     expect(check.reason).toMatch(/expired/i);
+  });
+});
+
+describe('the job cap comes from the host, never the caller', () => {
+  test('a call with no parent task is its own job, and one dearer than its cap holds nothing', async () => {
+    const calls: string[] = [];
+    const decision = await gateway({ entitlement: paid, jobCapCalls: calls }).admit(
+      ask({ maxMicroUsd: dollars(2.5) }),
+    );
+    expect(decision.admitted).toBe(false);
+    if (decision.admitted) throw new Error('unreachable');
+    expect(decision.code).toBe('job_cap_reached');
+    // The call's own id names the job.
+    expect(calls).toEqual(['res_1']);
+    expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(0);
+  });
+
+  test('children and retries under one parent task share its cap and cannot escape it', async () => {
+    const calls: string[] = [];
+    const g = gateway({ entitlement: paid, jobCapCalls: calls });
+    const first = await g.admit(ask({ parentTaskId: 'task_1', reservationId: 'child_1', maxMicroUsd: dollars(1.2) }));
+    expect(first.admitted).toBe(true);
+    // A retry is a new attempt under the same parent: it counts against the same cap.
+    const retry = await g.admit(ask({ parentTaskId: 'task_1', reservationId: 'child_1_retry', maxMicroUsd: dollars(1.2) }));
+    expect(retry.admitted).toBe(false);
+    if (retry.admitted) throw new Error('unreachable');
+    expect(retry.code).toBe('parent_envelope_exceeded');
+    expect(calls).toEqual(['task_1', 'task_1']);
+    // Another job has its own cap.
+    const other = await g.admit(ask({ parentTaskId: 'task_2', reservationId: 'child_2', maxMicroUsd: dollars(1.2) }));
+    expect(other.admitted).toBe(true);
+  });
+
+  test('an envelope named in the request changes nothing', async () => {
+    const forged = { ...ask({ parentTaskId: 'task_1', maxMicroUsd: dollars(3) }), parentEnvelopeMicroUsd: dollars(1000) };
+    const decision = await gateway({ entitlement: paid }).admit(forged);
+    expect(decision.admitted).toBe(false);
+    if (decision.admitted) throw new Error('unreachable');
+    expect(decision.code).toBe('parent_envelope_exceeded');
+    expect(ledger.summary(ORG, PERIOD).pendingMicroUsd).toBe(0);
   });
 });

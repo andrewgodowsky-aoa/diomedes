@@ -14,13 +14,28 @@ import {
   type PendingMessage,
 } from '../conversation-send';
 import { answerTurnId } from '../conversation-turn';
-import { awsPickerState } from '../aws-bedrock-view';
-import type { AwsConnectionView } from '../../shared/model-api';
+import {
+  afterStop,
+  beforeSend,
+  CapDeclined,
+  estimateMessage,
+  goOverAfterStop,
+  goOverBeforeSend,
+  isJobCapStop,
+  jobStatus,
+  setThreadTier,
+  type CapChoice,
+  type CapPrompt,
+  type GateResult,
+} from '../job-cap-gate';
+import { mintCommandId } from '../work-start';
+import type { JobTier } from '../../shared/job-caps';
 import type { MessageResult } from '../../shared/conversation';
 import { CONVERSATION_DEFAULT_ROUTE } from '../../shared/engines';
 import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
 import type { WorkStyle } from '../../shared/work-style';
-import { Diomedes, routeOptions } from './Diomedes';
+import { Diomedes } from './Diomedes';
+import { JobCapWarning } from './JobCapWarning';
 import { stepLiveReply, type LiveBinding, type LiveEvent, type LiveReply } from './live-reply';
 import { saveArtifact } from './artifact-save';
 import { HomeArt } from './HomeArt';
@@ -131,21 +146,20 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const [cardBusy, setCardBusy] = useState(false);
   const [unread, setUnread] = useState(false);
   // The route the scoped thread is recorded on, or null until one is read: the caption then
-  // names the default a first send takes. The AWS view feeds only what the Route control offers.
+  // names the default a first send takes. There is no Route control; a tier decides the route.
   const [route, setRoute] = useState<Route | null>(null);
   // The scoped thread's own WorkStyle, or null to follow the Settings default.
   const [workStyle, setWorkStyle] = useState<WorkStyle | null>(null);
-  const [aws, setAws] = useState<AwsConnectionView | null>(null);
+  /** The job-cap decision on screen, and how to answer the send waiting on it. */
+  const [capPrompt, setCapPrompt] = useState<(CapPrompt & { answer(choice: CapChoice): void }) | null>(null);
+  /** The command a job-cap stop refused, told from inside the delivery to the send that awaits it. */
+  const capStop = useRef<DispatchIdentity | null>(null);
   const delivery = useRef<ActiveDelivery | null>(null);
   // Whose turn it is to paint. A scope change, a read and a send each take the next number, so
   // an answer for a visit the person has left, or for a message they have since followed with
   // another, finds the number moved and is dropped. Leaving a scope and coming back is a new
   // visit: the scope's id alone could not tell the two apart.
   const turn = useRef(0);
-  // Route presses are numbered within a visit: two choices can share one visit, and only the
-  // latest one's answer may repaint the control or restore what was there before it. The visit
-  // fence alone cannot tell them apart.
-  const routePick = useRef(0);
   const lastRef = useRef(last);
   lastRef.current = last;
   // The answer streaming for the message in flight, and the one command it may belong to. The
@@ -250,14 +264,6 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       setUnread(false);
       setPending(false);
       setCardBusy(false);
-      // The AWS view is a read from memory. It refreshes what the Route control may offer
-      // whenever the conversation is read, and a failed read leaves the last answer in place.
-      void api<AwsConnectionView>('/ai/model-api/aws-bedrock').then(
-        (view) => {
-          if (owns()) setAws(view);
-        },
-        () => undefined,
-      );
       try {
         let found: Binding | null;
         let conversation: Conversation | null = null;
@@ -392,6 +398,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         setKept(keptOf(found ? retained(found) : null));
         return false;
       }
+      // Cancel at a job-cap question sent nothing and saved nothing: the words go back, unremarked.
+      if (error instanceof CapDeclined) return false;
+      // A job that reached its cap stopped before its next step; the send decides what follows.
+      if (isJobCapStop(error) && current.issued) capStop.current = current.issued;
       setNotice(words(error));
       // A refusal after an uncertain attempt may be about the retry, not the original, and the
       // saved message is kept for exactly that case. It is shown with its own words so it can
@@ -408,15 +418,79 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     }
   };
 
-  const send = (text: string): Promise<boolean> => {
+  /**
+   * Ask the person a job-cap question; the send waits until one of the three is chosen. A Stop
+   * while it is on screen answers it as Cancel.
+   */
+  const askCap = (prompt: CapPrompt, signal?: AbortSignal) =>
+    new Promise<CapChoice>((answer) => {
+      setCapPrompt({ ...prompt, answer });
+      signal?.addEventListener(
+        'abort',
+        () => {
+          setCapPrompt(null);
+          answer('cancel');
+        },
+        { once: true },
+      );
+    });
+  const answerCap = (choice: CapChoice) => {
+    const shown = capPrompt;
+    setCapPrompt(null);
+    shown?.answer(choice);
+  };
+  const tierUp = async (where: Binding, tier: JobTier) => {
+    await setThreadTier(where.projectId, where.threadId, tier);
+    setWorkStyle(tier);
+  };
+
+  /**
+   * A new message. Once the conversation is found and before anything is sent, the host
+   * estimates the job; when it will likely pass its cap (or cannot say), nothing is sent until
+   * the person chooses the tier above, going over this once for this message's own command id,
+   * or Cancel. A job that stops at its cap mid-way asks the same two choices, and either one
+   * sends the message again as a new job.
+   */
+  const send = async (text: string, presetCommandId?: string): Promise<boolean> => {
     const scope = scopeId;
     const mode = modeFor(restriction);
-    return deliver(
+    const draft = { text, mode, sources: [] };
+    capStop.current = null;
+    const sent = await deliver(
       text,
       () => ensure(scope),
-      (found, signal, onClaim) =>
-        sendMessage(found.projectId, found.threadId, { text, mode, sources: [] }, signal, onClaim),
+      async (found, signal, onClaim) => {
+        let commandId = presetCommandId;
+        if (commandId === undefined) {
+          const gate = await beforeSend({
+            estimate: () => estimateMessage(found.projectId, found.threadId, draft),
+            ask: (prompt) => askCap(prompt, signal),
+            upgrade: (tier) => tierUp(found, tier),
+            goOver: (id) => goOverBeforeSend(found.projectId, found.threadId, id, draft),
+            mint: mintCommandId,
+          });
+          if (!gate.send || signal.aborted) throw new CapDeclined();
+          commandId = gate.commandId;
+        }
+        return sendMessage(found.projectId, found.threadId, draft, signal, onClaim, commandId);
+      },
     );
+    // Set inside the delivery, which TypeScript cannot see from here.
+    const stop = capStop.current as DispatchIdentity | null;
+    capStop.current = null;
+    if (!stop) return sent;
+    const again: GateResult = await afterStop({
+      status: () => jobStatus(stop.projectId, stop.commandId),
+      ask: (prompt) => askCap(prompt),
+      upgrade: (tier) => tierUp(stop, tier),
+      goOverAfter: (id) => goOverAfterStop(stop.projectId, stop.threadId, id, stop.commandId),
+      mint: mintCommandId,
+    }).catch((error: unknown) => {
+      setNotice(words(error));
+      return { send: false } as const;
+    });
+    if (!again.send) return sent;
+    return send(text, again.commandId);
   };
 
   const resend = () => {
@@ -492,40 +566,9 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   };
 
   /**
-   * The person's route choice for the scoped thread, written to the thread so the provisioner
-   * keeps it. The saved thread answers what it now is; a refused write puts the record's answer
-   * back and says why.
-   */
-  const pickRoute = (next: Route) => {
-    const found = binding;
-    if (!found || pending) return;
-    const visit = turn.current;
-    const mine = ++routePick.current;
-    const before = route;
-    setRoute(next);
-    void api<Conversation>(
-      `/projects/${encodeURIComponent(found.projectId)}/threads/${encodeURIComponent(found.threadId)}`,
-      'PUT',
-      { engine: next },
-    ).then(
-      (conversation) => {
-        // A choice another press superseded is not this control's to repaint: its own saved
-        // answer already spoke, or its own refusal is already owed.
-        if (turn.current === visit && routePick.current === mine)
-          setRoute(conversation.engine ?? next);
-      },
-      (error) => {
-        if (turn.current !== visit || routePick.current !== mine) return;
-        setRoute(before);
-        setNotice(words(error));
-      },
-    );
-  };
-
-  /**
-   * The person's WorkStyle for the scoped thread, written to the thread. It changes which
-   * offered model leads and how hard it thinks from the next message; never the Mode, the
-   * route or who pays. A refused write puts the record's answer back and says why.
+   * The person's WorkStyle for the scoped thread, written to the thread. From the next message
+   * the owner's tier map decides the route and the model it runs on; never the Mode. A refused
+   * write puts the record's answer back and says why.
    */
   const pickStyle = (next: WorkStyle | null) => {
     const found = binding;
@@ -582,67 +625,69 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     }
   };
 
-  // What the caption names: the recorded route, or the default a first send takes. The Route
-  // control itself is only ever a home-scope thing, and only once the thread it writes to is
-  // real. Its entries always include the route the thread is on, offered or not.
+  // What the caption names without a tier: the recorded route, or the default a first send takes.
   const effective = route ?? CONVERSATION_DEFAULT_ROUTE;
-  const routeChoices =
-    scopeId === null && binding !== null
-      ? routeOptions(effective, awsPickerState(aws).offered)
-      : null;
 
   return (
-    <Diomedes
-      projects={projects}
-      scopeId={scopeId}
-      onScope={(id) => {
-        if (id === scopeId) return;
-        endDelivery();
-        dropLive();
-        turn.current += 1;
-        setPending(false);
-        setScopeId(id);
-      }}
-      turns={turns}
-      pending={pending}
-      live={live ? { text: live.text, activity: live.activity?.lines ?? [] } : null}
-      technical={props.detail === 'technical'}
-      restriction={restriction}
-      onRestriction={setRestriction}
-      onSend={send}
-      onStop={stopDelivery}
-      route={effective}
-      routeChoices={routeChoices}
-      onRoute={pickRoute}
-      workStyle={binding !== null ? workStyle : undefined}
-      onWorkStyle={pickStyle}
-      unavailable={unavailable}
-      card={card}
-      cardBusy={cardBusy}
-      onCardAction={() => void act()}
-      unconfirmed={kept?.text ?? null}
-      onResend={resend}
-      onDiscard={discard}
-      notice={notice}
-      onReadAgain={unread ? () => void load(scopeId) : null}
-      results={props.results}
-      onOpenResult={props.onOpenResult}
-      destinations={props.destinations}
-      pinned={props.pinned}
-      groups={props.groups}
-      onDestination={props.onDestination}
-      onTogglePin={props.onTogglePin}
-      onNewProject={props.onNewProject}
-      artifactScope={binding?.threadId ?? null}
-      onSaveArtifact={
-        scopeId !== null && binding ? (record) => saveArtifact(binding.projectId, record) : undefined
-      }
-      brief={
-        props.scheme === 'nectovia' ? (
-          <HomeBrief projects={projects} onOpen={props.onOpenWork} />
-        ) : undefined
-      }
-      art={props.scheme === 'nectovia' ? <HomeArt /> : undefined}
-    />
+    <>
+      <Diomedes
+        projects={projects}
+        scopeId={scopeId}
+        onScope={(id) => {
+          if (id === scopeId) return;
+          endDelivery();
+          dropLive();
+          turn.current += 1;
+          setPending(false);
+          setScopeId(id);
+        }}
+        turns={turns}
+        pending={pending}
+        live={live ? { text: live.text, activity: live.activity?.lines ?? [] } : null}
+        technical={props.detail === 'technical'}
+        restriction={restriction}
+        onRestriction={setRestriction}
+        onSend={send}
+        onStop={stopDelivery}
+        route={effective}
+        workStyle={binding !== null ? workStyle : undefined}
+        onWorkStyle={pickStyle}
+        unavailable={unavailable}
+        card={card}
+        cardBusy={cardBusy}
+        onCardAction={() => void act()}
+        unconfirmed={kept?.text ?? null}
+        onResend={resend}
+        onDiscard={discard}
+        notice={notice}
+        onReadAgain={unread ? () => void load(scopeId) : null}
+        results={props.results}
+        onOpenResult={props.onOpenResult}
+        destinations={props.destinations}
+        pinned={props.pinned}
+        groups={props.groups}
+        onDestination={props.onDestination}
+        onTogglePin={props.onTogglePin}
+        onNewProject={props.onNewProject}
+        artifactScope={binding?.threadId ?? null}
+        onSaveArtifact={
+          scopeId !== null && binding ? (record) => saveArtifact(binding.projectId, record) : undefined
+        }
+        brief={
+          props.scheme === 'nectovia' ? (
+            <HomeBrief projects={projects} onOpen={props.onOpenWork} />
+          ) : undefined
+        }
+        art={props.scheme === 'nectovia' ? <HomeArt /> : undefined}
+      />
+      {capPrompt && (
+        <JobCapWarning
+          copy={capPrompt.copy}
+          onUpgrade={() => answerCap('upgrade')}
+          onGoOver={() => answerCap('over')}
+          onCancel={() => answerCap('cancel')}
+        />
+      )}
+    </>
   );
 }

@@ -13,6 +13,7 @@ import { INTERFACE_SCALES } from '../shared/interface-scale';
 import { AppUpdates, useInstalledVersion } from './AppUpdates';
 import { freshnessLine, planLine, shouldShowEmptyDetail } from './usage-presentation';
 import { AIConnections } from './AISetup';
+import { ReadConnectors } from './ReadConnectors';
 import { isExternalEngine } from '../shared/engines';
 import { SCHEMES, schemeId } from './console/schemes';
 import { readCustomizationStatus } from './console/design-center/entitlement-api';
@@ -464,6 +465,8 @@ export function SettingsPage({
                       </section>
                     ))}
                 </div>
+                {/* What Ask and Plan may read beyond the project folder. Console only. */}
+                {isDesk && <ReadConnectors />}
               </>
             )}
             {section === 'Design Center' && (

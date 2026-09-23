@@ -11,12 +11,20 @@ import type {
 } from '../../shared/types';
 import type { EngineConnection } from '../../shared/engines';
 import type { AwsConnectionView } from '../../shared/model-api';
-import { EXTERNAL_ENGINES, isExternalEngine } from '../../shared/engines';
+import { EXTERNAL_ENGINES, isExternalEngine, routeDisplayName } from '../../shared/engines';
 import { freshness } from '../../shared/connection-policy';
 import { routeCaption } from '../../shared/engine-routes';
 import { MODE_CEILING, effortFor } from '../../shared/effort';
 import { api, engineConnections } from '../api';
 import { AWS_ROUTE_NAME, awsPickerState } from '../aws-bedrock-view';
+import {
+  providerModels,
+  providerPickerState,
+  type ProviderView,
+} from '../provider-setup-view';
+
+/** The model-API routes set up in AI setup beside AWS, in the order the menu lists them. */
+const PROVIDER_ROUTES = ['azure-openai', 'openrouter'] as const;
 
 const ENGINE_IDS = ['codex', 'claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin'] as const;
 
@@ -113,6 +121,7 @@ export function Picker({
     {},
   );
   const [aws, setAws] = useState<AwsConnectionView | null>(null);
+  const [providers, setProviders] = useState<Partial<Record<ProviderView['route'], ProviderView>>>({});
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -157,6 +166,13 @@ export function Picker({
       .catch(() => {
         // Same rule: an unreadable view offers nothing new.
       });
+    // Azure OpenAI and OpenRouter follow the same rule, each from its own view.
+    for (const id of PROVIDER_ROUTES)
+      void api<ProviderView>(`/ai/model-api/${id}`)
+        .then((view) => {
+          if (alive) setProviders((prev) => ({ ...prev, [id]: view }));
+        })
+        .catch(() => undefined);
     return () => {
       alive = false;
     };
@@ -207,8 +223,16 @@ export function Picker({
       ? ''
       : displayEngine === 'aws-bedrock'
         ? AWS_ROUTE_NAME
-        : (integrations.find((i) => i.id === displayEngine)?.name ?? displayEngine);
+        : (PROVIDER_ROUTES as readonly string[]).includes(displayEngine)
+          ? routeDisplayName(displayEngine)
+          : (integrations.find((i) => i.id === displayEngine)?.name ?? displayEngine);
   const awsState = awsPickerState(aws);
+  const providerStates = PROVIDER_ROUTES.map((id) => ({
+    id,
+    view: providers[id] ?? null,
+    state: providerPickerState(providers[id] ?? null),
+  }));
+  const anyProviderShown = providerStates.some(({ state }) => state.offered || state.note);
   const displayModel = chosenSlug || savedModel || chosen?.model.slug || 'default';
   const wantedEffort =
     route === 'codex'
@@ -339,7 +363,52 @@ export function Picker({
                 </div>
               )}
               {awsState.note && <p className="note">{awsState.note}</p>}
-              {offeredIds.length === 0 && waiting.length === 0 && !awsState.offered && !awsState.note && (
+              {providerStates.map(({ id, view, state }) =>
+                state.offered && view?.connection ? (
+                  <div key={id}>
+                    <h4>
+                      {routeDisplayName(id)}
+                      <span title={view.connection.endpoint}>
+                        {'resource' in view.connection ? view.connection.resource : shortLocation(view.connection.endpoint)}
+                      </span>
+                    </h4>
+                    <p className="note">Your company’s own account, billed there.</p>
+                    {/* Like AWS, the thread takes the route and its saved default model: the
+                        host checks a pinned model against engine catalogues, which list none
+                        for a company-account route, so a pin here would be refused. */}
+                    {(() => {
+                      const models = providerModels(view);
+                      const saved = settings.services?.[`${id}Model`];
+                      const current = models.find((m) => m.slug === saved) ?? models[0];
+                      if (!current) return null;
+                      return (
+                        <button
+                          type="button"
+                          className={`m ${route === id ? 'on' : ''}`}
+                          role="menuitemradio"
+                          aria-checked={route === id}
+                          onClick={() => choose(null, id)}
+                        >
+                          <span>{current.slug}</span>
+                          <span className="id" title={current.where}>
+                            {current.where}
+                          </span>
+                          <small>Within the spend limit set in Settings</small>
+                        </button>
+                      );
+                    })()}
+                  </div>
+                ) : state.note ? (
+                  <p className="note" key={id}>
+                    {state.note}
+                  </p>
+                ) : null,
+              )}
+              {offeredIds.length === 0 &&
+                waiting.length === 0 &&
+                !awsState.offered &&
+                !awsState.note &&
+                !anyProviderShown && (
                 <p className="note">Connect an engine in Settings.</p>
               )}
               {chosen && chosen.model.efforts.length > 0 ? (

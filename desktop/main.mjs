@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, Menu, safeStorage, shell } from 'electron';
 import { createServer } from 'node:http';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { watch } from 'node:fs';
 import path from 'node:path';
@@ -55,6 +55,9 @@ let service;
 let shuttingDown = false;
 let releaseLock;
 let nativeAuth;
+// In memory only: another process on loopback must not gain the desktop's
+// project and account API merely by knowing its port or sending a client header.
+const loopbackToken = randomBytes(32).toString('hex');
 
 // Field colour schemes as [chrome, t1] pairs for the titlebar overlay.
 // `cobalt` is retired and reads as `harbor` for saved settings.
@@ -268,6 +271,23 @@ async function createMainWindow() {
   win.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) =>
     callback(false),
   );
+  // The renderer never receives the token. Chromium adds it to this window's
+  // requests for the one local origin, including EventSource and the first page.
+  win.webContents.session.webRequest.onBeforeSendHeaders({ urls: ['<all_urls>'] }, (details, callback) => {
+    const headers = { ...details.requestHeaders };
+    for (const name of Object.keys(headers))
+      if (name.toLowerCase() === 'x-diomedes-session') delete headers[name];
+    let localWindowRequest = false;
+    try {
+      localWindowRequest = details.webContentsId === win.webContents.id &&
+        new URL(details.url).origin === appUrl;
+    } catch {
+      // A nonstandard URL never receives the token; still finish the request.
+    }
+    if (localWindowRequest)
+      headers['X-Diomedes-Session'] = loopbackToken;
+    callback({ requestHeaders: headers });
+  });
   win.once('ready-to-show', () => win.show());
   await win.loadURL(appUrl);
   await applyTitleBarOverlay();
@@ -363,6 +383,7 @@ if (!app.requestSingleInstanceLock()) {
         clientPort: port,
         updateOverrides: updates,
         secretBox,
+        loopbackToken,
       });
       serveClient(service, path.join(root, 'dist'));
       server.on('request', service);

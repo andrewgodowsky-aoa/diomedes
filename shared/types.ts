@@ -443,6 +443,12 @@ export interface ConversationLineage {
    * change that moves it starts the next generation rather than failing.
    */
   effort?: string;
+  /**
+   * The model-API route and model a lineage was opened on. A tier moves both at once, and
+   * the saved context is bound to them, so a change starts the next generation.
+   */
+  route?: string;
+  model?: string;
 }
 export interface Conversation {
   engine?: Route;
@@ -503,7 +509,30 @@ export interface EngineCatalog {
   models: EngineModel[]; // empty when the engine reports no choices
   detail: string; // one plain sentence for where the list came from, or why it is empty
 }
+/** Project-owned outbound consent. Absent or malformed records deny cloud sends. */
+export interface CloudSharingPolicy {
+  version: number;
+  routes: Exclude<Route, 'sample'>[];
+  documents: string[];
+  shareConversationHistory: boolean;
+  /** Separately permits proposal excerpts, task metadata and scope in model review. */
+  shareReviewPackets: boolean;
+  /**
+   * Present when this policy was first derived, once, from what the project had already sent
+   * before default-deny sharing (`server/cloud-sharing.ts`, `upgradeCloudSharing`). It records
+   * what the upgrade kept; it is provenance, never authority, and an owner's change keeps it.
+   */
+  upgrade?: CloudSharingUpgrade;
+}
+export interface CloudSharingUpgrade {
+  at: string;
+  from: 'recorded-history';
+  routes: Exclude<Route, 'sample'>[];
+  documents: string[];
+  shareConversationHistory: boolean;
+}
 export interface ProjectState {
+  cloudSharing?: CloudSharingPolicy;
   /** Absent in v1 projects. Persisted grants alone never restore active authority. */
   scopeGrants?: ScopeGrantRecord[];
   project: Project;
@@ -568,8 +597,16 @@ export interface TeamMember {
   role: 'lead' | 'member';
   /** Team membership by Agent identity. Absent on members created before Agents. */
   agentId?: string;
-  engine: 'codex' | 'claude-code' | 'opencode' | 'oh-my-pi' | 'sample' | 'probe';
+  /**
+   * The route this member runs on. Any route may be recorded (members saved before
+   * 2026-09-23 may name one that cannot carry team tools); only the routes in
+   * `shared/team-routes.ts` can run, and the rest are refused by name.
+   */
+  engine: Exclude<Route, 'sample'> | 'sample' | 'probe';
+  /** The model requested for this member, or null for the route's own default. Never a reported model. */
   model: string | null;
+  /** How the route and model were chosen. Absent on members created before 2026-09-23. */
+  selection?: import('./team-routes.js').TeamMemberSelection;
   status: 'idle' | 'working' | 'waiting' | 'stopped' | 'error';
   threadId: string | null;
   createdAt: string;

@@ -51,6 +51,7 @@ export function commandBinding(
     text: string;
     mode: ConversationMode;
     sources: readonly { path: string; sha: string }[];
+    readAccess?: string;
   },
 ) {
   return digest({
@@ -58,6 +59,9 @@ export function commandBinding(
     text: command.text,
     mode: command.mode,
     sources: command.sources.map((source) => ({ path: source.path, sha: source.sha })),
+    // Only a whole-project read is bound, so every earlier binding keeps its digest, and a
+    // retry that changes what the message may read is a different command.
+    ...(command.readAccess === 'project' ? { readAccess: 'project' } : {}),
   });
 }
 

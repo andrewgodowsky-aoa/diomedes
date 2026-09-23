@@ -100,6 +100,16 @@ async function fixture(mode = 'ok', engine: ExternalEngine = 'claude-code') {
   const project = await api('/projects', 'POST', { name: 'Independent synthetic cafe' });
   expect(project.status).toBe(200);
   const projectId: string = project.data.id;
+  // Default-deny cloud sharing: this synthetic project explicitly grants the
+  // fixture engine route with no source documents and no prior history
+  // (work/start and ask use sources [] throughout).
+  expect((await api(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0,
+    routes: [engine],
+    documents: [],
+    shareConversationHistory: false,
+    shareReviewPackets: false,
+  })).status).toBe(200);
   const thread = await api(`/projects/${projectId}/threads`, 'POST', {});
   expect(thread.status).toBe(201);
   const threadId: string = thread.data.id;

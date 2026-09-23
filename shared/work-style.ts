@@ -217,7 +217,12 @@ function fit(model: EngineModel | undefined, wanted: string): string | null {
   return below[0] ?? ids[0];
 }
 
-function inferEffort(
+/**
+ * The level a style asks of one model, fitted to what that model lists. Shared
+ * with the owner's tier map, which picks the model but leaves the level to the
+ * style, the mode and the task.
+ */
+export function inferEffort(
   style: WorkStyle,
   mode: Mode,
   kind: TaskKind,

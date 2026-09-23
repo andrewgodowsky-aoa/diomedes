@@ -7,6 +7,7 @@ import {
 } from '../../shared/workspaces';
 import { api } from '../api';
 import { Allowance } from './Allowance';
+import { NectoviaUsage } from './NectoviaUsage';
 import { Button, Modal } from '../components';
 import { BusinessSetup } from './BusinessSetup';
 import { Configuration } from './Configuration';
@@ -350,6 +351,10 @@ export function WorkspacePanel({ view, busy, onClose, onChanged, report }: Panel
               )
             )}
           </section>
+        )}
+
+        {activeOrganization && (
+          <NectoviaUsage organizationId={activeOrganization.organization.id} report={report} />
         )}
 
         {activeOrganization && (

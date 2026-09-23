@@ -98,10 +98,6 @@ export function AwsBedrockSetup({
       return next;
     });
   };
-  const makeDefault = () =>
-    void run(() =>
-      save({ ...settings, services: { ...settings.services, defaultEngine: 'aws-bedrock' } }),
-    );
   // Connecting turns the route on; this is only for a route someone switched off since.
   const turnOn = () =>
     void run(async () => {
@@ -295,11 +291,8 @@ export function AwsBedrockSetup({
               Turn on
             </Button>
           )}
-          {!awsIsDefault(settings.services) && view?.enabled && (
-            <Button onClick={makeDefault} disabled={disabled}>
-              Use AWS for new work
-            </Button>
-          )}
+          {/* No "use for new work" here: which route serves each tier is the owner's tier map,
+              the one place that decides routing (Tiers, below). */}
           <Button tone="quiet" onClick={disconnect} disabled={disabled}>
             Disconnect
           </Button>

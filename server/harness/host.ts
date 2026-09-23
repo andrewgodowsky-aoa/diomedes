@@ -26,6 +26,8 @@ import {
 import { ENGINE_TEXT_TURN, TextRouteRuntime, textDispatchAuthorizer } from './text-route.js';
 import { MODEL_SESSION_CAPABILITIES, ModelSessionRuns, modelApiDispatchAuthorizer } from './model-session-run.js';
 import { AWS_BEDROCK_ROUTE } from '../engines/aws-bedrock.js';
+import { isModelApiRoute } from '../../shared/model-api.js';
+import { cloudSharing, requireCloudSharing } from '../cloud-sharing.js';
 
 export const HARNESS_POLICY_VERSION = 'diomedes-host-policy-v1';
 
@@ -406,6 +408,25 @@ export function createHarnessHost({
   });
   const claudeSessions = new ClaudeSessionRuns(runs);
   const modelSessions = new ModelSessionRuns(runs, AWS_BEDROCK_ROUTE);
+  claudeSessions.setSharingPolicy((projectId, documents, prior) =>
+    requireCloudSharing(store.state(projectId), 'claude-code', documents, prior, {
+      home: store.isHomeProject(projectId),
+    }),
+  );
+  modelSessions.setSharingPolicy(
+    (projectId, documents, history, route) => {
+      if (!isModelApiRoute(route))
+        throw new ApiError(403, 'This model API route has no project sharing grant.');
+      requireCloudSharing(store.state(projectId), route, documents, history, {
+        home: store.isHomeProject(projectId),
+      });
+    },
+    // History is shared per route: a grant for one route's history never sends it on another.
+    (projectId, route) => {
+      const policy = cloudSharing(store.state(projectId));
+      return policy.shareConversationHistory && (policy.routes as string[]).includes(route);
+    },
+  );
   const bridge = new HarnessBridge(store, runs, tools, adapter, redact, HOST_TEST_PROJECT, codex);
   const observers = new Set<{ runId: string; changed: () => void; closed: () => void }>();
   let closed = false;
@@ -419,9 +440,18 @@ export function createHarnessHost({
   runs.afterStep = () => bridge.flush();
   runs.use((context) => bridge.beforeStep(context));
   const refreshSecrets = async () => {
-    for (const project of await store.projects())
-      for (const token of Object.values(await store.readTeamSecrets(project.id)))
-        secrets.add(token);
+    for (const project of await store.projects()) {
+      // A team token file this account cannot open holds nothing this process can know, and so
+      // nothing it could print. It must not stop the app from starting; that project's team
+      // features still refuse when they read it.
+      let tokens: Record<string, string>;
+      try {
+        tokens = await store.readTeamSecrets(project.id);
+      } catch {
+        continue;
+      }
+      for (const token of Object.values(tokens)) secrets.add(token);
+    }
   };
   /**
    * A client reads runs by naming the project they belong to, and the reserved

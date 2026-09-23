@@ -160,6 +160,21 @@ test('managed access shows no balance, because there is none to show', async ({ 
   await expect(section).toContainText('Does not');
 });
 
+test('Nectovia usage says not connected and draws no figure', async ({ page }) => {
+  await openPanel(page);
+  const section = page.locator('.ws-section', {
+    has: page.getByRole('heading', { name: 'Nectovia usage' }),
+  });
+  await expect(section).toBeVisible();
+  // This host holds no control-plane session, so it has no usage to show.
+  await expect(section).toContainText('Not connected');
+  await expect(section).toContainText('not signed in to a Nectovia account');
+  // Unknown is never drawn as 0%.
+  await expect(section.getByRole('progressbar')).toHaveCount(0);
+  await expect(section).not.toContainText('0%');
+  await expect(section.getByRole('button', { name: 'Refresh' })).toBeEnabled();
+});
+
 test('the panel holds together in a narrow window with a long name', async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 700 });
   const long = 'Llanfairpwllgwyngyll Joinery and Cabinetmaking Partnership Limited';

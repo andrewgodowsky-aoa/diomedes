@@ -268,6 +268,11 @@ beforeEach(async () => {
   thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
   const folder = store().state(project.id).project.folder;
   for (const doc of Object.values(DOCS)) await fs.writeFile(path.join(folder, doc.path), doc.text, 'utf8');
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0, routes: ['aws-bedrock'],
+    documents: Object.values(DOCS).map((doc) => doc.path),
+    shareConversationHistory: true, shareReviewPackets: false,
+  });
   // The thread runs on AWS, chosen through the same thread route the Console's picker saves.
   // Work started from this conversation follows the thread's route.
   const chosen = await api<Conversation>(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });
@@ -540,7 +545,7 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
     expect((await view()).spend!.recent[0]).toMatchObject({ state: 'uncertain' });
   });
 
-  test('a new key is a new connection generation: the old lineage is retired and the direct route is refused', async () => {
+  test('a new key is a new connection generation: the old lineage is retired, and Build from the thread runs on the new key', async () => {
     await connected();
     const first = await send('m-one', 'Good morning');
     await connect('test-only-bedrock-key-second-generation-0000');
@@ -550,19 +555,35 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
     expect(second.runId).not.toBe(first.runId);
     expect(seen.at(-1)?.authorization).toBe('Bearer test-only-bedrock-key-second-generation-0000');
 
+    // Owner decision 2026-09-23: Build and Fix run from a thread on AWS; Ask and Plan still
+    // answer through the conversation.
+    const plan = await request(`/projects/${project.id}/ask`, 'POST', {
+      text: 'Plan it now',
+      threadId: thread.id,
+      mode: 'plan',
+      consent: true,
+    });
+    expect(plan.status).toBe(409);
+    expect(await plan.text()).toMatch(/answers through the conversation/);
     const direct = await request(`/projects/${project.id}/ask`, 'POST', {
       text: 'Draft it now',
       threadId: thread.id,
       mode: 'build',
       consent: true,
     });
-    expect(direct.status).toBe(409);
-    expect(await direct.text()).toMatch(/answers through the conversation/);
+    expect(direct.status, await direct.clone().text()).toBe(200);
+    await openNeed();
+    expect(seen.at(-1)?.authorization).toBe('Bearer test-only-bedrock-key-second-generation-0000');
+    await expect(
+      fs.stat(path.join(store().state(project.id).project.folder, CHECKLIST)),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
 
 // Independent review additions. Everything above is the owner's complete,
-// unfiltered fixture, copied byte-for-byte from the frozen 2026-09-21 snapshot.
+// unfiltered fixture, copied byte-for-byte from the frozen 2026-09-21 snapshot,
+// except the last test's direct Build: amended 2026-09-23 when the owner reversed
+// CD-01 Decision 5's refusal of Build and Fix on a model-API thread.
 // close/open below is orderly restart evidence, not an abrupt OS crash test.
 describe('AWS conversation authority: independent integration counterexamples', () => {
   for (const mode of ['ask', 'plan'] as const) {

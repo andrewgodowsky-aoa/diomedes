@@ -1,5 +1,5 @@
 // Tool names and mailbox semantics follow iOfficeAI/AionCore v0.2.1 crates/aionui-team (Apache-2.0); reimplemented for Diomedes.
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type {
   Conversation,
   MailboxMessage,
@@ -19,6 +19,16 @@ import {
   unreadForSlot,
 } from './mailbox.js';
 import {
+  isTeamRoute,
+  resolveTeamMemberModel,
+  teamRouteRefusal,
+  type TeamMemberSelection,
+  type TeamRouteCandidate,
+} from '../../shared/team-routes.js';
+import { ownerPinFrom, tierMapFrom } from '../../shared/tier-map.js';
+import { isRoute } from '../../shared/engines.js';
+import { isWorkStyle, type WorkStyle } from '../../shared/work-style.js';
+import {
   checkCompletionAllowed,
   engineLabel,
   memberAttribution,
@@ -30,14 +40,12 @@ import {
   type TeamTaskStatus,
 } from './board.js';
 
-const engines: TeamMember['engine'][] = [
-  'codex',
-  'claude-code',
-  'opencode',
-  'oh-my-pi',
-  'sample',
-  'probe',
-];
+/** Routes with no provider behind them, kept for demos and tests. They never run team work. */
+const localEngines: TeamMember['engine'][] = ['sample', 'probe'];
+/** The request value that asks Nectovia to choose the member's route and model. */
+export const AUTO_TEAM_ENGINE = 'auto';
+/** The style "Nectovia chooses" follows when none is given; the lead resolves one tier above. */
+const DEFAULT_TEAM_STYLE: WorkStyle = 'focused';
 const roles: TeamMember['role'][] = ['lead', 'member'];
 const statuses: TeamMember['status'][] = ['idle', 'working', 'waiting', 'stopped', 'error'];
 
@@ -58,6 +66,13 @@ function findMember(team: TeamState, slotId: Slot): TeamMember {
   return member;
 }
 
+function activeMember(team: TeamState, slotId: Slot): TeamMember {
+  const member = findMember(team, slotId);
+  if (member.status === 'stopped')
+    throw new ApiError(401, 'This member token was not recognized.');
+  return member;
+}
+
 export interface RunStarterInput {
   projectId: string;
   member: TeamMember;
@@ -66,6 +81,8 @@ export interface RunStarterInput {
 }
 
 export type RunStarter = (input: RunStarterInput) => Promise<{ sessionId: string }>;
+/** The routes the person turned on and connected, with what each reported, for "Nectovia chooses". */
+export type TeamRouteCandidates = (projectId: string) => TeamRouteCandidate[];
 
 /** At most this many automatic wakes per slot inside AUTO_WAKE_WINDOW_MS. */
 const AUTO_WAKE_LIMIT = 5;
@@ -82,6 +99,7 @@ function renderWakeText(team: TeamState, unread: MailboxMessage[]): string {
 
 export class TeamService {
   private runStarter: RunStarter | null = null;
+  private candidates: TeamRouteCandidates | null = null;
   private wakeLog = new Map<string, number[]>();
   private clock: () => number = () => Date.now();
 
@@ -90,6 +108,11 @@ export class TeamService {
   /** Wire the app's run starter later; until then wakes park as 'waiting' and never fail a send. */
   setRunStarter(fn: RunStarter): void {
     this.runStarter = fn;
+  }
+
+  /** Wire the host's connected-route facts; until then "Nectovia chooses" is refused. */
+  setRouteCandidates(fn: TeamRouteCandidates): void {
+    this.candidates = fn;
   }
 
   /** Test seam for the auto-wake budget clock (avoids fake timers around network tests). */
@@ -105,10 +128,17 @@ export class TeamService {
     return team;
   }
 
+  requireActive(projectId: string, slotId: Slot): TeamMember {
+    return activeMember(this.teamState(projectId), slotId);
+  }
+
   // The run controller persists these mutations with the corresponding Session
   // and Need changes, so clients see a consistent team and work state.
   setMemberStatus(projectId: string, slotId: Slot, status: TeamMember['status']): void {
     const member = findMember(this.teamState(projectId), slotId);
+    // A late native run or approval result cannot reactivate a helper whose
+    // owner or lead already stopped it. There is no implicit resume authority.
+    if (member.status === 'stopped' && status !== 'stopped') return;
     member.status = status;
     member.lastSeenAt = now();
   }
@@ -156,12 +186,19 @@ export class TeamService {
     if (slotId === 'owner') throw new ApiError(401, 'The owner slot cannot call the team server.');
     const team = this.teamState(projectId);
     const member = team.members.find((m) => m.slotId === slotId);
-    if (!member) throw new ApiError(401, 'This member token was not recognized.');
+    if (!member || member.status === 'stopped')
+      throw new ApiError(401, 'This member token was not recognized.');
     const secrets = await this.store.readTeamSecrets(projectId);
     const expected = secrets[slotId];
-    if (!expected || expected !== token)
+    if (
+      !expected ||
+      !/^[0-9a-f]{64}$/.test(expected) ||
+      !/^[0-9a-f]{64}$/.test(token) ||
+      !timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(token, 'hex'))
+    )
       throw new ApiError(401, 'This member token was not recognized.');
-    return member;
+    // The owner may have stopped this helper while the token file was read.
+    return this.requireActive(projectId, slotId);
   }
 
   async createMember(
@@ -169,8 +206,11 @@ export class TeamService {
     input: {
       name: unknown;
       role: unknown;
+      /** A route id, or `auto` for "Nectovia chooses". */
       engine: unknown;
       model?: unknown;
+      /** For `auto`: the WorkStyle the team follows. The lead resolves one tier above it. */
+      style?: unknown;
       threadId?: unknown;
       /** Team membership by Agent identity. Validated by the caller's registry. */
       agentId?: unknown;
@@ -181,15 +221,51 @@ export class TeamService {
     const name = asName(input.name, 'a member name');
     if (!roles.includes(input.role as TeamMember['role']))
       throw new ApiError(400, 'Choose a valid member role.');
-    if (!engines.includes(input.engine as TeamMember['engine']))
-      throw new ApiError(400, 'Choose a valid engine.');
     const role = input.role as TeamMember['role'];
-    const engine = input.engine as TeamMember['engine'];
+    let engine: TeamMember['engine'];
     let model: string | null = null;
-    if (input.model !== undefined && input.model !== null) {
-      if (typeof input.model !== 'string' || input.model.length > 200)
-        throw new ApiError(400, 'Provide a model of up to 200 characters.');
-      model = input.model;
+    let selection: TeamMemberSelection;
+    if (input.engine === AUTO_TEAM_ENGINE) {
+      if (input.model !== undefined && input.model !== null)
+        throw new ApiError(400, 'Nectovia chooses the model when it chooses the route. Choose a route to pick a model yourself.');
+      if (input.style !== undefined && input.style !== null && !isWorkStyle(input.style))
+        throw new ApiError(400, 'Choose Efficient, Focused or Thorough.');
+      const style = isWorkStyle(input.style) ? input.style : DEFAULT_TEAM_STYLE;
+      if (!this.candidates)
+        throw new ApiError(409, 'Nectovia cannot choose a team model here. Choose a route and model for this member.');
+      // The owner's tier map decides the member's route and model, as it does a thread's.
+      const services = this.store.settings.services;
+      const resolved = resolveTeamMemberModel({
+        role,
+        style,
+        candidates: this.candidates(projectId),
+        tiers: { map: tierMapFrom(services), pin: ownerPinFrom(services) },
+      });
+      if (resolved.outcome === 'ask') throw new ApiError(409, resolved.reason);
+      engine = resolved.route;
+      model = resolved.model;
+      selection = resolved.selection;
+    } else {
+      if (
+        !localEngines.includes(input.engine as TeamMember['engine']) &&
+        !isTeamRoute(input.engine)
+      ) {
+        // A known route that cannot carry the tools is named, never swapped for one that can.
+        if (isRoute(input.engine)) throw new ApiError(409, teamRouteRefusal(input.engine)!);
+        throw new ApiError(400, 'Choose a valid engine.');
+      }
+      engine = input.engine as TeamMember['engine'];
+      if (input.model !== undefined && input.model !== null) {
+        if (typeof input.model !== 'string' || input.model.length > 200)
+          throw new ApiError(400, 'Provide a model of up to 200 characters.');
+        model = input.model;
+      }
+      selection = {
+        by: 'person',
+        style: null,
+        reason: model ? 'Chosen model.' : 'The route’s own default.',
+        substituted: false,
+      };
     }
     let agentId: string | null = null;
     if (input.agentId !== undefined && input.agentId !== null) {
@@ -217,6 +293,10 @@ export class TeamService {
         updatedAt: stamped,
         taskId: null,
         helper: { engine, model },
+        // The member's thread runs on the member's own route and model, so every path that
+        // reads the thread (the picker, Work start, a wake) resolves the same request.
+        ...(isRoute(engine) ? { engine } : {}),
+        ...(model ? { requested: { model, effort: null } } : {}),
         // A member's thread runs Build; the person can switch it on the Console.
         mode: 'build',
       };
@@ -230,6 +310,7 @@ export class TeamService {
       ...(agentId ? { agentId } : {}),
       engine,
       model,
+      selection,
       status: 'idle',
       threadId,
       createdAt: stamped,
@@ -260,7 +341,7 @@ export class TeamService {
   ): Promise<{ member: TeamMember; sessionId: string }> {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const member = findMember(team, slotId);
+    const member = activeMember(team, slotId);
     const waiting = unreadForSlot(team.messages, slotId);
     if (waiting.length === 0)
       throw new ApiError(400, 'Nothing is waiting for this helper.');
@@ -375,7 +456,7 @@ export class TeamService {
   ): Promise<MailboxMessage> {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const live = findMember(team, sender.slotId);
+    const live = activeMember(team, sender.slotId);
     const to = args.to;
     if (typeof to !== 'string' || !to.trim()) throw new ApiError(400, 'Provide a recipient slot.');
     if (to !== 'owner') findMember(team, to);
@@ -426,7 +507,7 @@ export class TeamService {
   ): Promise<MailboxMessage[]> {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const live = findMember(team, reader.slotId);
+    const live = activeMember(team, reader.slotId);
     if (sinceMessageId !== undefined && typeof sinceMessageId !== 'string')
       throw new ApiError(400, 'Provide a valid message id.');
     const found = peekForSlot(team.messages, live.slotId, sinceMessageId);
@@ -452,7 +533,7 @@ export class TeamService {
   ) {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const live = findMember(team, creator.slotId);
+    const live = activeMember(team, creator.slotId);
     const meta = this.store.teamMeta(projectId);
     if (args.idempotency_key !== undefined && args.idempotency_key !== null) {
       if (typeof args.idempotency_key !== 'string' || !args.idempotency_key.trim())
@@ -512,7 +593,7 @@ export class TeamService {
   ) {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const live = findMember(team, updater.slotId);
+    const live = activeMember(team, updater.slotId);
     const meta = this.store.teamMeta(projectId);
     if (typeof args.task_id !== 'string' || !args.task_id.trim())
       throw new ApiError(400, 'Provide a task id.');
@@ -594,10 +675,11 @@ export class TeamService {
 
   async taskListAsMember(
     projectId: string,
-    _reader: TeamMember,
+    reader: TeamMember,
     args: { owner?: unknown; status?: unknown; include_deleted?: unknown; limit?: unknown },
   ) {
     const state = this.store.state(projectId);
+    activeMember(migrateTeam(state), reader.slotId);
     const meta = this.store.teamMeta(projectId);
     let tasks = [...state.tasks];
     const includeDeleted = args.include_deleted === true;
@@ -626,7 +708,7 @@ export class TeamService {
   async renameAsLead(projectId: string, caller: TeamMember, slotId: Slot, newName: string) {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const live = findMember(team, caller.slotId);
+    const live = activeMember(team, caller.slotId);
     requireLead(live, 'team_rename_agent');
     const target = findMember(team, slotId);
     target.name = asName(newName, 'a member name');
@@ -643,7 +725,7 @@ export class TeamService {
   ): Promise<MailboxMessage> {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const live = findMember(team, caller.slotId);
+    const live = activeMember(team, caller.slotId);
     requireLead(live, 'team_interrupt_agent');
     const target = findMember(team, slotId);
     if (typeof message !== 'string' || !message.trim() || message.length > 16000)
@@ -666,7 +748,7 @@ export class TeamService {
   async shutdownAsLead(projectId: string, caller: TeamMember, slotId: Slot, reason?: string) {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const live = findMember(team, caller.slotId);
+    const live = activeMember(team, caller.slotId);
     requireLead(live, 'team_shutdown_agent');
     const target = findMember(team, slotId);
     const outgoing = deliverMessage(team.messages, {

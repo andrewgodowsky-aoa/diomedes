@@ -54,6 +54,11 @@ export interface MessageRequest {
   mode: ConversationMode;
   sources: { path: string; sha: string }[];
   consent: true;
+  /**
+   * What an Ask or Plan message may read from the project. Absent means the selected
+   * documents only; `project` lets the route look through the folder for this one message.
+   */
+  readAccess?: import('./read-access.js').ReadAccess;
 }
 
 /** `POST .../messages/:commandId/select`. Bound to the proposal that was shown and to its project. */

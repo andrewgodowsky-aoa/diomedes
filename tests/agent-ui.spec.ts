@@ -162,9 +162,9 @@ test.afterAll(async () => {
 });
 
 const agentButton = (page: Page) => page.getByRole('button', { name: 'Worker for this thread' });
-// The model control names itself by its current selection, so locate the
-// control rather than a label that changes as soon as the test uses it.
-const modelButton = (page: Page) => page.locator('.model-picker > button');
+// The thread's model control offers tiers only (owner decision 2026-09-23); it names a
+// thread pinned to one model as "Chosen model", never the model id itself.
+const modelButton = (page: Page) => page.locator('.style-picker > button');
 const thread = async (): Promise<Conversation> => {
   const { threads } = await api<{ threads: Conversation[] }>(`/projects/${projectId}/threads`);
   return threads[0];
@@ -234,7 +234,7 @@ test('choosing a worker leaves the model alone, and the model leaves the worker 
   });
   await page.reload();
   await expect(agentButton(page)).toContainText('Code Reviewer');
-  await expect(modelButton(page)).toContainText('fixture-model-b');
+  await expect(modelButton(page)).toContainText('Chosen model');
 
   // Switching the worker back to Auto must not disturb the model.
   await agentButton(page).click();
@@ -242,6 +242,6 @@ test('choosing a worker leaves the model alone, and the model leaves the worker 
   await expect(agentButton(page)).toContainText('Auto');
   await expect.poll(async () => (await thread()).requested?.agent ?? null).toBeNull();
   expect((await thread()).requested?.model).toBe('fixture-model-b');
-  await expect(modelButton(page)).toContainText('fixture-model-b');
+  await expect(modelButton(page)).toContainText('Chosen model');
   await page.screenshot({ path: path.join(EVIDENCE, 'agent-and-model-kept.png') });
 });

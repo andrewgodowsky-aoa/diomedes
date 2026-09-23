@@ -129,6 +129,21 @@ describe('path privacy and 8.3 aliases', () => {
     expect(refusalOf('F:/proj/auth.json')).not.toBeNull();
   });
 
+  test('common account and private key files cannot enter project context', async () => {
+    for (const candidate of [
+      '.npmrc', '.pypirc', '.netrc', '.git-credentials', 'service-account.json',
+      '.docker/config.json', '.kube/config', '.gnupg/private-keys-v1.d/key',
+      'id_ecdsa', 'tls/private.key', 'tls/client.pem', 'auth/account.p12',
+      'auth/account.pfx', 'auth/identity.jks', 'auth/identity.keystore',
+      'connection-secrets/model.sealed', 'team-secrets.json',
+      'team-secrets.json.crash.tmp', 'diomedes-native-auth.json',
+      'diomedes-native-auth.json.backup',
+    ]) {
+      expect(refusalOf(`F:/proj/${candidate}`), candidate).not.toBeNull();
+      expect(await statusOf(path.join(os.tmpdir(), 'diomedes-project', candidate)), candidate).toBe(403);
+    }
+  });
+
   test('ordinary tilde filenames stay valid', () => {
     expect(refusalOf('F:/proj/notes~backup.md')).toBeNull();
     expect(refusalOf('F:/proj/main.py~')).toBeNull();

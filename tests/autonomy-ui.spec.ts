@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import type { Project, ProjectState, TaskCandidate } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
+import { shareAfter } from './fixtures/cloud-sharing-grant';
 
 // Deterministic browser proof for task-scope autonomy using the real built UI
 // and a synthetic nativeGenerator. No model calls, credentials, or quota.
@@ -122,7 +123,9 @@ async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T>
     throw new Error(
       `Autonomy fixture ${route} failed (${response.status}): ${await response.text()}`,
     );
-  return response.json() as Promise<T>;
+  const value = (await response.json()) as T;
+  await shareAfter(api, route, method, value);
+  return value;
 }
 
 async function settled(projectId: string): Promise<ProjectState> {

@@ -48,9 +48,9 @@ export interface AdmissionRequest {
   readonly personId: string;
   readonly route: string;
   readonly kind: ChargeKind;
+  /** The job this call belongs to. Null makes the call a job of its own. */
   readonly parentTaskId: string | null;
   readonly maxMicroUsd: MicroUsd;
-  readonly parentEnvelopeMicroUsd: MicroUsd | null;
   /** Binds the authorization to this request and no other. */
   readonly requestDigest: string;
   readonly reservationId: string;
@@ -103,6 +103,12 @@ export interface GatewayDependencies {
     suspended: boolean;
     suspendedReason: string | null;
   }>;
+  /**
+   * The job's cap, from the host's tier map (`APPROVED_JOB_CAP_CREDITS`) and
+   * any one-job raise the host recorded. Never a request field: a caller that
+   * could name its own envelope could name any envelope.
+   */
+  readonly jobCapFor: (organizationId: string, jobId: string) => MicroUsd;
 }
 
 const refuse = (code: string, message: string, payer: Payer = 'refused'): Admission => ({
@@ -195,7 +201,16 @@ export class ManagedGateway {
     if (!isAdmissibleChargeKind(RATE_CARD_V1, request.kind))
       return refuse('charge_not_admissible', RATE_CARD_V1.reason[request.kind], 'managed');
 
-    // Money last. Everything above had to pass on its own terms first.
+    // Money last. Everything above had to pass on its own terms first. The job's cap is the
+    // host's; every child and every retry under one parent task is held inside it, and a call
+    // with no parent task is a job of its own, held to the same cap alone.
+    const jobCap = this.deps.jobCapFor(organizationId, request.parentTaskId ?? request.reservationId);
+    if (request.parentTaskId === null && request.maxMicroUsd > jobCap)
+      return refuse(
+        'job_cap_reached',
+        'This call could cost more than one job is capped at. Nothing was held and nothing was sent.',
+        'managed',
+      );
     let reservation: Reservation;
     try {
       reservation = await this.deps.ledger.reserve({
@@ -208,7 +223,7 @@ export class ManagedGateway {
         payer: 'managed',
         maxMicroUsd: request.maxMicroUsd,
         rateCardVersion: RATE_CARD_V1.version,
-        parentEnvelopeMicroUsd: request.parentEnvelopeMicroUsd,
+        parentEnvelopeMicroUsd: request.parentTaskId === null ? null : jobCap,
         at: request.at,
       });
     } catch (error) {

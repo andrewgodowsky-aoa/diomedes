@@ -1,11 +1,25 @@
 import fs from 'node:fs/promises';
 import { directOrigin } from '../shared/attribution.js';
 import { routeDisplayName } from '../shared/engines.js';
+import { isModelApiRoute } from '../shared/model-api.js';
 import { AGENT_NAME } from '../shared/agent-name.js';
 import { diffLines } from 'diff';
 import type { Change, Need, Session, ThreadPermission } from '../shared/types.js';
 import type { WorkAdmission } from './work-admission.js';
 import { askCodex, nativeWorkDisclosure, type NativeTeamOptions } from './integrations.js';
+import {
+  TEAM_CARRIAGE,
+  teamRouteRefusal,
+  type TeamRoute,
+} from '../shared/team-routes.js';
+
+/** What a team run can reach, said once in the session log, per carriage. */
+function teamWorkDisclosure(route: TeamRoute): string {
+  if (route === 'codex') return nativeWorkDisclosure({} as NativeTeamOptions);
+  if (TEAM_CARRIAGE[route] === 'mcp')
+    return `This run can talk to the Diomedes team service and no other MCP service. ${routeDisplayName(route)}'s own file, shell and web tools stay off. Diomedes applies file proposals only after your approval.`;
+  return `The model is offered the Diomedes team tools only, and Diomedes runs each call itself as this member. It has no file, shell or web access. Diomedes applies file proposals only after your approval.`;
+}
 import { MODES } from './modes.js';
 import { effortFor } from '../shared/effort.js';
 import { absent, ApiError, projectFile, relativeName, textKind } from './paths.js';
@@ -34,6 +48,7 @@ import {
   productKnowledgeSentence,
 } from './readiness/instructions.js';
 import type { Route } from '../shared/types.js';
+import { cloudSharing, requireCloudSharing } from './cloud-sharing.js';
 
 export type NativeGenerator = (input: {
   engine?: Exclude<Route, 'sample'>;
@@ -43,6 +58,8 @@ export type NativeGenerator = (input: {
   accountRoute?: string;
   prompt: string;
   documents: { path: string; text: string }[];
+  /** Additional project instruction files already rendered into the prompt. */
+  sharingPaths?: readonly string[];
   signal?: AbortSignal;
   team?: NativeTeamOptions;
   onTeamToolCall?: (tool: string) => void;
@@ -93,6 +110,7 @@ interface NativeRun {
    * text. Absent when this project delivers no instructions.
    */
   instructionSection?: string;
+  instructionPaths?: string[];
   proposal?: Proposal;
   writes?: WriteInput[];
   /**
@@ -160,11 +178,16 @@ export function extractJsonObject(text: string): string {
   return text;
 }
 
-export function parseProposal(text: string): Proposal {
+/**
+ * `source` names who replied in the two refusals that say so. A model-API route is named,
+ * so a route that cannot return the proposal contract is refused by name; the other routes
+ * keep the generic wording their records already carry.
+ */
+export function parseProposal(text: string, source = 'The engine'): Proposal {
   if (Buffer.byteLength(text) > MAX_BYTES * 8)
     throw new ApiError(
       413,
-      'The engine returned a proposal that is too large. No files were changed.',
+      `${source} returned a proposal that is too large. No files were changed.`,
     );
   let parsed: unknown;
   try {
@@ -172,7 +195,7 @@ export function parseProposal(text: string): Proposal {
   } catch {
     throw new ApiError(
       422,
-      'The engine did not return a valid file proposal. No files were changed. Start again to request a new proposal.',
+      `${source} did not return a valid file proposal. No files were changed. Start again to request a new proposal.`,
     );
   }
   if (
@@ -336,8 +359,10 @@ export class NativeWorkService {
     const engine = input.engine ?? 'codex';
     if (this.store.settings.services?.[engine] !== true)
       throw new ApiError(409, `Turn ${engine} on in Settings before using it.`);
-    if (input.team && engine !== 'codex')
-      throw new ApiError(409, 'Team tools are not supported on this route.');
+    // Team work runs on every route that can carry the team tools (shared/team-routes.ts).
+    // A route that cannot is refused by name; nothing falls back to another route.
+    const teamRefusal = input.team ? teamRouteRefusal(engine) : null;
+    if (teamRefusal) throw new ApiError(409, teamRefusal);
     if (input.consent !== true)
       throw new ApiError(
         409,
@@ -355,6 +380,7 @@ export class NativeWorkService {
         'Select no more than eight source documents. An empty selection may create new files only.',
       );
     const names = input.sources.map(relativeName);
+    requireCloudSharing(state, engine, names);
     if (new Set(names.map((name) => name.toLowerCase())).size !== names.length)
       throw new ApiError(400, 'Select each source document only once.');
     const instruction = (input.instruction?.trim() || task.description.trim() || task.name).trim();
@@ -404,6 +430,7 @@ export class NativeWorkService {
       routeId: engine,
       agentRole: `Diomedes ${input.mode ?? 'build'} file proposal writer`,
       budgetBytes: instructionSectionBudget(bytes),
+      allowedDocuments: cloudSharing(state).documents,
     });
     const team = input.team;
     const member = team
@@ -412,30 +439,40 @@ export class NativeWorkService {
     let tokenLease: Pick<NativeRun, 'releaseToken' | 'redact'> = {};
     if (member && input.team) {
       const tokenEnv = `DIOMEDES_TEAM_${member.slotId.toUpperCase().replace(/[^A-Z0-9]/g, '')}`;
-      if (
-        input.team.tokenEnv !== tokenEnv ||
-        member.engine !== 'codex' ||
-        input.team.role !== member.role
-      )
+      // The run must be this member's own: its slot's token variable, its role, and its
+      // own route. A member saved for one route never runs its team tools on another.
+      if (input.team.tokenEnv !== tokenEnv || input.team.role !== member.role)
         throw new ApiError(400, 'The team run configuration does not match this member.');
+      if (member.engine !== engine)
+        throw new ApiError(
+          409,
+          `${member.name} works through ${routeDisplayName(member.engine) || member.engine}, not ${routeDisplayName(engine)}. Switch the thread back to ${routeDisplayName(member.engine) || member.engine} to run this helper.`,
+        );
       const token = (await this.store.readTeamSecrets(projectId))[member.slotId];
       if (!token) throw new ApiError(409, 'This team member has no stored token.');
-      if (process.env[tokenEnv] !== undefined)
+      // Only a route whose engine reaches the team service itself needs the token; a
+      // host-carried route runs the tools in this process as the member, and no token
+      // leaves the host.
+      const carried = TEAM_CARRIAGE[engine as TeamRoute] === 'mcp';
+      if (carried && process.env[tokenEnv] !== undefined)
         throw new ApiError(409, 'This team member already has a token environment in use.');
       // Validation and secret reads yield; another start may have claimed the
       // project in the meantime. Do not lease its environment or add a session.
       if (state.sessions.some(active) || this.runs.has(projectId))
         throw new ApiError(409, 'This project already has work in progress.');
-      process.env[tokenEnv] = token;
-      let released = false;
-      tokenLease = {
-        releaseToken: () => {
-          if (released) return;
-          released = true;
-          if (process.env[tokenEnv] === token) delete process.env[tokenEnv];
-        },
-        redact: secretScrubber([token]),
-      };
+      if (!carried) tokenLease = { redact: secretScrubber([token]) };
+      else {
+        process.env[tokenEnv] = token;
+        let released = false;
+        tokenLease = {
+          releaseToken: () => {
+            if (released) return;
+            released = true;
+            if (process.env[tokenEnv] === token) delete process.env[tokenEnv];
+          },
+          redact: secretScrubber([token]),
+        };
+      }
     }
     const commit = input.commit ?? (<T>(step: () => Promise<T>) => step());
     // Preparation is done. What follows is the final validation and the durable admission,
@@ -488,14 +525,15 @@ export class NativeWorkService {
           ? `Preparing a proposal with ${routeDisplayName(engine)} from ${sources.length} ${sources.length === 1 ? 'document' : 'documents'}.`
           : `Preparing a proposal with ${routeDisplayName(engine)}.`,
       );
-      this.log(
-        session,
-        engine === 'codex'
-          ? 'The engine has no file or shell access.'
-          : 'The adapter disables engine tools and sends only selected text. This is not an operating-system sandbox.',
-        'technical',
-      );
-      if (input.team) this.log(session, nativeWorkDisclosure(input.team), 'technical');
+      if (input.team) this.log(session, teamWorkDisclosure(engine as TeamRoute), 'technical');
+      else
+        this.log(
+          session,
+          engine === 'codex'
+            ? 'The engine has no file or shell access.'
+            : 'The adapter disables engine tools and sends only selected text. This is not an operating-system sandbox.',
+          'technical',
+        );
       if (instructions.delivery) {
         // Said once, in the place History already reads: which files went, at
         // which sha, and which were left out whole. The session carries the same
@@ -546,6 +584,9 @@ export class NativeWorkService {
         ...(input.requested ? { requested: { ...input.requested } } : {}),
         ...(resolved ? { agent: resolved } : {}),
         ...(instructions.section ? { instructionSection: instructions.section } : {}),
+        instructionPaths: instructions.delivery?.files
+          .filter((file) => file.state === 'sent')
+          .map((file) => file.path) ?? [],
         ...tokenLease,
       };
       this.runs.set(projectId, run);
@@ -646,6 +687,11 @@ export class NativeWorkService {
       // The caller resolves the thread's own choice; the saved default still
       // applies on paths that start a run without passing one.
       const requestedModel = this.requestedModel(run);
+      requireCloudSharing(
+        this.store.state(run.projectId),
+        run.engine,
+        [...run.sources.map((source) => source.path), ...(run.instructionPaths ?? [])],
+      );
       const modeDef = MODES[run.mode] ?? MODES.build;
       // A proposal is strict JSON, so its text is not worth showing as it
       // streams. The first piece is still news: the engine has started and
@@ -692,6 +738,7 @@ export class NativeWorkService {
           `Requested work: ${run.instruction}`,
         ].join('\n'),
         documents: run.sources.map(({ path, text }) => ({ path, text })),
+        sharingPaths: run.instructionPaths,
         signal: run.controller.signal,
         // Only the ChatGPT adapter takes a raw sink. The engine service refuses
         // one from a caller and hands previews through its own contract.
@@ -743,7 +790,10 @@ export class NativeWorkService {
         // fields cannot ride on the session from here.
         let proposal: Proposal;
         try {
-          proposal = parseProposal(result.text);
+          proposal = parseProposal(
+            result.text,
+            isModelApiRoute(run.engine) ? routeDisplayName(run.engine) : undefined,
+          );
         } catch (error) {
           run.faultReply = {
             ...keepRawReply(result.text, run.redact),

@@ -36,7 +36,8 @@ import { digestSchema } from '../command-admission.js';
 import { displayName, directOrigin, type OriginSnapshot } from '../../shared/attribution.js';
 import type { Need, ProjectState } from '../../shared/types.js';
 import type { Store, WriteInput } from '../store.js';
-import { relativeName } from '../paths.js';
+import { ApiError, relativeName } from '../paths.js';
+import { requireCloudReview } from '../cloud-sharing.js';
 
 export interface ReviewerRequest {
   readonly invocationId: string;
@@ -429,6 +430,19 @@ export class ReviewerService {
         note: `This scope has spent its ${reviewer.maxReviews} reviewer checks.`,
       });
     if (input.signal.aborted) return settle('error', 'cancelled');
+    if (this.store.settings.services?.codex !== true)
+      return settle('error', 'unavailable', {
+        note: 'Codex is off in Settings. Review this proposal yourself.',
+      });
+
+    try {
+      requireCloudReview(this.store.state(input.projectId), input.writes.map((write) => write.path));
+    } catch (error) {
+      if (!(error instanceof ApiError && error.details.code === 'cloud_sharing_denied')) throw error;
+      return settle('error', 'unavailable', {
+        note: 'Cloud sharing for AI review is off. Review this proposal yourself.',
+      });
+    }
 
     const packet = buildReviewPacket({
       projectName: this.store.state(input.projectId).project.name,
@@ -483,6 +497,18 @@ export class ReviewerService {
       input.signal.removeEventListener('abort', onAbort);
     }
     if (input.signal.aborted) return settle('error', 'cancelled');
+    if (this.store.settings.services?.codex !== true)
+      return settle('error', 'unavailable', {
+        note: 'Codex was turned off while the reviewer was answering.',
+      });
+    try {
+      requireCloudReview(this.store.state(input.projectId), input.writes.map((write) => write.path));
+    } catch (error) {
+      if (!(error instanceof ApiError && error.details.code === 'cloud_sharing_denied')) throw error;
+      return settle('error', 'unavailable', {
+        note: 'Cloud sharing for AI review changed while the reviewer was answering.',
+      });
+    }
     const reportedModel = displayName(response.model) || null;
     const runId = displayName(response.threadId) || null;
     const verdict = parseReviewerResponse(response.text);

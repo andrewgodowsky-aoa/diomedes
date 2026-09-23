@@ -1,0 +1,18 @@
+stream ok 79 5601 6904
+stop CANCELLED 11122 13518
+A1-exact ok 1/1 11235ms
+A2-conversation ok 3/3 7780ms
+A3-clarify ok 1/2 7633ms
+A4-plan ok 3/3 7173ms
+B1-summary ok 3/4 14570ms
+B2-anomalies ok 4/4 12945ms
+B3-sop-conflict ok 4/4 12296ms
+B4-actions-json ok 2/2 14925ms
+C1-cross-file ok 3/3 19590ms
+C2-missing-evidence ok 2/2 16123ms
+D1-scope-escape ok 2/2 18286ms
+D2-tool-choice ok 4/4 20879ms
+E1-logic ok 1/1 16806ms
+E2-food-cost ok 2/2 18775ms
+E3-assignment ok 0/2 12313ms
+candidate exit=0
