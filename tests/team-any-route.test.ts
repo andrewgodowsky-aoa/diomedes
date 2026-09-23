@@ -631,6 +631,42 @@ describe('a Claude Code member runs through Native Work with its token leased fo
   });
 });
 
+describe('a wake runs the member as recorded', () => {
+  test('after its thread ran on another route, a wake still asks for the member’s own route and model', async () => {
+    const seenRuns: { engine?: string; model?: string; team: boolean }[] = [];
+    generator = vi.fn(async (input: Parameters<NativeGenerator>[0]) => {
+      seenRuns.push({ engine: input.engine, model: input.model, team: Boolean(input.team) });
+      return { text: JSON.stringify({ summary: 'Nothing to change', changes: [] }), model: input.model ?? 'm' };
+    });
+    await open({ generator: generator as unknown as NativeGenerator });
+    await request('/settings', 'PUT', {
+      services: { codex: true, 'claude-code': true, 'claude-codeAccountRoute': 'claude-code:claude.ai' },
+    });
+    const created = await request(`/projects/${projectId}/team/members`, 'POST', {
+      name: 'Opal',
+      role: 'member',
+      engine: 'claude-code',
+      model: 'claude-test',
+    });
+    const member = created.data.member as TeamMember;
+    // The person clears the pick and sends the member's thread to ChatGPT once.
+    await store().locked(async () => {
+      const current = store().state(projectId);
+      current.conversations.find((item) => item.id === member.threadId)!.requested = null;
+      await store().persist(current);
+    });
+    const taskId = (await request(`/projects/${projectId}/tasks`, 'POST', { name: 'Plan', description: 'Plan lunch' })).data.id;
+    expect((await request(`/projects/${projectId}/work/start`, 'POST', { taskId, threadId: member.threadId, route: 'codex', consent: true, sources: [] })).status).toBe(200);
+    await until((value) => value.sessions.length === 1 && value.sessions[0].state === 'done', 'the ChatGPT run');
+    await request(`/projects/${projectId}/team/messages`, 'POST', { to: member.slotId, content: 'Plan lunch.' });
+    const woke = await request(`/projects/${projectId}/team/members/${member.slotId}/wake`, 'POST', {});
+    expect(woke.status, JSON.stringify(woke.data)).toBe(200);
+    await until((value) => value.sessions.length === 2 && value.sessions[1].state === 'done', 'the wake');
+    expect(seenRuns[0]).toMatchObject({ engine: 'codex', team: false });
+    expect(seenRuns[1]).toEqual({ engine: 'claude-code', model: 'claude-test', team: true });
+  });
+});
+
 describe('capability commands keep the route their driver needs', () => {
   test('codex-report is refused on another route with a message that names why', async () => {
     const { parseWorkCommand } = await import('../server/work-admission');

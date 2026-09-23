@@ -1048,6 +1048,14 @@ export async function createApp(options: AppOptions) {
       const refusal = teamRouteRefusal(member.engine);
       if (refusal) throw new ApiError(409, refusal);
       const state = store.state(projectId);
+      // A wake runs the member as recorded: its own route and requested model. The person may
+      // have sent the same thread to another route since, which clears the thread's pick; the
+      // member stays the authority for its own wake, so the run never asks for another model.
+      const memberThread = state.conversations.find((item) => item.id === threadId);
+      if (memberThread) {
+        memberThread.engine = member.engine as TeamRoute;
+        memberThread.requested = member.model ? { model: member.model, effort: null } : null;
+      }
       const openTask = state.tasks.find(
         (item) => item.assignedTo === member.slotId && !item.deletedAt && item.state !== 'done',
       );
