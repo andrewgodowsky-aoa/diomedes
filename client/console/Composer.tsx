@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Conversation, Mode, Route } from '../../shared/types';
+import type { ReadAccess } from '../../shared/read-access';
 import { askDraftKey } from '../components';
 import { reducedMotion, spring } from './motion';
 import { SendConfirmation } from './SendConfirmation';
@@ -46,7 +47,13 @@ interface ComposerProps {
   route: Route;
   confirmSend: boolean;
   prepareSources(text: string, failingDocument: string): Promise<string[]>;
-  onSend(text: string, failingDocument: string, failingText: string, sources: string[]): void;
+  onSend(
+    text: string,
+    failingDocument: string,
+    failingText: string,
+    sources: string[],
+    readAccess: ReadAccess,
+  ): void;
   /**
    * A playbook the person picked for the next message. Named once beside the box and
    * removable; `starter` fills the box each time `n` changes. The playbook's own text is
@@ -94,7 +101,14 @@ export function Composer({
   }, [projectId]);
   const [failingDocument, setFailingDocument] = useState('');
   const [failingText, setFailingText] = useState('');
-  const [pending, setPending] = useState<{ text: string; sources: string[]; send(): void } | null>(null);
+  const [pending, setPending] = useState<{
+    text: string;
+    sources: string[];
+    send(access: ReadAccess): void;
+  } | null>(null);
+  // What this one message may read. It starts at the selected documents each time the dialog
+  // opens and is never kept for the next message.
+  const [readAccess, setReadAccess] = useState<ReadAccess>('selected');
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState('');
   const preparingRef = useRef(false);
@@ -275,9 +289,10 @@ export function Composer({
     try {
       const selected = await prepareSources(value, doc);
       if (preparation.current !== attempt) return;
-      const send = () => onSend(value, doc, failure, selected);
+      const send = (access: ReadAccess) => onSend(value, doc, failure, selected, access);
+      setReadAccess('selected');
       if (confirmSend) setPending({ text: value, sources: selected, send });
-      else dispatch(send);
+      else dispatch(() => send('selected'));
     } catch (e) {
       if (preparation.current !== attempt) return;
       preparingRef.current = false;
@@ -417,11 +432,18 @@ export function Composer({
           sources={pending.sources}
           mode={mode}
           disabled={busy || !online}
+          readAccess={readAccess}
+          onReadAccess={setReadAccess}
           onClose={() => {
             preparingRef.current = false;
             setPending(null);
+            setReadAccess('selected');
           }}
-          onSend={() => dispatch(pending.send)}
+          onSend={() => {
+            const access = readAccess;
+            setReadAccess('selected');
+            dispatch(() => pending.send(access));
+          }}
         />
       )}
     </div>

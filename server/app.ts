@@ -121,6 +121,12 @@ import {
 import { EngineService, HOST_TEST_PROJECT } from './engines/service.js';
 import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
 import { loadApprovedReadServers, type ReadScope } from './engines/read-scope.js';
+import {
+  buildTurnReadScope,
+  closeReadGrant,
+  parseReadAccess,
+  revokeProjectReadGrants,
+} from './engines/turn-scope.js';
 import { mountInteractionRoutes } from './engines/interaction-routes.js';
 import {
   InteractionTurns,
@@ -1525,6 +1531,8 @@ export async function createApp(options: AppOptions) {
       const policy = changeCloudSharing(candidate, body(req));
       state.cloudSharing = policy;
       await store.persist(state);
+      // A turn admitted under the old sharing, even one still queued, reads nothing more.
+      revokeProjectReadGrants(projectId);
       return policy;
     }),
   );
@@ -2622,20 +2630,39 @@ export async function createApp(options: AppOptions) {
     };
   };
   /**
-   * The read-only tools an Ask or Plan turn gets (owner decision 2026-09-23):
-   * the project folder through the path trust funnel, web search, and the MCP
-   * read tools the owner approved in `<data>/read-connectors.json`. Only the
-   * host builds it, from its own project record; a missing folder means text.
+   * The read-only tools one Ask or Plan turn gets, bound to that turn and its route
+   * (`server/engines/turn-scope.ts`): web search, the MCP read tools the owner approved in
+   * `<data>/read-connectors.json`, and from the project only what this message may read. By
+   * default that is the documents the person chose, already sent inline; the whole folder only
+   * when the person asked for it on this message, on a route whose reads are answered before
+   * they run, and then only the files Cloud sharing lets that route receive. Only the host
+   * builds it, from its own project record; a missing folder means text.
    */
   const readScopeFor = async (
     projectId: string,
     mode: string,
+    turn: { route: Route; access?: unknown; documents: readonly { path: string }[] },
   ): Promise<{ readScope?: ReadScope }> => {
-    if (mode !== 'ask' && mode !== 'plan') return {};
-    // A folder the path funnel refuses, or one that is gone, leaves the turn text-only.
-    const root = await safeAbsolute(store.state(projectId).project.folder).catch(() => null);
-    if (!root || !(await fs.stat(root).then((entry) => entry.isDirectory(), () => false)))
+    const access = parseReadAccess(turn.access);
+    if (mode !== 'ask' && mode !== 'plan') {
+      if (access === 'project')
+        throw new ApiError(400, 'Only Ask and Plan can look through the project folder.');
       return {};
+    }
+    const state = store.state(projectId);
+    if (access === 'project' && !(cloudSharing(state).routes as string[]).includes(turn.route))
+      // Listing the folder shows every file name to the route, so it needs the route's grant
+      // even where a typed message alone does not (Home).
+      throw new ApiError(403, 'Cloud sharing for this route is off in this project.', {
+        code: 'cloud_sharing_denied',
+      });
+    // A folder the path funnel refuses, or one that is gone, leaves the turn text-only.
+    const root = await safeAbsolute(state.project.folder).catch(() => null);
+    if (!root || !(await fs.stat(root).then((entry) => entry.isDirectory(), () => false))) {
+      if (access === 'project')
+        throw new ApiError(409, 'This project folder is not available. Choose the documents to include instead.');
+      return {};
+    }
     let mcp: ReadScope['mcp'];
     try {
       mcp = loadApprovedReadServers(path.join(store.dataDir, 'read-connectors.json'));
@@ -2645,7 +2672,28 @@ export async function createApp(options: AppOptions) {
         'The approved read connectors file (read-connectors.json) is malformed. Fix or remove it, then send again.',
       );
     }
-    return { readScope: { root, web: true, mcp } };
+    const policy = cloudSharing(state);
+    const readScope = await buildTurnReadScope({
+      projectId,
+      mode,
+      root,
+      route: turn.route,
+      access,
+      documents: turn.documents,
+      web: true,
+      mcp,
+      shared: (policy.routes as string[]).includes(turn.route) ? policy.documents : [],
+    });
+    return readScope ? { readScope } : {};
+  };
+  /** A route with no read scope: a whole-project read asked of it is refused, not dropped. */
+  const refuseWholeProjectRead = (access: unknown): Record<string, never> => {
+    if (parseReadAccess(access) === 'project')
+      throw new ApiError(
+        409,
+        'Reading the whole project folder is not available on this route. Choose the documents to include instead.',
+      );
+    return {};
   };
   const nativeChoice = (
     engine: Exclude<Route, 'sample'>,
@@ -2768,7 +2816,11 @@ export async function createApp(options: AppOptions) {
           instructions: MODES[command.mode].instructions,
           model: selection.model,
           accountRoute,
-          ...(await readScopeFor(projectId, command.mode)),
+          ...(await readScopeFor(projectId, command.mode, {
+            route: 'claude-code',
+            access: command.readAccess,
+            documents,
+          })),
         };
       });
       const runId =
@@ -3220,7 +3272,13 @@ export async function createApp(options: AppOptions) {
             model: selection.model as string,
             ...(modelRoute && selection.effort ? { effort: selection.effort } : {}),
             accountRoute,
-            ...(modelRoute ? {} : await readScopeFor(projectId, command.mode)),
+            ...(modelRoute
+              ? refuseWholeProjectRead(command.readAccess)
+              : await readScopeFor(projectId, command.mode, {
+                  route: 'claude-code',
+                  access: command.readAccess,
+                  documents,
+                })),
             signal: options.signal,
             onPreview: (frame: TransientPreview) =>
               progress('delta', { ...frame, text: gate(frame.text) }),
@@ -3664,6 +3722,13 @@ export async function createApp(options: AppOptions) {
           'Automatic is a conversation mode. Direct execution does not accept it.',
         );
       const mode = parsedMode;
+      // What this message may read from the project, bound to it alone. Parsed before consent is
+      // asked for or anything is read; only Ask and Plan take a whole-project read.
+      const readAccess = parseReadAccess(b.readAccess);
+      if (readAccess === 'project' && mode !== 'ask' && mode !== 'plan')
+        throw new ApiError(400, 'Only Ask and Plan can look through the project folder.');
+      if (readAccess === 'project' && serviceRoute === 'sample')
+        throw new ApiError(409, 'The sample route reads nothing from the project folder.');
       // A Small Business skill the person picked. Checked here, before consent is asked for or
       // anything is read, so a skill that cannot run says why instead of a send being confirmed
       // for nothing. The section itself is assembled once the selected documents are known,
@@ -3890,9 +3955,16 @@ export async function createApp(options: AppOptions) {
         // The signal exists before Stop is shown, so a Stop during the read-scope lookup still lands.
         const signal = connectionSignal(res);
         progress('started');
+        // The turn's read grant ends with the turn.
+        let grant: string | undefined;
         try {
           requireCloudSharing(store.state(projectId), serviceRoute, prepared.documents.map((doc) => doc.path));
-          const readScope = await readScopeFor(projectId, mode);
+          const readScope = await readScopeFor(projectId, mode, {
+            route: serviceRoute,
+            access: readAccess,
+            documents: prepared.documents,
+          });
+          grant = readScope.readScope?.grant;
           const result = await engines.generate(serviceRoute, {
             projectId,
             threadId: prepared.conversationId,
@@ -3915,6 +3987,7 @@ export async function createApp(options: AppOptions) {
             verified: true,
           };
         } finally {
+          closeReadGrant(grant);
           progress('ended');
         }
       } else if (serviceRoute === 'codex') {
@@ -3969,7 +4042,11 @@ export async function createApp(options: AppOptions) {
             // Stop closes the request, and this ends the ChatGPT turn with it.
             signal,
             onDelta,
-            ...(await readScopeFor(projectId, mode)),
+            ...(await readScopeFor(projectId, mode, {
+              route: 'codex',
+              access: readAccess,
+              documents: prepared.documents,
+            })),
           });
           answer = result.text;
           helper = codexHelper(result);

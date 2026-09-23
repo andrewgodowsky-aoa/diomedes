@@ -1111,6 +1111,7 @@ export function Shell({
     failing?: { document?: string; text?: string },
     sources?: string[],
     skill?: string,
+    readAccess?: import('../../shared/read-access').ReadAccess,
   ) {
     askControl.current?.abort();
     const control = new AbortController();
@@ -1132,6 +1133,8 @@ export function Shell({
             ...(sources ? { sources } : {}),
             ...(mode === 'fix' && failing ? { failing } : {}),
             ...(skill ? { skill } : {}),
+            // Sent only when the person chose it for this message; absent means the selection.
+            ...(readAccess === 'project' ? { readAccess } : {}),
           },
           control.signal,
         );
@@ -1733,7 +1736,7 @@ export function Shell({
                   : null
               }
               onClearSkill={() => setSkillDraft(null)}
-              onSend={(m, text, r, failing, sources) =>
+              onSend={(m, text, r, failing, sources, readAccess) =>
                 void send(
                   selected,
                   m,
@@ -1744,6 +1747,7 @@ export function Shell({
                   skillDraft?.threadId === selected.id && (m === 'ask' || m === 'plan')
                     ? skillDraft.skill.id
                     : undefined,
+                  readAccess,
                 )
               }
               onResolve={(n, res, allow) => void resolveNeed(n, res, allow)}
