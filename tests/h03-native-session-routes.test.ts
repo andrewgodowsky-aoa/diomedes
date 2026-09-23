@@ -195,6 +195,16 @@ beforeEach(async () => {
   await api('/ai/check/claude-code', 'POST', {});
   await api('/ai/select', 'POST', { engine: 'claude-code', model });
   project = await api<Project>('/projects', 'POST', { name: 'Native session fixture' });
+  // Default-deny cloud sharing: this synthetic project explicitly grants the
+  // claude-code route with no source documents, plus conversation history for
+  // follow-up turns and resume on the same native lineage (sources [] throughout).
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0,
+    routes: ['claude-code'],
+    documents: [],
+    shareConversationHistory: true,
+    shareReviewPackets: false,
+  });
   thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
   const store = app.locals.store as Store;
   const state = store.state(project.id);
@@ -316,6 +326,15 @@ test('routes refuse missing consent, request instructions, changed source hashes
   await api(`/projects/${project.id}/documents/create`, 'POST', {
     path: 'selected.md',
     text: 'A bounded source',
+  });
+  // The stale-hash check runs after the sharing check, so this fixture grants
+  // selected.md to preserve the exact 409 (not 403) assertion below.
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 1,
+    routes: ['claude-code'],
+    documents: ['selected.md'],
+    shareConversationHistory: true,
+    shareReviewPackets: false,
   });
   expect(
     (
