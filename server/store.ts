@@ -2,6 +2,7 @@ import { assertReplay, findCommand } from './command-admission.js';
 import { validateTaskReceipts } from './task-admission.js';
 import { ScopeGrants, validateScopeGrants } from './trust/scope-grants.js';
 import { validateAgentResolutions } from './agents.js';
+import { upgradeCloudSharing } from './cloud-sharing.js';
 import { applicationOrigin, formatOrigin, type OriginSnapshot } from '../shared/attribution.js';
 import { diomedesThread } from '../shared/diomedes-thread.js';
 import { CONVERSATION_DEFAULT_ROUTE, HOST_TEST_PROJECT } from '../shared/engines.js';
@@ -435,6 +436,9 @@ export class Store extends EventEmitter {
       for (const conversation of state.conversations ?? [])
         migrateConversation(conversation, state.tasks ?? [], loadTime);
       migrateTeam(state);
+      // Once, for a project an earlier build left without a sharing record: keep the routes it
+      // had already sent to, never widening what they received. Persisted with the loop below.
+      upgradeCloudSharing(state, loadTime, this.isHomeProject(project.id));
       state.teamMeta ??= emptyTeamMeta();
       state.teamMeta.idempotency ??= {};
       state.teamMeta.blockedBy ??= {};
@@ -492,6 +496,7 @@ export class Store extends EventEmitter {
       for (const conversation of fresh.conversations ?? [])
         migrateConversation(conversation, fresh.tasks ?? [], loadTime);
       migrateTeam(fresh);
+      upgradeCloudSharing(fresh, loadTime, this.isHomeProject(id));
       validateTaskReceipts(fresh);
       validateWorkReceipts(fresh);
       validateApprovalReceipts(fresh);
