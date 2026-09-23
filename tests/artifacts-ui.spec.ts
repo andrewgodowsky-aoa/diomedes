@@ -8,15 +8,22 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { FRAME_CSP } from '../client/console/artifact-frame';
+import {
+  REFUSED_IMAGE,
+  REFUSED_MATH_HERE,
+  REFUSED_MATH_MARKUP,
+  REFUSED_PARTICIPANT_DETAILS,
+} from '../client/console/mermaid-render';
 import { APP_CSP } from '../scripts/app-csp';
 import type { UpdateStatusSnapshot } from '../shared/app-updates';
-import type { DocumentContent, Project, ProjectState } from '../shared/types';
+import type { DocumentContent, Project, ProjectState, Task } from '../shared/types';
 import {
   ARTIFACT_ENGINE,
   ARTIFACT_MODEL,
   artifactEngine,
   artifactTransport,
   heldUpdate,
+  PIXEL,
   probes,
   UPDATE_RECEIVED,
   UPDATE_SIZE,
@@ -293,6 +300,12 @@ test.afterEach(({ tunnels }) => {
 async function freshProject(name: string): Promise<Project> {
   const project = await api<Project>('/projects', 'POST', { name });
   await api(`/projects/${project.id}/threads`, 'POST', { name: `${name} thread`, mode: 'ask' });
+  await onConsole(project);
+  return project;
+}
+
+/** Settings that open the Console on this project, the way a person who finished onboarding has them. */
+async function onConsole(project: Project): Promise<void> {
   await api('/settings', 'PUT', {
     surface: 'console',
     detail: 'technical',
@@ -305,7 +318,6 @@ async function freshProject(name: string): Promise<Project> {
       completedAt: new Date().toISOString(),
     },
   });
-  return project;
 }
 
 const state = (project: Project) => api<ProjectState>(`/projects/${project.id}/state`);
@@ -1124,6 +1136,268 @@ test('a hostile picture and hostile diagram labels load nothing and run nothing'
   await chips(page, 'Image', 'Shop sign').click();
   await expect(panel.getByRole('heading', { name: 'Shop sign', exact: true })).toBeVisible();
   await expect(picture).toHaveAttribute('srcdoc', /Linen Co\./);
+});
+
+// ---- Mermaid math and pictures (artifacts v2, E1) ---------------------------------------------
+//
+// Math is drawn as MathML, and only where the page carries the app's policy: the built index.html
+// has one (scripts/app-csp.ts), the development server has none. A picture is drawn only when the
+// diagram carries it as a data:image URL. Everything else is refused before Mermaid lays the
+// diagram out in the Console's own document.
+
+/** Every request the Console's document makes for a local document read, from now on. */
+function documentReads(page: Page): string[] {
+  const reads: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/documents/read')) reads.push(request.url());
+  });
+  return reads;
+}
+
+const refusedDiagram = (panel: Locator) =>
+  panel.getByRole('group', { name: 'This diagram could not be drawn.', exact: true }).locator('.art-error-problem');
+
+test('math in a diagram is drawn as MathML on the built Console, and nothing is fetched for it', async ({ page }, testInfo) => {
+  const project = await freshProject('Price formula');
+  await openConsole(page, project);
+  // What turns math on: the policy the build writes first in the head.
+  await expect(page.locator('head > meta[http-equiv="Content-Security-Policy"]')).toHaveAttribute('content', APP_CSP);
+  const reads = documentReads(page);
+  await send(page, 'MATH for the monthly price');
+  await chips(page, 'Diagram', 'Price formula').click();
+  const panel = pane(page);
+  const frame = panel.locator('iframe[title="Diagram: Price formula"]');
+  await expect(frame).toHaveAttribute('sandbox', '');
+  await expect.poll(async () => (await stillFrame(page, frame)).elements).toContain('math');
+  const drawn = await stillFrame(page, frame);
+  // Both labels are MathML: a product with its brackets, and a fraction.
+  expect(drawn.elements.filter((name) => name === 'math')).toHaveLength(2);
+  for (const name of ['mfrac', 'mi', 'mn', 'mo']) expect(drawn.elements).toContain(name);
+  // MathML only: no KaTeX HTML (it would need KaTeX's stylesheet and fonts), no TeX source left
+  // in an annotation, and nothing that links, loads or runs.
+  const srcdoc = (await frame.getAttribute('srcdoc')) ?? '';
+  expect(srcdoc).not.toContain('katex-html');
+  for (const name of ['annotation', 'semantics', 'mglyph', 'a', 'img', 'image', 'script'])
+    expect(drawn.elements).not.toContain(name);
+  const linking = drawn.tags.flatMap(({ name, attributes }) =>
+    Object.keys(attributes)
+      .filter((attribute) => /(^|:)(href|src)$/i.test(attribute))
+      .map((attribute) => `<${name} ${attribute}>`),
+  );
+  expect(linking).toEqual([]);
+  expect(drawn.text).toContain('Monthly price');
+  expect(reads).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath('math-in-panel.png'), animations: 'disabled' });
+});
+
+test('math beside markup, and a picture from a link, are refused before Mermaid draws them', async ({ page }) => {
+  const project = await freshProject('Formula checks');
+  // A document of this project, read from the Console's own origin, which its policy allows.
+  await api(`/projects/${project.id}/documents/create`, 'POST', { path: 'Notes.md', text: 'Private notes.\n' });
+  probes.read = `/api/projects/${project.id}/documents/read?path=Notes.md`;
+  await openConsole(page, project);
+  const reads = documentReads(page);
+  const panel = pane(page);
+
+  await send(page, 'MIXED math and markup');
+  await chips(page, 'Diagram', 'Formula with markup').click();
+  await expect(refusedDiagram(panel)).toHaveText(REFUSED_MATH_MARKUP);
+  await expect(panel.locator('iframe')).toHaveCount(0);
+
+  await send(page, 'REMOTE logo');
+  await chips(page, 'Diagram', 'Linked logo').click();
+  await expect(refusedDiagram(panel)).toHaveText(REFUSED_IMAGE);
+  await expect(panel.locator('iframe')).toHaveCount(0);
+
+  // Nothing asked for the document, from the Console's document or from anywhere else.
+  await page.waitForTimeout(SETTLE_MS);
+  expect(reads).toEqual([]);
+});
+
+test("a sequence diagram that gives a participant a picture from a link is refused, and nothing asks for it", async ({ page }) => {
+  const project = await freshProject('Courier desk');
+  // A document of this project, read from the Console's own origin, which its policy allows.
+  await api(`/projects/${project.id}/documents/create`, 'POST', { path: 'Notes.md', text: 'Private notes.\n' });
+  probes.read = `/api/projects/${project.id}/documents/read?path=Notes.md`;
+  await openConsole(page, project);
+  const reads = documentReads(page);
+  const panel = pane(page);
+  await send(page, 'ICON for the parcel handoff');
+  await chips(page, 'Diagram', 'Parcel handoff').click();
+  // Whichever comes, the refusal or a drawing, then anything the diagram asked for on the way.
+  await expect(refusedDiagram(panel).or(panel.locator('iframe'))).toHaveCount(1);
+  await page.waitForTimeout(SETTLE_MS);
+  expect(reads).toEqual([]);
+  await expect(refusedDiagram(panel)).toHaveText(REFUSED_PARTICIPANT_DETAILS);
+  await expect(panel.locator('iframe')).toHaveCount(0);
+});
+
+test('a picture written into a diagram as a data:image URL is drawn in its frame', async ({ page }) => {
+  const project = await freshProject('Shop logo');
+  await openConsole(page, project);
+  await send(page, 'PHOTO of the shop logo');
+  await chips(page, 'Diagram', 'Shop logo').click();
+  const frame = pane(page).locator('iframe[title="Diagram: Shop logo"]');
+  await expect(frame).toHaveAttribute('sandbox', '');
+  await expect.poll(async () => (await stillFrame(page, frame)).elements).toContain('image');
+  const drawn = await stillFrame(page, frame);
+  expect(drawn.tags.filter((tag) => tag.name === 'image').map((tag) => tag.attributes.href)).toEqual([PIXEL]);
+  for (const word of ['Logo', 'Shop front']) expect(drawn.text).toContain(word);
+});
+
+test('a page without the app policy draws no math: the policy in the page is the signal', async ({ page }) => {
+  const bare = await withoutAppPolicy(page);
+  const project = await freshProject('Formula without policy');
+  await openConsole(page, project);
+  expect(bare.served()).toBeGreaterThan(0);
+  await expect(page.locator('head > meta[http-equiv="Content-Security-Policy"]')).toHaveCount(0);
+  await send(page, 'MATH for the monthly price');
+  await chips(page, 'Diagram', 'Price formula').click();
+  const panel = pane(page);
+  await expect(refusedDiagram(panel)).toHaveText(REFUSED_MATH_HERE);
+  await expect(panel.locator('iframe')).toHaveCount(0);
+  await bare.restore();
+});
+
+test('the development server carries no policy, so math stays off there', async ({ page, baseURL }) => {
+  // The suite's own Vite development server (playwright.config.ts, webServer), not this spec's
+  // built bundle. Its index.html has no policy: the plugin that writes one applies at build only.
+  await page.goto(baseURL!);
+  await expect(page.locator('head > meta[http-equiv="Content-Security-Policy"]')).toHaveCount(0);
+  // The Console's own renderer, as the development server serves it.
+  await page.addScriptTag({
+    type: 'module',
+    content: [
+      "import { renderDiagram } from '/client/console/mermaid-render.ts';",
+      "import { NECTOVIA_TOKENS } from '/client/console/artifact-frame.ts';",
+      "window.__drawn = renderDiagram('flowchart LR\\n  A[\"$$x^2$$\"] --> B[Price]', NECTOVIA_TOKENS);",
+    ].join('\n'),
+  });
+  await page.waitForFunction(() => '__drawn' in window);
+  const drawn = await page.evaluate(() => (window as unknown as { __drawn: Promise<unknown> }).__drawn);
+  expect(drawn).toEqual({ ok: false, problem: REFUSED_MATH_HERE });
+});
+
+test('what Mermaid drew keeps a picture only when it is written in, and a <use> only of the drawing itself', async ({ page, baseURL }) => {
+  // The Console's own scan of what Mermaid returns (withoutFetchingSvg), as the development server
+  // serves it, run on drawings written by hand. It parses them inertly; so does this test.
+  const svg = (body: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">${body}</svg>`;
+  const READ = '/api/projects/p/documents/read?path=a.md';
+  const drawings: Array<[string, string[]]> = [
+    // A picture written into the drawing stays, whichever href spells it.
+    [svg(`<image href="${PIXEL}" width="4" height="4"/>`), [`image ${PIXEL}`]],
+    [svg(`<image xlink:href="${PIXEL}" width="4" height="4"/>`), [`image ${PIXEL}`]],
+    // Every other picture goes: another site, the local service, a file beside the page, an SVG,
+    // and a written one that also names a link.
+    [svg('<image href="https://example.com/x.png"/>'), []],
+    [svg(`<image xlink:href="${READ}"/>`), []],
+    [svg('<image href="x.png"/>'), []],
+    [svg('<image href="data:image/svg+xml;base64,PHN2Zz4="/>'), []],
+    [svg(`<image href="${PIXEL}" xlink:href="https://example.com/x.png"/>`), []],
+    [svg('<IMAGE HREF="https://example.com/x.png"/>'), []],
+    // A filter's picture, by the same rule.
+    [
+      svg(`<filter id="f"><feImage href="https://example.com/x.png"/><feImage href="${PIXEL}"/></filter><rect filter="url(#f)" width="4" height="4"/>`),
+      [`feImage ${PIXEL}`],
+    ],
+    // A <use> stays only when it points into the drawing itself.
+    [svg('<circle id="dot" r="1"/><use href="#dot"/><use xlink:href="#dot"/>'), ['use #dot', 'use #dot']],
+    [svg(`<use href="https://example.com/s.svg#x"/><use xlink:href="${READ}#x"/>`), []],
+    // A shadow root written as markup, which a frame would attach and draw.
+    [`<div><template shadowrootmode="open">${svg('<image href="https://example.com/x.png"/>')}</template></div>`, []],
+  ];
+  await page.goto(baseURL!);
+  await page.addScriptTag({
+    type: 'module',
+    content: ["import { withoutFetchingSvg } from '/client/console/mermaid-render.ts';", 'window.__scan = withoutFetchingSvg;'].join('\n'),
+  });
+  await page.waitForFunction(() => '__scan' in window);
+  const kept = await page.evaluate((written) => {
+    const scan = (window as unknown as { __scan: (drawing: string) => string }).__scan;
+    // Every picture, filter picture and <use> left, with its hrefs, template contents included.
+    const references = (root: ParentNode): string[] =>
+      [...root.querySelectorAll('*')].flatMap((element) => [
+        ...(/^(image|feimage|use)$/i.test(element.localName)
+          ? [[element.localName, ...[...element.attributes].filter((a) => a.localName === 'href').map((a) => a.value)].join(' ')]
+          : []),
+        ...(element instanceof HTMLTemplateElement ? references(element.content) : []),
+      ]);
+    return written.map((drawing) => references(new DOMParser().parseFromString(`<!doctype html><body>${scan(drawing)}`, 'text/html').body));
+  }, drawings.map(([drawing]) => drawing));
+  expect(kept).toEqual(drawings.map(([, left]) => left));
+});
+
+// ---- the progress board (artifacts v2, (d)) ---------------------------------------------------
+
+test('a thread on a running plan shows the plan counted from its tasks in the side panel, and follows them', async ({ page }, testInfo) => {
+  const project = await api<Project>('/projects', 'POST', { name: 'Launch week' });
+  const plan = 'plans/Launch week.md';
+  await api(`/projects/${project.id}/documents/create`, 'POST', {
+    path: plan,
+    kind: 'plan',
+    text: '# Launch week\n\n- Draft the offer\n- Build the landing page\n- Send the announcement\n',
+  });
+  const { found } = await api<{ found: Array<{ line: number; name: string; owner: string }> }>(
+    `/projects/${project.id}/plans/find-tasks`,
+    'POST',
+    { path: plan },
+  );
+  const { tasks } = await api<{ tasks: Task[] }>(`/projects/${project.id}/plans/add-tasks`, 'POST', {
+    path: plan,
+    items: found,
+  });
+  expect(tasks.map((task) => task.name)).toEqual(['Draft the offer', 'Build the landing page', 'Send the announcement']);
+  await api(`/projects/${project.id}/threads`, 'POST', {
+    name: 'Launch plan',
+    mode: 'plan',
+    attachedTo: { kind: 'plan', ref: plan },
+  });
+  // The first task is done, and the second is running on the sample route, waiting on the person.
+  await api(`/projects/${project.id}/tasks/${tasks[0].id}`, 'PUT', { state: 'done' });
+  await api(`/projects/${project.id}/work/start`, 'POST', { taskId: tasks[1].id, route: 'sample' });
+  await onConsole(project);
+  await openConsole(page, project);
+
+  const board = page.getByRole('complementary', { name: 'Progress', exact: true });
+  await expect(board).toBeVisible();
+  await expect(board.getByRole('heading', { name: 'Launch plan', exact: true })).toBeVisible();
+  const bar = board.getByRole('progressbar', { name: 'Tasks from Launch week.md', exact: true });
+  await expect(bar).toHaveAttribute('aria-valuetext', '1 of 3 tasks done');
+  const steps = board.getByRole('listitem');
+  await expect(steps).toHaveText([/Draft the offer/, /Build the landing page/, /Send the announcement/]);
+  await expect(steps.nth(1)).toContainText('Needs your decision');
+  await page.screenshot({ path: testInfo.outputPath('progress-board.png'), animations: 'disabled' });
+
+  // Another task is done: the board follows the tasks event, with no reload.
+  await api(`/projects/${project.id}/tasks/${tasks[2].id}`, 'PUT', { state: 'done' });
+  await expect(bar).toHaveAttribute('aria-valuetext', '2 of 3 tasks done');
+
+  // A reload rebuilds it from the same records.
+  await openConsole(page, project);
+  await expect(bar).toHaveAttribute('aria-valuetext', '2 of 3 tasks done');
+
+  // Close puts it away while it counts the same tasks, across a reload too.
+  await board.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(board).toHaveCount(0);
+  await openConsole(page, project);
+  await expect(page.locator('button.console-thread', { hasText: 'Launch plan' })).toBeVisible();
+  await page.waitForTimeout(SETTLE_MS);
+  await expect(board).toHaveCount(0);
+});
+
+// ---- the thread list's preview line (artifacts v2, E3) ----------------------------------------
+
+test('the thread list reads a reply that is only a diagram by its title, never by its fence', async ({ page }) => {
+  const project = await freshProject('Fence reply');
+  await openConsole(page, project);
+  await send(page, 'FENCE only, please');
+  await expect(chips(page, 'Diagram', 'Van route')).toBeVisible();
+  const row = page
+    .getByRole('navigation', { name: 'Threads and views', exact: true })
+    .locator('button.console-thread', { hasText: 'Fence reply thread' });
+  await expect(row.locator('small')).toHaveText('Diagram: Van route');
+  await expect(row).not.toContainText('`');
 });
 
 test('live text holds an artifact back until its answer is saved', async ({ page }, testInfo) => {

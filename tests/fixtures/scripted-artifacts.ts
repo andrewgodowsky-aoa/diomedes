@@ -71,11 +71,58 @@ export const UPDATE_CARD = { kind: 'app', key: 'update-progress' };
  * Where the hostile fixtures below point, set by tests/artifacts-ui.spec.ts once its observers
  * are listening: a UDP socket that records any STUN request, and a path on the spec's own server
  * that records any request made to it. `{{STUN}}` and `{{LEAK}}` in an answer are replaced by them.
+ * `{{READ}}` is a local document read the spec sets per test: the Console's own origin, which the
+ * app's policy allows, so only the diagram checks stand between a diagram and that request.
  */
-export const probes = { stun: 'stun:127.0.0.1:9', leak: 'http://127.0.0.1:9/leak' };
+export const probes = { stun: 'stun:127.0.0.1:9', leak: 'http://127.0.0.1:9/leak', read: '/api/projects/none/documents/read?path=none.md' };
 
 /** A 1x1 GIF: an image that loads under the frame's policy, so its onload would fire if it could. */
-const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+export const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+/** A diagram with math in two labels: drawn as MathML where the page carries the app's policy. */
+const FORMULA = [
+  '%% artifact: id=price-formula title="Price formula"',
+  'flowchart LR',
+  '  A["$$p = c(1 + m)$$"] --> B["$$\\frac{p}{12}$$"]',
+  '  B --> C[Monthly price]',
+];
+
+/** Math beside markup of the label's own: an image that would read a local document. */
+const FORMULA_WITH_MARKUP = [
+  '%% artifact: id=formula-markup title="Formula with markup"',
+  'flowchart LR',
+  '  A["$$x^2$$ <img src=\'{{READ}}\'>Area"] --> B[Done]',
+];
+
+/** A picture written into the diagram as a data:image URL: the one kind of picture drawn. */
+const LOGO = [
+  '%% artifact: id=shop-logo title="Shop logo"',
+  'flowchart LR',
+  `  A@{ img: "${PIXEL}", label: "Logo", w: 48, h: 48 }`,
+  '  A --> B[Shop front]',
+];
+
+/** A picture from a link: a local document read, which the app's own policy would allow. */
+const LINKED_LOGO = [
+  '%% artifact: id=linked-logo title="Linked logo"',
+  'flowchart LR',
+  '  A@{ img: "{{READ}}", label: "Logo" }',
+  '  A --> B[Shop front]',
+];
+
+/**
+ * A participant given a picture from a link by a sequence diagram's `properties` line: a local
+ * document read, which Mermaid would ask for from the Console's own document as it laid the
+ * diagram out.
+ */
+const ACTOR_PICTURE = [
+  '%% artifact: id=parcel-handoff title="Parcel handoff"',
+  'sequenceDiagram',
+  '  participant S as Shop',
+  '  participant C as Courier',
+  '  properties S: {"icon": "{{READ}}"}',
+  '  S->>C: Parcel ready',
+];
 
 /**
  * A page that tries every way out of its frame, and writes in its own DOM what it did. No script
@@ -231,12 +278,22 @@ export const ANSWERS: Readonly<Record<string, string>> = {
   PICTURE: answer('## Shop sign', fence('svg', HOSTILE_PICTURE)),
   LABEL: answer('## Hostile labels', fence('mermaid', HOSTILE_LABELS)),
   STREAM: answer('Here is the route.', fence('mermaid', ROUTE)),
+  MATH: answer('Here is how the monthly price is worked out.', fence('mermaid', FORMULA)),
+  MIXED: answer('Here is the area.', fence('mermaid', FORMULA_WITH_MARKUP)),
+  PHOTO: answer('Here is the logo.', fence('mermaid', LOGO)),
+  REMOTE: answer('Here is the logo from the shared folder.', fence('mermaid', LINKED_LOGO)),
+  ICON: answer('Here is who hands the parcel to whom.', fence('mermaid', ACTOR_PICTURE)),
+  // A reply that is the diagram alone: no line of prose before or after the fence.
+  FENCE: fence('mermaid', ROUTE),
 };
 
 export function artifactAnswer(prompt: string): string {
   const word = /^[A-Z]+/.exec(prompt.trim())?.[0] ?? '';
   const text = ANSWERS[word] ?? `You said: ${prompt}`;
-  return text.replaceAll('{{STUN}}', probes.stun).replaceAll('{{LEAK}}', probes.leak);
+  return text
+    .replaceAll('{{STUN}}', probes.stun)
+    .replaceAll('{{LEAK}}', probes.leak)
+    .replaceAll('{{READ}}', probes.read);
 }
 
 // ---- the home conversation: AWS Bedrock (Luna) at its provider boundary ---------------------

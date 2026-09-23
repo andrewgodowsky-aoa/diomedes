@@ -88,6 +88,9 @@ import { BoardView } from './BoardView';
 import { FilesPane, DEFAULT_WIDTH, clampWidth } from './FilesPane';
 import { threadRun, useArtifactHost } from './artifact-panel';
 import { saveArtifact } from './artifact-save';
+import { boardFor } from './board-model';
+import { useStartedWork } from './ProgressBoard';
+import { previewLine } from '../../shared/thread-preview';
 import { ActivityOverview } from './ActivityOverview';
 import { projectActivity, type ActivityRow } from './activity';
 import { TeamView } from './TeamView';
@@ -668,6 +671,25 @@ export function Shell({
   const selected = selectedId
     ? (state?.conversations.find((c) => c.id === selectedId) ?? null)
     : null;
+  // The thread's progress board: its attached plan's tasks and the work its
+  // conversation started, counted from records only (board-model.ts). The
+  // tasks and session events reload `state`, so the board moves with them.
+  const started = useStartedWork(projectId, selected, state?.tasks, state?.sessions);
+  const board = useMemo(
+    () =>
+      state && selected
+        ? boardFor({
+            projectId,
+            thread: selected,
+            started,
+            tasks: state.tasks,
+            sessions: state.sessions,
+            needs: state.needs,
+            changes: state.changes,
+          })
+        : null,
+    [projectId, selected, started, state],
+  );
   // The third column also hosts the artifact panel: a chip in the thread opens
   // it, and Files and the panel keep their own state behind one another.
   const artifactHost = useArtifactHost({
@@ -680,6 +702,8 @@ export function Shell({
     onSave: (record) => saveArtifact(projectId, record),
     onShowFile: (path) => openDocument(path),
     session: threadRun(state?.sessions, selected),
+    board,
+    boardTitle: state && selected ? threadName(selected, state) : undefined,
   });
   useEffect(() => {
     if (selected) setMode(selected.mode ?? 'ask');
@@ -1441,12 +1465,14 @@ export function Shell({
   const project = state.project;
   const railItems: RailItem[] = threads.map((c) => {
     const task = c.taskId ? state.tasks.find((t) => t.id === c.taskId) : null;
-    const lastTurn = c.turns.at(-1)?.text.trim() ?? '';
+    // The last turn as one plain line: a fence reads as its artifact's title,
+    // never as its source. A turn with no line to give (a list) says nothing yet.
+    const preview = previewLine(c.turns.at(-1)?.text ?? '', 60);
     return {
       id: c.id,
       name: threadName(c, state),
       time: time(threadTime(c)).toLowerCase(),
-      sub: task ? task.name : lastTurn ? lastTurn.slice(0, 60) : 'Nothing said yet',
+      sub: task ? task.name : preview || 'Nothing said yet',
     };
   });
   const openTasks = state.tasks.filter((t) => t.state !== 'done').length;

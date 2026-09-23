@@ -1,0 +1,2 @@
+<!DOCTYPE svg [<!ENTITY x "console.log(1)">]>
+<svg xmlns="http://www.w3.org/2000/svg"><text y="10">&x;</text></svg>
