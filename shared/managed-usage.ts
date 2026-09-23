@@ -648,3 +648,449 @@ export function periodIdFor(at: string): string {
   if (Number.isNaN(when.getTime())) throw new RangeError('That is not a time.');
   return `${when.getUTCFullYear()}-${String(when.getUTCMonth() + 1).padStart(2, '0')}`;
 }
+
+// --- credits, parent-job caps and the usage projection ------------------------
+//
+// NC-2026-09-22.1 (Phases C and G). Credits replace the literal request count
+// as the unit a customer reads; the micro-USD records above stay the ledger's
+// only money. Nothing below activates billing, a plan or a checkout.
+
+/**
+ * One credit is the website's internal $0.10 eligible-inference conversion.
+ *
+ * A credit is fractional cumulative usage. It is not a call, a request or a
+ * task: one task can use a fraction of a credit or many credits, depending on
+ * the planner, worker, reviewer, advisor, reasoning and cache usage it needed.
+ */
+export const CREDIT_MICRO_USD = 100_000;
+
+/** Credits as exact money. Refuses anything finer than one micro-USD. */
+export function creditAmount(credits: number): MicroUsd {
+  if (!Number.isFinite(credits)) throw new RangeError('That is not a number of credits.');
+  const scaled = credits * CREDIT_MICRO_USD;
+  const whole = Math.round(scaled);
+  if (Math.abs(scaled - whole) > 1e-6)
+    throw new RangeError(`${credits} credits is finer than one micro-USD.`);
+  return micro(whole);
+}
+
+/** Money as a fractional credit count, for display only. */
+export function creditsFor(amount: MicroUsd): number {
+  return amount / CREDIT_MICRO_USD;
+}
+
+/**
+ * Credits as text: at most two decimals, grouped thousands, and never "0" for
+ * an amount that is not zero.
+ */
+export function formatCredits(amount: MicroUsd): string {
+  if (amount === 0) return '0';
+  const hundredths = Math.round((amount * 100) / CREDIT_MICRO_USD);
+  if (hundredths === 0) return 'less than 0.01';
+  const whole = Math.floor(hundredths / 100);
+  const fraction = hundredths % 100;
+  const grouped = whole.toLocaleString('en-US');
+  if (fraction === 0) return grouped;
+  return `${grouped}.${String(fraction).padStart(2, '0').replace(/0$/, '')}`;
+}
+
+/**
+ * Whether a plan's monthly credit figure is a published anchor, an owner
+ * direction still awaiting approval, or an engineering proposal.
+ */
+export type CreditGrantStatus = 'published' | 'directed-unapproved' | 'proposed';
+
+export interface MonthlyCreditGrant {
+  readonly planId: string;
+  readonly label: string;
+  /** Null where no figure is approved. A null is not zero. */
+  readonly monthlyCredits: number | null;
+  readonly status: CreditGrantStatus;
+  /** Recording a grant never makes it sellable; that is a separate gate. */
+  readonly sellable: false;
+  readonly note: string;
+}
+
+/**
+ * Monthly credit grants, from the commercial contract NC-2026-09-22.1 and the
+ * website registry it cites. Managed grants are totals, not additions to
+ * Business. Solo's price is directed but its allowance is not approved, so its
+ * grant stays null. The $500 Business Plus row stays a proposal.
+ */
+export const MONTHLY_CREDIT_GRANTS: readonly MonthlyCreditGrant[] = Object.freeze([
+  Object.freeze({
+    planId: 'workflow-starter',
+    label: '90-Day Workflow Starter',
+    monthlyCredits: 500,
+    status: 'published',
+    sellable: false,
+    note: 'One workflow or location for three months; no automatic continuation.',
+  }),
+  Object.freeze({
+    planId: 'business',
+    label: 'Business',
+    monthlyCredits: 1_000,
+    status: 'published',
+    sellable: false,
+    note: 'Self-managed workspace and workflows.',
+  }),
+  Object.freeze({
+    planId: 'managed-small',
+    label: 'Managed Small',
+    monthlyCredits: 3_000,
+    status: 'published',
+    sellable: false,
+    note: 'Business included; the grant is the total, not an addition to Business.',
+  }),
+  Object.freeze({
+    planId: 'managed-standard',
+    label: 'Managed Standard',
+    monthlyCredits: 5_000,
+    status: 'published',
+    sellable: false,
+    note: 'Business included; the grant is the total, not an addition to Business.',
+  }),
+  Object.freeze({
+    planId: 'managed-plus',
+    label: 'Managed Plus',
+    monthlyCredits: 8_000,
+    status: 'published',
+    sellable: false,
+    note: 'Business included; the grant is the total, not an addition to Business.',
+  }),
+  Object.freeze({
+    planId: 'solo',
+    label: 'Solo',
+    monthlyCredits: null,
+    status: 'directed-unapproved',
+    sellable: false,
+    note: 'Owner-directed price; the allowance, user and host limits and billing are not approved.',
+  }),
+  Object.freeze({
+    planId: 'business-plus',
+    label: 'Business Plus',
+    monthlyCredits: null,
+    status: 'proposed',
+    sellable: false,
+    note: 'A proposal only. It is not published or sold.',
+  }),
+] satisfies MonthlyCreditGrant[]);
+
+/** The monthly grant a published plan carries, or null where none is approved. */
+export function publishedMonthlyGrant(planId: string): MicroUsd | null {
+  const row = MONTHLY_CREDIT_GRANTS.find((item) => item.planId === planId);
+  if (!row || row.status !== 'published' || row.monthlyCredits === null) return null;
+  return creditAmount(row.monthlyCredits);
+}
+
+/**
+ * The suggested initial parent-job cap. It is an unapproved proposal and no
+ * service applies it by default: a host must configure an approved cap.
+ */
+export const PROPOSED_DEFAULT_JOB_CAP_CREDITS = Object.freeze({
+  credits: 20,
+  status: 'proposed' as const,
+});
+
+/** The price terms an attempt was reserved under. Integer micro-USD per million tokens. */
+export interface RateSnapshot {
+  readonly version: string;
+  readonly inputMicroUsdPerMillion: number;
+  readonly outputMicroUsdPerMillion: number;
+  readonly cacheReadMicroUsdPerMillion: number;
+  readonly cacheWriteMicroUsdPerMillion: number;
+}
+
+/**
+ * A provider's usage report. Billed reasoning is part of output and is
+ * reported only so it can be checked, never charged a second time.
+ */
+export interface ProviderUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly cacheReadTokens: number;
+  readonly cacheWriteTokens: number;
+  readonly reasoningTokens: number;
+}
+
+/**
+ * A paid attempt: one model, advisor or tool operation under a root job. It is
+ * a `Reservation` with the fields parent-job accounting needs. `parentTaskId`
+ * carries the root job, so a child or retry can only ever name its parent's
+ * envelope.
+ */
+export interface FundedAttempt extends Reservation {
+  readonly tenantId: string;
+  readonly rootJobId: string;
+  readonly parentAttemptId: string | null;
+  readonly requestDigest: string;
+  readonly rateSnapshot: RateSnapshot;
+  /** The hold split: the month pays first, then the top-up balance. */
+  readonly monthlyHoldMicroUsd: MicroUsd;
+  readonly topUpHoldMicroUsd: MicroUsd;
+  /** Written and committed before the provider is called. Null means never sent. */
+  readonly dispatchedAt: string | null;
+}
+
+/** What one attempt actually cost, attributed to the period it was reserved in. */
+export interface AttemptSettlement extends SettledCharge {
+  readonly tenantId: string;
+  readonly receiptRef: string;
+  readonly monthlyDebitMicroUsd: MicroUsd;
+  readonly topUpDebitMicroUsd: MicroUsd;
+  readonly usage: ProviderUsage;
+}
+
+const USAGE_FIELDS = [
+  'inputTokens',
+  'outputTokens',
+  'cacheReadTokens',
+  'cacheWriteTokens',
+  'reasoningTokens',
+] as const;
+const MAX_TOKENS_PER_FIELD = 50_000_000;
+
+/**
+ * A usage report is complete and consistent, or it is unknown consumption.
+ * There is no partial credit for a partial report: a missing field could hide
+ * any amount, so the hold stays until the provider says what happened.
+ */
+export function validateProviderUsage(
+  value: unknown,
+): { valid: true; usage: ProviderUsage } | { valid: false; reason: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return { valid: false, reason: 'The provider reported no usage.' };
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).some((key) => !(USAGE_FIELDS as readonly string[]).includes(key)))
+    return { valid: false, reason: 'The usage report has fields this build cannot price.' };
+  for (const field of USAGE_FIELDS) {
+    const count = record[field];
+    if (
+      typeof count !== 'number' ||
+      !Number.isSafeInteger(count) ||
+      count < 0 ||
+      count > MAX_TOKENS_PER_FIELD
+    )
+      return { valid: false, reason: `The usage report has no valid ${field}.` };
+  }
+  const usage: ProviderUsage = {
+    inputTokens: record.inputTokens as number,
+    outputTokens: record.outputTokens as number,
+    cacheReadTokens: record.cacheReadTokens as number,
+    cacheWriteTokens: record.cacheWriteTokens as number,
+    reasoningTokens: record.reasoningTokens as number,
+  };
+  if (usage.reasoningTokens > usage.outputTokens)
+    return { valid: false, reason: 'Reported reasoning exceeds reported output.' };
+  return { valid: true, usage };
+}
+
+/** Exact cost of a validated report under a rate snapshot, rounded up to one micro-USD. */
+export function usageCost(rate: RateSnapshot, usage: ProviderUsage): MicroUsd {
+  const scaled =
+    usage.inputTokens * rate.inputMicroUsdPerMillion +
+    usage.outputTokens * rate.outputMicroUsdPerMillion +
+    usage.cacheReadTokens * rate.cacheReadMicroUsdPerMillion +
+    usage.cacheWriteTokens * rate.cacheWriteMicroUsdPerMillion;
+  if (!Number.isSafeInteger(scaled))
+    throw new RangeError('That usage cannot be priced exactly; reconcile it by hand.');
+  return micro(Math.ceil(scaled / 1_000_000));
+}
+
+export type ReserveRefusalCode =
+  | 'invalid_ceiling'
+  | 'insufficient_allowance'
+  | 'cap_request_required';
+
+export type ReserveDecision =
+  | {
+      readonly ok: true;
+      readonly monthlyHoldMicroUsd: MicroUsd;
+      readonly topUpHoldMicroUsd: MicroUsd;
+    }
+  | { readonly ok: false; readonly code: ReserveRefusalCode; readonly reason: string };
+
+/**
+ * Whether a conservative ceiling can be held against the month, the top-up
+ * balance and the parent job at once. Funds are checked first: raising a cap
+ * cannot help when there is nothing to spend. `job.usedMicroUsd` already counts
+ * every child and retry under the root job, which is why neither can escape it.
+ */
+export function decideReserve(input: {
+  maxMicroUsd: MicroUsd;
+  monthlyAvailableMicroUsd: MicroUsd;
+  topUpAvailableMicroUsd: MicroUsd;
+  job: { capMicroUsd: MicroUsd; usedMicroUsd: MicroUsd } | null;
+}): ReserveDecision {
+  const max = input.maxMicroUsd;
+  if (!Number.isSafeInteger(max) || max <= 0 || max > MAX_MONEY_MICRO_USD)
+    return {
+      ok: false,
+      code: 'invalid_ceiling',
+      reason: 'A reservation needs a positive whole-micro-USD ceiling.',
+    };
+  const funds = sumMoney([input.monthlyAvailableMicroUsd, input.topUpAvailableMicroUsd]);
+  if (max > funds)
+    return {
+      ok: false,
+      code: 'insufficient_allowance',
+      reason: `This step needs up to ${formatCredits(max)} credits and ${formatCredits(funds)} are available. Nothing switches payer or buys more on its own.`,
+    };
+  if (input.job && input.job.usedMicroUsd + max > input.job.capMicroUsd)
+    return {
+      ok: false,
+      code: 'cap_request_required',
+      reason: `This job's cap is ${formatCredits(input.job.capMicroUsd)} credits and ${formatCredits(input.job.usedMicroUsd)} are already used or held. A higher cap needs an explicit request and approval before new spend.`,
+    };
+  const monthly = Math.min(max, input.monthlyAvailableMicroUsd);
+  return {
+    ok: true,
+    monthlyHoldMicroUsd: micro(monthly),
+    topUpHoldMicroUsd: micro(max - monthly),
+  };
+}
+
+/** One period's aggregates, as the store reads them. */
+export interface PeriodTotals {
+  readonly settledMonthlyMicroUsd: MicroUsd;
+  readonly pendingMonthlyMicroUsd: MicroUsd;
+  readonly uncertainMonthlyMicroUsd: MicroUsd;
+  readonly correctionGrantsMicroUsd: MicroUsd;
+  readonly correctionWithdrawalsMicroUsd: MicroUsd;
+  /** Top-up money settled by attempts reserved in this period. */
+  readonly settledTopUpMicroUsd: MicroUsd;
+}
+
+/** The organization's top-up balance, across periods. */
+export interface TopUpTotals {
+  readonly purchasedMicroUsd: MicroUsd;
+  readonly heldMicroUsd: MicroUsd;
+  readonly settledMicroUsd: MicroUsd;
+}
+
+export interface UsageReceipt {
+  readonly receiptRef: string;
+  readonly settledAt: string;
+  readonly allowanceDebitMicroUsd: MicroUsd;
+}
+
+/**
+ * What the Nectovia usage bar draws. The monthly percentage is settled debit
+ * allocated to the monthly grant divided by that month's grant. Holds,
+ * top-ups and corrections are separate lines and never move the percentage.
+ */
+export interface UsageProjection {
+  readonly v: 1;
+  readonly organizationId: string;
+  readonly periodId: string;
+  readonly planId: string;
+  readonly periodStartsAt: string;
+  readonly resetsAt: string;
+  readonly timezone: 'UTC';
+  readonly microUsdPerCredit: typeof CREDIT_MICRO_USD;
+  readonly grantedMicroUsd: MicroUsd;
+  readonly settledMicroUsd: MicroUsd;
+  readonly pendingMicroUsd: MicroUsd;
+  readonly uncertainMicroUsd: MicroUsd;
+  readonly correctionsMicroUsd: MicroUsd;
+  readonly correctionWithdrawalsMicroUsd: MicroUsd;
+  /** Monthly credits still available to reserve. Never negative. */
+  readonly availableMicroUsd: MicroUsd;
+  /** How far used and held exceed the month's funds. Shown, never clamped away. */
+  readonly overspentMicroUsd: MicroUsd;
+  readonly reconciliation: string | null;
+  /** Null where the grant is zero: there is no honest percentage of nothing. */
+  readonly usedPercent: number | null;
+  readonly topUp: {
+    readonly availableMicroUsd: MicroUsd;
+    readonly heldMicroUsd: MicroUsd;
+    readonly settledThisPeriodMicroUsd: MicroUsd;
+  };
+  /** Included-chat entitlement is not implemented; null never reads as included. */
+  readonly includedChat: null;
+  readonly lastReceipt: UsageReceipt | null;
+  readonly observedAt: string;
+  readonly rateCardVersion: string;
+}
+
+export function projectUsage(input: {
+  organizationId: string;
+  period: {
+    periodId: string;
+    planId: string;
+    grantedMicroUsd: MicroUsd;
+    startsAt: string;
+    endsAt: string;
+    rateCardVersion: string;
+  };
+  totals: PeriodTotals;
+  topUp: TopUpTotals;
+  lastReceipt: UsageReceipt | null;
+  observedAt: string;
+}): UsageProjection {
+  const { period, totals, topUp } = input;
+  const funded = sumMoney([period.grantedMicroUsd, totals.correctionGrantsMicroUsd]);
+  const committed = sumMoney([
+    totals.correctionWithdrawalsMicroUsd,
+    totals.settledMonthlyMicroUsd,
+    totals.pendingMonthlyMicroUsd,
+    totals.uncertainMonthlyMicroUsd,
+  ]);
+  const available = committed > funded ? micro(0) : subtractMoney(funded, committed);
+  const overspent = committed > funded ? subtractMoney(committed, funded) : micro(0);
+  const usedPercent =
+    period.grantedMicroUsd === 0
+      ? null
+      : Math.round((totals.settledMonthlyMicroUsd * 10_000) / period.grantedMicroUsd) / 100;
+  return {
+    v: 1,
+    organizationId: input.organizationId,
+    periodId: period.periodId,
+    planId: period.planId,
+    periodStartsAt: period.startsAt,
+    resetsAt: period.endsAt,
+    timezone: 'UTC',
+    microUsdPerCredit: CREDIT_MICRO_USD,
+    grantedMicroUsd: period.grantedMicroUsd,
+    settledMicroUsd: totals.settledMonthlyMicroUsd,
+    pendingMicroUsd: totals.pendingMonthlyMicroUsd,
+    uncertainMicroUsd: totals.uncertainMonthlyMicroUsd,
+    correctionsMicroUsd: totals.correctionGrantsMicroUsd,
+    correctionWithdrawalsMicroUsd: totals.correctionWithdrawalsMicroUsd,
+    availableMicroUsd: available,
+    overspentMicroUsd: overspent,
+    reconciliation:
+      overspent > 0
+        ? 'Used and held credits exceed this month’s grant. The difference is being reconciled against provider records; nothing was bought or switched on your behalf.'
+        : null,
+    usedPercent,
+    topUp: {
+      // A top-up balance can only be overdrawn by an edit outside the ledger;
+      // subtractMoney refuses to present it rather than clamp it.
+      availableMicroUsd: subtractMoney(
+        topUp.purchasedMicroUsd,
+        sumMoney([topUp.heldMicroUsd, topUp.settledMicroUsd]),
+      ),
+      heldMicroUsd: topUp.heldMicroUsd,
+      settledThisPeriodMicroUsd: totals.settledTopUpMicroUsd,
+    },
+    includedChat: null,
+    lastReceipt: input.lastReceipt,
+    observedAt: input.observedAt,
+    rateCardVersion: period.rateCardVersion,
+  };
+}
+
+/**
+ * What a usage surface can know. `loading`, `not-connected` and `unavailable`
+ * carry no numbers at all, so none of them can be drawn as 0%.
+ */
+export type UsageState =
+  | { readonly state: 'loading'; readonly organizationId: string }
+  | { readonly state: 'not-connected'; readonly organizationId: string; readonly reason: string }
+  | { readonly state: 'unavailable'; readonly organizationId: string; readonly reason: string }
+  | {
+      readonly state: 'ready';
+      readonly organizationId: string;
+      readonly projection: UsageProjection;
+    };
