@@ -67,7 +67,7 @@ import { COMPOSER_LABEL } from './Composer';
 import { AgentPicker } from './AgentPicker';
 import { BoardView } from './BoardView';
 import { FilesPane, DEFAULT_WIDTH, clampWidth } from './FilesPane';
-import { useArtifactHost } from './artifact-panel';
+import { threadRun, useArtifactHost } from './artifact-panel';
 import { saveArtifact } from './artifact-save';
 import { ActivityOverview } from './ActivityOverview';
 import { projectActivity, type ActivityRow } from './activity';
@@ -614,6 +614,7 @@ export function Shell({
     filesWidth,
     onSave: (record) => saveArtifact(projectId, record),
     onShowFile: (path) => openDocument(path),
+    session: threadRun(state?.sessions, selected),
   });
   useEffect(() => {
     if (selected) setMode(selected.mode ?? 'ask');

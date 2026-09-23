@@ -5,12 +5,22 @@
 // DOM, no clock, no network.
 
 import {
+  parseVisualSpec,
+  readBlock,
+  VISUAL_FENCE_TAG,
+  VISUAL_MAX_JSON_BYTES,
+  VISUAL_MAX_POINTS,
+  type VisualKind,
+  type VisualSpec,
+} from '../../shared/visual-spec';
+import {
   artifactKindOf,
   KIND_LABEL,
   normalizeNewlines,
   parseBlocks,
   plainText,
   type ArtifactKind,
+  type CodeBlock,
   type TableBlock,
   type TurnBlock,
 } from './turn-blocks';
@@ -132,26 +142,11 @@ const COMMENT_DECLARATION = /^<!--\s*artifact:\s*([\s\S]*?)\s*-->$/i;
  * turn can add a version of the same artifact:
  *   mermaid:  %% artifact: id=delivery-flow title="Delivery check"
  *   html, svg, markdown:  <!-- artifact: id=home-mock title="Home mock" -->
- *   chart:    top-level "id" and "title" fields
+ * A table declares nothing, and neither does a visual: its spec is strict JSON
+ * with no field for an id, so each visual is the only version of itself.
  */
 export function declarationOf(kind: ArtifactKind, source: string): Declaration {
-  if (kind === 'table') return { id: null, title: null };
-  if (kind === 'chart') {
-    try {
-      const value: unknown = JSON.parse(source);
-      if (!value || typeof value !== 'object' || Array.isArray(value)) return { id: null, title: null };
-      const record = value as Record<string, unknown>;
-      return {
-        id: typeof record.id === 'string' && DECLARED_ID.test(record.id) ? record.id : null,
-        title:
-          typeof record.title === 'string' && record.title.trim()
-            ? record.title.trim().slice(0, TITLE_LIMIT)
-            : null,
-      };
-    } catch {
-      return { id: null, title: null };
-    }
-  }
+  if (kind === 'table' || kind === 'visual') return { id: null, title: null };
   const line = firstLine(source);
   const match =
     kind === 'diagram' ? MERMAID_DECLARATION.exec(line) : COMMENT_DECLARATION.exec(line);
@@ -189,7 +184,8 @@ function cleanTitle(text: string): string {
 export function nearbyTitle(blocks: readonly TurnBlock[], blockIndex: number): string | null {
   for (let index = blockIndex - 1; index >= 0; index -= 1) {
     const block = blocks[index];
-    if (artifactKindOf(block)) return null;
+    // A visual is drawn where it stands, so a heading above it is its heading.
+    if (artifactKindOf(block) || isVisualBlock(block)) return null;
     if (block.type === 'heading' && block.text.trim()) return cleanTitle(block.text) || null;
     if (block.type === 'paragraph') {
       const lines = block.text.split('\n');
@@ -200,6 +196,49 @@ export function nearbyTitle(blocks: readonly TurnBlock[], blockIndex: number): s
     }
   }
   return null;
+}
+
+// ---- visuals ----------------------------------------------------------------
+
+/**
+ * A ```visual block, open or closed, valid or not: each one counts toward a
+ * turn's limit. (Narrowed by its language too, so a code block in another
+ * language is still a code block where this says no.)
+ */
+export function isVisualBlock(block: TurnBlock): block is CodeBlock & { lang: typeof VISUAL_FENCE_TAG } {
+  return block.type === 'code' && block.lang === VISUAL_FENCE_TAG;
+}
+
+/** What a visual is called when it gives no title: its kind, in words. */
+export const VISUAL_KIND_LABEL: Record<Exclude<VisualKind, 'app'>, string> = {
+  bar: 'Bar chart',
+  line: 'Line chart',
+  area: 'Area chart',
+  pie: 'Donut chart',
+  stat: 'Key figures',
+  table: 'Table',
+  progress: 'Progress',
+};
+
+/** A visual's title: the spec's own, or else its kind's label (an app card's own name). */
+export function visualTitle(spec: VisualSpec): string {
+  if ('title' in spec && spec.title) return spec.title;
+  if (spec.kind === 'app') return spec.key === 'update-progress' ? 'App update' : 'Run status';
+  return VISUAL_KIND_LABEL[spec.kind];
+}
+
+export type VisualRead = { ok: true; spec: VisualSpec } | { ok: false; reason: string };
+
+/**
+ * A visual's JSON source read with every limit a reply's block is read with
+ * (shared/visual-spec.ts `readBlock`). The panel and a saved `.json` file draw
+ * only what a turn could have drawn.
+ */
+export function visualOf(source: string): VisualRead {
+  if (source.length > VISUAL_MAX_JSON_BYTES) return { ok: false, reason: 'the block is too large' };
+  const read = readBlock(source, 1);
+  if (read.type === 'visual') return { ok: true, spec: read.spec };
+  return { ok: false, reason: read.type === 'invalid' ? read.reason : 'the block could not be read' };
 }
 
 // ---- the index --------------------------------------------------------------
@@ -223,6 +262,10 @@ export function turnKeyOf(turn: TurnLike, index: number): string {
  * Every artifact in one scope's assistant turns. Versions are grouped by the
  * declared id and ordered by turn order, then block order; an artifact that
  * declares nothing is the only version of itself.
+ *
+ * A visual is indexed exactly when its turn draws it: a closed block that
+ * `readBlock` accepts, counted among the turn's visual blocks the way TurnBody
+ * counts them, so the ninth visual of a reply, drawn as a note, is no artifact.
  */
 export function indexArtifacts(scope: string, turns: readonly TurnLike[]): ArtifactIndex {
   const list: ArtifactRecord[] = [];
@@ -231,7 +274,32 @@ export function indexArtifacts(scope: string, turns: readonly TurnLike[]): Artif
     if (turn.role === 'you' || !turn.text) return;
     const turnKey = turnKeyOf(turn, turnIndex);
     const blocks = blocksOf(turn.text);
+    let visuals = 0;
     blocks.forEach((block, blockIndex) => {
+      if (isVisualBlock(block)) {
+        visuals += 1;
+        if (!block.closed) return;
+        const read = readBlock(block.source, visuals);
+        if (read.type !== 'visual') return;
+        const key = artifactKey(scope, turnKey, blockIndex);
+        list.push({
+          key,
+          scope,
+          identity: key,
+          declaredId: null,
+          kind: 'visual',
+          lang: VISUAL_FENCE_TAG,
+          title: visualTitle(read.spec),
+          source: block.source,
+          table: null,
+          turnKey,
+          turnIndex,
+          blockIndex,
+          version: 1,
+          versionCount: 1,
+        });
+        return;
+      }
       const kind = artifactKindOf(block);
       if (!kind) return;
       ordinal[kind] = (ordinal[kind] ?? 0) + 1;
@@ -280,43 +348,78 @@ export function indexArtifacts(scope: string, turns: readonly TurnLike[]): Artif
   };
 }
 
-/** One file's artifacts. A `.html` file is one design; any other text is read like a turn. */
+/** A file that is one artifact as a whole: the index of that one record. */
+function wholeFile(
+  scope: string,
+  fields: Pick<ArtifactRecord, 'identity' | 'declaredId' | 'kind' | 'lang' | 'title'> & { source: string },
+  key: string,
+): ArtifactIndex {
+  const record: ArtifactRecord = {
+    key,
+    scope,
+    ...fields,
+    table: null,
+    turnKey: 'file',
+    turnIndex: 0,
+    blockIndex: 0,
+    version: 1,
+    versionCount: 1,
+  };
+  return {
+    scope,
+    list: [record],
+    byKey: new Map([[key, record]]),
+    versionsOf: () => [record],
+    forBlock: (turnKey, blockIndex) => (turnKey === 'file' && blockIndex === 0 ? record : undefined),
+  };
+}
+
+/**
+ * One file's artifacts. A `.html` file is one design, and a `.json` file that
+ * holds a valid visual spec is one visual (what Save to Files writes for a
+ * visual); any other text is read like a turn.
+ */
 export function indexFile(path: string, text: string): ArtifactIndex {
   const scope = `file:${path}`;
+  const key = artifactKey(scope, 'file', 0);
+  const name = path.split('/').pop() ?? path;
   if (/\.html?$/i.test(path)) {
-    const name = path.split('/').pop() ?? path;
     const declared = declarationOf('design', text);
-    const key = artifactKey(scope, 'file', 0);
-    const record: ArtifactRecord = {
+    return wholeFile(
+      scope,
+      {
+        identity: declared.id ? `id:${declared.id}` : key,
+        declaredId: declared.id,
+        kind: 'design',
+        lang: 'html',
+        title: declared.title ?? name.replace(/\.html?$/i, ''),
+        source: text,
+      },
       key,
+    );
+  }
+  if (/\.json$/i.test(path)) {
+    const read = visualOf(text);
+    if (!read.ok) return indexArtifacts(scope, []);
+    return wholeFile(
       scope,
-      identity: declared.id ? `id:${declared.id}` : key,
-      declaredId: declared.id,
-      kind: 'design',
-      lang: 'html',
-      title: declared.title ?? name.replace(/\.html?$/i, ''),
-      source: text,
-      table: null,
-      turnKey: 'file',
-      turnIndex: 0,
-      blockIndex: 0,
-      version: 1,
-      versionCount: 1,
-    };
-    return {
-      scope,
-      list: [record],
-      byKey: new Map([[key, record]]),
-      versionsOf: () => [record],
-      forBlock: (turnKey, blockIndex) => (turnKey === 'file' && blockIndex === 0 ? record : undefined),
-    };
+      {
+        identity: key,
+        declaredId: null,
+        kind: 'visual',
+        lang: VISUAL_FENCE_TAG,
+        title: 'title' in read.spec && read.spec.title ? read.spec.title : name.replace(/\.json$/i, ''),
+        source: text,
+      },
+      key,
+    );
   }
   return indexArtifacts(scope, [{ id: 'file', role: 'file', text }]);
 }
 
 /** Whether a Files document holds anything the panel can open. */
 export function fileHasArtifacts(path: string, text: string): boolean {
-  if (!/\.(md|markdown|html?)$/i.test(path)) return false;
+  if (!/\.(md|markdown|html?|json)$/i.test(path)) return false;
   return indexFile(path, text).list.length > 0;
 }
 
@@ -339,9 +442,12 @@ export function safeFileBase(title: string, fallback: string): string {
   return name;
 }
 
-/** The extension a saved artifact takes: a design is a web page, everything else Markdown. */
-export function savedExtension(kind: ArtifactKind): '.html' | '.md' {
-  return kind === 'design' ? '.html' : '.md';
+/**
+ * The extension a saved artifact takes: a design is a web page, a visual is its
+ * JSON spec, and everything else is Markdown.
+ */
+export function savedExtension(kind: ArtifactKind): '.html' | '.md' | '.json' {
+  return kind === 'design' ? '.html' : kind === 'visual' ? '.json' : '.md';
 }
 
 /** The id a saved copy carries, so a later save can tell its own file from another's. */
@@ -349,21 +455,22 @@ export function savedIdOf(record: ArtifactRecord): string {
   return record.declaredId ?? record.key;
 }
 
+/**
+ * A title as a declaration line can hold it: one line, no double quote, and no
+ * run of hyphens. A `--` could close the `<!-- artifact: ... -->` comment early
+ * (a heading such as "Plan --> next" would leave `next" -->` on the page of a
+ * saved design) or open another, and XML allows none inside an SVG's comment.
+ */
+export function declarationTitle(title: string): string {
+  return title.replace(/["\n\r]/g, "'").replace(/-{2,}/g, '-');
+}
+
 /** The source with its identity declared on the first line, adding one only when absent. */
 export function declaredSource(record: ArtifactRecord, title: string): string {
   const id = savedIdOf(record);
-  const safeTitle = title.replace(/["\n\r]/g, "'");
-  if (record.kind === 'table') return record.source;
-  if (record.kind === 'chart') {
-    if (record.declaredId) return record.source;
-    try {
-      const value: unknown = JSON.parse(record.source);
-      if (!value || typeof value !== 'object' || Array.isArray(value)) return record.source;
-      return JSON.stringify({ id, title, ...(value as Record<string, unknown>) }, null, 2);
-    } catch {
-      return record.source;
-    }
-  }
+  const safeTitle = declarationTitle(title);
+  // A table has no line to declare on, and a visual's strict spec no field.
+  if (record.kind === 'table' || record.kind === 'visual') return record.source;
   if (record.declaredId) return record.source;
   const line =
     record.kind === 'diagram'
@@ -380,13 +487,14 @@ function fenceFor(source: string): string {
 }
 
 /**
- * What Save to Files writes. A design is its own page; everything else is a
- * titled Markdown file holding the fenced source, which the Files viewer can
- * show and the panel can open again.
+ * What Save to Files writes. A design is its own page and a visual its own JSON
+ * spec; everything else is a titled Markdown file holding the fenced source,
+ * which the Files viewer can show and the panel can open again.
  */
 export function savedDocument(record: ArtifactRecord, title: string): string {
   const source = declaredSource(record, title);
-  if (record.kind === 'design') return source.endsWith('\n') ? source : `${source}\n`;
+  if (record.kind === 'design' || record.kind === 'visual')
+    return source.endsWith('\n') ? source : `${source}\n`;
   const heading = `# ${title.replace(/\s+/g, ' ').trim()}`;
   if (record.kind === 'table') return `${heading}\n\n${source}\n`;
   const lang = record.kind === 'image' ? 'svg' : record.lang || 'text';
@@ -394,11 +502,17 @@ export function savedDocument(record: ArtifactRecord, title: string): string {
   return `${heading}\n\n${fence}${lang}\n${source}\n${fence}\n`;
 }
 
-/** Whether a saved file already belongs to this artifact (its first artifact carries the same id). */
+/**
+ * Whether a saved file already belongs to this artifact: its first artifact
+ * carries the same id. A table or a visual declares none, so its file is its
+ * own when it holds the same source.
+ */
 export function fileBelongsTo(path: string, text: string, record: ArtifactRecord): boolean {
   const found = indexFile(path, text).list[0];
   if (!found) return false;
   if (record.kind === 'table') return found.source === record.source;
+  if (record.kind === 'visual')
+    return found.kind === 'visual' && found.source.trimEnd() === record.source.trimEnd();
   return found.declaredId === savedIdOf(record) && found.kind === record.kind;
 }
 
@@ -469,30 +583,73 @@ export function chartColumns(table: TableBlock): { category: number; numeric: Ta
 }
 
 /**
- * The chart "Chart this" draws for one column: bars across the row labels, or
- * a line when the labels are a sequence in time. Cells that are not numbers
- * are drawn as 0 and said so in the caption.
+ * A cell's words as a visual label: plain text on one line, no control
+ * characters (the spec refuses them) and no longer than the spec allows.
  */
-export function tableChart(
-  table: TableBlock,
-  column: number,
-): { type: 'bar' | 'line'; title: string; x: string[]; series: { name: string; values: number[] }[]; caption?: string } {
-  const { category } = chartColumns(table);
-  const x = table.rows.map((row, index) => plainText(row[category] ?? '') || `Row ${index + 1}`);
-  let blanks = 0;
-  const values = table.rows.map((row) => {
+function specText(text: string, limit: number): string {
+  const words = plainText(text)
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return words.length > limit ? `${words.slice(0, limit - 1).trimEnd()}…` : words;
+}
+
+export type TableVisual =
+  | {
+      ok: true;
+      spec: Extract<VisualSpec, { kind: 'bar' | 'line' }>;
+      /** Says which rows are left out, or null when every row is drawn. */
+      caption: string | null;
+    }
+  | { ok: false; reason: string };
+
+/**
+ * The visual "Chart this" draws for one column of numbers: bars across the row
+ * labels, or a line when the labels read as ordered periods. It is a visual
+ * spec like any a reply may hold, validated by `parseVisualSpec`, so the panel
+ * draws a table's chart with the same renderer and limits as a reply's.
+ *
+ * A row whose cell in the column is blank is left out, and the caption says
+ * so: nothing is drawn at a 0 the table never held. (A column that holds any
+ * word is not a column of numbers at all; `chartColumns` never offers it.)
+ */
+export function tableVisual(table: TableBlock, column: number): TableVisual {
+  const { category, numeric } = chartColumns(table);
+  const chosen = numeric.find((entry) => entry.index === column);
+  if (!chosen) return { ok: false, reason: 'this column does not hold only numbers' };
+  const labels: string[] = [];
+  const values: number[] = [];
+  let left = 0;
+  table.rows.forEach((row, index) => {
     const value = cellNumber(row[column] ?? '');
-    if (value === null) blanks += 1;
-    return value ?? 0;
+    if (value === null) {
+      left += 1;
+      return;
+    }
+    labels.push(specText(row[category] ?? '', 60) || `Row ${index + 1}`);
+    values.push(value);
   });
-  const name = plainText(table.header[column] ?? '') || `Column ${column + 1}`;
-  return {
-    type: temporal(x) ? 'line' : 'bar',
-    title: `${name} by ${plainText(table.header[category] ?? '') || 'row'}`,
-    x,
+  if (labels.length > VISUAL_MAX_POINTS)
+    return {
+      ok: false,
+      reason: `a chart draws at most ${VISUAL_MAX_POINTS} rows, and this column has ${labels.length}`,
+    };
+  const name = specText(chosen.name, 60) || `Column ${column + 1}`;
+  const across = specText(table.header[category] ?? '', 60) || 'row';
+  const parsed = parseVisualSpec({
+    kind: temporal(labels) ? 'line' : 'bar',
+    title: specText(`${name} by ${across}`, 120),
+    labels,
     series: [{ name, values }],
-    ...(blanks
-      ? { caption: `${blanks} ${blanks === 1 ? 'row has' : 'rows have'} no number in ${name} and ${blanks === 1 ? 'is' : 'are'} drawn at 0.` }
-      : {}),
+  });
+  if (!parsed.ok) return { ok: false, reason: parsed.reason };
+  if (parsed.spec.kind !== 'bar' && parsed.spec.kind !== 'line')
+    return { ok: false, reason: 'the chart could not be drawn' };
+  return {
+    ok: true,
+    spec: parsed.spec,
+    caption: left
+      ? `${left} ${left === 1 ? 'row has' : 'rows have'} no number in ${name} and ${left === 1 ? 'is' : 'are'} left out.`
+      : null,
   };
 }

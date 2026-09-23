@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import type { UpdateTransport } from '../../server/app-updates';
 import { AWS_LUNA_MODEL } from '../../server/engines/aws-bedrock';
 import { EngineService, TESTED_VERSIONS } from '../../server/engines/service';
 import { routeContractFor } from '../../server/harness/route-contract';
+import { ApiError } from '../../server/paths';
 import { responsesAnswer } from './model-api-streams.js';
 
 // A model that answers with artifacts, for tests/artifacts-ui.spec.ts. It sits where
@@ -30,31 +33,39 @@ const DELIVERY = [
 /** The same declared id again, one step longer: the second version of one artifact. */
 const DELIVERY_V2 = [...DELIVERY.slice(0, 4), '  C --> E[Load by 7am]', DELIVERY[4]];
 
-export const WEEKLY_CHART = {
-  type: 'bar',
-  id: 'weekly-sends',
+/**
+ * A ```visual bar chart, the one kind of chart a model is taught (VISUAL_INSTRUCTIONS in
+ * server/modes.ts). The ```chart fence it replaces is retired: a saved one reads as code.
+ */
+export const WEEKLY_VISUAL = {
+  kind: 'bar',
   title: 'Weekly sends',
-  unit: 'msgs',
-  x: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+  labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
   series: [
     { name: 'Sent', values: [120, 80, 150, 95, 130] },
     { name: 'Replies', values: [9, 12, 20, 7, 15] },
   ],
 };
 
-/** The two charts the Console's segment bar draws: steps as the record lists them, and a count. */
-export const LAUNCH_STEPS = {
-  type: 'segments',
-  title: 'Launch steps',
-  steps: [
-    { label: 'Draft the offer', state: 'done' },
-    { label: 'Check the prices', state: 'done' },
-    { label: 'Book the van', state: 'active' },
-    { label: 'Tell the regulars', state: 'pending' },
-    { label: 'Open the doors', state: 'pending' },
+/** The same week as key figures: the sums of WEEKLY_VISUAL, and the share that replied. */
+export const WEEK_FIGURES = {
+  kind: 'stat',
+  title: 'This week',
+  items: [
+    { label: 'Sent', value: 575 },
+    { label: 'Replies', value: 63, delta: 12.5, deltaLabel: 'on last week' },
+    { label: 'Reply rate', value: 11, format: 'percent' },
   ],
 };
-export const PACKING = { type: 'progress', title: 'Boxes packed', done: 7, total: 12, label: 'boxes' };
+
+/**
+ * A reply's own progress: a share and its words, never counted segments. A model cannot report
+ * record progress (contract A15), so the Console draws this apart from a bar a record keeps.
+ */
+export const FOLLOW_UPS = { kind: 'progress', label: 'Follow-ups drafted', value: 0.4, detail: '4 of the 10 I planned' };
+
+/** A live card: every number on it comes from the host's update record, none from the reply. */
+export const UPDATE_CARD = { kind: 'app', key: 'update-progress' };
 
 /**
  * Where the hostile fixtures below point, set by tests/artifacts-ui.spec.ts once its observers
@@ -191,12 +202,20 @@ export const STREAM_PREVIEW = ['Here is the route.', '', '```mermaid', ROUTE[0],
 export const ANSWERS: Readonly<Record<string, string>> = {
   DIAGRAM: answer('Here is how a delivery gets checked.', fence('mermaid', DELIVERY)),
   REDRAW: answer('Updated: the van is loaded before seven.', fence('mermaid', DELIVERY_V2)),
-  CHART: answer('Sends and replies this week.', fence('chart', [JSON.stringify(WEEKLY_CHART)])),
-  STEPS: answer(
-    'Where the launch stands.',
-    fence('chart', [JSON.stringify(LAUNCH_STEPS)]),
-    'And the packing.',
-    fence('chart', [JSON.stringify(PACKING)]),
+  CHART: answer('Sends and replies this week.', fence('visual', [JSON.stringify(WEEKLY_VISUAL)])),
+  VISUALS: answer(
+    'Sends and replies this week.',
+    fence('visual', [JSON.stringify(WEEKLY_VISUAL)]),
+    'In short:',
+    fence('visual', [JSON.stringify(WEEK_FIGURES)]),
+    'And the follow-ups so far.',
+    fence('visual', [JSON.stringify(FOLLOW_UPS)]),
+  ),
+  UPDATE: answer('Here is the update, as the app records it.', fence('visual', [JSON.stringify(UPDATE_CARD)])),
+  // The retired ```chart fence, as a turn saved before it retired holds it.
+  LEGACY: answer(
+    'The chart from before.',
+    fence('chart', [JSON.stringify({ type: 'bar', title: 'Old sends', x: ['Mon', 'Tue'], series: [{ name: 'Sent', values: [1, 2] }] })]),
   ),
   TABLE: answer(
     '## Replies by region',
@@ -347,5 +366,83 @@ export function artifactEngine(enginesDir: string): ArtifactEngine {
     prompts,
     holding: () => release !== null,
     release: () => release?.(),
+  };
+}
+
+// ---- the app update the UPDATE card reads: one download, held part of the way ----------------
+
+const MIB = 1024 * 1024;
+/** The size the release record declares for the installer: 80.0 MB as the update panel writes it. */
+export const UPDATE_SIZE = 80 * MIB;
+/** What has arrived when the download is held: 12.3 MB of it. */
+export const UPDATE_RECEIVED = Math.round(12.3 * MIB);
+
+export interface HeldUpdate {
+  /** The release offered: one patch past the build under test, so it is always newer. */
+  version: string;
+  /** `updateOverrides.transport` for createApp. Nothing reaches github.com. */
+  transport: Partial<UpdateTransport>;
+  /** True once the download has reported its bytes and is waiting to be let go. */
+  holding(): boolean;
+  /** Ends the held download the way a dropped connection does: it fails and nothing is saved. */
+  drop(): void;
+}
+
+/**
+ * A release channel with one newer installer, and a download that reports 12.3 of its 80.0 MB
+ * once the host's progress throttle would keep it (after 250 ms), then waits. It is dropped
+ * rather than finished, so no 80 MB file is ever made, and the end it takes is the one a stale
+ * share would most likely survive.
+ */
+export function heldUpdate(): HeldUpdate {
+  const { version: current } = JSON.parse(
+    readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+  ) as { version: string };
+  const [major, minor, patch] = current.split('.').map(Number);
+  const version = `${major}.${minor}.${patch + 1}`;
+  const asset = `Diomedes-Experimental-${version}-unsigned-setup.exe`;
+  const assetUrl = `https://github.com/andrewgodowsky-aoa/diomedes/releases/download/v${version}/${asset}`;
+  const release = {
+    tag_name: `v${version}`,
+    html_url: `https://github.com/andrewgodowsky-aoa/diomedes/releases/tag/v${version}`,
+    body: `Notes for ${version}.`,
+    prerelease: false,
+    draft: false,
+    assets: [
+      {
+        name: asset,
+        browser_download_url: assetUrl,
+        size: UPDATE_SIZE,
+        // Checked only against bytes that never arrive: the download is dropped first.
+        digest: `sha256:${'5'.repeat(64)}`,
+        state: 'uploaded',
+      },
+    ],
+  };
+  let held = false;
+  let drop: (() => void) | null = null;
+  return {
+    version,
+    transport: {
+      fetchRelease: async () => structuredClone(release),
+      downloadAsset: async (_url, _size, signal, onProgress) => {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        onProgress?.(UPDATE_RECEIVED, UPDATE_SIZE);
+        held = true;
+        await new Promise<void>((resolve, reject) => {
+          drop = resolve;
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        }).finally(() => {
+          held = false;
+          drop = null;
+        });
+        throw new ApiError(502, 'The installer download was interrupted. Nothing was saved.');
+      },
+      launchInstaller: async () => {
+        throw new Error('The artifacts fixture never installs anything.');
+      },
+    },
+    holding: () => held,
+    drop: () => drop?.(),
   };
 }

@@ -8,9 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AppUpdateService,
   assertTrustedFinalUrl,
+  progressGate,
   type UpdateTransport,
 } from '../server/app-updates.js';
 import { createApp } from '../server/app.js';
+import { ApiError } from '../server/paths.js';
 import {
   UPDATE_RELEASES_URL,
   compareVersions,
@@ -1068,4 +1070,207 @@ describe('update routes through the local service', () => {
     expect((await api('/updates/check', 'POST', {})).status).toBe(409);
     expect(launched).toHaveLength(1);
   }, 15000);
+});
+
+// ---- download progress: observation only -----------------------------------------------------
+//
+// The snapshot follows a running download's bytes so the update card and Settings can draw them.
+// It only watches: the checks, the bytes written and every failure above are unchanged. These
+// tests leave the ones above alone and pin down what the observation must never do.
+
+describe('download progress is observation only', () => {
+  type Progress = { transferred: number; total: number | null } | undefined;
+
+  function progressService(
+    dir: string,
+    clock: () => number,
+    downloadAsset?: UpdateTransport['downloadAsset'],
+  ) {
+    const bytes = fixtureBytes();
+    const sha = digestOf(bytes);
+    const service = new AppUpdateService({
+      currentVersion: INSTALLED,
+      dataDir: dir,
+      platform: 'win32',
+      packaged: true,
+      installed: true,
+      isBusy: () => false,
+      clock,
+      ...(downloadAsset
+        ? { transport: { fetchRelease: async () => releasePayload(NEXT, bytes, sha), downloadAsset } }
+        : {}),
+    });
+    return { service, bytes, sha };
+  }
+
+  /** A response body that sends `first` bytes, then waits until it is released. */
+  function heldBody(bytes: Uint8Array, first: number) {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(bytes.slice(0, first));
+        await released;
+        controller.enqueue(bytes.slice(first));
+        controller.close();
+      },
+    });
+    return { stream, release };
+  }
+
+  it('keeps a report only 250 ms and 1% after the last one, whichever is later, plus the last byte', () => {
+    let now = 0;
+    const keep = progressGate(() => now);
+    const at = (time: number, transferred: number, total: number | null = 1000) => {
+      now = time;
+      return keep(transferred, total);
+    };
+    expect(at(100, 500)).toBe(false); // too soon after the start, however far on
+    expect(at(260, 505)).toBe(true); // 260 ms and 50.5%
+    expect(at(600, 510)).toBe(false); // long enough, but only 0.5% further on
+    expect(at(620, 520)).toBe(true); // 360 ms and 1.5% since the last kept one
+    expect(at(630, 900)).toBe(false); // far further on, but only 10 ms later
+    expect(at(640, 1000)).toBe(true); // the last byte is always kept
+    // With no declared size there is no 1% of anything: time alone decides.
+    now = 0;
+    const open = progressGate(() => now);
+    now = 200;
+    expect(open(10, null)).toBe(false);
+    now = 250;
+    expect(open(11, null)).toBe(true);
+  });
+
+  it('shows the throttled bytes while the download runs, and nothing once it is done', async () => {
+    const dir = await tempDir();
+    dirs.push(dir);
+    let now = 0;
+    const seen: Progress[] = [];
+    const { service, sha } = progressService(dir, () => now, async (_url, size, _signal, onProgress) => {
+      const report = async (time: number, transferred: number) => {
+        now = time;
+        onProgress?.(transferred, size);
+        seen.push((await service.status()).download.progress);
+      };
+      await report(100, 100_000); // too soon
+      await report(260, 105_000); // kept: 260 ms and 9.5%
+      await report(600, 110_000); // under 1% further on
+      await report(620, 120_000); // kept
+      await report(630, 900_000); // 10 ms later
+      await report(640, size); // the last byte
+      return { bytes: fixtureBytes(), finalUrl: ASSET_URL };
+    });
+    await service.check({});
+    expect((await service.status()).download.progress).toBeUndefined();
+    await service.download({});
+    expect(seen).toEqual([
+      { transferred: 0, total: null },
+      { transferred: 105_000, total: SIZE },
+      { transferred: 105_000, total: SIZE },
+      { transferred: 120_000, total: SIZE },
+      { transferred: 120_000, total: SIZE },
+      { transferred: SIZE, total: SIZE },
+    ]);
+    const done = await service.status();
+    expect(done.download.progress).toBeUndefined();
+    expect(done.download).toMatchObject({ ready: true, bytes: SIZE, sha256: sha });
+  });
+
+  it('reports the declared size of a real response, and no size at all when none was declared', async () => {
+    for (const declared of [true, false]) {
+      const dir = await tempDir();
+      dirs.push(dir);
+      let now = 0;
+      // Every reading of the clock is 300 ms after the last, so each report is due by time.
+      const { service, bytes, sha } = progressService(dir, () => (now += 300));
+      const held = heldBody(bytes, 400_000);
+      vi.stubGlobal('fetch', (async (url: string | URL | Request) => {
+        if (String(url).includes('api.github.com'))
+          return new Response(JSON.stringify(releasePayload(NEXT, bytes, sha)));
+        return new Response(held.stream, {
+          status: 200,
+          headers: declared ? { 'content-length': String(SIZE) } : {},
+        });
+      }) as typeof fetch);
+      await service.check({});
+      const pending = service.download({});
+      await vi.waitFor(async () =>
+        expect((await service.status()).download.progress?.transferred).toBe(400_000),
+      );
+      // Without a Content-Length the total stays unknown: nothing downstream can draw a guess.
+      expect((await service.status()).download.progress).toEqual({
+        transferred: 400_000,
+        total: declared ? SIZE : null,
+      });
+      held.release();
+      await pending;
+      expect((await service.status()).download.progress).toBeUndefined();
+      expect((await fs.stat(path.join(dir, 'updates', ASSET))).size).toBe(SIZE);
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('clears the progress when the download fails, and ignores anything it says afterwards', async () => {
+    const dir = await tempDir();
+    dirs.push(dir);
+    let now = 0;
+    let late: ((transferred: number, total: number | null) => void) | undefined;
+    const { service } = progressService(dir, () => (now += 300), async (_url, size, _signal, onProgress) => {
+      late = onProgress;
+      onProgress?.(200_000, size);
+      expect((await service.status()).download.progress).toEqual({ transferred: 200_000, total: size });
+      throw new ApiError(503, 'The installer download was interrupted. Try again.');
+    });
+    await service.check({});
+    await expect(service.download({})).rejects.toMatchObject({ status: 503 });
+    expect((await service.status()).download.progress).toBeUndefined();
+    late?.(900_000, SIZE);
+    expect((await service.status()).download.progress).toBeUndefined();
+  });
+
+  it('clears the progress when the download is aborted', async () => {
+    const dir = await tempDir();
+    dirs.push(dir);
+    let now = 0;
+    const controller = new AbortController();
+    const { service } = progressService(dir, () => (now += 300), (_url, size, signal, onProgress) => {
+      onProgress?.(300_000, size);
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          onProgress?.(310_000, size);
+          reject(new ApiError(504, 'The installer download timed out. Try again when online.'));
+        });
+      });
+    });
+    await service.check({});
+    const pending = service.download({}, controller.signal);
+    await vi.waitFor(async () =>
+      expect((await service.status()).download.progress).toEqual({ transferred: 300_000, total: SIZE }),
+    );
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ status: 504 });
+    expect((await service.status()).download.progress).toBeUndefined();
+  });
+
+  it('never lets a failing observer change the download', async () => {
+    const dir = await tempDir();
+    dirs.push(dir);
+    let readings = 0;
+    // The clock works once, when the download starts, and fails on every report after that.
+    const { service, bytes, sha } = progressService(dir, () => {
+      readings += 1;
+      if (readings > 1) throw new Error('The clock stopped.');
+      return 0;
+    });
+    vi.stubGlobal('fetch', (async (url: string | URL | Request) => {
+      if (String(url).includes('api.github.com'))
+        return new Response(JSON.stringify(releasePayload(NEXT, bytes, sha)));
+      return new Response(Buffer.from(bytes), { status: 200, headers: { 'content-length': String(SIZE) } });
+    }) as typeof fetch);
+    await service.check({});
+    expect(await service.download({})).toEqual({ downloaded: true, version: NEXT });
+    expect(readings).toBeGreaterThan(1);
+    const status = await service.status();
+    expect(status.download).toMatchObject({ ready: true, sha256: sha, bytes: SIZE });
+    expect(status.download.progress).toBeUndefined();
+  });
 });

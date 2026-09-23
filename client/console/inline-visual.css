@@ -227,55 +227,23 @@
   white-space: nowrap;
 }
 
-.console .iv-progress {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* Progress, a run and an update are the Console's segment bar
+   (segment-bar.css); what is left here is their words. */
+.console .iv-run {
+  display: grid;
+  gap: 4px;
   min-width: 0;
-}
-.console .iv-progress-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: var(--dm-type-caption);
-  color: var(--t2);
-  min-width: 0;
-}
-.console .iv-progress-head > span:first-child {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.console .iv-track {
-  position: relative;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--hair-2);
-  overflow: hidden;
-}
-.console .iv-fillbar {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: 3px;
-  background: var(--light);
-  transition: width var(--move) var(--ease);
-}
-.console .iv-track.indeterminate .iv-fillbar {
-  width: 30%;
-  animation: iv-busy 1.4s var(--ease) infinite;
-}
-@keyframes iv-busy {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(340%);
-  }
 }
 .console .iv-detail {
   margin: 0;
   font-size: var(--dm-type-caption);
   color: var(--t3);
   overflow-wrap: anywhere;
+}
+.console .iv-state {
+  margin: 0;
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
 }
 .console .iv-state.failed {
   color: var(--fail);
@@ -284,9 +252,52 @@
   color: var(--attn);
 }
 
-.console .body .iv-note {
+/* A plain note, in a turn or in the artifact panel (a visual or an artifact
+   that could not be drawn there). */
+.console :is(.body, .art-body) .iv-note {
+  margin: 0;
   font-size: var(--dm-type-caption);
   color: var(--t3);
+}
+
+/* "Open in panel" under a visual in a saved turn (TurnBody VisualOpen): a
+   quiet text control, since the visual is already drawn above it. It keeps a
+   chip's state: "In panel" in the lead colour while the panel shows it. */
+.console .iv-open-row {
+  display: flex;
+  justify-content: flex-end;
+  max-width: min(100%, 44rem);
+  margin: -8px 0 14px;
+}
+.console .iv-open {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--rb, 5px);
+  background: none;
+  color: var(--t3);
+  font: inherit;
+  font-size: var(--dm-type-caption);
+  cursor: pointer;
+}
+.console .iv-open:hover {
+  color: var(--t1);
+}
+.console .iv-open:focus-visible {
+  outline: var(--dm-focus-width, 1px) solid var(--dm-focus-color, var(--light));
+  outline-offset: -1px;
+}
+.console .iv-open.on {
+  color: var(--light);
+}
+
+/* In the artifact panel a visual takes the panel's width and is drawn at it
+   (ArtifactPane PanelVisual), so a chart's 11 px labels stay 11 px. */
+.console .art-body .iv {
+  max-width: none;
+  margin: 0;
+}
+.console .art-visual {
+  min-width: 0;
 }
 
 /* Visually hidden, still read: the data behind every chart. */
@@ -304,24 +315,13 @@
 }
 
 html[data-motion='reduced'] .console .iv,
-html[data-motion='reduced'] .console .iv-fillbar {
+html[data-motion-preset='none'] .console .iv {
   animation: none;
   transition: none;
 }
-html[data-motion='reduced'] .console .iv-track.indeterminate .iv-fillbar {
-  width: 100%;
-  opacity: 0.45;
-  transform: none;
-}
 @media (prefers-reduced-motion: reduce) {
-  .console .iv,
-  .console .iv-fillbar {
+  .console .iv {
     animation: none;
     transition: none;
-  }
-  .console .iv-track.indeterminate .iv-fillbar {
-    width: 100%;
-    opacity: 0.45;
-    transform: none;
   }
 }

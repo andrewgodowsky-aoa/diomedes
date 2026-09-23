@@ -50,26 +50,33 @@ export interface TableBlock {
 }
 export type TurnBlock = ParagraphBlock | HeadingBlock | ListBlock | CodeBlock | TableBlock;
 
-/** What an artifact fence or table becomes in the panel. */
-export type ArtifactKind = 'diagram' | 'chart' | 'image' | 'design' | 'document' | 'table';
+/**
+ * What an artifact fence or table becomes in the panel. A `visual` is an
+ * inline visual (a ```visual block, shared/visual-spec.ts) opened in the panel
+ * from its turn; it is drawn in place first, so it never stands in a turn as a
+ * chip. There is no `chart` kind: the ```chart fence retired in favour of the
+ * visual spec, and a saved ```chart block reads as the code block it is.
+ */
+export type ArtifactKind = 'diagram' | 'image' | 'design' | 'document' | 'table' | 'visual';
 
 export const KIND_LABEL: Record<ArtifactKind, string> = {
   diagram: 'Diagram',
-  chart: 'Chart',
   image: 'Image',
   design: 'Design',
   document: 'Document',
   table: 'Table',
+  visual: 'Visual',
 };
 
 /** The line shown in place of an artifact while its turn is still arriving. */
 export const DRAWING: Record<ArtifactKind, string> = {
   diagram: 'Drawing a diagram…',
-  chart: 'Drawing a chart…',
   image: 'Drawing an image…',
   design: 'Building a design…',
   document: 'Writing a document…',
   table: 'Writing a table…',
+  // A visual block's own placeholder (InlineVisual's VisualPending) says the same.
+  visual: 'Drawing a chart…',
 };
 
 /** CRLF and lone CR become LF before anything else reads the text. */
@@ -104,15 +111,14 @@ export function startsWithSvg(source: string): boolean {
 }
 
 /**
- * Which fences become artifacts. Every other language, and no language at
- * all, stays a code block.
+ * Which fences become artifacts drawn in the panel. Every other language, and
+ * no language at all, stays a code block. A `visual` fence is not one of them:
+ * it is drawn in place (TurnBody) and indexed on its own terms (artifacts.ts).
  */
 export function fenceKind(lang: string, source: string): ArtifactKind | null {
   switch (lang) {
     case 'mermaid':
       return 'diagram';
-    case 'chart':
-      return 'chart';
     case 'svg':
       return 'image';
     case 'xml':

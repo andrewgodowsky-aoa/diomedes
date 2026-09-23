@@ -7,6 +7,9 @@ Version 2026-09-22.1, written 2026-09-23 by the model-artifacts lane (Opus 5.5).
 - **Base:** `c10b7b2` ("Record 0.1.7 publication and verified website deployment")
 - **State:** uncommitted, unpushed, unmerged, unreleased.
 - **Decisions and security model:** `docs/product/2026-09-22-model-artifacts.md`.
+- **Superseded in part, 2026-09-23:** the ` ```chart ` fence, `chart-spec.ts`, `Chart.tsx`, their
+  CSS and their tests are retired. Charts are ` ```visual ` blocks drawn by `InlineVisual.tsx`,
+  which open in the panel as the kind Visual. Record: `docs/product/2026-09-23-visual-convergence.md`.
 
 ## Release blocker
 

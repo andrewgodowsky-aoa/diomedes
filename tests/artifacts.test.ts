@@ -4,6 +4,7 @@ import {
   cellNumber,
   chartColumns,
   declarationOf,
+  declarationTitle,
   declaredSource,
   fileBelongsTo,
   fileHasArtifacts,
@@ -14,19 +15,25 @@ import {
   savedExtension,
   savedIdOf,
   shortDigest,
-  tableChart,
   tableSource,
+  tableVisual,
   temporal,
   turnKeyOf,
+  visualOf,
+  visualTitle,
   withoutDeclaration,
 } from '../client/console/artifacts';
 import { parseBlocks, type TableBlock } from '../client/console/turn-blocks';
 import { savedPath } from '../client/console/artifact-save';
+import { parseVisualSpec, VISUAL_MAX_PER_REPLY } from '../shared/visual-spec';
 
 const said = (id: string, text: string) => ({ id, role: 'diomedes', text });
 const asked = (id: string, text: string) => ({ id, role: 'you', text });
 const fence = (lang: string, body: string) => `\`\`\`${lang}\n${body}\n\`\`\``;
 const table = (text: string) => parseBlocks(text).find((block) => block.type === 'table') as TableBlock;
+const BAR = '{"kind":"bar","labels":["a"],"series":[{"name":"n","values":[1]}]}';
+const bar = (title?: string) =>
+  JSON.stringify({ kind: 'bar', ...(title ? { title } : {}), labels: ['a'], series: [{ name: 'n', values: [1] }] });
 
 describe('artifact identity', () => {
   it('is a short digest of the thread, the turn and the block, and nothing else', () => {
@@ -42,11 +49,11 @@ describe('artifact identity', () => {
   it('reads artifacts from assistant turns only, in turn order, then block order', () => {
     const index = indexArtifacts('thread-1', [
       asked('t0', fence('mermaid', 'graph TD\n  A-->B')),
-      said('t1', `One\n\n${fence('chart', '{"type":"bar","x":["a"],"series":[{"name":"n","values":[1]}]}')}\n\n${fence('mermaid', 'graph LR\n  X-->Y')}`),
+      said('t1', `One\n\n${fence('visual', BAR)}\n\n${fence('mermaid', 'graph LR\n  X-->Y')}`),
       said('t2', fence('html', '<p>Hi</p>')),
     ]);
     expect(index.list.map((record) => [record.turnKey, record.blockIndex, record.kind])).toEqual([
-      ['t1', 1, 'chart'],
+      ['t1', 1, 'visual'],
       ['t1', 2, 'diagram'],
       ['t2', 0, 'design'],
     ]);
@@ -97,9 +104,8 @@ describe('versions', () => {
     expect(declarationOf('design', '<!-- artifact: id=home-mock title="Home mock" -->\n<p>x</p>')).toEqual({ id: 'home-mock', title: 'Home mock' });
     expect(declarationOf('image', "  \n<!-- artifact: id=logo title='Logo' -->\n<svg/>")).toEqual({ id: 'logo', title: 'Logo' });
     expect(declarationOf('document', '<!-- artifact: id=plan.v2 -->\n# Plan')).toEqual({ id: 'plan.v2', title: null });
-    expect(declarationOf('chart', '{"type":"bar","id":"sales","title":" Sales "}')).toEqual({ id: 'sales', title: 'Sales' });
-    expect(declarationOf('chart', '{"type":"bar","id":"has space"}')).toEqual({ id: null, title: null });
-    expect(declarationOf('chart', 'not json')).toEqual({ id: null, title: null });
+    // A visual's strict spec has no id field, so nothing it holds is read as one.
+    expect(declarationOf('visual', '{"kind":"bar","id":"sales","title":"Sales"}')).toEqual({ id: null, title: null });
     expect(declarationOf('diagram', '%% artifact: id=-bad title="T"')).toEqual({ id: null, title: 'T' });
     expect(declarationOf('diagram', 'graph TD\n%% artifact: id=late')).toEqual({ id: null, title: null });
     expect(declarationOf('table', 'anything')).toEqual({ id: null, title: null });
@@ -120,11 +126,10 @@ describe('titles', () => {
         't1',
         [
           '## Weekly volume',
-          fence('chart', '{"type":"bar","x":["a"],"series":[{"name":"n","values":[1]}]}'),
+          fence('mermaid', 'graph TD\n  Z-->Y'),
           fence('mermaid', 'graph TD\n  A-->B'),
           '**Delivery check:**',
           fence('mermaid', 'graph TD\n  C-->D'),
-          fence('chart', '{"type":"bar","title":"Declared","x":["a"],"series":[{"name":"n","values":[1]}]}'),
           'Plain words.',
           fence('html', '<p>x</p>'),
         ].join('\n\n'),
@@ -133,11 +138,81 @@ describe('titles', () => {
     expect(index.list.map((record) => record.title)).toEqual([
       'Weekly volume',
       // The second diagram under the same heading does not borrow it: an artifact sits between.
-      'Diagram 1',
+      'Diagram 2',
       'Delivery check',
-      'Declared',
       'Design 1',
     ]);
+  });
+
+  it('names a visual by its own title, or else by its kind, and never borrows a heading', () => {
+    const index = indexArtifacts('thread-1', [
+      said(
+        't1',
+        [
+          '## Weekly volume',
+          fence('visual', bar()),
+          fence('mermaid', 'graph TD\n  A-->B'),
+          fence('visual', bar('Declared')),
+          fence('visual', '{"kind":"progress","label":"Packing","value":0.5}'),
+          fence('visual', '{"kind":"app","key":"update-progress"}'),
+          fence('visual', '{"kind":"stat","items":[{"label":"Sent","value":3}]}'),
+        ].join('\n\n'),
+      ),
+    ]);
+    expect(index.list.map((record) => [record.kind, record.title])).toEqual([
+      ['visual', 'Bar chart'],
+      // A visual is drawn where it stands, so the heading above it is not the diagram's.
+      ['diagram', 'Diagram 1'],
+      ['visual', 'Declared'],
+      ['visual', 'Progress'],
+      ['visual', 'App update'],
+      ['visual', 'Key figures'],
+    ]);
+    const run = parseVisualSpec({ kind: 'app', key: 'run-status' });
+    expect(run.ok && visualTitle(run.spec)).toBe('Run status');
+  });
+});
+
+describe('visuals as artifacts', () => {
+  it('indexes a visual exactly when its turn draws one: closed, valid and within the reply limit', () => {
+    const visuals = Array.from({ length: VISUAL_MAX_PER_REPLY + 1 }, (_, at) => fence('visual', bar(`Chart ${at + 1}`)));
+    const index = indexArtifacts('thread-1', [said('t1', visuals.join('\n\n'))]);
+    expect(index.list).toHaveLength(VISUAL_MAX_PER_REPLY);
+    expect(index.list.map((record) => record.title).at(-1)).toBe(`Chart ${VISUAL_MAX_PER_REPLY}`);
+    for (const record of index.list) {
+      expect([record.kind, record.lang, record.declaredId, record.version, record.versionCount]).toEqual([
+        'visual',
+        'visual',
+        null,
+        1,
+        1,
+      ]);
+      expect(record.identity).toBe(record.key);
+      expect(visualOf(record.source).ok).toBe(true);
+    }
+    // An invalid visual and one never closed are notes, not artifacts, but they count toward the limit.
+    const broken = indexArtifacts('thread-1', [
+      said('t1', [fence('visual', '{"kind":"bar"}'), ...visuals.slice(0, VISUAL_MAX_PER_REPLY)].join('\n\n')),
+      said('t2', `Done.\n\n\`\`\`visual\n${BAR}`),
+    ]);
+    expect(broken.list).toHaveLength(VISUAL_MAX_PER_REPLY - 1);
+    expect(broken.list.every((record) => record.turnKey === 't1')).toBe(true);
+  });
+
+  it('reads a retired ```chart fence as an ordinary code block: no artifact, no record', () => {
+    const chart = fence('chart', '{"type":"bar","id":"sales","x":["a"],"series":[{"name":"n","values":[1]}]}');
+    expect(indexArtifacts('thread-1', [said('t1', `Sales.\n\n${chart}`)]).list).toEqual([]);
+    expect(fileHasArtifacts('Saved artifacts/Sales.md', `# Sales\n\n${chart}\n`)).toBe(false);
+  });
+
+  it('reads a visual with every limit a reply applies, and says why one cannot be drawn', () => {
+    expect(visualOf(BAR)).toMatchObject({ ok: true, spec: { kind: 'bar' } });
+    expect(visualOf('{"kind":"bar","id":"x","labels":["a"],"series":[{"name":"n","values":[1]}]}')).toEqual({
+      ok: false,
+      reason: 'has a field it does not take (id)',
+    });
+    expect(visualOf('not json')).toEqual({ ok: false, reason: 'the block is not valid JSON' });
+    expect(visualOf(`{"kind":"bar","pad":"${'x'.repeat(40_000)}"}`)).toEqual({ ok: false, reason: 'the block is too large' });
   });
 });
 
@@ -168,6 +243,17 @@ describe('files', () => {
     expect(fileHasArtifacts('notes.md', fence('mermaid', 'graph TD'))).toBe(true);
     expect(fileHasArtifacts('notes.txt', fence('mermaid', 'graph TD'))).toBe(false);
     expect(fileHasArtifacts('page.html', '<p>x</p>')).toBe(true);
+  });
+
+  it('reads a .json file as one visual only when it holds a valid visual spec', () => {
+    const titled = indexFile('Saved artifacts/Sales.json', `${bar('Weekly sales')}\n`);
+    expect(titled.list.map((record) => [record.kind, record.title, record.lang])).toEqual([
+      ['visual', 'Weekly sales', 'visual'],
+    ]);
+    expect(indexFile('charts/Q3 numbers.json', BAR).list[0].title).toBe('Q3 numbers');
+    expect(fileHasArtifacts('Saved artifacts/Sales.json', BAR)).toBe(true);
+    for (const text of ['{"name":"diomedes","version":"0.1.6"}', '{"kind":"bar"}', 'not json', '[]'])
+      expect(fileHasArtifacts('package.json', text), text).toBe(false);
   });
 });
 
@@ -201,14 +287,6 @@ describe('saving', () => {
     const diagram = thread(fence('mermaid', 'graph TD\n  A-->B'));
     expect(savedIdOf(diagram)).toBe(diagram.key);
     expect(declaredSource(diagram, 'Flow "one"')).toBe(`%% artifact: id=${diagram.key} title="Flow 'one'"\ngraph TD\n  A-->B`);
-    const chart = thread(fence('chart', '{"type":"bar","x":["a"],"series":[{"name":"n","values":[1]}]}'));
-    expect(JSON.parse(declaredSource(chart, 'Sales'))).toEqual({
-      id: chart.key,
-      title: 'Sales',
-      type: 'bar',
-      x: ['a'],
-      series: [{ name: 'n', values: [1] }],
-    });
     const declared = thread(fence('mermaid', '%% artifact: id=flow\ngraph TD'));
     expect(declaredSource(declared, 'Anything')).toBe('%% artifact: id=flow\ngraph TD');
 
@@ -223,6 +301,45 @@ describe('saving', () => {
     expect(other.key).not.toBe(diagram.key);
     expect(fileBelongsTo(path, savedDocument(other, 'Flow'), diagram)).toBe(false);
     expect(fileBelongsTo(path, '# Notes\n\nNo artifacts here.', diagram)).toBe(false);
+  });
+
+  it('saves a visual as its JSON source in a .json file, and knows that file again by its content', () => {
+    const source = bar('Weekly sales');
+    const visual = thread(`## Numbers\n\n${fence('visual', source)}`);
+    expect(visual.kind).toBe('visual');
+    expect(savedExtension(visual.kind)).toBe('.json');
+    // Nothing is added to the spec: it is strict, and an id field would make it invalid.
+    expect(declaredSource(visual, 'Anything')).toBe(source);
+    const saved = savedDocument(visual, visual.title);
+    expect(saved).toBe(`${source}\n`);
+    expect(JSON.parse(saved)).toEqual(JSON.parse(source));
+    const path = 'Saved artifacts/Weekly sales.json';
+    const reread = indexFile(path, saved).list[0];
+    expect([reread.kind, reread.title]).toEqual(['visual', 'Weekly sales']);
+    expect(fileBelongsTo(path, saved, visual)).toBe(true);
+    // Another visual saved under the same name is not this one's file.
+    const other = thread(fence('visual', bar('Weekly sales, again')));
+    expect(fileBelongsTo(path, savedDocument(other, other.title), visual)).toBe(false);
+    expect(fileBelongsTo(path, '{"name":"x"}', visual)).toBe(false);
+  });
+
+  it('keeps a declaration line whole, whatever the title says', () => {
+    expect(declarationTitle('Plan --> next')).toBe('Plan -> next');
+    expect(declarationTitle('a <!-- b --- c "d"\ne')).toBe("a <!- b - c 'd''e");
+    const design = thread(fence('html', '<p>x</p>'));
+    const saved = savedDocument(design, 'Plan --> next <!-- again');
+    const [first, ...rest] = saved.split('\n');
+    // One comment, opened once and closed once, at the end of its own line.
+    expect(first).toBe(`<!-- artifact: id=${design.key} title="Plan -> next <!- again" -->`);
+    expect(first.match(/-->/g)).toHaveLength(1);
+    expect(first.match(/<!--/g)).toHaveLength(1);
+    expect(rest.join('\n')).toBe('<p>x</p>\n');
+    expect(indexFile('Saved artifacts/Plan.html', saved).list[0].title).toBe('Plan -> next <!- again');
+    // An SVG's comment may hold no "--" at all (XML), so nothing of the title adds one.
+    const image = thread(fence('svg', '<svg viewBox="0 0 1 1"/>'));
+    const svg = declaredSource(image, 'Sign -- final');
+    const comment = /^<!--([\s\S]*?)-->/.exec(svg)![1];
+    expect(comment).not.toContain('--');
   });
 });
 
@@ -249,25 +366,55 @@ describe('charting a table', () => {
     expect(temporal(['2024'])).toBe(false);
   });
 
-  it('draws bars across row labels, a line across time, and says which cells had no number', () => {
+  it('draws a visual spec: bars across row labels, a line across ordered periods', () => {
     const regions = table('| Region | Sent | Replies |\n|---|---|---|\n| North | 120 | 9 |\n| South | 80 | n/a |');
     expect(chartColumns(regions)).toEqual({
       category: 0,
       numeric: [{ index: 1, name: 'Sent' }],
     });
-    expect(tableChart(regions, 1)).toEqual({
-      type: 'bar',
-      title: 'Sent by Region',
-      x: ['North', 'South'],
-      series: [{ name: 'Sent', values: [120, 80] }],
+    const sent = tableVisual(regions, 1);
+    expect(sent).toEqual({
+      ok: true,
+      spec: { kind: 'bar', title: 'Sent by Region', labels: ['North', 'South'], series: [{ name: 'Sent', values: [120, 80] }] },
+      caption: null,
     });
-    expect(tableChart(regions, 2)).toMatchObject({
-      series: [{ name: 'Replies', values: [9, 0] }],
-      caption: '1 row has no number in Replies and is drawn at 0.',
-    });
+    // What it draws is a spec a reply could hold: it passes the same parser.
+    expect(sent.ok && parseVisualSpec(sent.spec)).toEqual({ ok: true, spec: sent.ok && sent.spec });
+    // A column holding a word is not a column of numbers, so it is never charted as one.
+    expect(tableVisual(regions, 2)).toEqual({ ok: false, reason: 'this column does not hold only numbers' });
     const months = table('| Month | Sent |\n|---|---|\n| Jan | 5 |\n| Feb | 7 |');
-    expect(tableChart(months, 1).type).toBe('line');
+    expect(tableVisual(months, 1)).toMatchObject({ ok: true, spec: { kind: 'line', labels: ['Jan', 'Feb'] } });
     const idsFirst = table('| Id | Name | Score |\n|---|---|---|\n| 17 | Ada | 3 |\n| 42 | Bo | 5 |');
     expect(chartColumns(idsFirst).category).toBe(1);
+  });
+
+  it('leaves out a row with no number and says so, rather than drawing a 0 the table never held', () => {
+    const gaps = table('| Region | Sent |\n|---|---|\n| North | 120 |\n| South |  |\n| East | 40 |\n| West |  |');
+    const drawn = tableVisual(gaps, 1);
+    expect(drawn).toMatchObject({
+      ok: true,
+      spec: { labels: ['North', 'East'], series: [{ name: 'Sent', values: [120, 40] }] },
+      caption: '2 rows have no number in Sent and are left out.',
+    });
+    const one = tableVisual(table('| Region | Sent |\n|---|---|\n| North | 120 |\n| South |  |'), 1);
+    expect(one.ok && one.caption).toBe('1 row has no number in Sent and is left out.');
+  });
+
+  it('keeps every label inside the spec’s limits, and offers nothing past its row limit', () => {
+    const long = 'L'.repeat(90);
+    const wide = table(`| **${long}** | ${'N'.repeat(90)} |\n|---|---|\n| ${long} | 1 |\n| \`b\` | 2 |\n|  | 3 |`);
+    const drawn = tableVisual(wide, 1);
+    expect(drawn.ok).toBe(true);
+    if (!drawn.ok) return;
+    expect(drawn.spec.labels.map((label) => label.length)).toEqual([60, 1, 5]);
+    expect(drawn.spec.labels[0].endsWith('…')).toBe(true);
+    expect(drawn.spec.labels.slice(1)).toEqual(['b', 'Row 3']);
+    expect(drawn.spec.series[0].name).toHaveLength(60);
+    expect(drawn.spec.title!.length).toBeLessThanOrEqual(120);
+    const rows = Array.from({ length: 201 }, (_, at) => `| r${at} | ${at} |`).join('\n');
+    expect(tableVisual(table(`| Row | Value |\n|---|---|\n${rows}`), 1)).toEqual({
+      ok: false,
+      reason: 'a chart draws at most 200 rows, and this column has 201',
+    });
   });
 });

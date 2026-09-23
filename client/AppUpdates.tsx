@@ -3,6 +3,8 @@ import type { UpdateStatusSnapshot } from '../shared/app-updates';
 import { ApiError, api } from './api';
 import { readUpdateStatus } from './use-update-status';
 import { Button } from './components';
+import { SegmentBar } from './console/SegmentBar';
+import { updateBar, type UpdateRequest } from './update-progress';
 import './app-updates.css';
 
 type Phase = 'loading' | 'ready' | 'checking' | 'downloading' | 'installing' | 'launched';
@@ -86,6 +88,21 @@ export function AppUpdates() {
     [refresh],
   );
 
+  // While a download runs the host's record is read again at the update
+  // card's own interval, so the bar follows the bytes the host has received.
+  // A failed read here changes nothing: the download's own answer says how it
+  // ended.
+  const downloadRunning = phase === 'downloading' || !!status?.download.progress;
+  useEffect(() => {
+    if (!downloadRunning) return;
+    const timer = setInterval(() => {
+      readUpdateStatus()
+        .then(setStatus)
+        .catch(() => undefined);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [downloadRunning]);
+
   const outcome = status?.check.outcome ?? null;
   const handedOff = phase === 'launched' || status?.install.phase === 'launched';
   const busy =
@@ -93,7 +110,11 @@ export function AppUpdates() {
     phase === 'downloading' ||
     phase === 'installing' ||
     handedOff ||
-    status?.install.phase === 'installing';
+    status?.install.phase === 'installing' ||
+    !!status?.download.progress;
+  const pending: UpdateRequest | null =
+    phase === 'checking' || phase === 'downloading' || phase === 'installing' ? phase : null;
+  const bar = handedOff ? null : updateBar(status, pending);
 
   return (
     <div className="app-updates">
@@ -170,6 +191,15 @@ export function AppUpdates() {
             <p className="caption">
               Project work is active. Finish or stop it before installing the update.
             </p>
+          )}
+          {bar && (
+            <SegmentBar
+              size="panel"
+              className="update-bar"
+              label={bar.label}
+              fraction={bar.fraction}
+              detail={bar.detail}
+            />
           )}
           <div className="actions">
             <Button disabled={busy} onClick={() => void run('checking', '/updates/check')}>
