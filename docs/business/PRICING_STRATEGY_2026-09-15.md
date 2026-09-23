@@ -21,7 +21,7 @@ Every term here is **approved** (an owner decision, with its date), **proposed**
 | Owner-only model override for testing | approved | Owner decision 2026-09-23 |
 | Customer expert model picker (including for BYO users), lead-only / all-call pinning and no-substitution choices | withdrawn | Owner decision 2026-09-23 |
 | Efficient: GPT-6 Luna on AWS Bedrock | approved (route not live-qualified) | Owner decision 2026-09-23 |
-| Focused: Gemini 3.8 Flash on Google Cloud Vertex AI (sign-in: API key or local ADC, owner decision pending) | approved (route not live-qualified) | Owner decision 2026-09-23 |
+| Focused: Gemini 3.8 Flash on Google Cloud Vertex AI (sign-in: a Vertex API key; local ADC is the alternative) | approved (route not live-qualified) | Owner decision 2026-09-23 |
 | Thorough: GPT-6 Sol on AWS Bedrock | approved (route not live-qualified) | Owner decision 2026-09-23 |
 | Sol-primary Focused, optional Muse Standard, Opus 5.5-led Thorough | superseded | Replaced by owner decision 2026-09-23 |
 | Parent-job credit caps: Efficient 20, Focused 50, Thorough 100 | approved | Owner decision 2026-09-23 |
@@ -139,7 +139,7 @@ Approved 2026-09-23. Customers never choose routing or models. Every picker show
 | Tier | Owner's current route |
 |---|---|
 | Efficient | GPT-6 Luna on AWS Bedrock |
-| Focused | Gemini 3.8 Flash on Google Cloud Vertex AI (sign-in: API key or local ADC, owner decision pending) |
+| Focused | Gemini 3.8 Flash on Google Cloud Vertex AI (sign-in: a Vertex API key; local ADC is the alternative) |
 | Thorough | GPT-6 Sol on AWS Bedrock |
 
 None of these routes has had a live call. Each needs live-provider qualification before any customer use, and the app at `c10b7b2` still binds the older GPT-5.6 Luna AWS route (see "Architecture and implementation status").
@@ -188,7 +188,7 @@ Initial workflows continue to avoid autonomous payroll, payments, hiring/firing/
 
 ## Architecture and implementation status
 
-Extend the existing Vercel AI SDK ModelAdapter with explicit connections for the approved routes: AWS Bedrock (GPT-6 Luna, GPT-6 Sol), Google Cloud Vertex AI (Gemini 3.8 Flash; sign-in by API key or local ADC is an open owner decision) and OpenRouter (Jev). Azure is not in the approved 2026-09-23 map; no current rule depends on an Azure route. Other qualified hosts use the same registry. The SDK does not pool balances, supply credentials or verify credit eligibility. The owner's tier map selects the model and route; then an authorized account/payer/processing route is bound. Preserve NativeAgent/RunService/Trust, provider-bound private continuation and no implicit fallback.
+Extend the existing Vercel AI SDK ModelAdapter with explicit connections for the approved routes: AWS Bedrock (GPT-6 Luna, GPT-6 Sol), Google Cloud Vertex AI (Gemini 3.8 Flash; sign-in by a Vertex API key, with local ADC as the alternative) and OpenRouter (Jev). Azure is not in the approved 2026-09-23 map; no current rule depends on an Azure route. Other qualified hosts use the same registry. The SDK does not pool balances, supply credentials or verify credit eligibility. The owner's tier map selects the model and route; then an authorized account/payer/processing route is bound. Preserve NativeAgent/RunService/Trust, provider-bound private continuation and no implicit fallback.
 
 TypeSafe Jev is a bounded advisory/evaluation model, reached through OpenRouter (approved 2026-09-23). Reuse `shared/evaluation.ts`, `server/harness/evaluation-adapter.ts` and price/usage seams; verify the real installed SDK/provider contract. Jev does not approve effects, change permissions, execute tools or make confidence equal correctness.
 
