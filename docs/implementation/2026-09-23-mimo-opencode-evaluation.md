@@ -50,29 +50,47 @@ Committed on the branch (local only):
 
 **Held, not committed.** `server/engines/opencode.ts` is claimed by NECTOVIA.SECURITY.PASS
 until its PR merges. The route fix and its tests exist uncommitted in the worktree and as
-`evidence/mimo-opencode-evaluation/pending-opencode-route-fix.patch` (sha256 `95786fbf…6d7528`),
-covering `server/engines/opencode.ts`, `tests/opencode-adapter.test.ts` and
-`tests/read-scope-opencode.test.ts`:
+`evidence/mimo-opencode-evaluation/pending-opencode-route-fix.patch` (sha256 `00120779…b4fea7`,
+after the review repairs below), covering `server/engines/opencode.ts`,
+`tests/opencode-adapter.test.ts`, `tests/read-scope-opencode.test.ts` and
+`tests/independent-h01-fixtures-20260917/opencode-provider.cjs`:
 
 - **F1, catalogue seed.** Before launch, copy (never link) the person's own
   `<XDG_CACHE_HOME or ~/.cache>/opencode/models.json` into the isolated cache. The copy is capped
-  at 32 MB and any error is ignored. It is the public model catalogue, not account data. There is
-  no write-back, because the copy is deleted with the run root. Enablement, permissions and auth
-  are unchanged. With no native file, behaviour is exactly as before.
+  at 32 MB (checked before and after the copy) and any error is ignored. `lstat`, so a link is not
+  followed. A file last written before the installed OpenCode binary was built is not seeded,
+  because it is probably older than the bundled catalogue. It is the public model catalogue, not
+  account data. There is no write-back, because the copy is deleted with the run root.
+  Enablement, permissions and auth are unchanged. With no native file, behaviour is exactly as
+  before.
 - **F2, handshake attempt bound.** Each readiness `/provider` probe gets its own 5s bound inside
   the unchanged 45s startup deadline. Live on the unmodified adapter, roughly 9 of ~31 launches
   hung on the first probe for the whole deadline. During one hang, a probe on a fresh connection
   was answered in under 0.4s.
 - **F3, text parts only.** A `message.part.delta` is accepted only for a part already announced
-  as `text`. OpenCode 1.18.4 streams a reasoning part's deltas with `field: "text"`. Live on MiMo
+  as `text`. A text delta that arrives before its announcement is recovered from that part's full
+  text, tracked per part. OpenCode 1.18.4 streams a reasoning part's deltas with `field: "text"`. Live on MiMo
   Flash, 125 reasoning deltas (1,484 chars) were prepended to a 505-char answer, and the result
   was saved and streamed as the answer. This affects every OpenCode Go model that reasons.
 
-Tests: 8 new tests in `tests/opencode-adapter.test.ts`. On the unmodified adapter 4 fail
-(catalogue ×2, reasoning leak, handshake retry) and 4 pass as guards (no native file, unparsable
-native file, late text announcement, deadline still enforced). All 8 pass on the candidate. The
-fixture now announces text parts before their deltas, as 1.18.4 does. `read-scope-opencode`
-needed one fixture line for the same reason.
+Tests: 10 new tests in `tests/opencode-adapter.test.ts`. On the unmodified adapter, 4 of the
+first 8 failed (catalogue ×2, reasoning leak, handshake retry) and 4 passed as guards (no native
+file, unparsable native file, late text announcement, deadline still enforced). The review added
+two: a native catalogue older than the binary is not seeded, and a later part's early delta is
+recovered. A global `beforeEach` points `XDG_CACHE_HOME` at an empty path, so no adapter test
+reads the developer's own cache. Fixtures now announce text parts before their deltas, as 1.18.4
+does: one line each in `read-scope-opencode` and the H01 provider fixture. The H01 test file is
+claimed by security-hardening-acceptance-fixtures; only its unclaimed `.cjs` fixture was changed.
+
+Gates on the candidate, run 2026-09-23:
+
+- The three focused files: 99/99 passed, exit 0.
+- The 93 test files that mention OpenCode, WorkStyle, route contract or attribution:
+  1676 passed and 1 skipped, exit 0. An earlier run of the same set had one
+  `scoped-work` timing failure, which passed when run alone.
+- `tsc --noEmit`: exit 0.
+- The full `vitest run` was **not** run, because the heavy-test slot was held by another lane
+  (`site-final-gates`).
 
 Integration steps once the security PR has merged and the routing session says so: claim
 `server/engines/opencode.ts`, rebase onto main, apply the patch, rerun the gates and commit.
@@ -90,9 +108,10 @@ measures what `steps: 2` changes.
 - `client/console/Picker.tsx` and `client/AISetup.tsx` list what the last check returned, and the
   service gates selection by the exact slug. No change; MiMo 2.6 shows in the expert picker once
   the catalogue is fresh.
-- Version: OpenCode 1.18.4 is installed, and every protocol check in the adapter passed live:
-  session creation with an explicit model, `prompt_async`, event shapes, the reported provider
-  and model, Stop via `/abort`, and read-tool part shapes with `external_directory: deny`.
+- Version: OpenCode 1.18.4 is installed, and every adapter protocol check exercised here passed
+  live: session creation with an explicit model, `prompt_async`, event shapes, the reported
+  provider and model, Stop via `/abort`, and read-tool part shapes. Every model declined D1
+  without a tool call, so `external_directory: deny` itself was not exercised live.
   **No tested-version bump is needed.** A newer OpenCode would ship a newer bundled catalogue,
   but that is not a fix: the race and the staleness come back with the next model release.
 - Read scope, permissions and the step bound for read turns are unchanged.
@@ -114,7 +133,7 @@ as unavailable (F1).
 | In the live catalogue (both inspections) | yes, 30 models | yes, 30 models |
 | Explicit selection; route, account and model logged before dispatch | 17/17 calls | 17/17 calls |
 | Exact response (A1) | pass | pass |
-| Final attribution = selected slug, and OpenCode's own `message.updated` model | 15/15, `mimo-v2.6-flash` | 15/15, `mimo-v2.6-pro` |
+| OpenCode's own `message.updated` model on every task (the adapter also refuses a mismatch; the runner's `attributionMatches` just echoes the request and proves nothing alone) | 15/15, `mimo-v2.6-flash` | 15/15, `mimo-v2.6-pro` |
 | Stream probe (1–40) | 42 deltas, first 7.0s, done 10.6s; content failed (steps:1 preamble) | 15 deltas, first 21.1s, done 23.4s; correct |
 | Stop 1.5s after the first text | CANCELLED, settled 1.06s after Stop, no completion | CANCELLED, 1.16s, no completion |
 | Synthetic file read (B1) | read the report | read the report |
@@ -129,8 +148,10 @@ dispatch, 0 handshake timeouts, and the 30-model catalogue every time.
 ### Frozen v1 scores, and the v1.1 re-score
 
 v1 is the committed checker (`eval-set.ts`, f940e73). v1.1 (`rescore-v1_1.ts`, written after
-the runs) fixes one defect only, applied to every model the same way: trailing punctuation was
-counted as part of a figure, so `$61,200,` was read as an invented number. Derived arithmetic
+the runs) fixes one kind of defect, applied to every model the same way in the two figure
+checks (`no invented figures`, `no invented dollar figure`): trailing punctuation was counted as
+part of a figure, so `$61,200,` was read as an invented number. The class columns below are
+**v1**; under v1.1, Flash is B 3/4 and C 2/2, and Luna and Sol are B 4/4. Derived arithmetic
 such as "+11.2 pts" still counts as not in the source under both.
 
 | Model (route) | v1 accepted | v1.1 | A | B | C | D | E | Median first text / total | Median words |
@@ -141,8 +162,10 @@ such as "+11.2 pts" still counts as not in the source under both.
 | DeepSeek V4 Flash (Diomedes/OpenCode Go) | 11/15 | 11/15 | 1/4 | 3/4 | 2/2 | 2/2 | 3/3 | 11.0s / 12.0s | 39 |
 | GPT-5.6 Sol, medium (**Codex-direct**, ChatGPT subscription) | 12/15 | 13/15 | 3/4 | 3/4* | 2/2 | 2/2* | 2/3 | n/a / 9.4s | 25 |
 
-\*Codex reads with its own tools, which are not visible to the scorer. Its read-evidence checks
-are recorded as N/A, not as passes. Sol is a different route, and it cannot show whether the
+\*Codex reads with its own tools, which are not visible to the scorer. Its three read-evidence
+checks are recorded as N/A, not as passes, so Sol was scored on 36 checks against 39 for the
+others. Its text-only prompts also carried an extra "do not read files" line that the route
+prompts did not. The headline numbers are therefore not strictly like for like. Sol is a different route, and it cannot show whether the
 Diomedes route works.
 
 Where the misses were:
@@ -192,9 +215,11 @@ cash through Andrew's subscription is **unknown**. Codex reported total tokens p
   DeepSeek V4 Flash or Luna on accepted results, speed or verbosity. It obeys the steps:1
   injection, and at steps:2 it emitted raw tool-call markup. It is not ready to be an Efficient
   alternative.
-- **MiMo-V2.6-Pro: MANUAL**, the one to evaluate next. It had the strongest B/C/D/E record among
-  the same-route models (3/4, 2/2, 2/2, 3/3; it solved E3, which Luna missed), but it is slow to
-  first text (21s on the stream probe) and verbose (median 88 words). Every figure here is **one
+- **MiMo-V2.6-Pro: MANUAL.** Its B/C/D/E record (3/4, 2/2, 2/2, 3/3) **ties DeepSeek V4 Flash**
+  on the same route. It is not better. Pro, Flash and DeepSeek all solved E3, which Luna missed.
+  Its median time to first text across tasks (12.1s) matched the others, although one stream
+  probe took 21s, and it is the most verbose (median 88 words). It is worth a repeat evaluation
+  as a document/research read worker only alongside DeepSeek V4 Flash, as a comparator. Every figure here is **one
   run per task**, so nothing yet counts as "repeatedly". A QUALIFIED CANDIDATE judgement for a
   document/research-worker role needs repeated runs and a blinded read.
 - Neither model is added to `STYLE_LEADS`. Luna stays the Efficient lead, Sol Focused and
@@ -215,6 +240,12 @@ work, over repeated runs with blinded review, and once F3 and the steps question
 - F1 depends on the person's own OpenCode having refreshed its catalogue. With no native file,
   the race remains. Waiting for OpenCode's own refresh would need a separate design.
 - Latency was measured on one busy Windows machine with other sessions running.
+- The discovery figures behind F1, F2 and F3 are session observations, not committed run rows:
+  9 of 14 inspections saw the live catalogue, roughly 9 of ~31 launches hung, and 125 reasoning
+  deltas / 1,484 chars leaked. The scripts that produced them, and the lengths-only event trace,
+  are in `evidence/mimo-opencode-evaluation/discovery/`.
+- Joining text parts with no separator is pre-existing behaviour (e.g. Luna's "…figure.- **Downtown**"
+  and "I'll search…" narration). It is not changed here.
 
 ## Files
 
@@ -224,3 +255,21 @@ work, over repeated runs with blinded review, and once F3 and the steps question
 - `runs/*.jsonl` (every dispatch, refusal, probe and task row), `summary-v1.jsonl`,
   `summary-v1_1.jsonl`.
 - `pending-opencode-route-fix.patch`.
+- `discovery/`: the catalogue, race, startup and event-shape scripts, and the Flash event trace
+  on the unmodified route.
+
+## Independent review
+
+An Opus reviewer (read-only) found no P0 or P1. Repaired:
+
+- P2: a WorkStyle assertion that could never fail.
+- P2: F1 seeding a stale native catalogue (now the binary-mtime guard).
+- P3: per-part recovery for late text deltas.
+- P3: `lstat` and the post-copy size bound.
+- P3: test isolation from the developer's own cache.
+- The record claims it called overstated (Pro "strongest", the 21s latency, v1/v1.1 columns,
+  the scope of the v1.1 re-score, Sol's comparability, uncommitted discovery evidence, and D1 not
+  exercising `external_directory`).
+
+The reviewer checked every numeric claim it spot-checked against the JSONL and found them all
+matching, and found no credentials in the committed evidence.

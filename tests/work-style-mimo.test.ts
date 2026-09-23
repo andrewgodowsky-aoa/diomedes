@@ -22,7 +22,8 @@ const route = 'opencode';
 describe('MiMo 2.6 is manual-only on every Work Style', () => {
   it('is no logical model, so no style can lead with it', () => {
     for (const m of [flash, pro, ...older]) expect(logicalModelOf(m)).toBeNull();
-    for (const style of WORK_STYLES) expect(STYLE_LEADS[style]).not.toContain(expect.stringMatching(/mimo/i));
+    for (const style of WORK_STYLES)
+      expect(STYLE_LEADS[style].some((lead) => /mimo/i.test(lead))).toBe(false);
   });
 
   it('leaves Efficient on Luna when MiMo is listed first', () => {
