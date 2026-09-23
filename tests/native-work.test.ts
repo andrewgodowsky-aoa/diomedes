@@ -771,6 +771,13 @@ describe('guarded native file proposals', () => {
     await start([]);
     const ready = await waiting();
     const moved = `${ready.project.folder}-moved-for-test`;
+    // The open need starts a change review build that opens each project file
+    // to hash it, and Windows refuses to rename a folder with a file open
+    // inside. Reading the session's review queues behind that build.
+    const review = await request(
+      `/projects/${projectId}/change-review/session/${ready.needs[0].sessionId}`,
+    );
+    expect(review.status).toBe(200);
     await fs.rename(ready.project.folder, moved);
     expect((await decision(ready.needs[0].id, 'go-ahead')).status).toBe(409);
     await expect(fs.stat(ready.project.folder)).rejects.toHaveProperty('code', 'ENOENT');
