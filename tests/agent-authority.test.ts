@@ -118,15 +118,13 @@ beforeEach(async () => {
     await request(`/projects/${projectId}/threads`, 'POST', { taskId, name: 'Agent thread' })
   ).data.id;
   await request('/settings', 'PUT', { services: { codex: true } });
-  // Default-deny cloud sharing: this synthetic project explicitly grants the
-  // codex route with no source documents and reviewer packets for the
-  // model-reviewer scope below (sources [] throughout).
+  // Grant the proposed file path for the model-reviewer scope below.
   expect(
     (
       await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
         expectedVersion: 0,
         routes: ['codex'],
-        documents: [],
+        documents: ['Result.md'],
         shareConversationHistory: false,
         shareReviewPackets: true,
       })
