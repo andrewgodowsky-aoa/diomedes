@@ -14,6 +14,7 @@
 // Synthetic material only. Prints and records answer text, timings and the
 // route's own sanitised error messages; never environment, headers or auth.
 import fs from 'node:fs';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { OpenCodeAdapter, OPENCODE_ACCOUNT_ROUTE, OPENCODE_VERSION } from '../../server/engines/opencode.js';
@@ -27,12 +28,67 @@ const EXE =
   process.env.MIMO_EVAL_OPENCODE ??
   'C:/Users/andre/AppData/Local/Microsoft/WinGet/Packages/OpenJS.NodeJS.LTS_Microsoft.Winget.Source_8wekyb3d8bbwe/node-v24.14.1-win-x64/node_modules/opencode-ai/bin/opencode.exe';
 const MAX_ATTEMPTS = 8;
+/** Which adapter build these calls ran on. Set by the operator for every run; recorded on every row. */
+const ROUTE_BUILD = process.env.MIMO_EVAL_ROUTE_BUILD ?? 'unlabelled';
+
+/**
+ * Read-only observation of what OpenCode itself reported on the event stream
+ * for the last assistant message: provider, model, token counts and its own
+ * cost estimate (computed by OpenCode from public list prices; it is NOT what
+ * the OpenCode Go subscription charges). The adapter's bytes are untouched.
+ */
+let reported: { provider?: string; model?: string; tokens?: unknown; costEstimate?: unknown } = {};
+const NL = String.fromCharCode(10);
+const observe: typeof fetch = async (url, init) => {
+  const response = await fetch(url, init);
+  if (!String(url).endsWith('/event') || !response.body) return response;
+  // A pass-through transform, not a tee: a cancel from the adapter reaches the source at once.
+  const dec = new TextDecoder();
+  let buf = '';
+  const tap = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      controller.enqueue(chunk);
+      buf += dec.decode(chunk, { stream: true });
+      let i: number;
+      while ((i = buf.indexOf(NL + NL)) >= 0) {
+        const data = buf.slice(0, i).split(NL).filter((l) => l.startsWith('data: ')).map((l) => l.slice(6)).join('');
+        buf = buf.slice(i + 2);
+        try {
+          const ev = JSON.parse(data);
+          const info = ev?.properties?.info;
+          if (ev.type === 'message.updated' && info?.role === 'assistant')
+            reported = { provider: info.providerID, model: info.modelID, tokens: info.tokens, costEstimate: info.cost };
+        } catch {
+          /* not JSON */
+        }
+      }
+    },
+  });
+  const mine = response.body.pipeThrough(tap);
+  return new Response(mine, { status: response.status, headers: response.headers });
+};
 
 const [out, model, only] = process.argv.slice(2);
 if (!out || !model?.startsWith('opencode-go/')) throw new Error('usage: run-eval.ts <out.jsonl> <opencode-go/model> [ids]');
 const wanted = only ? new Set(only.split(',')) : null;
-const adapter = new OpenCodeAdapter(EXE, path.resolve(here, '..', '..'));
-const write = (row: object) => fs.appendFileSync(out, `${JSON.stringify({ at: new Date().toISOString(), evalSet: EVAL_SET_VERSION, ...row })}\n`);
+/**
+ * SIDE EXPERIMENT ONLY (MIMO_EVAL_TEXT_STEPS set): raise the text-only agent's
+ * step limit in the inline config the adapter already built, to measure what
+ * OpenCode's injected "MAXIMUM STEPS REACHED" instruction does at steps:1.
+ * Tools stay off and denied either way. Never part of the evaluated candidate.
+ */
+const TEXT_STEPS = process.env.MIMO_EVAL_TEXT_STEPS ? Number(process.env.MIMO_EVAL_TEXT_STEPS) : null;
+const launch = (file: string, args: string[], options: Parameters<typeof spawn>[2]) => {
+  const env = { ...(options?.env ?? {}) };
+  if (TEXT_STEPS !== null && env.OPENCODE_CONFIG_CONTENT) {
+    const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT);
+    if (config?.agent?.diomedes?.steps === 1) config.agent.diomedes.steps = TEXT_STEPS;
+    env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config);
+  }
+  return spawn(file, args, { ...options, env }) as ChildProcessWithoutNullStreams;
+};
+const adapter = new OpenCodeAdapter(EXE, path.resolve(here, '..', '..'), { fetch: observe, spawn: launch });
+const write = (row: object) => fs.appendFileSync(out, `${JSON.stringify({ at: new Date().toISOString(), evalSet: EVAL_SET_VERSION, routeBuild: ROUTE_BUILD, textSteps: TEXT_STEPS ?? 1, ...row })}\n`);
 
 interface Call {
   text: string;
@@ -43,6 +99,7 @@ interface Call {
   totalMs: number;
   deltas: number;
   activity: RawToolActivity[];
+  opencodeReported?: typeof reported;
 }
 
 async function call(
@@ -81,9 +138,10 @@ async function call(
     // Recorded before dispatch: the exact route, account and model this call asks for.
     write({ kind: 'dispatch', id, attempt: n, engine: 'opencode', accountRoute: request.accountRoute, model, scope: scoped ? 'read' : 'text', opencodeVersion: OPENCODE_VERSION });
     const started = Date.now();
+    reported = {};
     try {
       const result = await adapter.generate(request);
-      return { text: result.text, attributed: result.model, attempts, firstDeltaMs, totalMs: Date.now() - started, deltas, activity };
+      return { text: result.text, attributed: result.model, attempts, firstDeltaMs, totalMs: Date.now() - started, deltas, activity, opencodeReported: reported };
     } catch (raw) {
       const error = raw as { code?: string; stage?: string; message?: string };
       const e = { code: String(error.code ?? 'UNKNOWN'), stage: error.stage, message: String(error.message ?? raw).slice(0, 300) };
@@ -95,7 +153,7 @@ async function call(
         write({ kind: 'refused-before-dispatch', id, attempt: n, ...e, ms: Date.now() - started });
         continue;
       }
-      return { text: '', error: e, attempts, firstDeltaMs, totalMs: Date.now() - started, deltas, activity };
+      return { text: '', error: e, attempts, firstDeltaMs, totalMs: Date.now() - started, deltas, activity, opencodeReported: reported };
     }
   }
 }
@@ -157,6 +215,7 @@ for (const task of TASKS) {
     words: r.text.trim() ? r.text.trim().split(/\s+/).length : 0,
     toolCalls: outcome.toolCalls,
     activity: r.activity.map((a) => ({ phase: a.phase, tool: a.tool, summary: a.summary })),
+    opencodeReported: r.opencodeReported ?? null,
   });
   console.log(task.id, r.error?.code ?? 'ok', checks.filter((c) => c.pass).length + '/' + checks.length, r.totalMs + 'ms');
 }
