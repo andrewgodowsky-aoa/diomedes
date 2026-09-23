@@ -19,6 +19,7 @@ import type { AwsConnectionView } from '../../shared/model-api';
 import type { MessageResult } from '../../shared/conversation';
 import { CONVERSATION_DEFAULT_ROUTE } from '../../shared/engines';
 import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
+import type { WorkStyle } from '../../shared/work-style';
 import { Diomedes, routeOptions } from './Diomedes';
 import { stepLiveReply, type LiveBinding, type LiveEvent, type LiveReply } from './live-reply';
 import type { EverythingItem } from './Everything';
@@ -123,6 +124,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   // The route the scoped thread is recorded on, or null until one is read: the caption then
   // names the default a first send takes. The AWS view feeds only what the Route control offers.
   const [route, setRoute] = useState<Route | null>(null);
+  // The scoped thread's own WorkStyle, or null to follow the Settings default.
+  const [workStyle, setWorkStyle] = useState<WorkStyle | null>(null);
   const [aws, setAws] = useState<AwsConnectionView | null>(null);
   const delivery = useRef<ActiveDelivery | null>(null);
   // Whose turn it is to paint. A scope change, a read and a send each take the next number, so
@@ -205,6 +208,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       if (!owns()) return;
       const ending = conversation?.turns.at(-1);
       setRoute(conversation?.engine ?? null);
+      setWorkStyle(conversation?.workStyle ?? null);
       setTurns(conversation?.turns ?? []);
       setLast(ending && answer !== null && ending.id === answer ? result : null);
     },
@@ -228,6 +232,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       const owns = () => turn.current === mine;
       setBinding(null);
       setRoute(null);
+      setWorkStyle(null);
       setTurns([]);
       setLast(null);
       setKept(null);
@@ -259,6 +264,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         setBinding(found);
         if (!found || !conversation) return;
         setRoute(conversation.engine ?? null);
+        setWorkStyle(conversation.workStyle ?? null);
         setTurns(conversation.turns);
         setRestriction(restrictionFor(conversation.mode));
         setKept(keptOf(retained(found)));
@@ -507,6 +513,33 @@ export function DiomedesHome(props: DiomedesHomeProps) {
     );
   };
 
+  /**
+   * The person's WorkStyle for the scoped thread, written to the thread. It changes which
+   * offered model leads and how hard it thinks from the next message; never the Mode, the
+   * route or who pays. A refused write puts the record's answer back and says why.
+   */
+  const pickStyle = (next: WorkStyle | null) => {
+    const found = binding;
+    if (!found || pending) return;
+    const visit = turn.current;
+    const before = workStyle;
+    setWorkStyle(next);
+    void api<Conversation>(
+      `/projects/${encodeURIComponent(found.projectId)}/threads/${encodeURIComponent(found.threadId)}`,
+      'PUT',
+      { workStyle: next },
+    ).then(
+      (conversation) => {
+        if (turn.current === visit) setWorkStyle(conversation.workStyle ?? null);
+      },
+      (error) => {
+        if (turn.current !== visit) return;
+        setWorkStyle(before);
+        setNotice(words(error));
+      },
+    );
+  };
+
   const card = outcomeCard(last?.outcome ?? null, projects);
   const act = async () => {
     const shown = last;
@@ -572,6 +605,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       route={effective}
       routeChoices={routeChoices}
       onRoute={pickRoute}
+      workStyle={binding !== null ? workStyle : undefined}
+      onWorkStyle={pickStyle}
       unavailable={unavailable}
       card={card}
       cardBusy={cardBusy}

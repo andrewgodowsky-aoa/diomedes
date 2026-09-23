@@ -20,7 +20,7 @@ import { AWS_ROUTE_NAME, awsPickerState } from '../aws-bedrock-view';
 
 const ENGINE_IDS = ['codex', 'claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin'] as const;
 
-interface PickerProps {
+export interface PickerProps {
   thread: Conversation;
   mode: Mode;
   route: Route;
@@ -277,7 +277,7 @@ export function Picker({
                     >
                       <span>Default</span>
                       <span className="id">default</span>
-                      <small>Follow the saved default in Settings</small>
+                      <small>Let the style, or the default saved in Settings, choose</small>
                     </button>
                     {modelsFor(id).map((m) => (
                       <button

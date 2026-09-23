@@ -27,6 +27,8 @@ import { spawn } from 'node:child_process';
 import type {
   Conversation,
   ConversationLineage,
+  EngineModel,
+  Mode,
   Owner,
   Page,
   ProjectState,
@@ -74,6 +76,13 @@ import { codexReviewerAdapter } from './trust/codex-reviewer.js';
 import { AgentRegistry } from './agents.js';
 import { AUTO_AGENT, agentCompatibility } from '../shared/agents.js';
 import { effortFor } from '../shared/effort.js';
+import {
+  DEFAULT_WORK_STYLE,
+  chooseWorkStyleSentence,
+  isWorkStyle,
+  resolveWorkStyle,
+  type WorkStyle,
+} from '../shared/work-style.js';
 import type { UsageSnapshot } from '../shared/types.js';
 import { mountTeamRoutes } from './team/routes.js';
 import { createHarnessHost } from './harness/host.js';
@@ -225,6 +234,19 @@ function parseThreadPermission(value: unknown): ThreadPermission {
   if (typeof value !== 'string' || !THREAD_PERMISSIONS.includes(value as ThreadPermission))
     throw new ApiError(400, PERMISSION_UNAVAILABLE);
   return value as ThreadPermission;
+}
+/** What one request says about itself, for a WorkStyle to read. Never a permission. */
+interface RunHints {
+  mode?: Mode;
+  text?: string | null;
+  /** A model-API conversation binds its level into saved context: style and mode only. */
+  stableEffort?: boolean;
+}
+/** The model and level one request is sent with, and who chose them. */
+interface RunChoice {
+  model?: string;
+  effort?: string;
+  selection?: 'automatic' | 'runtime-default';
 }
 /**
  * A thread's helper choice. Null clears it, so the thread follows the saved
@@ -423,6 +445,13 @@ function validateSettings(current: Settings, body: unknown): Settings {
       // `thread/start` config, never the answer text.
       if (key === 'defaultEngine') {
         services[key] = choice(on, ROUTES, 'default engine');
+        continue;
+      }
+      // The WorkStyle a thread follows when it names none. A style is not a
+      // switch and grants nothing; only the three names are accepted.
+      if (key === 'workStyle') {
+        if (!isWorkStyle(on)) throw new ApiError(400, chooseWorkStyleSentence());
+        services[key] = on;
         continue;
       }
       if (
@@ -1962,6 +1991,7 @@ export async function createApp(options: AppOptions) {
           selectedRoute,
           projectId,
           state.conversations.find((c) => c.id === threadId),
+          { mode: 'build', text: typeof b.instruction === 'string' ? b.instruction : null },
         ),
         instruction:
           b.instruction === undefined
@@ -1995,14 +2025,21 @@ export async function createApp(options: AppOptions) {
     admit: (projectId, command) => admitWork(projectId, command, listeningPort),
     stopSession: (projectId, sessionId) =>
       serviceFor(projectId, sessionId).stop(projectId, sessionId),
-    modelFor: (projectId, threadId, engine) =>
-      engine === 'sample'
-        ? null
-        : (nativeChoice(
+    modelFor: (projectId, threadId, engine) => {
+      if (engine === 'sample') return null;
+      // A name for a queued follow-up. A style that would ask is answered when it is sent.
+      try {
+        return (
+          nativeChoice(
             engine,
             projectId,
             store.state(projectId).conversations.find((c) => c.id === threadId),
-          ).model ?? null),
+          ).model ?? null
+        );
+      } catch {
+        return null;
+      }
+    },
   });
   /**
    * The one trigger. A session reaching a terminal state and a task becoming
@@ -2361,9 +2398,13 @@ export async function createApp(options: AppOptions) {
         b.permission === undefined &&
         b.mode === undefined &&
         b.requested === undefined &&
-        b.engine === undefined
+        b.engine === undefined &&
+        b.workStyle === undefined
       )
         throw new ApiError(400, 'Provide a thread name, permission mode, mode or helper choice.');
+      // Checked before any field is touched, so a refused style leaves nothing half applied.
+      if (b.workStyle !== undefined && b.workStyle !== null && !isWorkStyle(b.workStyle))
+        throw new ApiError(400, chooseWorkStyleSentence());
       // The home conversation runs on the routes a Diomedes conversation supports: Claude
       // Code or a model-API route. Anything else is refused before any field is touched, so a
       // request that also renames or narrows the Mode leaves nothing half applied. Its name,
@@ -2389,6 +2430,10 @@ export async function createApp(options: AppOptions) {
           ? selectedEngine(store.settings, state.project, conversation)
           : choice(b.engine, ROUTES, 'engine');
       if (b.requested !== undefined) conversation.requested = parseRequested(b.requested, engine);
+      // A style changes which offered model leads and how hard it reasons, from the next
+      // request on. It never touches the mode, the permission or the route.
+      if (b.workStyle !== undefined)
+        conversation.workStyle = b.workStyle === null ? null : (b.workStyle as WorkStyle);
       if (b.engine !== undefined) {
         conversation.engine = engine;
         // A route the person picked is marked theirs: the conversation provisioners
@@ -2419,16 +2464,89 @@ export async function createApp(options: AppOptions) {
    */
   const codexChoice = (conversation?: Conversation | null): { model?: string; effort?: string } => {
     const chosen = conversation?.requested;
+    // A model chosen for this thread is never swapped for another. When ChatGPT's own list
+    // no longer offers it, the person is asked rather than given the account default.
+    if (
+      chosen?.model &&
+      engineCatalog('codex').models.length > 0 &&
+      !isKnownChoice('codex', chosen.model, chosen.effort ?? null)
+    )
+      throw new ApiError(
+        409,
+        `The chosen model ${chosen.model} is no longer offered on ChatGPT. Choose another model or return to a style.`,
+      );
     const model = chosen?.model ?? codexModelSetting();
     const effort = chosen?.model ? (chosen.effort ?? undefined) : codexEffortSetting();
     if (!model || !isKnownChoice('codex', model, effort ?? null)) return {};
     return { model, ...(effort ? { effort } : {}) };
   };
+  /** The thread's WorkStyle, else the Settings default, else none. */
+  const styleOf = (conversation?: Conversation | null): WorkStyle | null => {
+    if (isWorkStyle(conversation?.workStyle)) return conversation.workStyle;
+    const saved = store.settings.services?.workStyle;
+    return isWorkStyle(saved) ? saved : DEFAULT_WORK_STYLE;
+  };
+  /**
+   * What a route offers a style to choose from: the engine's own list. The AWS route reports
+   * no list; its one connected model is what it can run, with the three levels its adapter
+   * accepts. Nothing here adds a model a route did not report.
+   */
+  const routeModels = (engine: string): EngineModel[] => {
+    const listed = engineCatalog(engine).models;
+    if (listed.length > 0 || engine !== AWS_BEDROCK_ROUTE) return listed;
+    const saved = store.settings.services?.[`${engine}Model`];
+    if (typeof saved !== 'string' || !saved) return [];
+    const efforts = ['low', 'medium', 'high'].map((level) => ({ id: level, description: '' }));
+    return [{ slug: saved, name: saved, description: '', defaultEffort: 'low', efforts }];
+  };
+  /**
+   * The WorkStyle seam (NC-2026-09-22.1). Null when the thread pins a model (the pin always
+   * wins) or no style applies, so the caller keeps its own path unchanged. Otherwise the model
+   * and level the style resolves to from what this route offers; when nothing offered
+   * qualifies, the request is refused with the reason rather than quietly downgraded.
+   */
+  const styleChoice = (
+    engine: Exclude<Route, 'sample'>,
+    projectId: string,
+    conversation: Conversation | null | undefined,
+    options: RunHints = {},
+  ): (RunChoice & { reason: string }) | null => {
+    if (conversation?.requested?.model) return null;
+    const style = styleOf(conversation);
+    if (!style) return null;
+    const savedModel =
+      engine === 'codex'
+        ? codexModelSetting()
+        : selectedModel(engine, store.settings, store.state(projectId).project, conversation);
+    const resolved = resolveWorkStyle({
+      style,
+      mode: options.mode ?? conversation?.mode ?? 'ask',
+      route: engine,
+      availableModels: routeModels(engine),
+      hints: { text: options.text ?? null },
+      savedModel: savedModel ?? null,
+      routeDefaultAllowed: engine === 'codex',
+      stableEffort: options.stableEffort === true,
+    });
+    if (resolved.outcome === 'ask') throw new ApiError(409, resolved.reason);
+    return {
+      ...(resolved.model ? { model: resolved.model } : {}),
+      ...(resolved.effort ? { effort: resolved.effort } : {}),
+      selection: resolved.selection === 'manual' ? 'automatic' : resolved.selection,
+      reason: resolved.reason,
+    };
+  };
   const nativeChoice = (
     engine: Exclude<Route, 'sample'>,
     projectId: string,
     conversation?: Conversation | null,
-  ): { model?: string; effort?: string } => {
+    options: RunHints = {},
+  ): RunChoice => {
+    const styled = styleChoice(engine, projectId, conversation, options);
+    if (styled) {
+      const { reason: _reason, ...choice } = styled;
+      return choice;
+    }
     if (engine === 'codex') return codexChoice(conversation);
     const model = selectedModel(
       engine,
@@ -2441,6 +2559,48 @@ export async function createApp(options: AppOptions) {
     // never disappear just because the connection is stale or unavailable.
     return { model };
   };
+  /**
+   * What the thread's next request would run with, for the style picker and the details line.
+   * Read-only: it resolves exactly as dispatch does, minus the message itself, and changes
+   * nothing. A pin is reported as the pin; a style that would ask says so here first.
+   */
+  app.get(
+    '/api/projects/:id/threads/:threadId/work-style',
+    route(async (req) => {
+      const projectId = id(req);
+      const state = store.state(projectId);
+      const thread = state.conversations.find((c) => c.id === req.params.threadId);
+      if (!thread) throw new ApiError(404, 'This thread was not found.');
+      const engine = selectedEngine(store.settings, state.project, thread);
+      const style = styleOf(thread);
+      const source = isWorkStyle(thread.workStyle)
+        ? 'thread'
+        : isWorkStyle(store.settings.services?.workStyle)
+          ? 'settings'
+          : style
+            ? 'default'
+            : 'none';
+      if (engine === 'sample') return { route: engine, style, source, resolution: null };
+      const pin = thread.requested?.model
+        ? { model: thread.requested.model, effort: thread.requested.effort ?? null }
+        : null;
+      const savedModel =
+        engine === 'codex'
+          ? codexModelSetting()
+          : selectedModel(engine, store.settings, state.project, { ...thread, requested: null });
+      const resolution = resolveWorkStyle({
+        style,
+        mode: thread.mode,
+        route: engine,
+        availableModels: routeModels(engine),
+        pin,
+        savedModel: savedModel ?? null,
+        routeDefaultAllowed: engine === 'codex',
+        stableEffort: isModelApiRoute(engine),
+      });
+      return { route: engine, style, source, resolution };
+    }),
+  );
   mountClaudeSessionRoutes(app, engines, {
     authorize: async (req) => {
       store.state(String(req.params.id));
@@ -2459,7 +2619,10 @@ export async function createApp(options: AppOptions) {
         if (store.settings.services?.['claude-code'] !== true)
           throw new ApiError(409, 'Turn Claude Code on in Settings before sending.');
         const accountRoute = store.settings.services?.['claude-codeAccountRoute'];
-        const selection = nativeChoice('claude-code', projectId, thread);
+        const selection = nativeChoice('claude-code', projectId, thread, {
+          mode: command.mode,
+          text: command.text,
+        });
         if (!selection.model || typeof accountRoute !== 'string')
           throw new ApiError(409, 'Select the Claude account and model in Settings first.');
         const paths = new Set<string>();
@@ -2791,10 +2954,19 @@ export async function createApp(options: AppOptions) {
         if (store.settings.services?.[conversationRoute] !== true)
           throw new ApiError(409, `Turn ${routeName} on in Settings before sending.`);
         const accountRoute = store.settings.services?.[`${conversationRoute}AccountRoute`];
-        const selection =
-          conversationRoute === 'claude-code'
+        // A WorkStyle, when one applies, chooses from what the route offers; on a model-API
+        // route its level follows style and mode only, because that route binds it into the
+        // lineage's saved context. Without one, each route keeps its own path.
+        const styled = styleChoice(conversationRoute, projectId, thread, {
+          mode: command.mode,
+          text: command.text,
+          stableEffort: isModelApiRoute(conversationRoute),
+        });
+        const selection: { model?: unknown; effort?: string } =
+          styled ??
+          (conversationRoute === 'claude-code'
             ? nativeChoice('claude-code', projectId, thread)
-            : { model: store.settings.services?.[`${conversationRoute}Model`] };
+            : { model: store.settings.services?.[`${conversationRoute}Model`] });
         if (typeof selection.model !== 'string' || !selection.model || typeof accountRoute !== 'string')
           throw new ApiError(409, `Connect ${routeName} and choose its model in AI setup first.`);
         const paths = new Set<string>();
@@ -2828,6 +3000,14 @@ export async function createApp(options: AppOptions) {
           current = undefined;
           changed = true;
         }
+        // A model-API lineage keeps the level it was opened with. A style change that moves
+        // the level is the safe boundary: the next generation starts, the earlier stays.
+        const lineageEffort = modelRoute ? selection.effort : undefined;
+        if (current && !sent && modelRoute && current.effort !== lineageEffort) {
+          current.retired = 'scope-change';
+          current = undefined;
+          changed = true;
+        }
         // The lineages are searched newest first, so once the replacement holds this command
         // it is the one a retry or a restart finds, and the refused turn stays as evidence.
         if (current && options.replace && !sent) {
@@ -2844,6 +3024,7 @@ export async function createApp(options: AppOptions) {
               projectId,
               `lineage.${evidenceDigest({ threadId, mode: command.mode, generation }).slice(0, 40)}`,
             ),
+            ...(lineageEffort ? { effort: lineageEffort } : {}),
           };
           thread.lineages = [...lineages, current];
           changed = true;
@@ -2906,6 +3087,7 @@ export async function createApp(options: AppOptions) {
             ...request,
             documents,
             model: selection.model as string,
+            ...(modelRoute && selection.effort ? { effort: selection.effort } : {}),
             accountRoute,
             signal: options.signal,
             onPreview: (frame: TransientPreview) =>
@@ -3268,6 +3450,7 @@ export async function createApp(options: AppOptions) {
       // The turn id is fixed before the run so the native worker can mark the
       // turn verified once the runtime reports its engine.
       const turnId = identifier('U');
+      const choice = nativeChoice(engine, projectId, conversation, { mode: runMode, text });
       const session = await nativeWork.start(projectId, task.id, {
         instruction,
         sources,
@@ -3277,7 +3460,7 @@ export async function createApp(options: AppOptions) {
         engine,
         threadId: conversation.id,
         mode: runMode,
-        requested: nativeChoice(engine, projectId, conversation),
+        requested: choice,
         agentId: conversation.requested?.agent ?? null,
       });
       const storedSession = store.state(projectId).sessions.find((item) => item.id === session.id)!;
@@ -3296,7 +3479,7 @@ export async function createApp(options: AppOptions) {
         ...(storedSession.origin ? { origin: structuredClone(storedSession.origin) } : {}),
         helper: {
           engine,
-          model: nativeChoice(engine, projectId, conversation).model ?? null,
+          model: choice.model ?? null,
           version: null,
           verified: false,
         },
@@ -3504,6 +3687,7 @@ export async function createApp(options: AppOptions) {
               serviceRoute,
               projectId,
               store.state(projectId).conversations.find((c) => c.id === prepared.conversationId),
+              { mode, text },
             );
       const requestedModel = runChoice.model;
       if (isExternalEngine(serviceRoute)) {

@@ -61,7 +61,8 @@ import {
 import { SendConfirmation } from './SendConfirmation';
 import { PermissionPanel } from './PermissionPanel';
 import { Ledger } from './Ledger';
-import { Picker } from './Picker';
+import { ThreadModelControls } from './WorkStylePicker';
+import type { WorkStyle } from '../../shared/work-style';
 import { COMPOSER_LABEL } from './Composer';
 import { AgentPicker } from './AgentPicker';
 import { BoardView } from './BoardView';
@@ -890,6 +891,23 @@ export function Shell({
       setMode(previous);
     });
   }
+  /**
+   * A thread's WorkStyle. It never changes the mode, the permission or the route. Picking one
+   * clears a pinned model, because a pin outranks every style and the choice would do nothing;
+   * the Agent stays.
+   */
+  function pickStyle(style: WorkStyle | null) {
+    if (!selected || selectedLive || current.current.busy) return;
+    const thread = selected;
+    const agent = thread.requested?.agent ?? null;
+    const unpin = thread.requested?.model
+      ? { requested: agent ? { model: null, effort: null, agent } : null }
+      : {};
+    void perform(async () => {
+      await api(`${base}/threads/${thread.id}`, 'PUT', { workStyle: style, ...unpin });
+      await load();
+    });
+  }
   /** Agent and model are separate choices; changing one preserves the other. */
   function pickAgent(agentId: string | null) {
     if (!selected) return;
@@ -1463,7 +1481,8 @@ export function Shell({
             />
           )}
           {selected && (
-            <Picker
+            <ThreadModelControls
+              projectId={projectId}
               thread={selected}
               mode={mode}
               route={route}
@@ -1472,6 +1491,7 @@ export function Shell({
               settings={settings}
               busy={busy}
               onPick={pick}
+              onStyle={pickStyle}
             />
           )}
           <span

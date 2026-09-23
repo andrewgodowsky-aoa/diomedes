@@ -34,6 +34,8 @@ import { ReplyBody } from './ReplyBody';
 import { useWorkingWord, workingLine } from './working-words';
 import { toolRunning, type ToolLine } from './engine-activity';
 import { ToolActivityList } from './ToolActivity';
+import { resolvedDetail, threadStyle, useWorkStyleView } from './WorkStylePicker';
+import { WORK_STYLE_LABELS } from '../../shared/work-style';
 
 function fmtDur(ms: number): string {
   const s = ms / 1000;
@@ -168,6 +170,12 @@ export function ThreadView({
   const wantedEffort = route === 'codex' ? thread.requested?.effort || savedEffort || 'medium' : '';
   const runsAt = effortFor(mode, wantedEffort, wantedEffort);
   const capped = runsAt !== wantedEffort;
+  // A thread on a WorkStyle names the style for everyone; the model and level it resolves to
+  // are details, shown at technical detail or on request. A pinned model is named as before.
+  const style = thread.requested?.model ? null : threadStyle(thread, settings);
+  const styleView = useWorkStyleView(projectId, thread, [route, mode, settings.services?.workStyle]);
+  const [styleDetails, setStyleDetails] = useState(false);
+  const showStyleDetails = settings.detail === 'technical' || styleDetails;
   const context =
     live?.engine.context ??
     [...ordered].reverse().find((s) => s.engine.context != null)?.engine.context;
@@ -388,13 +396,30 @@ export function ThreadView({
         )}
       </div>
       <div className="col instr" aria-label="Thread instruments">
-        <span>
-          next request <b>{mode}</b> <span className="lc">{modelId}</span>{' '}
-          <span className="lc">
-            {runsAt}
-            {capped ? ', capped' : ''}
+        {style ? (
+          <span>
+            next request <b>{mode}</b> <span className="lc">{WORK_STYLE_LABELS[style]}</span>{' '}
+            {showStyleDetails ? (
+              <span className="lc">{resolvedDetail(styleView)}</span>
+            ) : (
+              <button
+                type="button"
+                title="The model and reasoning level this style resolves to"
+                onClick={() => setStyleDetails(true)}
+              >
+                details
+              </button>
+            )}
           </span>
-        </span>
+        ) : (
+          <span>
+            next request <b>{mode}</b> <span className="lc">{modelId}</span>{' '}
+            <span className="lc">
+              {runsAt}
+              {capped ? ', capped' : ''}
+            </span>
+          </span>
+        )}
         {context != null && (
           <span>
             context <b>{Math.round(context)}%</b>
