@@ -544,7 +544,7 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
     expect((await view()).spend!.recent[0]).toMatchObject({ state: 'uncertain' });
   });
 
-  test('a new key is a new connection generation: the old lineage is retired and the direct route is refused', async () => {
+  test('a new key is a new connection generation: the old lineage is retired, and Build from the thread runs on the new key', async () => {
     await connected();
     const first = await send('m-one', 'Good morning');
     await connect('test-only-bedrock-key-second-generation-0000');
@@ -554,13 +554,53 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
     expect(second.runId).not.toBe(first.runId);
     expect(seen.at(-1)?.authorization).toBe('Bearer test-only-bedrock-key-second-generation-0000');
 
+    // Owner decision 2026-09-23: a thread runs Build and Fix on every connected route, AWS
+    // included, reversing CD-01 Decision 5's refusal. Ask and Plan still answer through the
+    // conversation, so the direct route refuses them as before.
+    const plan = await request(`/projects/${project.id}/ask`, 'POST', {
+      text: 'Plan it now',
+      threadId: thread.id,
+      mode: 'plan',
+      consent: true,
+    });
+    expect(plan.status).toBe(409);
+    expect(await plan.text()).toMatch(/answers through the conversation/);
+
+    const calls = seen.length;
     const direct = await request(`/projects/${project.id}/ask`, 'POST', {
       text: 'Draft it now',
       threadId: thread.id,
       mode: 'build',
       consent: true,
     });
-    expect(direct.status).toBe(409);
-    expect(await direct.text()).toMatch(/answers through the conversation/);
+    expect(direct.status, await direct.clone().text()).toBe(200);
+    const { session: work } = (await direct.json()) as { session: { id: string; route: string } };
+    expect(work.route).toBe('aws-bedrock');
+    await openNeed();
+    // One Work call, on the new key, with no tools and the strict proposal contract.
+    expect(seen).toHaveLength(calls + 1);
+    expect(seen.at(-1)?.authorization).toBe('Bearer test-only-bedrock-key-second-generation-0000');
+    expect(seen.at(-1)?.body.tools ?? []).toEqual([]);
+    expect(userText(seen.at(-1)!.body)).toContain('Return STRICT JSON only');
+    const folder = store().state(project.id).project.folder;
+    await expect(fs.stat(path.join(folder, CHECKLIST))).rejects.toMatchObject({ code: 'ENOENT' });
+    await resolveNeed('go-ahead');
+    const written = await until(
+      () => fs.readFile(path.join(folder, CHECKLIST), 'utf8').catch(() => null),
+      (text) => text !== null,
+      'the approved checklist',
+    );
+    expect(written).toContain('# Linen delivery checklist');
+    const done = await until(
+      state,
+      (value) => value.sessions.find((session) => session.id === work.id)?.state === 'done',
+      'the Build to finish',
+    );
+    expect(done.sessions.find((session) => session.id === work.id)?.origin).toMatchObject({
+      engine: { id: 'aws-bedrock' },
+      model: { requested: AWS_LUNA_MODEL, reported: AWS_LUNA_MODEL, source: 'runtime' },
+      accountRoute: 'aws-bedrock:aws-bedrock-1@r2',
+      executorId: 'diomedes:recorded-writer',
+    });
   });
 });

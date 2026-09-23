@@ -123,6 +123,7 @@ import {
   isExternalEngine,
   isRoute,
   isConversationRoute,
+  CONVERSATION_ROUTE_LIST,
   ROUTES,
   routeDisplayName,
   type EngineConnection,
@@ -753,6 +754,9 @@ export async function createApp(options: AppOptions) {
               ),
             );
           }
+          // Tool activity reaches the run card as on every external route. No preview sink:
+          // a proposal is strict JSON, and the fenced preview channel fails the whole paid
+          // call on one over-long frame, which a large proposal sent as one delta would be.
           return engines.generateModelApi(input.engine, {
             ...input,
             projectId: input.projectId,
@@ -761,6 +765,7 @@ export async function createApp(options: AppOptions) {
             model: input.model,
             instructions: input.instructions ?? '',
             accountRoute: input.accountRoute,
+            onActivity: (frame) => store.emit('engine-activity', frame),
           });
         }
         if (!isExternalEngine(input.engine))
@@ -2545,7 +2550,7 @@ export async function createApp(options: AppOptions) {
       if (b.engine !== undefined && store.isHomeProject(id(req)) && !isConversationRoute(b.engine))
         throw new ApiError(
           409,
-          'The Diomedes conversation runs on Claude Code or AWS Bedrock. Its engine cannot be changed to that.',
+          `The Diomedes conversation runs on ${CONVERSATION_ROUTE_LIST}. Its engine cannot be changed to that.`,
         );
       if (b.name !== undefined) {
         if (typeof b.name !== 'string' || !b.name.trim() || b.name.trim().length > 120)
@@ -3284,9 +3289,10 @@ export async function createApp(options: AppOptions) {
           return { unfinished: true as const, runId: sent.runId, sourceMessageId };
         // CD-01 Decision 5: a conversation runs on the native Claude session or on a
         // model-API route through its own driver. Any other route is refused here, by
-        // name, through the same predicate the thread update guards with.
-        // The tier decides the route when one applies (owner decisions 2026-09-23); a tier
-        // whose route cannot run is refused by name before anything is written or sent.
+        // name, through the same predicate the thread update guards with. This is about
+        // which driver answers a message; Build and Fix on a thread run on every connected
+        // route through /ask (owner decision 2026-09-23). The tier decides the route when one
+        // applies; a tier whose route cannot run is refused by name before anything is sent.
         const conversationRoute = threadRoute(projectId, thread, {
           mode: command.mode,
           text: command.text,
@@ -3294,7 +3300,7 @@ export async function createApp(options: AppOptions) {
         if (!isConversationRoute(conversationRoute))
           throw new ApiError(
             409,
-            'Select Claude Code or AWS Bedrock for this conversation before sending.',
+            `${routeDisplayName(conversationRoute) || 'This route'} does not answer conversations. Select ${CONVERSATION_ROUTE_LIST} for this conversation before sending.`,
           );
         const routeName =
           conversationRoute === 'claude-code' ? 'Claude Code' : MODEL_API_NAMES[conversationRoute];
@@ -3707,7 +3713,7 @@ export async function createApp(options: AppOptions) {
     verified: true,
   });
   /**
-   * A Codex Work run from a thread: a task from the text (or the given task), the person's
+   * A Work run from a thread, on any route: a task from the text (or the given task), the person's
    * turn, the native run with any team options, and the reply turn. `held` says the caller
    * already holds the store lock (the lock is a queue, not reentrant): the team service's
    * wake runs inside a locked route, the /ask route does not.
@@ -3888,11 +3894,6 @@ export async function createApp(options: AppOptions) {
                 { mode: modeOf(b.mode) ?? undefined, text },
               )
             : choice(b.route, ROUTES, 'service');
-      if (isModelApiRoute(serviceRoute))
-        throw new ApiError(
-          409,
-          `${MODEL_API_NAMES[serviceRoute]} answers through the conversation. Send your message there.`,
-        );
       // Home is reached through its messages route alone. This direct route would start work
       // there, write a plan into it, or re-route the one thread that has to stay on Claude
       // Code, so it is refused for every mode before anything is changed, any source file is
@@ -3910,6 +3911,16 @@ export async function createApp(options: AppOptions) {
           'Automatic is a conversation mode. Direct execution does not accept it.',
         );
       const mode = parsedMode;
+      // Build and Fix run on every connected route, the model-API routes included (owner
+      // decision 2026-09-23, reversing CD-01 Decision 5's refusal of them on a thread). They
+      // take the one guarded proposal path below. Ask and Plan on a model-API route still
+      // answer through the conversation, which is where that route's read tools and lineage
+      // live.
+      if (isModelApiRoute(serviceRoute) && mode !== 'build' && mode !== 'fix')
+        throw new ApiError(
+          409,
+          `${MODEL_API_NAMES[serviceRoute]} answers through the conversation. Send your message there.`,
+        );
       // A Small Business skill the person picked. Checked here, before consent is asked for or
       // anything is read, so a skill that cannot run says why instead of a send being confirmed
       // for nothing. The section itself is assembled once the selected documents are known,
@@ -3947,6 +3958,9 @@ export async function createApp(options: AppOptions) {
         throw new ApiError(409, 'Turn the selected engine on in Settings before using it.');
       const needsConsent =
         isExternalEngine(serviceRoute) ||
+        // A model-API route reaches /ask only for Build or Fix, and sends the selected
+        // documents to the company's provider account.
+        isModelApiRoute(serviceRoute) ||
         (serviceRoute === 'codex' &&
           (mode === 'build' || mode === 'fix' || store.settings.permissions.sending));
       if (needsConsent && b.consent !== true)

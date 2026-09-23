@@ -18,6 +18,7 @@ import type {
 import type { FollowUpCommand } from '../../shared/work-control';
 import { effortFor } from '../../shared/effort';
 import { isExternalEngine } from '../../shared/engines';
+import { isModelApiRoute } from '../../shared/model-api';
 import type { InstructionFileRecord } from '../../shared/capability-packs';
 import { formatOrigin, originForSession, originForTurn } from '../../shared/attribution';
 import { ApprovalStatus, time } from '../components';
@@ -559,7 +560,9 @@ export function ThreadView({
         route={route}
         confirmSend={
           isExternalEngine(route) ||
-          (route === 'codex' && (mode === 'build' || mode === 'fix' || settings.permissions.sending))
+          (route === 'codex' && (mode === 'build' || mode === 'fix' || settings.permissions.sending)) ||
+          // Build and Fix send the selected documents to the company's provider account.
+          (isModelApiRoute(route) && (mode === 'build' || mode === 'fix'))
         }
         prepareSources={(text, doc) => prepareSources(mode, text, doc)}
         onSend={submit}

@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import { directOrigin } from '../shared/attribution.js';
 import { routeDisplayName } from '../shared/engines.js';
+import { isModelApiRoute } from '../shared/model-api.js';
 import { AGENT_NAME } from '../shared/agent-name.js';
 import { diffLines } from 'diff';
 import type { Change, Need, Session, ThreadPermission } from '../shared/types.js';
@@ -173,11 +174,16 @@ export function extractJsonObject(text: string): string {
   return text;
 }
 
-export function parseProposal(text: string): Proposal {
+/**
+ * `source` names who replied in the two refusals that say so. A model-API route is named,
+ * so a route that cannot return the proposal contract is refused by name; the other routes
+ * keep the generic wording their records already carry.
+ */
+export function parseProposal(text: string, source = 'The engine'): Proposal {
   if (Buffer.byteLength(text) > MAX_BYTES * 8)
     throw new ApiError(
       413,
-      'The engine returned a proposal that is too large. No files were changed.',
+      `${source} returned a proposal that is too large. No files were changed.`,
     );
   let parsed: unknown;
   try {
@@ -185,7 +191,7 @@ export function parseProposal(text: string): Proposal {
   } catch {
     throw new ApiError(
       422,
-      'The engine did not return a valid file proposal. No files were changed. Start again to request a new proposal.',
+      `${source} did not return a valid file proposal. No files were changed. Start again to request a new proposal.`,
     );
   }
   if (
@@ -769,7 +775,10 @@ export class NativeWorkService {
         // fields cannot ride on the session from here.
         let proposal: Proposal;
         try {
-          proposal = parseProposal(result.text);
+          proposal = parseProposal(
+            result.text,
+            isModelApiRoute(run.engine) ? routeDisplayName(run.engine) : undefined,
+          );
         } catch (error) {
           run.faultReply = {
             ...keepRawReply(result.text, run.redact),
