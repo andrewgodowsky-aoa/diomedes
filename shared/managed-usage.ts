@@ -36,6 +36,13 @@
  * here is a checkout, a price approval or a commercial commitment.
  */
 
+import {
+  freshInputTokens,
+  normalizeUsage,
+  type NormalizedUsage,
+  type UsageCounts,
+} from './usage-contract.js';
+
 // --- money --------------------------------------------------------------------
 
 /**
@@ -784,13 +791,43 @@ export function publishedMonthlyGrant(planId: string): MicroUsd | null {
 }
 
 /**
- * The suggested initial parent-job cap. It is an unapproved proposal and no
- * service applies it by default: a host must configure an approved cap.
+ * The tier a parent job runs under. The same three words as the WorkStyles in
+ * `shared/work-style.ts` (checked at the type level in `shared/job-caps.ts`),
+ * spelled out here so the control plane can read the caps without importing the
+ * model-selection code.
  */
-export const PROPOSED_DEFAULT_JOB_CAP_CREDITS = Object.freeze({
-  credits: 20,
-  status: 'proposed' as const,
+export const JOB_TIERS = ['efficient', 'focused', 'thorough'] as const;
+export type JobTier = (typeof JOB_TIERS)[number];
+
+export function isJobTier(value: unknown): value is JobTier {
+  return typeof value === 'string' && (JOB_TIERS as readonly string[]).includes(value);
+}
+
+/**
+ * The finite credit cap every parent job starts with, by tier. Owner decision
+ * of 2026-09-23 (Andrew): Efficient 20, Focused 50, Thorough 100. These replace
+ * the single 20-credit figure that was recorded as a proposal only.
+ *
+ * A cap is a bound on one job, not a grant: it spends nothing by itself, and a
+ * job still needs funds to reserve against. Anything above a tier's cap is
+ * either an owner-approved cap request (the control plane's
+ * `requestCapIncrease` / `decideCapIncrease`) or, on this computer, an explicit
+ * one-job raise the person agrees to for that job alone. Neither is ever a
+ * standing change to these figures.
+ */
+export const APPROVED_JOB_CAP_CREDITS = Object.freeze({
+  status: 'approved' as const,
+  decidedBy: 'owner' as const,
+  decidedOn: '2026-09-23',
+  credits: Object.freeze({ efficient: 20, focused: 50, thorough: 100 }) as Readonly<
+    Record<JobTier, number>
+  >,
 });
+
+/** A tier's approved cap as exact money. */
+export function approvedJobCap(tier: JobTier): MicroUsd {
+  return creditAmount(APPROVED_JOB_CAP_CREDITS.credits[tier]);
+}
 
 /** The price terms an attempt was reserved under. Integer micro-USD per million tokens. */
 export interface RateSnapshot {
@@ -802,22 +839,38 @@ export interface RateSnapshot {
 }
 
 /**
- * A provider's usage report. Billed reasoning is part of output and is
- * reported only so it can be checked, never charged a second time.
+ * A provider's usage report, in the `nectovia-usage/1` meanings
+ * (`shared/usage-contract.ts`): input includes its cache reads and writes, and
+ * output includes its reasoning. Billed reasoning is reported so it can be
+ * checked and is never charged a second time.
  */
-export interface ProviderUsage {
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly cacheReadTokens: number;
-  readonly cacheWriteTokens: number;
-  readonly reasoningTokens: number;
+export type ProviderUsage = UsageCounts;
+
+/**
+ * What an attempt is for, recorded on every attempt so the debit rule for each
+ * class can be decided on its own. Every class records its provider cost.
+ *
+ * `included-chat` is a person's own conversational Ask; `metered-work` is Build,
+ * Fix and other premium work; `worker` is a delegated or team member's turn;
+ * `automation` is work nobody started by hand.
+ *
+ * Which classes debit the customer's allowance, and at what rate, is an open
+ * owner question. This build activates no plan and no pricing for any class:
+ * recording the class changes no balance and no reservation decision.
+ */
+export const USAGE_CLASSES = ['included-chat', 'metered-work', 'worker', 'automation'] as const;
+export type UsageClass = (typeof USAGE_CLASSES)[number];
+
+export function isUsageClass(value: unknown): value is UsageClass {
+  return typeof value === 'string' && (USAGE_CLASSES as readonly string[]).includes(value);
 }
 
 /**
  * A paid attempt: one model, advisor or tool operation under a root job. It is
  * a `Reservation` with the fields parent-job accounting needs. `parentTaskId`
  * carries the root job, so a child or retry can only ever name its parent's
- * envelope.
+ * envelope. A retry is a new attempt with its own id under the same root job:
+ * it spends from the same parent budget and is never the same attempt replayed.
  */
 export interface FundedAttempt extends Reservation {
   readonly tenantId: string;
@@ -825,6 +878,7 @@ export interface FundedAttempt extends Reservation {
   readonly parentAttemptId: string | null;
   readonly requestDigest: string;
   readonly rateSnapshot: RateSnapshot;
+  readonly usageClass: UsageClass;
   /** The hold split: the month pays first, then the top-up balance. */
   readonly monthlyHoldMicroUsd: MicroUsd;
   readonly topUpHoldMicroUsd: MicroUsd;
@@ -832,69 +886,53 @@ export interface FundedAttempt extends Reservation {
   readonly dispatchedAt: string | null;
 }
 
-/** What one attempt actually cost, attributed to the period it was reserved in. */
+/**
+ * What one attempt actually cost, attributed to the period it was reserved in.
+ * `usage` is the normalized report with the provider's raw evidence beside it.
+ */
 export interface AttemptSettlement extends SettledCharge {
   readonly tenantId: string;
   readonly receiptRef: string;
   readonly monthlyDebitMicroUsd: MicroUsd;
   readonly topUpDebitMicroUsd: MicroUsd;
-  readonly usage: ProviderUsage;
+  readonly usage: NormalizedUsage;
 }
 
-const USAGE_FIELDS = [
-  'inputTokens',
-  'outputTokens',
-  'cacheReadTokens',
-  'cacheWriteTokens',
-  'reasoningTokens',
-] as const;
-const MAX_TOKENS_PER_FIELD = 50_000_000;
-
 /**
- * A usage report is complete and consistent, or it is unknown consumption.
- * There is no partial credit for a partial report: a missing field could hide
- * any amount, so the hold stays until the provider says what happened.
+ * A usage report is complete and consistent, or it is not priced. There is no
+ * partial credit for a partial report: a missing field could hide any amount, so
+ * the hold stays until the provider says what happened. This is the contract's
+ * own `normalizeUsage`, in the shape the ledgers already branch on; `unknown`
+ * says whether the report was missing rather than wrong.
  */
 export function validateProviderUsage(
   value: unknown,
-): { valid: true; usage: ProviderUsage } | { valid: false; reason: string } {
-  if (!value || typeof value !== 'object' || Array.isArray(value))
-    return { valid: false, reason: 'The provider reported no usage.' };
-  const record = value as Record<string, unknown>;
-  if (Object.keys(record).some((key) => !(USAGE_FIELDS as readonly string[]).includes(key)))
-    return { valid: false, reason: 'The usage report has fields this build cannot price.' };
-  for (const field of USAGE_FIELDS) {
-    const count = record[field];
-    if (
-      typeof count !== 'number' ||
-      !Number.isSafeInteger(count) ||
-      count < 0 ||
-      count > MAX_TOKENS_PER_FIELD
-    )
-      return { valid: false, reason: `The usage report has no valid ${field}.` };
-  }
-  const usage: ProviderUsage = {
-    inputTokens: record.inputTokens as number,
-    outputTokens: record.outputTokens as number,
-    cacheReadTokens: record.cacheReadTokens as number,
-    cacheWriteTokens: record.cacheWriteTokens as number,
-    reasoningTokens: record.reasoningTokens as number,
-  };
-  if (usage.reasoningTokens > usage.outputTokens)
-    return { valid: false, reason: 'Reported reasoning exceeds reported output.' };
-  return { valid: true, usage };
+  raw?: unknown,
+):
+  | { valid: true; usage: NormalizedUsage }
+  | { valid: false; reason: string; unknown: boolean } {
+  const evidence = normalizeUsage(value, raw);
+  if (evidence.state === 'known') return { valid: true, usage: evidence.usage };
+  return { valid: false, reason: evidence.reason, unknown: evidence.state === 'unknown' };
 }
 
-/** Exact cost of a validated report under a rate snapshot, rounded up to one micro-USD. */
-export function usageCost(rate: RateSnapshot, usage: ProviderUsage): MicroUsd {
+/**
+ * Exact cost of a normalized report under a rate snapshot, rounded up once to
+ * one micro-USD. Fresh input is input less its cache parts; cache reads and
+ * writes are priced at their own rates; reasoning is inside output and is not
+ * priced again.
+ */
+export function usageCost(rate: RateSnapshot, usage: UsageCounts): MicroUsd {
+  const fresh = freshInputTokens(usage);
   const scaled =
-    usage.inputTokens * rate.inputMicroUsdPerMillion +
-    usage.outputTokens * rate.outputMicroUsdPerMillion +
-    usage.cacheReadTokens * rate.cacheReadMicroUsdPerMillion +
-    usage.cacheWriteTokens * rate.cacheWriteMicroUsdPerMillion;
-  if (!Number.isSafeInteger(scaled))
+    BigInt(fresh) * BigInt(rate.inputMicroUsdPerMillion) +
+    BigInt(usage.cacheReadTokens) * BigInt(rate.cacheReadMicroUsdPerMillion) +
+    BigInt(usage.cacheWriteTokens) * BigInt(rate.cacheWriteMicroUsdPerMillion) +
+    BigInt(usage.outputTokens) * BigInt(rate.outputMicroUsdPerMillion);
+  const cost = (scaled + 999_999n) / 1_000_000n;
+  if (cost > BigInt(MAX_MONEY_MICRO_USD))
     throw new RangeError('That usage cannot be priced exactly; reconcile it by hand.');
-  return micro(Math.ceil(scaled / 1_000_000));
+  return micro(Number(cost));
 }
 
 export type ReserveRefusalCode =

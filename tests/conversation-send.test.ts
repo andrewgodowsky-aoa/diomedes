@@ -157,6 +157,26 @@ describe('sending one message', () => {
     expect(sent(1).commandId).toBe('uuid-2');
   });
 
+  test('a command id issued before the send (a one-job cap raise) names the new message', async () => {
+    fetchMock.mockImplementationOnce(answered);
+    await mod.sendMessage(PROJECT, THREAD, input(), undefined, undefined, 'raised-cmd-1');
+    expect(sent(0).commandId).toBe('raised-cmd-1');
+    await expect(mod.sendMessage(PROJECT, THREAD, input('Next'), undefined, undefined, 'bad id!')).rejects.toThrow();
+  });
+
+  test('a job-cap stop is a refusal: the claim is cleared and the resend is a new command', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 402,
+      json: async () => ({ error: 'This job would pass its cap.', code: 'job_cap_reached' }),
+    });
+    await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toMatchObject({ status: 402, data: { code: 'job_cap_reached' } });
+    expect(session.getItem(PENDING)).toBeNull();
+    fetchMock.mockImplementationOnce(answered);
+    await mod.sendMessage(PROJECT, THREAD, input(), undefined, undefined, 'resend-cmd');
+    expect(sent(1).commandId).toBe('resend-cmd');
+  });
+
   test('a refusal after an uncertain attempt keeps the message: the first attempt may have landed', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('network')).mockResolvedValueOnce(refused(409));
     await expect(mod.sendMessage(PROJECT, THREAD, input())).rejects.toMatchObject({ status: 409 });

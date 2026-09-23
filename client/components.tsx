@@ -157,11 +157,17 @@ export function Modal({
   onClose,
   wide = false,
   inline = false,
+  role,
+  describedBy,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  /** `alertdialog` for a decision that must be answered before anything happens. */
+  role?: 'dialog' | 'alertdialog';
+  /** The id of the text that says what the decision is. */
+  describedBy?: string;
   /**
    * Render in place instead of taking the top layer.
    *
@@ -190,6 +196,8 @@ export function Modal({
       ref={ref}
       open={inline || undefined}
       aria-labelledby={id}
+      {...(role ? { role } : {})}
+      {...(describedBy ? { 'aria-describedby': describedBy } : {})}
       className={`dialog ${wide ? 'wide' : ''} ${inline ? 'inline' : ''}`}
       onCancel={(e) => {
         e.preventDefault();

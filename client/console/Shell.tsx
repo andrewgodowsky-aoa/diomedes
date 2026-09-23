@@ -75,6 +75,8 @@ import {
   type ActivityState,
 } from './engine-activity';
 import { SendConfirmation } from './SendConfirmation';
+import { JobCapWarning } from './JobCapWarning';
+import { beforeWake, estimateWake, setThreadTier, wakeOverCap, type CapChoice, type CapPrompt } from '../job-cap-gate';
 import { PermissionPanel } from './PermissionPanel';
 import { Ledger } from './Ledger';
 import { ThreadModelControls } from './WorkStylePicker';
@@ -187,6 +189,8 @@ export function Shell({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<ShellView>('Thread');
   const [workspacesOpen, setWorkspacesOpen] = useState(false);
+  /** A team wake's job-cap question, and how to answer the wake waiting on it. */
+  const [capPrompt, setCapPrompt] = useState<(CapPrompt & { answer(choice: CapChoice): void }) | null>(null);
   const [workspace, setWorkspace] = useWorkspace(report);
   const [mode, setMode] = useState<Mode>('ask');
   // The playbook a person picked for their next message in one thread. It lives here, not in
@@ -1081,7 +1085,18 @@ export function Shell({
   // A helper parked on "Show me first" waits for the person to start it on its messages.
   async function wakeMember(member: TeamMember) {
     await perform(async () => {
-      await api(`${base}/team/members/${encodeURIComponent(member.slotId)}/wake`, 'POST', {});
+      // A wake whose job will likely pass its cap asks first; nothing wakes until a choice.
+      const threadId = member.threadId;
+      const decided = threadId
+        ? await beforeWake({
+            estimate: () => estimateWake(projectId, member.slotId),
+            ask: (prompt) => new Promise<CapChoice>((answer) => setCapPrompt({ ...prompt, answer })),
+            upgrade: (tier) => setThreadTier(projectId, threadId, tier),
+          })
+        : 'wake';
+      if (decided === 'cancel') return;
+      if (decided === 'over') await wakeOverCap(projectId, member.slotId);
+      else await api(`${base}/team/members/${encodeURIComponent(member.slotId)}/wake`, 'POST', {});
       await load();
       if (member.threadId) {
         setSelectedId(member.threadId);
@@ -2123,6 +2138,23 @@ export function Shell({
           onClose={() => setWorkspacesOpen(false)}
           onChanged={setWorkspace}
           report={report}
+        />
+      )}
+      {capPrompt && (
+        <JobCapWarning
+          copy={capPrompt.copy}
+          onUpgrade={() => {
+            setCapPrompt(null);
+            capPrompt.answer('upgrade');
+          }}
+          onGoOver={() => {
+            setCapPrompt(null);
+            capPrompt.answer('over');
+          }}
+          onCancel={() => {
+            setCapPrompt(null);
+            capPrompt.answer('cancel');
+          }}
         />
       )}
       {sendTask && (

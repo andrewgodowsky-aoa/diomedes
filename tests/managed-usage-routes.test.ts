@@ -256,6 +256,25 @@ describe('admission through the route', () => {
     expect(admitted.status).toBe(400);
   });
 
+  test('a client-supplied job envelope is refused, not honoured and not ignored', async () => {
+    const organizationId = await makeOrganization('Fernbrook Joinery');
+    const admitted = await request<{ code?: string }>(
+      `/workspace/organizations/${organizationId}/allowance/admit`,
+      'POST',
+      {
+        route: 'ollama',
+        kind: 'generation',
+        parentTaskId: 'task_1',
+        maxMicroUsd: 1_000_000,
+        parentEnvelopeMicroUsd: 1_000_000_000,
+        requestDigest: 'digest',
+        reservationId: 'res_envelope',
+      },
+    );
+    expect(admitted.status).toBe(400);
+    expect(admitted.data.code).toBe('client_envelope_refused');
+  });
+
   test('an unknown charge kind is refused rather than treated as a generation', async () => {
     const organizationId = await makeOrganization('Fernbrook Joinery');
     const admitted = await request(

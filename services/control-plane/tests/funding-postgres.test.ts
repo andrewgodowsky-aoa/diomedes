@@ -37,7 +37,7 @@ function recording(options: { failCommit?: boolean; money?: string } = {}) {
 
 const reserveInput = {
   tenantId: 't1', organizationId: 'org_1', attemptId: 'attempt_1', rootJobId: 'job_1', parentAttemptId: null,
-  kind: 'generation' as const, route: 'aws-bedrock', requestDigest: 'digest_1',
+  kind: 'generation' as const, route: 'aws-bedrock', requestDigest: 'digest_1', usageClass: 'metered-work' as const,
   rateSnapshot: { version: 'r1', inputMicroUsdPerMillion: 1, outputMicroUsdPerMillion: 1, cacheReadMicroUsdPerMillion: 1, cacheWriteMicroUsdPerMillion: 1 },
   maxMicroUsd: creditAmount(5),
 };
@@ -45,7 +45,7 @@ const reserveInput = {
 describe('funding SQL adapter protocol', () => {
   it('takes the organization lock before reading any balance, then inserts once and commits', async () => {
     const db = recording();
-    const service = new FundingService(new PostgresFundingRepository(db.factory), { now, approvedDefaultJobCapMicroUsd: creditAmount(20) });
+    const service = new FundingService(new PostgresFundingRepository(db.factory), { now });
     const attempt = await service.reserve(reserveInput);
     expect(attempt.monthlyHoldMicroUsd).toBe(creditAmount(5));
     const sql = db.calls.map((call) => call.sql);
@@ -65,7 +65,7 @@ describe('funding SQL adapter protocol', () => {
 
   it('never replays a reservation after an uncertain COMMIT', async () => {
     const db = recording({ failCommit: true });
-    const service = new FundingService(new PostgresFundingRepository(db.factory), { now, approvedDefaultJobCapMicroUsd: creditAmount(20) });
+    const service = new FundingService(new PostgresFundingRepository(db.factory), { now });
     await expect(service.reserve(reserveInput)).rejects.toThrow('connection lost during commit');
     const sql = db.calls.map((call) => call.sql);
     expect(sql.filter((item) => item === 'BEGIN')).toHaveLength(1);
@@ -75,7 +75,7 @@ describe('funding SQL adapter protocol', () => {
 
   it('refuses stored money outside the safe integer range rather than rounding it', async () => {
     const db = recording({ money: '9007199254740993' });
-    const service = new FundingService(new PostgresFundingRepository(db.factory), { now, approvedDefaultJobCapMicroUsd: creditAmount(20) });
+    const service = new FundingService(new PostgresFundingRepository(db.factory), { now });
     await expect(service.reserve(reserveInput)).rejects.toThrow(/safe whole number/);
     expect(db.calls.map((call) => call.sql)).toContain('ROLLBACK');
   });

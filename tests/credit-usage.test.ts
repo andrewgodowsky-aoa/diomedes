@@ -10,7 +10,8 @@ import { describe, expect, test } from 'vitest';
 import {
   CREDIT_MICRO_USD,
   MONTHLY_CREDIT_GRANTS,
-  PROPOSED_DEFAULT_JOB_CAP_CREDITS,
+  APPROVED_JOB_CAP_CREDITS,
+  approvedJobCap,
   creditAmount,
   creditsFor,
   decideReserve,
@@ -110,8 +111,13 @@ describe('the published grant table keeps approval and proposal apart', () => {
     }
   });
 
-  test('the 20-credit job cap is recorded as a proposal, not applied', () => {
-    expect(PROPOSED_DEFAULT_JOB_CAP_CREDITS).toEqual({ credits: 20, status: 'proposed' });
+  test('job caps are the owner-approved 20, 50 and 100 credits by tier', () => {
+    expect(APPROVED_JOB_CAP_CREDITS.status).toBe('approved');
+    expect(APPROVED_JOB_CAP_CREDITS.decidedOn).toBe('2026-09-23');
+    expect(APPROVED_JOB_CAP_CREDITS.credits).toEqual({ efficient: 20, focused: 50, thorough: 100 });
+    expect(approvedJobCap('efficient')).toBe(c(20));
+    expect(approvedJobCap('focused')).toBe(c(50));
+    expect(approvedJobCap('thorough')).toBe(c(100));
   });
 });
 
@@ -173,8 +179,11 @@ describe('usage settles from a validated provider report, never a guess', () => 
     });
     expect(usage.valid).toBe(true);
     if (!usage.valid) return;
-    // 0.2 + 0.4 + 0.002 = $0.602; reasoning is inside output, not charged twice.
-    expect(usageCost(rate, usage.usage)).toBe(602_000);
+    // nectovia-usage/1: the 10,000 cached tokens are part of the 100,000 input, so
+    // 90,000 fresh at $2/M + 10,000 cached at $0.2/M + 50,000 output at $8/M is
+    // 0.18 + 0.002 + 0.4 = $0.582. Reasoning is inside output, not charged twice.
+    // (Before the contract this priced the cached tokens twice, at $0.602.)
+    expect(usageCost(rate, usage.usage)).toBe(582_000);
     expect(usageCost(rate, { ...usage.usage, inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, reasoningTokens: 0 })).toBe(2);
   });
 
