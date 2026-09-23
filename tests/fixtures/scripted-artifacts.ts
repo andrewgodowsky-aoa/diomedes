@@ -82,7 +82,9 @@ const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAA
  * runs in a design (sandbox=""), so none of its marks may appear: its inline script, its
  * onload and onerror handlers, a javascript: URL and a WebRTC connection to the spec's STUN
  * listener all stay unrun. Every attempt is caught, so that if one ever ran, the spec would fail
- * on the mark it left rather than on an uncaught error.
+ * on the mark it left rather than on an uncaught error. Its <link>s, and the one in its nested
+ * frame's srcdoc, are taken out before its srcdoc is built: Chromium does not hold dns-prefetch or
+ * preconnect to the frame's policy.
  */
 const HOSTILE_DESIGN = [
   '<!-- artifact: id=spring-offer title="Spring offer" -->',
@@ -100,6 +102,7 @@ const HOSTILE_DESIGN = [
   '<img src="https://example.com/x.png" alt="" onerror="document.body.dataset.img = \'error ran\'" onload="document.body.dataset.img = \'load ran\'">',
   `<img src="${PIXEL}" alt="" onload="document.body.dataset.pixel = 'ran'">`,
   '<iframe title="Nested" src="javascript:parent.document.body.dataset.js = \'ran\'"></iframe>',
+  '<iframe title="Nested document" srcdoc="<link rel=dns-prefetch href=https://srcdoc-prefetch.example.com>"></iframe>',
   '<script>',
   '  const mark = (name, value) => { document.body.dataset[name] = value; };',
   '  mark("ran", "yes");',
