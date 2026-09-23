@@ -170,23 +170,26 @@ Still open: which change in `App.tsx` makes the two writes safe to cross (for ex
 `openInBook` waiting for the `lastPage` patch, or `navigate` skipping the patch while a guarded
 write is in flight), carried under its own work order rather than as a test change.
 
-### O10. Which web search an Ask or Plan turn on a model-API route may use
-
-Raised 2026-09-23 with the model-API read tools (`server/harness/capabilities/read-scope-tools.ts`).
-The owner's decision lets Ask and Plan search the web. On AWS Bedrock, Azure OpenAI and OpenRouter
-the host now offers project-file reads, approved connector reads and a guarded `fetch_page` for a
-known address, but no search: none of the three has a search tool that needs no new credential
-and no paid add-on. OpenAI's hosted `web_search` is billed per call and Bedrock's compatible
-endpoint is not known to carry it; Azure's needs a separate grounding resource; OpenRouter's web
-plugin is paid per request. The model is told search is unavailable. Still open:
-
-1. Which search provider and key, paid by whom, and under what spend limit. A search call would
-   need its own ledger line; it must never ride on a model route's spend hold unannounced.
-2. Whether an approved connector's MCP server is launched through a shell on Windows. The host
-   client spawns the owner's `command` directly, so a `.cmd` launcher such as `npx` needs its
-   full path or a `node` command line in `read-connectors.json`.
-
 ## Resolved
+
+### R8. Which web search an Ask or Plan turn on a model-API route may use (raised as O10)
+
+**Settled 2026-09-23 by Andrew: web search stays on the subscription engines.** Claude Code and
+Codex search the web natively under the customer's managed subscription, and that is where search
+lives. Nectovia buys no search API: no paid search provider, no search key, and no per-call search
+charge on AWS Bedrock, Azure OpenAI or OpenRouter (nor on Google Vertex AI when its route lands).
+A model-API turn keeps project-file reads, approved connector reads and the guarded `fetch_page`
+for a known address (`server/harness/capabilities/read-scope-tools.ts`), and the model is still
+told search is unavailable there. Work that needs a search belongs on a subscription engine, and
+the tier map (`shared/tier-map.ts`) is where the owner decides which tier runs where.
+
+This answers the first half of O10 (which provider and key, paid by whom, under what limit): none.
+A search call therefore never needs a ledger line of its own and never rides on a model route's
+spend hold.
+
+Still open, carried from O10: whether an approved connector's MCP server is launched through a
+shell on Windows. The host client spawns the owner's `command` directly, so a `.cmd` launcher such
+as `npx` needs its full path or a `node` command line in `read-connectors.json`.
 
 ### R7. History retention was configured and not enforced (raised as O5)
 

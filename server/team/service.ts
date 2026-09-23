@@ -25,6 +25,7 @@ import {
   type TeamMemberSelection,
   type TeamRouteCandidate,
 } from '../../shared/team-routes.js';
+import { ownerPinFrom, tierMapFrom } from '../../shared/tier-map.js';
 import { isRoute } from '../../shared/engines.js';
 import { isWorkStyle, type WorkStyle } from '../../shared/work-style.js';
 import {
@@ -211,7 +212,14 @@ export class TeamService {
       const style = isWorkStyle(input.style) ? input.style : DEFAULT_TEAM_STYLE;
       if (!this.candidates)
         throw new ApiError(409, 'Nectovia cannot choose a team model here. Choose a route and model for this member.');
-      const resolved = resolveTeamMemberModel({ role, style, candidates: this.candidates(projectId) });
+      // The owner's tier map decides the member's route and model, as it does a thread's.
+      const services = this.store.settings.services;
+      const resolved = resolveTeamMemberModel({
+        role,
+        style,
+        candidates: this.candidates(projectId),
+        tiers: { map: tierMapFrom(services), pin: ownerPinFrom(services) },
+      });
       if (resolved.outcome === 'ask') throw new ApiError(409, resolved.reason);
       engine = resolved.route;
       model = resolved.model;

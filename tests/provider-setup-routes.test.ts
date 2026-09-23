@@ -183,15 +183,19 @@ describe('a thread on a connected Azure route', () => {
   });
 });
 
-describe('WorkStyles on Azure and OpenRouter choose from the connected models', () => {
-  type Next = { route: string; resolution: { outcome: string; model: string | null; effort: string | null } };
-  const styled = async (project: Project, thread: Conversation, engine: string, workStyle: string) => {
-    await ok<Conversation>(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine, requested: null });
+describe('the owner’s tier map sends each tier to its mapped Azure or OpenRouter model', () => {
+  type Next = { route: string; resolution: { outcome: string; model: string | null; effort: string | null; reason: string } };
+  const styled = async (project: Project, thread: Conversation, workStyle: string) => {
     await ok<Conversation>(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { workStyle });
     return ok<Next>(`/projects/${project.id}/threads/${thread.id}/work-style`);
   };
+  /** The owner's map, saved beside whatever the routes' own setup already wrote. */
+  const mapTiers = async (entries: Record<string, string>) => {
+    const settings = await ok<{ services?: Record<string, unknown> }>('/settings');
+    await ok('/settings', 'PUT', { services: { ...settings.services, ...entries } });
+  };
 
-  test('Focused takes the Sol deployment and Efficient the Luna one, each with a level', async () => {
+  test('Focused and Efficient each run the deployment the owner mapped, with a level, whatever route the thread was on', async () => {
     const parsed = azureConnectBody({
       resourceName: 'contoso-ai',
       deployments: [
@@ -204,16 +208,23 @@ describe('WorkStyles on Azure and OpenRouter choose from the connected models', 
     });
     if (!parsed.ok) throw new Error(parsed.message);
     await ok('/ai/model-api/azure-openai', 'PUT', parsed.body);
+    await mapTiers({
+      focusedRoute: 'azure-openai',
+      focusedModel: 'gpt-6-sol',
+      efficientRoute: 'azure-openai',
+      efficientModel: 'gpt-6-luna',
+    });
     const project = await ok<Project>('/projects', 'POST', { name: 'Harbor cafe' });
     const thread = await ok<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
-    const focused = await styled(project, thread, 'azure-openai', 'focused');
+    const focused = await styled(project, thread, 'focused');
+    expect(focused.route).toBe('azure-openai');
     expect(focused.resolution).toMatchObject({ outcome: 'run', model: 'gpt-6-sol' });
     expect(focused.resolution.effort).not.toBeNull();
-    const efficient = await styled(project, thread, 'azure-openai', 'efficient');
+    const efficient = await styled(project, thread, 'efficient');
     expect(efficient.resolution).toMatchObject({ outcome: 'run', model: 'gpt-6-luna' });
   });
 
-  test('an OpenRouter model is chosen with no level, since the route sends none', async () => {
+  test('an OpenRouter model is mapped with no level, since the route sends none', async () => {
     const parsed = openRouterConnectBody({
       models: [{ id: 'vendor/gpt-6-luna', upstreams: 'upstream-one', rates: prices }],
       apiKey: SECRET,
@@ -222,10 +233,43 @@ describe('WorkStyles on Azure and OpenRouter choose from the connected models', 
     });
     if (!parsed.ok) throw new Error(parsed.message);
     await ok('/ai/model-api/openrouter', 'PUT', parsed.body);
+    await mapTiers({ efficientRoute: 'openrouter', efficientModel: 'vendor/gpt-6-luna' });
     const project = await ok<Project>('/projects', 'POST', { name: 'Harbor cafe' });
     const thread = await ok<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
-    const efficient = await styled(project, thread, 'openrouter', 'efficient');
-    expect(efficient.resolution).toMatchObject({ outcome: 'run', model: 'vendor/gpt-6-luna', effort: null });
+    const efficient = await styled(project, thread, 'efficient');
+    expect(efficient).toMatchObject({ route: 'openrouter', resolution: { outcome: 'run', model: 'vendor/gpt-6-luna', effort: null } });
+  });
+
+  test('the host refuses a tier mapped to anything but a company account, or a malformed model id', async () => {
+    const settings = await ok<{ services?: Record<string, unknown> }>('/settings');
+    for (const [key, value] of [
+      ['focusedRoute', 'codex'],
+      ['focusedRoute', 'google-vertex-typo'],
+      ['thoroughModel', 'has spaces'],
+      ['ownerPinRoute', 'sample'],
+    ] as const) {
+      const refused = await call('/settings', 'PUT', { services: { ...settings.services, [key]: value } });
+      expect(refused.status, `${key}=${value}`).toBe(400);
+    }
+    expect((await ok<{ services?: Record<string, unknown> }>('/settings')).services).toEqual(settings.services);
+  });
+
+  test('a model the mapped route does not offer is a refusal that names it, not another model', async () => {
+    const parsed = openRouterConnectBody({
+      models: [{ id: 'vendor/gpt-6-luna', upstreams: 'upstream-one', rates: prices }],
+      apiKey: SECRET,
+      expiresLocal: '',
+      consent: true,
+    });
+    if (!parsed.ok) throw new Error(parsed.message);
+    await ok('/ai/model-api/openrouter', 'PUT', parsed.body);
+    await mapTiers({ thoroughRoute: 'openrouter', thoroughModel: 'vendor/gpt-6-sol' });
+    const project = await ok<Project>('/projects', 'POST', { name: 'Harbor cafe' });
+    const thread = await ok<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
+    const thorough = await styled(project, thread, 'thorough');
+    expect(thorough.resolution.outcome).toBe('ask');
+    expect(thorough.resolution.reason).toContain('vendor/gpt-6-sol');
+    expect(thorough.resolution.reason).toContain('OpenRouter');
   });
 });
 

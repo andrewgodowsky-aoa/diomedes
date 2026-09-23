@@ -489,8 +489,8 @@ describe('a model-API team member runs its team tools on the host', () => {
   });
 });
 
-describe('Nectovia chooses a member’s route and model from connected routes only', () => {
-  test('members resolve on the route that offers the style’s model; a style nothing serves is refused with the reason', async () => {
+describe('Nectovia chooses a member’s route and model from the owner’s tier map', () => {
+  test('a member runs on its tier’s mapped route and model; the lead’s tier, one above, is refused by name', async () => {
     await open();
     await connectOpenRouter();
     await connectAws();
@@ -499,7 +499,8 @@ describe('Nectovia chooses a member’s route and model from connected routes on
     const ready = (routes.data.routes as { route: string; ready: boolean }[]).filter((item) => item.ready).map((item) => item.route);
     expect(ready.sort()).toEqual(['aws-bedrock', 'openrouter']);
 
-    // Efficient prefers Luna, which AWS offers; OpenRouter would only be a substitute.
+    // Efficient is GPT-5.6 Luna on AWS Bedrock by the owner's default map. OpenRouter is
+    // connected too, and is not chosen: the map decides, not whichever route is ready.
     const member = await request(`/projects/${projectId}/team/members`, 'POST', {
       name: 'Pip',
       role: 'member',
@@ -512,9 +513,10 @@ describe('Nectovia chooses a member’s route and model from connected routes on
       model: AWS_LUNA_MODEL,
       selection: { by: 'nectovia', style: 'efficient', substituted: false },
     });
-    expect(member.data.member.selection.reason).toMatch(/Efficient with Luna\. On AWS Bedrock\./);
+    expect(member.data.member.selection.reason).toBe(`Efficient: ${AWS_LUNA_MODEL} on AWS Bedrock.`);
 
-    // The lead works one tier up (Focused wants Sol); no connected route offers it.
+    // The lead works one tier up: Focused, Gemini 3.8 Flash on Google Vertex AI, which is not
+    // connected. It is refused by name rather than moved to AWS or OpenRouter.
     const lead = await request(`/projects/${projectId}/team/members`, 'POST', {
       name: 'Lead',
       role: 'lead',
@@ -522,11 +524,25 @@ describe('Nectovia chooses a member’s route and model from connected routes on
       style: 'efficient',
     });
     expect(lead.status).toBe(409);
-    expect(lead.data.error).toMatch(/No connected route offers a model for the lead’s style/);
+    expect(lead.data.error).toMatch(/^Focused runs on Google Vertex AI .*Connect Google Vertex AI in AI setup/);
     expect((await state()).team?.members).toHaveLength(1);
+
+    // The owner maps Focused to the OpenRouter model: now the lead runs there.
+    const settings = await request('/settings');
+    await request('/settings', 'PUT', {
+      services: { ...settings.data.services, focusedRoute: 'openrouter', focusedModel: OR_MODEL },
+    });
+    const mapped = await request(`/projects/${projectId}/team/members`, 'POST', {
+      name: 'Lead',
+      role: 'lead',
+      engine: 'auto',
+      style: 'efficient',
+    });
+    expect(mapped.status, JSON.stringify(mapped.data)).toBe(200);
+    expect(mapped.data.member).toMatchObject({ engine: 'openrouter', model: OR_MODEL, selection: { style: 'focused' } });
   });
 
-  test('with nothing connected, Nectovia says what to connect', async () => {
+  test('with nothing connected, Nectovia names the tier’s route to connect', async () => {
     await open();
     const refused = await request(`/projects/${projectId}/team/members`, 'POST', {
       name: 'Pip',
@@ -534,7 +550,7 @@ describe('Nectovia chooses a member’s route and model from connected routes on
       engine: 'auto',
     });
     expect(refused.status).toBe(409);
-    expect(refused.data.error).toMatch(/Turn on and connect ChatGPT, Claude Code, AWS Bedrock, Azure OpenAI or OpenRouter/);
+    expect(refused.data.error).toMatch(/Connect (AWS Bedrock|Google Vertex AI) in AI setup/);
   });
 });
 
@@ -684,7 +700,7 @@ describe('capability commands keep the route their driver needs', () => {
 });
 
 describe('the add-member form offers connected routes and "Nectovia chooses"', () => {
-  test('only ready routes are offered beside "Nectovia chooses", with the styles to choose from', async () => {
+  test('the form offers the tiers only: no route and no model, even when routes are ready', async () => {
     const { createElement } = await import('react');
     const { renderToStaticMarkup } = await import('react-dom/server');
     const { AddMember } = await import('../client/console/TeamView');
@@ -708,11 +724,13 @@ describe('the add-member form offers connected routes and "Nectovia chooses"', (
         onCancel: () => undefined,
       }),
     );
-    expect(html).toContain('<option value="auto" selected="">Nectovia chooses</option>');
-    expect(html).toContain('>Claude Code</option>');
-    expect(html).toContain('>OpenRouter</option>');
-    expect(html).not.toContain('>ChatGPT</option>');
-    expect(html).toContain('>Thorough</option>');
-    expect(html).toContain('a leader works one step above it');
+    const options = [...html.matchAll(/<option value="([^"]*)"[^>]*>([^<]*)<\/option>/g)].map((m) => m[2]);
+    // Role, then the three tiers. Nothing else is choosable.
+    expect(options).toEqual(['Leader', 'Member', 'Efficient', 'Focused', 'Thorough']);
+    expect(html).not.toContain('aria-label="Route"');
+    expect(html).not.toContain('aria-label="Model"');
+    for (const word of ['Claude Code', 'OpenRouter', 'ChatGPT', 'Opus', OR_MODEL, 'Nectovia chooses</option>'])
+      expect(html).not.toContain(word);
+    expect(html).toContain('a leader works one tier above it');
   });
 });

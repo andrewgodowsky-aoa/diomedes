@@ -2,6 +2,7 @@ import type { EngineModel } from './types.js';
 import { MODEL_API_ROUTES } from './model-api.js';
 import { routeDisplayName } from './engines.js';
 import { resolveWorkStyle, WORK_STYLES, type WorkStyle } from './work-style.js';
+import { resolveTier, type OwnerPin, type TierMap } from './tier-map.js';
 
 /**
  * Which routes can carry the Diomedes team tools, and how. Team work is not a
@@ -139,8 +140,42 @@ export function resolveTeamMemberModel(input: {
   role: 'lead' | 'member';
   style: WorkStyle;
   candidates: readonly TeamRouteCandidate[];
+  /**
+   * The owner's tier map (owner decisions 2026-09-23). When given, the member's tier decides
+   * the route and the model exactly as a thread's does: the mapped route must be one of the
+   * candidates (turned on and connected), or the choice is refused by name. Nothing falls
+   * back to another route.
+   */
+  tiers?: { map: TierMap; pin?: OwnerPin | null };
 }): TeamModelResolution {
   const style = teamRoleStyle(input.role, input.style);
+  if (input.tiers) {
+    const byRoute = new Map(input.candidates.map((candidate) => [candidate.route as string, candidate]));
+    const resolved = resolveTier({
+      style,
+      mode: 'build',
+      map: input.tiers.map,
+      pin: input.tiers.pin ?? null,
+      state: (route) => {
+        const candidate = byRoute.get(route);
+        return { ready: Boolean(candidate), models: candidate?.models ?? [], savedModel: candidate?.savedModel ?? null };
+      },
+    });
+    if (resolved.outcome === 'refuse') return { outcome: 'ask', reason: resolved.reason };
+    if (!isTeamRoute(resolved.route)) return { outcome: 'ask', reason: teamRouteRefusal(resolved.route)! };
+    return {
+      outcome: 'run',
+      route: resolved.route,
+      model: resolved.model,
+      effort: resolved.effort,
+      selection: {
+        by: 'nectovia',
+        style,
+        reason: style === input.style ? resolved.reason : `${resolved.reason} The lead works a tier above.`,
+        substituted: false,
+      },
+    };
+  }
   const runs = input.candidates.flatMap((candidate) => {
     const resolved = resolveWorkStyle({
       style,

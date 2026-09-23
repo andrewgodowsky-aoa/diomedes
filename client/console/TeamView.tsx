@@ -10,6 +10,7 @@ import type {
 import { formatOrigin, originForSession } from '../../shared/attribution';
 import type { TeamProps } from './types';
 import type { NewTeamMember, TeamRoutesView } from '../../shared/team-routes';
+import { WORK_STYLE_LABELS, WORK_STYLES } from '../../shared/work-style';
 import './team.css';
 
 const KIND_WORDS = new Set([
@@ -477,11 +478,10 @@ export function TeamView({
 const AUTO = 'auto';
 
 /**
- * Add one member: a name, a role, and either a route and model the person picks
- * or "Nectovia chooses", which resolves the route and model on the host from a
- * WorkStyle (the leader one step above). Only routes that are on and connected
- * are offered; the host resolves and refuses again, so this form is never the
- * authority.
+ * Add one member: a name, a role and a tier. Nectovia chooses the route and the
+ * model on the host from the owner's tier map (the leader one tier above); a
+ * tier whose route is not connected is refused there by name, so this form is
+ * never the authority and never offers a route or a model.
  */
 export function AddMember({
   routes,
@@ -496,31 +496,21 @@ export function AddMember({
   onAdd(input: NewTeamMember): Promise<void>;
   onCancel(): void;
 }) {
-  const ready = (routes?.routes ?? []).filter((r) => r.ready);
   const [name, setName] = useState('');
   const [role, setRole] = useState<'lead' | 'member'>(firstIsLead ? 'lead' : 'member');
-  const [engine, setEngine] = useState<string>(AUTO);
-  const [model, setModel] = useState('');
   const [style, setStyle] = useState<NonNullable<NewTeamMember['style']>>('focused');
   const [failure, setFailure] = useState<string | null>(null);
-  const chosen = ready.find((r) => r.route === engine) ?? null;
+  // A customer picks the tier only; the owner's tier map decides the route and the model
+  // (owner decision 2026-09-23), so no route or model is ever offered here.
   const caption =
-    engine === AUTO
-      ? role === 'lead'
-        ? 'Nectovia picks a connected route and model for this style; a leader works one step above it.'
-        : 'Nectovia picks a connected route and model for this style.'
-      : '';
+    role === 'lead'
+      ? 'Nectovia runs this member on the tier you choose; a leader works one tier above it.'
+      : 'Nectovia runs this member on the tier you choose.';
   const submit = async () => {
     if (!name.trim() || busy) return;
     setFailure(null);
     try {
-      await onAdd({
-        name: name.trim(),
-        role,
-        ...(engine === AUTO
-          ? { engine: AUTO, style }
-          : { engine: chosen!.route, ...(model ? { model } : {}) }),
-      });
+      await onAdd({ name: name.trim(), role, engine: AUTO, style });
     } catch (error) {
       setFailure(error instanceof Error ? error.message : 'This member could not be added.');
     }
@@ -546,51 +536,19 @@ export function AddMember({
         </select>
       </label>
       <label>
-        <span>Runs on</span>
+        <span>Style</span>
         <select
-          aria-label="Route"
-          value={engine}
-          onChange={(e) => {
-            setEngine(e.target.value);
-            setModel('');
-          }}
+          aria-label="Style"
+          value={style}
+          onChange={(e) => setStyle(e.target.value as NonNullable<NewTeamMember['style']>)}
         >
-          <option value={AUTO}>Nectovia chooses</option>
-          {ready.map((r) => (
-            <option key={r.route} value={r.route}>
-              {r.name}
+          {(routes?.styles ?? WORK_STYLES.map((s) => ({ style: s, label: WORK_STYLE_LABELS[s] }))).map((s) => (
+            <option key={s.style} value={s.style}>
+              {s.label}
             </option>
           ))}
         </select>
       </label>
-      {engine === AUTO ? (
-        <label>
-          <span>Style</span>
-          <select
-            aria-label="Style"
-            value={style}
-            onChange={(e) => setStyle(e.target.value as NonNullable<NewTeamMember['style']>)}
-          >
-            {(routes?.styles ?? []).map((s) => (
-              <option key={s.style} value={s.style}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : (
-        <label>
-          <span>Model</span>
-          <select aria-label="Model" value={model} onChange={(e) => setModel(e.target.value)}>
-            <option value="">{chosen?.savedModel ? `Default (${chosen.savedModel})` : 'Route default'}</option>
-            {(chosen?.models ?? []).map((m) => (
-              <option key={m.slug} value={m.slug}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
       {caption && <p className="caption">{caption}</p>}
       {failure && (
         <p className="caption failure" role="alert">

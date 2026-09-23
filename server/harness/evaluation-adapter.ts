@@ -605,3 +605,47 @@ export async function runEvaluation(input: {
     );
   }
 }
+
+/**
+ * Which route Jev runs through when nothing names one (owner decision
+ * 2026-09-23): OpenRouter, whose Decisions API reports the model that answered
+ * and so can be priced from what actually ran. The Vercel AI Gateway stays
+ * available only by name. The advisor itself stays off until the host is given
+ * one (`AppOptions.jevAdvisor`), and nothing here makes a call.
+ */
+export const DEFAULT_EVALUATION_ROUTE = 'openrouter' as const;
+export const EVALUATION_ROUTES = ['openrouter', 'vercel-gateway'] as const;
+export type EvaluationRoute = (typeof EVALUATION_ROUTES)[number];
+/** Jev 1.13 as OpenRouter lists it; priced by `EVALUATION_PRICE_JEV_113_OPENROUTER`. */
+export const DEFAULT_OPENROUTER_JEV_MODEL = 'typesafe/jev-1.13';
+
+/**
+ * The evaluation port for Jev on a route, OpenRouter unless another is named.
+ * The credential is always explicit: no route reads an ambient key.
+ */
+export function jevEvaluationPort(options: {
+  route?: EvaluationRoute;
+  apiKey: string;
+  modelId?: string;
+  fetch?: unknown;
+  loadOpenRouterSdk?: () => Promise<OpenRouterEvaluationSdk>;
+  loadGatewaySdk?: () => Promise<EvaluationSdk>;
+}): EvaluationPort {
+  const route = options.route ?? DEFAULT_EVALUATION_ROUTE;
+  if (route === 'vercel-gateway') {
+    if (!options.modelId)
+      throw new EvaluationTransportError('invalid_transport', 'Name the Jev model to ask on the Vercel AI Gateway.');
+    return gatewayEvaluationPort({
+      apiKey: options.apiKey,
+      modelId: options.modelId,
+      fetch: options.fetch,
+      loadSdk: options.loadGatewaySdk,
+    });
+  }
+  return openRouterEvaluationPort({
+    apiKey: options.apiKey,
+    modelId: options.modelId ?? DEFAULT_OPENROUTER_JEV_MODEL,
+    fetch: options.fetch,
+    loadSdk: options.loadOpenRouterSdk,
+  });
+}
