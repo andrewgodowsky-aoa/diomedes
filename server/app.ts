@@ -84,6 +84,7 @@ import {
   WORK_STYLE_LABELS,
   WORK_STYLES,
   type WorkStyle,
+  type WorkStyleResolution,
 } from '../shared/work-style.js';
 import {
   TEAM_ROUTES,
@@ -164,6 +165,14 @@ import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_ROUTES } from '../shared/mo
 import { baselineRedact } from './secrets.js';
 import { EngineError } from './engines/process.js';
 import { selectedEngine, selectedModel } from '../shared/ai-selection.js';
+import {
+  ownerPinFrom,
+  resolveTier,
+  tierMapFrom,
+  TIER_SETTING_KEYS,
+  tierSettingRefusal,
+  type TierResolution,
+} from '../shared/tier-map.js';
 import { projectedTurnIds, turnIdentityText } from '../shared/conversation-turn-id.js';
 import { AppUpdateService, mountAppUpdateRoutes, type UpdateTransport } from './app-updates.js';
 import { EngineInstaller } from './engines/install.js';
@@ -474,6 +483,15 @@ function validateSettings(current: Settings, body: unknown): Settings {
       if (key === 'workStyle') {
         if (!isWorkStyle(on)) throw new ApiError(400, chooseWorkStyleSentence());
         services[key] = on;
+        continue;
+      }
+      // The owner's tier map and the owner-testing pin: which route and model serve each
+      // tier. Checked here, on the host, key by key; a route that is not connected is
+      // refused when a tier is used, never silently swapped.
+      if (TIER_SETTING_KEYS.includes(key)) {
+        const refusal = tierSettingRefusal(key, on);
+        if (refusal) throw new ApiError(400, refusal);
+        services[key] = String(on).trim();
         continue;
       }
       if (
@@ -2052,13 +2070,14 @@ export async function createApp(options: AppOptions) {
       if (!thread) throw new ApiError(404, 'This thread was not found.');
       threadPermission = thread.permission ?? 'show-first';
     }
+    // The thread's tier, when one applies, decides the route Build runs on; a tier whose
+    // route is not ready is refused here by name, never moved to the recorded route.
     const selectedRoute =
       b.route === undefined
-        ? selectedEngine(
-            store.settings,
-            state.project,
-            state.conversations.find((c) => c.id === threadId),
-          )
+        ? threadRoute(projectId, state.conversations.find((c) => c.id === threadId), {
+            mode: 'build',
+            text: typeof b.instruction === 'string' ? b.instruction : null,
+          })
         : choice(b.route, ROUTES, 'service');
     const team = teamForThread(projectId, threadId, port, selectedRoute);
     if (command && team)
@@ -2634,6 +2653,60 @@ export async function createApp(options: AppOptions) {
     const efforts = ['low', 'medium', 'high'].map((level) => ({ id: level, description: '' }));
     return [{ slug: saved, name: saved, description: '', defaultEffort: 'low', efforts }];
   };
+  /** What the host knows about one route when a tier resolves: on, connected, and what it lists. */
+  const tierRouteState = (route: string) => {
+    // A mapped route this build does not have (Google Vertex AI before its branch lands) is
+    // simply not ready, so its tier is refused by name.
+    if (!ROUTES.some((known) => known === route) || route === 'sample')
+      return { ready: false, models: [], savedModel: null };
+    const services = store.settings.services ?? {};
+    const ready =
+      services[route] === true &&
+      (route === 'codex' || typeof services[`${route}AccountRoute`] === 'string');
+    const saved = route === 'codex' ? codexModelSetting() : services[`${route}Model`];
+    return {
+      ready,
+      models: ready ? routeModels(route) : [],
+      savedModel: typeof saved === 'string' && saved ? saved : null,
+    };
+  };
+  /**
+   * The tier seam (owner decisions 2026-09-23). When a tier applies and the thread pins no
+   * model, the owner's tier map decides the route and the model together; the owner-testing
+   * pin, when set, wins over the map and says so. Null when no tier applies, so the caller
+   * keeps the thread's recorded route. A refusal names the tier and its route.
+   */
+  const tierFor = (
+    conversation: Conversation | null | undefined,
+    options: RunHints = {},
+  ): TierResolution | null => {
+    if (conversation?.requested?.model) return null;
+    const style = styleOf(conversation);
+    if (!style) return null;
+    return resolveTier({
+      style,
+      mode: options.mode ?? conversation?.mode ?? 'ask',
+      map: tierMapFrom(store.settings.services),
+      pin: ownerPinFrom(store.settings.services),
+      state: tierRouteState,
+      hints: { text: options.text ?? null },
+    });
+  };
+  /**
+   * The route a thread's next request takes: its tier's route when a tier applies, else the
+   * route the thread is recorded on. A tier that cannot run is refused here, by name, before
+   * anything is sent; it never falls back to the recorded route or another payer.
+   */
+  const threadRoute = (
+    projectId: string,
+    conversation: Conversation | null | undefined,
+    options: RunHints = {},
+  ): Route => {
+    const tier = tierFor(conversation, options);
+    if (tier?.outcome === 'refuse') throw new ApiError(409, tier.reason);
+    if (tier) return tier.route as Route;
+    return selectedEngine(store.settings, store.state(projectId).project, conversation);
+  };
   /**
    * The WorkStyle seam (NC-2026-09-22.1). Null when the thread pins a model (the pin always
    * wins) or no style applies, so the caller keeps its own path unchanged. Otherwise the model
@@ -2649,6 +2722,17 @@ export async function createApp(options: AppOptions) {
     if (conversation?.requested?.model) return null;
     const style = styleOf(conversation);
     if (!style) return null;
+    // The owner's tier map decides the model on the tier's own route. A caller that named
+    // another engine itself (a team member's own route, a native Claude session) keeps the
+    // style's choice within that engine; the route was not the tier's to decide there.
+    const tier = tierFor(conversation, options);
+    if (tier?.outcome === 'run' && tier.route === engine)
+      return {
+        model: tier.model,
+        ...(tier.effort ? { effort: tier.effort } : {}),
+        selection: 'automatic',
+        reason: tier.reason,
+      };
     const savedModel =
       engine === 'codex'
         ? codexModelSetting()
@@ -2760,8 +2844,11 @@ export async function createApp(options: AppOptions) {
       const state = store.state(projectId);
       const thread = state.conversations.find((c) => c.id === req.params.threadId);
       if (!thread) throw new ApiError(404, 'This thread was not found.');
-      const engine = selectedEngine(store.settings, state.project, thread);
       const style = styleOf(thread);
+      // A tier decides the route and the model; its answer is shown as it would be sent,
+      // including a refusal, which reads as a choice the owner has to make.
+      const tier = tierFor(thread, { mode: thread.mode });
+      const engine = tier ? (tier.route as Route) : selectedEngine(store.settings, state.project, thread);
       const source = isWorkStyle(thread.workStyle)
         ? 'thread'
         : isWorkStyle(store.settings.services?.workStyle)
@@ -2770,6 +2857,26 @@ export async function createApp(options: AppOptions) {
             ? 'default'
             : 'none';
       if (engine === 'sample') return { route: engine, style, source, resolution: null };
+      if (tier)
+        return {
+          route: engine,
+          style,
+          source,
+          ownerPin: tier.ownerPin,
+          resolution: {
+            outcome: tier.outcome === 'run' ? 'run' : 'ask',
+            model: tier.outcome === 'run' ? tier.model : null,
+            effort: tier.outcome === 'run' ? tier.effort : null,
+            reason: tier.reason,
+            pinScope: null,
+            substituted: false,
+            selection: tier.ownerPin ? 'manual' : 'automatic',
+            style: tier.style,
+            logical: null,
+            kind: tier.kind,
+            escalation: null,
+          } satisfies WorkStyleResolution,
+        };
       const pin = thread.requested?.model
         ? { model: thread.requested.model, effort: thread.requested.effort ?? null }
         : null;
@@ -2798,8 +2905,13 @@ export async function createApp(options: AppOptions) {
         const state = store.state(projectId);
         const thread = state.conversations.find((c) => c.id === threadId);
         if (!thread) throw new ApiError(404, 'This thread was not found.');
-        const engine = selectedEngine(store.settings, state.project, thread);
         const style = styleOf(thread);
+        // The preflight reads the route the tier would send on, never the recorded one.
+        const tier = tierFor(thread, { mode: thread.mode });
+        const engine =
+          tier?.outcome === 'run'
+            ? (tier.route as Route)
+            : selectedEngine(store.settings, state.project, thread);
         if (engine === 'sample') return { tenant: 'local', mode: thread.mode, style, workStyle: null };
         const savedModel =
           engine === 'codex'
@@ -3173,7 +3285,12 @@ export async function createApp(options: AppOptions) {
         // CD-01 Decision 5: a conversation runs on the native Claude session or on a
         // model-API route through its own driver. Any other route is refused here, by
         // name, through the same predicate the thread update guards with.
-        const conversationRoute = selectedEngine(store.settings, state.project, thread);
+        // The tier decides the route when one applies (owner decisions 2026-09-23); a tier
+        // whose route cannot run is refused by name before anything is written or sent.
+        const conversationRoute = threadRoute(projectId, thread, {
+          mode: command.mode,
+          text: command.text,
+        });
         if (!isConversationRoute(conversationRoute))
           throw new ApiError(
             409,
@@ -3238,6 +3355,21 @@ export async function createApp(options: AppOptions) {
           current = undefined;
           changed = true;
         }
+        // A tier moves the route and the model together (Efficient on AWS, Focused on Google
+        // Cloud). The saved context is bound to both, so a change starts the next generation
+        // rather than failing the follow-up; a lineage written before either was recorded is
+        // left as it is.
+        if (
+          current &&
+          !sent &&
+          modelRoute &&
+          ((current.route !== undefined && current.route !== conversationRoute) ||
+            (current.model !== undefined && current.model !== selection.model))
+        ) {
+          current.retired = 'scope-change';
+          current = undefined;
+          changed = true;
+        }
         // The lineages are searched newest first, so once the replacement holds this command
         // it is the one a retry or a restart finds, and the refused turn stays as evidence.
         if (current && options.replace && !sent) {
@@ -3255,6 +3387,7 @@ export async function createApp(options: AppOptions) {
               `lineage.${evidenceDigest({ threadId, mode: command.mode, generation }).slice(0, 40)}`,
             ),
             ...(lineageEffort ? { effort: lineageEffort } : {}),
+            ...(modelRoute ? { route: conversationRoute, model: selection.model as string } : {}),
           };
           thread.lineages = [...lineages, current];
           changed = true;
@@ -3749,10 +3882,10 @@ export async function createApp(options: AppOptions) {
         text = asString(b.text, 'an instruction', 16000),
         serviceRoute =
           b.route === undefined
-            ? selectedEngine(
-                store.settings,
-                store.state(projectId).project,
+            ? threadRoute(
+                projectId,
                 store.state(projectId).conversations.find((c) => c.id === b.threadId),
+                { mode: modeOf(b.mode) ?? undefined, text },
               )
             : choice(b.route, ROUTES, 'service');
       if (isModelApiRoute(serviceRoute))

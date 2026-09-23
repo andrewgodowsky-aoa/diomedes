@@ -239,22 +239,34 @@ test('no style sends what it sent before; a style sends its level and opens its 
   expect(seen).toHaveLength(3);
 });
 
-test('a style whose model the route lacks is refused by name and nothing is sent', async () => {
+test('a tier whose mapped route is not connected, or has no model, is refused by name and nothing is sent', async () => {
   await connect();
   await approveSpend();
   const home = await provisionHome();
+  // Focused is Gemini 3.8 Flash on Google Vertex AI by default. Only AWS is connected here,
+  // and the work is never moved to it.
   await style(home, 'focused');
   const refused = await sendRaw(home, 'm-focused', 'Review the plan for next week.');
   expect(refused.status).toBe(409);
-  expect(await refused.text()).toContain('Sol');
+  expect(await refused.text()).toContain('Connect Google Vertex AI in AI setup');
   expect(seen).toHaveLength(0);
-  // A greeting stays cheap in Thorough: Luna answers it rather than refusing.
+  // Thorough is meant for GPT-6 Sol, which is not qualified: it has no model until the owner
+  // chooses one, and even a greeting is not answered by something else.
   await style(home, 'thorough');
-  const hello = await send(home, 'm-hi', 'hello');
-  expect(hello.answerText).toBe('answer:hello');
+  const unset = await sendRaw(home, 'm-hi', 'hello');
+  expect(unset.status).toBe(409);
+  expect(await unset.text()).toContain('Choose the Thorough model in AI setup');
+  expect(seen).toHaveLength(0);
+  // Once the owner maps Thorough to a model AWS serves, it runs there at Thorough's level.
+  const settings = await api<{ services?: Record<string, unknown> }>('/settings');
+  await api('/settings', 'PUT', {
+    services: { ...settings.services, thoroughRoute: 'aws-bedrock', thoroughModel: AWS_LUNA_MODEL },
+  });
+  const audit = await send(home, 'm-audit', 'Audit the quarterly numbers.');
+  expect(audit.answerText).toBe('answer:Audit the quarterly numbers.');
   expect(seen).toHaveLength(1);
-  expect((await sendRaw(home, 'm-audit', 'Audit the quarterly numbers.')).status).toBe(409);
-  expect(seen).toHaveLength(1);
+  expect(effortOf(0)).toBe('high');
+  expect(homeThread(home).lineages?.at(-1)).toMatchObject({ route: 'aws-bedrock', model: AWS_LUNA_MODEL, effort: 'high' });
 });
 
 test('a style never changes the conversation Mode or its route', async () => {

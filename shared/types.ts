@@ -443,6 +443,12 @@ export interface ConversationLineage {
    * change that moves it starts the next generation rather than failing.
    */
   effort?: string;
+  /**
+   * The model-API route and model a lineage was opened on. A tier moves both at once, and
+   * the saved context is bound to them, so a change starts the next generation.
+   */
+  route?: string;
+  model?: string;
 }
 export interface Conversation {
   engine?: Route;
