@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Project, Route, Turn } from '../../shared/types';
 import { routeDisplayName } from '../../shared/engines';
+import { WORK_STYLES, WORK_STYLE_DESCRIPTIONS, WORK_STYLE_LABELS, isWorkStyle, type WorkStyle } from '../../shared/work-style';
 import type { EverythingItem } from './Everything';
 import { Rail } from './Rail';
 import { useWorkingWord, workingLine } from './working-words';
@@ -50,6 +51,12 @@ export interface DiomedesPageProps {
   routeChoices: Route[] | null;
   /** The person's route choice, written to the thread. */
   onRoute(next: Route): void;
+  /**
+   * The thread's WorkStyle, null to follow the Settings default, or undefined while there is no
+   * thread to write a choice to (the Style control is then not shown).
+   */
+  workStyle?: WorkStyle | null;
+  onWorkStyle?(next: WorkStyle | null): void;
   /** Why the conversation cannot run here, in plain words, or null when it can. */
   unavailable: string | null;
   /** What the last message led to, beyond its answer. Null when the answer is all there is. */
@@ -141,6 +148,8 @@ export function Diomedes({
   route,
   routeChoices,
   onRoute,
+  workStyle,
+  onWorkStyle,
   unavailable,
   card,
   cardBusy,
@@ -348,6 +357,27 @@ export function Diomedes({
                           {routeChoices.map((choice) => (
                             <option key={choice} value={choice}>
                               {routeName(choice)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    {workStyle !== undefined && onWorkStyle && (
+                      <label className="dio-field">
+                        <span>Style</span>
+                        <select
+                          aria-label="Style"
+                          value={workStyle ?? ''}
+                          title={workStyle ? WORK_STYLE_DESCRIPTIONS[workStyle] : 'Follows the default in Settings'}
+                          disabled={pending}
+                          onChange={(e) =>
+                            onWorkStyle(isWorkStyle(e.target.value) ? e.target.value : null)
+                          }
+                        >
+                          <option value="">Default</option>
+                          {WORK_STYLES.map((style) => (
+                            <option key={style} value={style} title={WORK_STYLE_DESCRIPTIONS[style]}>
+                              {WORK_STYLE_LABELS[style]}
                             </option>
                           ))}
                         </select>
