@@ -2,12 +2,26 @@ DIOMEDES BUNDLED PRODUCTION DEPENDENCIES
 ========================================
 
 Application version: 0.1.7
-package-lock.json SHA-256: 2e8defe771b5109af7d12a38b4e32d48727671c4c5e3681bcf04b22e5332f4b5
-Reachable installed production package paths: 141
+package-lock.json SHA-256: 5b313eef69a37505864cdcb3607dd0d8c606a456723da0d98208a71c8114f7d2
+Reachable installed production package paths: 144
 
 Scope: every installed package reachable through dependencies, optional dependencies,
 and required installed peer dependencies from the package-lock root. This conservative
 inventory can include code removed by Vite or esbuild tree shaking.
+
+@ai-sdk/azure@4.0.75
+  lock path: node_modules/@ai-sdk/azure
+  declared license: Apache-2.0
+  source: https://registry.npmjs.org/@ai-sdk/azure/-/azure-4.0.75.tgz
+  package-lock integrity: sha512-radEF1WwU598ah1UDO0X0op4P/KxSBH/mgyv22iXKy3mhNSPI5PE8f7nxV0GTpYZbt7YKuV5JcApySiC+vfmzA==
+  notice files: LICENSE:b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17ae7a267715269bd5529
+
+@ai-sdk/deepseek@3.0.49
+  lock path: node_modules/@ai-sdk/deepseek
+  declared license: Apache-2.0
+  source: https://registry.npmjs.org/@ai-sdk/deepseek/-/deepseek-3.0.49.tgz
+  package-lock integrity: sha512-fcZ6uFsGKCyMy8FucUGAkI/Wi4vX4QQNfF7+hCzmDxQ9fcvsqTruncPqJ/PKlw7iCj4z4m2mD4cGzTjptYTG6g==
+  notice files: LICENSE:b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17ae7a267715269bd5529
 
 @ai-sdk/gateway@4.0.87
   lock path: node_modules/@ai-sdk/gateway
@@ -96,6 +110,13 @@ inventory can include code removed by Vite or esbuild tree shaking.
   source: https://registry.npmjs.org/@modelcontextprotocol/sdk/-/sdk-1.30.0.tgz
   package-lock integrity: sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==
   notice files: LICENSE:5e13dbbc1d120fc2a03cecde7c91424ae2d7de11b63d58ded2f4431e261ee50d
+
+@openrouter/ai-sdk-provider@3.1.0
+  lock path: node_modules/@openrouter/ai-sdk-provider
+  declared license: Apache-2.0
+  source: https://registry.npmjs.org/@openrouter/ai-sdk-provider/-/ai-sdk-provider-3.1.0.tgz
+  package-lock integrity: sha512-BQy1TA9fKrh47s9ivsO6FY5QimN7GUF0i8Qon3pkxQclEgShso0dClpcWn8OIyPLEZZPFaFKgI8TW4S/O0p0Dw==
+  notice files: LICENSE:dc5d6874c25b4d5af22aa7bb9a18422bc86c7516c80056c1788fc120c4121f72
 
 @standard-schema/spec@1.1.0
   lock path: node_modules/@standard-schema/spec
