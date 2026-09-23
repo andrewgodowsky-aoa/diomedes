@@ -72,7 +72,6 @@ test.beforeAll(async () => {
   const project = await api<Project>('/projects/sample', 'POST', {});
   projectName = project.name;
   await api('/settings', 'PUT', {
-    surface: 'console',
     detail: 'technical',
     onboarding: {
       work: 'personal',

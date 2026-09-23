@@ -3,10 +3,8 @@ import type {
   ExternalEngine,
   IntegrationStatus,
   Mode,
-  Page,
   Project,
   Settings,
-  Surface,
   UsageSnapshot,
 } from '../shared/types';
 import { api, patchSettings, readSettings, SettingsConflict, writeSettings } from './api';
@@ -14,17 +12,13 @@ import { nextInterfaceScale, scaleShortcut, type ScaleCommand } from '../shared/
 import {
   Brand,
   Button,
-  Empty,
   Icon,
   Mark,
   Modal,
   UsageChip,
   askDraftKey,
   askModeKey,
-  pages,
-  surfaceOf,
   tightestWindow,
-  titleCase,
 } from './components';
 import { Shell } from './console/Shell';
 import { Home, type HomeDestination } from './console/Home';
@@ -32,11 +26,9 @@ import { DiomedesHome } from './console/DiomedesHome';
 import type { EverythingItem } from './console/Everything';
 import { TopStrip } from './console/TopStrip';
 import { DesignCenter } from './console/DesignCenter';
-import { NectoviaGlyph } from './console/NectoviaMark';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
 import { ErrorBoundary } from './ErrorBoundary';
-import { Workspace } from './Workspace';
 import { Wake } from './console/Wake';
 import {
   applyResolvedAppearance,
@@ -69,10 +61,8 @@ export function App() {
     [projects],
   );
   const [selected, setSelected] = useState<string | null>(null);
-  const [page, setPage] = useState<Page>('home');
   const [showSettings, setShowSettings] = useState(false);
   const [designCenter, setDesignCenter] = useState(false);
-  const [account, setAccount] = useState(false);
   const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
   const [usage, setUsage] = useState<UsageSnapshot[]>([]);
   const [helpersRequest, setHelpersRequest] = useState(0);
@@ -142,8 +132,8 @@ export function App() {
   const settingsRef = useRef(settings);
   const scaleWrites = useRef<Promise<void>>(Promise.resolve());
   settingsRef.current = settings;
-  // Opener registered by the console Shell; Ctrl+K on the console surface
-  // opens the console palette instead of the Workbook's project search.
+  // Opener registered by the console Shell; Ctrl+K inside a project opens the
+  // console palette instead of the project search.
   const paletteOpen = useRef<(() => void) | null>(null);
   const report = useCallback(
     (e: unknown) =>
@@ -239,13 +229,7 @@ export function App() {
       // launch: the window keeps the place it was showing, so refreshing mid-work, or the
       // app restarting its page, never throws a person out of their project.
       const kept = keptPlace();
-      if (kept && p.projects.some((project) => project.id === kept)) {
-        setSelected(kept);
-        // The page too, as the old restore did. A page the rail no longer offers would
-        // otherwise come back as an empty pane.
-        const restored = s.lastPage[kept];
-        setPage(restored && (pages as readonly Page[]).includes(restored) ? restored : 'home');
-      }
+      if (kept && p.projects.some((project) => project.id === kept)) setSelected(kept);
       void refreshIntegrations();
       void refreshUsage();
     } catch (e) {
@@ -345,8 +329,9 @@ export function App() {
   useEffect(() => {
     if (!settings) return;
     const root = document.documentElement;
-    const surface = surfaceOf(settings);
-    root.dataset.surface = surface;
+    // The Console is the one surface. The attribute stays because stylesheets
+    // and the packaged smoke drivers key on it.
+    root.dataset.surface = 'console';
     // Detail is the person's own setting and nothing else decides it. It used to
     // be pinned to 'technical' whenever the Console was showing, which made the
     // setting unreachable for anybody working there; with one surface left that
@@ -435,7 +420,6 @@ export function App() {
     (project: Project) => {
       setSelected(project.id);
       setShowSettings(false);
-      setPage('home');
       const s = settingsRef.current;
       if (s) {
         // Update the local copy first so a navigation that follows at once builds on this order, not the old one.
@@ -451,22 +435,6 @@ export function App() {
     },
     [report],
   );
-  const navigate = useCallback(
-    (p: Page) => {
-      // Only the page moves. Settings replaces the Workbook and the Console while it is
-      // open, so a navigate that arrives then comes from a background restore
-      // (a recovered draft, the first plan) and must not close it.
-      setPage(p);
-      const s = settingsRef.current;
-      if (s && selected) {
-        const next = { ...s, lastPage: { ...s.lastPage, [selected]: p } };
-        settingsRef.current = next;
-        setSettings(next);
-        void patchSettings({ lastPage: next.lastPage }).catch(report);
-      }
-    },
-    [report, selected],
-  );
   // Going back into Settings abandons the handover too: the person is back at
   // the screen that made the offer, where they can make it again.
   useEffect(() => {
@@ -476,19 +444,9 @@ export function App() {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        const s = settingsRef.current;
-        const onConsole = !!selected && !!s && surfaceOf(s) === 'console' && !showSettings;
+        const onConsole = !!selected && !showSettings;
         if (onConsole && paletteOpen.current) paletteOpen.current();
         else setSearch(true);
-      }
-      if (e.ctrlKey && /^[1-8]$/.test(e.key) && selected) {
-        e.preventDefault();
-        setShowSettings(false);
-        navigate(
-          (['home', 'ask', 'plan', 'work', 'review', 'tasks', 'documents', 'history'] as Page[])[
-            Number(e.key) - 1
-          ],
-        );
       }
       if (e.ctrlKey && e.key === '.') {
         e.preventDefault();
@@ -497,7 +455,7 @@ export function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selected, showSettings, navigate]);
+  }, [selected, showSettings]);
   async function createProject() {
     setBusy(true);
     try {
@@ -549,14 +507,12 @@ export function App() {
       // Storage is unavailable; continue without a carried draft.
     }
     setLandingText('');
+    // The Console's composer picks the carried draft and mode up when it opens.
     openProject(project);
-    navigate('ask');
   };
   const current = projects.find((p) => p.id === selected);
-  const surface: Surface = settings ? surfaceOf(settings) : 'workbook';
-  // The Field shell draws its own top strip; the app bar hides underneath it
-  // so the shell strip is the only one on the console surface.
-  const consoleActive = !!selected && surface === 'console' && !showSettings;
+  // The Field shell draws its own top strip, so the app's strip hides inside a project.
+  const consoleActive = !!selected && !showSettings;
   // The chip follows the helper that is on: the first ready engine whose
   // switch is on. It shows the last reported windows even when that engine
   // is momentarily unreachable; the helpers list carries the live status.
@@ -580,12 +536,9 @@ export function App() {
           ? ''
           : 'Ready when you are.';
 
-  // The frozen Workbook keeps its own frozen bar, and nobody reaches it from the
-  // interface any more. Everything a person sees wears the Console's strip:
-  // Shell draws its own inside a project, and TopStrip draws the same one over
-  // the Projects page and Settings.
-  const legacyChrome = surface === 'workbook';
-  const stripShown = !consoleActive && !legacyChrome;
+  // Shell draws its own strip inside a project, and TopStrip draws the same one
+  // over the Projects page and Settings.
+  const stripShown = !consoleActive;
   // The strip speaks only when there is news. "Ready when you are." narrated a
   // state the empty strip already shows (standing decision 4).
   const stripStatus = !online
@@ -684,7 +637,7 @@ export function App() {
         {wakeLayer}
         <div className="initial-state">
           <Brand />
-          <p className="prose">{error || 'Opening your workbook...'}</p>
+          <p className="prose">{error || 'Opening Nectovia...'}</p>
           {error && <Button onClick={() => location.reload()}>Try again</Button>}
         </div>
       </>
@@ -706,107 +659,6 @@ export function App() {
           <Setup settings={settings} save={saveSettings} busy={busy} />
         ) : (
           <>
-            {!consoleActive && legacyChrome && (
-              <header className="top-bar">
-                <button
-                  className="brand-button"
-                  onClick={() => {
-                    setSelected(null);
-                    setShowSettings(false);
-                    setLanding('diomedes');
-                  }}
-                  aria-label="Nectovia"
-                >
-                  <NectoviaGlyph size={18} />
-                  <Brand />
-                </button>
-                <nav className="project-tabs" aria-label="Open projects">
-                  <button
-                    className={`project-tab ${!selected && !showSettings && landing === 'projects' ? 'active' : ''}`}
-                    onClick={() => {
-                      setSelected(null);
-                      setShowSettings(false);
-                      setLanding('projects');
-                    }}
-                  >
-                    Projects
-                  </button>
-                  {shownProjects.map((p) => (
-                    <button
-                      key={p.id}
-                      className={`project-tab ${selected === p.id && !showSettings ? 'active' : ''}`}
-                      onClick={() => openProject(p)}
-                    >
-                      {p.status?.needsYou || p.status?.working ? (
-                        <Mark state={p.status.needsYou ? 'waiting' : 'working'} />
-                      ) : null}
-                      <span className="project-tab-name" title={p.name}>
-                        {p.name}
-                      </span>
-                    </button>
-                  ))}
-                </nav>
-                <div className="top-right">
-                  <div className="top-status" role="status">
-                    {status && (
-                      <>
-                        <Mark
-                          state={
-                            !online ? 'fault' : needs ? 'waiting' : running ? 'working' : 'done'
-                          }
-                        />
-                        <span>{status}</span>
-                      </>
-                    )}
-                    {chipVisible && activeIntegration && activeUsage && (
-                      <UsageChip
-                        snapshot={activeUsage}
-                        name={activeIntegration.name}
-                        onOpen={() => {
-                          setShowSettings(true);
-                          setHelpersRequest((n) => n + 1);
-                        }}
-                      />
-                    )}
-                  </div>
-                  <Button
-                    tone={`quiet ${showSettings ? 'selected' : ''}`}
-                    onClick={() => setShowSettings(!showSettings)}
-                  >
-                    Settings
-                  </Button>
-                  <div className="account-wrap">
-                    <Button
-                      tone="quiet icon-button"
-                      aria-label="Interface detail menu"
-                      onClick={() => setAccount(!account)}
-                    >
-                      <Icon name="settings" />
-                    </Button>
-                    {account && (
-                      <div className="account-menu">
-                        {/* Not gated on a surface. Detail decides how much a change
-                            card spells out, which is the same question wherever the
-                            card is shown, so all three levels are offered here. */}
-                        <p className="caption">Detail</p>
-                        {(['guided', 'standard', 'technical'] as const).map((d) => (
-                          <button
-                            key={d}
-                            onClick={() => {
-                              void saveSettings({ ...settings, detail: d });
-                              setAccount(false);
-                            }}
-                          >
-                            <Mark state={d === settings.detail ? 'working' : 'todo'} />
-                            {titleCase(d)}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </header>
-            )}
             <div
               className={`page-frame ${stripShown ? 'with-strip' : ''} ${needs && current?.status?.needsYou ? 'needs-attention' : ''} ${!online ? 'disconnected' : ''}`}
             >
@@ -890,7 +742,7 @@ export function App() {
                   }}
                 />
                 </ErrorBoundary>
-              ) : selected && surface === 'console' ? (
+              ) : selected ? (
                 <Shell
                   key={`console:${selected}`}
                   projectId={selected}
@@ -917,19 +769,6 @@ export function App() {
                   }}
                   firstTask={startTask}
                   onFirstTaskTaken={() => setStartTask(null)}
-                />
-              ) : selected ? (
-                <Workspace
-                  key={selected}
-                  projectId={selected}
-                  page={page}
-                  navigate={navigate}
-                  settings={settings}
-                  integrations={integrations}
-                  usage={usage}
-                  saveSettings={saveSettings}
-                  report={report}
-                  online={online}
                 />
               ) : landing === 'diomedes' ? (
                 <DiomedesHome

@@ -226,6 +226,11 @@
 .console .files-code {
   color: var(--t1);
 }
+/* A drawing's preview is the artifact panel's own frame (artifacts.css), set
+   in the same gutter as the Markdown and raw views. */
+.console .files-drawing {
+  padding: 0 8px;
+}
 .console .files-md {
   padding: 0 8px;
   color: var(--t2);

@@ -13,7 +13,6 @@ function base(overrides?: Partial<Settings>): Settings {
   return {
     version: 1,
     detail: 'standard',
-    surface: 'console',
     onboarding: {
       work: null,
       detail: null,
@@ -32,8 +31,6 @@ function base(overrides?: Partial<Settings>): Settings {
     appearance: { package: 'field', motion: 'normal' },
     seen: { onlineServiceNotice: false, guidedDescriptors: {}, firstUse: [] },
     openProjects: [],
-    lastPage: {},
-    tasksView: {},
     services: {},
     ...overrides,
   };

@@ -83,7 +83,7 @@ test.beforeEach(async () => {
   await api('/ai/select', 'POST', { engine, model });
   project = await api('/projects', 'POST', { name: 'Preview repair' });
   thread = await api(`/projects/${project.id}/threads`, 'POST', { name: 'Preview ordering', mode: 'ask' });
-  await api('/settings', 'PUT', { surface: 'console', detail: 'technical', openProjects: [project.id],
+  await api('/settings', 'PUT', { detail: 'technical', openProjects: [project.id],
     onboarding: { work: 'business', detail: 'technical', familiarity: 'comfortable', resumeAt: 'done', completedAt: new Date().toISOString() } });
 });
 test.afterEach(async () => {

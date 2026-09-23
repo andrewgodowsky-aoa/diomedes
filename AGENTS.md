@@ -20,7 +20,7 @@ already made, and they are not an agent's to re-litigate.
 2. **Work in your own worktree**, branched from `main`.
 3. **Scan the non-negotiable decisions below.** If your task conflicts with one, say so before
    writing code rather than after.
-4. **Build Console-only.** The Workbook is frozen and takes no new screens.
+4. **Build Console-only.** The Workbook was removed on 2026-09-23; the Console is the only surface.
 5. **Run all four gates** before merging to `main`, and report the real counts from that run.
 6. **Do not commit, push or release** without Andrew's explicit approval for the patch in front of
    you. "Build it" is not permission to publish it.
@@ -69,9 +69,8 @@ implementation thread when these documents already answer it.
 Numbering is stable; tests and comments cite these by number. Full text and reasoning:
 [`docs/reference/STANDING_DECISIONS.md`](docs/reference/STANDING_DECISIONS.md).
 
-1. **One surface: the Console.** The Workbook is frozen and is being ported page by page, then
-   deleted. Every new feature is Console-only: no new Workbook screens, and no further re-skin
-   passes on the Workbook's half of `client/styles.css`.
+1. **One surface: the Console.** The Workbook was ported page by page and then removed
+   (Andrew, 2026-09-23). Every feature is Console-only; do not bring a second surface back.
    → [`docs/implementation/2026-09-09-one-surface.md`](docs/implementation/2026-09-09-one-surface.md)
 2. **The visual reference is the Settings > Engines screen**, read through the shared Console visual
    system: crisp readable typography, disciplined spacing, flat graphite/dark surfaces, thin
@@ -316,3 +315,4 @@ After a meaningful slice:
 | [`docs/implementation/`](docs/implementation/) | Per-slice implementation records |
 | [`docs/product/`](docs/product/) | Product direction and design investigations |
 | [`docs/harness/RUNTIME_VERIFICATION.md`](docs/harness/RUNTIME_VERIFICATION.md) | What the runtime has actually been proven to do |
+| [`docs/handoff/NEW_CLAUDE_JOINERS.md`](docs/handoff/NEW_CLAUDE_JOINERS.md) | Setup and standards for a new teammate's Claude, including how this file applies on a second machine |

@@ -69,10 +69,9 @@ try {
   const after = await api(`${base}/state`), sameNeed = after.needs.find(n => n.id === need.id);
   expect(sameNeed.approval).toEqual(need.approval); expect(sameNeed.harness).toEqual(need.harness);
   expect(after.history).toEqual(before.history);
-  // The one stored preference an upgrade does not keep: every stored surface opens
-  // on the Console at launch, since the Workbook left a person's reach
-  // (migrateSettings in server/store.ts).
-  expect((await api('/settings')).surface).toBe('console');
+  // The prior build stored the Workbook's keys; this build drops them on load and keeps the rest.
+  for (const key of ['surface', 'lastPage', 'tasksView'])
+    expect(Object.keys(await api('/settings'))).not.toContain(key);
   expect((await api('/settings')).openProjects).toEqual(settings.openProjects);
   expect(await fs.readFile(sentinel, 'utf8')).toBe('User project data survives the application upgrade.');
   proof.checks.push(`Actual ${priorVersion} profile upgraded to ${appVersion} with project, preferences, History and exact pending Need preserved`);

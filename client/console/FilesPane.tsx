@@ -4,7 +4,8 @@ import { readDocument } from '../api';
 import { date, time } from '../components';
 import type { FilesPaneProps } from './types';
 import { ImportFiles } from './ImportFiles';
-import { fileHasArtifacts } from './artifacts';
+import { fileHasArtifacts, indexFile } from './artifacts';
+import { ArtifactFrame } from './artifact-frames';
 import {
   fileTreeKey,
   visibleFileNodes,
@@ -99,6 +100,22 @@ function marks(file: DocumentInfo): string[] {
     ...(file.hasChangesWaiting ? ['changes waiting'] : []),
     ...(file.recorded ? ['recorded'] : []),
   ];
+}
+
+/**
+ * A drawing, shown the one way the artifact panel shows it: an `.svg` in the
+ * image frame and an `.mmd` through the Mermaid pipeline into the diagram
+ * frame, each a `sandbox=""` iframe with its own policy and no network. The
+ * drawing's markup never enters this page's document.
+ */
+function DrawingPreview({ path, text }: { path: string; text: string }) {
+  const record = useMemo(() => indexFile(path, text).list[0], [path, text]);
+  if (!record) return <pre className="files-raw">{text}</pre>;
+  return (
+    <div className="files-drawing">
+      <ArtifactFrame record={record} />
+    </div>
+  );
 }
 
 /**
@@ -310,7 +327,7 @@ function Viewer({
       controller.abort();
     };
   }, [projectId, info.path, readable, attempt]);
-  const rendered = info.kind === 'markdown' || info.kind === 'plan';
+  const rendered = info.kind === 'markdown' || info.kind === 'plan' || info.kind === 'drawing';
   return (
     <div className="files-doc">
       <div className="files-doc-head">
@@ -404,7 +421,11 @@ function Viewer({
       {readable &&
         content &&
         (rendered && !raw ? (
-          <Markdown text={content.text} />
+          info.kind === 'drawing' ? (
+            <DrawingPreview path={info.path} text={content.text} />
+          ) : (
+            <Markdown text={content.text} />
+          )
         ) : (
           <pre className="files-raw">{content.text}</pre>
         ))}

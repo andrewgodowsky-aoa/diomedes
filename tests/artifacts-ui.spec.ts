@@ -307,7 +307,6 @@ async function freshProject(name: string): Promise<Project> {
 /** Settings that open the Console on this project, the way a person who finished onboarding has them. */
 async function onConsole(project: Project): Promise<void> {
   await api('/settings', 'PUT', {
-    surface: 'console',
     detail: 'technical',
     openProjects: [project.id],
     onboarding: {
