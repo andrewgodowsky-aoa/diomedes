@@ -2,35 +2,41 @@
 // Every artifact that is not drawn by the app itself is shown only inside a
 // sandboxed iframe whose srcdoc this module builds, and every srcdoc starts
 // with a Content-Security-Policy that lets it reach nothing: not the app's
-// service, not the internet. The sandbox turns scripts off (or, for a design,
-// keeps them inside an opaque origin); the policy stops the fetches a sandbox
-// alone would still allow, such as <image href="https://..."> or CSS url().
+// service, not the internet. The sandbox turns scripts off in every frame,
+// designs included; the policy stops the fetches a sandbox alone would still
+// allow, such as <image href="https://..."> or CSS url(). Links are made inert
+// before a source reaches this module (artifact-links.ts), because neither a
+// sandbox nor this policy stops a frame following a link to somewhere else.
 // Pure: no React, no DOM.
+//
+// A design runs no script. A frame that runs script can open a WebRTC
+// connection, whose ICE traffic no Content-Security-Policy governs: a design
+// with `allow-scripts` sent STUN requests off the machine while its fetches,
+// images, sockets and popups were all refused (hostile review, 2026-09-23).
+// Interactive designs wait for isolation from the network at the process or
+// operating-system level (docs/product/2026-09-23-artifact-hardening.md).
 
 export type FrameKind = 'diagram' | 'image' | 'design';
 
-/** A design's policy: its own inline script and style run; nothing loads from anywhere. */
-export const DESIGN_CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:";
-
-/** Diagrams and images run no script at all, so their policy names none. */
-export const STATIC_CSP =
-  "default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:";
-
-export function cspFor(kind: FrameKind): string {
-  return kind === 'design' ? DESIGN_CSP : STATIC_CSP;
-}
+/**
+ * Every frame's policy. Nothing runs, so it names no script source (and no
+ * blob:, which only a script could make); styles, images, fonts and media may
+ * come only from the artifact itself, inline or as data: URLs it carries. A
+ * srcdoc frame also inherits the app document's policy (scripts/app-csp.ts),
+ * which allows at least these.
+ */
+export const FRAME_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src data:";
 
 /**
- * The sandbox each frame gets. A diagram and an image run nothing; a design
- * runs its own script in an opaque origin. Never allow-same-origin (it would
- * hand the frame the app's origin), and never top navigation, popups, forms or
- * modals.
+ * The sandbox each frame gets: none of the sandbox's permissions, so no
+ * script, no forms, no popups, no top navigation, and an opaque origin. The
+ * kind stays because the panel labels and sizes each one differently.
  */
 export const FRAME_SANDBOX: Readonly<Record<FrameKind, string>> = {
   diagram: '',
   image: '',
-  design: 'allow-scripts',
+  design: '',
 };
 
 /** Sandbox tokens no artifact frame may ever carry. */
@@ -143,7 +149,7 @@ export function isDark(color: string): boolean {
  */
 export function frameDocument(kind: FrameKind, body: string, tokens: FrameTokens = NECTOVIA_TOKENS): string {
   const head =
-    `<!doctype html><meta http-equiv="Content-Security-Policy" content="${cspFor(kind)}">` +
+    `<!doctype html><meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">` +
     '<meta http-equiv="x-dns-prefetch-control" content="off"><meta name="referrer" content="no-referrer">';
   if (kind === 'design') return `${head}${body}`;
   const ground = kind === 'image' ? IMAGE_GROUND : tokens.ground;

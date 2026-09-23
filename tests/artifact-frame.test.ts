@@ -2,12 +2,10 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
-  DESIGN_CSP,
   FORBIDDEN_SANDBOX,
+  FRAME_CSP,
   FRAME_SANDBOX,
   NECTOVIA_TOKENS,
-  STATIC_CSP,
-  cspFor,
   designLayout,
   frameDocument,
   frameHeight,
@@ -17,9 +15,11 @@ import {
   type FrameKind,
 } from '../client/console/artifact-frame';
 import { ArtifactFrame } from '../client/console/artifact-frames';
+import { LEAVING_ATTRIBUTES, SETTLE_PASSES, settle, withoutNavigation } from '../client/console/artifact-links';
 import { artifactMaxWidth, clampArtifactWidth } from '../client/console/artifact-width';
 import { indexArtifacts } from '../client/console/artifacts';
 import {
+  CSS_ATTRIBUTES,
   LABEL_TAGS,
   REFUSED_MATH_OR_IMAGE,
   REFUSED_STYLE,
@@ -28,6 +28,7 @@ import {
   preparedSource,
   refusal,
   shapeData,
+  withoutFetchingUrls,
 } from '../client/console/mermaid-render';
 
 const KINDS: FrameKind[] = ['diagram', 'image', 'design'];
@@ -37,39 +38,32 @@ describe('every srcdoc', () => {
     const hostile = '<meta http-equiv="Content-Security-Policy" content="default-src *"><img src="https://example.com/x.png">';
     for (const kind of KINDS) {
       const html = frameDocument(kind, hostile);
-      expect(html.startsWith(`<!doctype html><meta http-equiv="Content-Security-Policy" content="${cspFor(kind)}">`)).toBe(true);
+      expect(html.startsWith(`<!doctype html><meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">`)).toBe(true);
       // A second policy in the artifact can only narrow the first; it can never widen it.
-      expect(html.indexOf(cspFor(kind))).toBeLessThan(html.indexOf('default-src *'));
+      expect(html.indexOf(FRAME_CSP)).toBeLessThan(html.indexOf('default-src *'));
       expect(html).toContain('<meta name="referrer" content="no-referrer">');
     }
   });
 
-  it('uses the brief\'s exact design policy, and no script at all for pictures', () => {
-    expect(DESIGN_CSP).toBe(
-      "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:",
-    );
-    expect(cspFor('design')).toBe(DESIGN_CSP);
-    expect(cspFor('diagram')).toBe(STATIC_CSP);
-    expect(cspFor('image')).toBe(STATIC_CSP);
-    expect(STATIC_CSP).not.toContain('script-src');
-    for (const policy of [DESIGN_CSP, STATIC_CSP]) {
-      expect(policy.startsWith("default-src 'none'")).toBe(true);
-      expect(policy).not.toMatch(/https?:|\*|'self'|unsafe-eval|connect-src|frame-src/);
-    }
+  it('uses one policy for every kind, and it names no script source', () => {
+    expect(FRAME_CSP).toBe("default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src data:");
+    expect(FRAME_CSP).not.toMatch(/script-src|https?:|\*|'self'|unsafe-eval|connect-src|frame-src|blob:/);
+    for (const kind of KINDS) expect(frameDocument(kind, '<p>x</p>')).toContain(`content="${FRAME_CSP}"`);
   });
 
   it('draws a picture on its own ground and leaves a design as its own page', () => {
     expect(frameDocument('image', '<svg/>')).toContain('background:#f4f5f7');
     expect(frameDocument('diagram', '<svg/>', NECTOVIA_TOKENS)).toContain(`background:${NECTOVIA_TOKENS.ground}`);
     expect(frameDocument('design', '<p>page</p>')).toBe(
-      `<!doctype html><meta http-equiv="Content-Security-Policy" content="${DESIGN_CSP}"><meta http-equiv="x-dns-prefetch-control" content="off"><meta name="referrer" content="no-referrer"><p>page</p>`,
+      `<!doctype html><meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}"><meta http-equiv="x-dns-prefetch-control" content="off"><meta name="referrer" content="no-referrer"><p>page</p>`,
     );
   });
 });
 
 describe('sandboxes', () => {
-  it('never give an artifact frame the app origin, the top window, popups, forms or modals', () => {
-    expect(FRAME_SANDBOX).toEqual({ diagram: '', image: '', design: 'allow-scripts' });
+  it('run no script in any frame, a design included, and never give one the app origin', () => {
+    // A frame that runs script can open WebRTC, which no policy governs (hostile review, H1).
+    expect(FRAME_SANDBOX).toEqual({ diagram: '', image: '', design: '' });
     for (const tokens of Object.values(FRAME_SANDBOX))
       for (const token of tokens.split(/\s+/).filter(Boolean))
         expect(FORBIDDEN_SANDBOX as readonly string[]).not.toContain(token);
@@ -77,18 +71,44 @@ describe('sandboxes', () => {
       expect(FORBIDDEN_SANDBOX as readonly string[]).toContain(token);
   });
 
-  it('are what the frames actually render', () => {
+  it('draw nothing in a frame when the links cannot be made inert: here, with no parser at all', () => {
+    // Node has no DOMParser, so this is the fail-closed path. The browser suite
+    // (tests/artifacts-ui.spec.ts) pins what the frames render when it exists.
+    expect(typeof DOMParser).toBe('undefined');
+    expect(withoutNavigation('<a href="https://example.com/?secret=1">x</a>', 'page')).toBeNull();
     const records = indexArtifacts('thread-1', [
       { id: 't1', role: 'diomedes', text: '```svg\n<svg viewBox="0 0 10 10"><image href="https://example.com/x.png"/></svg>\n```\n\n```html\n<script>parent.document.title = 1</script>\n```' },
     ]).list;
     const image = renderToStaticMarkup(createElement(ArtifactFrame, { record: records[0] }));
-    expect(image).toMatch(/<iframe class="art-frame still image" title="Image: Image 1" sandbox="" referrerPolicy="no-referrer" srcDoc="&lt;!doctype html&gt;&lt;meta http-equiv=&quot;Content-Security-Policy&quot;/);
     const design = renderToStaticMarkup(createElement(ArtifactFrame, { record: records[1] }));
-    expect(design).toContain('sandbox="allow-scripts"');
-    expect(design).not.toContain('allow-same-origin');
-    expect(design).toContain('referrerPolicy="no-referrer"');
-    // The design's markup only ever exists inside the srcdoc attribute.
-    expect(design).not.toContain('<script>');
+    for (const [html, heading] of [
+      [image, 'This image was not shown.'],
+      [design, 'This design was not shown.'],
+    ]) {
+      expect(html).not.toContain('<iframe');
+      expect(html).toContain(`aria-label="${heading}"`);
+      // What the model wrote is only ever text here.
+      expect(html).not.toMatch(/<(script|image)\b/);
+    }
+  });
+});
+
+describe('links in a frame source', () => {
+  it('are read until a reading changes nothing, and refused when it never settles', () => {
+    expect(settle('a', (markup) => markup)).toBe('a');
+    const shrink = (markup: string) => markup.slice(0, -1) || markup;
+    expect(settle('abc', shrink)).toBe('a');
+    let reads = 0;
+    const restless = (markup: string) => {
+      reads += 1;
+      return `${markup}!`;
+    };
+    expect(settle('a', restless)).toBeNull();
+    expect(reads).toBe(SETTLE_PASSES);
+  });
+
+  it('take out every attribute that sends a frame or a request somewhere', () => {
+    expect([...LEAVING_ATTRIBUTES].sort()).toEqual(['action', 'formaction', 'ping', 'target']);
   });
 });
 
@@ -171,6 +191,21 @@ describe('mermaid input', () => {
     expect(shapeData('A@{ shape: rounded }\nB@{ label: "x}" , img: y }')).toEqual([' shape: rounded ', ' label: "x}" , img: y ']);
   });
 
+  it('reads a semicolon as the end of a statement, so a style joined onto one line is refused too', () => {
+    const links = ['url(http://example.com/x.png)', 'url(//example.com/x.png)', 'url(data:image/png;base64,AAAA)'];
+    const statements = ['style A background-image:', 'classDef foo background-image:', 'linkStyle 0 stroke:red,background:'];
+    for (const link of links)
+      for (const statement of statements) {
+        const source = `graph TD; A-->B; ${statement}${link}; class A foo`;
+        expect(refusal(source), source).toBe(REFUSED_STYLE);
+      }
+    // Whatever whitespace opens the statement, it is still a statement.
+    expect(refusal('graph TD; style A fill:url(https://example.com/x)')).toBe(REFUSED_STYLE);
+    expect(refusal('graph TD;\tclassDef foo fill:URL(https://example.com/x)')).toBe(REFUSED_STYLE);
+    // Joined statements with no link in them are drawn.
+    expect(refusal('graph TD; A-->B; style B fill:#44d2c9,stroke:#b569fb; classDef foo stroke-width:2px')).toBeNull();
+  });
+
   it('is laid out strictly: SVG labels, nothing configurable, labels without links or styles', () => {
     const config = mermaidConfig(NECTOVIA_TOKENS);
     expect(config).toMatchObject({
@@ -189,5 +224,73 @@ describe('mermaid input', () => {
       expect(LABEL_TAGS).not.toContain(tag);
     expect((config.themeVariables as Record<string, string>).lineColor).toBe(NECTOVIA_TOKENS.lead);
     expect((config.themeVariables as Record<string, string>).secondaryBorderColor).toBe(NECTOVIA_TOKENS.trail);
+  });
+});
+
+describe('what Mermaid drew', () => {
+  it('keeps a same-document url(#...), which is how its lines find their arrowheads', () => {
+    for (const css of [
+      'url(#arrowhead)',
+      'marker-end:url(#art-mermaid-1_flowchart-v2-pointEnd)',
+      'fill:url( "#grad" )',
+      "filter:url('#drop-shadow')",
+      'fill:url(\\23 grad)',
+    ])
+      expect(withoutFetchingUrls(css)).toBe(css);
+  });
+
+  it('takes out every other url(), whatever it points at and however it is spelt', () => {
+    const cases: Array<[string, string]> = [
+      ['background-image:url(http://example.com/x.png)', 'background-image:none'],
+      ['background-image:url(https://example.com/x.png)', 'background-image:none'],
+      ['background-image:url(//example.com/x.png)', 'background-image:none'],
+      ['background-image:url(data:image/png;base64,AAAA)', 'background-image:none'],
+      ['background:URL("https://example.com/x")', 'background:none'],
+      ["cursor:url( 'https://example.com/c.cur' ),auto", 'cursor:none,auto'],
+      ['mask-image:\\75 rl(https://example.com/m.png)', 'mask-image:none'],
+      ['mask-image:\\000075rl(https://example.com/m.png)', 'mask-image:none'],
+      ['background:u\\rl(https://example.com/x)', 'background:none'],
+      ['background:url(https://example.com/a\\)b)', 'background:none'],
+      ['fill:url(https://example.com/x.svg#grad)', 'fill:none'],
+      ['.a{fill:red}.b>*{background:url(http://example.com/x)!important}', '.a{fill:red}.b>*{background:none!important}'],
+    ];
+    for (const [css, kept] of cases) expect(withoutFetchingUrls(css), css).toBe(kept);
+  });
+
+  it('takes out every other function and rule that fetches a file', () => {
+    const cases: Array<[string, string]> = [
+      ['mask:image-set("https://example.com/x" 1x)', 'mask:none'],
+      ['mask:-webkit-image-set(url(https://example.com/x) 1x)', 'mask:none'],
+      ['background:image("https://example.com/x")', 'background:none'],
+      ['background:cross-fade(url(https://example.com/a), url(#b) 50%)', 'background:none'],
+      ['background:element(#x)', 'background:none'],
+      ['@font-face{font-family:x;src:url(https://example.com/f.woff2)}', '@font-face{font-family:x;src:none}'],
+      ['@import "https://example.com/x.css"; .a{fill:red}', ' .a{fill:red}'],
+      ['@IMPORT url(https://example.com/x.css) screen;.a{fill:red}', '.a{fill:red}'],
+      ['@\\69mport "https://example.com/x.css";', ''],
+      ['.a{fill:var(--x, url(https://example.com/x))}', '.a{fill:var(--x, none)}'],
+    ];
+    for (const [css, kept] of cases) expect(withoutFetchingUrls(css), css).toBe(kept);
+  });
+
+  it('leaves strings, comments and names that only mention url( as written', () => {
+    for (const css of [
+      'content:"url(https://example.com/x)"',
+      "content:'image-set(x)'",
+      '/* url(https://example.com/x) */fill:red',
+      'u/**/rl(https://example.com/x)',
+      'font-family:"Segoe UI",system-ui;fill:#44d2c9;stroke:rgba(230,233,237,.14)',
+      '#art-mermaid-1 .node rect{fill:#14141a;stroke:#44d2c9;stroke-width:1px}',
+    ])
+      expect(withoutFetchingUrls(css)).toBe(css);
+    // A string a newline cuts short ends there, as it does for a browser, so what follows is read.
+    expect(withoutFetchingUrls('content:"x\nbackground:url(https://example.com/x)')).toBe('content:"x\nbackground:none');
+  });
+
+  it('is applied to every attribute of a drawing that holds CSS, and to nothing else', () => {
+    for (const name of ['style', 'fill', 'stroke', 'marker-end', 'clip-path', 'mask', 'filter', 'cursor'])
+      expect(CSS_ATTRIBUTES).toContain(name);
+    for (const name of ['id', 'class', 'aria-label', 'aria-roledescription', 'data-id'])
+      expect(CSS_ATTRIBUTES).not.toContain(name);
   });
 });

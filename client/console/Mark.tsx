@@ -6,7 +6,6 @@ interface MarkProps {
   size?: number;
 }
 
-// The in-app brand is NectoviaMark; this spear stays only as the app icon's source (switching the icon is a pending decision).
 // The Diomedes mark: an open D drawn as a spear-line (shaft + blade) with the
 // guiding point ahead of its tip. Geometry is 1:1 with the approved prototype
 // (05-instrumented-density-prototype.html, top strip). Presentation lives in
