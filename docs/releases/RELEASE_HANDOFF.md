@@ -1,14 +1,15 @@
 # Diomedes Windows experimental 0.1.1 handoff
 
-> **Current release (20 September 2026):** `v0.1.6` from commit `4a06a45`, record
-> `evidence/release-candidates/diomedes-0.1.6-windows-experimental-20260920-4a06a45cee9b.json`,
-> published at https://github.com/andrewgodowsky-aoa/diomedes/releases/tag/v0.1.6
-> (installer `Diomedes-Experimental-0.1.6-unsigned-setup.exe`, 266,387,557 bytes, sha256
-> `b63007a600872316949bf8cdc2b2cf757a7d75c0fd728b2da2c13486f30a351d`). It is a stable tag and is
+> **Current release (21 September 2026):** `v0.1.7` from commit `6e2f033`, record
+> `evidence/release-candidates/diomedes-0.1.7-windows-experimental-20260921-6e2f033b4778.json`,
+> published at https://github.com/andrewgodowsky-aoa/diomedes/releases/tag/v0.1.7
+> (installer `Diomedes-Experimental-0.1.7-unsigned-setup.exe`, 266,655,455 bytes, sha256
+> `ae024d7912957323d23012c3ee88299f2554d074362de3d07a3cf2d815790fbe`). It is a stable tag and is
 > GitHub's `latest`, which is what the in-app update check reads. The tag points at the commit
 > the bytes were built from, not at the later commits that carry the evidence, which is how
-> `v0.1.4` was cut. `v0.1.5` (`8d7d63b`, 20 September) is the release before it and `v0.1.4`
-> (`efa83acd`, 19 September) the one before that. Public assets are produced by `scripts/write-release-assets.mjs`; the release
+> `v0.1.4` was cut. `v0.1.6` (`4a06a45`, 20 September) is the release before it and `v0.1.5`
+> (`8d7d63b`, 20 September) the one before that. `v0.1.8` is not published yet; when it is,
+> its release record replaces this paragraph. Public assets are produced by `scripts/write-release-assets.mjs`; the release
 > pipeline is described in `docs/implementation/2026-09-12-integration.md` §12 and signing in
 > `docs/releases/CODE_SIGNING.md`.
 >

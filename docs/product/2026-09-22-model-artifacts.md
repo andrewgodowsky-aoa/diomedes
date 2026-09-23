@@ -178,8 +178,14 @@ the artifact, so a later policy can only narrow it. Next come `x-dns-prefetch-co
 
 | Frame | sandbox | Policy |
 | --- | --- | --- |
-| Diagram, Image | `""` (no script, opaque origin) | `default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:` |
-| Design | `allow-scripts` only | `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:` (the work order's policy, exactly) |
+| Diagram, Image, Design | `""` (no script, opaque origin) | `default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src data:` |
+
+(Updated 2026-09-23. v1 gave designs `allow-scripts` and a policy with `script-src 'unsafe-inline'`,
+and every frame's policy allowed `blob:`. The hardening pass removed both: a design with
+`allow-scripts` could reach the network over WebRTC, which no CSP governs. The frame policy is
+`FRAME_CSP` and `FRAME_SANDBOX` in `client/console/artifact-frame.ts`. A srcdoc frame also inherits
+the app document's policy, `APP_CSP` in `shared/app-csp.ts`, which `scripts/app-csp.ts` writes into
+the built page.)
 
 No frame ever carries `allow-same-origin`, `allow-top-navigation`, `allow-popups`, `allow-forms`
 or `allow-modals` (`FORBIDDEN_SANDBOX` lists all twelve refused tokens). The picture policy has no

@@ -24,6 +24,8 @@ import {
   benignConflict,
   checkedSentence,
   compatibilityText,
+  discoveryOutcome,
+  NO_ENGINES_FOUND,
   connected,
   contextText,
   firstTaskHandoff,
@@ -625,8 +627,10 @@ export function AIConnections({
           {statusError}
         </p>
       )}
-      {connections !== null && connections.length === 0 && (
-        <p className="caption">No connections reported.</p>
+      {connections !== null && !discovering && (connections.length === 0 || discoveryOutcome(rows)) && (
+        <p className="ai-alert" role="status" data-testid="no-engines-found">
+          {NO_ENGINES_FOUND}
+        </p>
       )}
       <div className="service-list">
         {rows.map((c) => {

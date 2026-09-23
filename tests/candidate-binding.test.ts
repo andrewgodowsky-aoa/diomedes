@@ -424,7 +424,7 @@ describe('the binding a person chose, remembered across restarts', () => {
 });
 
 describe('every installation is a candidate, and one failure hides nothing', () => {
-  it('recommends the reviewed private copy over a wrong-version installation on PATH', async () => {
+  it('recommends the reviewed private copy over a different-version installation on PATH', async () => {
     const outside = place(path.join(root(), 'tools', 'opencode.exe'), 'the person’s own copy');
     const h = host({
       system: [{ file: outside, version: '1.20.0' }],
@@ -439,9 +439,10 @@ describe('every installation is a candidate, and one failure hides nothing', () 
     // Both installations are reported; only the reviewed one is recommended.
     expect(value.candidates?.map((row) => row.source).sort()).toEqual(['managed', 'system']);
     const theirs = value.candidates!.find((row) => row.source === 'system')!;
+    // A different version is still usable; the private copy only outranks it.
     expect(theirs).toMatchObject({
       version: '1.20.0',
-      compatibility: 'unsupported',
+      compatibility: 'supported',
       provenance: 'unverified',
       context: 'windows-native',
     });
@@ -478,7 +479,7 @@ describe('every installation is a candidate, and one failure hides nothing', () 
     });
   });
 
-  it('reports a failed private copy beside a wrong-version installation as a repairable pair', async () => {
+  it('falls back to their own installation, of any version, beside a failed private copy', async () => {
     const theirs = place(path.join(root(), 'tools', 'opencode.exe'), 'their own copy');
     const h = host({
       system: [{ file: theirs, version: '1.20.0' }],
@@ -486,19 +487,18 @@ describe('every installation is a candidate, and one failure hides nothing', () 
     });
     await h.service.discover(true);
     const value = connection(h.service, 'opencode');
-    // Two installations exist, so neither is "the only one": the contract's
-    // `corrupt` does not apply and the route is found-but-unsupported. The
-    // failed private copy is still the thing that needs repairing, and it is
-    // named on the candidate rather than only in the installation state.
+    // The failed private copy is never run and is named on its candidate; their
+    // own copy answered its probe, so whatever its version, it is recommended.
     expect(value.installation).toBe('found');
-    expect(value.compatibility).toBe('unsupported');
-    expect(value.repair).toBe('no-reviewed-candidate');
+    expect(value.compatibility).toBe('supported');
+    expect(value.repair ?? null).toBeNull();
+    expect(value.location).toBe(fs.realpathSync.native(theirs));
     expect(value.candidates?.find((row) => row.source === 'managed')).toMatchObject({
       integrity: 'failed',
     });
     expect(value.candidates?.find((row) => row.source === 'system')).toMatchObject({
       integrity: 'verified',
-      compatibility: 'unsupported',
+      compatibility: 'supported',
     });
   });
 
@@ -593,31 +593,31 @@ describe('an explicit binding, and what breaks it', () => {
     expect(value.candidates?.length).toBe(2);
   });
 
-  it('breaks the connection when the bound copy is removed, changed or downgraded', async () => {
-    for (const [reason, damage] of [
-      ['selected-missing', (file: string) => fs.rmSync(file)],
-      ['selected-changed', (file: string) => fs.writeFileSync(file, 'different bytes now')],
-    ] as const) {
-      const h = await bound();
-      damage(h.first);
-      await h.service.discover(true);
-      const value = connection(h.service, 'opencode');
-      expect(value.repair).toBe(reason);
-      expect(value.binding?.id).toBe(h.id);
-      await expect(h.service.check('opencode')).rejects.toMatchObject({
-        code: 'BINDING_CHANGED',
-        stage: 'runtime-verification',
-      });
-    }
-  });
-
-  it('breaks the connection when the bound copy keeps its bytes but changes version', async () => {
+  it('breaks the connection when the bound copy is removed', async () => {
     const h = await bound();
-    h.version.mockResolvedValue('1.0.0');
+    fs.rmSync(h.first);
     await h.service.discover(true);
     const value = connection(h.service, 'opencode');
-    expect(value.repair).toBe('selected-changed');
-    await expect(h.service.check('opencode')).rejects.toMatchObject({ code: 'BINDING_CHANGED' });
+    expect(value.repair).toBe('selected-missing');
+    expect(value.binding?.id).toBe(h.id);
+    await expect(h.service.check('opencode')).rejects.toMatchObject({
+      code: 'BINDING_CHANGED',
+      stage: 'runtime-verification',
+    });
+  });
+
+  it('follows the bound copy when it updates itself in place', async () => {
+    const h = await bound();
+    const before = connection(h.service, 'opencode');
+    fs.writeFileSync(h.first, 'the next release');
+    h.version.mockResolvedValue('9.9.9');
+    await h.service.discover(true);
+    const value = connection(h.service, 'opencode');
+    expect(value.repair ?? null).toBeNull();
+    expect(value.binding).toMatchObject({ id: h.id, version: '9.9.9', sha256: digestOf(h.first) });
+    // An update is not a new choice: the revision does not move.
+    expect(value.revision).toBe(before.revision);
+    await expect(h.service.check('opencode')).resolves.toMatchObject({ version: '9.9.9' });
   });
 
   it('refuses a request rather than running a different executable in its place', async () => {
@@ -663,9 +663,9 @@ describe('what a person is asked to do next, and what the record says', () => {
       (row) => row.source === 'system',
     )!;
     await h.service.bind('opencode', mine.id);
-    fs.writeFileSync(theirs, 'changed underneath them');
+    fs.rmSync(theirs);
     await h.service.discover(true);
-    expect(connection(h.service, 'opencode').repair).toBe('selected-changed');
+    expect(connection(h.service, 'opencode').repair).toBe('selected-missing');
     expect(h.service.nextAction('opencode', { enabled: true, installSupported: true })).toBe(
       'choose-installation',
     );
