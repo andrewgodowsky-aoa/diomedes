@@ -281,7 +281,7 @@ export class TeamService {
   ): Promise<{ member: TeamMember; sessionId: string }> {
     const state = this.store.state(projectId);
     const team = migrateTeam(state);
-    const member = findMember(team, slotId);
+    const member = activeMember(team, slotId);
     const waiting = unreadForSlot(team.messages, slotId);
     if (waiting.length === 0)
       throw new ApiError(400, 'Nothing is waiting for this helper.');

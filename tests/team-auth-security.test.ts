@@ -101,6 +101,10 @@ test('stopping a helper immediately denies its existing team credential', async 
     method: 'POST', headers, body: '{}',
   });
   expect(stop.status).toBe(200);
+  const wake = await fetch(`${base}/api/projects/${project.id}/team/members/${member.slotId}/wake`, {
+    method: 'POST', headers, body: '{}',
+  });
+  expect(wake.status).toBe(401);
   releaseRead();
   expect((await inFlight).status).toBe(401);
   store.readTeamSecrets = originalRead;
