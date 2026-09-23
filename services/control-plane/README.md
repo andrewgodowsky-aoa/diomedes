@@ -103,6 +103,28 @@ migrations, concurrency, rollback, tenant foreign keys, duplicate events and
 revocation across clients. scripts/runtime-permissions.sql is a review template
 for a separate non-owner cp_runtime role; it grants no deletion or DDL rights.
 
+## Funded parent-job accounting (NC-2026-09-22.1, code and tests only)
+
+`src/funding.ts` sequences credit funding over migration 003: a month's grant
+(from a verified entitlement grant and a published plan grant only), purchased
+top-ups (from a verified billing event), root jobs with a finite cap, and one
+reservation per paid attempt bound to its tenant, root job, reserving period
+and rate snapshot. Money rules, the reservation state table, the reserve
+decision and the usage projection live in `shared/managed-usage.ts`. The
+protocol is reserve, mark dispatched, provider call with no transaction open,
+then settle, mark uncertain or cancel. Unsent holds release; sent holds settle
+only from a complete provider usage report or stay uncertain; nothing is
+retried by the service. Children and retries spend inside the root cap; a
+higher cap needs a request and an owner decision. There is no built-in default
+cap: the 20-credit figure is a proposal and must be configured once approved.
+
+The Worker exposes only `GET /account/organizations/:id/usage`, which verifies
+membership and then reads the projection. No funding write is reachable over
+HTTP. The memory adapter in `tests/support/funding-memory.ts` is TEST ONLY; the
+SQL adapter has been checked against a recording client, and its real-database
+cases are in the opt-in PostgreSQL suite. Nothing here activates billing, a
+plan, a checkout or a funded model call.
+
 ## Runtime evidence and release
 
 `npm run test:runtime` requires CP_EVIDENCE_DIRECTORY and uses local workerd.

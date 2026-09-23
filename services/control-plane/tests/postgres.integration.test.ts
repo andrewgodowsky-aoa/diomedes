@@ -7,6 +7,9 @@ import { migrate, type Migration } from '../src/migrations.js';
 import { PostgresRepository, type SqlClient } from '../src/postgres.js';
 import { AccountService } from '../src/account-service.js';
 import { verifier, now } from './support/fixtures.js';
+import { FundingService } from '../src/funding.js';
+import { PostgresFundingRepository } from '../src/funding-postgres.js';
+import { creditAmount } from '../../../shared/managed-usage.js';
 
 const connectionString = process.env.CP_TEST_DATABASE_URL;
 const enabled = Boolean(connectionString);
@@ -36,7 +39,7 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
     factory = local
       ? () => new pg.Client({ connectionString, connectionTimeoutMillis: 5000 })
       : () => new NeonClient({ connectionString, connectionTimeoutMillis: 5000 });
-    migrations = await Promise.all(['001_accounts.sql', '002_commercial.sql'].map(async (name, index) => {
+    migrations = await Promise.all(['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql'].map(async (name, index) => {
       const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
       return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
     }));
@@ -47,14 +50,14 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
   it('migrates an empty DB, then upgrades a prior version and is idempotent', async () => {
     await query('DROP SCHEMA IF EXISTS control_plane CASCADE');
     expect(await migrate(factory, [migrations[0]])).toEqual([1]);
-    expect(await migrate(factory, migrations)).toEqual([2]);
+    expect(await migrate(factory, migrations)).toEqual([2, 3]);
     expect(await migrate(factory, migrations)).toEqual([]);
   });
   it('rolls back interrupted DDL and its version row', async () => {
-    const broken = { version: 3, name: 'interruption', sql: 'CREATE TABLE control_plane.interrupted(id integer); SELECT 1/0;', sha256: 'f'.repeat(64) };
+    const broken = { version: 4, name: 'interruption', sql: 'CREATE TABLE control_plane.interrupted(id integer); SELECT 1/0;', sha256: 'f'.repeat(64) };
     await expect(migrate(factory, [...migrations, broken])).rejects.toThrow();
     expect((await query("SELECT to_regclass('control_plane.interrupted') AS relation")).rows[0].relation).toBeNull();
-    expect((await query('SELECT count(*)::int AS count FROM control_plane.schema_migrations')).rows[0].count).toBe(2);
+    expect((await query('SELECT count(*)::int AS count FROM control_plane.schema_migrations')).rows[0].count).toBe(3);
   });
   it('maps concurrent identical verified subjects to exactly one person', async () => {
     const sessions = await Promise.all(Array.from({ length: 6 }, () => accounts.signIn('alice')));
@@ -88,6 +91,47 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
     await expect(repository.recordVerifiedWebhook({ ...event, payloadHash: 'b'.repeat(64) })).rejects.toMatchObject({ status: 409 });
     const other = await accounts.createOrganization('alice', 'Other tenant');
     await expect(query('INSERT INTO control_plane.billing_customers(provider,customer_id,organization_id,tenant_id) VALUES ($1,$2,$3,$4)', ['stripe', 'cus_other', other.id, org.tenantId])).rejects.toMatchObject({ code: '23503' });
+  });
+  async function fundedOrganization(label: string) {
+    const org = await accounts.createOrganization('alice', label);
+    const customer = `cus_${label.replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
+    const event = `evt_${label.replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
+    await query('INSERT INTO control_plane.billing_customers(provider,customer_id,organization_id,tenant_id) VALUES ($1,$2,$3,$4)', ['stripe', customer, org.id, org.tenantId]);
+    await repository.recordVerifiedWebhook({ provider: 'stripe', eventId: event, customerId: customer, payloadHash: 'c'.repeat(64), eventType: 'fixture.grant', payload: { fixture: true } });
+    await query("INSERT INTO control_plane.entitlement_grants(tenant_id,grant_id,organization_id,provider,source_event_id,kind,state,valid_from,valid_until,projection) VALUES ($1,$2,$3,'stripe',$4,'plan','active','2026-09-01T00:00:00Z','2026-10-01T00:00:00Z','{}'::jsonb)",
+      [org.tenantId, `grant_${org.id}`, org.id, event]);
+    const funding = new FundingService(new PostgresFundingRepository(factory), { now: () => Date.parse('2026-09-10T12:00:00Z'), approvedDefaultJobCapMicroUsd: creditAmount(400) });
+    await funding.allocatePeriod({ tenantId: org.tenantId, organizationId: org.id, periodId: '2026-09', planId: 'workflow-starter', sourceGrantId: `grant_${org.id}` });
+    return { org, funding };
+  }
+  const rate = { version: 'fixture', inputMicroUsdPerMillion: 1_000_000, outputMicroUsdPerMillion: 1_000_000, cacheReadMicroUsdPerMillion: 1_000_000, cacheWriteMicroUsdPerMillion: 1_000_000 };
+  it('serializes concurrent funded reservations so the last credits are held once', async () => {
+    const { org, funding } = await fundedOrganization('Funding race');
+    for (const job of ['job_a', 'job_b'])
+      await funding.openJob({ tenantId: org.tenantId, organizationId: org.id, rootJobId: job, runRef: `run_${job}`, parentRunRef: null, capMicroUsd: creditAmount(400) });
+    const reserve = (job: string) => funding.reserve({ tenantId: org.tenantId, organizationId: org.id, attemptId: `attempt_${job}`, rootJobId: job, parentAttemptId: null,
+      kind: 'generation', route: 'aws-bedrock', requestDigest: `digest_${job}`, rateSnapshot: rate, maxMicroUsd: creditAmount(300) });
+    const results = await Promise.allSettled([reserve('job_a'), reserve('job_b')]);
+    expect(results.filter((item) => item.status === 'fulfilled')).toHaveLength(1);
+    const state = await funding.projection(org.tenantId, org.id);
+    expect(state.state === 'ready' && state.projection.pendingMicroUsd).toBe(creditAmount(300));
+  });
+  it('keeps a sent hold across a restarted repository and settles it in its own period', async () => {
+    const { org, funding } = await fundedOrganization('Funding restart');
+    await funding.openJob({ tenantId: org.tenantId, organizationId: org.id, rootJobId: 'job_r', runRef: 'run_job_r', parentRunRef: null, capMicroUsd: creditAmount(20) });
+    const ref = { tenantId: org.tenantId, organizationId: org.id, attemptId: 'attempt_r' };
+    await funding.reserve({ ...ref, rootJobId: 'job_r', parentAttemptId: null, kind: 'generation', route: 'aws-bedrock', requestDigest: 'digest_r', rateSnapshot: rate, maxMicroUsd: creditAmount(10) });
+    await funding.markDispatched(ref);
+    const restarted = new FundingService(new PostgresFundingRepository(factory), { now: () => Date.parse('2026-10-02T00:00:00Z') });
+    expect(await restarted.recoverAfterRestart({ tenantId: org.tenantId, organizationId: org.id })).toEqual({ released: [], uncertain: ['attempt_r'] });
+    const settled = await restarted.settle({ ...ref, receiptRef: 'receipt_r', usage: { inputTokens: 400_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 }, reconciledFrom: 'provider-report' });
+    expect(settled.outcome === 'settled' && settled.settlement.periodId).toBe('2026-09');
+  });
+  it('refuses a funded period bound to another tenant’s grant', async () => {
+    const { org } = await fundedOrganization('Funding tenant');
+    const other = await accounts.createOrganization('alice', 'Funding other tenant');
+    await expect(query("INSERT INTO control_plane.credit_periods(tenant_id,organization_id,period_id,plan_id,rate_card_version,granted_micro_usd,starts_at,ends_at,source_grant_id,allocated_at) VALUES ($1,$2,'2026-09','business','r',1,'2026-09-01','2026-10-01',$3,now())",
+      [other.tenantId, other.id, `grant_${org.id}`])).rejects.toMatchObject({ code: '23503' });
   });
   it('retains revoked session tombstones across repository instances', async () => {
     await accounts.revokeLocalSession('revoked');
