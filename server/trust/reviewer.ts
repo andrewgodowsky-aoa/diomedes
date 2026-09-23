@@ -430,6 +430,10 @@ export class ReviewerService {
         note: `This scope has spent its ${reviewer.maxReviews} reviewer checks.`,
       });
     if (input.signal.aborted) return settle('error', 'cancelled');
+    if (this.store.settings.services?.codex !== true)
+      return settle('error', 'unavailable', {
+        note: 'Codex is off in Settings. Review this proposal yourself.',
+      });
 
     try {
       requireCloudReview(this.store.state(input.projectId));
@@ -493,6 +497,10 @@ export class ReviewerService {
       input.signal.removeEventListener('abort', onAbort);
     }
     if (input.signal.aborted) return settle('error', 'cancelled');
+    if (this.store.settings.services?.codex !== true)
+      return settle('error', 'unavailable', {
+        note: 'Codex was turned off while the reviewer was answering.',
+      });
     try {
       requireCloudReview(this.store.state(input.projectId));
     } catch (error) {

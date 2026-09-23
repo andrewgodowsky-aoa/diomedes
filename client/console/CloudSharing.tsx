@@ -112,7 +112,7 @@ export function CloudSharing({
   return (
     <Modal title="Cloud sharing" onClose={onClose}>
       <p className="caption muted">
-        {projectName}: nothing is shared until it is checked here.
+        {projectName}: cloud routes and project files start off. Text you type is sent when you use an enabled route.
       </p>
       <p className="caption">
         Native CLI helpers may read outside the selected documents, so cloud sharing must be used

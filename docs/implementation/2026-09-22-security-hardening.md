@@ -44,7 +44,8 @@ excluded at the owner's request.
   or damaged records fail closed. The UI exposes route, document and conversation
   history choices; saves use an expected version, so stale windows cannot
   silently replace another choice. The server checks this policy before source
-  reads and cloud starts, and rejects previously admitted Work after a revoke.
+  reads and cloud starts, and rejects a new dispatch or Work-command replay
+  after a revoke. Completed conversation answers remain in local history.
   Instruction files such as `AGENTS.md` and `CLAUDE.md` enter a Work prompt only
   if their paths are separately allowlisted. Text-route provider callbacks,
   native session turns and each model-API completion check the live policy again.
