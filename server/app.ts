@@ -3145,7 +3145,10 @@ export async function createApp(options: AppOptions) {
             model: selection.model as string,
             ...(modelRoute && selection.effort ? { effort: selection.effort } : {}),
             accountRoute,
-            ...(modelRoute ? {} : await readScopeFor(projectId, command.mode)),
+            // Ask and Plan get the read-only tools on every conversation route; on a model-API
+            // route the host runs them itself (server/harness/capabilities/read-scope-tools.ts).
+            // Automatic, Build and Fix get none: `readScopeFor` answers only for Ask and Plan.
+            ...(await readScopeFor(projectId, command.mode)),
             signal: options.signal,
             onPreview: (frame: TransientPreview) =>
               progress('delta', { ...frame, text: gate(frame.text) }),
