@@ -2430,15 +2430,20 @@ export async function createApp(options: AppOptions) {
     mode: string,
   ): Promise<{ readScope?: ReadScope }> => {
     if (mode !== 'ask' && mode !== 'plan') return {};
-    const root = await safeAbsolute(store.state(projectId).project.folder);
-    if (!(await fs.stat(root).then((entry) => entry.isDirectory(), () => false))) return {};
-    return {
-      readScope: {
-        root,
-        web: true,
-        mcp: loadApprovedReadServers(path.join(store.dataDir, 'read-connectors.json')),
-      },
-    };
+    // A folder the path funnel refuses, or one that is gone, leaves the turn text-only.
+    const root = await safeAbsolute(store.state(projectId).project.folder).catch(() => null);
+    if (!root || !(await fs.stat(root).then((entry) => entry.isDirectory(), () => false)))
+      return {};
+    let mcp: ReadScope['mcp'];
+    try {
+      mcp = loadApprovedReadServers(path.join(store.dataDir, 'read-connectors.json'));
+    } catch {
+      throw new ApiError(
+        409,
+        'The approved read connectors file (read-connectors.json) is malformed. Fix or remove it, then send again.',
+      );
+    }
+    return { readScope: { root, web: true, mcp } };
   };
   const nativeChoice = (
     engine: Exclude<Route, 'sample'>,
