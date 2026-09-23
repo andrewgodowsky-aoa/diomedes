@@ -46,6 +46,8 @@ import type {
   TextResponse,
 } from './contract.js';
 import { contextMessage } from './contract.js';
+import type { ToolRegistry } from '../harness/tools.js';
+import { TEAM_CARRIAGE, teamRouteRefusal } from '../../shared/team-routes.js';
 import type { ClaudeSessionCheckpoint } from './claude-session.js';
 import { ClaudeSessionRuns, type ClaudeSessionTurn } from '../harness/claude-session-run.js';
 import { HarnessError } from '../harness/policy.js';
@@ -1489,6 +1491,10 @@ export class EngineService {
     input: TextRequest,
   ): Promise<TextResponse & { runId: string }> {
     const key = `${input.projectId}:${input.threadId}`;
+    // Only a route whose adapter carries the team service over MCP accepts team tools;
+    // every other adapter would drop them, so the request is refused by name instead.
+    if (input.team && (engine !== 'claude-code' || TEAM_CARRIAGE[engine] !== 'mcp'))
+      throw new EngineError('ROUTE_REFUSED', teamRouteRefusal(engine) ?? 'Team tools cannot ride on this request.', true);
     if (this.running.has(key))
       throw new EngineError(
         'REQUEST_ACTIVE',
@@ -1901,6 +1907,9 @@ export class EngineService {
       throw new EngineError('REQUEST_ACTIVE', 'This thread already has a request in progress. Wait for it or cancel it.');
     if (input.onDelta || input.onToolActivity)
       throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
+    // A team turn on this route runs through generateModelApiTools; this one offers no tools.
+    if (input.team)
+      throw new EngineError('POLICY_MISMATCH', 'Team tools on a model-API route ride in the host registry.', true);
     const dispatch = this.dispatch;
     const api = this.modelApi;
     if (!dispatch || !api)
@@ -1989,6 +1998,70 @@ export class EngineService {
         },
       });
       return { ...outcome.result, runId: outcome.run.id };
+    } catch (error) {
+      throw seamError(modelApiError(error));
+    } finally {
+      controller.abort();
+      this.running.delete(key);
+    }
+  }
+  /**
+   * One team member's Work turn on a model-API route. The route carries the team tools by
+   * running them itself: the model is offered their descriptors and each call is a host tool
+   * step in the member's own run (ModelSessionRuns.workTurn). Admission, the connection, the
+   * credential and the spend cap are the ones every model-API call is held to. The result is
+   * the proposal text, parsed and approved exactly as any other Work proposal.
+   */
+  async generateModelApiTools(
+    route: ModelApiRoute,
+    input: TextRequest,
+    registry: ToolRegistry,
+  ): Promise<TextResponse & { runId: string }> {
+    const key = `${input.projectId}:${input.threadId}`;
+    if (this.running.has(key))
+      throw new EngineError('REQUEST_ACTIVE', 'This thread already has a request in progress. Wait for it or cancel it.');
+    if (input.onDelta || input.onToolActivity)
+      throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
+    if (input.team || input.readScope)
+      throw new EngineError('POLICY_MISMATCH', 'A model-API team turn carries its tools in the host registry only.', true);
+    const driver = this.modelSessions;
+    const api = this.modelApi;
+    if (!driver || !api)
+      throw new EngineError('RUNTIME_UNAVAILABLE', 'The model-API runtime is not attached to this service.', true);
+    const controller = new AbortController();
+    this.running.set(key, controller);
+    try {
+      const result = await driver.workTurn({
+        route,
+        input: { ...input, signal: AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]) },
+        registry,
+        admit: () => this.admitModelApi(route, input),
+        adapter: async (admission, instructions, stop) => {
+          const { handle, secret } = await this.openModelApi(admission);
+          const adapter = handle.adapter({
+            model: admission.model,
+            secret,
+            exposure: api.exposure,
+            instructions,
+            effort: effortOf(input.effort),
+            transport: api.transport,
+          });
+          return {
+            ...adapter,
+            complete: (request, signal) => adapter.complete(request, AbortSignal.any([signal, stop])),
+          };
+        },
+      });
+      return {
+        text: result.text,
+        // Only the provider's own report; Work marks the model verified when this is non-empty.
+        model: result.model,
+        version: result.version,
+        threadId: input.threadId,
+        projectId: input.projectId,
+        requestId: input.requestId,
+        runId: result.runId,
+      };
     } catch (error) {
       throw seamError(modelApiError(error));
     } finally {

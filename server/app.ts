@@ -81,8 +81,17 @@ import {
   chooseWorkStyleSentence,
   isWorkStyle,
   resolveWorkStyle,
+  WORK_STYLE_LABELS,
+  WORK_STYLES,
   type WorkStyle,
 } from '../shared/work-style.js';
+import {
+  TEAM_ROUTES,
+  teamRouteRefusal,
+  type TeamRoute,
+  type TeamRouteCandidate,
+} from '../shared/team-routes.js';
+import { teamToolRegistry } from './team/tools.js';
 import type { UsageSnapshot } from '../shared/types.js';
 import { mountTeamRoutes } from './team/routes.js';
 import { createHarnessHost } from './harness/host.js';
@@ -687,12 +696,36 @@ export async function createApp(options: AppOptions) {
   const nativeWork = new NativeWorkService(
     store,
     options.nativeGenerator ??
-      (async (input) => {
+      (async ({ team, onTeamToolCall, ...input }) => {
         if (isModelApiRoute(input.engine)) {
           if (!input.projectId || !input.threadId || !input.requestId || !input.model)
             throw new ApiError(409, 'Select a model and thread before requesting work.');
           if (typeof input.accountRoute !== 'string')
             throw new ApiError(409, 'Connect this route in AI setup first.');
+          if (team) {
+            // A model-API route carries the team tools by running them here, as the member
+            // whose run this is. Native Work already matched the run to this member.
+            const member = store
+              .state(input.projectId)
+              .team?.members.find((item) => item.slotId === team.slotId);
+            if (!member) throw new ApiError(409, 'This team member was not found.');
+            return engines.generateModelApiTools(
+              input.engine,
+              {
+                ...input,
+                projectId: input.projectId,
+                threadId: input.threadId,
+                requestId: input.requestId,
+                model: input.model,
+                instructions: `${input.instructions ?? ''}\n\n${team.roleInstructions}`.trim(),
+                accountRoute: input.accountRoute,
+              },
+              teamToolRegistry(
+                { projectId: input.projectId, member, store, service: teamService },
+                onTeamToolCall,
+              ),
+            );
+          }
           return engines.generateModelApi(input.engine, {
             ...input,
             projectId: input.projectId,
@@ -703,7 +736,8 @@ export async function createApp(options: AppOptions) {
             accountRoute: input.accountRoute,
           });
         }
-        if (!isExternalEngine(input.engine)) return askCodex(input);
+        if (!isExternalEngine(input.engine))
+          return askCodex({ ...input, ...(team ? { team, onTeamToolCall } : {}) });
         if (!input.projectId || !input.threadId || !input.requestId || !input.model)
           throw new ApiError(409, 'Select a model and thread before requesting work.');
         const accountRoute = input.accountRoute;
@@ -717,6 +751,8 @@ export async function createApp(options: AppOptions) {
           model: input.model,
           instructions: input.instructions ?? '',
           accountRoute,
+          // Only an MCP-carrying adapter accepts this; the engine service refuses it elsewhere.
+          ...(team ? { team: { ...team, onToolCall: onTeamToolCall } } : {}),
           // A work run's requestId is its session id, which is how its run card finds these.
           onActivity: (frame) => store.emit('engine-activity', frame),
         });
@@ -786,13 +822,17 @@ export async function createApp(options: AppOptions) {
     threadId: string | undefined,
     // The socket is the listening service, even when listen(0) selected the port.
     port: number | undefined,
+    // The route this request runs on. A member's team tools ride only on the member's own
+    // route; the same thread sent to another route is ordinary work with no team service.
+    runRoute: Route,
   ): NativeTeamOptions | undefined => {
     if (!threadId) return undefined;
     const state = store.state(projectId);
-    const member = state.team?.members.find(
-      (item) => item.threadId === threadId && item.engine === 'codex',
-    );
-    if (!member) return undefined;
+    // Any member on any route carries its team options when the run is on that route;
+    // Native Work checks the route can carry them and refuses by name otherwise.
+    const member = state.team?.members.find((item) => item.threadId === threadId);
+    if (!member || member.engine === 'probe' || member.engine === 'sample') return undefined;
+    if (member.engine !== runRoute) return undefined;
     return teamForMember(projectId, member, port);
   };
   const serviceFor = (projectId: string, sessionId: string) => {
@@ -993,15 +1033,20 @@ export async function createApp(options: AppOptions) {
   // Accepted close-and-install latches before the desktop handoff; new
   // mutating work pauses after that point. Assigned once updates exist;
   // route handlers run later, so the late binding is safe.
-  // A member wakes on team mail (see server/team/service.ts): the run is the same Codex Work
-  // run a person starts from the thread, on the member's open task when it has one. Only
-  // Codex members run; other engines park as waiting until they exist.
+  // A member wakes on team mail (see server/team/service.ts): the run is the same Work run a
+  // person starts from the thread, on the member's own route and model, on the member's open
+  // task when it has one. Every route that can carry the team tools runs (shared/team-routes.ts).
   teamService.setRunStarter(async ({ projectId, member, threadId, text }) => {
     if (isUpdateClosing())
       throw new ApiError(409, 'The app update is accepted. New work pauses until restart.');
     pendingMutations += 1;
     try {
-      if (member.engine !== 'codex') throw new ApiError(409, 'This helper cannot run here yet.');
+      // A demo member has no provider behind it; a real route that cannot carry the team
+      // tools is named. Every route that can carries them runs the member's own Work.
+      if (member.engine === 'probe' || member.engine === 'sample')
+        throw new ApiError(409, 'This helper cannot run here yet.');
+      const refusal = teamRouteRefusal(member.engine);
+      if (refusal) throw new ApiError(409, refusal);
       const state = store.state(projectId);
       const openTask = state.tasks.find(
         (item) => item.assignedTo === member.slotId && !item.deletedAt && item.state !== 'done',
@@ -1009,6 +1054,7 @@ export async function createApp(options: AppOptions) {
       const started = await startCodexWork(
         {
           projectId,
+          engine: member.engine as TeamRoute,
           threadId,
           attachedTo: { kind: 'project', ref: projectId },
           text,
@@ -1025,6 +1071,34 @@ export async function createApp(options: AppOptions) {
       pendingMutations -= 1;
     }
   });
+  /**
+   * The routes a team member may run on right now: turned on in Settings and connected (an
+   * account route recorded; ChatGPT needs only to be on), with exactly the models each one
+   * reported. The project's default route comes first, so "Nectovia chooses" prefers it when
+   * two routes serve a style equally well.
+   */
+  const teamCandidates = (projectId: string): TeamRouteCandidate[] => {
+    const services = store.settings.services ?? {};
+    const preferred = selectedEngine(store.settings, store.state(projectId).project, null);
+    const ordered = [...TEAM_ROUTES].sort((a, b) =>
+      a === preferred ? -1 : b === preferred ? 1 : 0,
+    );
+    return ordered.flatMap((teamRoute) => {
+      if (services[teamRoute] !== true) return [];
+      if (teamRoute !== 'codex' && typeof services[`${teamRoute}AccountRoute`] !== 'string')
+        return [];
+      const saved = teamRoute === 'codex' ? codexModelSetting() : services[`${teamRoute}Model`];
+      return [
+        {
+          route: teamRoute,
+          models: routeModels(teamRoute),
+          savedModel: typeof saved === 'string' && saved ? saved : null,
+          routeDefaultAllowed: teamRoute === 'codex',
+        },
+      ];
+    });
+  };
+  teamService.setRouteCandidates(teamCandidates);
   const route =
     (action: (req: Request, res: Response) => Promise<unknown>, locked = true) =>
     async (req: Request, res: Response, next: express.NextFunction) => {
@@ -1969,7 +2043,7 @@ export async function createApp(options: AppOptions) {
             state.conversations.find((c) => c.id === threadId),
           )
         : choice(b.route, ROUTES, 'service');
-    const team = teamForThread(projectId, threadId, port);
+    const team = teamForThread(projectId, threadId, port, selectedRoute);
     if (command && team)
       throw new ApiError(409, 'Saved Work commands for team helpers are not available yet.', {
         code: 'unsupported_work_target',
@@ -2608,6 +2682,34 @@ export async function createApp(options: AppOptions) {
     // never disappear just because the connection is stale or unavailable.
     return { model };
   };
+  /**
+   * What the add-member form may offer: every route that can carry the team tools, whether
+   * it is ready (on and connected) and the models it reported. Read-only; the member route
+   * resolves and refuses again when a member is created, so this is never the authority.
+   */
+  app.get(
+    '/api/projects/:id/team/routes',
+    route(async (req) => {
+      const projectId = id(req);
+      const ready = new Map(teamCandidates(projectId).map((item) => [item.route, item]));
+      return {
+        routes: TEAM_ROUTES.map((teamRoute) => {
+          const candidate = ready.get(teamRoute);
+          return {
+            route: teamRoute,
+            name: routeDisplayName(teamRoute),
+            ready: Boolean(candidate),
+            models: (candidate?.models ?? []).map((model) => ({ slug: model.slug, name: model.name })),
+            savedModel: candidate?.savedModel ?? null,
+            ...(candidate
+              ? {}
+              : { reason: `Turn ${routeDisplayName(teamRoute)} on and connect it in AI setup.` }),
+          };
+        }),
+        styles: WORK_STYLES.map((style) => ({ style, label: WORK_STYLE_LABELS[style] })),
+      };
+    }, false),
+  );
   /**
    * What the thread's next request would run with, for the style picker and the details line.
    * Read-only: it resolves exactly as dispatch does, minus the message itself, and changes
@@ -3507,7 +3609,18 @@ export async function createApp(options: AppOptions) {
       // The turn id is fixed before the run so the native worker can mark the
       // turn verified once the runtime reports its engine.
       const turnId = identifier('U');
-      const choice = nativeChoice(engine, projectId, conversation, { mode: runMode, text });
+      const resolvedChoice = nativeChoice(engine, projectId, conversation, { mode: runMode, text });
+      // A member whose model Nectovia chose runs it as an automatic selection, so the run's
+      // record says who chose it; a person's own pick stays theirs.
+      const teamMember = team
+        ? state.team?.members.find((item) => item.slotId === team.slotId)
+        : undefined;
+      const choice: RunChoice =
+        teamMember?.selection?.by === 'nectovia' &&
+        resolvedChoice.model &&
+        resolvedChoice.model === teamMember.model
+          ? { ...resolvedChoice, selection: 'automatic' }
+          : resolvedChoice;
       const session = await nativeWork.start(projectId, task.id, {
         instruction,
         sources,
@@ -3680,7 +3793,7 @@ export async function createApp(options: AppOptions) {
           text,
           sources,
           consent: b.consent === true,
-          team: teamForThread(projectId, threadId, req.socket.localPort),
+          team: teamForThread(projectId, threadId, req.socket.localPort, serviceRoute),
           mode,
           ...(failing ? { failing } : {}),
         });
