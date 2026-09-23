@@ -22,7 +22,9 @@
  */
 import {
   RATE_CARD_V1,
+  approvedJobCap,
   debitsAllowance,
+  isJobTier,
   decideReserve,
   periodIdFor,
   projectUsage,
@@ -37,6 +39,7 @@ import {
   type AttemptSettlement,
   type ChargeKind,
   type FundedAttempt,
+  type JobTier,
   type MicroUsd,
   type PeriodTotals,
   type RateSnapshot,
@@ -226,21 +229,19 @@ function sameUsage(a: AttemptSettlement['usage'], b: AttemptSettlement['usage'])
 
 export interface FundingOptions {
   now?: () => number;
-  /**
-   * The approved default parent-job cap. There is deliberately no built-in
-   * value: the 20-credit figure in the commercial contract is a proposal, so a
-   * host must configure an approved cap before any root job can open.
-   */
-  approvedDefaultJobCapMicroUsd?: MicroUsd | null;
 }
 
 export class FundingService {
   private readonly now: () => number;
-  private readonly defaultCap: MicroUsd | null;
 
+  /**
+   * Every root job's default cap comes from its tier: the owner-approved
+   * `APPROVED_JOB_CAP_CREDITS` (Efficient 20, Focused 50, Thorough 100). There
+   * is no host option to change them, so no deployment can widen a default by
+   * configuration; a higher cap is an owner-approved cap request.
+   */
   constructor(private readonly repository: FundingRepository, options: FundingOptions = {}) {
     this.now = options.now ?? Date.now;
-    this.defaultCap = options.approvedDefaultJobCapMicroUsd ?? null;
   }
 
   private at() {
@@ -317,10 +318,12 @@ export class FundingService {
   }
 
   /**
-   * Open a root job with a finite cap, or attach a child run to its parent's
-   * root. A child never brings a cap of its own: it spends inside the root's.
+   * Open a root job with its tier's finite cap, or attach a child run to its
+   * parent's root. A child never brings a tier or a cap of its own: it spends
+   * inside the root's. A root may ask for less than its tier's cap; asking for
+   * more is refused here and goes through `requestCapIncrease`.
    */
-  async openJob(input: { tenantId: string; organizationId: string; rootJobId: string; runRef: string; parentRunRef: string | null; capMicroUsd: MicroUsd | null }): Promise<FundedJobRow & { inherited: boolean }> {
+  async openJob(input: { tenantId: string; organizationId: string; rootJobId: string; runRef: string; parentRunRef: string | null; tier: JobTier | null; capMicroUsd: MicroUsd | null }): Promise<FundedJobRow & { inherited: boolean }> {
     const tenantId = requireId(input.tenantId, 'tenant');
     const organizationId = requireId(input.organizationId, 'organization');
     const runRef = requireId(input.runRef, 'run reference');
@@ -333,14 +336,17 @@ export class FundingService {
         const root = parentRef ? await tx.job(tenantId, parentRef.rootJobId) : undefined;
         if (!root || root.organizationId !== organizationId)
           throw new FundingError(404, 'The parent job was not found for this organization.', 'unknown_parent');
-        if (input.capMicroUsd !== null)
+        if (input.capMicroUsd !== null || input.tier !== null)
           throw new FundingError(409, 'A child job spends inside its parent’s cap and cannot set its own.', 'child_cannot_set_cap');
         if (existingRef && existingRef.rootJobId !== root.rootJobId)
           throw new FundingError(409, 'That run is already attached to a different job.', 'job_conflict');
         if (!existingRef) await tx.saveJobRef({ tenantId, runRef, rootJobId: root.rootJobId });
         return { ...root, inherited: true };
       }
-      const cap = requireMoney(input.capMicroUsd, 'the job cap');
+      if (!isJobTier(input.tier))
+        throw new FundingError(422, 'A root job names its tier: efficient, focused or thorough.', 'invalid_tier');
+      const tierCap = approvedJobCap(input.tier);
+      const cap = input.capMicroUsd === null ? tierCap : requireMoney(input.capMicroUsd, 'the job cap');
       const existing = await tx.job(tenantId, rootJobId);
       if (existing) {
         if (existing.organizationId !== organizationId || existing.runRef !== runRef)
@@ -348,10 +354,8 @@ export class FundingService {
         return { ...existing, inherited: false };
       }
       if (existingRef) throw new FundingError(409, 'That run is already attached to a job.', 'job_conflict');
-      if (this.defaultCap === null)
-        throw new FundingError(409, 'No approved default job cap is configured, so no paid job can start.', 'no_approved_cap');
-      if (cap > this.defaultCap)
-        throw new FundingError(409, 'A cap above the approved default needs an explicit request and approval.', 'cap_request_required');
+      if (cap > tierCap)
+        throw new FundingError(409, 'A cap above the tier’s approved cap needs an explicit request and an owner’s approval.', 'cap_request_required');
       const row: FundedJobRow = { tenantId, organizationId, rootJobId, runRef, capMicroUsd: cap, capGeneration: 0, state: 'open', openedAt: this.at() };
       await tx.saveJob(row);
       await tx.saveJobRef({ tenantId, runRef, rootJobId });

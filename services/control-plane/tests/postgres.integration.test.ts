@@ -100,25 +100,27 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
     await repository.recordVerifiedWebhook({ provider: 'stripe', eventId: event, customerId: customer, payloadHash: 'c'.repeat(64), eventType: 'fixture.grant', payload: { fixture: true } });
     await query("INSERT INTO control_plane.entitlement_grants(tenant_id,grant_id,organization_id,provider,source_event_id,kind,state,valid_from,valid_until,projection) VALUES ($1,$2,$3,'stripe',$4,'plan','active','2026-09-01T00:00:00Z','2026-10-01T00:00:00Z','{}'::jsonb)",
       [org.tenantId, `grant_${org.id}`, org.id, event]);
-    const funding = new FundingService(new PostgresFundingRepository(factory), { now: () => Date.parse('2026-09-10T12:00:00Z'), approvedDefaultJobCapMicroUsd: creditAmount(400) });
+    const funding = new FundingService(new PostgresFundingRepository(factory), { now: () => Date.parse('2026-09-10T12:00:00Z') });
     await funding.allocatePeriod({ tenantId: org.tenantId, organizationId: org.id, periodId: '2026-09', planId: 'workflow-starter', sourceGrantId: `grant_${org.id}` });
     return { org, funding };
   }
   const rate = { version: 'fixture', inputMicroUsdPerMillion: 1_000_000, outputMicroUsdPerMillion: 1_000_000, cacheReadMicroUsdPerMillion: 1_000_000, cacheWriteMicroUsdPerMillion: 1_000_000 };
   it('serializes concurrent funded reservations so the last credits are held once', async () => {
     const { org, funding } = await fundedOrganization('Funding race');
-    for (const job of ['job_a', 'job_b'])
-      await funding.openJob({ tenantId: org.tenantId, organizationId: org.id, rootJobId: job, runRef: `run_${job}`, parentRunRef: null, capMicroUsd: creditAmount(400) });
+    // Six Thorough jobs (100-credit caps) each ask for 90 of the month's 500 credits: five fit.
+    const jobs = ['job_a', 'job_b', 'job_c', 'job_d', 'job_e', 'job_f'];
+    for (const job of jobs)
+      await funding.openJob({ tenantId: org.tenantId, organizationId: org.id, rootJobId: job, runRef: `run_${job}`, parentRunRef: null, tier: 'thorough', capMicroUsd: null });
     const reserve = (job: string) => funding.reserve({ tenantId: org.tenantId, organizationId: org.id, attemptId: `attempt_${job}`, rootJobId: job, parentAttemptId: null,
-      kind: 'generation', route: 'aws-bedrock', requestDigest: `digest_${job}`, rateSnapshot: rate, maxMicroUsd: creditAmount(300) });
-    const results = await Promise.allSettled([reserve('job_a'), reserve('job_b')]);
-    expect(results.filter((item) => item.status === 'fulfilled')).toHaveLength(1);
+      kind: 'generation', route: 'aws-bedrock', requestDigest: `digest_${job}`, rateSnapshot: rate, maxMicroUsd: creditAmount(90) });
+    const results = await Promise.allSettled(jobs.map(reserve));
+    expect(results.filter((item) => item.status === 'fulfilled')).toHaveLength(5);
     const state = await funding.projection(org.tenantId, org.id);
-    expect(state.state === 'ready' && state.projection.pendingMicroUsd).toBe(creditAmount(300));
+    expect(state.state === 'ready' && state.projection.pendingMicroUsd).toBe(creditAmount(450));
   });
   it('keeps a sent hold across a restarted repository and settles it in its own period', async () => {
     const { org, funding } = await fundedOrganization('Funding restart');
-    await funding.openJob({ tenantId: org.tenantId, organizationId: org.id, rootJobId: 'job_r', runRef: 'run_job_r', parentRunRef: null, capMicroUsd: creditAmount(20) });
+    await funding.openJob({ tenantId: org.tenantId, organizationId: org.id, rootJobId: 'job_r', runRef: 'run_job_r', parentRunRef: null, tier: 'efficient', capMicroUsd: null });
     const ref = { tenantId: org.tenantId, organizationId: org.id, attemptId: 'attempt_r' };
     await funding.reserve({ ...ref, rootJobId: 'job_r', parentAttemptId: null, kind: 'generation', route: 'aws-bedrock', requestDigest: 'digest_r', rateSnapshot: rate, maxMicroUsd: creditAmount(10) });
     await funding.markDispatched(ref);

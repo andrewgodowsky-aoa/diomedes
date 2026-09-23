@@ -20,7 +20,7 @@ async function fixture(options: { grant?: boolean } = {}) {
   const { accounts } = setup();
   const organization = await accounts.createOrganization('alice', 'Fernbrook Joinery');
   const repository = new FundingMemoryRepository();
-  const funding = new FundingService(repository, { now: () => now, approvedDefaultJobCapMicroUsd: creditAmount(20) });
+  const funding = new FundingService(repository, { now: () => now });
   if (options.grant !== false)
     await funding.allocatePeriod({ tenantId: organization.tenantId, organizationId: organization.id, periodId: '2026-09', planId: 'business', sourceGrantId: 'grant_fixture' });
   const handler = createHandler(() => accounts, (_config, account) => new UsageService(account, funding));

@@ -34,13 +34,12 @@ const usageFor = (credits: number) => ({
   reasoningTokens: 0,
 });
 
-function harness(options: { cap?: MicroUsd | null } = {}) {
+function harness() {
   let clock = Date.parse('2026-09-10T12:00:00.000Z');
   const repository = new FundingMemoryRepository();
   const make = () =>
     new FundingService(repository, {
       now: () => clock,
-      approvedDefaultJobCapMicroUsd: options.cap === undefined ? c(20) : options.cap,
     });
   const service = make();
   const setClock = (iso: string) => {
@@ -49,7 +48,7 @@ function harness(options: { cap?: MicroUsd | null } = {}) {
   const allocate = (periodId: string, planId = 'business', svc = service) =>
     svc.allocatePeriod({ tenantId: T, organizationId: O, periodId, planId, sourceGrantId: `grant_${periodId}` });
   const open = (rootJobId = 'job_1', svc = service) =>
-    svc.openJob({ tenantId: T, organizationId: O, rootJobId, runRef: `run_${rootJobId}`, parentRunRef: null, capMicroUsd: c(20) });
+    svc.openJob({ tenantId: T, organizationId: O, rootJobId, runRef: `run_${rootJobId}`, parentRunRef: null, tier: 'efficient', capMicroUsd: null });
   const reserve = (attemptId: string, credits: number, over: Record<string, unknown> = {}, svc = service) =>
     svc.reserve({
       tenantId: T,
@@ -87,11 +86,11 @@ async function refusal(promise: Promise<unknown>): Promise<FundingError> {
 
 describe('concurrent reserve', () => {
   it('two simultaneous reservations never both spend the last credits', async () => {
-    const h = harness({ cap: c(20) });
+    const h = harness();
     await h.allocate('2026-09', 'business');
     // Leave exactly 10 credits in the month.
     for (let index = 0; index < 99; index++) {
-      await h.service.openJob({ tenantId: T, organizationId: O, rootJobId: `fill_${index}`, runRef: `run_fill_${index}`, parentRunRef: null, capMicroUsd: c(20) });
+      await h.service.openJob({ tenantId: T, organizationId: O, rootJobId: `fill_${index}`, runRef: `run_fill_${index}`, parentRunRef: null, tier: 'efficient', capMicroUsd: null });
       await h.reserve(`fill_${index}`, 10, { rootJobId: `fill_${index}` });
       await h.service.markDispatched(h.ref(`fill_${index}`));
       await h.settle(`fill_${index}`, 10);
@@ -362,12 +361,12 @@ describe('monthly reset', () => {
 
 describe('top-up', () => {
   it('a top-up is spent only after the month and never lowers the monthly percentage', async () => {
-    const h = harness({ cap: c(20) });
+    const h = harness();
     await h.allocate('2026-09', 'workflow-starter');
     await h.service.recordTopUp({ tenantId: T, organizationId: O, topUpId: 'topup_1', amountMicroUsd: c(50), provider: 'stripe', sourceEventId: 'evt_topup_1' });
     // Use 495 of the 500 monthly credits.
     for (let index = 0; index < 33; index++) {
-      await h.service.openJob({ tenantId: T, organizationId: O, rootJobId: `fill_${index}`, runRef: `run_fill_${index}`, parentRunRef: null, capMicroUsd: c(20) });
+      await h.service.openJob({ tenantId: T, organizationId: O, rootJobId: `fill_${index}`, runRef: `run_fill_${index}`, parentRunRef: null, tier: 'efficient', capMicroUsd: null });
       await h.reserve(`fill_${index}`, 15, { rootJobId: `fill_${index}` });
       await h.service.markDispatched(h.ref(`fill_${index}`));
       await h.settle(`fill_${index}`, 15);
@@ -483,11 +482,11 @@ describe('parent-job caps', () => {
     const h = harness();
     await h.allocate('2026-09');
     await h.open();
-    const child = await h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'job_child', runRef: 'run_child', parentRunRef: 'run_job_1', capMicroUsd: null });
+    const child = await h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'job_child', runRef: 'run_child', parentRunRef: 'run_job_1', tier: null, capMicroUsd: null });
     expect(child.rootJobId).toBe('job_1');
     expect(child.inherited).toBe(true);
     const escape = await refusal(
-      h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'job_child2', runRef: 'run_child2', parentRunRef: 'run_job_1', capMicroUsd: c(20) }),
+      h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'job_child2', runRef: 'run_child2', parentRunRef: 'run_job_1', tier: null, capMicroUsd: c(20) }),
     );
     expect(escape.code).toBe('child_cannot_set_cap');
     await h.reserve('parent_step', 15);
@@ -495,17 +494,29 @@ describe('parent-job caps', () => {
     expect(childStep.code).toBe('cap_request_required');
   });
 
-  it('a new root above the approved default cap is refused, and no default exists unless configured', async () => {
+  it('a root job takes its tier’s approved cap, 20, 50 or 100 credits, and nothing above it', async () => {
     const h = harness();
     await h.allocate('2026-09');
+    for (const [tier, credits] of [['efficient', 20], ['focused', 50], ['thorough', 100]] as const) {
+      const job = await h.service.openJob({ tenantId: T, organizationId: O, rootJobId: `tier_${tier}`, runRef: `run_tier_${tier}`, parentRunRef: null, tier, capMicroUsd: null });
+      expect(job.capMicroUsd).toBe(c(credits));
+    }
+    // A smaller cap than the tier's is allowed; a larger one needs the owner.
+    const small = await h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'small', runRef: 'run_small', parentRunRef: null, tier: 'focused', capMicroUsd: c(10) });
+    expect(small.capMicroUsd).toBe(c(10));
     const over = await refusal(
-      h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'big', runRef: 'run_big', parentRunRef: null, capMicroUsd: c(25) }),
+      h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'big', runRef: 'run_big', parentRunRef: null, tier: 'efficient', capMicroUsd: c(25) }),
     );
     expect(over.code).toBe('cap_request_required');
-    const unconfigured = harness({ cap: null });
-    await unconfigured.allocate('2026-09');
-    const none = await refusal(unconfigured.open());
-    expect(none.code).toBe('no_approved_cap');
+    const thoroughOver = await refusal(
+      h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'bigger', runRef: 'run_bigger', parentRunRef: null, tier: 'thorough', capMicroUsd: c(101) }),
+    );
+    expect(thoroughOver.code).toBe('cap_request_required');
+    // A root job must name its tier; there is no silent default.
+    const untiered = await refusal(
+      h.service.openJob({ tenantId: T, organizationId: O, rootJobId: 'untiered', runRef: 'run_untiered', parentRunRef: null, tier: null, capMicroUsd: null }),
+    );
+    expect(untiered.code).toBe('invalid_tier');
   });
 
   it('a higher cap needs an explicit request and an owner decision before new spend', async () => {

@@ -784,13 +784,43 @@ export function publishedMonthlyGrant(planId: string): MicroUsd | null {
 }
 
 /**
- * The suggested initial parent-job cap. It is an unapproved proposal and no
- * service applies it by default: a host must configure an approved cap.
+ * The tier a parent job runs under. The same three words as the WorkStyles in
+ * `shared/work-style.ts` (checked at the type level in `shared/job-caps.ts`),
+ * spelled out here so the control plane can read the caps without importing the
+ * model-selection code.
  */
-export const PROPOSED_DEFAULT_JOB_CAP_CREDITS = Object.freeze({
-  credits: 20,
-  status: 'proposed' as const,
+export const JOB_TIERS = ['efficient', 'focused', 'thorough'] as const;
+export type JobTier = (typeof JOB_TIERS)[number];
+
+export function isJobTier(value: unknown): value is JobTier {
+  return typeof value === 'string' && (JOB_TIERS as readonly string[]).includes(value);
+}
+
+/**
+ * The finite credit cap every parent job starts with, by tier. Owner decision
+ * of 2026-09-23 (Andrew): Efficient 20, Focused 50, Thorough 100. These replace
+ * the single 20-credit figure that was recorded as a proposal only.
+ *
+ * A cap is a bound on one job, not a grant: it spends nothing by itself, and a
+ * job still needs funds to reserve against. Anything above a tier's cap is
+ * either an owner-approved cap request (the control plane's
+ * `requestCapIncrease` / `decideCapIncrease`) or, on this computer, an explicit
+ * one-job raise the person agrees to for that job alone. Neither is ever a
+ * standing change to these figures.
+ */
+export const APPROVED_JOB_CAP_CREDITS = Object.freeze({
+  status: 'approved' as const,
+  decidedBy: 'owner' as const,
+  decidedOn: '2026-09-23',
+  credits: Object.freeze({ efficient: 20, focused: 50, thorough: 100 }) as Readonly<
+    Record<JobTier, number>
+  >,
 });
+
+/** A tier's approved cap as exact money. */
+export function approvedJobCap(tier: JobTier): MicroUsd {
+  return creditAmount(APPROVED_JOB_CAP_CREDITS.credits[tier]);
+}
 
 /** The price terms an attempt was reserved under. Integer micro-USD per million tokens. */
 export interface RateSnapshot {

@@ -10,7 +10,8 @@ import { describe, expect, test } from 'vitest';
 import {
   CREDIT_MICRO_USD,
   MONTHLY_CREDIT_GRANTS,
-  PROPOSED_DEFAULT_JOB_CAP_CREDITS,
+  APPROVED_JOB_CAP_CREDITS,
+  approvedJobCap,
   creditAmount,
   creditsFor,
   decideReserve,
@@ -110,8 +111,13 @@ describe('the published grant table keeps approval and proposal apart', () => {
     }
   });
 
-  test('the 20-credit job cap is recorded as a proposal, not applied', () => {
-    expect(PROPOSED_DEFAULT_JOB_CAP_CREDITS).toEqual({ credits: 20, status: 'proposed' });
+  test('job caps are the owner-approved 20, 50 and 100 credits by tier', () => {
+    expect(APPROVED_JOB_CAP_CREDITS.status).toBe('approved');
+    expect(APPROVED_JOB_CAP_CREDITS.decidedOn).toBe('2026-09-23');
+    expect(APPROVED_JOB_CAP_CREDITS.credits).toEqual({ efficient: 20, focused: 50, thorough: 100 });
+    expect(approvedJobCap('efficient')).toBe(c(20));
+    expect(approvedJobCap('focused')).toBe(c(50));
+    expect(approvedJobCap('thorough')).toBe(c(100));
   });
 });
 
