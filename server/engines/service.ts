@@ -90,6 +90,7 @@ import type { ModelAdapter } from '../harness/native-agent.js';
 import type { ExposureAttempt } from '../spend-exposure.js';
 import type { ModelTranscripts } from '../harness/model-transcripts.js';
 import type { ModelSessionAdmission, ModelSessionRuns, ModelSessionTurn } from '../harness/model-session-run.js';
+import type { ReadToolDeps } from '../harness/capabilities/read-scope-tools.js';
 import type { ConnectionSecrets } from '../connection-secrets.js';
 import type { SpendExposure } from '../spend-exposure.js';
 import type { ModelApiRoute } from '../../shared/model-api.js';
@@ -1860,6 +1861,7 @@ export class EngineService {
         runId,
         route,
         input,
+        readTools: api.readTools,
         admit: () => this.admitModelApi(route, input),
         // The caller's channels, stamped with the turn step's identity and published only while
         // that exact attempt still owns its lease.
@@ -2092,6 +2094,11 @@ export interface ModelApiServices {
   openrouter?: { connections: OpenRouterConnections; transcripts: ModelTranscripts };
   /** Tests substitute the network here, below the SDK. Production leaves it unset. */
   transport?: typeof globalThis.fetch;
+  /**
+   * Tests substitute what the Ask and Plan read tools reach (DNS, the page transport, the
+   * connector transport). Production leaves it unset; it never widens what a tool may read.
+   */
+  readTools?: ReadToolDeps;
 }
 
 interface RouteCallOptions {

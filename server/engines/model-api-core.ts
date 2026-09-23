@@ -22,6 +22,7 @@ import { z } from 'zod';
 import type { RawToolActivity } from '../../shared/adapter-contract.js';
 import type { Json, ToolDescriptor } from '../../shared/harness.js';
 import { HarnessError } from '../harness/policy.js';
+import { readToolSummary } from '../harness/capabilities/read-scope-tools.js';
 import { secretScrubber } from '../secrets.js';
 import {
   ceilingCost,
@@ -396,6 +397,8 @@ const quoted = (value: unknown) => (typeof value === 'string' && value.trim() ? 
  */
 export function toolSummary(name: string, input: unknown): string {
   const args = input && typeof input === 'object' && !Array.isArray(input) ? (input as Record<string, unknown>) : {};
+  const read = readToolSummary(name, input);
+  if (read) return read;
   const target = quoted(args.path) ?? quoted(args.file) ?? quoted(args.name);
   switch (name) {
     case 'read_source':

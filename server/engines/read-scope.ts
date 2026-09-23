@@ -13,6 +13,12 @@
  * adapter-side check: a tool it did not allow, or a path outside `root`, stops
  * the request. That check observes what the tool reports, so it cannot stop the
  * one call it sees; the tool's own allow-list is what prevents the call.
+ *
+ * A model-API route (AWS Bedrock, Azure OpenAI, OpenRouter) has no tool of its
+ * own: the host executes every read itself (`server/harness/capabilities/
+ * read-scope-tools.ts`), so there the check happens before the read, not after.
+ * Those routes offer no web search yet (QUESTIONS.md O10), only a guarded page
+ * fetch, so they write their own note instead of `readScopeNote`.
  */
 import fs from 'node:fs';
 import path from 'node:path';
