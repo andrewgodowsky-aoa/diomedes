@@ -11,6 +11,15 @@ repository at that commit.
 released.** What shipped, the gates and their counts:
 `docs/implementation/2026-09-22-model-artifacts.md`.
 
+**Superseded in part, 2026-09-23 (visual convergence).** The ` ```chart ` fence retires with its
+spec (section 3a), `chart-spec.ts` and `Chart.tsx`. A saved ` ```chart ` fence now reads as an
+ordinary code block. A chart is the ` ```visual ` fence the model is taught
+(`shared/visual-spec.ts`). `InlineVisual.tsx` draws it in the turn, and "Open in panel" shows it in
+this panel as the kind Visual. "Chart this" builds a visual spec from the table. The panel's
+progress and segments charts are gone: a reply's own progress is a share in its own words, never
+counted segments (contract A15). Files offers "Open in panel" for a saved visual's `.json` too.
+Record: `docs/product/2026-09-23-visual-convergence.md`.
+
 ---
 
 ## 1. What a person gets

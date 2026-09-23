@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import type { Project, Route, Turn } from '../../shared/types';
+import { AGENT_NAME } from '../../shared/agent-name';
 import { routeDisplayName } from '../../shared/engines';
 import { WORK_STYLES, WORK_STYLE_DESCRIPTIONS, WORK_STYLE_LABELS, isWorkStyle, type WorkStyle } from '../../shared/work-style';
 import { speakerName } from '../attribution-display';
@@ -257,9 +258,9 @@ export function Diomedes({
             two places to a screen reader. */}
         <section className="screen on dio-screen">
           {art}
-          <main className="work" aria-label="Nectovia">
+          <main className="work" aria-label={AGENT_NAME}>
             <div className="col head">
-              <h1>Nectovia</h1>
+              <h1>{AGENT_NAME}</h1>
             </div>
             <div className="col instr" aria-label="This conversation">
               <span>{instrumentLine(scopeId, projects, restriction)}</span>
@@ -367,8 +368,8 @@ export function Diomedes({
                 <div className={`composer${turns.length === 0 ? ' quiet' : ''}${pending ? ' busy' : ''}`}>
                   <textarea
                     rows={turns.length === 0 ? 3 : 1}
-                    aria-label="Message Nectovia"
-                    placeholder="Ask a question or give Nectovia something to do."
+                    aria-label={`Message ${AGENT_NAME}`}
+                    placeholder={`Ask a question or give ${AGENT_NAME} something to do.`}
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                     onKeyDown={(e) => {

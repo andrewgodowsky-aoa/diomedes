@@ -14,6 +14,7 @@ import {
   tightestWindow,
   titleCase,
 } from '../components';
+import { AGENT_NAME } from '../../shared/agent-name';
 import { CAPS, MODE_ORDER } from './Composer';
 import type { EverythingItem } from './Everything';
 import { Rail, type RailItem } from './Rail';
@@ -183,7 +184,7 @@ export function Home({
   });
 
   const destinations: EverythingItem[] = [
-    { id: 'diomedes', label: 'Nectovia', hint: 'Talk to Nectovia about any project, or all of them.' },
+    { id: 'diomedes', label: AGENT_NAME, hint: `Talk to ${AGENT_NAME} about any project, or all of them.` },
     { id: 'new-project', label: 'New project', hint: 'Start from an empty folder.' },
     {
       id: 'open-folder',
@@ -214,7 +215,7 @@ export function Home({
     {
       id: 'permissions',
       label: 'Permissions',
-      hint: 'What Nectovia may do on its own, and what always asks first.',
+      hint: `What ${AGENT_NAME} may do on its own, and what always asks first.`,
     },
     { id: 'detail', label: 'Interface detail', hint: 'How much each change spells out.' },
     { id: 'updates', label: 'App updates', hint: 'The version you run, and what is newer.' },

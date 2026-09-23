@@ -9,13 +9,18 @@ import { createApp } from '../server/app';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { FRAME_CSP } from '../client/console/artifact-frame';
 import { APP_CSP } from '../scripts/app-csp';
+import type { UpdateStatusSnapshot } from '../shared/app-updates';
 import type { DocumentContent, Project, ProjectState } from '../shared/types';
 import {
   ARTIFACT_ENGINE,
   ARTIFACT_MODEL,
   artifactEngine,
   artifactTransport,
+  heldUpdate,
   probes,
+  UPDATE_RECEIVED,
+  UPDATE_SIZE,
+  WEEKLY_VISUAL,
   type ArtifactEngine,
 } from './fixtures/scripted-artifacts';
 import { AWS_CONNECT_BODY } from './fixtures/scripted-home-luna';
@@ -103,6 +108,8 @@ let app: Awaited<ReturnType<typeof createApp>> | undefined;
 let server: Server | undefined;
 let url = '';
 let engine: ArtifactEngine;
+/** The app update the UPDATE card reads: a newer release, and a download held part way. */
+const update = heldUpdate();
 let pageErrors: string[] = [];
 let externals: string[] = [];
 let dialogs: string[] = [];
@@ -200,6 +207,8 @@ test.beforeAll(async () => {
     reviewerAdapter: null,
     secretBox: testOnlySecretBox(),
     modelApiTransport: artifactTransport,
+    // An installed Windows build, so the host's updater runs; its channel is the fixture's.
+    updateOverrides: { platform: 'win32', packaged: true, installed: true, transport: update.transport },
   });
   const dist = path.resolve('dist');
   await fs.access(path.join(dist, 'index.html'));
@@ -219,6 +228,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   engine?.release();
+  update.drop();
   await app?.locals.close?.();
   server?.closeAllConnections();
   await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
@@ -683,63 +693,143 @@ test('Save to Files makes one file and one History entry, and Files opens it in 
   await expect(chips(page, 'Diagram', 'Delivery check')).not.toHaveAttribute('aria-current', 'true');
 });
 
-test('a chart is an SVG with a plain-words name and its data one button away', async ({ page }, testInfo) => {
+/** What the bar chart in the CHART and VISUALS answers is called, as a screen reader hears it. */
+const WEEKLY = 'Bar chart: Weekly sends. 5 points, Mon to Fri. Sent from 80 to 150; Replies from 7 to 20.';
+
+/**
+ * The quiet control under a visual in a saved turn: "Open in panel", or "In panel" while the panel
+ * shows it, then the visual's title for a screen reader.
+ */
+const panelControl = (scope: Locator, title: string, current = false) =>
+  scope.getByRole('button', {
+    name: new RegExp(`^${current ? 'In panel' : 'Open in panel'}\\s*:\\s*${escaped(title)}$`),
+  });
+
+/** A colour as the page computes it, so a token can be compared with a drawn fill. */
+const computedColour = (page: Page, value: string) =>
+  page.evaluate((colour) => {
+    const probe = document.createElement('i');
+    probe.style.color = colour;
+    document.body.append(probe);
+    const found = getComputedStyle(probe).color;
+    probe.remove();
+    return found;
+  }, value);
+
+test('a visual is drawn in its turn and opens in the panel as a visual, saved to Files as its JSON', async ({ page }, testInfo) => {
   const project = await freshProject('Weekly numbers');
   await openConsole(page, project);
   await send(page, 'CHART of this week');
-  await chips(page, 'Chart', 'Weekly sends').click();
+  const turn = page.locator('.transcript .turn.dio').last();
+  // Drawn where the reply put it, not behind a chip, and none of its JSON is shown.
+  await expect(turn.getByRole('img', { name: WEEKLY, exact: true })).toBeVisible();
+  await expect(turn.locator('svg.iv-svg rect.iv-mark')).toHaveCount(10);
+  await expect(turn.locator('.art-chip')).toHaveCount(0);
+  await expect(turn).not.toContainText('"kind"');
+
+  await panelControl(turn, 'Weekly sends').click();
   const panel = pane(page);
-  const chart = panel.getByRole('img', {
-    name: /^Bar chart: Weekly sends\. 2 series \(Sent, Replies\) across 5 categories/,
-  });
-  await expect(chart).toBeVisible();
-  await expect(panel.locator('svg.art-chart-svg rect.art-bar')).toHaveCount(10);
-  const data = panel.getByRole('button', { name: 'Show data', exact: true });
-  await expect(data).toHaveAttribute('aria-expanded', 'false');
-  await data.click();
-  const table = panel.getByRole('table');
-  await expect(table.getByRole('columnheader')).toHaveText(['Category', 'Sent (msgs)', 'Replies (msgs)']);
-  await expect(table.getByRole('row')).toHaveCount(6);
-  await expect(table.getByRole('row').nth(3)).toHaveText(/Wed\s*150\s*20/);
-  await expect(panel.getByRole('button', { name: 'Hide data', exact: true })).toHaveAttribute('aria-expanded', 'true');
-  await page.screenshot({ path: testInfo.outputPath('chart-with-data.png'), animations: 'disabled' });
+  await expect(panel.getByRole('heading', { name: 'Weekly sends', exact: true })).toBeFocused();
+  await expect(panel.locator('.art-kind')).toHaveText('Visual');
+  await expect(panel.getByRole('img', { name: WEEKLY, exact: true })).toBeVisible();
+  await expect(panel.locator('svg.iv-svg rect.iv-mark')).toHaveCount(10);
+  // The panel draws the chart at its own width, so its labels keep their size: the drawing is
+  // as wide as the panel's body, not a 640-wide picture scaled down into it.
+  // (Polled: the panel measures its body after the first paint, then draws again at that width.)
+  await expect
+    .poll(async () => {
+      const drawnWidth = await panel.locator('svg.iv-svg').evaluate((svg) => (svg as SVGSVGElement).viewBox.baseVal.width);
+      const bodyWidth = (await panel.locator('.art-visual').boundingBox())!.width;
+      return Math.abs(drawnWidth - bodyWidth);
+    })
+    .toBeLessThanOrEqual(2);
+  // The control in the turn keeps a chip's state while the panel shows its visual.
+  await expect(panelControl(turn, 'Weekly sends', true)).toHaveAttribute('aria-current', 'true');
+
+  // Its source is the JSON the reply wrote, and Save to Files writes that JSON as a .json file.
+  await panel.getByRole('button', { name: 'Source', exact: true }).click();
+  await expect(panel.locator('pre.art-source')).toContainText('"kind":"bar"');
+  const saved = 'Saved artifacts/Weekly sends.json';
+  await panel.getByRole('button', { name: 'Save to Files', exact: true }).click();
+  await expect(panel.locator('.art-status')).toContainText(`Saved to Files as ${saved}.`);
+  const file = await api<DocumentContent>(`/projects/${project.id}/documents/read?path=${encodeURIComponent(saved)}`);
+  expect(JSON.parse(file.text)).toEqual(WEEKLY_VISUAL);
+
+  // The saved file opens in the panel from Files, drawn from the file.
+  await panel.getByRole('button', { name: 'Show in Files', exact: true }).click();
+  const files = filesPane(page);
+  await files.getByRole('button', { name: 'Open in panel', exact: true }).click();
+  await expect(panel.getByRole('heading', { name: 'Weekly sends', exact: true })).toBeFocused();
+  await panel.getByRole('button', { name: 'Rendered', exact: true }).click();
+  await expect(panel.getByRole('img', { name: WEEKLY, exact: true })).toBeVisible();
+  // It is the file's visual, not the turn's, so the turn no longer says it is in the panel.
+  await expect(panelControl(turn, 'Weekly sends')).not.toHaveAttribute('aria-current', 'true');
+  await page.screenshot({ path: testInfo.outputPath('visual-from-files.png'), animations: 'disabled' });
 });
 
-/**
- * Every segment of a segment bar has its share of the track. Inside the Console `.console .seg`
- * (console.css, the segmented radio control) also matches a segment, and without the chart's own
- * rule its `margin-left: auto` shrank each one to a 2 px border.
- */
-async function expectSegmentsDrawn(track: Locator, count: number) {
-  const segments = track.locator('span.seg');
-  await expect(segments).toHaveCount(count);
-  const trackBox = await track.boundingBox();
-  const share = (trackBox!.width - 4 * (count - 1)) / count;
-  for (const segment of await segments.all()) {
-    const box = await segment.boundingBox();
-    expect(box!.width).toBeGreaterThan(share - 1);
-    expect(box!.height).toBeGreaterThanOrEqual(3);
-  }
-}
-
-test('segments and progress charts are the Console segment bar, every segment drawn', async ({ page }, testInfo) => {
-  const project = await freshProject('Launch board');
+test('a retired ```chart fence reads as the code block it is: no chip, no drawing', async ({ page }) => {
+  const project = await freshProject('Old chart');
   await openConsole(page, project);
-  await send(page, 'STEPS for the launch');
-  await chips(page, 'Chart', 'Launch steps').click();
+  await send(page, 'LEGACY chart from before');
+  const turn = page.locator('.transcript .turn.dio').last();
+  await expect(turn).toContainText('The chart from before.');
+  await expect(turn.locator('pre code')).toContainText('"type":"bar"');
+  await expect(turn.locator('figure.iv, .art-chip, button.iv-open')).toHaveCount(0);
+});
+
+test('a bar chart, key figures and a reply\'s own progress in one turn, under scheme nectovia at 1440 wide', async ({ page }, testInfo) => {
+  // Tall enough that the whole turn, three visuals, is on screen at once.
+  await page.setViewportSize({ width: 1440, height: 1300 });
+  const project = await freshProject('Week in visuals');
+  await openConsole(page, project);
+  await expect(page.locator('html')).toHaveAttribute('data-package', 'nectovia');
+  expect(page.viewportSize()?.width).toBe(1440);
+  await send(page, 'VISUALS of this week');
+  const turn = page.locator('.transcript .turn.dio').last();
+  await expect(turn.locator('figure.iv')).toHaveCount(3);
+
+  // The bar chart, its series in the palette: lead cyan, then the violet trail.
+  const chart = turn.getByRole('img', { name: WEEKLY, exact: true });
+  await expect(chart).toBeVisible();
+  const fillOf = (series: number) =>
+    chart.locator(`g.iv-s${series} rect.iv-mark`).first().evaluate((mark) => getComputedStyle(mark).fill);
+  expect(await fillOf(0)).toBe(await computedColour(page, 'var(--seam-lead)'));
+  expect(await fillOf(1)).toBe(await computedColour(page, 'var(--seam-trail)'));
+
+  // The key figures, as the reply gave them.
+  const figures = turn.locator('figure.iv-stat .iv-stat');
+  await expect(figures).toHaveCount(3);
+  await expect(figures.nth(0)).toContainText('575');
+  await expect(figures.nth(2)).toContainText('11%');
+
+  // The reply's progress is a share in its own words: one outlined track marked as the reply's,
+  // never segments, never a count the reply did not write, and nothing on it moves.
+  const progress = turn.getByRole('progressbar', { name: 'Follow-ups drafted', exact: true });
+  await expect(progress).toHaveAttribute('aria-valuenow', '40');
+  await expect(progress).toHaveAttribute('aria-valuetext', '40%, 4 of the 10 I planned');
+  const gauge = turn.locator('.seg-bar[data-source="reply"]');
+  await expect(gauge).toHaveCount(1);
+  await expect(gauge.locator('span.seg')).toHaveCount(0);
+  await expect(gauge.locator('.seg-caption')).toHaveText('Follow-ups drafted · 4 of the 10 I planned');
+  expect(await gauge.locator('.seg-track').evaluate((track) => getComputedStyle(track).borderTopStyle)).toBe('solid');
+  expect(await gauge.locator('.seg-fill').evaluate((fill) => getComputedStyle(fill).transitionDuration)).toBe('0s');
+
+  // Every valid visual can go to the panel; the progress takes its kind's name.
+  await expect(turn.locator('button.iv-open')).toHaveText([
+    'Open in panel: Weekly sends',
+    'Open in panel: This week',
+    'Open in panel: Progress',
+  ]);
+  for (const title of ['Weekly sends', 'This week', 'Progress']) await expect(panelControl(turn, title)).toBeVisible();
+  await turn.locator('.iv-open-row').last().scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('visuals-in-turn.png'), animations: 'disabled' });
+
+  // The same bar chart, opened in the panel.
+  await panelControl(turn, 'Weekly sends').click();
   const panel = pane(page);
-  const steps = panel.getByRole('progressbar', { name: /^Steps: Launch steps\. 2 of 5 done/ });
-  await expect(steps).toBeVisible();
-  await expectSegmentsDrawn(steps, 5);
-  await expect(steps.locator('span.seg.done')).toHaveCount(2);
-  await expect(steps.locator('span.seg.active')).toHaveCount(1);
-  await page.screenshot({ path: testInfo.outputPath('segments-chart.png'), animations: 'disabled' });
-  await chips(page, 'Chart', 'Boxes packed').click();
-  const packed = panel.getByRole('progressbar', { name: 'Progress: Boxes packed. 7 of 12 boxes.', exact: true });
-  await expect(packed).toHaveAttribute('aria-valuenow', '7');
-  await expect(packed).toHaveAttribute('aria-valuemax', '12');
-  await expectSegmentsDrawn(packed, 12);
-  await expect(packed.locator('span.seg.done')).toHaveCount(7);
+  await expect(panel.getByRole('heading', { name: 'Weekly sends', exact: true })).toBeFocused();
+  await expect(panel.getByRole('img', { name: WEEKLY, exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('bar-chart-in-panel.png'), animations: 'disabled' });
 });
 
 test('a table stays readable in the turn, and Chart this draws any of its number columns', async ({ page }, testInfo) => {
@@ -756,11 +846,16 @@ test('a table stays readable in the turn, and Chart this draws any of its number
   const chartIt = panel.getByRole('button', { name: 'Chart this', exact: true });
   await expect(chartIt).toHaveAttribute('aria-expanded', 'false');
   await chartIt.click();
-  await expect(panel.getByRole('img', { name: /^Bar chart: Sent by Region\./ })).toBeVisible();
-  await expect(panel.locator('.art-chart-heading')).toHaveText('Sent by Region');
+  // Drawn by the one visual renderer, from a spec the visual schema accepted: one bar a region.
+  const chart = panel.locator('figure.iv-bar');
+  await expect(chart.getByRole('img', { name: /^Bar chart: Sent by Region\./ })).toBeVisible();
+  await expect(chart.locator('.iv-title')).toHaveText('Sent by Region');
+  await expect(chart.locator('rect.iv-mark')).toHaveCount(3);
   await expect(panel.getByRole('button', { name: 'Hide chart', exact: true })).toHaveAttribute('aria-expanded', 'true');
   await panel.getByRole('combobox', { name: 'Column' }).selectOption({ label: 'Replies' });
   await expect(panel.getByRole('img', { name: /^Bar chart: Replies by Region\./ })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-package', 'nectovia');
+  await chart.scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath('table-charted.png'), animations: 'disabled' });
 });
 
@@ -1058,14 +1153,16 @@ test('on the Nectovia page the panel opens beside the conversation, and says why
   const box = page.getByRole('textbox', { name: 'Message Nectovia' });
   await box.fill('CHART of this week');
   await box.press('Enter');
-  const chip = page.locator('.turn.dio').getByRole('button', { name: /^Chart\s+Weekly sends\b/ });
-  await expect(chip).toBeVisible();
-  await chip.click();
+  const turn = page.locator('.turn.dio').last();
+  await expect(turn.getByRole('img', { name: WEEKLY, exact: true })).toBeVisible();
+  const open = panelControl(turn, 'Weekly sends');
+  await expect(open).toBeVisible();
+  await open.click();
   const panel = pane(page);
   await expect(panel).toBeVisible();
   await expect(panel).toHaveClass(/\boverlay\b/);
   await expect(panel.getByRole('heading', { name: 'Weekly sends', exact: true })).toBeFocused();
-  await expect(panel.getByRole('img', { name: /^Bar chart: Weekly sends\./ })).toBeVisible();
+  await expect(panel.getByRole('img', { name: WEEKLY, exact: true })).toBeVisible();
   // At this width the page makes room for the panel: nothing of the composer, Send included, is under it.
   const composerBox = await page.locator('.dio-screen .composer').boundingBox();
   const sendBox = await page.locator('.dio-screen .composer .send').boundingBox();
@@ -1082,7 +1179,57 @@ test('on the Nectovia page the panel opens beside the conversation, and says why
     'This conversation is about all projects, so it has no folder to save into. Copy the source, or save from a project conversation.',
   );
   await page.screenshot({ path: testInfo.outputPath('home-panel.png'), animations: 'disabled' });
+  // Esc closes it, and focus goes back to the control that opened it, which says so again.
   await page.keyboard.press('Escape');
   await expect(panel).toHaveCount(0);
-  await expect(chip).toBeFocused();
+  await expect(panelControl(turn, 'Weekly sends')).toBeFocused();
+});
+
+// Last in the file: it leaves the host's updater with a checked release.
+test('the update card in a reply and Settings draw the bytes the host reported, and no share once it ends', async ({ page }, testInfo) => {
+  const project = await freshProject('Update watch');
+  await openConsole(page, project);
+  await expect(page.locator('html')).toHaveAttribute('data-package', 'nectovia');
+  const status = () => api<UpdateStatusSnapshot>('/updates/status');
+  await api('/updates/check', 'POST', {});
+  expect((await status()).check.outcome).toBe('available');
+  // The download runs on the host. This request answers only when the download ends.
+  const download = fetch(`${url}/api/updates/download`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' },
+    body: '{}',
+  });
+  await expect.poll(() => update.holding()).toBe(true);
+  expect((await status()).download.progress).toEqual({ transferred: UPDATE_RECEIVED, total: UPDATE_SIZE });
+
+  // The card's numbers are the host's: the bytes received over the size the server declared.
+  await send(page, 'UPDATE me on the download');
+  const card = page.locator('.transcript .turn.dio').last().locator('figure.iv-app');
+  const downloading = `Downloading version ${update.version}`;
+  const bar = card.getByRole('progressbar', { name: downloading, exact: true });
+  await expect(bar).toHaveAttribute('aria-valuenow', '15');
+  await expect(bar).toHaveAttribute('aria-valuetext', '15%, 12.3 of 80.0 MB');
+  await expect(card.locator('.seg-caption')).toHaveText(`${downloading} · 12.3 of 80.0 MB`);
+  // A record's bar, not the outlined gauge a reply's own progress is drawn as.
+  await expect(card.locator('.seg-bar[data-source="reply"]')).toHaveCount(0);
+  await card.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('update-card-mid-download.png'), animations: 'disabled' });
+
+  // Settings, App updates draws the same download by the same rule.
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await page.getByRole('button', { name: 'App updates', exact: true }).click();
+  const settings = page.locator('.app-updates');
+  const settingsBar = settings.getByRole('progressbar', { name: downloading, exact: true });
+  await expect(settingsBar).toHaveAttribute('aria-valuenow', '15');
+  await expect(settingsBar).toHaveAttribute('aria-valuetext', '15%, 12.3 of 80.0 MB');
+  await page.screenshot({ path: testInfo.outputPath('settings-update-mid-download.png'), animations: 'disabled' });
+
+  // The connection drops. The host clears what the download said about itself, and Settings,
+  // reading the record again, draws no share of a download that is no longer running.
+  update.drop();
+  expect((await download).status).toBe(502);
+  expect((await status()).download.progress).toBeUndefined();
+  await expect(settingsBar).toHaveCount(0);
+  await expect(settings.locator('.seg-bar')).toHaveCount(0);
+  await expect(settings).toContainText(`Version ${update.version} is available`);
 });

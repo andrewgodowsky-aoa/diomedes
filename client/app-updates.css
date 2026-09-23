@@ -40,3 +40,8 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* the running phase, drawn by the rule the update card uses (update-progress.ts) */
+.app-updates .update-bar {
+  max-width: 32rem;
+}

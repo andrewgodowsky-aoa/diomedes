@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Session } from '../../shared/types';
-import { readBlock, VISUAL_FENCE_TAG, type ReplySegment } from '../../shared/visual-spec';
-import { blocksOf, chartColumns, type ArtifactRecord } from './artifacts';
-import { InlineVisual, VisualNote, VisualPending } from './InlineVisual';
+import { readBlock, type ReplySegment } from '../../shared/visual-spec';
+import { blocksOf, chartColumns, isVisualBlock, type ArtifactRecord } from './artifacts';
+import { InlineVisual, VisualBoundary, VisualNote, VisualPending } from './InlineVisual';
 import {
   artifactKindOf,
   DRAWING,
@@ -24,8 +24,10 @@ import {
  *
  * Paragraphs render as the `<p>` children of the turn's `.body` they always
  * were, so a plain answer reads exactly as before. A fenced block in a language
- * the panel draws (mermaid, chart, svg, html, markdown) becomes a chip that
- * opens it there; every other fence is a code block with its own Copy.
+ * the panel draws (mermaid, svg, html, markdown) becomes a chip that opens it
+ * there; a `visual` block is drawn in place, with a quiet way to open it in the
+ * panel once its turn is saved; every other fence (a retired ```chart
+ * included) is a code block with its own Copy.
  */
 export interface TurnBodyProps {
   text: string;
@@ -62,9 +64,22 @@ export function TurnBody({ text, preview = false, artifactAt, onOpenArtifact, op
   return (
     <>
       {blocks.map((block, index) => {
-        if (block.type === 'code' && block.lang === VISUAL_FENCE_TAG) {
+        if (isVisualBlock(block)) {
           const segment = visualSegment(block, ++visuals, preview);
-          if (segment.type === 'visual') return <InlineVisual key={index} spec={segment.spec} session={session} />;
+          if (segment.type === 'visual') {
+            // Only a saved turn's visual is an artifact; a streaming preview never offers the panel.
+            const record = preview ? undefined : artifactAt?.(index);
+            return (
+              <Fragment key={index}>
+                <VisualBoundary>
+                  <InlineVisual spec={segment.spec} session={session} />
+                </VisualBoundary>
+                {record?.kind === 'visual' && onOpenArtifact && (
+                  <VisualOpen record={record} current={record.key === openKey} onOpen={onOpenArtifact} />
+                )}
+              </Fragment>
+            );
+          }
           if (segment.type === 'pending') return <VisualPending key={index} />;
           if (segment.type === 'invalid') return <VisualNote key={index} reason={segment.reason} />;
         }
@@ -239,6 +254,37 @@ export function TableView({ table, caption }: { table: TableBlock; caption?: str
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/**
+ * The quiet way from a visual in a turn to the panel. The visual is already
+ * drawn above it, so it is a small text control rather than a chip; it keeps a
+ * chip's state all the same: "In panel" and `aria-current` while the panel
+ * shows this visual. Its accessible name carries the title, so two visuals in
+ * one turn are two different controls.
+ */
+export function VisualOpen({
+  record,
+  current,
+  onOpen,
+}: {
+  record: ArtifactRecord;
+  current: boolean;
+  onOpen(record: ArtifactRecord): void;
+}) {
+  return (
+    <div className="iv-open-row">
+      <button
+        type="button"
+        className={`iv-open${current ? ' on' : ''}`}
+        aria-current={current ? 'true' : undefined}
+        onClick={() => onOpen(record)}
+      >
+        {current ? 'In panel' : 'Open in panel'}
+        <span className="art-sr">: {record.title}</span>
+      </button>
     </div>
   );
 }

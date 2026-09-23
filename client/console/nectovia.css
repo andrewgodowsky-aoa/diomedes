@@ -1331,3 +1331,83 @@ html[data-motion-preset='none'] .console.diomedes .nv-band {
   border-color: transparent;
   background: none;
 }
+
+/* ---- visuals, the segment bar and the artifact panel (lane VISUALS) ----
+   Inline visuals and the panel's charts are one renderer (InlineVisual.tsx);
+   here they take the palette. Series run lead cyan, violet trail and bone,
+   then muted tints of the three toward t3, then t3: eight colours, every one
+   3:1 or more on the ink, surface and raised grounds (WCAG 1.4.11). */
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s0 {
+  --iv-c: var(--seam-lead);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s1 {
+  --iv-c: var(--seam-trail);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s2 {
+  --iv-c: var(--t1);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s3 {
+  --iv-c: color-mix(in oklab, var(--seam-lead) 55%, var(--t3));
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s4 {
+  --iv-c: color-mix(in oklab, var(--seam-trail) 55%, var(--t3));
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s5 {
+  --iv-c: color-mix(in oklab, var(--t1) 55%, var(--t3));
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s6 {
+  --iv-c: color-mix(in oklab, var(--seam-lead) 25%, var(--t3));
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s7 {
+  --iv-c: var(--t3);
+}
+
+/* The segment bar on the Nectovia grounds (WCAG 1.4.11, 3:1 for a part of a
+   graphic that says where work stands). The rule-2 hairline gave pending
+   1.35:1 on ink, and the lead at 45% over the ground gave active 2.88:1.
+     pending #616872 (t3 into ink): ink 3.55, surface 3.44, raised 3.26, plate 3.04
+     active  #317c79 (lead 62% into ink, oklab): ink 4.08, surface 3.96, raised 3.75
+     done    #44d2c9 (the lead): 10.77 on ink; 3.03:1 against pending, so a
+             finished segment, and a share's fill against its track, stay apart
+   Opaque, so the ratios hold whatever the bar sits on. */
+:is(html, .dc-stage)[data-package='nectovia'] .seg-bar {
+  --seg-ahead: #616872;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .seg-bar .seg.active {
+  background: #317c79;
+}
+
+/* The artifact panel's plate faces the thread, so its cut is top left
+   (contract §3). Here it is drawn on a layer behind the panel's content (A1):
+   the panel and its face hold content, so neither is clipped, and no picker,
+   focus ring or scrolled edge inside the panel is ever cut. The rule runs
+   along the top and left edges and down the bevel, as it did. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .art-plate {
+  position: relative;
+  isolation: isolate;
+  padding: 0;
+  background: none;
+  clip-path: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .art-plate-face {
+  background: none;
+  clip-path: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .art-plate::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(
+        to top left,
+        transparent calc(50% - 1px),
+        var(--hair-2) calc(50% - 1px) 50%,
+        transparent 50%
+      )
+      left top / var(--art-cut-pane) var(--art-cut-pane) no-repeat,
+    var(--raised);
+  box-shadow: inset 1px 1px 0 0 var(--hair-2);
+  clip-path: polygon(var(--art-cut-pane) 0, 100% 0, 100% 100%, 0 100%, 0 var(--art-cut-pane));
+  pointer-events: none;
+}

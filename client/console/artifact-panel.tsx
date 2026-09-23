@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import type { Session } from '../../shared/types';
 import { ArtifactPane } from './ArtifactPane';
 import type { SaveOutcome } from './artifact-save';
 import { clampArtifactWidth, remember, stored, storedArtifactWidth, viewportWidth } from './artifact-width';
@@ -9,6 +10,28 @@ import { indexArtifacts, indexFile, type ArtifactIndex, type ArtifactRecord, typ
 // a file the person opened), so nothing here is a second copy of the record.
 
 const NO_TURNS: readonly TurnLike[] = [];
+
+const LIVE: ReadonlySet<Session['state']> = new Set(['queued', 'working', 'waiting']);
+
+/**
+ * The run a thread's run-status card reads: its own queued, working or waiting
+ * session, or its task's when the session names no thread. The same one
+ * ThreadView hands a turn's inline card (its `live`), so a card opened in the
+ * panel shows what the card in the turn shows.
+ */
+export function threadRun(
+  sessions: readonly Session[] | null | undefined,
+  thread: { id: string; taskId?: string | null } | null | undefined,
+): Session | null {
+  if (!thread || !sessions) return null;
+  return (
+    sessions.find(
+      (session) =>
+        (session.threadId ? session.threadId === thread.id : !!thread.taskId && session.taskId === thread.taskId) &&
+        LIVE.has(session.state),
+    ) ?? null
+  );
+}
 
 interface Opened {
   /** The conversation the key was read from, when it came from one. */
@@ -158,6 +181,8 @@ export function useArtifactHost(input: {
   filesWidth: number;
   onSave?(record: ArtifactRecord): Promise<SaveOutcome>;
   onShowFile?(path: string): void;
+  /** The conversation's live run, for a visual's run-status card in the panel (`threadRun`). */
+  session?: Session | null;
 }): ArtifactHost {
   const { filesOpen, setFilesOpen, filesWidth } = input;
   const selection = useArtifactSelection(input.reset, input.scope, input.turns);
@@ -212,6 +237,7 @@ export function useArtifactHost(input: {
         switcher={switcher}
         onSave={input.onSave}
         onShowFile={input.onShowFile}
+        session={input.session ?? null}
       />
     ) : null,
     toggleFiles() {

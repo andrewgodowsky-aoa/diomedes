@@ -16,6 +16,7 @@ import type {
   Turn,
 } from '../../shared/types';
 import type { FollowUpCommand } from '../../shared/work-control';
+import { AGENT_NAME } from '../../shared/agent-name';
 import { effortFor } from '../../shared/effort';
 import { isExternalEngine } from '../../shared/engines';
 import type { InstructionFileRecord } from '../../shared/capability-packs';
@@ -402,7 +403,7 @@ export function ThreadView({
           {title}
         </h1>
         {permissionControl ?? (
-          <div className="seg" role="radiogroup" aria-label="What Nectovia may do">
+          <div className="seg" role="radiogroup" aria-label={`What ${AGENT_NAME} may do`}>
             <button
               type="button"
               role="radio"

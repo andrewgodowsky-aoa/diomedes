@@ -1,12 +1,16 @@
 import type { Turn } from '../shared/types';
+import { AGENT_NAME } from '../shared/agent-name';
 import { formatOrigin as formatRecordedOrigin, type OriginSnapshot } from '../shared/attribution';
 
 // Everything else in the shared module is used as it is; only the words shown for
 // the product's own actions change here.
 export * from '../shared/attribution';
 
-/** The product's name wherever the product itself is the actor. */
-export const PRODUCT_NAME = 'Nectovia';
+/**
+ * The product's name wherever the product itself is the actor: the agent's own
+ * name (shared/agent-name.ts), read from the one place that spells it.
+ */
+export const PRODUCT_NAME = AGENT_NAME;
 
 /**
  * The name shared/attribution.ts writes for the product's own actions. It is

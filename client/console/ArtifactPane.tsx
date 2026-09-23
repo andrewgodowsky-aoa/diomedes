@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { Session } from '../../shared/types';
+import type { VisualSpec } from '../../shared/visual-spec';
 import {
   chartColumns,
   indexArtifacts,
-  tableChart,
+  tableVisual,
+  visualOf,
   withoutDeclaration,
   type ArtifactIndex,
   type ArtifactRecord,
 } from './artifacts';
-import { parseChart } from './chart-spec';
-import { Chart } from './Chart';
-import { ArtifactError, ArtifactFrame, SourceView } from './artifact-frames';
+import { ArtifactError, ArtifactFrame, SourceView, useElementSize } from './artifact-frames';
 import { clampArtifactWidth, viewportWidth } from './artifact-width';
 import type { SaveOutcome } from './artifact-save';
+import { InlineVisual, VisualBoundary } from './InlineVisual';
 import { TableView, TurnBody, useCopy } from './TurnBody';
 import { KIND_LABEL, type TableBlock } from './turn-blocks';
 
@@ -40,6 +42,11 @@ export interface ArtifactPaneProps {
   saveUnavailable?: string;
   /** Shows a saved file in Files. */
   onShowFile?(path: string): void;
+  /**
+   * The conversation's live run, so a visual's run-status card stays live in
+   * the panel as it is in the turn. Absent where there is none (the home page).
+   */
+  session?: Session | null;
 }
 
 /**
@@ -61,6 +68,7 @@ export function ArtifactPane({
   onSave,
   saveUnavailable,
   onShowFile,
+  session = null,
 }: ArtifactPaneProps) {
   // Artifacts opened from inside a document, deepest last.
   const [trail, setTrail] = useState<ArtifactRecord[]>([]);
@@ -244,11 +252,12 @@ export function ArtifactPane({
             </p>
           </div>
           <div className="art-body" key={shown.key}>
-            {source ? (
-              <SourceView source={shown.source} />
-            ) : (
-              <ArtifactView record={shown} onOpen={(sub) => setTrail((list) => [...list, sub])} />
-            )}
+            <ArtifactBody
+              record={shown}
+              source={source}
+              session={session}
+              onOpen={(sub) => setTrail((list) => [...list, sub])}
+            />
           </div>
         </div>
       </div>
@@ -256,14 +265,51 @@ export function ArtifactPane({
   );
 }
 
-function ArtifactView({ record, onOpen }: { record: ArtifactRecord; onOpen(record: ArtifactRecord): void }) {
+/**
+ * What the panel's body shows: the source, or the artifact drawn. The drawn
+ * view sits inside a boundary, so an artifact that throws while it draws is
+ * one plain line and the panel, and the Console around it, still work; its
+ * source stays one click away. Hook-free, so a test can read what it returns.
+ */
+export function ArtifactBody({
+  record,
+  source,
+  session,
+  onOpen,
+}: {
+  record: ArtifactRecord;
+  source: boolean;
+  session: Session | null;
+  onOpen(record: ArtifactRecord): void;
+}) {
+  if (source) return <SourceView source={record.source} />;
+  return (
+    <VisualBoundary
+      fallback={
+        <p className="iv-note">This artifact could not be shown here. Its source is under Source.</p>
+      }
+    >
+      <ArtifactView record={record} session={session} onOpen={onOpen} />
+    </VisualBoundary>
+  );
+}
+
+function ArtifactView({
+  record,
+  session,
+  onOpen,
+}: {
+  record: ArtifactRecord;
+  session: Session | null;
+  onOpen(record: ArtifactRecord): void;
+}) {
   switch (record.kind) {
-    case 'chart': {
-      const parsed = parseChart(record.source);
-      return parsed.ok ? (
-        <Chart spec={parsed.spec} />
+    case 'visual': {
+      const read = visualOf(record.source);
+      return read.ok ? (
+        <PanelVisual spec={read.spec} session={session} />
       ) : (
-        <ArtifactError heading="This chart could not be drawn." problem={parsed.problem} source={record.source} />
+        <ArtifactError heading="This visual could not be drawn." problem={read.reason} source={record.source} />
       );
     }
     case 'table':
@@ -277,24 +323,49 @@ function ArtifactView({ record, onOpen }: { record: ArtifactRecord; onOpen(recor
   }
 }
 
-/** A table, and the chart a person can make of one of its columns. */
+/**
+ * A visual drawn by the same renderer as the turn's (InlineVisual), at the
+ * panel's own width, so a chart's 11 px labels stay 11 px at any panel width.
+ */
+function PanelVisual({ spec, session = null }: { spec: VisualSpec; session?: Session | null }) {
+  const [box, size] = useElementSize<HTMLDivElement>({ width: 560, height: 0 });
+  return (
+    <div className="art-visual" ref={box}>
+      <InlineVisual spec={spec} session={session} width={size.width} />
+    </div>
+  );
+}
+
+/**
+ * A table, and the chart a person can make of one of its columns. The chart
+ * is a visual spec (artifacts.ts `tableVisual`), validated like a reply's, and
+ * the button is offered only for a column that makes a valid one.
+ */
 function TableArtifact({ table, title }: { table: TableBlock; title: string }) {
-  const { numeric } = chartColumns(table);
-  const [column, setColumn] = useState(numeric[0]?.index ?? -1);
+  const columns = useMemo(
+    () =>
+      chartColumns(table).numeric.map((column) => ({ column, visual: tableVisual(table, column.index) })),
+    [table],
+  );
+  const offered = columns.flatMap((entry) =>
+    entry.visual.ok ? [{ column: entry.column, visual: entry.visual }] : [],
+  );
+  const [column, setColumn] = useState(offered[0]?.column.index ?? -1);
   const [charted, setCharted] = useState(false);
-  const chosen = numeric.some((entry) => entry.index === column) ? column : (numeric[0]?.index ?? -1);
+  const chosen = offered.find((entry) => entry.column.index === column) ?? offered[0];
+  const refused = columns.find((entry) => !entry.visual.ok)?.visual;
   return (
     <>
       <TableView table={table} caption={title} />
-      {numeric.length > 0 ? (
+      {chosen ? (
         <div className="art-chartable">
-          {numeric.length > 1 && (
+          {offered.length > 1 && (
             <label>
               Column{' '}
-              <select value={chosen} onChange={(event) => setColumn(Number(event.target.value))}>
-                {numeric.map((entry) => (
-                  <option key={entry.index} value={entry.index}>
-                    {entry.name}
+              <select value={chosen.column.index} onChange={(event) => setColumn(Number(event.target.value))}>
+                {offered.map((entry) => (
+                  <option key={entry.column.index} value={entry.column.index}>
+                    {entry.column.name}
                   </option>
                 ))}
               </select>
@@ -310,9 +381,20 @@ function TableArtifact({ table, title }: { table: TableBlock; title: string }) {
           </button>
         </div>
       ) : (
-        <p className="art-waiting">No column holds only numbers, so there is nothing to chart.</p>
+        <p className="art-waiting">
+          {refused && !refused.ok
+            ? `Nothing here can be charted: ${refused.reason}.`
+            : 'No column holds only numbers, so there is nothing to chart.'}
+        </p>
       )}
-      {charted && chosen >= 0 && <Chart spec={tableChart(table, chosen)} showTitle />}
+      {charted && chosen && (
+        <>
+          <VisualBoundary>
+            <PanelVisual spec={chosen.visual.spec} />
+          </VisualBoundary>
+          {chosen.visual.caption && <p className="art-waiting">{chosen.visual.caption}</p>}
+        </>
+      )}
     </>
   );
 }
