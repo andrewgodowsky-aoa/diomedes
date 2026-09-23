@@ -195,7 +195,6 @@ test.beforeAll(async () => {
     mode: 'ask',
   });
   await api('/settings', 'PUT', {
-    surface: 'console',
     detail: 'technical',
     openProjects: [project.id],
     onboarding: {
@@ -319,7 +318,6 @@ async function scratchProject(name: string, open: boolean): Promise<Project> {
   const made = await api<Project>('/projects', 'POST', { name });
   await api(`/projects/${made.id}/threads`, 'POST', { name: `${name} thread`, mode: 'ask' });
   await api('/settings', 'PUT', {
-    surface: 'console',
     detail: 'technical',
     openProjects: open ? [made.id] : [],
     onboarding: {

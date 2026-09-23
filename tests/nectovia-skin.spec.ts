@@ -67,7 +67,6 @@ test.beforeAll(async ({ request }) => {
     headers: HEADERS,
     data: {
       onboarding: { resumeAt: 'done', work: 'business', detail: 'technical', familiarity: 'comfortable' },
-      surface: 'console',
       detail: 'technical',
     },
   });

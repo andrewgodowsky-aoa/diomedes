@@ -18,10 +18,13 @@ Andrew Godowsky owns this project. When this file and Andrew disagree, Andrew wi
 Nothing below works until these are done. If any is missing, stop and tell the person to ask
 Andrew for it by name.
 
-1. **GitHub access.** The repositories are private. Andrew invites the joiner's GitHub account as a
-   collaborator on `andrewgodowsky-aoa/diomedes` (the app), and on `andrewgodowsky-aoa/diomedes-site`
-   (the website) if they will work on the site. The joiner accepts the invite from the email or from
-   https://github.com/notifications.
+1. **GitHub access.** The app repository `andrewgodowsky-aoa/diomedes` is public, so anyone can
+   clone it, but only a collaborator can push a branch to it. The site `andrewgodowsky-aoa/diomedes-site`
+   and `andrewgodowsky-aoa/diomedes-mac` are private and cannot even be cloned without an invite.
+   Andrew invites the joiner's GitHub account as a collaborator on the app, and on the site if they
+   will work there. The joiner accepts from the email or from https://github.com/notifications.
+   `main` on the app is protected by a ruleset: every change reaches it through a pull request with
+   CI green, so a mistaken push to `main` is refused rather than landing.
 2. **The three canonical Google Docs** (links in `AGENTS.md`, "Cloud canonical documents") shared
    with the joiner's Google account, view access at least. The repository keeps mirrors of all three
    in `docs/`, so the joiner can work without them; the cloud copies win when they differ.
@@ -104,7 +107,8 @@ cd ../..
 The second install matters: the root type check includes that service, and it has its own pinned
 dependencies. `.github/workflows/build-test.yml` is the authority on the exact setup CI uses.
 
-If `gh repo clone` says the repository is not found, the invite in step 0 has not been accepted.
+The clone works without an invite. If a later `git push` is refused with a permission error, the
+invite in step 0 has not been accepted yet.
 
 ### 3.4 Prove the machine works
 
@@ -230,9 +234,23 @@ claiming unshipped capability.
 ## 6. First contribution: a practice run
 
 Do one small, real, low-risk change end to end so the person sees the whole loop once with you
-explaining it. Ask Andrew for a starter task. If none is given, a good default is fixing one broken
-link, typo or outdated statement you found while reading section 4, confirmed against the source.
-The point is the loop, not the size of the change.
+explaining it. Use the task Andrew gives. The default starter task is **the first-hour walkthrough**:
+
+1. Run the app from source (README, "Run from source"), answer the setup questions, and choose
+   **Open sample project**. Start a **Sample work** task. It is scripted and local, so no AI account
+   is needed. Visit every Console page with the person driving and you explaining what each is for,
+   using the definitions in `docs/DIOMEDES_PROJECT_MEMORY.md`.
+2. As you go, note every papercut the person hits: a confusing word, a truncated label, text that
+   contradicts the docs, a step that surprised them. A beginner's confusion is the finding; do not
+   explain it away.
+3. Write the notes up as one GitHub issue on the app repository titled "First-hour walkthrough:
+   <name>", one bullet per papercut, each with the page, what happened and a screenshot where it
+   helps. Mark which ones touch a "Not yours to decide" item.
+4. Pick the smallest papercut that is plainly a bug or a wording error and is not on that list, fix it
+   on a branch, add or update a test if the change is behavioural, run the gates, and open the PR,
+   linking the issue. Andrew picks from the rest.
+
+The point is the loop and a first map of the product, not the size of the change.
 
 Walk through: branch → change → gates → commit → PR → CI → Andrew's review. At each step say what
 you are doing and why, in a sentence.

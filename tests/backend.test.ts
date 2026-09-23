@@ -600,27 +600,50 @@ describe('threads are first-class conversations', () => {
     await reloadedAgain.init();
     expect(JSON.stringify(reloadedAgain.state(id).conversations)).toBe(snapshot);
   });
-  // The Workbook left a person's reach (2026-09-20): nothing switches into it, so
-  // a stored file opens on the Console whatever it holds. It used to fall back on
-  // the detail level, and a stored 'workbook' used to be honoured.
-  test('stored settings open on the Console, with or without a surface', async () => {
+  // The Workbook is gone (2026-09-23). A stored file loses the keys only it
+  // read, and for one release a client that still sends them is answered
+  // rather than refused: they are accepted and dropped.
+  test('settings retired with the Workbook are dropped on load and on write', async () => {
     const settingsPath = path.join(temp, 'data', 'settings.json');
     await request('/settings', 'PUT', { detail: 'standard' });
-    for (const [stored, detail] of [
-      [undefined, 'standard'],
-      [undefined, 'technical'],
-      ['workbook', 'guided'],
-    ] as const) {
-      const raw = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
-      if (stored === undefined) delete raw.surface;
-      else raw.surface = stored;
-      raw.detail = detail;
-      await fs.writeFile(settingsPath, JSON.stringify(raw));
-      const reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
-      await reloaded.init();
-      expect(reloaded.settings.detail).toBe(detail);
-      expect(reloaded.settings.surface).toBe('console');
+    const raw = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
+    raw.surface = 'workbook';
+    raw.lastPage = { '0123456789ab': 'tasks' };
+    raw.tasksView = { '0123456789ab': 'board' };
+    raw.detail = 'guided';
+    await fs.writeFile(settingsPath, JSON.stringify(raw));
+    const reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
+    await reloaded.init();
+    expect(reloaded.settings.detail).toBe('guided');
+    for (const key of ['surface', 'lastPage', 'tasksView'])
+      expect(Object.keys(reloaded.settings)).not.toContain(key);
+
+    const put = await request('/settings', 'PUT', {
+      surface: 'workbook',
+      lastPage: { '0123456789ab': 'home' },
+      tasksView: {},
+      detail: 'technical',
+    });
+    expect(put.status).toBe(200);
+    expect(put.data.detail).toBe('technical');
+    for (const key of ['surface', 'lastPage', 'tasksView']) {
+      expect(Object.keys(put.data)).not.toContain(key);
+      expect(Object.keys(JSON.parse(await fs.readFile(settingsPath, 'utf8')))).not.toContain(key);
     }
+  });
+  test('a stored project loses where the Workbook left off', async () => {
+    const id = await sample();
+    const statePath = path.join(temp, 'data', 'projects', id, 'state.json');
+    const raw = JSON.parse(await fs.readFile(statePath, 'utf8'));
+    raw.project.leftOff = { page: 'plan', document: null, scroll: 0, at: '2026-09-01T00:00:00.000Z' };
+    await fs.writeFile(statePath, JSON.stringify(raw));
+    const reloaded = new Store(path.join(temp, 'data'), path.join(temp, 'projects'));
+    await reloaded.init();
+    expect(Object.keys(reloaded.state(id).project)).not.toContain('leftOff');
+    const listed = await request('/projects');
+    expect(listed.status).toBe(200);
+    const left = await request(`/projects/${id}/left-off`, 'PUT', { page: 'home' });
+    expect(left.status).toBe(404);
   });
   test('POST /threads creates, PUT renames, GET lists newest-updated first', async () => {
     const id = await sample();
