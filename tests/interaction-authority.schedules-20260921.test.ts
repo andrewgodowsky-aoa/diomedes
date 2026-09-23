@@ -254,6 +254,10 @@ async function proposal(commandId: string) {
 async function useNativeRoute() {
   // The conversation keeps the engine it already has; only the Work route changes.
   await api('/settings', 'PUT', { services: { ...store().settings.services, codex: true } });
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 1, routes: ['claude-code', 'codex'], documents: [],
+    shareConversationHistory: true, shareReviewPackets: false,
+  });
   const state = store().state(project.id);
   state.project.ai = { engine: 'codex', model: null };
   await store().persist(state);
