@@ -114,6 +114,17 @@ const connected = (overrides: { stale?: boolean; matches?: boolean } = {}) => ({
   next: null,
 });
 
+test.beforeEach(async ({ page }) => {
+  // Past first-run setup, so Settings is reachable; the card's own views are all served below.
+  const response = await page.request.put('/api/settings', {
+    headers: { 'X-Diomedes-Client': '1' },
+    data: {
+      onboarding: { work: 'personal', detail: 'technical', familiarity: 'comfortable', resumeAt: 'done', completedAt: new Date().toISOString() },
+    },
+  });
+  expect(response.ok(), await response.text()).toBeTruthy();
+});
+
 async function openEngines(page: Page) {
   await page.goto('/');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
