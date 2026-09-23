@@ -281,10 +281,24 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
   const pinThread = async (engine: string, model: string) => {
     const { threads } = await api<{ threads: Conversation[] }>(`/projects/${project.id}/threads`);
     const thread = threads.find((item) => item.name === 'Engine UI thread')!;
+    // The header already says "Chosen model" from the previous pin, so wait for the Console
+    // to reload the project state carrying this pin before sending on it.
+    // A reload already in flight can still carry the previous pin, so wait for one that has it.
+    const reloaded = page.waitForResponse(async (response) => {
+      if (
+        !response.url().endsWith(`/projects/${project.id}/state`) ||
+        response.request().method() !== 'GET'
+      )
+        return false;
+      const state = (await response.json().catch(() => null)) as ProjectState | null;
+      const pinned = state?.conversations.find((item) => item.id === thread.id);
+      return pinned?.engine === engine && pinned.requested?.model === model;
+    });
     await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', {
       engine,
       requested: { model, effort: null },
     });
+    await reloaded;
     await expect(picker).toContainText('Chosen model');
   };
   const documentScope = [
@@ -339,13 +353,7 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
   ).toBe(false);
 
   for (const engine of Object.keys(versions) as ExternalEngine[]) {
-    await picker.click();
-    await page
-      .getByRole('menu')
-      .getByRole('menuitemradio')
-      .filter({ hasText: `${engine}/fixture-model` })
-      .click();
-    await expect(picker).toContainText(`${engine}/fixture-model`);
+    await pinThread(engine, `${engine}/fixture-model`);
     await page
       .getByRole('radio', { name: engine === 'oh-my-pi' ? 'fix' : 'build', exact: true })
       .click();
