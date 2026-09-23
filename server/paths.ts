@@ -199,5 +199,29 @@ export async function readTextOrNull(absolute: string): Promise<string | null> {
 
 const MARKDOWN_NAME = new RegExp(`\\.(${MARKDOWN_EXTENSIONS.join('|')})$`, 'i');
 const TEXT_NAME = new RegExp(`\\.(${TEXT_EXTENSIONS.join('|')})$`, 'i');
-export const textKind = (name: string): 'markdown' | 'text' | 'unsupported' =>
-  MARKDOWN_NAME.test(name) ? 'markdown' : TEXT_NAME.test(name) ? 'text' : 'unsupported';
+/**
+ * Drawings are a kind of their own rather than more TEXT_EXTENSIONS, so that
+ * automatic task-source selection, which reads only markdown and text, never
+ * sends one to a model. Every gate that tests only for 'unsupported' admits a
+ * drawing: native-work.ts checks each SVG a proposal writes, and a grant never
+ * covers an .svg (see exactReviewOnly).
+ */
+const DRAWING_NAME = /\.(svg|mmd)$/i;
+export const textKind = (name: string): 'markdown' | 'text' | 'drawing' | 'unsupported' =>
+  MARKDOWN_NAME.test(name)
+    ? 'markdown'
+    : TEXT_NAME.test(name)
+      ? 'text'
+      : DRAWING_NAME.test(name)
+        ? 'drawing'
+        : 'unsupported';
+
+/**
+ * Files a browser runs code from when they are opened: an SVG, a web page and
+ * an XML document. A model's proposal that writes one always waits for the
+ * person's exact review, and no task grant covers it. The person's own writes
+ * through the editor and Save to Files are theirs, and are not checked. `.htm`
+ * and `.xhtml` cannot be proposed today; they are listed so that widening the
+ * text extensions later cannot quietly let a grant cover them.
+ */
+export const exactReviewOnly = (name: string): boolean => /\.(svg|html?|xhtml|xml)$/i.test(name);
