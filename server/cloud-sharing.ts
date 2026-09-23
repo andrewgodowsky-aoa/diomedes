@@ -7,6 +7,7 @@ const empty = (): CloudSharingPolicy => ({
   routes: [],
   documents: [],
   shareConversationHistory: false,
+  shareReviewPackets: false,
 });
 
 const cloudRoute = (value: unknown): value is Exclude<Route, 'sample'> =>
@@ -21,6 +22,7 @@ export function cloudSharing(state: ProjectState): CloudSharingPolicy {
       !Number.isSafeInteger(policy.version) || policy.version < 1 ||
       !Array.isArray(policy.routes) || !Array.isArray(policy.documents) ||
       typeof policy.shareConversationHistory !== 'boolean' ||
+      typeof policy.shareReviewPackets !== 'boolean' ||
       policy.routes.length > ROUTES.length || policy.documents.length > 1000 ||
       !policy.routes.every(cloudRoute) ||
       !policy.documents.every((name) => typeof name === 'string' && relativeName(name) === name)
@@ -33,6 +35,7 @@ export function cloudSharing(state: ProjectState): CloudSharingPolicy {
     routes: [...new Set(policy.routes)],
     documents: [...new Set(policy.documents)],
     shareConversationHistory: policy.shareConversationHistory,
+    shareReviewPackets: policy.shareReviewPackets,
   };
 }
 
@@ -45,7 +48,8 @@ export function changeCloudSharing(state: ProjectState, input: Record<string, un
   if (
     !Array.isArray(routes) || routes.length > ROUTES.length || !routes.every(cloudRoute) ||
     !Array.isArray(documents) || documents.length > 1000 ||
-    typeof input.shareConversationHistory !== 'boolean'
+    typeof input.shareConversationHistory !== 'boolean' ||
+    typeof input.shareReviewPackets !== 'boolean'
   ) throw new ApiError(400, 'Choose valid cloud routes, documents, and history sharing.');
   const names = documents.map(relativeName);
   if (new Set(names.map((name) => name.toLowerCase())).size !== names.length)
@@ -55,9 +59,18 @@ export function changeCloudSharing(state: ProjectState, input: Record<string, un
     routes: [...new Set(routes)] as Exclude<Route, 'sample'>[],
     documents: names,
     shareConversationHistory: input.shareConversationHistory,
+    shareReviewPackets: input.shareReviewPackets,
   };
   state.cloudSharing = updated;
   return updated;
+}
+
+export function requireCloudReview(state: ProjectState): void {
+  const policy = cloudSharing(state);
+  if (!policy.routes.includes('codex') || !policy.shareReviewPackets)
+    throw new ApiError(403, 'Sharing proposal excerpts with the AI reviewer is off in this project.', {
+      code: 'cloud_sharing_denied',
+    });
 }
 
 /** Check before any file read or provider dispatch. The sample route stays local. */

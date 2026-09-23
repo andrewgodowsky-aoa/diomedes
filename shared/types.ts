@@ -495,6 +495,8 @@ export interface CloudSharingPolicy {
   routes: Exclude<Route, 'sample'>[];
   documents: string[];
   shareConversationHistory: boolean;
+  /** Separately permits proposal excerpts, task metadata and scope in model review. */
+  shareReviewPackets: boolean;
 }
 export interface ProjectState {
   cloudSharing?: CloudSharingPolicy;

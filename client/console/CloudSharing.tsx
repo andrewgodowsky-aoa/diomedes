@@ -8,6 +8,7 @@ interface CloudSharingPolicy {
   routes: string[];
   documents: string[];
   shareConversationHistory: boolean;
+  shareReviewPackets: boolean;
 }
 
 interface CloudSharingSaveBody {
@@ -15,6 +16,7 @@ interface CloudSharingSaveBody {
   routes: string[];
   documents: string[];
   shareConversationHistory: boolean;
+  shareReviewPackets: boolean;
 }
 
 const CLOUD_ROUTES = ROUTES.filter((route) => route !== 'sample');
@@ -40,6 +42,7 @@ export function CloudSharing({
   const [routes, setRoutes] = useState<string[]>([]);
   const [documents, setDocuments] = useState<string[]>([]);
   const [shareHistory, setShareHistory] = useState(false);
+  const [shareReviews, setShareReviews] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +61,7 @@ export function CloudSharing({
         setRoutes(policy.routes.filter((route) => (CLOUD_ROUTES as readonly string[]).includes(route)));
         setDocuments([...policy.documents]);
         setShareHistory(policy.shareConversationHistory);
+        setShareReviews(policy.shareReviewPackets);
         setPaths(listing.documents.map((entry) => entry.path).sort((a, b) => a.localeCompare(b)));
       })
       .catch((failure) => {
@@ -86,6 +90,7 @@ export function CloudSharing({
       routes,
       documents,
       shareConversationHistory: shareHistory,
+      shareReviewPackets: shareReviews,
     };
     api<CloudSharingPolicy>(`/projects/${encodeURIComponent(projectId)}/cloud-sharing`, 'PUT', body)
       .then((policy) => {
@@ -93,6 +98,7 @@ export function CloudSharing({
         setRoutes(policy.routes.filter((route) => (CLOUD_ROUTES as readonly string[]).includes(route)));
         setDocuments([...policy.documents]);
         setShareHistory(policy.shareConversationHistory);
+        setShareReviews(policy.shareReviewPackets);
         onSaved();
       })
       .catch((failure) => {
@@ -153,6 +159,14 @@ export function CloudSharing({
               onChange={(e) => setShareHistory(e.target.checked)}
             />
             Share conversation history
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={shareReviews}
+              onChange={(e) => setShareReviews(e.target.checked)}
+            />
+            Share proposed changes with the AI reviewer, including task details and file excerpts
           </label>
         </>
       )}

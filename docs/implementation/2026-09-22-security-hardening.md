@@ -49,6 +49,9 @@ excluded at the owner's request.
   if their paths are separately allowlisted. Text-route provider callbacks,
   native session turns and each model-API completion check the live policy again.
   The AWS conversation excludes prior turns unless the history switch is on.
+  Model review of a proposed change has its own off-by-default switch because
+  its packet includes project and task details, scope and file excerpts; when
+  off, the proposal falls back to human review.
 - A stopped team's bearer token is refused before MCP tool dispatch, and
   credential comparison uses fixed-length constant-time comparison. MCP also
   applies the Host/Origin boundary, returns the same 401 for an unknown

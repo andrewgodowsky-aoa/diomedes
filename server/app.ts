@@ -3257,7 +3257,7 @@ export async function createApp(options: AppOptions) {
     const engine = input.engine ?? 'codex';
     const run = async () => {
       const state = store.state(projectId);
-      requireCloudSharing(state, engine, sources);
+      requireCloudSharing(state, engine, sources, wake === true);
       if (
         state.sessions.some((session) => ['queued', 'working', 'waiting'].includes(session.state))
       )

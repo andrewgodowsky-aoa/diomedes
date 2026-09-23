@@ -5,17 +5,17 @@ import { createApp } from '../server/app.js';
 import { Store } from '../server/store.js';
 import { activatePack } from '../server/capability-packs.js';
 import { assembleInstructions } from '../server/harness/instruction-delivery.js';
-import { changeCloudSharing, cloudSharing, requireCloudSharing } from '../server/cloud-sharing.js';
+import { changeCloudSharing, cloudSharing, requireCloudReview, requireCloudSharing } from '../server/cloud-sharing.js';
 import type { ProjectState } from '../shared/types.js';
 
 const state = () => ({ project: { id: 'p1' } }) as ProjectState;
 
 test('older and damaged projects deny every cloud route by default', () => {
   const project = state();
-  expect(cloudSharing(project)).toEqual({ version: 0, routes: [], documents: [], shareConversationHistory: false });
+  expect(cloudSharing(project)).toEqual({ version: 0, routes: [], documents: [], shareConversationHistory: false, shareReviewPackets: false });
   expect(() => requireCloudSharing(project, 'codex', [])).toThrow('Cloud sharing');
   expect(() => requireCloudSharing(project, 'sample', [])).not.toThrow();
-  project.cloudSharing = { version: 2, routes: ['codex'], documents: ['.env'], shareConversationHistory: true };
+  project.cloudSharing = { version: 2, routes: ['codex'], documents: ['.env'], shareConversationHistory: true, shareReviewPackets: false };
   expect(() => requireCloudSharing(project, 'codex', [])).toThrow('Cloud sharing');
 });
 
@@ -27,6 +27,7 @@ test('a project allows only its selected route and document, and history is inde
     routes: ['aws-bedrock'],
     documents: ['Allowed.md'],
     shareConversationHistory: false,
+    shareReviewPackets: false,
   });
   expect(policy.version).toBe(1);
   expect(() => requireCloudSharing(project, 'aws-bedrock', ['Allowed.md'])).not.toThrow();
@@ -34,8 +35,8 @@ test('a project allows only its selected route and document, and history is inde
   expect(() => requireCloudSharing(project, 'codex', [])).toThrow('Cloud sharing');
   expect(() => requireCloudSharing(other, 'aws-bedrock', [])).toThrow('Cloud sharing');
   expect(() => requireCloudSharing(project, 'aws-bedrock', [], true)).toThrow('Cloud sharing');
-  expect(() => changeCloudSharing(project, { expectedVersion: 0, routes: [], documents: [], shareConversationHistory: false })).toThrow('Cloud sharing changed');
-  changeCloudSharing(project, { expectedVersion: 1, routes: [], documents: [], shareConversationHistory: false });
+  expect(() => changeCloudSharing(project, { expectedVersion: 0, routes: [], documents: [], shareConversationHistory: false, shareReviewPackets: false })).toThrow('Cloud sharing changed');
+  changeCloudSharing(project, { expectedVersion: 1, routes: [], documents: [], shareConversationHistory: false, shareReviewPackets: false });
   expect(() => requireCloudSharing(project, 'aws-bedrock', [])).toThrow('Cloud sharing');
 });
 
@@ -46,8 +47,22 @@ test('private paths and the sample route cannot be allowlisted', () => {
     { routes: ['codex'], documents: ['.env'] },
     { routes: ['codex'], documents: ['../outside.md'] },
   ]) {
-    expect(() => changeCloudSharing(project, { expectedVersion: 0, ...input, shareConversationHistory: false })).toThrow();
+    expect(() => changeCloudSharing(project, { expectedVersion: 0, ...input, shareConversationHistory: false, shareReviewPackets: false })).toThrow();
   }
+});
+
+test('a separate project switch is required for AI review packets', () => {
+  const project = state();
+  changeCloudSharing(project, {
+    expectedVersion: 0, routes: ['codex'], documents: [],
+    shareConversationHistory: false, shareReviewPackets: false,
+  });
+  expect(() => requireCloudReview(project)).toThrow('proposal excerpts');
+  changeCloudSharing(project, {
+    expectedVersion: 1, routes: ['codex'], documents: [],
+    shareConversationHistory: false, shareReviewPackets: true,
+  });
+  expect(() => requireCloudReview(project)).not.toThrow();
 });
 
 test('project instruction bodies and paths stay out of cloud prompts until allowlisted', async () => {
@@ -109,12 +124,12 @@ test('cloud sharing API persists an optimistic, project-scoped policy', async ()
     route: 'codex', mode: 'ask', text: 'Do not send this', sources: [], consent: true,
   })).status).toBe(403);
   const saved = await post(url, {
-    expectedVersion: 0, routes: ['codex'], documents: [], shareConversationHistory: false,
+    expectedVersion: 0, routes: ['codex'], documents: [], shareConversationHistory: false, shareReviewPackets: false,
   }, 'PUT');
   expect(saved.status).toBe(200);
   expect(await saved.json()).toMatchObject({ version: 1, routes: ['codex'] });
   expect((await post(url, {
-    expectedVersion: 0, routes: [], documents: [], shareConversationHistory: false,
+    expectedVersion: 0, routes: [], documents: [], shareConversationHistory: false, shareReviewPackets: false,
   }, 'PUT')).status).toBe(409);
   expect(await (await fetch(`${base}/projects/${two.id}/cloud-sharing`, { headers })).json()).toMatchObject({ version: 0, routes: [] });
 });

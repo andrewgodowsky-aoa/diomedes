@@ -75,6 +75,7 @@ beforeEach(async () => {
       routes: ['codex'],
       documents: ['Synthetic.txt'],
       shareConversationHistory: false,
+      shareReviewPackets: false,
     });
     await store.persist(state());
   });
