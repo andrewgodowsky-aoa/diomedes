@@ -1,0 +1,38 @@
+server.connected
+message.updated role=user provider=undefined model=undefined finish= tokens=null cost=
+updated part=prt_0cd67275f001cvRnEJeYroXxFB type=text len=93
+session.updated
+session.status
+message.updated role=assistant provider=opencode-go model=mimo-v2.6-flash finish= tokens={"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}} cost=0
+session.updated
+session.diff
+plugin.added x36
+catalog.updated
+plugin.added x9
+reference.updated
+integration.updated
+catalog.updated
+session.status
+project.directories.updated
+updated part=prt_0cd673254001w23l8wUs2m18Y5 type=step-start len=0
+updated part=prt_0cd6732a0001LtesNJse03bs6Q type=reasoning len=0
+delta part=prt_0cd6732a0001LtesNJse03bs6Q type=reasoning field=text len=18 x60
+server.heartbeat
+delta part=prt_0cd6732a0001LtesNJse03bs6Q type=reasoning field=text len=16 x65
+updated part=prt_0cd6732a0001LtesNJse03bs6Q type=reasoning len=1484
+updated part=prt_0cd6761b0001Dc87kCbEY9L2G3 type=text len=0
+delta part=prt_0cd6761b0001Dc87kCbEY9L2G3 type=text field=text len=7 x38
+updated part=prt_0cd6761b0001Dc87kCbEY9L2G3 type=text len=505
+updated part=prt_0cd676a2a001RM9QNa7aO7KxaO type=step-finish len=0
+message.updated role=assistant provider=opencode-go model=mimo-v2.6-flash finish=stop tokens={"total":2507,"input":57,"output":103,"reasoning":299,"cache":{"write":0,"read":2048}} cost=0.0001262744 x2
+session.status x2
+session.idle
+session.updated
+session.diff
+server.heartbeat x7
+file.watcher.updated x2
+server.heartbeat x2
+file.watcher.updated x2
+server.heartbeat
+RESULT length 1989 attributed opencode-go/mimo-v2.6-flash
+RESULT tail " focused subtasks to stay within limits."
