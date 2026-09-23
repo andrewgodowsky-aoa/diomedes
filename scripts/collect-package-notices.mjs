@@ -28,6 +28,16 @@ const fontNotices = new Map([
   ['@fontsource/schibsted-grotesk', 'schibsted-grotesk.txt'],
 ]);
 
+// Fonts copied into the client tree rather than imported from an npm package, so the
+// production graph below never sees them. Their license travels as a file of its own.
+const vendoredFonts = [
+  {
+    source: 'client/fonts/instrument-serif/OFL.txt',
+    output: 'instrument-serif.txt',
+    note: 'Instrument Serif italic, woff2 files from `@fontsource/instrument-serif` 5.3.0 vendored in `client/fonts/`',
+  },
+];
+
 const nativeRuntime = [
   {
     name: 'codex.exe',
@@ -249,6 +259,12 @@ if (lock.packages['']?.version !== packageManifest.version) {
 }
 
 const codexProvenance = await ensurePinnedCodexFiles();
+const vendoredFontProvenance = [];
+for (const font of vendoredFonts) {
+  const bytes = await fs.readFile(path.join(root, font.source));
+  await fs.writeFile(path.join(licenseDir, font.output), bytes);
+  vendoredFontProvenance.push({ ...font, bytes: bytes.length, sha256: sha256(bytes) });
+}
 const graph = await productionGraph(lock);
 const groups = new Map();
 const dependencyRows = [];
@@ -359,6 +375,10 @@ The existing font-specific notices remain separate and were not rewritten:
 ${markdownList([...fontNotices.values()].map((name) => `\`${name}\``))}
 
 Their matching \`@fontsource\` package code is also represented in the package notice groups below.
+
+Vendored font files, which no npm package in the production graph supplies, carry their license as a copied file:
+
+${markdownList(vendoredFontProvenance.map((font) => `\`${font.output}\`: ${font.note}; copied from \`${font.source}\`, ${font.bytes} bytes, SHA-256 \`${font.sha256}\``))}
 
 ## OpenAI Codex native runtime
 
