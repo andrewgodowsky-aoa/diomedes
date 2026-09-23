@@ -21,6 +21,17 @@ import {
   type EngineProcess,
   type ProcessFactory,
 } from './process.js';
+import {
+  displayPath,
+  emitActivity,
+  insideRoot,
+  isWebUrl,
+  readDetail,
+  readScopeNote,
+  readSummary,
+  type ReadKind,
+  type ReadScope,
+} from './read-scope.js';
 
 // Tagged OMP 18.0.6 writes a v1 ready frame, then negotiates transport v2.
 export const OMP_VERSION = '18.0.6';
@@ -36,11 +47,24 @@ const PROFILE_CONFIG = '# Diomedes-isolated oh-my-pi profile.\n{}\n';
 const OVERLAY_CONFIG =
   '# Diomedes-owned OMP RPC overlay.\nretry:\n  enabled: false\n  maxRetries: 0\n  modelFallback: false\n  usageAwareFallback: false\n  fallbackChains: {}\ncompaction:\n  enabled: false\n  midTurnEnabled: false\n';
 
-export function ompArguments(overlayPath: string): string[] {
+/** oh-my-pi 18.0.6 built-in read tools (BUILTIN_TOOL_NAMES); `read` also opens URLs. */
+export const OMP_READ_TOOLS = ['read', 'grep', 'glob'] as const;
+export const OMP_WEB_TOOLS = ['web_search'] as const;
+/** A hidden built-in that only records the model's reasoning; it reads and writes nothing. */
+const OMP_SILENT_TOOLS = ['think'];
+export function ompReadTools(scope: ReadScope): string[] {
+  return [...OMP_READ_TOOLS, ...(scope.web ? OMP_WEB_TOOLS : [])];
+}
+/**
+ * Without a scope, every built-in tool is off. With one, `--tools` names the
+ * read tools and nothing else (the CLI refuses an unknown name), so bash, edit,
+ * write, eval, browser, task and the rest are never loaded.
+ */
+export function ompArguments(overlayPath: string, scope?: ReadScope): string[] {
   return [
     '--mode',
     'rpc',
-    '--no-tools',
+    ...(scope ? [`--tools=${ompReadTools(scope).join(',')}`] : ['--no-tools']),
     '--no-extensions',
     '--no-skills',
     '--no-rules',
@@ -49,7 +73,7 @@ export function ompArguments(overlayPath: string): string[] {
     '--no-title',
     '--no-session',
     '--max-time',
-    '90',
+    scope ? '240' : '90',
     '--config',
     overlayPath,
   ];
@@ -99,12 +123,86 @@ function containsTool(message: Record<string, unknown>): boolean {
   );
 }
 
+/** A path argument without its inline line selector (`file.md:10-20`). */
+const withoutSelector = (value: string) => value.replace(/:\d+(?:-\d+)?$/, '');
+/** The fixed folder a glob or path list entry starts from, before any wildcard. */
+const globBase = (value: string) => {
+  const wild = value.search(/[*?[{]/);
+  return wild < 0 ? value : value.slice(0, wild) || '.';
+};
+/**
+ * One oh-my-pi tool execution against a read scope: the activity to show, or a
+ * refusal. `read` of a URL needs web access; an internal URI (memory://,
+ * skill://) or a path outside the project folder is refused, and so is any
+ * tool beyond the allow-list.
+ */
+export function ompToolCall(
+  scope: ReadScope,
+  name: string,
+  raw: unknown,
+): { kind: ReadKind; summary: string; detail?: string } {
+  const args = record(raw);
+  const refuse = () =>
+    new EngineError(
+      'POLICY_MISMATCH',
+      'oh-my-pi went beyond the read-only boundary; the request was stopped.',
+      true,
+      'stream',
+    );
+  const detail = readDetail(args);
+  const list = (value: unknown) =>
+    typeof value === 'string' && value.trim()
+      ? value.split(';').map((entry) => entry.trim()).filter(Boolean)
+      : [];
+  const local = (entry: string) => !/^[a-z][a-z0-9+.-]*:\/\//i.test(entry) && insideRoot(scope.root, entry);
+  switch (name) {
+    case 'read': {
+      const target = typeof args.path === 'string' ? args.path.trim() : '';
+      if (isWebUrl(target)) {
+        if (!scope.web) throw refuse();
+        return { kind: 'web-fetch', summary: readSummary('web-fetch', { url: target }), detail };
+      }
+      const file = withoutSelector(target);
+      if (!file || !local(file)) throw refuse();
+      return { kind: 'read', summary: readSummary('read', { path: displayPath(scope.root, file) }), detail };
+    }
+    case 'grep': {
+      const paths = list(args.path).map(withoutSelector);
+      if (!paths.every((entry) => local(globBase(entry)))) throw refuse();
+      return {
+        kind: 'search',
+        summary: readSummary('search', { query: typeof args.pattern === 'string' ? args.pattern : undefined }),
+        detail,
+      };
+    }
+    case 'glob': {
+      const paths = list(args.path);
+      if (!paths.every((entry) => local(globBase(entry)))) throw refuse();
+      return {
+        kind: 'list',
+        summary: paths.length ? `Finding files matching ${paths.join('; ')}` : readSummary('list', {}),
+        detail,
+      };
+    }
+    case 'web_search':
+      if (!scope.web) throw refuse();
+      return {
+        kind: 'web-search',
+        summary: readSummary('web-search', { query: typeof args.query === 'string' ? args.query : undefined }),
+        detail,
+      };
+  }
+  throw refuse();
+}
+
 function promptMessage(input: TextRequest): string {
   // RPC prompt has no system-prompt field. Keep the contract size check and
   // make the instruction boundary explicit in the request sent to OMP.
   return JSON.stringify({
     diomedes: {
-      instructions: input.instructions,
+      instructions: input.readScope
+        ? `${input.instructions}\n\n${readScopeNote(input.readScope)}`
+        : input.instructions,
       requestContext: JSON.parse(contextMessage(input)),
     },
   });
@@ -151,12 +249,13 @@ export class OmpAdapter implements TextEngineAdapter {
     return { ...engineEnvironment(), PI_CODING_AGENT_DIR: this.profileDir() };
   }
 
-  private start(signal?: AbortSignal, timeoutMs = 120_000) {
+  private start(signal?: AbortSignal, timeoutMs = 120_000, scope?: ReadScope) {
     this.ensureIsolation();
     return this.launch({
       file: this.file,
-      args: ompArguments(this.overlayPath()),
-      cwd: this.cwd,
+      args: ompArguments(this.overlayPath(), scope),
+      // A read turn starts in the project folder; the profile stays the engine's.
+      cwd: scope ? scope.root : this.cwd,
       env: this.environment(),
       signal,
       timeoutMs,
@@ -174,7 +273,17 @@ export class OmpAdapter implements TextEngineAdapter {
       );
   }
 
-  private static observeSafety(frame: Record<string, unknown>, stage: SetupStage) {
+  private static observeSafety(
+    frame: Record<string, unknown>,
+    stage: SetupStage,
+    reads?: (frame: Record<string, unknown>) => void,
+  ) {
+    // A read turn judges each tool at execution, where its arguments are set;
+    // the message-level tool parts that precede and follow it are narration.
+    if (reads && typeof frame.type === 'string' && TOOL_EVENT.test(frame.type)) {
+      reads(frame);
+      return;
+    }
     if (typeof frame.type === 'string' && TOOL_EVENT.test(frame.type))
       throw new EngineError(
         'POLICY_MISMATCH',
@@ -197,6 +306,7 @@ export class OmpAdapter implements TextEngineAdapter {
         true,
         stage,
       );
+    if (reads) return;
     const message = record(frame.message);
     if (containsTool(message))
       throw new EngineError(
@@ -451,8 +561,9 @@ export class OmpAdapter implements TextEngineAdapter {
     provider: string,
     modelId: string,
     onDelta?: (text: string) => void,
+    reads?: (frame: Record<string, unknown>) => void,
   ): Record<string, unknown> | undefined {
-    OmpAdapter.observeSafety(frame, 'stream');
+    OmpAdapter.observeSafety(frame, 'stream', reads);
     if (frame.type === 'extension_error' || frame.type === 'error') throw failure(frame, 'stream');
     if (frame.type === 'message_update') {
       const event = record(frame.assistantMessageEvent);
@@ -500,9 +611,54 @@ export class OmpAdapter implements TextEngineAdapter {
         false,
         'provider-auth',
       );
+    const scope = input.readScope;
+    const started = new Set<string>();
+    /** Tool executions on a read turn: judged, then narrated. */
+    const reads = scope
+      ? (frame: Record<string, unknown>) => {
+          const name = typeof frame.toolName === 'string' ? frame.toolName : '';
+          if (OMP_SILENT_TOOLS.includes(name)) return;
+          const callId =
+            typeof frame.toolCallId === 'string' && frame.toolCallId
+              ? frame.toolCallId
+              : `call-${started.size + 1}`;
+          if (frame.type === 'tool_execution_start' || !started.has(callId)) {
+            if (frame.type !== 'tool_execution_start' && !ompReadTools(scope).includes(name))
+              throw new EngineError(
+                'POLICY_MISMATCH',
+                'oh-my-pi went beyond the read-only boundary; the request was stopped.',
+                true,
+                'stream',
+              );
+            if (frame.type === 'tool_execution_start') {
+              const call = ompToolCall(scope, name, frame.args);
+              started.add(callId);
+              emitActivity(input.onToolActivity, {
+                callId,
+                phase: 'started',
+                tool: name,
+                summary: call.summary,
+                ...(call.detail ? { detail: call.detail } : {}),
+              });
+            }
+          }
+          if (frame.type === 'tool_execution_end' && started.has(callId)) {
+            started.delete(callId);
+            const failed = frame.isError === true;
+            const detail = readDetail(record(frame.result).content, 300);
+            emitActivity(input.onToolActivity, {
+              callId,
+              phase: failed ? 'failed' : 'finished',
+              tool: name,
+              summary: failed ? `${name} did not complete` : `${name} finished`,
+              ...(detail ? { detail } : {}),
+            });
+          }
+        }
+      : undefined;
     try {
       phase = 'launch';
-      const child = this.start(input.signal, 120_000);
+      const child = this.start(input.signal, scope ? 300_000 : 120_000, scope);
       let aborted = false;
       const onAbort = () => {
         aborted = true;
@@ -554,10 +710,16 @@ export class OmpAdapter implements TextEngineAdapter {
             acknowledged = true;
             continue;
           }
-          terminal ??= this.observePromptEvent(frame, provider, modelId, (text) => {
-            phase = 'stream';
-            input.onDelta?.(text);
-          });
+          terminal ??= this.observePromptEvent(
+            frame,
+            provider,
+            modelId,
+            (text) => {
+              phase = 'stream';
+              input.onDelta?.(text);
+            },
+            reads,
+          );
         }
         phase = 'stream';
         if (terminal.sessionId !== undefined && terminal.sessionId !== sessionId)
