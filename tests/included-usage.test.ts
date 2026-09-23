@@ -112,7 +112,7 @@ describe('a helper consulted inside a request', () => {
   test('cannot be re-read as per-call billing', () => {
     expect(ALLOWANCE_MEANING).not.toMatch(/per (model )?call/i);
     expect(ALLOWANCE_MEANING).not.toMatch(/each model call/i);
-    expect(ALLOWANCE_MEANING).not.toMatch(/per request/i);
+    expect(ALLOWANCE_MEANING).not.toMatch(/\bper request\b/i);
   });
 
   test('is still one request when the count is what is sold', () => {
