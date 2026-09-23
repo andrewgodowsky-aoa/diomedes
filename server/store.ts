@@ -1070,21 +1070,61 @@ export class Store extends EventEmitter {
     for (const entry of state.history)
       for (const file of entry.files) if (file.recorded) recorded.add(file.path);
     const documents: DocumentInfo[] = [];
+    const root = path.resolve(state.project.folder);
+    // Why this walk does not call `projectFile` per entry.
+    //
+    // `projectFile` runs `safeAbsolute` on the root and on the entry, and each of
+    // those lstats every component from the drive root down. Per entry that was
+    // about a dozen sequential lstats, so a 3000-file project cost ~36,000 of
+    // them (measured: 16.7 s for the guard alone, against 13 ms for the readdir
+    // calls), and the Files list stalled the whole app. Every guard it applied
+    // still holds here, applied once per thing it protects rather than once per
+    // path that happens to pass through it:
+    //
+    // - The root and every ancestor of it: `checkFolder` above runs
+    //   `safeAbsolute(root)` on every walk. It refuses a link or junction at any
+    //   component, including the root itself, refuses private names, and expands
+    //   an 8.3 alias anywhere in the root before judging it. A refused root
+    //   throws, so nothing is listed.
+    // - Every folder below the root: its dirent was skipped if it reported a
+    //   link (Node reports a Windows junction's dirent as a symbolic link), and
+    //   it is lstat'd again immediately before it is read, so a folder swapped
+    //   for a link or junction after its parent was read is not followed either.
+    // - Every file: it is lstat'd (not stat'd) and listed only if that lstat says
+    //   it is a regular file, so a file link is never followed or listed.
+    // - Every name: `relativeName` runs the same `rejectForbidden` rules that
+    //   `safeAbsolute` runs on the literal path, over every component of the
+    //   project-relative path: private names, blocked folders, key suffixes and
+    //   any component shaped like an 8.3 alias. Names below the root come from
+    //   readdir, which returns long names, so no component below the root is an
+    //   alias that would need expanding; one that merely looks like an alias is
+    //   refused by its shape, as before.
     const walk = async (folder: string, prefix = ''): Promise<void> => {
+      if (prefix) {
+        let own;
+        try {
+          own = await fs.lstat(folder);
+        } catch (error) {
+          if (absent(error)) return;
+          throw error;
+        }
+        if (own.isSymbolicLink() || !own.isDirectory()) return;
+      }
       const dirents = await fs.readdir(folder, { withFileTypes: true });
       const files: { relative: string; absolute: string }[] = [];
       const subdirs: { relative: string; absolute: string }[] = [];
       for (const item of dirents) {
         if (item.isSymbolicLink() || item.name.startsWith('.')) continue;
         if (item.isDirectory() && SKIPPED_FOLDERS.has(item.name)) continue;
-        const relative = prefix ? `${prefix}/${item.name}` : item.name;
-        let absolute: string;
+        let relative: string;
         try {
-          absolute = (await projectFile(state.project.folder, relative)).absolute;
+          relative = relativeName(prefix ? `${prefix}/${item.name}` : item.name);
         } catch (error) {
           if (error instanceof ApiError && [400, 403].includes(error.status)) continue;
           throw error;
         }
+        const absolute = path.join(folder, item.name);
+        if (!isContained(root, absolute)) continue;
         if (item.isDirectory()) {
           if (documents.length < 10000) subdirs.push({ relative, absolute });
         } else if (item.isFile()) {
@@ -1098,7 +1138,8 @@ export class Store extends EventEmitter {
         const stats = await Promise.all(
           batch.map(async (file) => {
             try {
-              return { file, stat: await fs.stat(file.absolute) };
+              const stat = await fs.lstat(file.absolute);
+              return stat.isFile() ? { file, stat } : null;
             } catch (error) {
               if (absent(error)) return null;
               throw error;
@@ -1124,7 +1165,7 @@ export class Store extends EventEmitter {
         await walk(sub.absolute, sub.relative);
       }
     };
-    await walk(state.project.folder);
+    await walk(root);
     return documents.sort((a, b) => a.path.localeCompare(b.path));
   }
   async current(id: string, input: string) {

@@ -1301,12 +1301,30 @@ describe('state reads stay fast with a cached documents listing', () => {
     const id = created.data.id as string;
     // First call starts the background walk; force it via the explicit list.
     await request(`/projects/${id}/state`);
+    // Let the background walk that /state started land, so the count below
+    // covers exactly one walk.
+    await documentsOf(id);
+    const lstat = vi.spyOn(fs, 'lstat');
     const walkStarted = performance.now();
-    const listed = await documentsOf(id);
+    let listed: DocumentInfo[];
+    let walkMs: number;
+    let lstatCalls: number;
+    try {
+      listed = await documentsOf(id);
+      walkMs = Math.round(performance.now() - walkStarted);
+      lstatCalls = lstat.mock.calls.length;
+    } finally {
+      lstat.mockRestore();
+    }
     expect(listed.length).toBe(dirs * perDir);
-    console.info(
-      `state-speed: explicit document walk took ${Math.round(performance.now() - walkStarted)} ms`,
-    );
+    console.info(`state-speed: explicit document walk took ${walkMs} ms, ${lstatCalls} lstat calls`);
+    // One lstat per file, one per folder descended, and the root's own
+    // ancestor check. Guarding every path from the drive root down again, as the
+    // walk once did, costs about twelve per file (~36,000 here) and froze the app.
+    expect(lstatCalls).toBeLessThan(dirs * perDir + dirs + 50);
+    // A trip-wire, not the target: the walk measured ~0.44 s here, and ~32 s
+    // before. Generous because vitest runs under CPU contention.
+    expect(walkMs).toBeLessThan(8000);
     const started = Date.now();
     const second = await request(`/projects/${id}/state`);
     const elapsed = Date.now() - started;
@@ -1317,6 +1335,75 @@ describe('state reads stay fast with a cached documents listing', () => {
     // Seeding and walking 3000 real files can exceed the ordinary test deadline
     // on hosted Windows disks. The actual cached-read requirement stays 200 ms.
   }, 120_000);
+  test('(a2) the listing never follows a link and never lists a private or alias-shaped name', async () => {
+    const id = await sample();
+    const folder = (await state(id)).project.folder as string;
+    const outside = path.join(temp, 'outside');
+    await fs.mkdir(path.join(outside, 'deeper'), { recursive: true });
+    await fs.writeFile(path.join(outside, 'secret.md'), '# outside');
+    await fs.writeFile(path.join(outside, 'deeper', 'also.md'), '# outside');
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+    await fs.mkdir(path.join(folder, 'notes'), { recursive: true });
+    await fs.writeFile(path.join(folder, 'notes', 'kept.md'), '# kept');
+    // A linked folder at the top and one nested below an ordinary folder.
+    await fs.symlink(outside, path.join(folder, 'linked'), linkType);
+    await fs.symlink(outside, path.join(folder, 'notes', 'linked-deeper'), linkType);
+    // A file link, where the platform lets an unelevated process make one.
+    let fileLink = true;
+    try {
+      await fs.symlink(path.join(outside, 'secret.md'), path.join(folder, 'notes', 'link.md'), 'file');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
+      fileLink = false;
+    }
+    // Private names and names shaped like 8.3 aliases, at the top and nested.
+    const privateNames = [
+      'credentials.json',
+      'id_rsa',
+      'server.pem',
+      'notes/service-account.json',
+      'notes/CREDEN~1.JSO',
+      'NODEMO~1/inside.md',
+      'memories/inside.md',
+    ];
+    for (const name of privateNames) {
+      await fs.mkdir(path.dirname(path.join(folder, name)), { recursive: true });
+      await fs.writeFile(path.join(folder, name), 'private');
+    }
+    const paths = (await documentsOf(id)).map((d) => d.path);
+    expect(paths).toContain('notes/kept.md');
+    expect(paths.filter((p) => p.includes('linked'))).toEqual([]);
+    expect(paths.some((p) => p.endsWith('secret.md') || p.endsWith('also.md'))).toBe(false);
+    if (fileLink) expect(paths).not.toContain('notes/link.md');
+    for (const name of privateNames) expect(paths).not.toContain(name);
+    // Nothing was written through the links.
+    expect((await fs.readdir(outside)).sort()).toEqual(['deeper', 'secret.md']);
+  });
+  test('(a3) a project whose folder is a junction is refused, and one that becomes one lists nothing', async () => {
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+    const real = path.join(temp, 'real-project');
+    await fs.mkdir(real, { recursive: true });
+    await fs.writeFile(path.join(real, 'inside.md'), '# inside');
+    const linkedRoot = path.join(temp, 'linked-project');
+    await fs.symlink(real, linkedRoot, linkType);
+    const refused = await request('/projects', 'POST', { name: 'linked', folder: linkedRoot });
+    expect(refused.status).toBe(403);
+    // A project created on an ordinary folder whose folder is later replaced by
+    // a junction to somewhere else.
+    const ordinary = path.join(temp, 'ordinary-project');
+    await fs.mkdir(ordinary, { recursive: true });
+    await fs.writeFile(path.join(ordinary, 'mine.md'), '# mine');
+    const created = await request('/projects', 'POST', { name: 'ordinary', folder: ordinary });
+    expect(created.status).toBe(200);
+    const id = created.data.id as string;
+    expect((await documentsOf(id)).map((d) => d.path)).toContain('mine.md');
+    await fs.rename(ordinary, path.join(temp, 'ordinary-moved'));
+    await fs.symlink(real, ordinary, linkType);
+    const listed = await request(`/projects/${id}/documents`);
+    const documents = (listed.data?.documents ?? []) as DocumentInfo[];
+    expect(documents.map((d) => d.path)).not.toContain('inside.md');
+    expect(listed.status === 403 || documents.length === 0).toBe(true);
+  });
   test('(b) SKIPPED_FOLDERS are never listed', async () => {
     expect(SKIPPED_FOLDERS.has('artifacts')).toBe(true);
     expect(SKIPPED_FOLDERS.has('dist')).toBe(true);
