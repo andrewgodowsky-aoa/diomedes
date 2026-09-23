@@ -39,7 +39,7 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
     factory = local
       ? () => new pg.Client({ connectionString, connectionTimeoutMillis: 5000 })
       : () => new NeonClient({ connectionString, connectionTimeoutMillis: 5000 });
-    migrations = await Promise.all(['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql'].map(async (name, index) => {
+    migrations = await Promise.all(['001_accounts.sql', '002_commercial.sql', '003_funded_jobs.sql', '004_usage_contract.sql'].map(async (name, index) => {
       const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
       return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
     }));
@@ -50,14 +50,14 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
   it('migrates an empty DB, then upgrades a prior version and is idempotent', async () => {
     await query('DROP SCHEMA IF EXISTS control_plane CASCADE');
     expect(await migrate(factory, [migrations[0]])).toEqual([1]);
-    expect(await migrate(factory, migrations)).toEqual([2, 3]);
+    expect(await migrate(factory, migrations)).toEqual([2, 3, 4]);
     expect(await migrate(factory, migrations)).toEqual([]);
   });
   it('rolls back interrupted DDL and its version row', async () => {
-    const broken = { version: 4, name: 'interruption', sql: 'CREATE TABLE control_plane.interrupted(id integer); SELECT 1/0;', sha256: 'f'.repeat(64) };
+    const broken = { version: 5, name: 'interruption', sql: 'CREATE TABLE control_plane.interrupted(id integer); SELECT 1/0;', sha256: 'f'.repeat(64) };
     await expect(migrate(factory, [...migrations, broken])).rejects.toThrow();
     expect((await query("SELECT to_regclass('control_plane.interrupted') AS relation")).rows[0].relation).toBeNull();
-    expect((await query('SELECT count(*)::int AS count FROM control_plane.schema_migrations')).rows[0].count).toBe(3);
+    expect((await query('SELECT count(*)::int AS count FROM control_plane.schema_migrations')).rows[0].count).toBe(4);
   });
   it('maps concurrent identical verified subjects to exactly one person', async () => {
     const sessions = await Promise.all(Array.from({ length: 6 }, () => accounts.signIn('alice')));
@@ -112,7 +112,7 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
     for (const job of jobs)
       await funding.openJob({ tenantId: org.tenantId, organizationId: org.id, rootJobId: job, runRef: `run_${job}`, parentRunRef: null, tier: 'thorough', capMicroUsd: null });
     const reserve = (job: string) => funding.reserve({ tenantId: org.tenantId, organizationId: org.id, attemptId: `attempt_${job}`, rootJobId: job, parentAttemptId: null,
-      kind: 'generation', route: 'aws-bedrock', requestDigest: `digest_${job}`, rateSnapshot: rate, maxMicroUsd: creditAmount(90) });
+      kind: 'generation', route: 'aws-bedrock', requestDigest: `digest_${job}`, rateSnapshot: rate, maxMicroUsd: creditAmount(90), usageClass: 'metered-work' });
     const results = await Promise.allSettled(jobs.map(reserve));
     expect(results.filter((item) => item.status === 'fulfilled')).toHaveLength(5);
     const state = await funding.projection(org.tenantId, org.id);
@@ -122,7 +122,7 @@ describe.skipIf(!enabled)('REAL PostgreSQL (explicit disposable database only)',
     const { org, funding } = await fundedOrganization('Funding restart');
     await funding.openJob({ tenantId: org.tenantId, organizationId: org.id, rootJobId: 'job_r', runRef: 'run_job_r', parentRunRef: null, tier: 'efficient', capMicroUsd: null });
     const ref = { tenantId: org.tenantId, organizationId: org.id, attemptId: 'attempt_r' };
-    await funding.reserve({ ...ref, rootJobId: 'job_r', parentAttemptId: null, kind: 'generation', route: 'aws-bedrock', requestDigest: 'digest_r', rateSnapshot: rate, maxMicroUsd: creditAmount(10) });
+    await funding.reserve({ ...ref, rootJobId: 'job_r', parentAttemptId: null, kind: 'generation', route: 'aws-bedrock', requestDigest: 'digest_r', rateSnapshot: rate, maxMicroUsd: creditAmount(10), usageClass: 'metered-work' });
     await funding.markDispatched(ref);
     const restarted = new FundingService(new PostgresFundingRepository(factory), { now: () => Date.parse('2026-10-02T00:00:00Z') });
     expect(await restarted.recoverAfterRestart({ tenantId: org.tenantId, organizationId: org.id })).toEqual({ released: [], uncertain: ['attempt_r'] });

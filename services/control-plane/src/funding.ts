@@ -25,6 +25,7 @@ import {
   approvedJobCap,
   debitsAllowance,
   isJobTier,
+  isUsageClass,
   decideReserve,
   periodIdFor,
   projectUsage,
@@ -45,9 +46,11 @@ import {
   type RateSnapshot,
   type ReservationEvent,
   type TopUpTotals,
+  type UsageClass,
   type UsageReceipt,
   type UsageState,
 } from '../../../shared/managed-usage.js';
+import { sameUsageCounts } from '../../../shared/usage-contract.js';
 import { canAdministerMembers } from '../../../shared/workspaces.js';
 import { AccountError } from './errors.js';
 import type { AccountMembershipSnapshot } from './domain.js';
@@ -222,11 +225,6 @@ function topUpAvailable(totals: TopUpTotals): MicroUsd {
   return subtractMoney(totals.purchasedMicroUsd, sumMoney([totals.heldMicroUsd, totals.settledMicroUsd]));
 }
 
-function sameUsage(a: AttemptSettlement['usage'], b: AttemptSettlement['usage']) {
-  return a.inputTokens === b.inputTokens && a.outputTokens === b.outputTokens && a.cacheReadTokens === b.cacheReadTokens &&
-    a.cacheWriteTokens === b.cacheWriteTokens && a.reasoningTokens === b.reasoningTokens;
-}
-
 export interface FundingOptions {
   now?: () => number;
 }
@@ -371,6 +369,7 @@ export class FundingService {
   async reserve(input: {
     tenantId: string; organizationId: string; attemptId: string; rootJobId: string; parentAttemptId: string | null;
     kind: ChargeKind; route: string; requestDigest: string; rateSnapshot: RateSnapshot; maxMicroUsd: MicroUsd;
+    usageClass: UsageClass;
   }): Promise<FundedAttempt> {
     const tenantId = requireId(input.tenantId, 'tenant');
     const organizationId = requireId(input.organizationId, 'organization');
@@ -380,6 +379,9 @@ export class FundingService {
     const requestDigest = requireId(input.requestDigest, 'request digest');
     const parentAttemptId = input.parentAttemptId === null ? null : requireId(input.parentAttemptId, 'parent attempt');
     const rate = requireRate(input.rateSnapshot);
+    if (!isUsageClass(input.usageClass))
+      throw new FundingError(422, 'Say what this attempt is for: included-chat, metered-work, worker or automation.', 'invalid_usage_class');
+    const usageClass = input.usageClass;
     if (!(RATE_CARD_V1.kinds as readonly string[]).includes(input.kind) || !debitsAllowance(RATE_CARD_V1, input.kind))
       throw new FundingError(409, 'That kind of charge is not run on included credits.', 'charge_not_admissible');
     const at = this.at();
@@ -389,7 +391,8 @@ export class FundingService {
       if (existing) {
         const same = existing.organizationId === organizationId && existing.rootJobId === rootJobId && existing.parentAttemptId === parentAttemptId &&
           existing.kind === input.kind && existing.route === route && existing.requestDigest === requestDigest &&
-          existing.maxMicroUsd === input.maxMicroUsd && JSON.stringify(existing.rateSnapshot) === JSON.stringify(rate);
+          existing.maxMicroUsd === input.maxMicroUsd && JSON.stringify(existing.rateSnapshot) === JSON.stringify(rate) &&
+          existing.usageClass === usageClass;
         if (!same) throw new FundingError(409, 'That attempt id is already used for a different hold.', 'attempt_conflict');
         return existing;
       }
@@ -417,7 +420,7 @@ export class FundingService {
       const attempt: FundedAttempt = {
         id: attemptId, organizationId, periodId, parentTaskId: rootJobId, kind: input.kind, route, payer: 'managed',
         maxMicroUsd: input.maxMicroUsd, rateCardVersion: period.rateCardVersion, state: 'pending', createdAt: at,
-        resolvedAt: null, uncertainReason: null, tenantId, rootJobId, parentAttemptId, requestDigest, rateSnapshot: rate,
+        resolvedAt: null, uncertainReason: null, tenantId, rootJobId, parentAttemptId, requestDigest, rateSnapshot: rate, usageClass,
         monthlyHoldMicroUsd: decision.monthlyHoldMicroUsd, topUpHoldMicroUsd: decision.topUpHoldMicroUsd, dispatchedAt: null,
       };
       await tx.saveAttempt(attempt);
@@ -486,20 +489,22 @@ export class FundingService {
   }
 
   /**
-   * Settle from a validated provider usage report. An incomplete report, or
-   * usage beyond the reserved ceiling, keeps the hold as uncertain rather than
+   * Settle from a provider usage report, normalized once through the
+   * `nectovia-usage/1` contract (`shared/usage-contract.ts`) with the provider's
+   * raw usage kept beside the counts. A missing or refused report, or usage
+   * beyond the reserved ceiling, keeps the hold as uncertain rather than
    * guessing or clamping.
    */
-  async settle(ref: AttemptRef & { receiptRef: string; usage: unknown; reconciledFrom: 'response' | 'provider-report' }): Promise<SettleResult> {
+  async settle(ref: AttemptRef & { receiptRef: string; usage: unknown; raw?: unknown; reconciledFrom: 'response' | 'provider-report' }): Promise<SettleResult> {
     const receiptRef = requireId(ref.receiptRef, 'provider receipt');
     const reconciledFrom = ref.reconciledFrom === 'provider-report' ? 'provider-report' : 'response';
     const at = this.at();
     return this.repository.transaction(async (tx) => {
       const attempt = await this.lockedAttempt(tx, ref);
-      const checked = validateProviderUsage(ref.usage);
+      const checked = validateProviderUsage(ref.usage, ref.raw);
       const recorded = await tx.settlement(ref.tenantId, attempt.id);
       if (recorded) {
-        if (recorded.receiptRef !== receiptRef || !checked.valid || !sameUsage(recorded.usage, checked.usage))
+        if (recorded.receiptRef !== receiptRef || !checked.valid || !sameUsageCounts(recorded.usage, checked.usage))
           throw new FundingError(409, 'That attempt is already settled from a different provider record.', 'settlement_conflict');
         return { outcome: 'settled', settlement: recorded };
       }

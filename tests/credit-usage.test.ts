@@ -179,8 +179,11 @@ describe('usage settles from a validated provider report, never a guess', () => 
     });
     expect(usage.valid).toBe(true);
     if (!usage.valid) return;
-    // 0.2 + 0.4 + 0.002 = $0.602; reasoning is inside output, not charged twice.
-    expect(usageCost(rate, usage.usage)).toBe(602_000);
+    // nectovia-usage/1: the 10,000 cached tokens are part of the 100,000 input, so
+    // 90,000 fresh at $2/M + 10,000 cached at $0.2/M + 50,000 output at $8/M is
+    // 0.18 + 0.002 + 0.4 = $0.582. Reasoning is inside output, not charged twice.
+    // (Before the contract this priced the cached tokens twice, at $0.602.)
+    expect(usageCost(rate, usage.usage)).toBe(582_000);
     expect(usageCost(rate, { ...usage.usage, inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, reasoningTokens: 0 })).toBe(2);
   });
 

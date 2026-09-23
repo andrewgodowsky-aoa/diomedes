@@ -23,6 +23,7 @@ import type { RawToolActivity } from '../../shared/adapter-contract.js';
 import type { Json, ToolDescriptor } from '../../shared/harness.js';
 import { HarnessError } from '../harness/policy.js';
 import { readToolSummary } from '../harness/capabilities/read-scope-tools.js';
+import { normalizeUsage } from '../../shared/usage-contract.js';
 import { secretScrubber } from '../secrets.js';
 import {
   ceilingCost,
@@ -275,14 +276,16 @@ const responsesUsageSchema = z.object({
   output_tokens_details: z.object({ reasoning_tokens: count.nullish() }).nullish(),
 });
 
-/** Refuses usage whose parts do not add up: any repair would be a guess about money. */
+/**
+ * A route's mapping into the five counts, through the `nectovia-usage/1`
+ * boundary (`shared/usage-contract.ts`). Usage whose parts do not add up, or
+ * that is missing a count, is null: any repair would be a guess about money.
+ */
 export function consistentUsage(usage: ProviderUsage): ProviderUsage | null {
-  if (
-    usage.cacheReadTokens + usage.cacheWriteTokens > usage.inputTokens ||
-    usage.reasoningTokens > usage.outputTokens
-  )
-    return null;
-  return usage;
+  const evidence = normalizeUsage(usage);
+  if (evidence.state !== 'known') return null;
+  const { contract: _contract, raw: _raw, ...counts } = evidence.usage;
+  return counts;
 }
 
 /** Responses usage in the ledger's structure: cache reads and writes and reasoning stay distinct. */

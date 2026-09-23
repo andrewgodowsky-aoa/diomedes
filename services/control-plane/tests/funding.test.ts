@@ -61,6 +61,7 @@ function harness() {
       requestDigest: `digest_${attemptId}`,
       rateSnapshot: RATE,
       maxMicroUsd: c(credits),
+      usageClass: 'metered-work',
       ...over,
     });
   const ref = (attemptId: string) => ({ tenantId: T, organizationId: O, attemptId });

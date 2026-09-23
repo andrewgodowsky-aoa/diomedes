@@ -37,7 +37,7 @@ function recording(options: { failCommit?: boolean; money?: string } = {}) {
 
 const reserveInput = {
   tenantId: 't1', organizationId: 'org_1', attemptId: 'attempt_1', rootJobId: 'job_1', parentAttemptId: null,
-  kind: 'generation' as const, route: 'aws-bedrock', requestDigest: 'digest_1',
+  kind: 'generation' as const, route: 'aws-bedrock', requestDigest: 'digest_1', usageClass: 'metered-work' as const,
   rateSnapshot: { version: 'r1', inputMicroUsdPerMillion: 1, outputMicroUsdPerMillion: 1, cacheReadMicroUsdPerMillion: 1, cacheWriteMicroUsdPerMillion: 1 },
   maxMicroUsd: creditAmount(5),
 };

@@ -16,7 +16,7 @@ if (!local && (url.hostname !== process.env.CP_TEST_EXPECTED_HOST || !url.hostna
   throw new Error('An approved isolated branch and pinned endpoint are required; production migration is not enabled.');
 const factory = local ? () => new pg.Client({ connectionString, connectionTimeoutMillis: 5000 })
   : () => new NeonClient({ connectionString, connectionTimeoutMillis: 5000 });
-const migrations = await Promise.all(['001_accounts.sql','002_commercial.sql','003_funded_jobs.sql'].map(async (name, index) => {
+const migrations = await Promise.all(['001_accounts.sql','002_commercial.sql','003_funded_jobs.sql','004_usage_contract.sql'].map(async (name, index) => {
   const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
   return { version: index + 1, name, sql, sha256: createHash('sha256').update(sql).digest('hex') };
 }));

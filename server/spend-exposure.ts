@@ -57,6 +57,7 @@ import {
   type ReservationEvent,
   type ReservationState,
 } from '../shared/managed-usage.js';
+import { normalizeUsage, type UsageCounts } from '../shared/usage-contract.js';
 import { digest } from './harness/policy.js';
 import { absent } from './paths.js';
 import { jsonWrite, readJson } from './store.js';
@@ -88,19 +89,12 @@ export interface ModelRateCard {
   long: ModelRateBand;
 }
 
-/** What the provider reported one call used. */
-export interface ProviderUsage {
-  /** Total input, including the cache-read and cache-write tokens. */
-  inputTokens: number;
-  /** Part of `inputTokens`. */
-  cacheReadTokens: number;
-  /** Part of `inputTokens`. */
-  cacheWriteTokens: number;
-  /** Total output, including reasoning. */
-  outputTokens: number;
-  /** Part of `outputTokens` and priced as output; kept so a person can see it. */
-  reasoningTokens: number;
-}
+/**
+ * What the provider reported one call used, in the `nectovia-usage/1` meanings
+ * (`shared/usage-contract.ts`): total input with its cache reads and writes as
+ * parts, and total output with its reasoning as a part, priced once as output.
+ */
+export type ProviderUsage = UsageCounts;
 
 /** Which call is about to be sent. Persisted before the request leaves. */
 export interface ExposureAttempt {
@@ -297,16 +291,16 @@ function attemptOf(value: unknown): ExposureAttempt {
 const reservationIdFor = (connectionId: string, attempt: ExposureAttempt): string =>
   `exp-${digest({ connectionId, attempt: pickAttempt(attempt) }).slice(0, 40)}`;
 
+/**
+ * The usage contract's own verdict on the five counts. Only those fields are
+ * read here: a stored record may carry more, and an extra key must never change
+ * what a call cost.
+ */
 function usageProblem(value: unknown): string | null {
   if (!isRecord(value)) return 'there is no usage record.';
-  for (const key of USAGE_KEYS)
-    if (!isCount(value[key])) return `${key} must be a whole number of tokens, zero or more.`;
-  const usage = value as unknown as ProviderUsage;
-  if (BigInt(usage.cacheReadTokens) + BigInt(usage.cacheWriteTokens) > BigInt(usage.inputTokens))
-    return 'cache reads and cache writes are part of the input, so together they cannot exceed it.';
-  if (usage.reasoningTokens > usage.outputTokens)
-    return 'reasoning is part of the output, so it cannot exceed it.';
-  return null;
+  const evidence = normalizeUsage(Object.fromEntries(USAGE_KEYS.map((key) => [key, value[key]])));
+  if (evidence.state === 'known') return null;
+  return evidence.reason.charAt(0).toLowerCase() + evidence.reason.slice(1);
 }
 
 const pickUsage = (usage: ProviderUsage): ProviderUsage => ({

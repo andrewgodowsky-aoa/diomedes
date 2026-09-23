@@ -9,8 +9,9 @@
  * This adapter has only been exercised against a recording client here. The
  * real-database cases live in the opt-in postgres.integration.test.ts suite.
  */
-import { micro, type AttemptSettlement, type FundedAttempt, type MicroUsd, type PeriodTotals,
-  type ProviderUsage, type RateSnapshot, type ReservationState, type TopUpTotals, type ChargeKind } from '../../../shared/managed-usage.js';
+import { isUsageClass, micro, type AttemptSettlement, type FundedAttempt, type MicroUsd, type PeriodTotals,
+  type RateSnapshot, type ReservationState, type TopUpTotals, type ChargeKind, type UsageClass } from '../../../shared/managed-usage.js';
+import { isNormalizedUsage, type NormalizedUsage } from '../../../shared/usage-contract.js';
 import type { CapRequestRow, CreditAdjustmentRow, CreditPeriodRow, FundedJobRow, FundingRepository, FundingTransaction,
   JobRefRow, TopUpRow } from './funding.js';
 import { inTransaction, type ClientFactory, type SqlClient } from './postgres.js';
@@ -36,9 +37,20 @@ const text = (value: unknown) => {
 };
 const textOrNull = (value: unknown) => (value === null || value === undefined ? null : text(value));
 const json = <T>(value: unknown): T => (typeof value === 'string' ? JSON.parse(value) : value) as T;
+function usageClass(value: unknown): UsageClass {
+  if (!isUsageClass(value)) throw new Error('Stored usage class is unknown.');
+  return value;
+}
+/** Settled usage is stored in the contract's shape; anything else is refused, never reinterpreted. */
+function normalized(value: unknown): NormalizedUsage {
+  const usage = json<unknown>(value);
+  if (!isNormalizedUsage(usage))
+    throw new Error('Stored usage is not in the nectovia-usage/1 shape; reconcile it by hand.');
+  return usage;
+}
 
 const ATTEMPT_COLUMNS = `tenant_id,reservation_id,organization_id,root_job_id,existing_parent_task_ref,period_id,kind,route,request_digest,
-  rate_snapshot,rate_card_version,reserved_micro_usd,monthly_hold_micro_usd,topup_hold_micro_usd,state,created_at,dispatched_at,resolved_at,uncertain_reason`;
+  rate_snapshot,usage_class,rate_card_version,reserved_micro_usd,monthly_hold_micro_usd,topup_hold_micro_usd,state,created_at,dispatched_at,resolved_at,uncertain_reason`;
 const SETTLEMENT_COLUMNS = `tenant_id,reservation_id,organization_id,period_id,provider_receipt_ref,provider_cost_micro_usd,allowance_debit_micro_usd,
   monthly_debit_micro_usd,topup_debit_micro_usd,usage,reconciled_from,settled_at,rate_card_version`;
 
@@ -49,7 +61,7 @@ function attemptFrom(row: Row): FundedAttempt {
     maxMicroUsd: money(row.reserved_micro_usd), rateCardVersion: text(row.rate_card_version), state: text(row.state) as ReservationState,
     createdAt: iso(row.created_at), resolvedAt: isoOrNull(row.resolved_at), uncertainReason: textOrNull(row.uncertain_reason),
     tenantId: text(row.tenant_id), rootJobId: text(row.root_job_id), parentAttemptId: textOrNull(row.existing_parent_task_ref),
-    requestDigest: text(row.request_digest), rateSnapshot: json<RateSnapshot>(row.rate_snapshot),
+    requestDigest: text(row.request_digest), rateSnapshot: json<RateSnapshot>(row.rate_snapshot), usageClass: usageClass(row.usage_class),
     monthlyHoldMicroUsd: money(row.monthly_hold_micro_usd), topUpHoldMicroUsd: money(row.topup_hold_micro_usd),
     dispatchedAt: isoOrNull(row.dispatched_at),
   };
@@ -63,7 +75,7 @@ function settlementFrom(row: Row): AttemptSettlement {
     rateCardVersion: text(row.rate_card_version), eligibility: 'included', settledAt: iso(row.settled_at),
     reconciledFrom: text(row.reconciled_from) as 'response' | 'provider-report', tenantId: text(row.tenant_id),
     receiptRef: text(row.provider_receipt_ref), monthlyDebitMicroUsd: money(row.monthly_debit_micro_usd),
-    topUpDebitMicroUsd: money(row.topup_debit_micro_usd), usage: json<ProviderUsage>(row.usage),
+    topUpDebitMicroUsd: money(row.topup_debit_micro_usd), usage: normalized(row.usage),
   };
 }
 
@@ -115,12 +127,12 @@ export class PostgresFundingTransaction implements FundingTransaction {
   }
   async saveAttempt(row: FundedAttempt) {
     await this.client.query(`INSERT INTO control_plane.funding_reservations(tenant_id,reservation_id,account_id,existing_run_ref,existing_parent_task_ref,rate_card_version,reserved_micro_usd,state,created_at,
-        organization_id,root_job_id,period_id,kind,route,request_digest,rate_snapshot,monthly_hold_micro_usd,topup_hold_micro_usd,dispatched_at,resolved_at,uncertain_reason)
-      VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$3,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,$18,$19)
+        organization_id,root_job_id,period_id,kind,route,request_digest,rate_snapshot,monthly_hold_micro_usd,topup_hold_micro_usd,dispatched_at,resolved_at,uncertain_reason,usage_class)
+      VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$3,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,$18,$19,$20)
       ON CONFLICT (tenant_id,reservation_id) DO UPDATE SET state=EXCLUDED.state,dispatched_at=EXCLUDED.dispatched_at,resolved_at=EXCLUDED.resolved_at,uncertain_reason=EXCLUDED.uncertain_reason`,
       [row.tenantId, row.id, row.rootJobId, row.parentAttemptId, row.rateCardVersion, row.maxMicroUsd, row.state, row.createdAt,
         row.organizationId, row.periodId, row.kind, row.route, row.requestDigest, JSON.stringify(row.rateSnapshot),
-        row.monthlyHoldMicroUsd, row.topUpHoldMicroUsd, row.dispatchedAt, row.resolvedAt, row.uncertainReason]);
+        row.monthlyHoldMicroUsd, row.topUpHoldMicroUsd, row.dispatchedAt, row.resolvedAt, row.uncertainReason, row.usageClass]);
   }
   async pendingAttempts(tenantId: string, organizationId: string) {
     const result = await this.client.query(`SELECT ${ATTEMPT_COLUMNS} FROM control_plane.funding_reservations WHERE tenant_id=$1 AND organization_id=$2 AND state='pending' ORDER BY created_at,reservation_id FOR UPDATE`, [tenantId, organizationId]);
