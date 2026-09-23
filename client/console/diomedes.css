@@ -184,6 +184,34 @@
   margin: 0 0 8px;
 }
 
+/* All projects, while earlier messages are not shared with the route the next message takes:
+   one caption line and its control. Information, not a failure, so no box and no stripe. A
+   refusal for want of history carries the same control inside its notice. */
+.console.diomedes .dio-history {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin: 0 0 8px;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  line-height: var(--dm-line-body);
+}
+.console.diomedes .dio-history p {
+  min-width: 0;
+  margin: 0;
+}
+.console.diomedes .dio-history .send,
+.console.diomedes .dio-notice .send {
+  padding: 0;
+  color: var(--light);
+  font-size: var(--dm-type-caption);
+  font-weight: 500;
+}
+.console.diomedes .dio-notice .send {
+  margin-left: 10px;
+}
+
 /* Both voices are set from the same left margin, as the approved boards draw
    them. The person's turns are told apart by the dimmer body colour
    console.css already gives `.turn.you`, and Diomedes' by the point
