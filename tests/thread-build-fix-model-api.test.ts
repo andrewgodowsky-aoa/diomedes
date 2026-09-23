@@ -51,7 +51,7 @@ type Item = Record<string, unknown>;
 let seen: { url: string; body: Item; raw: string }[];
 let proposals: number;
 /** What the fake model answers with: a proposal (default), prose, or a tool call. */
-let reply: 'proposal' | 'prose' | 'tool';
+let reply: 'proposal' | 'prose' | 'tool' | 'large';
 
 /** The proposal the fake model writes, from what the request carries. */
 function proposalFor(raw: string): string {
@@ -73,13 +73,26 @@ const network = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const raw = String(init?.body);
   const body = JSON.parse(raw) as Item;
   seen.push({ url, body, raw });
-  const text = reply === 'prose' ? 'I would rather talk this through first.' : reply === 'proposal' ? proposalFor(raw) : '';
+  const text =
+    reply === 'prose'
+      ? 'I would rather talk this through first.'
+      : reply === 'large'
+        ? JSON.stringify({ summary: 'A long plan', changes: [{ path: PLAN, text: `# Long plan
+
+${'Soup. '.repeat(18_000)}
+`, summary: 'A long plan.' }] })
+        : reply === 'proposal'
+          ? proposalFor(raw)
+          : '';
+  // A provider may send a large answer as one delta; `large` does, to show Work still accepts it.
+  const split = reply === 'large' ? 1_000_000 : undefined;
   if (url.startsWith('https://openrouter.ai/'))
     return sseResponse(
       chatEvents({
         model: OR_MODEL,
         provider: 'Anthropic',
         text,
+        ...(split ? { split } : {}),
         ...(reply === 'tool' ? { toolCalls: [{ id: 'call_x', name: 'read_source', arguments: '{"path":"notes/menu.md"}' }] } : {}),
         usage: { prompt_tokens: 700, completion_tokens: 40, total_tokens: 740, is_byok: false },
       }),
@@ -101,7 +114,7 @@ const network = (async (input: RequestInfo | URL, init?: RequestInit) => {
         usage: { input_tokens: 500, output_tokens: 60, total_tokens: 560 },
         incomplete_details: null,
         error: null,
-      }),
+      }, split ? { split } : {}),
       azure ? { 'apim-request-id': `apim-${seen.length}` } : { 'x-amzn-requestid': `req-${seen.length}` },
     );
   }
@@ -266,9 +279,6 @@ describe.each(ROUTES)('Build and Fix from a thread on %s', (route) => {
     const need = ready.needs.find((item) => item.state === 'open')!;
     expect(need.files).toEqual([PLAN]);
     await expect(fs.stat(path.join(folder, PLAN))).rejects.toMatchObject({ code: 'ENOENT' });
-    // The first streamed piece notes that writing began, as on the ChatGPT route.
-    const working = ready.sessions.find((item) => item.id === session.id)!;
-    expect(working.log.map((line) => line.sentence)).toContain('Nectovia is writing the proposal.');
 
     await resolveNeed('go-ahead');
     const written = await until(
@@ -307,6 +317,18 @@ describe.each(ROUTES)('Build and Fix from a thread on %s', (route) => {
     await resolveNeed('declined');
     await idle();
     expect(await fs.readFile(path.join(folder, MENU), 'utf8')).toBe(MENU_TEXT);
+  });
+});
+
+describe('a large proposal', () => {
+  test.each(ROUTES)('on %s, a valid proposal sent as one large delta still reaches exact approval', async (route) => {
+    await onRoute(route);
+    reply = 'large';
+    const sent = await build(route);
+    expect(sent.status, await sent.clone().text()).toBe(200);
+    const ready = await openNeed();
+    expect(ready.needs.find((need) => need.state === 'open')!.files).toEqual([PLAN]);
+    await expect(fs.stat(path.join(folder, PLAN))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
 

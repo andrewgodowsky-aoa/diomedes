@@ -726,9 +726,8 @@ export class NativeWorkService {
         documents: run.sources.map(({ path, text }) => ({ path, text })),
         signal: run.controller.signal,
         // Only the ChatGPT adapter takes a raw sink. The engine service refuses
-        // one from an external engine's caller and hands previews through its own
-        // contract; the host maps this onto a model-API route's fenced preview.
-        ...(run.engine === 'codex' || isModelApiRoute(run.engine) ? { onDelta } : {}),
+        // one from a caller and hands previews through its own contract.
+        ...(run.engine === 'codex' ? { onDelta } : {}),
         ...(run.team
           ? {
               team: run.team,

@@ -719,13 +719,10 @@ export async function createApp(options: AppOptions) {
               .state(input.projectId)
               .team?.members.find((item) => item.slotId === team.slotId);
             if (!member) throw new ApiError(409, 'This team member was not found.');
-            // The team turn's run has no preview channel; its tool calls are narrated
-            // through onTeamToolCall, so the raw sink is dropped rather than refused.
-            const { onDelta: _unused, ...teamInput } = input;
             return engines.generateModelApiTools(
               input.engine,
               {
-                ...teamInput,
+                ...input,
                 projectId: input.projectId,
                 threadId: input.threadId,
                 requestId: input.requestId,
@@ -739,18 +736,17 @@ export async function createApp(options: AppOptions) {
               ),
             );
           }
-          // The engine service refuses a raw sink, so the "writing began" note rides on its
-          // fenced preview channel, and tool activity reaches the run card as on every route.
-          const { onDelta, ...rest } = input;
+          // Tool activity reaches the run card as on every external route. No preview sink:
+          // a proposal is strict JSON, and the fenced preview channel fails the whole paid
+          // call on one over-long frame, which a large proposal sent as one delta would be.
           return engines.generateModelApi(input.engine, {
-            ...rest,
+            ...input,
             projectId: input.projectId,
             threadId: input.threadId,
             requestId: input.requestId,
             model: input.model,
             instructions: input.instructions ?? '',
             accountRoute: input.accountRoute,
-            ...(onDelta ? { onPreview: (frame: TransientPreview) => onDelta(frame.text) } : {}),
             onActivity: (frame) => store.emit('engine-activity', frame),
           });
         }
@@ -3585,7 +3581,7 @@ export async function createApp(options: AppOptions) {
     verified: true,
   });
   /**
-   * A Codex Work run from a thread: a task from the text (or the given task), the person's
+   * A Work run from a thread, on any route: a task from the text (or the given task), the person's
    * turn, the native run with any team options, and the reply turn. `held` says the caller
    * already holds the store lock (the lock is a queue, not reentrant): the team service's
    * wake runs inside a locked route, the /ask route does not.
@@ -3766,16 +3762,6 @@ export async function createApp(options: AppOptions) {
                 store.state(projectId).conversations.find((c) => c.id === b.threadId),
               )
             : choice(b.route, ROUTES, 'service');
-      // Build and Fix run on every connected route, the model-API routes included (owner
-      // decision 2026-09-23, reversing CD-01 Decision 5's refusal of them on a thread). They
-      // take the one guarded proposal path below. Ask and Plan on a model-API route still
-      // answer through the conversation, which is where that route's read tools and lineage
-      // live.
-      if (isModelApiRoute(serviceRoute) && b.mode !== 'build' && b.mode !== 'fix')
-        throw new ApiError(
-          409,
-          `${MODEL_API_NAMES[serviceRoute]} answers through the conversation. Send your message there.`,
-        );
       // Home is reached through its messages route alone. This direct route would start work
       // there, write a plan into it, or re-route the one thread that has to stay on Claude
       // Code, so it is refused for every mode before anything is changed, any source file is
@@ -3793,6 +3779,16 @@ export async function createApp(options: AppOptions) {
           'Automatic is a conversation mode. Direct execution does not accept it.',
         );
       const mode = parsedMode;
+      // Build and Fix run on every connected route, the model-API routes included (owner
+      // decision 2026-09-23, reversing CD-01 Decision 5's refusal of them on a thread). They
+      // take the one guarded proposal path below. Ask and Plan on a model-API route still
+      // answer through the conversation, which is where that route's read tools and lineage
+      // live.
+      if (isModelApiRoute(serviceRoute) && mode !== 'build' && mode !== 'fix')
+        throw new ApiError(
+          409,
+          `${MODEL_API_NAMES[serviceRoute]} answers through the conversation. Send your message there.`,
+        );
       // A Small Business skill the person picked. Checked here, before consent is asked for or
       // anything is read, so a skill that cannot run says why instead of a send being confirmed
       // for nothing. The section itself is assembled once the selected documents are known,
