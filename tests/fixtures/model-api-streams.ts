@@ -31,7 +31,7 @@ export function responsesEvents(response: Item, options: { terminal?: string; sp
   const output = Array.isArray(response.output) ? (response.output as Item[]) : [];
   output.forEach((raw, index) => {
     const id = String(raw.id ?? `item_${index}`);
-    const item = { ...raw, id };
+    const item: Item = { ...raw, id };
     if (item.type === 'message') {
       out += frame({
         type: 'response.output_item.added',

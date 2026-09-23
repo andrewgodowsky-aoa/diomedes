@@ -4,7 +4,7 @@
  * `ExternalEngine`s: nothing is discovered, installed, bound or signed in to,
  * and every place that handles a route must say what it does with these.
  */
-export const MODEL_API_ROUTES = ['aws-bedrock'] as const;
+export const MODEL_API_ROUTES = ['aws-bedrock', 'azure-openai', 'openrouter'] as const;
 export type ModelApiRoute = (typeof MODEL_API_ROUTES)[number];
 
 export const isModelApiRoute = (value: unknown): value is ModelApiRoute =>
@@ -12,6 +12,8 @@ export const isModelApiRoute = (value: unknown): value is ModelApiRoute =>
 
 export const MODEL_API_NAMES: Record<ModelApiRoute, string> = {
   'aws-bedrock': 'AWS Bedrock (GPT-5.6 Luna)',
+  'azure-openai': 'Azure OpenAI',
+  openrouter: 'OpenRouter',
 };
 
 /** What `GET /api/ai/model-api/aws-bedrock` returns. Identifiers and state only, never a credential. */
