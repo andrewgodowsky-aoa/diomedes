@@ -160,6 +160,26 @@ test('managed access shows no balance, because there is none to show', async ({ 
   await expect(section).toContainText('Does not');
 });
 
+// The 0.1.8 release review read this section, under a labelled local fixture business, as a
+// claim about this build: "includes a set number of requests each period, and we pay for them".
+// The section now says first that managed access is not available here, and the plan's own
+// sentence after it describes a plan.
+test('managed access reads as a plan this build does not offer', async ({ page }) => {
+  await openPanel(page);
+  const section = page.locator('.ws-section', {
+    has: page.getByRole('heading', { name: 'Managed model access' }),
+  });
+  const lines = section.locator('p.caption');
+  await expect(lines.first()).toContainText('not available here');
+  const texts = await lines.allTextContents();
+  const plan = texts.findIndex((text) => text.includes('we pay for them'));
+  expect(plan).toBeGreaterThan(0);
+  expect(texts[plan]).toMatch(/^On a managed plan, a set number of requests each period/);
+  // No dollar figure, and the product is called what people see it called.
+  await expect(section).not.toContainText('$');
+  await expect(section).not.toContainText('Diomedes');
+});
+
 test('Nectovia usage says not connected and draws no figure', async ({ page }) => {
   await openPanel(page);
   const section = page.locator('.ws-section', {

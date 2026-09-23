@@ -35,6 +35,14 @@ import { CONVERSATION_DEFAULT_ROUTE } from '../../shared/engines';
 import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
 import type { WorkStyle } from '../../shared/work-style';
 import { Diomedes } from './Diomedes';
+import {
+  historyLine,
+  historySentence,
+  nextRoute,
+  sharesHistoryWith,
+  type HomeSharing,
+} from './home-history';
+import { HomeHistorySharing } from './HomeHistorySharing';
 import { JobCapWarning } from './JobCapWarning';
 import { stepLiveReply, type LiveBinding, type LiveEvent, type LiveReply } from './live-reply';
 import { saveArtifact } from './artifact-save';
@@ -77,10 +85,24 @@ export interface DiomedesHomeProps {
    * other scheme draws the page as it always has.
    */
   scheme?: string;
+  /** Settings' services: the owner's tier map, the owner-testing pin and the default tier. */
+  services?: Record<string, unknown>;
+  /**
+   * Given the opener of the All projects conversation's Cloud sharing while that conversation is
+   * showing and exists, and null otherwise, so the strip never shows a control that opens nothing.
+   */
+  onSharingControl?(open: (() => void) | null): void;
 }
 
 const words = (error: unknown) =>
   error instanceof Error ? error.message : 'Nectovia could not complete that.';
+
+/**
+ * A send the host refused under Cloud sharing. From All projects, whose typed messages carry no
+ * document and need no grant, that is its earlier messages.
+ */
+const refusedForHistory = (error: unknown) =>
+  error instanceof ApiError && error.status === 403 && error.data?.code === 'cloud_sharing_denied';
 
 /** What an interrupt acknowledgement that cannot confirm a stop is told as. */
 const STOP_UNCONFIRMED =
@@ -150,6 +172,25 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const [route, setRoute] = useState<Route | null>(null);
   // The scoped thread's own WorkStyle, or null to follow the Settings default.
   const [workStyle, setWorkStyle] = useState<WorkStyle | null>(null);
+  // A model the thread pins, which keeps it on its recorded route; null when none is pinned.
+  const [pinnedModel, setPinnedModel] = useState<string | null>(null);
+  // All projects' Cloud sharing record, read once that conversation exists; null until then.
+  // `sharingReads` asks for it again, after a refusal that another window's change may explain.
+  const [sharing, setSharing] = useState<HomeSharing | null>(null);
+  const [sharingReads, setSharingReads] = useState(0);
+  const [sharingOpen, setSharingOpen] = useState(false);
+  // The notice on screen when it is a refusal for want of history, so it carries the line's button.
+  const [refusal, setRefusal] = useState<string | null>(null);
+  // The route the next message takes, by the host's rules, and the one the line and the refusal
+  // name. A refusal reads it after the provisioner may have moved the thread, so it is a ref too.
+  const next = nextRoute({
+    engine: route,
+    workStyle,
+    requestedModel: pinnedModel,
+    services: props.services,
+  });
+  const nextRef = useRef(next);
+  nextRef.current = next;
   /** The job-cap decision on screen, and how to answer the send waiting on it. */
   const [capPrompt, setCapPrompt] = useState<(CapPrompt & { answer(choice: CapChoice): void }) | null>(null);
   /** The command a job-cap stop refused, told from inside the delivery to the send that awaits it. */
@@ -232,6 +273,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       const ending = conversation?.turns.at(-1);
       setRoute(conversation?.engine ?? null);
       setWorkStyle(conversation?.workStyle ?? null);
+      setPinnedModel(conversation?.requested?.model ?? null);
       setTurns(conversation?.turns ?? []);
       setLast(ending && answer !== null && ending.id === answer ? result : null);
     },
@@ -256,6 +298,8 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       setBinding(null);
       setRoute(null);
       setWorkStyle(null);
+      setPinnedModel(null);
+      setSharingOpen(false);
       setTurns([]);
       setLast(null);
       setKept(null);
@@ -280,6 +324,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         if (!found || !conversation) return;
         setRoute(conversation.engine ?? null);
         setWorkStyle(conversation.workStyle ?? null);
+        setPinnedModel(conversation.requested?.model ?? null);
         setTurns(conversation.turns);
         setRestriction(restrictionFor(conversation.mode));
         setKept(keptOf(retained(found)));
@@ -304,6 +349,36 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   useEffect(() => {
     void load(scopeId);
   }, [load, scopeId]);
+
+  // The Home project, while All projects is showing and its conversation exists. Project scopes
+  // keep their own Cloud sharing, in their own Console.
+  const homeProject = scopeId === null ? (binding?.projectId ?? null) : null;
+  useEffect(() => {
+    if (!homeProject) {
+      setSharing(null);
+      return;
+    }
+    let live = true;
+    // Unread, the page says nothing about history; the dialog reads the record itself.
+    api<HomeSharing>(`/projects/${encodeURIComponent(homeProject)}/cloud-sharing`).then(
+      (policy) => {
+        if (live) setSharing(policy);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [homeProject, sharingReads]);
+  // The strip's Cloud sharing opens this conversation's dialog, and exists only while it can.
+  const sharingControl = useRef(props.onSharingControl);
+  sharingControl.current = props.onSharingControl;
+  const sharable = homeProject !== null;
+  useEffect(() => {
+    if (!sharable) return;
+    sharingControl.current?.(() => setSharingOpen(true));
+    return () => sharingControl.current?.(null);
+  }, [sharable]);
 
   /**
    * The scope's conversation, made now if it never was. Only a send calls this. Both scopes ask
@@ -358,7 +433,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       // thread is the authority. A failed read blocks nothing - the send still proceeds and the
       // outcome read afterwards still refreshes it.
       const provisioned = await listedThread(found).catch(() => null);
-      if (owns() && !current.cancelled && provisioned) setRoute(provisioned.engine ?? null);
+      if (owns() && !current.cancelled && provisioned) {
+        setRoute(provisioned.engine ?? null);
+        setPinnedModel(provisioned.requested?.model ?? null);
+      }
       const result = await transport(found, current.controller.signal, (identity) => {
         current.issued = identity;
         // Told before the request leaves, so the started frame always finds its binding.
@@ -402,7 +480,15 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       if (error instanceof CapDeclined) return false;
       // A job that reached its cap stopped before its next step; the send decides what follows.
       if (isJobCapStop(error) && current.issued) capStop.current = current.issued;
-      setNotice(words(error));
+      // Claude Code is the one route whose All projects follow-up is refused without history; a
+      // model route answers it alone. Its refusal is said once: the line's own sentence, with its
+      // button. The record is read again, in case another window's change is what refused it.
+      if (scopeId === null && refusedForHistory(error) && nextRef.current === 'claude-code') {
+        const sentence = historySentence(nextRef.current);
+        setRefusal(sentence);
+        setNotice(sentence);
+        setSharingReads((n) => n + 1);
+      } else setNotice(words(error));
       // A refusal after an uncertain attempt may be about the retry, not the original, and the
       // saved message is kept for exactly that case. It is shown with its own words so it can
       // be sent again or given up, never silently turned back into a draft.
@@ -628,6 +714,21 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   // What the caption names without a tier: the recorded route, or the default a first send takes.
   const effective = route ?? CONVERSATION_DEFAULT_ROUTE;
 
+  // A refusal for want of history already says the line's sentence, with its button, so the line
+  // steps aside while it is up.
+  const refusalShown = notice !== null && notice === refusal;
+  const line =
+    homeProject !== null && !refusalShown
+      ? historyLine({ policy: sharing, route: next, turns })
+      : null;
+  const openSharing = homeProject !== null ? () => setSharingOpen(true) : undefined;
+  const sharingSaved = (policy: HomeSharing) => {
+    setSharing(policy);
+    setSharingOpen(false);
+    // The refusal is answered once its route receives earlier messages.
+    if (refusalShown && sharesHistoryWith(policy, nextRef.current)) setNotice(null);
+  };
+
   return (
     <>
       <Diomedes
@@ -660,6 +761,9 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         onResend={resend}
         onDiscard={discard}
         notice={notice}
+        noticeSharesHistory={refusalShown}
+        history={line}
+        onShareHistory={openSharing}
         onReadAgain={unread ? () => void load(scopeId) : null}
         results={props.results}
         onOpenResult={props.onOpenResult}
@@ -686,6 +790,14 @@ export function DiomedesHome(props: DiomedesHomeProps) {
           onUpgrade={() => answerCap('upgrade')}
           onGoOver={() => answerCap('over')}
           onCancel={() => answerCap('cancel')}
+        />
+      )}
+      {sharingOpen && homeProject !== null && (
+        <HomeHistorySharing
+          projectId={homeProject}
+          route={next}
+          onClose={() => setSharingOpen(false)}
+          onSaved={sharingSaved}
         />
       )}
     </>
