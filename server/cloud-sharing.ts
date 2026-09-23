@@ -52,7 +52,7 @@ export function changeCloudSharing(state: ProjectState, input: Record<string, un
     typeof input.shareReviewPackets !== 'boolean'
   ) throw new ApiError(400, 'Choose valid cloud routes, documents, and history sharing.');
   const names = documents.map(relativeName);
-  if (new Set(names.map((name) => name.toLowerCase())).size !== names.length)
+  if (new Set(names).size !== names.length)
     throw new ApiError(400, 'Choose each document once.');
   const updated: CloudSharingPolicy = {
     version: current.version + 1,
@@ -82,10 +82,10 @@ export function requireCloudSharing(
 ): CloudSharingPolicy {
   const policy = cloudSharing(state);
   if (route === 'sample') return policy;
-  const allowed = new Set(policy.documents.map((name) => name.toLowerCase()));
+  const allowed = new Set(policy.documents);
   if (
     !policy.routes.includes(route) ||
-    documents.some((name) => !allowed.has(relativeName(name).toLowerCase())) ||
+    documents.some((name) => !allowed.has(relativeName(name))) ||
     (priorConversation && !policy.shareConversationHistory)
   ) throw new ApiError(403, 'Cloud sharing for this route, document, or conversation history is off in this project.', {
     code: 'cloud_sharing_denied',

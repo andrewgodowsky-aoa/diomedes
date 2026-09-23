@@ -213,10 +213,10 @@ export async function assembleInstructions(input: {
   });
   const allowed = input.allowedDocuments === undefined
     ? null
-    : new Set(input.allowedDocuments.map((name) => name.toLowerCase()));
+    : new Set(input.allowedDocuments);
   const records = new Map(
     activeInstructionFiles(input.state.project.packs, input.state.instructionFiles)
-      .filter((record) => record.ruleId && (allowed === null || allowed.has(record.path.toLowerCase())))
+      .filter((record) => record.ruleId && (allowed === null || allowed.has(record.path)))
       .map((record) => [record.ruleId!, record]),
   );
   const rules = instructionRules(input.state).filter(({ rule }) => records.has(rule.id));

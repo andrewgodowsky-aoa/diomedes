@@ -31,6 +31,7 @@ test('a project allows only its selected route and document, and history is inde
   });
   expect(policy.version).toBe(1);
   expect(() => requireCloudSharing(project, 'aws-bedrock', ['Allowed.md'])).not.toThrow();
+  expect(() => requireCloudSharing(project, 'aws-bedrock', ['allowed.md'])).toThrow('Cloud sharing');
   expect(() => requireCloudSharing(project, 'aws-bedrock', ['Other.md'])).toThrow('Cloud sharing');
   expect(() => requireCloudSharing(project, 'codex', [])).toThrow('Cloud sharing');
   expect(() => requireCloudSharing(other, 'aws-bedrock', [])).toThrow('Cloud sharing');
