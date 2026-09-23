@@ -685,3 +685,25 @@ test('Workbook Tasks header keeps every view label on one line', async ({ page }
   expect(Math.abs(segments[0].width - segments[1].width)).toBeLessThan(1);
   await api('/settings', 'PUT', { surface: 'console' });
 });
+
+test('Cloud sharing selects an exact future path before AI review can send it', async ({ page }) => {
+  const fixture = await api<Project>('/projects/sample', 'POST', {});
+  await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id] });
+  await page.goto(baseURL);
+  await reopenLastProject(page);
+  await page.getByRole('button', { name: 'Cloud sharing' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Cloud sharing' });
+  await expect(dialog.getByRole('checkbox', { name: 'Reopening plan.md' })).toBeChecked();
+  await dialog.getByLabel('Document path').fill('notes/Planned.md');
+  await dialog.getByRole('button', { name: 'Add path' }).click();
+  await expect(dialog.getByRole('checkbox', { name: 'notes/Planned.md' })).toBeChecked();
+  await dialog.getByRole('checkbox', { name: /Share proposed changes with the AI reviewer/ }).check();
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const policy = await api<{ version: number; documents: string[]; shareReviewPackets: boolean }>(
+    `/projects/${fixture.id}/cloud-sharing`,
+  );
+  expect(policy.version).toBe(2);
+  expect(policy.documents).toEqual(['Reopening plan.md', 'notes/Planned.md']);
+  expect(policy.shareReviewPackets).toBe(true);
+});
