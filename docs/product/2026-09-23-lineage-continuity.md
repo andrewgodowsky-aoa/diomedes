@@ -9,8 +9,8 @@ Release 0.1.8 is held until this is on main.
 
 **Status: implemented and tested in `feature/lineage-continuity` (worktree
 `F:/Diomedes/diomedes-wt/lineage-continuity`, base `6ee757c`, with `origin/main` at `8424710` merged in).
-PR #45. The review's fixes are a second commit on top of `f7d4c47`. Not merged to main and not
-released.**
+PR #45. The review's fixes are a second commit on top of `f7d4c47`. Merged to main as PR #45
+(`bd684a6`, 2026-09-23); not yet in a published release.**
 
 ## The defect
 

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { Project, Settings, TeamState } from '../shared/types';
+import { reopenLastProject } from './fixtures/landing';
 
 const headers = { 'X-Diomedes-Client': '1' };
 let saved: Settings;
@@ -29,17 +30,15 @@ test.beforeAll(async ({ request }) => {
 test.afterAll(async ({ request }) => {
   expect((await request.put('/api/settings', { headers, data: saved })).ok()).toBe(true);
 });
-async function open(page: Page, surface: 'workbook' | 'console', scale: number, theme = 'ember') {
+async function open(page: Page, scale: number, theme = 'ember') {
   expect(
     (
       await page.request.put('/api/settings', {
         headers,
         data: {
           onboarding: { ...saved.onboarding, resumeAt: 'done' },
-          surface,
           detail: 'technical',
           openProjects: [project.id],
-          lastPage: { [project.id]: 'home' },
           appearance: {
             package: theme,
             motion: 'reduced',
@@ -52,7 +51,8 @@ async function open(page: Page, surface: 'workbook' | 'console', scale: number, 
     ).ok(),
   ).toBe(true);
   await page.goto('/');
-  await expect(page.locator(surface === 'console' ? '.console' : '.workspace')).toBeVisible();
+  await reopenLastProject(page);
+  await expect(page.locator('.console')).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
 }
 async function fits(page: Page) {
@@ -79,30 +79,28 @@ for (const [width, height, scale] of [
   [640, 800, 1.5],
   [390, 844, 1],
 ]) {
-  test(`Workbook and Settings contain long content at ${width}px and ${scale} scale`, async ({
+  test(`Settings contain long content at ${width}px and ${scale} scale`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height });
-    await open(page, 'workbook', scale);
-    const rail = page.getByRole('navigation', { name: 'Project pages', exact: true });
-    for (const name of ['Home', 'Ask', 'Plan', 'Work', 'Review', 'Tasks', 'Documents', 'History']) {
-      await rail.getByRole('button', { name: new RegExp(`^${name}\\b`) }).click();
-      await expect(page.locator('.page-header h1')).toBeVisible();
-      await fits(page);
-      const uiFonts = await page
-        .locator('.prose:not(.document-reading)')
-        .evaluateAll((els) =>
-          els.map((el) => ({
-            family: getComputedStyle(el).fontFamily,
-            size: getComputedStyle(el).fontSize,
-          })),
-        );
-      for (const font of uiFonts) {
-        expect(font.family).toContain('Schibsted Grotesk');
-        expect(font.size).toBe('16px');
-      }
+    await open(page, scale);
+    await page.getByRole('navigation', { name: 'Threads and views' })
+      .getByRole('button', { name: /^Engines\b/ })
+      .click();
+    await expect(page.locator('.settings-layout')).toBeVisible();
+    await fits(page);
+    const uiFonts = await page
+      .locator('.settings-layout .prose')
+      .evaluateAll((els) =>
+        els.map((el) => ({
+          family: getComputedStyle(el).fontFamily,
+          size: getComputedStyle(el).fontSize,
+        })),
+      );
+    for (const font of uiFonts) {
+      expect(font.family).toContain('Schibsted Grotesk');
+      expect(font.size).toBe('16px');
     }
-    await page.getByRole('button', { name: 'Settings', exact: true }).click();
     for (const name of [
       'Interface detail',
       'Helpers on this computer',
@@ -110,6 +108,11 @@ for (const [width, height, scale] of [
       'History',
       'Appearance',
       'About',
+      'Design Center',
+      'Engines',
+      'App updates',
+      'Rules',
+      'Developer',
     ]) {
       await page
         .locator('.settings-layout .rail')
@@ -158,7 +161,7 @@ for (const [width, height, scale] of [
     await page.route(`**/api/projects/${project.id}/team`, (route) =>
       route.fulfill({ json: team }),
     );
-    await open(page, 'console', scale);
+    await open(page, scale);
     const nav = page.getByRole('navigation', { name: 'Threads and views' });
     for (const name of ['Thread', 'Board', 'Team', 'Connections']) {
       await nav.getByRole('button', { name: new RegExp(`^${name}\\b`) }).click();
@@ -175,19 +178,13 @@ for (const [width, height, scale] of [
   });
 }
 
-test('document scale stays separate from UI, and themes keep their selected accent', async ({
-  page,
-}) => {
-  const sample = (await (
-    await page.request.post('/api/projects/sample', { headers, data: {} })
-  ).json()) as Project;
-  await open(page, 'workbook', 1);
+test('themes keep their selected accent on the Console', async ({ page }) => {
   for (const [theme, accent] of [
     ['ember', '#ff8a5b'],
     ['field', '#3fd6df'],
     ['paper', '#0e7c86'],
   ]) {
-    await open(page, 'workbook', 1, theme);
+    await open(page, 1, theme);
     expect(
       await page.evaluate(() =>
         getComputedStyle(document.documentElement).getPropertyValue('--light').trim(),
@@ -195,20 +192,4 @@ test('document scale stays separate from UI, and themes keep their selected acce
     ).toBe(accent);
     await fits(page);
   }
-  await page.request.put('/api/settings', {
-    headers,
-    data: { openProjects: [sample.id], lastPage: { [sample.id]: 'documents' } },
-  });
-  await page.reload();
-  await page
-    .getByRole('button', { name: /Reopening plan.md/ })
-    .first()
-    .click();
-  await expect(page.locator('.document-reading')).toBeVisible();
-  expect(
-    await page.locator('.document-reading').evaluate((el) => getComputedStyle(el).fontFamily),
-  ).toContain('Schibsted Grotesk');
-  expect(
-    await page.locator('.document-reading').evaluate((el) => getComputedStyle(el).fontSize),
-  ).toBe('20.8px');
 });

@@ -68,7 +68,6 @@ test.beforeAll(async () => {
 
   const project = await api<Project>('/projects/sample', 'POST', {});
   await api('/settings', 'PUT', {
-    surface: 'console',
     detail: 'technical',
     // A legacy "business" answer is present on purpose: the interface must
     // still open in Personal and still not offer the company questions.

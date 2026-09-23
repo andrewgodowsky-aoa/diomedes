@@ -154,7 +154,6 @@ test.beforeAll(async () => {
   );
   server.on('request', application);
   await api('/settings', 'PUT', {
-    surface: 'console',
     detail: 'technical',
     onboarding: {
       work: 'software',

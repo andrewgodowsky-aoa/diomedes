@@ -46,6 +46,7 @@ import { TEAM_TOOL_NAMES } from '../../shared/team-routes.js';
 import { teamCarriageToken } from '../team/carriage.js';
 import { readAllowed, type ReadKindForFiles } from './turn-scope.js';
 
+/** The build this adapter was last exercised against. Shown, never enforced. */
 export const CLAUDE_VERSION = '2.1.252';
 const ACCOUNT_ROUTE = 'claude-code:claude.ai';
 /**
@@ -638,7 +639,13 @@ export class ClaudeAdapter implements TextEngineAdapter {
     // The checkpoint names the working folder, so a saved session never resumes in
     // another project or under another read choice.
     const workingDirectory = await this.workingFolder(input.readScope);
-    const prepared = prepareClaudeSession(input, options, account, workingDirectory, CLAUDE_VERSION);
+    const prepared = prepareClaudeSession(
+      input,
+      options,
+      account,
+      workingDirectory,
+      options.observedVersion,
+    );
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
     const process = await this.start(
@@ -663,7 +670,7 @@ export class ClaudeAdapter implements TextEngineAdapter {
             { ...options, restore: undefined, fork: false },
             await this.claudeAccount(signal),
             workingDirectory,
-            CLAUDE_VERSION,
+            options.observedVersion,
             prepared.checkpoint.accountDigest,
           );
         },

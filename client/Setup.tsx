@@ -57,8 +57,7 @@ export function Setup({
           <>
             <h1>Your workspace is ready</h1>
             <p className="prose intro">
-              You&apos;ll work in the {settings.surface === 'workbook' ? 'Workbook' : 'Console'}{' '}
-              with {titleCase(settings.detail)} detail:{' '}
+              You&apos;ll work in the Console with {titleCase(settings.detail)} detail:{' '}
               {detailDescriptions[settings.detail].toLowerCase()} File proposals require review
               before Nectovia applies them. Your other approval preferences are saved separately in
               Settings.

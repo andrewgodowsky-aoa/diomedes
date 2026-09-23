@@ -71,7 +71,6 @@ test.beforeAll(async () => {
   server.on('request', app);
   project = await api<Project>('/projects', 'POST', { name: 'Discovery meetings' });
   await api('/settings', 'PUT', {
-    surface: 'console',
     openProjects: [project.id],
     onboarding: {
       work: 'business',
