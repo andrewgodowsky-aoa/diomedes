@@ -20,6 +20,7 @@ import type { Store } from '../server/store';
 import type { AwsConnectionView } from '../shared/model-api';
 import type { MessageResult } from '../shared/conversation';
 import type { Conversation } from '../shared/types';
+import { responsesAnswer } from './fixtures/model-api-streams';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const SECRET = 'test-only-bedrock-key-0123456789abcdef-never-real';
@@ -104,10 +105,8 @@ const aws = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const headersIn = new Headers(init?.headers);
   const body = JSON.parse(String(init?.body)) as { input: Item[] };
   seen.push({ url: String(input), authorization: headersIn.get('authorization'), body });
-  return new Response(JSON.stringify(envelope(respond(body))), {
-    status: 200,
-    headers: { 'content-type': 'application/json', 'x-amzn-requestid': `req-${seen.length}` },
-  });
+  // AWS answers a streamed request as its event stream (tests/fixtures/model-api-streams.ts).
+  return responsesAnswer(envelope(respond(body)), 200, { 'x-amzn-requestid': `req-${seen.length}` });
 }) as typeof globalThis.fetch;
 
 // --- the app ------------------------------------------------------------------------
