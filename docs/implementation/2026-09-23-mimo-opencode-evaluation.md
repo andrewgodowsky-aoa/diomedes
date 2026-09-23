@@ -4,7 +4,7 @@ Recorded 2026-09-23 by the `mimo-opencode-evaluation` lane (role opus, node `mim
 
 | Item | Value |
 |---|---|
-| Base | `origin/main` 1da6917768615156b9df8521290f4c0ed164d2c5 |
+| Base | evaluated on `origin/main` 1da6917768615156b9df8521290f4c0ed164d2c5; rebased 2026-09-23 onto `feature/nectovia-wave2` 82cf2cb (security pass merged), where F1–F3 applied cleanly over the security pass's read-scope changes and pass with its tests. `steps: 2` is not in this wave and stays open. |
 | Branch / worktree | `feature/mimo-opencode-evaluation`, `F:/Diomedes/diomedes-wt/mimo-opencode-evaluation` |
 | Installed OpenCode | 1.18.4, the same as `OPENCODE_VERSION`. The native `opencode.exe` sits under the WinGet Node package's `opencode-ai` |
 | Account route | `opencode:opencode-go`. It is Andrew's personal OpenCode Go subscription, used here for testing. It is not customer inference, managed inference or a Business entitlement |
