@@ -5,10 +5,16 @@ targets 0.1.9. This lane carries frozen decision 7 (`.svg` and `.mmd` drawings) 
 for it. The lane brief and `ARTIFACTS_V2_FROZEN.md` override the contract draft wherever they differ.
 
 **Status: complete on `feature/artifacts-drawings-trust`.**
-- Worktree `F:/Diomedes/diomedes-wt/artifacts-drawings-trust`, base `a298382` (lane 1's commit).
-- Gates passed under the heavy slot: tsc, the full vitest suite (5855 passed), the build, and the
-  full Playwright suite (202 passed).
-- Not merged, not pushed, not released.
+- Worktree `F:/Diomedes/diomedes-wt/artifacts-drawings-trust`, base `a298382` (lane 1's commit). The
+  lane's work is commit `250f570`.
+- `origin/main` at `8f73322` is merged in at `02d7c84`, with no conflicts. It carries lane 4 (#46) and
+  the lineage lane (#45).
+- Gates passed under the heavy slot, both before and after that merge. After it:
+  - tsc;
+  - the full vitest suite, 5900 passed;
+  - the build;
+  - the full Playwright suite, 210 passed.
+- Not merged to main, not pushed, not released.
 
 **Trust owner.** AGENTS.md says to coordinate Trust interfaces with their owner, and points to
 `F:\Diomedes\planning\DIOMEDES-RUNTIME-OWNERSHIP-2026-09-09.md`. Its Trust response,
@@ -315,10 +321,11 @@ The draft put it in `parseProposal` (`:232` at `dd895af`). It moved for two reas
 - redaction rewrites a change after parsing;
 - an unchanged echo of a selected source writes nothing, so it is not checked.
 
-`prepare()` is the only place a model's proposal becomes file writes. Two other things parse
-proposals or make Needs, and neither writes a drawing:
+`prepare()` is the only place a model's proposal becomes file writes. Three other things parse
+proposals or make Needs, and none of them writes a drawing:
 - the harness engine parses proposals for one fixed report path;
-- the harness bridge makes Needs with no file preview.
+- the harness bridge makes Needs with no file preview;
+- sample work (`work.ts`) makes Needs for scripted Markdown writes only.
 
 A failure:
 - throws `The SVG check refused <file>: <reason>.` (422);
@@ -508,14 +515,29 @@ the lane's working notes.
 | `npx vite build` | exit 0, with the usual chunk-size warning |
 | `npx playwright test` | 202 passed in 5.0 minutes, `drawings-ui.spec.ts` included; exit 0 |
 
-- No failure needed a re-run.
-- `field.spec.ts` C07 did not cascade.
+**After merging `origin/main` `8f73322`** (merge `02d7c84`, with lane 4 and the lineage lane):
+
+| Gate | Result |
+|---|---|
+| `npx tsc --noEmit -p .` | exit 0 |
+| `npx vitest run` | 330 files: 5900 passed, 4 skipped (5904); exit 0 |
+| `npx vite build` | exit 0 |
+| `npx playwright test` | 210 passed in 5.5 minutes, `drawings-ui.spec.ts` included; exit 0 |
+
+In both runs:
+- no failure needed a re-run;
+- `field.spec.ts` C07 did not cascade;
 - `evidence/` and `docs/verification/2026-09-17-design-center/` were restored afterwards.
 
 ## For lane 4 and the integrator
 
 ### Lane 4
 
+- **Lane 4 landed first** (#46, `8f73322`) and is merged into this branch at `02d7c84`. The two lanes
+  share no file, so there were no conflicts.
+  - This lane never used `REFUSED_MATH_OR_IMAGE`.
+  - It does not edit `tests/fixtures/scripted-artifacts.ts`.
+  - The `saveArtifact` test passes with lane 4's `merge: false`.
 - **`ArtifactFrame` and `indexFile`.** `FilesPane.tsx` renders drawings with lane 4's
   `ArtifactFrame({ record })` (`artifact-frames.tsx`) and `indexFile(path, text)` (`artifacts.ts`).
   The Playwright spec looks for `iframe.art-frame.still.image` and `.still.diagram`. If that signature
