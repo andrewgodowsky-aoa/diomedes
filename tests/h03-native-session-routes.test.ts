@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -353,4 +354,27 @@ test('routes refuse missing consent, request instructions, changed source hashes
   await api(`${endpoint()}/${first.runId}/close`, 'POST', { commandId: 'close-without-sending' });
   expect(closes).toBe(1);
   expect(dispatches).toHaveLength(1);
+});
+
+test('an Ask turn carries the host-set read scope: the project folder, web and approved connectors only', async () => {
+  const store = app.locals.store as Store;
+  await fs.writeFile(
+    path.join(store.dataDir, 'read-connectors.json'),
+    JSON.stringify({
+      version: 1,
+      servers: [
+        { name: 'pos', approved: true, transport: 'stdio', command: 'pos.exe', readTools: ['list_orders'] },
+        { name: 'mail', approved: false, transport: 'stdio', command: 'mail.exe', readTools: ['send'] },
+      ],
+    }),
+  );
+  await api<ClaudeSessionTurnResult>(endpoint(), 'POST', command('scoped'));
+  const scope = dispatches[0].readScope;
+  expect(scope).toBeDefined();
+  const real = (value: string) => realpathSync.native(value).toLowerCase();
+  expect(real(scope!.root)).toBe(real(store.state(project.id).project.folder));
+  expect(scope!.web).toBe(true);
+  expect(scope!.mcp?.map((server) => [server.name, server.readTools])).toEqual([
+    ['pos', ['list_orders']],
+  ]);
 });

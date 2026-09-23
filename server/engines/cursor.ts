@@ -22,6 +22,7 @@ import { routeContractFor } from '../harness/route-contract.js';
 import {
   AcpClient,
   acpExplicitModel,
+  acpReadTurn,
   acpPromptTurn,
   acpSession,
   acpSessionUpdate,
@@ -46,6 +47,37 @@ import {
   staged,
   text,
 } from './process.js';
+import type { ReadScope } from './read-scope.js';
+
+/**
+ * Cursor's own permission file for a turn. Text-only: every tool denied. A read
+ * scope allows reads (relative to the workspace, which is then the project
+ * folder) and, with web access, web search and fetch; shell, writes and MCP stay
+ * denied. A project's own Cursor file could add allow rules; whatever Cursor
+ * then permits, the adapter stops any call whose ACP kind is not a read.
+ */
+export function cursorPermissions(scope?: ReadScope) {
+  return {
+    version: 1,
+    editor: { vimMode: false },
+    approvalMode: 'allowlist',
+    autoAcceptWebSearch: Boolean(scope?.web),
+    permissions: scope
+      ? {
+          allow: ['Read(**)', ...(scope.web ? ['WebFetch(*)', 'WebSearch(*)'] : [])],
+          deny: [
+            'Shell(*)',
+            'Write(**)',
+            'Mcp(*:*)',
+            ...(scope.web ? [] : ['WebFetch(*)', 'WebSearch(*)']),
+          ],
+        }
+      : {
+          allow: [],
+          deny: ['Shell(*)', 'Read(**)', 'Write(**)', 'WebFetch(*)', 'WebSearch(*)', 'Mcp(*:*)'],
+        },
+  };
+}
 
 export const CURSOR_VERSION = '2026.08.11';
 export const CURSOR_ACCOUNT_ROUTE = 'cursor:cursor-account';
@@ -209,7 +241,9 @@ export class CursorAdapter implements TextEngineAdapter {
     phase: Phase,
     run: (rpc: AcpClient, created: Json, version: string) => Promise<T>,
     turn?: AcpTurn,
+    read?: { scope: ReadScope; sink: TextRequest['onToolActivity'] },
   ): Promise<T> {
+    const reading = read ? acpReadTurn(CURSOR_ACP_PROFILE, read.scope, read.sink) : undefined;
     phase.at = 'launch';
     if (signal?.aborted) throw abortFailure(signal.reason, acpTimeoutDetail(CURSOR_ACP_PROFILE));
     const entry = await resolveCursorEntry(this.file);
@@ -241,29 +275,15 @@ export class CursorAdapter implements TextEngineAdapter {
         rootParent: this.cwd,
         rootPrefix: '.diomedes-cursor-',
         prepare: async (root) => {
+          // The configuration stays in the private root; a read turn's workspace
+          // is the project folder itself, and nothing is written into it.
           const config = path.join(root, 'config'),
-            workspace = path.join(root, 'workspace');
+            workspace = read ? read.scope.root : path.join(root, 'workspace');
           await fs.mkdir(config);
-          await fs.mkdir(workspace);
+          if (!read) await fs.mkdir(workspace);
           await fs.writeFile(
             path.join(config, 'cli-config.json'),
-            JSON.stringify({
-              version: 1,
-              editor: { vimMode: false },
-              approvalMode: 'allowlist',
-              autoAcceptWebSearch: false,
-              permissions: {
-                allow: [],
-                deny: [
-                  'Shell(*)',
-                  'Read(**)',
-                  'Write(**)',
-                  'WebFetch(*)',
-                  'WebSearch(*)',
-                  'Mcp(*:*)',
-                ],
-              },
-            }),
+            JSON.stringify(cursorPermissions(read?.scope)),
             { flag: 'wx' },
           );
           await fs.writeFile(path.join(config, 'mcp.json'), '{"mcpServers":{}}', {
@@ -292,6 +312,7 @@ export class CursorAdapter implements TextEngineAdapter {
           // Ask mode is set at launch and confirmed through set_mode; any
           // other reported mode is a drift the text route does not accept.
           acpSessionUpdate(CURSOR_ACP_PROFILE, rpc, params, turn, {
+            ...(reading ? { reads: reading.reads } : {}),
             onModeUpdate: (modeId) => {
               if (modeId !== 'ask')
                 throw new EngineError(
@@ -305,6 +326,7 @@ export class CursorAdapter implements TextEngineAdapter {
         },
         ready: (rpc) =>
           rpc.request('session/set_mode', { sessionId: rpc.sessionId, modeId: 'ask' }).then(() => {}),
+        ...(reading ? { permit: reading.permit } : {}),
       },
       (rpc, created) => run(rpc, created, version),
     );
@@ -411,6 +433,7 @@ export class CursorAdapter implements TextEngineAdapter {
           return acpTurnResponse(input, turn, version);
         },
         turn,
+        input.readScope ? { scope: input.readScope, sink: input.onToolActivity } : undefined,
       );
     } catch (error) {
       throw staged(error, phase.at);

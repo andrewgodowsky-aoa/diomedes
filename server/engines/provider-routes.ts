@@ -1,0 +1,464 @@
+/**
+ * Setup for the Azure OpenAI and OpenRouter model-API routes, mirroring the AWS
+ * Bedrock routes in `model-api-routes.ts`: connect, check, approve a spend
+ * limit, reconcile an uncertain call, disconnect.
+ *
+ *   GET    /api/ai/model-api/<route>                         the connection, as identifiers and state
+ *   PUT    /api/ai/model-api/<route>                         save the connection and key; switch the route on
+ *   POST   /api/ai/model-api/<route>/test                    offline readiness: nothing is sent to the provider
+ *   PUT    /api/ai/model-api/<route>/spend-limit             the owner's approved aggregate spend exposure
+ *   POST   /api/ai/model-api/<route>/holds/:id/reconcile     record an uncertain call's actual cost
+ *   POST   /api/ai/model-api/<route>/holds/:id/write-off     accept an uncertain call as spent at its ceiling
+ *   DELETE /api/ai/model-api/<route>                         forget the key; switch the route off
+ *
+ * The key goes one way: into protected storage, under this route's own
+ * connection id. No route reads it back and no response contains it. Spend
+ * records are never deleted by disconnecting, reconnecting or reinstalling.
+ * Each route has its own connection, key, ledger and settings keys: nothing
+ * here can move a call, a key or a limit from one route (and payer) to another.
+ */
+import type { Express, Request, RequestHandler } from 'express';
+import { z } from 'zod';
+import { dollars, micro } from '../../shared/managed-usage.js';
+import type {
+  AzureConnectionView,
+  DeclaredRatesView,
+  ModelApiReadiness,
+  ModelApiRoute,
+  ModelApiSpendView,
+  OpenRouterConnectionView,
+} from '../../shared/model-api.js';
+import { secretFingerprint } from '../connection-secrets.js';
+import { ApiError } from '../paths.js';
+import type { Store } from '../store.js';
+import {
+  AZURE_API_VERSION,
+  AZURE_CONNECTION_ID,
+  AZURE_DEPLOYMENT,
+  AZURE_LOGICAL_MODEL,
+  AZURE_OPENAI_ROUTE,
+  AZURE_RESOURCE,
+  azureAccountRoute,
+  azureConnectionSchema,
+  azureEndpoint,
+  azureRateCard,
+  type AzureConnection,
+} from './azure-openai.js';
+import type { DeclaredRates } from './model-api-core.js';
+import {
+  OPENROUTER_BASE_URL,
+  OPENROUTER_CONNECTION_ID,
+  OPENROUTER_MODEL,
+  OPENROUTER_ROUTE,
+  OPENROUTER_UPSTREAM,
+  openRouterAccountRoute,
+  openRouterConnectionSchema,
+  openRouterRateCard,
+  type OpenRouterConnection,
+} from './openrouter.js';
+import type { EngineService, ModelApiServices } from './service.js';
+
+const RECENT_HOLDS = 20;
+
+/** Dollars per million tokens as the owner reads them on a price page; stored as whole micro-USD. */
+const price = z.number().positive().max(1_000).transform((usd) => Math.round(usd * 1_000_000));
+const optionalPrice = z.number().nonnegative().max(1_000).nullable().transform((usd) => (usd === null ? null : Math.round(usd * 1_000_000)));
+const ratesBody = z.strictObject({
+  inputUsdPerMillion: price,
+  outputUsdPerMillion: price,
+  cacheReadUsdPerMillion: optionalPrice,
+  cacheWriteUsdPerMillion: optionalPrice,
+  source: z.string().trim().min(1, 'Say where these prices come from.').max(300),
+});
+const declared = (body: z.infer<typeof ratesBody>, at: string): DeclaredRates => ({
+  input: body.inputUsdPerMillion,
+  output: body.outputUsdPerMillion,
+  cacheRead: body.cacheReadUsdPerMillion,
+  cacheWrite: body.cacheWriteUsdPerMillion,
+  source: body.source,
+  declaredAt: at,
+});
+const credentialBody = {
+  apiKey: z.string().min(20).max(16_384),
+  expiresAt: z.string().datetime({ offset: true }).nullable(),
+  consent: z.literal(true),
+};
+const azureBody = z.strictObject({
+  resourceName: z.string().regex(AZURE_RESOURCE, 'Enter the Azure OpenAI resource name (lowercase letters, digits and hyphens).'),
+  deployments: z
+    .array(
+      z.strictObject({
+        model: z.string().regex(AZURE_LOGICAL_MODEL, 'Name the model, for example gpt-5.6-luna.'),
+        deployment: z.string().regex(AZURE_DEPLOYMENT, 'Enter the deployment name exactly as Azure shows it.'),
+        reasoning: z.boolean(),
+        rates: ratesBody,
+      }),
+    )
+    .min(1, 'Add at least one deployment.')
+    .max(16),
+  ...credentialBody,
+});
+const openRouterBody = z.strictObject({
+  models: z
+    .array(
+      z.strictObject({
+        id: z.string().regex(OPENROUTER_MODEL, 'Enter a model id such as vendor/model, with no :variant.'),
+        upstreams: z.array(z.string().regex(OPENROUTER_UPSTREAM)).min(1, 'Choose at least one endpoint for each model.').max(8),
+        rates: ratesBody,
+      }),
+    )
+    .min(1, 'Allow at least one model.')
+    .max(16),
+  ...credentialBody,
+});
+const limitBody = z.strictObject({ capUsd: z.number().min(0).max(100).multipleOf(0.01), consent: z.literal(true) });
+const reconcileBody = z.strictObject({ microUsd: z.number().int().min(0), note: z.string().trim().min(1).max(500) });
+const writeOffBody = z.strictObject({ note: z.string().trim().min(1).max(500) });
+
+interface Connected {
+  id: string;
+  revision: number;
+  credential: { fingerprint: string; expiresAt: string | null };
+}
+interface RouteSpec<C extends Connected> {
+  route: ModelApiRoute;
+  /** The connection record's schema: a draft is checked in full before its key is stored. */
+  schema: { parse(value: unknown): C };
+  label: string;
+  connectionId: string;
+  services(api: ModelApiServices): { connections: { read(): Promise<C | null>; write(c: C): Promise<C>; remove(): Promise<void> } } | undefined;
+  accountRoute(connection: C): string;
+  defaultModel(connection: C): string;
+  rateCardVersions(connection: C): string;
+}
+
+const expiredAt = (expiresAt: string | null) => !!expiresAt && Date.parse(expiresAt) <= Date.now() + 60_000;
+const ratesView = (rates: DeclaredRates): DeclaredRatesView => ({ ...rates });
+
+export function mountProviderRoutes(
+  app: Express,
+  deps: { store: Store; engines: EngineService },
+  route: (action: (req: Request) => Promise<unknown>) => RequestHandler,
+) {
+  const { store, engines } = deps;
+  const api = () => {
+    if (!engines.modelApi) throw new ApiError(503, 'The model-API runtime is not available.');
+    return engines.modelApi;
+  };
+
+  function mount<C extends Connected, V>(spec: RouteSpec<C>, view: (connection: C | null, common: {
+    protectedStorage: boolean;
+    enabled: boolean;
+    spend: ModelApiSpendView | null;
+    next: string | null;
+  }) => V, save: (req: Request, previous: C | null, fingerprint: string, at: string) => C) {
+    const BASE = `/api/ai/model-api/${spec.route}`;
+    const services = () => {
+      const found = spec.services(api());
+      if (!found) throw new ApiError(503, `The ${spec.label} route is not available in this process.`);
+      return found;
+    };
+    const build = async (): Promise<V> => {
+      const { secrets, exposure } = api();
+      const connection = await services().connections.read();
+      const protectedStorage = secrets.available();
+      const enabled = store.settings.services?.[spec.route] === true;
+      const summary = connection ? exposure.summary(connection.id) : null;
+      const allowance = connection ? exposure.allowance(connection.id) : null;
+      const next = !protectedStorage
+        ? `Open the Diomedes desktop app to connect ${spec.label}: this process has no protected credential storage.`
+        : !connection
+          ? `Connect ${spec.label}.`
+          : expiredAt(connection.credential.expiresAt)
+            ? `The saved ${spec.label} key has expired. Enter a new key.`
+            : !allowance || !summary || summary.availableMicroUsd <= 0
+              ? `Approve a spend limit for ${spec.label} before sending.`
+              : !enabled
+                ? `Turn ${spec.label} on.`
+                : null;
+      const spend: ModelApiSpendView | null =
+        connection && summary
+          ? {
+              rateCard: spec.rateCardVersions(connection),
+              capMicroUsd: summary.capMicroUsd,
+              settledMicroUsd: summary.settledMicroUsd,
+              pendingMicroUsd: summary.pendingMicroUsd,
+              uncertainMicroUsd: summary.uncertainMicroUsd,
+              writtenOffMicroUsd: summary.writtenOffMicroUsd,
+              availableMicroUsd: summary.availableMicroUsd,
+              note: `Estimated from the prices you declared and the usage ${spec.label} reports for each call. It is Diomedes’ own limit, not a ${spec.label} billing cap, and not your invoice.`,
+              recent: exposure
+                .list(connection.id)
+                .slice(-RECENT_HOLDS)
+                .reverse()
+                .map((hold) => ({
+                  id: hold.id,
+                  state: hold.state,
+                  runId: hold.attempt.runId,
+                  stepId: hold.attempt.stepId,
+                  maxMicroUsd: hold.maxMicroUsd,
+                  settledMicroUsd: hold.settledMicroUsd,
+                  usage: hold.usage,
+                  providerRequestId: hold.providerRequestId,
+                  createdAt: hold.createdAt,
+                  uncertainReason: hold.uncertainReason,
+                })),
+            }
+          : null;
+      return view(connection, { protectedStorage, enabled, spend, next });
+    };
+    /** A hold is reconciled only on the connection that made it. */
+    const ownHold = async (holdId: string) => {
+      const connection = await services().connections.read();
+      if (!connection || !api().exposure.list(connection.id).some((hold) => hold.id === holdId))
+        throw new ApiError(404, `That call is not on this ${spec.label} connection.`);
+    };
+
+    app.get(BASE, route(build));
+
+    app.put(
+      BASE,
+      route((req) =>
+        store.locked(async () => {
+          const { secrets } = api();
+          const { connections } = services();
+          if (!secrets.available())
+            throw new ApiError(409, 'Protected credential storage is available only in the Diomedes desktop app. Nothing was saved.');
+          const previous = await connections.read();
+          const at = new Date().toISOString();
+          const apiKey = String((req.body as { apiKey?: unknown } | null)?.apiKey ?? '');
+          // Validate everything before the key is stored.
+          const draft = spec.schema.parse(save(req, previous, secretFingerprint(apiKey), at));
+          const { fingerprint } = await secrets.put(spec.connectionId, apiKey);
+          if (fingerprint !== draft.credential.fingerprint)
+            throw new ApiError(500, 'The saved credential does not match what was entered.');
+          const connection = await connections.write(draft);
+          await store.saveSettings({
+            ...store.settings,
+            services: {
+              ...store.settings.services,
+              [spec.route]: true,
+              [`${spec.route}Model`]: spec.defaultModel(connection),
+              [`${spec.route}AccountRoute`]: spec.accountRoute(connection),
+            },
+          });
+          return build();
+        }),
+      ),
+    );
+
+    app.post(
+      `${BASE}/test`,
+      route(async (): Promise<ModelApiReadiness> => {
+        const { secrets, exposure } = api();
+        const connection = await services().connections.read();
+        const checks: ModelApiReadiness['checks'] = [];
+        const check = (id: string, ok: boolean, detail: string) => checks.push({ id, ok, detail });
+        check('protected-storage', secrets.available(), secrets.available() ? 'Protected credential storage is available.' : 'This process has no protected credential storage.');
+        check('connection', !!connection, connection ? `Connection ${spec.accountRoute(connection)} is saved.` : `No ${spec.label} connection is saved.`);
+        if (connection) {
+          let keyOk = false;
+          let detail = 'The saved key matches the connection record.';
+          try {
+            keyOk = secretFingerprint(await secrets.get(connection.id)) === connection.credential.fingerprint;
+            if (!keyOk) detail = 'The saved key does not match the connection record. Enter it again.';
+          } catch (error) {
+            detail = error instanceof Error ? error.message : 'The saved key could not be read.';
+          }
+          check('credential', keyOk, detail);
+          const expired = expiredAt(connection.credential.expiresAt);
+          check('expiry', !expired, expired ? 'The saved key has expired.' : 'The saved key has not expired.');
+          const summary = exposure.allowance(connection.id) ? exposure.summary(connection.id) : null;
+          check(
+            'spend-limit',
+            !!summary && summary.availableMicroUsd > 0,
+            summary ? `${summary.availableMicroUsd} micro-USD of the approved limit is available.` : 'No spend limit is approved.',
+          );
+        }
+        const enabled = store.settings.services?.[spec.route] === true;
+        check('enabled', enabled, enabled ? `${spec.label} is switched on.` : `${spec.label} is switched off.`);
+        return {
+          route: spec.route,
+          ready: checks.every((entry) => entry.ok),
+          sent: false,
+          checks,
+          note: `No request was sent to ${spec.label}. This checks the saved connection, key and spend limit only; whether ${spec.label} accepts the key is known only from a real call.`,
+        };
+      }),
+    );
+
+    app.put(
+      `${BASE}/spend-limit`,
+      route((req) =>
+        store.locked(async () => {
+          const body = limitBody.parse(req.body);
+          const connection = await services().connections.read();
+          if (!connection) throw new ApiError(409, `Connect ${spec.label} before approving a spend limit.`);
+          await api().exposure.setCap(connection.id, dollars(Math.round(body.capUsd * 100) / 100), {
+            approvedBy: 'the owner, in AI setup on this computer',
+            note: 'Aggregate estimated exposure for this connection. Reopening or reconnecting never resets it.',
+          });
+          return build();
+        }),
+      ),
+    );
+
+    app.post(
+      `${BASE}/holds/:holdId/reconcile`,
+      route((req) =>
+        store.locked(async () => {
+          const body = reconcileBody.parse(req.body);
+          const holdId = String(req.params.holdId);
+          await ownHold(holdId);
+          await api().exposure.reconcile(holdId, { microUsd: micro(body.microUsd), note: body.note });
+          return build();
+        }),
+      ),
+    );
+
+    app.post(
+      `${BASE}/holds/:holdId/write-off`,
+      route((req) =>
+        store.locked(async () => {
+          const body = writeOffBody.parse(req.body);
+          const holdId = String(req.params.holdId);
+          await ownHold(holdId);
+          await api().exposure.writeOff(holdId, { note: body.note });
+          return build();
+        }),
+      ),
+    );
+
+    app.delete(
+      BASE,
+      route(() =>
+        store.locked(async () => {
+          await api().secrets.remove(spec.connectionId);
+          await services().connections.remove();
+          const settings: Record<string, boolean | string> = { ...store.settings.services, [spec.route]: false };
+          delete settings[`${spec.route}AccountRoute`];
+          await store.saveSettings({ ...store.settings, services: settings });
+          return build();
+        }),
+      ),
+    );
+  }
+
+  mount<AzureConnection, AzureConnectionView>(
+    {
+      route: AZURE_OPENAI_ROUTE,
+      schema: azureConnectionSchema,
+      label: 'Azure OpenAI',
+      connectionId: AZURE_CONNECTION_ID,
+      services: (services) => services.azure,
+      accountRoute: azureAccountRoute,
+      defaultModel: (connection) => connection.deployments[0].model,
+      rateCardVersions: (connection) =>
+        connection.deployments.map((entry) => azureRateCard(connection, entry.model).version).join(' '),
+    },
+    (connection, common) => ({
+      route: AZURE_OPENAI_ROUTE,
+      configured: !!connection,
+      protectedStorage: common.protectedStorage,
+      enabled: common.enabled,
+      connection: connection
+        ? {
+            id: connection.id,
+            resource: connection.resourceName,
+            endpoint: connection.baseUrl,
+            apiVersion: connection.apiVersion,
+            deployments: connection.deployments.map((entry) => ({
+              model: entry.model,
+              deployment: entry.deployment,
+              reasoning: entry.reasoning,
+              rates: ratesView(entry.rates),
+            })),
+            credential: { ...connection.credential, expired: expiredAt(connection.credential.expiresAt) },
+            revision: connection.revision,
+            accountRoute: azureAccountRoute(connection),
+          }
+        : null,
+      spend: common.spend,
+      next: common.next,
+    }),
+    (req, previous, fingerprint, at) => {
+      const body = azureBody.parse(req.body);
+      return {
+        v: 1,
+        id: AZURE_CONNECTION_ID,
+        resourceName: body.resourceName,
+        baseUrl: azureEndpoint(body.resourceName),
+        apiVersion: AZURE_API_VERSION,
+        deployments: body.deployments.map((entry) => ({
+          model: entry.model,
+          deployment: entry.deployment,
+          reasoning: entry.reasoning,
+          rates: declared(entry.rates, at),
+        })),
+        credential: { kind: 'azure-api-key', fingerprint, savedAt: at, expiresAt: body.expiresAt },
+        // Every save is a new generation: a result from a call made under the old key, resource
+        // or prices is refused when it comes back.
+        revision: (previous?.revision ?? 0) + 1,
+        createdAt: previous?.createdAt ?? at,
+        updatedAt: at,
+      };
+    },
+  );
+
+  mount<OpenRouterConnection, OpenRouterConnectionView>(
+    {
+      route: OPENROUTER_ROUTE,
+      schema: openRouterConnectionSchema,
+      label: 'OpenRouter',
+      connectionId: OPENROUTER_CONNECTION_ID,
+      services: (services) => services.openrouter,
+      accountRoute: openRouterAccountRoute,
+      defaultModel: (connection) => connection.models[0].id,
+      rateCardVersions: (connection) =>
+        connection.models.map((entry) => openRouterRateCard(connection, entry.id).version).join(' '),
+    },
+    (connection, common) => ({
+      route: OPENROUTER_ROUTE,
+      configured: !!connection,
+      protectedStorage: common.protectedStorage,
+      enabled: common.enabled,
+      connection: connection
+        ? {
+            id: connection.id,
+            endpoint: connection.baseUrl,
+            models: connection.models.map((entry) => ({
+              id: entry.id,
+              upstreams: [...entry.upstreams],
+              rates: ratesView(entry.rates),
+            })),
+            dataCollection: connection.dataCollection,
+            allowFallbacks: connection.allowFallbacks,
+            credential: { ...connection.credential, expired: expiredAt(connection.credential.expiresAt) },
+            revision: connection.revision,
+            accountRoute: openRouterAccountRoute(connection),
+          }
+        : null,
+      spend: common.spend,
+      next: common.next,
+    }),
+    (req, previous, fingerprint, at) => {
+      const body = openRouterBody.parse(req.body);
+      return {
+        v: 1,
+        id: OPENROUTER_CONNECTION_ID,
+        baseUrl: OPENROUTER_BASE_URL,
+        models: body.models.map((entry) => ({
+          id: entry.id,
+          upstreams: [...entry.upstreams],
+          rates: declared(entry.rates, at),
+        })),
+        dataCollection: 'deny',
+        allowFallbacks: false,
+        credential: { kind: 'openrouter-api-key', fingerprint, savedAt: at, expiresAt: body.expiresAt },
+        revision: (previous?.revision ?? 0) + 1,
+        createdAt: previous?.createdAt ?? at,
+        updatedAt: at,
+      };
+    },
+  );
+}

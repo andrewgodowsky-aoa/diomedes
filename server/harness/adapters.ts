@@ -82,6 +82,7 @@ export const ADAPTER_CAPABILITIES = {
     notes: [
       'Model calls happen inside the pinned app-server; Diomedes sees turn events and the reported model, it does not dispatch each call (server/integrations.ts askCodex).',
       "Every tool feature is switched off in the thread configuration and the model has no shell or file tool; that inventory is the model's own report, not a protocol-level proof (evidence/codex-team-real-binary-2026-09-06.md, D8).",
+      'An Ask or Plan turn may carry a host-set read scope (server/engines/read-scope.ts): the project folder, web search and owner-approved MCP read tools. With one, the thread works in the project folder, the shell tool is on under the same read-only, no-network sandbox, web_search is live and only approved MCP servers are enabled with their read tools. A command is accepted only when the runtime parses every action as a read, listing or search inside the folder. Fixture-verified only; no paid live read turn is claimed.',
       'Project files cannot be written by the engine: the Windows read-only sandbox passes a write-denial probe before each run, and a proposal is applied only by Store.writeRecorded after the person says go ahead.',
       'The runtime echoes networkAccess=false in the policy check; no outbound probe has been run.',
       'There is no checkpoint inside a Codex turn. The host-only codex-report capability persists a completed outer-turn observation; unknown dispatch stays parked for reconciliation and is never automatically resent.',
@@ -123,6 +124,7 @@ export const ADAPTER_CAPABILITIES = {
     checkpointGranularity: 'task',
     notes: [
       'Each generate() is one bounded prompt to a fresh `claude` process launched with the --tools restriction; a reported tool list or a tool_use frame in the stream stops the request (server/engines/claude.ts).',
+      'An Ask or Plan turn may carry a host-set read scope (server/engines/read-scope.ts): the project folder, web search and owner-approved MCP read tools. With one, --tools and --allowedTools name Read, Grep, Glob, LS, WebSearch, WebFetch and the approved mcp__ tools, --permission-mode dontAsk and --restricted apply, the process works in the project folder, and a tool beyond that list or a path outside the folder stops the request. Fixture-verified only; no paid live read turn is claimed.',
       "The engine's own tool machinery is disabled by launch configuration, not by Diomedes code; that restriction is engine-honored, not a protocol proof, and no OS containment is claimed.",
       'File proposals go only through the recorded writer; a stopped request aborts and ends the owned process, which the engine reports.',
       'Every request starts a fresh native session; there is nothing to resume.',
@@ -142,6 +144,7 @@ export const ADAPTER_CAPABILITIES = {
     checkpointGranularity: 'task',
     notes: [
       'Each request is one bounded prompt against a fresh `opencode serve --pure` session with permission denies and tool disablement in the session config (server/engines/opencode.ts).',
+      'An Ask or Plan turn may carry a host-set read scope (server/engines/read-scope.ts): the project folder, web search and owner-approved MCP read tools. With one, read, glob, grep, list, webfetch, websearch and the approved MCP read tools are the only tools on and allowed, external_directory is denied and the instance directory is the project folder. Fixture-verified only.',
       'Tool denial is engine-honored configuration Diomedes writes, not a protocol proof; no OS containment is claimed.',
       'File proposals go only through the recorded writer; a stopped request aborts the request and ends the owned server process.',
       'Every request starts a fresh session; there is nothing to resume.',
@@ -161,6 +164,7 @@ export const ADAPTER_CAPABILITIES = {
     checkpointGranularity: 'task',
     notes: [
       'Each request is one bounded prompt to a fresh `omp` process launched with --no-tools; the flag removes the tool surface entirely (server/engines/omp.ts).',
+      'An Ask or Plan turn may carry a host-set read scope (server/engines/read-scope.ts): the project folder, web search and owner-approved MCP read tools. With one, --tools names read, grep, glob and web_search only and the process starts in the project folder; MCP is not passed on this route. Fixture-verified only.',
       'Tool denial is engine-honored launch configuration, not a protocol proof; no OS containment is claimed.',
       'File proposals go only through the recorded writer; a stopped request aborts and ends the owned process.',
       'Every request starts a fresh session; there is nothing to resume.',
@@ -181,6 +185,7 @@ export const ADAPTER_CAPABILITIES = {
     notes: [
       'Each request is one bounded session/prompt over ACP stdio to a fresh process under a fresh config dir with deny rules for Shell, Read, Write, WebFetch, WebSearch and MCP (server/engines/cursor.ts, shared transport in server/engines/acp-client.ts).',
       'Client filesystem and terminal capabilities are advertised false; a blocking client request is declined and a tool or plan update aborts the turn. Those are Diomedes-side refusals over engine-honored configuration, not a protocol proof, and no OS containment is claimed.',
+      'An Ask or Plan turn may carry a host-set read scope (server/engines/read-scope.ts): the project folder, web search and owner-approved MCP read tools. With one, the ACP workspace is the project folder, Read (and with web, WebFetch and WebSearch) is allowed while Shell, Write and MCP stay denied, and only read, search and fetch tool calls inside the folder are accepted; MCP is not passed on this route. Fixture-verified only.',
       'File proposals go only through the recorded writer; a stopped request sends session/cancel and ends the owned process.',
       'Every request starts a fresh session; there is nothing to resume.',
     ],

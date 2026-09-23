@@ -22,9 +22,10 @@
  * common base is recorded as owner follow-up, not done here.
  */
 import { randomUUID } from 'node:crypto';
+import type { RawToolActivity } from '../../shared/adapter-contract.js';
 import type { CapabilityManifest, HarnessRun, Json } from '../../shared/harness.js';
-import { AWS_BEDROCK_SDK } from '../engines/aws-bedrock.js';
 import type { TextRequest, TextResponse } from '../engines/contract.js';
+import type { StreamSinks } from '../engines/model-api-core.js';
 import { EngineError } from '../engines/process.js';
 import { localHarnessPrincipal } from './bridge.js';
 import type { InteractionPhase } from './claude-session-run.js';
@@ -32,6 +33,7 @@ import { SOURCE_TOOLS, sourceSha, sourceTools } from './capabilities/conversatio
 import { NativeAgent, type ModelAdapter } from './native-agent.js';
 import { digest, HarnessError } from './policy.js';
 import { RunService, Suspended, type StepContext, type StepDefinition } from './run-service.js';
+import { ToolRegistry } from './tools.js';
 
 export const MODEL_CONVERSATION_CAPABILITY: CapabilityManifest = {
   id: 'model-api-conversation',
@@ -77,14 +79,34 @@ export interface ModelSessionAdmission {
 export interface ModelSessionTurn {
   mode: 'start' | 'follow-up' | 'resume';
   runId: string;
+  /**
+   * The model-API route this conversation runs on. Recorded in the run's scope, so
+   * a conversation never changes route (or payer) between messages. Defaults to
+   * the route the driver was constructed with.
+   */
+  route?: string;
   input: TextRequest;
   admit(signal?: AbortSignal): Promise<ModelSessionAdmission>;
   /**
    * The adapter for this turn, bound to the admitted connection, the turn's
-   * instructions and a stop signal. Called inside the turn step, after the
-   * admission step committed.
+   * instructions, a stop signal and the turn's raw preview sinks. Called inside
+   * the turn step, after the admission step committed.
    */
-  adapter(admission: ModelSessionAdmission, instructions: string, signal: AbortSignal): Promise<ModelAdapter>;
+  adapter(
+    admission: ModelSessionAdmission,
+    instructions: string,
+    signal: AbortSignal,
+    sinks?: StreamSinks,
+  ): Promise<ModelAdapter>;
+  /**
+   * The caller's preview channel for this turn, stamped with the turn step's
+   * identity: raw text deltas and raw tool activity in, fenced frames out.
+   * `finish` drains every queued publication before the turn commits.
+   */
+  activity?(
+    context: StepContext,
+    stepId: string,
+  ): { onDelta(text: string): void; onToolActivity(raw: RawToolActivity): void; finish(): Promise<void> };
 }
 export interface ModelSessionTurnResult {
   runId: string;
@@ -143,6 +165,54 @@ const spoken = (text: string) => {
   return (at >= 0 ? text.slice(0, at) : text).trim();
 };
 
+type ToolPhase = 'finished' | 'failed';
+
+/**
+ * The same tools, each reporting when the host finishes or fails running it. The
+ * descriptors are unchanged, so what the model is offered (and NativeAgent's check
+ * of it) is identical; only the host's own execution is narrated.
+ */
+function narrated(
+  registry: ToolRegistry,
+  report: (phase: ToolPhase, tool: string, input: unknown, output: unknown) => void,
+): ToolRegistry {
+  const out = new ToolRegistry();
+  for (const { name } of registry.describe()) {
+    const tool = registry.get(name);
+    out.register({
+      ...tool,
+      execute: async (context) => {
+        let output: Json;
+        try {
+          output = await tool.execute(context);
+        } catch (error) {
+          report('failed', tool.name, context.input, null);
+          throw error;
+        }
+        report('finished', tool.name, context.input, output);
+        return output;
+      },
+    });
+  }
+  return out;
+}
+
+/** One plain sentence for a finished or failed host tool, from its name, input and output. */
+function toolOutcome(phase: ToolPhase, tool: string, input: unknown, output: unknown): string {
+  const args = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+  const result = output && typeof output === 'object' ? (output as Record<string, unknown>) : {};
+  const target = typeof args.path === 'string' && args.path ? args.path : null;
+  const words = tool.replace(/_/g, ' ');
+  if (phase === 'failed') return target ? `Could not read ${target}` : `Could not finish ${words}`;
+  if (tool === 'read_source')
+    return result.found === false ? `No attached file named ${target ?? 'that'}` : `Read ${target ?? 'an attached file'}`;
+  if (tool === 'list_sources') {
+    const count = Array.isArray(result.sources) ? result.sources.length : 0;
+    return count === 1 ? 'Found 1 attached file' : `Found ${count} attached files`;
+  }
+  return `Finished ${words}`;
+}
+
 export class ModelSessionRuns {
   private closed = false;
   private sharingPolicy: (projectId: string, documents: readonly string[], history: boolean) => void = () => {
@@ -196,7 +266,7 @@ export class ModelSessionRuns {
     if (this.closed)
       return Promise.reject(new EngineError('SESSION_CLOSED', 'The conversation runtime is shutting down.'));
     const intent = digest({
-      scope: scope(request.input, this.route),
+      scope: scope(request.input, request.route ?? this.route),
       prompt: request.input.prompt,
       documents: request.input.documents,
       requestId: request.input.requestId,
@@ -454,6 +524,7 @@ export class ModelSessionRuns {
 
   private async drive(request: ModelSessionTurn): Promise<ModelSessionTurnResult> {
     const { input, runId } = request;
+    const route = request.route ?? this.route;
     const principal = localHarnessPrincipal(input.projectId);
     let run: HarnessRun | undefined;
     try {
@@ -471,13 +542,13 @@ export class ModelSessionRuns {
         tenantId: principal.tenantId,
         principal,
         capability: MODEL_CONVERSATION_CAPABILITY,
-        input: scope(input, this.route),
+        input: scope(input, route),
         budget: { units: 128, modelCalls: 128, toolCalls: 384, wallMs: null },
       });
     if (!run) throw new HarnessError('unknown_run', 'Follow-up needs an existing conversation.');
     if (terminal(run))
       throw new EngineError('RECONCILE_REQUIRED', 'This run is settled or requires reconciliation; it cannot accept new work.', true);
-    if (digest(run.input) !== digest(scope(input, this.route)))
+    if (digest(run.input) !== digest(scope(input, route)))
       throw new EngineError('SESSION_MISMATCH', 'The conversation scope changed.');
     if (request.mode === 'start' && run.steps.some((step) => step.intent.stepId.startsWith('turn:')))
       throw new EngineError('SESSION_EXISTS', 'Use follow-up for an existing conversation.');
@@ -497,7 +568,7 @@ export class ModelSessionRuns {
       effect: 'read',
       name: 'Model-API conversation turn',
       input: {
-        engine: this.route,
+        engine: route,
         requestId: input.requestId,
         prompt: input.prompt,
         documents: input.documents,
@@ -518,7 +589,7 @@ export class ModelSessionRuns {
         kind: 'tool',
         effect: 'read',
         name: 'Model-API admission',
-        input: { engine: this.route, model: input.model, accountRoute: input.accountRoute },
+        input: { engine: route, model: input.model, accountRoute: input.accountRoute },
         destination: 'local',
         cost: 0,
         maxAttempts: 3,
@@ -537,11 +608,32 @@ export class ModelSessionRuns {
         const wall = AbortSignal.timeout(TURN_WALL_MS);
         const stop = AbortSignal.any([context.signal, wall, ...(input.signal ? [input.signal] : [])]);
         const childId = turnRunId(runId, input.requestId);
-        const registry = sourceTools(input.documents);
         // The host policy is read for each turn. A saved lineage does not grant
         // permission to send previous turns to the next model call.
         const history = this.historyPolicy(input.projectId) ? this.history(run!, turnId) : '';
         this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), history.length > 0);
+        const preview = request.activity?.(context, turnId);
+        // Pairs the host's finished/failed report with the call the model announced as started.
+        // One tool call per step and a sequential loop make the last announcement the one running.
+        let announced: { callId: string; tool: string } | null = null;
+        let unannounced = 0;
+        const sinks: StreamSinks | undefined = preview
+          ? {
+              onDelta: (text) => preview.onDelta(text),
+              onToolActivity: (raw) => {
+                if (raw.phase === 'started') announced = { callId: raw.callId, tool: raw.tool };
+                else if (announced?.callId === raw.callId) announced = null;
+                preview.onToolActivity(raw);
+              },
+            }
+          : undefined;
+        const registry = narrated(sourceTools(input.documents), (phase, tool, toolInput, output) => {
+          if (!preview) return;
+          const current = announced as { callId: string; tool: string } | null;
+          const callId = current?.tool === tool ? current.callId : `${tool}-${++unannounced}`;
+          announced = null;
+          preview.onToolActivity({ callId, phase, tool, summary: toolOutcome(phase, tool, toolInput, output) });
+        });
         await this.runs.start({
           id: childId,
           projectId: input.projectId,
@@ -550,8 +642,8 @@ export class ModelSessionRuns {
           capability: MODEL_TURN_CAPABILITY,
           tools: registry,
           input: {
-            engine: this.route,
-            route: this.route,
+            engine: route,
+            route,
             accountRoute: input.accountRoute,
             model: input.model,
             conversationRunId: runId,
@@ -563,7 +655,7 @@ export class ModelSessionRuns {
         });
         // The lease outlives the turn's own wall clock, which aborts the loop first.
         await this.runs.claim(childId, this.owner, TURN_WALL_MS + 60_000);
-        const adapter = await request.adapter(admission, `${input.instructions}\n\n${TOOL_NOTE}`, stop);
+        const adapter = await request.adapter(admission, `${input.instructions}\n\n${TOOL_NOTE}`, stop, sinks);
         const check = () => this.sharingPolicy(
           input.projectId,
           input.documents.map((doc) => doc.path),
@@ -607,12 +699,15 @@ export class ModelSessionRuns {
             maxTurns: MODEL_TURN_CAPABILITY.maxTurns,
           });
         } catch (error) {
+          await preview?.finish().catch(() => undefined);
           // The person stopped it, or its time ran out: say so. The child run and the spend ledger
           // keep what is actually known about the call that was in flight.
           if (input.signal?.aborted || wall.aborted)
             return { runId, response: null, interrupted: true, nativeSession: null };
           throw error;
         }
+        // Every queued preview is published, or the turn fails, before its answer is committed.
+        await preview?.finish();
         const child = await this.runs.get(childId);
         const lastModel = [...child.steps].reverse().find((step) => step.intent.kind === 'model' && step.state === 'succeeded');
         const reported =
@@ -620,7 +715,7 @@ export class ModelSessionRuns {
         context.reportOrigin?.({
           protocolVersion: 1,
           mode: 'direct',
-          engine: { id: this.route, version: AWS_BEDROCK_SDK },
+          engine: { id: route, version: adapter.version },
           model: { requested: input.model, reported, source: reported ? 'runtime' : 'not-recorded' },
           accountRoute: input.accountRoute,
         });
@@ -629,7 +724,7 @@ export class ModelSessionRuns {
           response: {
             text,
             model: reported ?? input.model,
-            version: AWS_BEDROCK_SDK,
+            version: adapter.version,
             threadId: input.threadId,
             projectId: input.projectId,
             requestId: input.requestId,

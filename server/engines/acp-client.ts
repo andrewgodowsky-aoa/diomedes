@@ -28,6 +28,16 @@ import {
   text,
 } from './process.js';
 import type { TextRequest, TextResponse } from './contract.js';
+import {
+  displayPath,
+  emitActivity,
+  insideRoot,
+  isWebUrl,
+  readDetail,
+  readScopeNote,
+  readSummary,
+  type ReadScope,
+} from './read-scope.js';
 
 type Json = Record<string, unknown>;
 type SpawnOptions = {
@@ -84,6 +94,12 @@ export interface AcpClientOptions {
   readonly onUpdate: (params: Json) => void;
   /** Defaults to the owned-process killer; tests inject a fake. */
   readonly kill?: (child: ChildProcessWithoutNullStreams) => Promise<void>;
+  /**
+   * A read turn's answer to a server-to-client request: the reply body when the
+   * request is a permission ask for an allowed read, undefined to decline it as
+   * every request is declined on the text route. It may throw to stop the turn.
+   */
+  readonly permit?: (method: string, params: unknown) => unknown;
 }
 
 const protocolError = (profile: AcpProfile, detail: string) =>
@@ -286,7 +302,14 @@ export class AcpClient {
         if (frame.jsonrpc !== '2.0')
           throw protocolError(profile, 'returned an invalid JSON-RPC envelope.');
         if (typeof frame.method === 'string' && 'id' in frame) {
-          this.decline(frame);
+          const allowed = this.failure ? undefined : this.options.permit?.(frame.method, frame.params);
+          if (allowed === undefined) this.decline(frame);
+          else
+            this.replies.push(
+              this.write({ jsonrpc: '2.0', id: frame.id, result: allowed }).catch(() =>
+                this.fail(protocolError(profile, 'did not accept a protocol reply.')),
+              ),
+            );
           continue;
         }
         if (this.failure) continue; // Drop every late result and delta after abort/failure.
@@ -430,6 +453,8 @@ export interface AcpSessionOptions {
   /** Per-agent session policy after session/new (mode set and confirmation). */
   readonly ready?: (rpc: AcpClient, created: Json) => Promise<void>;
   readonly kill?: (child: ChildProcessWithoutNullStreams) => Promise<void>;
+  /** A read turn's permission answers (`AcpClientOptions.permit`). */
+  readonly permit?: AcpClientOptions['permit'];
 }
 
 /**
@@ -459,6 +484,7 @@ export async function acpSession<T>(
       signal: options.signal,
       onUpdate: (params) => options.onUpdate(params, rpc!),
       kill: options.kill,
+      permit: options.permit,
     });
     const initialized = await rpc.request('initialize', {
       protocolVersion: 1,
@@ -533,6 +559,12 @@ const ACP_IDLE_UPDATES = [
 ];
 
 export interface AcpTurnPolicy {
+  /**
+   * A read turn's handler for `tool_call` and `tool_call_update` frames, which
+   * stop a text turn. It judges and narrates each call, or throws to stop.
+   * With it, the agent's own `plan` (its to-do list) is tolerated too.
+   */
+  readonly reads?: (update: Json) => void;
   /** A `current_mode_update` echo; the agent's mode rule decides what is legal. */
   readonly onModeUpdate?: (modeId: string) => void;
   /**
@@ -558,6 +590,12 @@ export function acpSessionUpdate(
 ): void {
   const update = record(params.update),
     kind = text(update.sessionUpdate);
+  if (policy.reads && (kind === 'tool_call' || kind === 'tool_call_update' || kind === 'plan')) {
+    if (rpc.sessionId && params.sessionId !== rpc.sessionId)
+      throw protocolError(profile, 'reported a different session.');
+    if (kind !== 'plan') policy.reads(update);
+    return;
+  }
   if (kind === 'tool_call' || kind === 'tool_call_update' || kind === 'plan')
     throw new EngineError(
       'UNEXPECTED_TOOL',
@@ -616,7 +654,11 @@ export async function acpPromptTurn(
       {
         type: 'text',
         text: JSON.stringify({
-          instructions: input.instructions,
+          instructions: input.readScope
+            ? `${input.instructions}
+
+${readScopeNote(input.readScope)}`
+            : input.instructions,
           input: JSON.parse(prompt),
         }),
       },
@@ -640,6 +682,116 @@ export const acpTurnResponse = (
   threadId: input.threadId,
   requestId: input.requestId,
 });
+
+// --- read turns ---------------------------------------------------------------------------------
+//
+// ACP names what a tool call does with a `kind`. A read turn accepts `read`,
+// `search` and (with web access) `fetch`, and `think`, which touches nothing;
+// `edit`, `delete`, `move`, `execute`, `switch_mode` and `other` stop it. A
+// call's locations and any path in its raw input must be inside the project
+// folder. The same rule answers the agent's permission asks: an allowed read
+// gets `allow_once`, anything else is rejected and stops the turn.
+
+const ACP_READ_KINDS = ['read', 'search', 'fetch', 'think'];
+const PATH_KEYS = ['path', 'file_path', 'filePath', 'target_file', 'targetFile', 'directory'];
+
+/** The read handler and permission answer for one ACP read turn. */
+export function acpReadTurn(
+  profile: AcpProfile,
+  scope: ReadScope,
+  sink: TextRequest['onToolActivity'],
+): { reads: (update: Json) => void; permit: (method: string, params: unknown) => unknown } {
+  const calls = new Map<string, { kind: string; started: boolean; finished: boolean }>();
+  const refuse = (why: string) =>
+    new EngineError(
+      'UNEXPECTED_TOOL',
+      `${profile.name} ${why}; Diomedes stopped the read-only request.`,
+      true,
+    );
+  /** Judge one call's kind and paths; returns the kind it resolved to. */
+  const judge = (call: Json): { id: string; kind: string } => {
+    const id = text(call.toolCallId);
+    if (!id || id.length > 200) throw protocolError(profile, 'reported a tool call without an id.');
+    const known = calls.get(id);
+    const kind = text(call.kind) || known?.kind || '';
+    if (!ACP_READ_KINDS.includes(kind)) throw refuse(`reported a ${kind || 'unnamed'} tool call`);
+    if (kind === 'fetch' && !scope.web) throw refuse('tried to reach the web without web access');
+    const locations = Array.isArray(call.locations) ? call.locations.map(record) : [];
+    const input = record(call.rawInput);
+    const paths = [
+      ...locations.map((location) => text(location.path)),
+      ...PATH_KEYS.map((key) => text(input[key])),
+    ].filter(Boolean);
+    if (kind !== 'fetch' && paths.some((candidate) => !insideRoot(scope.root, candidate)))
+      throw refuse('tried to read outside the project folder');
+    if (kind === 'fetch' && text(input.url) && !isWebUrl(text(input.url)))
+      throw refuse('tried to open something that is not a web page');
+    return { id, kind };
+  };
+  const summaryOf = (call: Json, kind: string) => {
+    const input = record(call.rawInput);
+    const location = Array.isArray(call.locations) ? text(record(call.locations[0]).path) : '';
+    const where =
+      location || PATH_KEYS.map((key) => text(input[key])).find(Boolean) || '';
+    if (kind === 'read')
+      return readSummary('read', { path: where ? displayPath(scope.root, where) : undefined });
+    if (kind === 'search')
+      return (
+        text(call.title).slice(0, 200) ||
+        readSummary('search', { query: text(input.query) || text(input.pattern) || undefined })
+      );
+    return isWebUrl(text(input.url))
+      ? readSummary('web-fetch', { url: text(input.url) })
+      : readSummary('web-search', { query: text(input.query) || undefined });
+  };
+  const reads = (update: Json) => {
+    const { id, kind } = judge(update);
+    const entry = calls.get(id) ?? { kind, started: false, finished: false };
+    entry.kind = kind;
+    calls.set(id, entry);
+    if (kind === 'think') return;
+    if (!entry.started) {
+      entry.started = true;
+      const detail = readDetail(update.rawInput);
+      emitActivity(sink, {
+        callId: id,
+        phase: 'started',
+        tool: kind,
+        summary: summaryOf(update, kind),
+        ...(detail ? { detail } : {}),
+      });
+    }
+    const status = text(update.status);
+    if ((status === 'completed' || status === 'failed') && !entry.finished) {
+      entry.finished = true;
+      const detail = readDetail(update.rawOutput, 300);
+      emitActivity(sink, {
+        callId: id,
+        phase: status === 'failed' ? 'failed' : 'finished',
+        tool: kind,
+        summary: status === 'failed' ? 'The read did not complete' : 'Read finished',
+        ...(detail ? { detail } : {}),
+      });
+    }
+  };
+  const permit = (method: string, params: unknown) => {
+    if (method !== 'session/request_permission') return undefined;
+    const call = record(record(params).toolCall);
+    try {
+      judge(call);
+    } catch {
+      return undefined;
+    }
+    const options = record(params).options;
+    const allow = Array.isArray(options)
+      ? options
+          .map(record)
+          .find((option) => option.kind === 'allow_once' && typeof option.optionId === 'string')
+      : undefined;
+    return allow ? { outcome: { outcome: 'selected', optionId: allow.optionId } } : undefined;
+  };
+  return { reads, permit };
+}
 
 // --- the known ACP agents --------------------------------------------------------------------
 

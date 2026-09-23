@@ -28,12 +28,14 @@
     "test:desktop-reviewer": "node scripts/reviewer-desktop-smoke.mjs"
   },
   "dependencies": {
+    "@ai-sdk/azure": "4.0.75",
     "@ai-sdk/openai": "4.0.71",
     "@fontsource/big-shoulders-display": "^5.2.8",
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@fontsource/ibm-plex-serif": "^5.2.7",
     "@fontsource/schibsted-grotesk": "^5.2.8",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@openrouter/ai-sdk-provider": "3.1.0",
     "@workos-inc/node": "10.13.0",
     "@workos/authkit-electron": "0.1.2",
     "@workos/authkit-session": "0.6.0",

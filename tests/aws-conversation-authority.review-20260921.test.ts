@@ -23,6 +23,7 @@ import { conversationCommandIds } from '../server/interaction-admission';
 import type { MessageResult } from '../server/interaction-service';
 import type { AwsConnectionView } from '../shared/model-api';
 import type { Conversation, Project, ProjectState } from '../shared/types';
+import { responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const SECRET = 'test-only-bedrock-key-0123456789abcdef-never-real';
@@ -160,10 +161,7 @@ const aws = (async (input: RequestInfo | URL, init?: RequestInit) => {
       signal?.addEventListener('abort', () => reject(signal.reason ?? new Error('aborted')), { once: true });
     });
   }
-  return new Response(JSON.stringify(envelope(output)), {
-    status: 200,
-    headers: { 'content-type': 'application/json', 'x-amzn-requestid': `req-${seen.length}` },
-  });
+  return sseResponse(responsesEvents(envelope(output)), { 'x-amzn-requestid': `req-${seen.length}` });
 }) as typeof globalThis.fetch;
 
 // --- the app ------------------------------------------------------------------------

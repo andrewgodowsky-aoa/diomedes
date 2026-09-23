@@ -117,7 +117,8 @@ export interface Settings {
    * Which helpers are switched on, by engine id; only engines whose adapter is
    * ready can be on. A few keys are choices rather than switches, and hold a
    * string: `codexModel` and `codexEffort` are the default Codex runs use when
-   * a thread has made no choice of its own.
+   * a thread has made no choice of its own. `workStyle` is the WorkStyle a
+   * thread follows when it names none.
    */
   services?: Record<string, boolean | string>;
 }
@@ -436,6 +437,12 @@ export interface ConversationLineage {
   runId: string;
   /** Absent means current. The guard that refused a new message names the reason. */
   retired?: 'scope-change' | 'terminated' | 'budget';
+  /**
+   * The reasoning level a model-API lineage was opened with, when a WorkStyle
+   * chose one. That route binds the level into its saved context, so a style
+   * change that moves it starts the next generation rather than failing.
+   */
+  effort?: string;
 }
 export interface Conversation {
   engine?: Route;
@@ -469,6 +476,13 @@ export interface Conversation {
    * `agent` may be `auto`, which resolves per run and is recorded as automatic.
    */
   requested?: { model: string | null; effort: string | null; agent?: string | null } | null;
+  /**
+   * The thread's WorkStyle (`shared/work-style.ts`), or absent/null to follow
+   * the Settings default (`services.workStyle`). It only chooses which offered
+   * model leads and how hard it reasons; it never changes `mode`, `permission`
+   * or the route, and an explicit `requested.model` pin outranks it.
+   */
+  workStyle?: import('./work-style.js').WorkStyle | null;
   /** The thread's current mode. State written before modes lacks it; the store fills it on load. */
   mode: Mode;
   /** Native conversation lineages, oldest first. Missing on state written before this field. */

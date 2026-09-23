@@ -30,7 +30,12 @@ import { FollowUpQueue } from './FollowUpQueue';
 import { StopMenu, StopReceiptLine } from './StopMenu';
 import { NeedBlock } from './Need';
 import { ChangeReview } from './ChangeReview';
+import { ReplyBody } from './ReplyBody';
 import { useWorkingWord, workingLine } from './working-words';
+import { toolRunning, type ToolLine } from './engine-activity';
+import { ToolActivityList } from './ToolActivity';
+import { resolvedDetail, threadStyle, useWorkStyleView } from './WorkStylePicker';
+import { WORK_STYLE_LABELS } from '../../shared/work-style';
 
 function fmtDur(ms: number): string {
   const s = ms / 1000;
@@ -96,10 +101,15 @@ interface ThreadViewProps {
   onStopSession(id: string): void;
   onOpenBoard(): void;
   /** Live streamed text for a new external-engine Ask/Plan: ephemeral, never saved. */
-  streaming?: { requestId: string; text: string; engine: string };
+  streaming?: { requestId: string; text: string; engine: string; activity?: ToolLine[] };
+  /** Live tool calls for a work run, by the run's session id. Ephemeral, never saved. */
+  runActivity?: Readonly<Record<string, ToolLine[]>>;
   onCancelText?(): void;
   /** Where a refused scoped Stop is reported; without it the refusal is silent. */
   onError?(error: Error): void;
+  /** A playbook picked for the next message, passed through to the composer. */
+  skill?: { name: string; starter: string; n: number } | null;
+  onClearSkill?(): void;
 }
 
 /**
@@ -141,9 +151,13 @@ export function ThreadView({
   onStopSession,
   onOpenBoard,
   streaming,
+  runActivity,
   onCancelText,
   onError,
+  skill = null,
+  onClearSkill,
 }: ThreadViewProps) {
+  const technical = settings.detail === 'technical';
   const permission: ThreadPermission = thread.permission ?? 'show-first';
   const live = sessions.find((s) => ['queued', 'working', 'waiting'].includes(s.state)) ?? null;
   const ordered = [...sessions].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
@@ -161,6 +175,12 @@ export function ThreadView({
   const wantedEffort = route === 'codex' ? thread.requested?.effort || savedEffort || 'medium' : '';
   const runsAt = effortFor(mode, wantedEffort, wantedEffort);
   const capped = runsAt !== wantedEffort;
+  // A thread on a WorkStyle names the style for everyone; the model and level it resolves to
+  // are details, shown at technical detail or on request. A pinned model is named as before.
+  const style = thread.requested?.model ? null : threadStyle(thread, settings);
+  const styleView = useWorkStyleView(projectId, thread, [route, mode, settings.services?.workStyle]);
+  const [styleDetails, setStyleDetails] = useState(false);
+  const showStyleDetails = settings.detail === 'technical' || styleDetails;
   const context =
     live?.engine.context ??
     [...ordered].reverse().find((s) => s.engine.context != null)?.engine.context;
@@ -186,15 +206,26 @@ export function ThreadView({
   }
 
   // While an answer is on its way and nothing has streamed yet, the agent
-  // says what it is up to. Display only; nothing here is recorded.
+  // says what it is up to. Display only; nothing here is recorded. A tool
+  // call in progress already says it, so the line waits behind it.
+  const streamWaiting = Boolean(
+    streaming && !streaming.text && !toolRunning(streaming.activity),
+  );
   const streamWord = useWorkingWord(
     mode === 'plan' ? 'drafting the plan' : 'replying',
-    Boolean(streaming && !streaming.text),
+    streamWaiting,
   );
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
     body.current?.scrollTo({ top: body.current.scrollHeight });
-  }, [thread.turns.length, live?.id, thread.id, streaming?.requestId, streaming?.text.length]);
+  }, [
+    thread.turns.length,
+    live?.id,
+    thread.id,
+    streaming?.requestId,
+    streaming?.text.length,
+    streaming?.activity?.length,
+  ]);
 
   const items: { at: string; seq: number; node: ReactNode }[] = [];
   exchanges.forEach((group, i) => {
@@ -217,6 +248,11 @@ export function ThreadView({
                   </span>
                 )}
                 <span className="mono">{time(t.at).toLowerCase()}</span>
+                {t.role === 'you' && t.skill && (
+                  <span className="mono lc" title={`${t.skill.packId} ${t.skill.packVersion}`}>
+                    playbook {t.skill.name}
+                  </span>
+                )}
                 {t.role !== 'you' && (
                   <span className="tools">
                     <button
@@ -235,9 +271,11 @@ export function ThreadView({
                 )}
               </div>
               <div className="body">
-                {paragraphs(t.text).map((p, j) => (
-                  <p key={j}>{p}</p>
-                ))}
+                {t.role === 'you' ? (
+                  paragraphs(t.text).map((p, j) => <p key={j}>{p}</p>)
+                ) : (
+                  <ReplyBody text={t.text} session={live} />
+                )}
               </div>
             </div>
           ))}
@@ -289,6 +327,8 @@ export function ThreadView({
         <RunRecord
           key={s.id}
           session={s}
+          activity={runActivity?.[s.id]}
+          technical={technical}
           onStop={() => onStopSession(s.id)}
           stop={
             projectId && task ? (
@@ -366,13 +406,30 @@ export function ThreadView({
         )}
       </div>
       <div className="col instr" aria-label="Thread instruments">
-        <span>
-          next request <b>{mode}</b> <span className="lc">{modelId}</span>{' '}
-          <span className="lc">
-            {runsAt}
-            {capped ? ', capped' : ''}
+        {style ? (
+          <span>
+            next request <b>{mode}</b> <span className="lc">{WORK_STYLE_LABELS[style]}</span>{' '}
+            {showStyleDetails ? (
+              <span className="lc">{resolvedDetail(styleView)}</span>
+            ) : (
+              <button
+                type="button"
+                title="The model and reasoning level this style resolves to"
+                onClick={() => setStyleDetails(true)}
+              >
+                details
+              </button>
+            )}
           </span>
-        </span>
+        ) : (
+          <span>
+            next request <b>{mode}</b> <span className="lc">{modelId}</span>{' '}
+            <span className="lc">
+              {runsAt}
+              {capped ? ', capped' : ''}
+            </span>
+          </span>
+        )}
         {context != null && (
           <span>
             context <b>{Math.round(context)}%</b>
@@ -463,11 +520,12 @@ export function ThreadView({
                   <b>{formatOrigin(undefined, { engine: streaming.engine }).primary}</b>
                   <span className="mono">live</span>
                 </div>
+                <ToolActivityList lines={streaming.activity} technical={technical} />
                 <div className="body">
                   {streaming.text ? (
-                    paragraphs(streaming.text).map((p, j) => <p key={j}>{p}</p>)
+                    <ReplyBody text={streaming.text} streaming session={live} />
                   ) : (
-                    <p className="caption">{workingLine(streamWord)}</p>
+                    streamWaiting && <p className="caption">{workingLine(streamWord)}</p>
                   )}
                 </div>
                 {onCancelText && (
@@ -499,6 +557,8 @@ export function ThreadView({
         }
         prepareSources={(text, doc) => prepareSources(mode, text, doc)}
         onSend={submit}
+        skill={skill}
+        onClearSkill={onClearSkill}
       />
       {/* A follow-up waits behind a run. With nothing running and nothing queued,
           the composer above sends at once, so a second box would only ask the
@@ -520,18 +580,24 @@ export function ThreadView({
 
 function RunRecord({
   session,
+  activity,
+  technical,
   onStop,
   stop,
   receipt,
 }: {
   session: Session;
+  /** Tool calls streamed for this run while it is live. Never saved; the log is the record. */
+  activity?: ToolLine[];
+  technical: boolean;
   onStop(): void;
   /** The scoped Stop cluster. Falls back to today's single button when absent. */
   stop?: ReactNode;
   receipt?: ReactNode;
 }) {
   const live = ['queued', 'working', 'waiting'].includes(session.state);
-  const word = useWorkingWord('on it', live && session.state !== 'waiting');
+  const waiting = live && session.state !== 'waiting' && !toolRunning(activity);
+  const word = useWorkingWord('on it', waiting);
   const [open, setOpen] = useState(live);
   const [details, setDetails] = useState(false);
   useEffect(() => {
@@ -560,7 +626,8 @@ function RunRecord({
           <b>{clockOf(l.time)}</b> <span>{l.sentence}</span>
         </div>
       ))}
-      {live && session.state !== 'waiting' && (
+      {live && <ToolActivityList lines={activity} technical={technical} />}
+      {waiting && (
         <div className="caption" aria-hidden="true">
           {workingLine(word)}
         </div>

@@ -29,6 +29,7 @@ import {
 import type { InteractionPhase } from '../server/harness/claude-session-run.js';
 import { FileModelTranscripts } from '../server/harness/model-transcripts.js';
 import { SpendExposure } from '../server/spend-exposure.js';
+import { responsesAnswer } from './fixtures/model-api-streams.js';
 
 const BASE = AWS_RESPONSES_ENDPOINTS['us-east-1'];
 const SECRET = 'test-only-bedrock-key-0123456789abcdef';
@@ -102,8 +103,8 @@ function network(script: Array<(signal: AbortSignal | undefined) => Promise<Resp
   }) as typeof globalThis.fetch;
   return { fetch, sent };
 }
-const json = (body: unknown) =>
-  new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json', 'x-amzn-requestid': 'req-1' } });
+/** A Responses object answers as its event stream: the route asks for `stream: true`. */
+const json = (body: unknown) => responsesAnswer(body, 200, { 'x-amzn-requestid': 'req-1' });
 
 let dir: string;
 let runs: RunService;

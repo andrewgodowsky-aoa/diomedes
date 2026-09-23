@@ -123,6 +123,33 @@ Clicking it opens a readable rendered version. Two properties matter and are eas
 
 ---
 
+## 4b. The Small Business pack (2026-09-23)
+
+`diomedes.small-business` (`shared/capability-packs.ts`, content in
+`shared/small-business-skills.ts`) contributes **skills**: twelve playbooks for recurring
+restaurant, shop and service-business work, each one data (`PackSkill`): a plain name, a one-line
+value, trigger phrases, the inputs it reads (each declared as one of the pack's `read-*` needs,
+with exactly how to export, upload or connect it when missing), a read-and-draft Mode (Ask or
+Plan), numbered steps, an output shape, where a visual helps, what it drafts, and a
+not-professional-advice caution on every accounting, tax, legal and employment playbook.
+
+- `validateManifest` refuses a skill that could act (`acts` is the literal `false`), runs in Build
+  or Fix, reads an undeclared need, or renders past 8 KB; and a pack that declares any outward
+  capability at all.
+- A skill never sends, posts, pays or messages anyone. What would reach someone else is a draft
+  headed "Draft for you to send".
+- Launch: with the pack on, the project's Ctrl K palette lists the playbooks; `Use` opens an empty
+  or new thread in the skill's Mode, fills the composer with a starter the person can edit, and
+  names the playbook beside the box. Nothing is sent until the person sends it.
+- Delivery: `/api/projects/:id/ask` takes `skill`, and `assembleSkillSection`
+  (`server/harness/instruction-delivery.ts`) appends the playbook to the Mode's instructions,
+  whole or refused, only while the pack is active. The message stays as typed; the turn records
+  which playbook and pack version ran.
+- Not yet: the Diomedes home conversation. Its runs pin one instruction digest per lineage, so a
+  per-message playbook there needs a decision (for example, a new lineage per skill).
+
+---
+
 ## 5. Open questions for Andrew
 
 1. **Granularity.** Is Software Engineering one pack, or a base pack plus optional pieces (Git,
@@ -137,6 +164,8 @@ Clicking it opens a readable rendered version. Two properties matter and are eas
 
 ## 6. What is true today
 
-Nothing in this document is built. There is no pack mechanism, no Software Engineering pack, and no
-Files pane. This records approved architecture direction so the next agent builds the right shape,
-and it may not be described as shipped anywhere, including the website.
+This section was written before anything was built and is kept as the record of that starting
+point. Since then the pack mechanism, the Software Engineering pack's instruction-file discovery
+and the Files pane landed (`docs/implementation/2026-09-11-*.md`), and the Small Business
+pack's playbooks landed on a feature branch (section 4b). Nothing beyond what those records prove
+may be described as shipped anywhere, including the website.

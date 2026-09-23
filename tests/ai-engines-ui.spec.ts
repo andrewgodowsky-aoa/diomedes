@@ -326,6 +326,11 @@ test('Console discovers, selects, streams, cancels, and approves every fixture e
   await page.getByRole('dialog', { name: 'Send this message?' })
     .getByRole('button', { name: 'Send message', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+  // Stop while the engine holds the request. A Stop during admission ends it before any
+  // adapter sees it, which is also correct but proves nothing about engine cancellation.
+  await expect
+    .poll(() => calls.some((item) => item.input.prompt === 'CANCEL fixture request'))
+    .toBe(true);
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Request stopped');
   await page.getByRole('alert').getByRole('button', { name: 'Dismiss' }).click();

@@ -315,7 +315,15 @@ export class NativeWorkService {
       team?: NativeTeamOptions;
       turnId?: string;
       mode?: 'build' | 'fix';
-      requested?: { model?: string; effort?: string };
+      /**
+       * `selection` says who chose the model: `automatic` when a WorkStyle resolved it. Absent
+       * means a named model is the person's choice and no model is the engine's default.
+       */
+      requested?: {
+        model?: string;
+        effort?: string;
+        selection?: 'manual' | 'automatic' | 'runtime-default';
+      };
       /** The Agent the person asked for, or `auto`. Never read from model text. */
       agentId?: string | null;
       permission?: ThreadPermission;
@@ -366,7 +374,8 @@ export class NativeWorkService {
           mode: input.mode ?? 'build',
           routeId: engine,
           requestedModel: input.requested?.model ?? null,
-          modelSelection: input.requested?.model ? 'manual' : 'runtime-default',
+          modelSelection:
+            input.requested?.selection ?? (input.requested?.model ? 'manual' : 'runtime-default'),
           state,
           taskId,
         })
