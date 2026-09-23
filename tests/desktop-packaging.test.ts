@@ -30,6 +30,7 @@ async function fixture() {
     'desktop/main.mjs',
     'desktop/app-updates.mjs',
     'desktop/update-helper.mjs',
+    'desktop/fresh-start.mjs',
     'desktop/diomedes.ico',
     'desktop/service.ts',
     'fixtures/harness/report-lines.txt',
