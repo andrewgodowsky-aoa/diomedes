@@ -11,26 +11,12 @@ import type {
 import type { FollowUpCommand, StopReceipt } from './work-control.js';
 
 export type Detail = 'guided' | 'standard' | 'technical';
-/** The two surfaces. The Workbook is one page at a time; the Console is every thread, helper and change at once. */
-export type Surface = 'workbook' | 'console';
 /**
  * The Console's two views. Conversation shows the prompt box and the threads;
  * Architect is the full Console. A view changes what is shown, never what
  * Nectovia can do.
  */
 export type ConsoleView = 'conversation' | 'architect';
-/** The four things a person can want to do; the Workbook's Home leads with these. */
-export type Intent = 'ask' | 'work' | 'plan' | 'review';
-export type Page =
-  | 'home'
-  | 'ask'
-  | 'plan'
-  | 'work'
-  | 'review'
-  | 'tasks'
-  | 'documents'
-  | 'history'
-  | 'connections';
 export type Mode = 'ask' | 'plan' | 'auto' | 'build' | 'fix';
 export type TaskState = 'todo' | 'working' | 'waiting' | 'done';
 export type Owner = 'you' | 'diomedes' | 'diomedes-with-ok';
@@ -40,8 +26,6 @@ export type Route = 'sample' | 'codex' | ExternalEngine | import('./model-api.js
 export interface Settings {
   version: 1;
   detail: Detail;
-  /** Missing on settings written before 2026-09-06; the server fills it: 'technical' detail becomes the Console. */
-  surface?: Surface;
   /** Missing on settings written before 2026-09-23; the server fills it with 'architect'. */
   view?: ConsoleView;
   onboarding: {
@@ -96,8 +80,6 @@ export interface Settings {
     firstUse: string[];
   };
   openProjects: string[];
-  lastPage: Record<string, Page>;
-  tasksView: Record<string, 'board' | 'list'>;
   /**
    * Which workspace this person is acting in. Absent means Personal, which is
    * what every settings file written before workspaces existed means too.
@@ -140,7 +122,6 @@ export interface Project {
   plans: string[];
   references: string[];
   repository: { present: boolean };
-  leftOff: { page: Page; document: string | null; scroll: number; at: string } | null;
   counts: { running: number; changesWaiting: number; waitingForYou: number; historyToday: number };
   status: { needsYou: number; working: number; tasksDone: number; tasksTotal: number };
   missing?: boolean;

@@ -204,10 +204,10 @@ describe('the brand', () => {
     expect(wake).toContain('aria-label="Nectovia is waking"');
   });
 
-  it('draws NectoviaMark at the three places the old mark stood', () => {
+  // The third place was the Workbook's own top bar, which went with the Workbook.
+  it('draws NectoviaMark at the places the old mark stood', () => {
     expect(read('client/console/Shell.tsx')).toMatch(/<header className="top">\s*<NectoviaMark \/>/);
     expect(read('client/console/TopStrip.tsx')).toMatch(/aria-label="Nectovia projects"[\s\S]{0,80}<NectoviaMark \/>/);
-    expect(read('client/App.tsx')).toContain('<NectoviaGlyph size={18} />');
   });
 });
 

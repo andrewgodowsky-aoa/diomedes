@@ -118,7 +118,7 @@ describe('first-run AI setup and the existing Work pipeline', () => {
   it('keeps a clean profile conservative, requires discovery consent, and preserves explicit upgrade choices', async () => {
     const { api, generate } = await fixture();
     const initial = (await api('/settings')).data;
-    expect(initial.surface).toBe('console');
+    expect(Object.keys(initial)).not.toContain('surface');
     expect(initial.permissions.changingFiles).toBe(true);
     const markup = renderToStaticMarkup(
       createElement(AIConnections, { settings: initial, save: async () => {} }),

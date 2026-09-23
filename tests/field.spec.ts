@@ -34,7 +34,6 @@ test.beforeAll(async ({ request }) => {
     headers: HEADERS,
     data: {
       onboarding: { resumeAt: 'done', work: 'business', detail: 'technical', familiarity: 'comfortable' },
-      surface: 'console',
       detail: 'technical',
     },
   });
@@ -100,7 +99,7 @@ async function projectState(page: Page): Promise<ProjectState> {
 async function openConsole(page: Page) {
   const opened = await page.request.put('/api/settings', {
     headers: HEADERS,
-    data: { surface: 'console', openProjects: [projectId] },
+    data: { openProjects: [projectId] },
   });
   expect(opened.ok()).toBe(true);
   await page.goto('/');
@@ -178,7 +177,7 @@ test('C03: the Board shows the Ready task, and Show-me-first confirms instead of
   await expect(confirm).toHaveCount(0);
 });
 
-test('C04: the palette finds and filters, Escape closes, and the Workbook keeps its own search', async ({ page }) => {
+test('C04: the palette finds and filters, Escape closes, and outside a project Ctrl+K finds a project', async ({ page }) => {
   await openConsole(page);
   await railOf(page).getByRole('button', { name: 'Thread', exact: true }).click();
   await expect(page.locator('#scrThread')).toBeVisible();
@@ -194,24 +193,17 @@ test('C04: the palette finds and filters, Escape closes, and the Workbook keeps 
   await expect(palette.getByText(READY_TASK)).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(palette).toHaveCount(0);
-  // The Workbook's own Ctrl+K project search still opens when surface is workbook.
-  const toBook = await page.request.put('/api/settings', {
-    headers: HEADERS,
-    data: { surface: 'workbook' },
-  });
-  expect(toBook.ok()).toBe(true);
+  // Outside a project there is no palette to open, so Ctrl+K is the project search.
+  // A reload keeps the window's place; clearing it lands on Nectovia's own page.
+  await page.evaluate(() => sessionStorage.clear());
   await page.reload();
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
+  // The strip over Nectovia's own page is `.console` too, so the project's rail is what is gone.
+  await expect(railOf(page)).toHaveCount(0);
   await page.keyboard.press('Control+K');
-  await expect(page.getByRole('dialog', { name: 'Open a project', exact: true })).toBeVisible();
+  const search = page.getByRole('dialog', { name: 'Open a project', exact: true });
+  await expect(search).toBeVisible();
   await page.keyboard.press('Escape');
-  const toConsole = await page.request.put('/api/settings', {
-    headers: HEADERS,
-    data: { surface: 'console' },
-  });
-  expect(toConsole.ok()).toBe(true);
-  await page.reload();
-  await expect(page.locator('.console')).toBeVisible();
+  await expect(search).toHaveCount(0);
 });
 
 test('C05: the wake is skipped under automation', async ({ page }) => {

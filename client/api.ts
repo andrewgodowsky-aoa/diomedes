@@ -107,7 +107,7 @@ export function listDocuments(projectId: string, signal?: AbortSignal): Promise<
   );
 }
 
-/** One document's text, through the same guarded read the Workbook uses. */
+/** One document's text, through the guarded document read. */
 export function readDocument(
   projectId: string,
   path: string,

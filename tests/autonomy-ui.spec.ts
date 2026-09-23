@@ -223,7 +223,6 @@ async function makeTaskProject(
     engine: 'codex',
   });
   await api('/settings', 'PUT', {
-    surface: 'console',
     detail: 'technical',
     services: { codex: true, defaultEngine: 'codex' },
     onboarding: {

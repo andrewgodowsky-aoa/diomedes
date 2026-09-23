@@ -65,7 +65,6 @@ test.beforeAll(async () => {
   project = await api<Project>('/projects/sample', 'POST', {});
   await api(`/projects/${project.id}/threads`, 'POST', { name: 'Talk it through' });
   await api('/settings', 'PUT', {
-    surface: 'console',
     view: 'conversation',
     detail: 'standard',
     onboarding: {

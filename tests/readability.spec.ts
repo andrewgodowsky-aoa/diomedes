@@ -32,9 +32,7 @@ async function open(page: Page, scale = 1) {
         headers,
         data: {
           onboarding: { ...saved.onboarding, resumeAt: 'done' },
-          surface: 'console',
           openProjects: [project.id],
-          lastPage: { [project.id]: 'home' },
           appearance: {
             package: 'graphite',
             motion: 'reduced',
@@ -186,22 +184,6 @@ for (const screen of screens) {
       await expect(page.getByRole('dialog')).toBeVisible();
       await audit(page);
       await page.keyboard.press('Escape');
-      await page.request.put('/api/settings', { headers, data: { surface: 'workbook' } });
-      await page.reload();
-      const rail = page.getByRole('navigation', { name: 'Project pages', exact: true });
-      for (const name of [
-        'Home',
-        'Ask',
-        'Plan',
-        'Work',
-        'Review',
-        'Tasks',
-        'Documents',
-        'History',
-      ]) {
-        await rail.getByRole('button', { name: new RegExp(`^${name}\\b`) }).click();
-        measurements.push(await audit(page));
-      }
       await info.attach('viewport-and-typography', {
         body: JSON.stringify(measurements, null, 2),
         contentType: 'application/json',

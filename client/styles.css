@@ -359,11 +359,7 @@ body {
   font-synthesis: none;
 }
 /* Tabular figures only where numbers line up; in running text they widen the punctuation. */
-time,
-.rail-count,
-.task-column > header .caption,
-.work-log time,
-.document-row > .caption {
+time {
   font-variant-numeric: tabular-nums;
 }
 button,
@@ -421,7 +417,7 @@ input[type='radio'] {
   cursor: pointer;
 }
 /* The app's control styling for the native checkbox (Settings' Reduced
-   motion row): 1 px rule border, the same 5 px control radius the Workbook
+   motion row): 1 px rule border, the same 5 px control radius the other
    controls use (via --rb, never above 6 px), --dm-well ground, and a drawn
    check in --dm-glacier when checked. It stays a real <input type=checkbox>
    with its label association; the app's focus ring already covers
@@ -524,10 +520,6 @@ a {
   font: 400 calc(var(--dm-type-code) * var(--dm-code-scale)) / 1.48 var(--dm-font-code);
 }
 /* Technical-only hint; no text-bearing use on the size-checked pages. */
-.key-hint {
-  font: 400 var(--dm-type-body) / 1.5 var(--dm-font-code);
-  letter-spacing: 0.06em;
-}
 .row,
 .actions {
   display: flex;
@@ -671,14 +663,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
-.brand-button {
-  border-right: 0;
-  padding: 0 16px;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
 /* Wordmark: the mark's spear-line stands before it; tracked type, no bar. */
 .brand {
   display: inline-flex;
@@ -688,34 +672,8 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   font: 400 var(--dm-type-body) / 1 var(--dm-font-brand);
   letter-spacing: 0.32em;
 }
-.project-tabs {
-  display: flex;
-  overflow: auto;
-  min-width: 0;
-  scrollbar-width: thin;
-}
 /* The open project reads as the current crumb: text weight and --t1, no tab
    box and no accent bar. */
-.project-tab {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 16px;
-  border: 0;
-  color: var(--dm-text-2);
-  white-space: nowrap;
-  min-height: 38px;
-}
-.project-tab.active {
-  border: 0;
-  background: none;
-  color: var(--dm-text-1);
-  font-weight: 500;
-}
-.project-tab:hover {
-  background: var(--dm-raised);
-  color: var(--dm-text-1);
-}
 .top-right {
   margin-left: auto;
   display: flex;
@@ -725,14 +683,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   min-width: 0;
   flex: 0 1 auto;
 }
-.top-status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 12px;
-  color: var(--dm-text-2);
-  min-width: 0;
-}
 /* Settings is a quiet --t2 link that lifts to --t1 on hover. */
 .top-right .button {
   color: var(--dm-text-2);
@@ -740,32 +690,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .top-right .button:hover:not(:disabled) {
   background: none;
   color: var(--dm-text-1);
-}
-.account-wrap {
-  position: relative;
-}
-.account-menu {
-  position: absolute;
-  right: 0;
-  top: 42px;
-  z-index: 8;
-  width: 250px;
-  border: 1px solid var(--dm-rule);
-  background: var(--dm-page);
-  padding: 16px;
-}
-.account-menu button {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 8px;
-}
-.account-menu button:hover {
-  background: var(--dm-raised);
-}
-.account-menu p {
-  margin-bottom: 8px;
 }
 .page-frame {
   margin: 0 20px 20px;
@@ -781,7 +705,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .page-frame.disconnected {
   border-top: 1px solid var(--dm-fault);
 }
-.workspace,
 .settings-layout {
   height: 100%;
   display: grid;
@@ -842,40 +765,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   border-radius: 50%;
   background: var(--dm-glacier);
 }
-.rail-link.with-description {
-  padding-top: 6px;
-  padding-bottom: 10px;
-}
-.rail-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-}
-.rail-count,
-.key-hint {
-  margin-left: auto;
-  color: var(--dm-text-3);
-  font-weight: 400;
-}
 /* Counts are tabular mono system labels, held at the 14 px floor. */
-.rail-count {
-  font-family: var(--dm-font-code);
-  font-size: var(--dm-type-caption);
-  letter-spacing: 0.02em;
-}
-.rail-description {
-  font-size: var(--dm-type-caption);
-  line-height: 1.43;
-  font-weight: 400;
-  color: var(--dm-text-3);
-  text-align: left;
-}
-.rail-separator {
-  height: 1px;
-  background: var(--dm-rule-2);
-  margin: 10px 20px;
-}
 .main {
   display: flex;
   flex-direction: column;
@@ -959,10 +849,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .block:last-child {
   margin-bottom: 0;
 }
-.section-title {
-  color: var(--dm-text-2);
-  margin: 0 0 12px;
-}
 .block > h3,
 .block > .row {
   margin-bottom: 12px;
@@ -998,55 +884,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .notice .caption {
   margin-top: 12px;
 }
-.session-status {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border-top: 1px solid var(--dm-rule-2);
-  border-bottom: 1px solid var(--dm-rule-2);
-  padding: 12px 0;
-  line-height: 1.55;
-}
-.session-status > div {
-  flex: 1;
-}
-.session-status strong {
-  font-weight: 500;
-}
-.session-status .caption {
-  margin-top: 6px;
-}
-.history-entry {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  border-top: 1px solid var(--dm-rule-2);
-  padding: 10px 0;
-  min-height: 56px;
-}
-.history-entry:last-child {
-  border-bottom: 1px solid var(--dm-rule-2);
-}
-.history-entry > time {
-  color: var(--dm-text-3);
-  min-width: 88px;
-  flex: none;
-}
-.entry-body {
-  flex: 1;
-  min-width: 100px;
-}
-.entry-body > strong {
-  font-weight: 600;
-}
-.entry-body p {
-  margin: 3px 0 0;
-}
-.history-entry > .actions {
-  justify-content: flex-end;
-  flex-shrink: 0;
-}
-.document-row,
 .reference-row {
   display: flex;
   align-items: center;
@@ -1057,10 +894,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   padding: 8px 0;
   min-width: 0;
 }
-.document-row {
-  min-height: 40px;
-}
-.document-row:hover,
 .reference-row:is(button):hover {
   color: var(--dm-text-1);
 }
@@ -1117,16 +950,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   white-space: nowrap;
 }
 .engine-state > .mark {
-  align-self: center;
-}
-.document-row > .caption {
-  flex: none;
-}
-.dotted-leader {
-  border-bottom: 1px dotted var(--dm-rule);
-  flex: 1;
-  min-width: 12px;
-  margin: 0 4px;
   align-self: center;
 }
 .composer {
@@ -1211,10 +1034,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   color: var(--dm-text-1);
   border-bottom-color: var(--dm-glacier);
 }
-.mode-line {
-  margin: 8px 0 12px;
-  min-height: 20px;
-}
 .composer > textarea {
   width: 100%;
   height: 68px;
@@ -1227,44 +1046,8 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .composer > textarea:focus {
   border-color: transparent;
 }
-.composer-actions {
-  margin-top: 12px;
-}
 /* Send is a quiet button that turns --light text only when there is text
    (the button is disabled while the box is empty). */
-.composer-actions .button.primary {
-  background: none;
-  border-color: var(--dm-rule);
-  color: var(--dm-text-3);
-}
-.composer-actions .button.primary:not(:disabled) {
-  color: var(--dm-glacier);
-}
-.route-line {
-  margin-top: 10px;
-}
-.route-line > label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--dm-text-3);
-  font-size: var(--dm-type-caption);
-}
-.route-line select {
-  flex: 1;
-}
-.attachment {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 6px 0;
-  font-size: var(--dm-type-caption);
-  color: var(--dm-glacier);
-}
-.attachment button {
-  min-width: 28px;
-  min-height: 28px;
-}
 .capability {
   margin: 24px 0 0 !important;
   color: var(--dm-text-3);
@@ -1407,8 +1190,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .search-results > button:hover {
   background: var(--dm-raised);
 }
-.error-bar,
-.feedback {
+.error-bar {
   position: fixed;
   z-index: 20;
   bottom: 20px;
@@ -1423,10 +1205,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   background: var(--dm-well);
   border: 1px solid var(--dm-rule);
 }
-.feedback {
-  z-index: 18;
-}
-.feedback > span:nth-child(2),
 .error-bar > span:nth-child(2) {
   max-width: 70ch;
 }
@@ -1434,8 +1212,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .error-bar.appearance-notice {
   bottom: 76px;
 }
-.error-bar .button,
-.feedback .button {
+.error-bar .button {
   flex: none;
 }
 .setup {
@@ -1553,133 +1330,9 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   gap: 10px;
   min-height: 36px;
 }
-.technical {
-  margin: 20px 0;
-  color: var(--dm-text-3);
-}
-.technical summary {
-  cursor: pointer;
-  min-height: 32px;
-}
-.technical p {
-  margin-top: 12px;
-}
-.task-board {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(180px, 1fr));
-  padding: 20px 28px;
-  gap: 16px;
-  flex: 1;
-  overflow: auto;
-  min-height: 0;
-  align-items: start;
-}
-.task-column {
-  min-height: 100%;
-  min-width: 0;
-  border-left: 1px solid var(--dm-rule-2);
-  padding-left: 12px;
-}
-.task-column:first-child {
-  border-left: 0;
-  padding-left: 0;
-}
 /* Board columns are hairline-topped lists with mono labels and tabular mono
    counts. The state point comes from .mark (todo hollow, working live,
    waiting amber, done --t3). */
-.task-column > header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  margin-bottom: 10px;
-  border-bottom: 0;
-  border-top: 1px solid var(--dm-rule-2);
-  padding-top: 10px;
-}
-.task-column h2 {
-  font-family: var(--dm-font-code);
-  font-size: var(--dm-type-caption);
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--dm-text-3);
-  margin: 0;
-  line-height: 1.4;
-}
-.task-column > header .caption {
-  font-family: var(--dm-font-code);
-  font-size: var(--dm-type-caption);
-  letter-spacing: 0.02em;
-}
-/* Workbook task rows read as bare rows over hairlines, like the Console's
-   board (.console .crow): no fill, no box, no coloured left bar. The state
-   reads as the point in the 14 px gutter (the row's <Mark>, aria-hidden);
-   the row itself carries a single bottom hairline. */
-.task-card {
-  display: grid;
-  grid-template-columns: 14px minmax(0, 1fr);
-  gap: 0 10px;
-  align-items: baseline;
-  background: none;
-  border: 0;
-  border-bottom: 1px solid var(--dm-rule-2);
-  border-radius: 0;
-  padding: 6px 6px 6px 2px;
-  margin: 0;
-  min-height: 0;
-  animation: view-enter var(--dm-t-extend) var(--dm-ease);
-}
-.task-card:hover {
-  background: var(--dm-raised);
-}
-.task-card > .mark {
-  grid-column: 1;
-  grid-row: 1;
-  align-self: start;
-  margin-top: 5px;
-}
-.task-card > :not(.mark) {
-  grid-column: 2;
-  min-width: 0;
-}
-.task-card.working,
-.task-card.waiting,
-.task-card.done {
-  border-left: 0;
-}
-.task-title {
-  padding: 0;
-  min-height: 24px;
-  display: block;
-  font-size: var(--dm-type-caption);
-  line-height: 1.42;
-  font-weight: 600;
-  width: 100%;
-  overflow-wrap: anywhere;
-}
-.task-title:hover {
-  color: var(--dm-text-1);
-}
-.task-card p {
-  margin-top: 6px;
-}
-.task-card .owner {
-  margin: 8px 0 12px;
-}
-.task-decision-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.task-decision-actions .button {
-  white-space: normal;
-}
-.task-card .button {
-  min-width: 0;
-  font-size: var(--dm-type-caption);
-  padding: 6px 10px;
-}
 .task-move {
   display: flex;
   align-items: center;
@@ -1693,138 +1346,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   font-size: var(--dm-type-caption);
   padding: 4px 6px;
 }
-.column-empty {
-  padding: 4px 0;
-}
-.list-view {
-  display: block;
-}
-.list-view .task-column {
-  border: 0;
-  padding: 0;
-  min-height: 0;
-}
-.list-view .task-card {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  min-height: 56px;
-}
-.list-view .task-title {
-  width: auto;
-  flex: 1;
-  min-width: 200px;
-}
-.list-view .task-card .owner {
-  margin: 0;
-}
-.list-view .task-move {
-  margin: 0;
-}
-.candidate {
-  display: flex;
-  gap: 10px;
-  margin: 12px 0;
-}
-.candidate > input {
-  margin-top: 9px;
-}
-.candidate > div {
-  flex: 1;
-  min-width: 0;
-}
-.candidate > div > input {
-  background: transparent;
-  border-color: transparent;
-  padding: 4px 0;
-  font-size: var(--dm-type-caption);
-  width: 100%;
-}
-.candidate > div > input:focus {
-  border-color: var(--dm-glacier);
-}
-.task-proposals .actions {
-  margin-top: 16px;
-}
-.task-proposals h3 {
-  line-height: 1.5;
-}
-.document-heading {
-  margin-bottom: 20px;
-}
-.document-heading h2 {
-  margin-bottom: 16px;
-}
-.document-heading .actions {
-  justify-content: flex-end;
-}
-.document-editor {
-  width: 100%;
-  min-height: 440px;
-  border: 1px solid var(--dm-rule);
-  padding: 20px;
-  background: var(--dm-well);
-  tab-size: 2;
-}
-.back-link {
-  margin: 0 0 16px -14px;
-}
-.markdown {
-  font: 400 var(--dm-type-body) / var(--dm-line-body) var(--dm-font-ui);
-  max-width: var(--dm-measure);
-  overflow-wrap: anywhere;
-}
-.markdown :is(p, .markdown-list-line) {
-  max-width: var(--dm-measure-prose);
-}
-.document-reading {
-  font: 400 calc(var(--dm-type-body) * var(--dm-read-scale)) / 1.55 var(--dm-font-read);
-}
-.markdown p {
-  margin: 0;
-}
-.markdown h2 {
-  margin: 20px 0 12px;
-  font: 600 var(--dm-type-section) / 1.4 var(--dm-font-ui);
-}
-.document-reading h2 {
-  font: 600 calc(1.5rem * var(--dm-read-scale)) / 1.4 var(--dm-font-read);
-}
-.document-reading h2.document-title {
-  margin-top: 0;
-  font-size: calc(1.75rem * var(--dm-read-scale));
-}
-.markdown h3 {
-  margin: 16px 0 10px;
-  font: 600 var(--dm-type-body) / 1.4 var(--dm-font-ui);
-}
-.document-reading h3 {
-  font: 600 calc(var(--dm-type-section) * var(--dm-read-scale)) / 1.42 var(--dm-font-read);
-}
-.paragraph-space {
-  height: 14px;
-}
-.markdown-list-line {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin: 5px 0;
-}
-.markdown-list-line > span:first-child {
-  color: var(--dm-text-3);
-  flex: none;
-  min-width: 20px;
-}
-.code-line {
-  background: var(--dm-well);
-  margin: 0;
-  padding: 0 12px;
-  white-space: pre-wrap;
-}
-.conversation {
-  margin-bottom: 32px;
-}
 .turn {
   padding: 14px 0;
   margin-bottom: 18px;
@@ -1833,42 +1354,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   font-size: var(--dm-type-body);
   border-left: 2px solid var(--dm-glacier);
   padding-left: 16px;
-}
-.turn-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px !important;
-}
-.work-session {
-  padding: 14px 0 24px;
-  border-bottom: 1px solid var(--dm-rule-2);
-  margin-bottom: 20px;
-}
-.work-session > h2 {
-  font-size: var(--dm-type-title);
-}
-.work-log {
-  margin: 20px 0;
-}
-.work-log > div {
-  display: flex;
-  align-items: flex-start;
-  gap: 24px;
-  min-height: 36px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--dm-rule-2);
-}
-.work-log time {
-  color: var(--dm-text-3);
-  min-width: 88px;
-}
-.work-log p {
-  margin: 0;
-}
-.technical-log {
-  font: calc(var(--dm-type-code) * var(--dm-code-scale)) / 1.48 var(--dm-font-code);
-  color: var(--dm-text-3);
 }
 .change-card {
   padding: 0;
@@ -1903,18 +1388,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .change-footer {
   padding: 8px 12px;
   margin: 0 !important;
-}
-.task-summary {
-  padding: 16px;
-  border: 1px solid var(--dm-rule-2);
-  background: var(--dm-well);
-  margin-bottom: 20px;
-}
-.task-summary.active {
-  border-left: 2px solid var(--dm-glacier);
-}
-.task-summary > p {
-  margin-top: 8px;
 }
 .facts {
   display: grid;
@@ -2051,38 +1524,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
 .change-hunk.context {
   color: var(--dm-text-3);
 }
-.filter-chips {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 0 0 24px;
-}
-.filter-chips button {
-  min-height: 32px;
-  border: 1px solid var(--dm-rule);
-  padding: 4px 12px;
-  color: var(--dm-text-2);
-}
-.filter-chips button.active {
-  border-color: var(--dm-rule);
-  color: var(--dm-text-1);
-}
-.restore-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 24px;
-}
-.restore-actions .button {
-  min-height: 40px;
-  justify-content: flex-start;
-}
-.restore-actions .button:last-child {
-  align-self: flex-end;
-}
-.signal-text {
-  color: var(--dm-signal);
-}
 .fault-text {
   color: var(--dm-fault);
 }
@@ -2111,7 +1552,7 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   .workbook-layout {
     grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
   }
-  .reading > :is(.markdown:has(pre, table), .document-editor, .block:has(pre, table)) {
+  .reading > .block:has(pre, table) {
     max-width: var(--dm-measure-wide);
   }
 }
@@ -2126,11 +1567,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   .reading {
     padding-right: 28px;
   }
-  .top-status {
-    max-width: 350px;
-    white-space: nowrap;
-    font-size: var(--dm-type-caption);
-  }
   .page-header {
     gap: 12px;
     padding-left: 28px;
@@ -2143,30 +1579,8 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   .header-path {
     display: none;
   }
-  .history-entry {
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-  .history-entry > .actions {
-    margin-left: auto;
-  }
-  .history-entry > time {
-    min-width: 72px;
-  }
-  .task-board {
-    padding: 24px;
-    gap: 12px;
-    grid-template-columns: repeat(4, minmax(160px, 1fr));
-  }
-  .task-card .actions {
-    gap: 6px;
-  }
 }
 @media (max-width: 1100px) {
-  .top-status {
-    display: none;
-  }
-  .workspace,
   .settings-layout {
     grid-template-columns: 200px minmax(0, 1fr);
   }
@@ -2178,20 +1592,11 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     margin-right: 12px;
     margin-bottom: 12px;
   }
-  .brand-button {
-    padding: 0 16px;
-  }
-  .project-tab {
-    padding: 0 12px;
-  }
   .rail {
     padding-top: 12px;
   }
   .rail-link {
     padding-left: 30px;
-  }
-  .rail-description {
-    font-size: var(--dm-type-caption);
   }
   .reading {
     padding: 24px 24px 40px 32px;
@@ -2202,22 +1607,11 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   .margin {
     padding: 24px 20px;
   }
-  .history-entry > .actions .button {
-    min-width: 76px;
-    padding: 6px 8px;
-  }
-  .task-board {
-    overflow: auto;
-    grid-template-columns: repeat(4, minmax(170px, 1fr));
-  }
   .projects-page > .workbook-layout {
     grid-template-columns: minmax(0, 1fr);
   }
   .project-row {
     flex-wrap: wrap;
-  }
-  .project-row > .dotted-leader {
-    display: none;
   }
   .project-row-status {
     margin-left: auto;
@@ -2251,20 +1645,8 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   .margin .composer {
     max-width: 600px;
   }
-  .workspace,
   .settings-layout {
     grid-template-columns: 180px minmax(0, 1fr);
-  }
-  .task-board {
-    grid-template-columns: repeat(2, minmax(150px, 1fr));
-    padding: 20px;
-  }
-  .task-column {
-    min-height: 220px;
-  }
-  .task-column:nth-child(3) {
-    border-left: 0;
-    padding-left: 0;
   }
   .page-header {
     padding: 16px 24px;
@@ -2290,27 +1672,13 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     min-height: 40px;
     flex-wrap: wrap;
   }
-  .brand-button {
-    height: 40px;
-    padding: 0 16px;
-  }
   .top-right {
     height: 40px;
     padding-right: 4px;
   }
-  .project-tabs {
-    order: 3;
-    flex-basis: 100%;
-    border-top: 1px solid var(--dm-rule-2);
-    height: 40px;
-  }
-  .project-tab {
-    min-height: 38px;
-  }
   .page-frame {
     margin: 0 8px 8px;
   }
-  .workspace,
   .settings-layout {
     display: flex;
     flex-direction: column;
@@ -2326,11 +1694,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   }
   .rail > div {
     display: flex;
-  }
-  .rail-separator,
-  .rail-description,
-  .key-hint {
-    display: none;
   }
   .rail::before {
     display: none;
@@ -2348,12 +1711,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   }
   .rail-link.active::before {
     display: none;
-  }
-  .rail-line {
-    gap: 6px;
-  }
-  .rail-count {
-    font-size: var(--dm-type-caption);
   }
   .main {
     flex: 1;
@@ -2403,17 +1760,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
     grid-column: 1/-1;
     grid-row: 2;
   }
-  .history-entry {
-    gap: 8px 14px;
-  }
-  .history-entry > .entry-body {
-    min-width: 160px;
-  }
-  .history-entry > .actions {
-    width: 100%;
-    justify-content: flex-start;
-    margin-left: 0;
-  }
   .project-row {
     gap: 8px;
   }
@@ -2428,38 +1774,6 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   }
   .project-row strong {
     font-size: var(--dm-type-caption);
-  }
-  .dotted-leader {
-    min-width: 4px;
-  }
-  .document-row {
-    flex-wrap: wrap;
-    gap: 6px;
-    font-size: var(--dm-type-caption);
-  }
-  .document-row > span:first-child {
-    overflow-wrap: anywhere;
-  }
-  .task-board {
-    display: block;
-    overflow: auto;
-    padding: 16px;
-  }
-  .task-column {
-    min-height: 0;
-    border: 0;
-    padding: 0;
-    margin-bottom: 24px;
-  }
-  .task-card {
-    min-height: 0;
-  }
-  .task-card .button {
-    font-size: var(--dm-type-caption);
-    min-height: 40px;
-  }
-  .task-column > header {
-    min-height: 40px;
   }
   .setup-content {
     margin: 40px auto;
@@ -2483,16 +1797,14 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   .dialog-heading h2 {
     font-size: var(--dm-type-title);
   }
-  .error-bar,
-  .feedback {
+  .error-bar {
     bottom: 12px;
     max-width: calc((100vw - 24px) / var(--dm-ui-scale));
     flex-wrap: wrap;
     gap: 8px;
     padding: 12px;
   }
-  .error-bar > span:nth-child(2),
-  .feedback > span:nth-child(2) {
+  .error-bar > span:nth-child(2) {
     width: calc(100% - 28px);
   }
   .dialog-actions .button {
@@ -2501,27 +1813,14 @@ html[data-package='paper'] .button.signal:hover:not(:disabled) {
   .change-heading {
     align-items: flex-start;
   }
-  .work-log > div {
-    gap: 12px;
-  }
-  .work-log time {
-    min-width: 68px;
-    font-size: var(--dm-type-caption);
-  }
   .service > .row {
     flex-wrap: wrap;
-  }
-  .document-editor {
-    min-height: 400px;
   }
   .project-row .code {
     max-width: 100%;
   }
   .header-path {
     display: none;
-  }
-  .task-title {
-    font-size: var(--dm-type-caption);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -2546,90 +1845,11 @@ html[data-motion='reduced'] *::after {
   scroll-behavior: auto !important;
 }
 
-/* ---- Home: what do you want to do? (the Workbook's door) ---- */
-.intents {
-  margin: 4px 0 28px;
-}
-.intents > h2 {
-  font-size: var(--dm-type-title);
-  margin: 0 0 14px;
-}
-.intent-rail {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--dm-rule-2);
-  border: 1px solid var(--dm-rule-2);
-}
-.intent {
-  display: grid;
-  grid-template-columns: 12px minmax(0, 1fr);
-  column-gap: 12px;
-  align-items: start;
-  padding: 16px 16px 18px;
-  background: var(--dm-page);
-  min-height: 96px;
-  transition: background var(--dm-t-quick);
-}
-.intent:hover {
-  background: var(--dm-raised);
-}
-/* Each door title carries a point, not a square. (.square stays for the
-   landing markup in client/App.tsx until Fable renames it there.) */
-.intent .square,
-.intent .pt {
-  width: 8px;
-  height: 8px;
-  margin-top: 6px;
-  border-radius: 50%;
-  border: 1.5px solid var(--dm-text-3);
-  background: transparent;
-}
-.intent strong {
-  display: block;
-  font-size: var(--dm-type-input);
-  font-weight: 600;
-  line-height: 1.4;
-}
-.intent span {
-  display: block;
-  color: var(--dm-text-2);
-  font-size: var(--dm-type-caption);
-  margin-top: 4px;
-  line-height: 1.5;
-}
-.intent .caption {
-  margin-top: 8px;
-}
-@media (max-width: 900px) {
-  .intent-rail {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* ---- Workbook Ask threads ----
-   These .console-* class names predate the new client/console/ shell and are
+/* ---- thread rows ----
+   These .console-* class names predate the client/console/ shell and are
    shared with it: client/console/Rail.tsx renders `spine console-threads`
    with `console-thread` rows inside .console (styled there by
-   client/console/console.css). The base rules below stay as they were for the
-   rail; the .workspace-scoped rules restyle the same markup as Workbook rail
-   rows: name with mono time at right, one-line ellipsis, current row in --t1
-   with the point in the gutter. */
-.console-side-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 0 8px;
-}
-.console-side-header h2 {
-  font-family: var(--dm-font-ui);
-  font-size: var(--dm-type-body);
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--dm-text-3);
-  margin: 0;
-}
+   client/console/console.css). */
 .console-threads {
   flex: 1;
   border-bottom: 1px solid var(--dm-rule-2);
@@ -2652,82 +1872,12 @@ html[data-motion='reduced'] *::after {
   border-left-color: var(--dm-glacier);
   background: var(--dm-well);
 }
-.console-thread-name {
-  display: block;
-  font-weight: 600;
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .console-thread .caption {
   display: block;
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* Workbook rail rows (Ask threads): the base rules above also serve the
-   Console rail, so every Workbook change is scoped under .workspace. */
-.workspace .console-threads {
-  flex: none;
-  border-bottom: 0;
-  padding-bottom: 4px;
-}
-.workspace .console-thread {
-  position: relative;
-  padding: 7px 10px 7px 30px;
-  border-left: 0;
-  border-radius: 0;
-  color: var(--dm-text-2);
-}
-.workspace .console-thread:hover {
-  background: var(--dm-raised);
-  color: var(--dm-text-1);
-}
-.workspace .console-thread.open {
-  border-left: 0;
-  background: none;
-  color: var(--dm-text-1);
-}
-.workspace .console-thread.open::before {
-  content: '';
-  position: absolute;
-  left: 12.5px;
-  top: 50%;
-  margin-top: -4px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--dm-glacier);
-}
-.workspace .console-thread-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  align-items: baseline;
-  min-width: 0;
-}
-.workspace .console-thread-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-weight: 400;
-}
-.workspace .console-thread.open .console-thread-name {
-  font-weight: 500;
-}
-.workspace .console-thread .thread-meta {
-  flex: none;
-  display: inline;
-  margin-top: 0;
-  font-family: var(--dm-font-code);
-  font-size: var(--dm-type-caption);
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-.workspace .console-thread .mode-chip {
-  display: block;
-  margin-top: 2px;
 }
 /* .choice-row survives the old Console: Settings uses it for the Default
    model/effort pickers. */
@@ -2739,9 +1889,6 @@ html[data-motion='reduced'] *::after {
 }
 .choice-row > .caption {
   flex: none;
-}
-.open-console {
-  margin-top: 24px;
 }
 .text-button {
   padding: 0;
@@ -2767,11 +1914,6 @@ html[data-motion='reduced'] *::after {
 .workbook-layout.home .reading > * {
   max-width: var(--dm-measure);
 }
-.workbook-layout.home .section-title {
-  font: 600 var(--dm-type-section) / 1.4 var(--dm-font-ui);
-  color: var(--dm-text-1);
-  margin-bottom: 10px;
-}
 .helper-line {
   display: flex;
   flex-wrap: wrap;
@@ -2782,13 +1924,6 @@ html[data-motion='reduced'] *::after {
 }
 .helper-line .text-button {
   font-size: inherit;
-}
-.history-entry.compact {
-  min-height: 48px;
-  padding: 8px 0;
-}
-.history-entry.compact .entry-body > span {
-  font-weight: 500;
 }
 
 /* ---- Landing ---- */
@@ -2837,15 +1972,8 @@ html[data-motion='reduced'] *::after {
 }
 
 /* Landing empty state: three doors, one row. */
-.projects-page .intent-rail {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
 
 /* Verified helper caption: the runtime-reported engine under a helper turn. */
-.turn .helper-caption {
-  margin-top: 2px;
-  color: var(--dm-text-2);
-}
 
 /* ---- Usage ---- */
 .usage-bar {
@@ -2888,24 +2016,13 @@ html[data-motion='reduced'] *::after {
   min-width: 0;
   max-width: 100%;
 }
-.usage-chip > span:first-child,
-.project-tab-name,
-.top-status > span {
+.usage-chip > span:first-child {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.project-tab {
-  min-width: 0;
-  flex: 0 0 auto;
-  max-width: 32ch;
-}
-.top-status {
-  flex: 0 1 auto;
-}
-.top-right > .button,
-.top-right > .account-wrap {
+.top-right > .button {
   flex: none;
 }
 button.usage-chip:hover {
@@ -2933,41 +2050,10 @@ button.usage-chip:hover {
 .usage-block .caption {
   margin: 0;
 }
-.usage-inline {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
 
 /* ---- Modes ---- */
 /* Mode names are mono text, not chips: no box, no pill. (The label text
    itself is untouched; tests read "Fix, try 1 of 3".) */
-.mode-chip {
-  display: inline;
-  border: 0;
-  padding: 0;
-  font-family: var(--dm-font-code);
-  font-size: var(--dm-type-caption);
-  line-height: 1.5;
-  letter-spacing: 0.02em;
-  color: var(--dm-text-3);
-  white-space: nowrap;
-}
-.mode-chip[data-mode='fix'] {
-  border: 0;
-  color: var(--dm-signal);
-}
-.failing-row {
-  display: grid;
-  gap: 10px;
-  margin-top: 12px;
-}
-.failing-row .field {
-  margin-bottom: 0;
-}
-.failing-row textarea {
-  min-height: 56px;
-}
 
 /* Content owns its line breaks. Flex/grid items must be allowed to shrink before
    paths, translated labels or increased text size can fit their allotted space. */
@@ -2977,40 +2063,18 @@ select {
   min-width: 0;
   max-width: 100%;
 }
-:where(
-    .row,
-    .actions,
-    .page-header,
-    .history-entry,
-    .project-row,
-    .document-row,
-    .reference-row,
-    .turn-meta,
-    .session-status,
-    .route-line,
-    .dialog-heading,
-    .attachment,
-    .field
-  )
-  > * {
+:where(.row, .actions, .page-header, .project-row, .reference-row, .dialog-heading, .field) > * {
   min-width: 0;
   max-width: 100%;
 }
-.row,
-.turn-meta {
+.row {
   flex-wrap: wrap;
 }
-.reference-row,
-.document-row {
+.reference-row {
   flex-wrap: wrap;
 }
 .reference-row > :first-child:not(.mark):not(.usage-bar):not(.engine-meter) {
   min-width: min(100%, 18ch);
-}
-.account-menu {
-  max-width: calc(100vw / var(--dm-ui-scale) - 24px);
-  white-space: normal;
-  overflow-wrap: anywhere;
 }
 .settings-layout .reading,
 .workbook-layout.home .reading {
@@ -3035,12 +2099,8 @@ select {
     border-left: 0;
     border-top: 1px solid var(--dm-rule-2);
   }
-  .top-status {
-    display: none;
-  }
 }
 @container app (max-width: 700px) {
-  .workspace,
   .settings-layout {
     display: flex;
     flex-direction: column;
@@ -3058,10 +2118,7 @@ select {
     display: flex;
     flex: none;
   }
-  .rail::before,
-  .rail-separator,
-  .rail-description,
-  .key-hint {
+  .rail::before {
     display: none;
   }
   .rail-link {
@@ -3099,29 +2156,13 @@ select {
   .top-bar {
     flex-wrap: wrap;
   }
-  .project-tabs {
-    order: 3;
-    flex-basis: 100%;
-    border-top: 1px solid var(--dm-rule-2);
-  }
   .top-right {
     margin-left: auto;
-  }
-  .brand-button {
-    min-height: 40px;
-  }
-  .task-board {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .intent-rail,
-  .projects-page .intent-rail {
-    grid-template-columns: minmax(0, 1fr);
   }
   .landing-project {
     flex-basis: 100%;
   }
-  .reference-row > .caption,
-  .document-row > .caption {
+  .reference-row > .caption {
     white-space: normal;
     flex-shrink: 1;
   }
@@ -3177,8 +2218,7 @@ input[type='range'] {
     color var(--dm-t-quick) var(--dm-ease);
 }
 .radio-row,
-.folder-browser,
-.account-menu {
+.folder-browser {
   border-radius: var(--r);
 }
 .radio-row {
@@ -3202,8 +2242,7 @@ input[type='range'] {
 }
 /* The notice carries its state in its point, which it already has; the 4 px
    stripe down its left edge said the same thing a second time and is gone. */
-.error-bar,
-.feedback {
+.error-bar {
   border-radius: var(--r);
   box-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.85);
   animation: dm-notice-in var(--dm-t-extend) cubic-bezier(0.16, 1, 0.3, 1);
