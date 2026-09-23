@@ -1,3 +1,4 @@
+import { APP_CSP } from '../../shared/app-csp';
 import { FRAME_FONT, isDark, type FrameTokens } from './artifact-frame';
 import { normalizeNewlines } from './turn-blocks';
 
@@ -16,21 +17,32 @@ import { normalizeNewlines } from './turn-blocks';
 //     before Mermaid sees it: a picture shape (@{ img: ... }) whose picture is
 //     not written into the diagram as a data:image URL, and a style statement
 //     with a CSS url(). Mermaid ends a statement at a newline or a semicolon,
-//     so both split them here.
+//     so both split them here;
+//   - so is a sequence diagram's `properties` or `details` statement: the
+//     first gives a participant a picture from a link (or a <use> of an
+//     element of this document), the second reads an element of this document
+//     by id. They are looked for wherever Mermaid's own grammar can start a
+//     statement, in the text as Mermaid will read it.
 // Math ($$...$$) is drawn as MathML (KaTeX, bundled with Mermaid, no `trust`,
-// MathML output only), and only on a page that carries the app's
-// Content-Security-Policy: the built index.html does (scripts/app-csp.ts), the
-// development server does not. A diagram with math is refused if it holds any
-// markup of its own beside the math, so its labels, which are HTML when a
-// flowchart draws math, hold only text, Mermaid's own markup and MathML; the
-// MathML passes an allowlist of presentation elements and attributes after
-// Mermaid sanitises it (artifacts v2, E1: docs/product/2026-09-23-artifacts-v2-panel-board.md).
-// What Mermaid returns is scanned before it goes anywhere: every CSS url()
-// that is not a same-document #fragment, and every other function that
-// fetches, is taken out of the drawing's style attributes and <style> text.
-// The app document's policy means a fetch that got past all of this still goes
-// nowhere. Evidence for each of these is in docs/implementation/2026-09-22-model-artifacts.md
-// and docs/product/2026-09-23-artifact-hardening.md.
+// MathML output only), and only on a page that carries exactly the app's
+// Content-Security-Policy (APP_CSP, shared/app-csp.ts): the built index.html
+// does (scripts/app-csp.ts), the development server does not. A diagram with
+// math is refused if it holds any markup of its own beside the math, so its
+// labels, which are HTML when a flowchart draws math, hold only text,
+// Mermaid's own markup and MathML; the MathML passes an allowlist of
+// presentation elements and attributes after Mermaid sanitises it (artifacts
+// v2, E1: docs/product/2026-09-23-artifacts-v2-panel-board.md).
+// What Mermaid returns is scanned before it goes anywhere: every <image> and
+// <feImage> whose picture is not written into the drawing as a data:image URL,
+// and every <use> of anything but a #fragment of the drawing, is taken out;
+// so is every CSS url() that is not a same-document #fragment, and every other
+// function that fetches, from the drawing's style attributes and <style> text.
+// In the built app the page's own policy lets a fetch that got past all of
+// this reach only the local service, and nothing it returns is readable by the
+// diagram. Evidence for each of these is in
+// docs/implementation/2026-09-22-model-artifacts.md,
+// docs/product/2026-09-23-artifact-hardening.md and
+// docs/product/2026-09-23-mermaid-fetch-hardening.md.
 
 /** Mermaid's frontmatter grammar (mermaid 11.17.2, src/diagram-api/regexes.ts). */
 const FRONTMATTER = /^([^\S\n\r]*)-{3}\s*[\n\r](.*?)[\n\r]\1-{3}\s*[\n\r]+/s;
@@ -62,6 +74,21 @@ const MARKUP_OUTSIDE_MATH = /[&\\]/;
 const STYLE_LINE = /^\s*(style|classDef|linkStyle)\b/i;
 /** Mermaid ends a statement at a newline or a semicolon (`graph TD; A-->B; style A ...`). */
 const STATEMENT_END = /[\n;]/;
+/** Mermaid's comment lines, taken out before it detects or parses a diagram (mermaid 11.17.2 cleanupComments). */
+const COMMENT_LINES = /^\s*%%(?!{)[^\n]+\n?/gm;
+/** The comments Mermaid's type detection takes out as well (mermaid 11.17.2 anyCommentRegex). */
+const ANY_COMMENT = /\s*%%.*\n/gm;
+/** Mermaid's sequence diagram detector (mermaid 11.17.2, dist/mermaid.core.mjs:277): case-sensitive. */
+const SEQUENCE_DIAGRAM = /^\s*sequenceDiagram/;
+/** A sequence diagram's accessible description block, a statement that ends at its `}`. */
+const DESCRIPTION_BLOCK = /accDescr\s*\{[^}]*\}/gi;
+/**
+ * A statement that gives a participant properties or details. Mermaid's sequence lexer ignores
+ * case, and besides after a newline or a semicolon, its grammar starts a statement right after the
+ * diagram's keyword, after `end`, and after any of / \ ( ) < > that starts no other token, which it
+ * reads as a line of its own (mermaid 11.17.2 sequence lexer rules 55, 35 and 93).
+ */
+const PARTICIPANT_DETAILS = /^(?:\s|[/\\()<>]|end\b|sequenceDiagram\b)*(?:properties|details)\b/i;
 /** CSS that fetches, and CSS escapes (`\75 rl(` is `url(` to a CSS parser). */
 const STYLE_FETCH = /url\s*\(|image-set\s*\(|\bimage\s*\(|cross-fade\s*\(|element\s*\(|@import|\\[0-9a-f]/i;
 /** The one picture drawn: a raster image written into the diagram, base64, nothing after it. */
@@ -79,6 +106,8 @@ export const REFUSED_IMAGE =
   'This diagram shows a picture from a link. Only a picture written into the diagram, as a quoted data:image URL (PNG, JPEG, GIF or WebP), is drawn here.';
 export const REFUSED_SHAPE_ESCAPE =
   'This diagram writes shape data with an escape (\\), which could name a picture from a link, so it is not drawn here.';
+export const REFUSED_PARTICIPANT_DETAILS =
+  'This sequence diagram gives a participant properties or details, which can show a picture from a link or take content from the page by id, so it is not drawn here.';
 
 /** The diagram text Mermaid is given: no frontmatter, no directives. */
 export function preparedSource(source: string): string {
@@ -108,7 +137,7 @@ export function shapeData(source: string): string[] {
 
 /** What a page lets a diagram draw. */
 export interface DiagramPolicy {
-  /** Math, as MathML: only on a page that carries the app's Content-Security-Policy. */
+  /** Math, as MathML: only on a page that carries exactly the app's Content-Security-Policy. */
   math: boolean;
 }
 
@@ -118,11 +147,13 @@ export interface HeadLike {
 }
 
 /**
- * Whether a page's <head> carries a Content-Security-Policy <meta>. This is the signal math is
- * drawn on, read from the page itself: the build writes the app's policy (APP_CSP_TAG) first in
- * the built index.html's head (scripts/app-csp.ts, `apply: 'build'`, into index.html only), and
- * the development server serves index.html without it. A report-only policy refuses nothing, so
- * it does not count, and neither does an empty one.
+ * Whether a page's <head> carries the app's own Content-Security-Policy, exactly (APP_CSP), as a
+ * <meta>. This is the signal math is drawn on, read from the page itself: the build writes that
+ * policy (APP_CSP_TAG) first in the built index.html's head (scripts/app-csp.ts, `apply: 'build'`,
+ * into index.html only), and the development server serves index.html without it. Any other
+ * policy does not count: a weaker or a different one, the app's with a directive added, dropped or
+ * changed, or the app's as report-only, which refuses nothing. Another policy beside the app's can
+ * only narrow what the page may load, so it does not stop the app's from counting.
  */
 export function carriesPolicy(head: HeadLike | null | undefined): boolean {
   if (!head) return false;
@@ -130,7 +161,7 @@ export function carriesPolicy(head: HeadLike | null | undefined): boolean {
     (child) =>
       child.localName === 'meta' &&
       (child.getAttribute('http-equiv') ?? '').trim().toLowerCase() === 'content-security-policy' &&
-      (child.getAttribute('content') ?? '').trim() !== '',
+      child.getAttribute('content') === APP_CSP,
   );
 }
 
@@ -172,17 +203,58 @@ function pictureAllowed(block: string): boolean {
 }
 
 /**
- * Why a diagram is not drawn on a page with this policy, or null when it may be. Math is refused
- * on a page without the app's policy, and on any page beside markup of its own. Shape data that
- * uses an escape (a YAML key can spell `img` as `\x69mg`) is refused, and so is any picture that
- * is not written into the diagram as a data:image URL. Mermaid's text limit (`maxTextSize`,
- * fixed by `secure`) bounds how large such a picture can be.
+ * What Mermaid makes of `text` before it detects and parses a diagram (mermaid 11.17.2
+ * preprocessDiagram): newlines normalised, one frontmatter block taken off, then directives and
+ * comment lines taken out, each once, and leading space trimmed. Mermaid also swaps the quotes in
+ * a tag's attributes, which moves no statement, so that is left out. Taking any of these out again
+ * would not be what Mermaid does: what one pass leaves of a directive, Mermaid's sequence lexer
+ * reads as a comment.
+ */
+function mermaidCode(text: string): string {
+  const cleaned = normalizeNewlines(text);
+  const frontmatter = FRONTMATTER.exec(cleaned);
+  const body = frontmatter ? cleaned.slice(frontmatter[0].length) : cleaned;
+  return body.replace(DIRECTIVE, '').replace(COMMENT_LINES, '').trimStart();
+}
+
+/**
+ * Whether Mermaid reads `text` as a sequence diagram: its own detector, on what its type detection
+ * sees (detectType takes frontmatter, directives and comments out of mermaidCode once more). A
+ * detector Mermaid tries first can only claim a text for another kind of diagram.
+ */
+export function isSequenceDiagram(text: string): boolean {
+  const seen = mermaidCode(text).replace(FRONTMATTER, '').replace(DIRECTIVE, '').replace(ANY_COMMENT, '\n');
+  return SEQUENCE_DIAGRAM.test(seen);
+}
+
+/**
+ * Whether a sequence diagram gives a participant properties or details (PARTICIPANT_DETAILS), in
+ * the text as Mermaid will parse it. It is split wherever Mermaid can end a statement: at a
+ * newline, at a semicolon, and at the `}` that closes an accDescr block. Splitting where Mermaid
+ * would not (in a comment, an accTitle or accDescr value, or a participant's @{...} data) can only
+ * find more. Mermaid's entity encoding, between this text and its parser, adds no place a statement
+ * starts: it takes a `;` or a `#` away and puts in characters a name may hold.
+ */
+function hasParticipantDetails(text: string): boolean {
+  if (!isSequenceDiagram(text)) return false;
+  const code = mermaidCode(text).replace(DESCRIPTION_BLOCK, (block) => `${block.slice(0, -1)}\n`);
+  return code.split(STATEMENT_END).some((statement) => PARTICIPANT_DETAILS.test(statement));
+}
+
+/**
+ * Why a diagram is not drawn on a page with this policy, or null when it may be. `source` is the
+ * text Mermaid is given (preparedSource). Math is refused on a page without the app's policy, and
+ * on any page beside markup of its own. A sequence diagram that gives a participant properties or
+ * details is refused. Shape data that uses an escape (a YAML key can spell `img` as `\x69mg`) is
+ * refused, and so is any picture that is not written into the diagram as a data:image URL.
+ * Mermaid's text limit (`maxTextSize`, fixed by `secure`) bounds how large such a picture can be.
  */
 export function refusal(source: string, policy: DiagramPolicy = { math: false }): string | null {
   if (hasMath(source)) {
     if (!policy.math) return REFUSED_MATH_HERE;
     if (markupBesideMath(source)) return REFUSED_MATH_MARKUP;
   }
+  if (hasParticipantDetails(source)) return REFUSED_PARTICIPANT_DETAILS;
   for (const block of shapeData(source)) {
     if (block.includes('\\')) return REFUSED_SHAPE_ESCAPE;
     if (!pictureAllowed(block)) return REFUSED_IMAGE;
@@ -412,16 +484,37 @@ export const CSS_ATTRIBUTES = [
   'cursor',
 ];
 
+/** The elements of a drawing that show a picture: <image>, and a filter's <feImage>. */
+const PICTURE_ELEMENTS = new Set(['image', 'feimage']);
+
 /**
- * The drawing Mermaid returned, with `withoutFetchingUrls` applied to every
- * style attribute, presentation attribute and <style> element in it. It is
- * read as the frame will read it (HTML, the drawing inside <body>) in an inert
- * document, which runs nothing and loads nothing. Text and labels are not
- * touched, so a label that says "url(x)" still says it.
+ * Whether an element of a drawing may stay, as far as what it points at goes: a picture (<image>,
+ * <feImage>) only when every href it has is a picture written into the drawing (DATA_IMAGE), and a
+ * <use> only when every href it has is a #fragment of the drawing itself. One with no href points
+ * at nothing, and goes too. Other elements are not this check's business: a link is made inert
+ * where its frame is built (artifact-links.ts).
  */
-export function withoutFetchingSvg(svg: string): string {
-  const parsed = new DOMParser().parseFromString(`<!doctype html><body>${svg}`, 'text/html');
-  for (const element of parsed.body.querySelectorAll('*')) {
+export function keepsReference(element: string, hrefs: readonly string[]): boolean {
+  const name = element.toLowerCase();
+  if (PICTURE_ELEMENTS.has(name)) return hrefs.length > 0 && hrefs.every((href) => DATA_IMAGE.test(href));
+  if (name === 'use') return hrefs.length > 0 && hrefs.every((href) => href.startsWith('#'));
+  return true;
+}
+
+/** Every href an element has: `href`, `xlink:href`, and any other prefixed one the parser kept. */
+function hrefsOf(element: Element): string[] {
+  return [...element.attributes]
+    .filter((attribute) => attribute.localName.toLowerCase() === 'href' || attribute.name.toLowerCase().endsWith(':href'))
+    .map((attribute) => attribute.value);
+}
+
+/** withoutFetchingSvg's pass over one parsed tree, and over every template's contents in it. */
+function scrub(root: ParentNode): void {
+  for (const element of root.querySelectorAll('*')) {
+    if (!keepsReference(element.localName, hrefsOf(element))) {
+      element.remove();
+      continue;
+    }
     for (const attribute of [...element.attributes]) {
       if (!CSS_ATTRIBUTES.includes(attribute.localName)) continue;
       const kept = withoutFetchingUrls(attribute.value);
@@ -432,7 +525,22 @@ export function withoutFetchingSvg(svg: string): string {
       const kept = withoutFetchingUrls(text);
       if (kept !== text) element.textContent = kept;
     }
+    // A template's contents are not among its descendants, and a frame draws them when the
+    // template declares a shadow root.
+    if (element instanceof HTMLTemplateElement) scrub(element.content);
   }
+}
+
+/**
+ * The drawing Mermaid returned, with every picture and <use> that `keepsReference` refuses taken
+ * out, and `withoutFetchingUrls` applied to every style attribute, presentation attribute and
+ * <style> element left, template contents included. It is read as the frame will read it (HTML,
+ * the drawing inside <body>) in an inert document, which runs nothing and loads nothing. Text and
+ * labels are not touched, so a label that says "url(x)" still says it.
+ */
+export function withoutFetchingSvg(svg: string): string {
+  const parsed = new DOMParser().parseFromString(`<!doctype html><body>${svg}`, 'text/html');
+  scrub(parsed.body);
   return parsed.body.innerHTML;
 }
 

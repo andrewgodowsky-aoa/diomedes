@@ -8,7 +8,12 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { FRAME_CSP } from '../client/console/artifact-frame';
-import { REFUSED_IMAGE, REFUSED_MATH_HERE, REFUSED_MATH_MARKUP } from '../client/console/mermaid-render';
+import {
+  REFUSED_IMAGE,
+  REFUSED_MATH_HERE,
+  REFUSED_MATH_MARKUP,
+  REFUSED_PARTICIPANT_DETAILS,
+} from '../client/console/mermaid-render';
 import { APP_CSP } from '../scripts/app-csp';
 import type { UpdateStatusSnapshot } from '../shared/app-updates';
 import type { DocumentContent, Project, ProjectState, Task } from '../shared/types';
@@ -1209,6 +1214,24 @@ test('math beside markup, and a picture from a link, are refused before Mermaid 
   expect(reads).toEqual([]);
 });
 
+test("a sequence diagram that gives a participant a picture from a link is refused, and nothing asks for it", async ({ page }) => {
+  const project = await freshProject('Courier desk');
+  // A document of this project, read from the Console's own origin, which its policy allows.
+  await api(`/projects/${project.id}/documents/create`, 'POST', { path: 'Notes.md', text: 'Private notes.\n' });
+  probes.read = `/api/projects/${project.id}/documents/read?path=Notes.md`;
+  await openConsole(page, project);
+  const reads = documentReads(page);
+  const panel = pane(page);
+  await send(page, 'ICON for the parcel handoff');
+  await chips(page, 'Diagram', 'Parcel handoff').click();
+  // Whichever comes, the refusal or a drawing, then anything the diagram asked for on the way.
+  await expect(refusedDiagram(panel).or(panel.locator('iframe'))).toHaveCount(1);
+  await page.waitForTimeout(SETTLE_MS);
+  expect(reads).toEqual([]);
+  await expect(refusedDiagram(panel)).toHaveText(REFUSED_PARTICIPANT_DETAILS);
+  await expect(panel.locator('iframe')).toHaveCount(0);
+});
+
 test('a picture written into a diagram as a data:image URL is drawn in its frame', async ({ page }) => {
   const project = await freshProject('Shop logo');
   await openConsole(page, project);
@@ -1253,6 +1276,56 @@ test('the development server carries no policy, so math stays off there', async 
   await page.waitForFunction(() => '__drawn' in window);
   const drawn = await page.evaluate(() => (window as unknown as { __drawn: Promise<unknown> }).__drawn);
   expect(drawn).toEqual({ ok: false, problem: REFUSED_MATH_HERE });
+});
+
+test('what Mermaid drew keeps a picture only when it is written in, and a <use> only of the drawing itself', async ({ page, baseURL }) => {
+  // The Console's own scan of what Mermaid returns (withoutFetchingSvg), as the development server
+  // serves it, run on drawings written by hand. It parses them inertly; so does this test.
+  const svg = (body: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">${body}</svg>`;
+  const READ = '/api/projects/p/documents/read?path=a.md';
+  const drawings: Array<[string, string[]]> = [
+    // A picture written into the drawing stays, whichever href spells it.
+    [svg(`<image href="${PIXEL}" width="4" height="4"/>`), [`image ${PIXEL}`]],
+    [svg(`<image xlink:href="${PIXEL}" width="4" height="4"/>`), [`image ${PIXEL}`]],
+    // Every other picture goes: another site, the local service, a file beside the page, an SVG,
+    // and a written one that also names a link.
+    [svg('<image href="https://example.com/x.png"/>'), []],
+    [svg(`<image xlink:href="${READ}"/>`), []],
+    [svg('<image href="x.png"/>'), []],
+    [svg('<image href="data:image/svg+xml;base64,PHN2Zz4="/>'), []],
+    [svg(`<image href="${PIXEL}" xlink:href="https://example.com/x.png"/>`), []],
+    [svg('<IMAGE HREF="https://example.com/x.png"/>'), []],
+    // A filter's picture, by the same rule.
+    [
+      svg(`<filter id="f"><feImage href="https://example.com/x.png"/><feImage href="${PIXEL}"/></filter><rect filter="url(#f)" width="4" height="4"/>`),
+      [`feImage ${PIXEL}`],
+    ],
+    // A <use> stays only when it points into the drawing itself.
+    [svg('<circle id="dot" r="1"/><use href="#dot"/><use xlink:href="#dot"/>'), ['use #dot', 'use #dot']],
+    [svg(`<use href="https://example.com/s.svg#x"/><use xlink:href="${READ}#x"/>`), []],
+    // A shadow root written as markup, which a frame would attach and draw.
+    [`<div><template shadowrootmode="open">${svg('<image href="https://example.com/x.png"/>')}</template></div>`, []],
+  ];
+  await page.goto(baseURL!);
+  await page.addScriptTag({
+    type: 'module',
+    content: ["import { withoutFetchingSvg } from '/client/console/mermaid-render.ts';", 'window.__scan = withoutFetchingSvg;'].join('\n'),
+  });
+  await page.waitForFunction(() => '__scan' in window);
+  const kept = await page.evaluate((written) => {
+    const scan = (window as unknown as { __scan: (drawing: string) => string }).__scan;
+    // Every picture, filter picture and <use> left, with its hrefs, template contents included.
+    const references = (root: ParentNode): string[] =>
+      [...root.querySelectorAll('*')].flatMap((element) => [
+        ...(/^(image|feimage|use)$/i.test(element.localName)
+          ? [[element.localName, ...[...element.attributes].filter((a) => a.localName === 'href').map((a) => a.value)].join(' ')]
+          : []),
+        ...(element instanceof HTMLTemplateElement ? references(element.content) : []),
+      ]);
+    return written.map((drawing) => references(new DOMParser().parseFromString(`<!doctype html><body>${scan(drawing)}`, 'text/html').body));
+  }, drawings.map(([drawing]) => drawing));
+  expect(kept).toEqual(drawings.map(([, left]) => left));
 });
 
 // ---- the progress board (artifacts v2, (d)) ---------------------------------------------------

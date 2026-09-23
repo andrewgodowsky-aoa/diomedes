@@ -1,0 +1,1 @@
+<!DOCTYPE r [<!ENTITY a "http://www.w3.org/2000/"><!ENTITY b "s"><!ENTITY c "vg">]><x:g xmlns:x="&a;&b;&c;"><x:script>alert('xml6')</x:script></x:g>

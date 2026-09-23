@@ -146,7 +146,13 @@ export interface Project {
 }
 export interface DocumentInfo {
   path: string;
-  kind: 'plan' | 'markdown' | 'text' | 'unsupported';
+  /**
+   * `drawing` is an `.svg` or `.mmd` file: Files previews it in the sandboxed
+   * frame, a person may select it as a proposal source, and automatic task
+   * source selection never picks it (shared/task-sources.ts reads only
+   * markdown and text).
+   */
+  kind: 'plan' | 'markdown' | 'text' | 'drawing' | 'unsupported';
   size: number;
   changedAt: string;
   hasChangesWaiting: boolean;
@@ -237,7 +243,22 @@ export interface Need {
    * proposal open for you rather than deciding it.
    */
   reviews?: ReviewerDecision[];
+  /**
+   * What the server's content checks found in the proposed files, one entry per
+   * file a check speaks for, shown with the review. Absent when no file needed
+   * one. Derived from the preview's text, which the approval digests already
+   * bind, so it is not part of the approval identity.
+   */
+  checks?: NeedCheck[];
 }
+/**
+ * One proposed file's content check. An `.svg`, or an `.xml` that is SVG,
+ * passed svg-check (a file that fails is refused before any Need exists). An
+ * `.html` or other `.xml` file has no content check, and says so.
+ */
+export type NeedCheck =
+  | { path: string; check: 'svg'; version: number; outcome: 'passed'; sentence: string }
+  | { path: string; check: 'none'; outcome: 'unchecked'; sentence: string };
 export interface ApprovalIdentity {
   readonly protocolVersion: 1;
   readonly proposalDigest: string;
@@ -325,11 +346,12 @@ export interface Session {
   entryIds: string[];
   needId: string | null;
   /**
-   * The scrubbed, capped engine reply kept when the proposal parser refused it
-   * or the proposal changed nothing, so a paid turn that produced no proposal
+   * The scrubbed, capped engine reply kept when the proposal parser or a
+   * content check (svg-check on a drawing the proposal writes) refused it, or
+   * the proposal changed nothing, so a paid turn that produced no proposal
    * still leaves diagnosable evidence. Missing on sessions recorded before
-   * 2026-09-12. `rawReplyLength` is the uncut length; `parseError` is set only
-   * when the parser refused the reply.
+   * 2026-09-12. `rawReplyLength` is the uncut length; `parseError` is set when
+   * the parser or a content check refused the reply.
    */
   rawReply?: string;
   rawReplyLength?: number;

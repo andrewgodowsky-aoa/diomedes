@@ -11,7 +11,14 @@ import type {
 } from '../../shared/permissions.js';
 import { usableApproval, validateReviewerDecisions } from './reviewer.js';
 import { commandIdSchema, digestSchema, findCommand, payloadDigest } from '../command-admission.js';
-import { ApiError, projectFile, relativeName, safeAbsolute, textKind } from '../paths.js';
+import {
+  ApiError,
+  exactReviewOnly,
+  projectFile,
+  relativeName,
+  safeAbsolute,
+  textKind,
+} from '../paths.js';
 import type { Store, WriteInput } from '../store.js';
 
 const commandSchema = z.strictObject({
@@ -440,6 +447,13 @@ export class ScopeGrants {
         write.text === null ? null : write.expected === null ? 'text.create' : 'text.modify';
       if (!operation || !grant.operations.includes(operation) || textKind(name) === 'unsupported')
         throw failure('Deletion or this operation class requires an exact review.');
+      // A drawing is not 'unsupported', so the test above admits one: an .mmd
+      // stays grant-coverable text, and an .svg is stopped here with the pages
+      // and XML files a browser runs code from (artifacts v2, frozen decision 7).
+      if (exactReviewOnly(name))
+        throw failure(
+          `${name} always needs your exact review: an SVG, HTML or XML file can run code when it is opened.`,
+        );
       const lower = name.toLowerCase();
       if (!grant.roots.some((root) => root === '.' || lower.startsWith(`${root.toLowerCase()}/`)))
         throw failure('This file is outside the folders you authorized.');
