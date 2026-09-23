@@ -4,6 +4,8 @@ import { ArtifactPane } from './ArtifactPane';
 import type { SaveOutcome } from './artifact-save';
 import { clampArtifactWidth, remember, stored, storedArtifactWidth, viewportWidth } from './artifact-width';
 import { indexArtifacts, indexFile, type ArtifactIndex, type ArtifactRecord, type TurnLike } from './artifacts';
+import type { Board } from './board-model';
+import { BoardPane, ProgressBoard } from './ProgressBoard';
 
 // Which artifact the panel shows, and where the panel sits. The selection is
 // UI state only: every record it points at is derived from a durable turn (or
@@ -144,7 +146,30 @@ export function useArtifactWidth(): [number, (width: number) => void] {
   return [width, (next) => setWidth(clampArtifactWidth(next, viewportWidth()))];
 }
 
+/**
+ * The column's two views: Files, and the panel, which holds an open artifact or, when none is
+ * open, the thread's progress board.
+ */
 export type PaneView = 'files' | 'artifact';
+
+/** Where the stage has a third column (artifacts.css): narrower, the panel overlays the page. */
+const WIDE_STAGE = '(min-width: 861px)';
+
+/** Whether the stage has room for the column beside the thread. True where nothing can say. */
+function useWideStage(): boolean {
+  const query = () =>
+    typeof window === 'undefined' || typeof window.matchMedia !== 'function' ? null : window.matchMedia(WIDE_STAGE);
+  const [wide, setWide] = useState(() => query()?.matches ?? true);
+  useEffect(() => {
+    const media = query();
+    if (!media) return;
+    const update = () => setWide(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+  return wide;
+}
 
 export interface ArtifactHost {
   selection: ArtifactSelection;
@@ -153,9 +178,9 @@ export interface ArtifactHost {
   /** The stage's class suffix and track width while the column is open. */
   stageClass: string;
   stageStyle: CSSProperties | undefined;
-  /** The Files | Artifact switch, for a view's head while both are open; null otherwise. */
+  /** The Files | Artifact (or Files | Progress) switch, for a view's head while both are open; null otherwise. */
   switcher: ReactNode;
-  /** The artifact view, ready for the stage's third column, or null. */
+  /** The panel's view, an artifact or the progress board, ready for the stage's third column, or null. */
   pane: ReactNode;
   /** The rail's Files item: shows Files when it is behind an artifact, and otherwise toggles it. */
   toggleFiles(): void;
@@ -171,6 +196,12 @@ export interface ArtifactHost {
  * one behind is `hidden`, not unmounted), and each remembers its own width.
  * Which view was in front is remembered under `console.pane.view`
  * (localStorage, like `console.files.*`: Settings rejects keys it does not know).
+ *
+ * With no artifact open, the panel holds the thread's progress board while its
+ * work is still moving (board-model.ts), where the stage has room for it: it
+ * opens by itself, takes no focus, and Close puts it away until the board
+ * counts different tasks (remembered under `console.board.closed`). An open
+ * artifact carries the board compactly under its head.
  */
 export function useArtifactHost(input: {
   reset: string | null;
@@ -183,6 +214,10 @@ export function useArtifactHost(input: {
   onShowFile?(path: string): void;
   /** The conversation's live run, for a visual's run-status card in the panel (`threadRun`). */
   session?: Session | null;
+  /** The thread's progress board (`boardFor`), or null when nothing on record is still moving. */
+  board?: Board | null;
+  /** The board view's title: the thread's name. */
+  boardTitle?: string;
 }): ArtifactHost {
   const { filesOpen, setFilesOpen, filesWidth } = input;
   const selection = useArtifactSelection(input.reset, input.scope, input.turns);
@@ -197,17 +232,26 @@ export function useArtifactHost(input: {
   useEffect(() => {
     if (selection.focusToken) setView('artifact');
   }, [selection.focusToken]);
+  const wide = useWideStage();
+  const [closedBoard, setClosedBoard] = useState(() => stored('console.board.closed'));
+  const board = input.board && input.board.key !== closedBoard ? input.board : null;
+  const closeBoard = (key: string) => {
+    setClosedBoard(key);
+    remember('console.board.closed', key);
+  };
 
   const record = selection.record;
-  const shown: PaneView | null = record && filesOpen ? view : record ? 'artifact' : filesOpen ? 'files' : null;
+  // What the panel holds: an open artifact, or else the board, only beside the thread.
+  const holds: 'artifact' | 'board' | null = record ? 'artifact' : board && wide ? 'board' : null;
+  const shown: PaneView | null = holds && filesOpen ? view : holds ? 'artifact' : filesOpen ? 'files' : null;
   const switcher =
-    record && filesOpen ? (
+    holds && filesOpen ? (
       <div className="art-switch" role="group" aria-label="Panel">
         <button type="button" aria-pressed={shown === 'files'} onClick={() => setView('files')}>
           Files
         </button>
         <button type="button" aria-pressed={shown === 'artifact'} onClick={() => setView('artifact')}>
-          Artifact
+          {holds === 'board' ? 'Progress' : 'Artifact'}
         </button>
       </div>
     ) : null;
@@ -238,6 +282,17 @@ export function useArtifactHost(input: {
         onSave={input.onSave}
         onShowFile={input.onShowFile}
         session={input.session ?? null}
+        board={board ? <ProgressBoard board={board} compact /> : null}
+      />
+    ) : holds === 'board' && board ? (
+      <BoardPane
+        board={board}
+        title={input.boardTitle || 'This thread'}
+        width={width}
+        onWidth={setWidth}
+        onClose={() => closeBoard(board.key)}
+        hidden={shown !== 'artifact'}
+        switcher={switcher}
       />
     ) : null,
     toggleFiles() {

@@ -1789,9 +1789,16 @@ export async function createApp(options: AppOptions) {
         !/^[a-f0-9]{64}$/.test(b.baseSha)
       )
         throw new ApiError(400, 'Provide document text and the version you opened.');
-      const entry = await store.writeRecorded(id(req), [
-        { path: relativeName(b.path), text: b.text, expected: b.baseSha },
-      ]);
+      // An edit folds into your last edit of the same file while that one is under ten minutes
+      // old (Store.writeRecorded). `merge: false`, exactly, keeps this write its own History
+      // entry: Save to Files sends it for each later version of an artifact (artifacts v2, E2).
+      if (b.merge !== undefined && b.merge !== false)
+        throw new ApiError(400, 'Leave merge out, or set it to false to keep this save as its own History entry.');
+      const entry = await store.writeRecorded(
+        id(req),
+        [{ path: relativeName(b.path), text: b.text, expected: b.baseSha }],
+        b.merge === false ? { merge: false } : undefined,
+      );
       return { sha: hash(b.text), entryId: entry.id };
     }),
   );

@@ -13,8 +13,9 @@ import { KIND_LABEL } from './turn-blocks';
 // never writes a file on its own (server/modes.ts; the Bedrock turn capability
 // says "No writes"). The first save creates the file through the same route the
 // editor's "save a copy" uses, so it is a new History entry; a later version of
-// the same artifact writes over that file with the version it read, so History
-// keeps the evidence and there is never a file per version.
+// the same artifact writes over that file with the version it read, and asks for
+// its own History entry (`merge: false`), so the version it replaced keeps its
+// entry however soon after it this one comes, and there is never a file per version.
 
 export type SaveOutcome =
   | { ok: true; path: string; created: boolean; sentence: string }
@@ -57,6 +58,7 @@ export async function saveArtifact(projectId: string, record: ArtifactRecord): P
           path,
           text,
           baseSha: current.sha,
+          merge: false,
         });
       } catch (cause) {
         if (cause instanceof ApiError && cause.status === 409)
