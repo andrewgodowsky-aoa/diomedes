@@ -27,12 +27,15 @@ import {
   REFUSED_IMAGE,
   REFUSED_MATH_HERE,
   REFUSED_MATH_MARKUP,
+  REFUSED_PARTICIPANT_DETAILS,
   REFUSED_SHAPE_ESCAPE,
   REFUSED_STYLE,
   SECURE_KEYS,
   carriesPolicy,
   diagramPolicy,
   hasMath,
+  isSequenceDiagram,
+  keepsReference,
   mermaidConfig,
   preparedSource,
   refusal,
@@ -40,6 +43,7 @@ import {
   withoutFetchingUrls,
   type HeadLike,
 } from '../client/console/mermaid-render';
+import { APP_CSP } from '../shared/app-csp';
 
 const KINDS: FrameKind[] = ['diagram', 'image', 'design'];
 
@@ -330,19 +334,31 @@ describe('mermaid math', () => {
   const POLICY = { math: true };
   const MATH = 'flowchart LR\n  A["$$p = c(1 + m)$$"] --> B["$$\\frac{p}{12}$$"]\n  B --> C[Monthly price]';
 
-  it('is on only in a page whose head carries a Content-Security-Policy, as the built index.html does', () => {
-    const built = headOf(
-      { tag: 'meta', 'http-equiv': 'Content-Security-Policy', content: "default-src 'self'" },
-      { tag: 'meta', charset: 'UTF-8' },
-    );
+  it("is on only in a page whose head carries the app's own Content-Security-Policy, as the built index.html does", () => {
+    const policy = (content: string, name = 'Content-Security-Policy') => ({ tag: 'meta', 'http-equiv': name, content });
+    const built = headOf(policy(APP_CSP), { tag: 'meta', charset: 'UTF-8' });
     expect(carriesPolicy(built)).toBe(true);
     expect(diagramPolicy({ head: built })).toEqual({ math: true });
-    expect(carriesPolicy(headOf({ tag: 'meta', 'http-equiv': ' content-security-policy ', content: "img-src 'self'" }))).toBe(true);
-    // The development server's head, an empty policy, a report-only one, and no document at all.
+    expect(carriesPolicy(headOf(policy(APP_CSP, ' content-security-policy ')))).toBe(true);
+    // Another policy beside the app's can only narrow what the page may load.
+    expect(carriesPolicy(headOf(policy("img-src *"), policy(APP_CSP)))).toBe(true);
+    // A weaker policy, a different one, and the app's with a directive more, less or changed: none is the app's.
+    for (const content of [
+      "default-src 'self'",
+      "img-src 'self'",
+      "default-src 'none'",
+      `${APP_CSP}; img-src *`,
+      APP_CSP.replace("img-src 'self' data:", 'img-src *'),
+      APP_CSP.split('; ').slice(1).join('; '),
+      ` ${APP_CSP}`,
+    ])
+      expect(carriesPolicy(headOf(policy(content))), content).toBe(false);
+    // The app's policy as report-only refuses nothing.
+    expect(carriesPolicy(headOf(policy(APP_CSP, 'Content-Security-Policy-Report-Only')))).toBe(false);
+    // The development server's head, an empty policy, a policy not on a <meta>, and no document at all.
     expect(carriesPolicy(headOf({ tag: 'meta', charset: 'UTF-8' }, { tag: 'title' }))).toBe(false);
-    expect(carriesPolicy(headOf({ tag: 'meta', 'http-equiv': 'Content-Security-Policy', content: ' ' }))).toBe(false);
-    expect(carriesPolicy(headOf({ tag: 'meta', 'http-equiv': 'Content-Security-Policy-Report-Only', content: "img-src 'none'" }))).toBe(false);
-    expect(carriesPolicy(headOf({ tag: 'link', 'http-equiv': 'Content-Security-Policy', content: "img-src 'none'" }))).toBe(false);
+    expect(carriesPolicy(headOf(policy(' ')))).toBe(false);
+    expect(carriesPolicy(headOf({ tag: 'link', 'http-equiv': 'Content-Security-Policy', content: APP_CSP }))).toBe(false);
     expect(carriesPolicy(null)).toBe(false);
     expect(diagramPolicy(null)).toEqual({ math: false });
     // Node has no document: off.
@@ -452,6 +468,111 @@ describe('mermaid pictures', () => {
   });
 });
 
+// A sequence diagram's `properties` line gives a participant JSON whose icon Mermaid draws as a
+// picture from a link (or, written @id, as a <use> of an element of the page), and a `details` line
+// reads an element of the app's own document by id (mermaid 11.17.2). Both are refused before
+// Mermaid sees the diagram. tests/mermaid-sequence-check.test.ts tries the same check against
+// Mermaid's own parser.
+describe('mermaid participant details', () => {
+  const PICTURE = '{"icon": "https://example.com/shop.png"}';
+  const shop = (...lines: string[]) =>
+    ['sequenceDiagram', '  participant S as Shop', '  participant C as Courier', ...lines, '  S->>C: Parcel ready'].join('\n');
+
+  it("refuses a participant's properties, whatever its icon names and however the line is written", () => {
+    for (const source of [
+      shop(`  properties S: ${PICTURE}`),
+      shop('  properties S: {"icon": "/api/projects/p/documents/read?path=a.md"}'),
+      shop('  properties S: {"icon": "@root"}'),
+      shop('  properties S: {"class": "plain"}'),
+      shop(`  PROPERTIES S: ${PICTURE}`),
+      shop(`  PrOpErTiEs S: ${PICTURE}`),
+      shop(`properties S: ${PICTURE}`),
+      shop(`\t\t    properties S: ${PICTURE}`),
+      `sequenceDiagram; participant S; properties S: ${PICTURE}; S->>C: x`,
+      shop(`  S->>C: Parcel ready; properties S: ${PICTURE}`),
+      `%% who hands the parcel to whom\n%%{wrap}%%\n\nsequenceDiagram\n  %% the shop's picture\n  properties S: ${PICTURE}`,
+      `\n\n   sequenceDiagram\n  properties S: ${PICTURE}`,
+    ])
+      expect(refusal(source), source).toBe(REFUSED_PARTICIPANT_DETAILS);
+  });
+
+  it('refuses details, which reads an element of the page by id', () => {
+    for (const source of [shop('  details S: root'), shop('  DETAILS S: root'), 'sequenceDiagram;details S: root'])
+      expect(refusal(source), source).toBe(REFUSED_PARTICIPANT_DETAILS);
+  });
+
+  it('finds the line wherever Mermaid starts a statement on the same line as something else', () => {
+    // After the diagram's keyword, after `end`, after the `}` that closes an accDescr block (a `;`
+    // inside it ends nothing), and after / \ ( ) < and >, each of which Mermaid reads as a line of
+    // its own.
+    for (const source of [
+      `sequenceDiagram properties S: ${PICTURE}`,
+      shop('  loop every hour', '  S->>C: ping', `  end properties S: ${PICTURE}`),
+      shop('  loop every hour', '  S->>C: ping', `  END\tproperties S: ${PICTURE}`),
+      ...[')', '(', '<', '>', '/', '\\'].map((mark) => shop(`  ${mark}properties S: ${PICTURE}`)),
+      shop('  ) ( > details S: root'),
+      shop(`  accDescr { who; what } properties S: ${PICTURE}`),
+      shop('  accDescr {', '    who hands the parcel over', `  }properties S: ${PICTURE}`),
+    ])
+      expect(refusal(source), source).toBe(REFUSED_PARTICIPANT_DETAILS);
+  });
+
+  it('reads the diagram as Mermaid will, after its own frontmatter, directive and comment passes', () => {
+    // A second frontmatter block, and directives that re-form once the one inside each is taken out.
+    // The Console takes each out once (preparedSource), and Mermaid takes each out once more before
+    // it parses what is left, so the check reads the prepared text as Mermaid will.
+    for (const source of [
+      `---\ntitle: a\n---\n---\ntitle: b\n---\nsequenceDiagram\n  properties S: ${PICTURE}`,
+      shop('  loop x', '  S->>C: y', `  end %%{%%{wrap}%%wrap}%%properties S: ${PICTURE}`),
+      shop(`  %%{%%{wrap}%%wrap}%%details S: root`),
+    ])
+      expect(refusal(preparedSource(source)), source).toBe(REFUSED_PARTICIPANT_DETAILS);
+    expect(refusal(`---\ntitle: a\n---\n---\ntitle: b\n---\nsequenceDiagram\n  properties S: ${PICTURE}`)).toBe(
+      REFUSED_PARTICIPANT_DETAILS,
+    );
+  });
+
+  it("is a sequence diagram only where Mermaid's own detector says so", () => {
+    expect(isSequenceDiagram('sequenceDiagram\n  A->>B: x')).toBe(true);
+    expect(isSequenceDiagram('  %% note\n\n%%{wrap}%%\n   sequenceDiagram')).toBe(true);
+    expect(isSequenceDiagram('---\ntitle: a\n---\n---\ntitle: b\n---\nsequenceDiagram')).toBe(true);
+    expect(isSequenceDiagram('flowchart TD\n  sequenceDiagram --> B')).toBe(false);
+    expect(isSequenceDiagram('%% sequenceDiagram\nflowchart TD')).toBe(false);
+    // Mermaid 11.17.2's detector is case-sensitive, so Mermaid finds no diagram here at all.
+    expect(isSequenceDiagram('SEQUENCEDIAGRAM\n  A->>B: x')).toBe(false);
+  });
+
+  it('draws a flowchart, or any other kind, whose nodes are called details and properties', () => {
+    for (const source of [
+      'flowchart TD\n  details --> properties\n  properties[Properties] --> C[Done]',
+      'graph LR; details-->properties; properties-->done',
+      'flowchart TD\n  A[Order] --> details\n  details;properties',
+      'classDiagram\n  class Order {\n    details\n    properties\n  }',
+      'stateDiagram-v2\n  details --> properties',
+    ])
+      expect(refusal(source), source).toBeNull();
+  });
+
+  it('draws a sequence diagram that only says the words, in a message, a name, a note, a title or a comment', () => {
+    for (const source of [
+      shop('  S->>C: details of the parcel'),
+      shop('  C-->>S: properties, then (details)'),
+      shop('  Note over S: details: see the order'),
+      shop('  loop details', '  S->>C: ping', '  end'),
+      'sequenceDiagram\n  participant D as Order details\n  participant P as properties list\n  D->>P: send',
+      'sequenceDiagram\n  Order details->>Courier: hand over',
+      'sequenceDiagram\n  title Order details and properties\n  A->>B: x',
+      'sequenceDiagram\n  %% properties S: {"icon": "/api/x"} is only a comment\n  A->>B: x',
+    ])
+      expect(refusal(source), source).toBeNull();
+  });
+
+  it('draws links, which only become menu entries that load and read nothing', () => {
+    for (const source of [shop('  links S: {"Orders": "https://example.com/orders"}'), shop('  link S: Orders @ https://example.com/orders')])
+      expect(refusal(source), source).toBeNull();
+  });
+});
+
 describe('what Mermaid drew', () => {
   it('keeps a same-document url(#...), which is how its lines find their arrowheads', () => {
     for (const css of [
@@ -517,5 +638,36 @@ describe('what Mermaid drew', () => {
       expect(CSS_ATTRIBUTES).toContain(name);
     for (const name of ['id', 'class', 'aria-label', 'aria-roledescription', 'data-id'])
       expect(CSS_ATTRIBUTES).not.toContain(name);
+  });
+
+  it('keeps a picture only when it is written into the drawing, and a <use> only of the drawing itself', () => {
+    // The browser suite (tests/artifacts-ui.spec.ts) runs withoutFetchingSvg on whole drawings.
+    const GIF = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    for (const name of ['image', 'feImage', 'feimage']) expect(keepsReference(name, [GIF]), name).toBe(true);
+    for (const href of [
+      'https://example.com/x.png',
+      '//example.com/x.png',
+      '/api/projects/p/documents/read?path=a.md',
+      'x.png',
+      '#logo',
+      'data:image/svg+xml;base64,PHN2Zz4=',
+      'data:image/png,rawbytes',
+      `${GIF} `,
+      '',
+    ]) {
+      expect(keepsReference('image', [href]), href).toBe(false);
+      expect(keepsReference('feImage', [href]), href).toBe(false);
+    }
+    // Every href it has must hold, and one it lacks is no picture at all.
+    expect(keepsReference('image', [GIF, 'https://example.com/x.png'])).toBe(false);
+    expect(keepsReference('image', [])).toBe(false);
+    expect(keepsReference('use', ['#actor-man'])).toBe(true);
+    for (const href of ['https://example.com/s.svg#x', '/api/x#y', 'x.svg#y', `${GIF}#x`, ' #x', ''])
+      expect(keepsReference('use', [href]), href).toBe(false);
+    expect(keepsReference('use', ['#a', '/api/x#b'])).toBe(false);
+    expect(keepsReference('use', [])).toBe(false);
+    // Other elements are not this check's business: a link is made inert where its frame is built.
+    expect(keepsReference('a', ['https://example.com/x'])).toBe(true);
+    expect(keepsReference('rect', [])).toBe(true);
   });
 });

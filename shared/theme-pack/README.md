@@ -62,7 +62,7 @@ schemaVersion  1
 id             ^[a-z0-9][a-z0-9-]{2,63}$
 name           display name, 1–64 characters, no markup and no control characters
 revision       integer ≥ 1
-baseTheme      one of the ten built-in scheme ids (default: field)
+baseTheme      one of the eleven built-in scheme ids (default: field)
 surfaces       at least one of 'app-console' | 'website'
 provenance     author, createdAt (ISO-8601), tool, notes?
 tokens         color.{chrome,surface,raised,hair,hair2,t1,t2,t3,light,attn,fail} + lightScheme
