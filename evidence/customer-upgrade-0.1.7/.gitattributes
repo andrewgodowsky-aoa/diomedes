@@ -1,0 +1,4 @@
+# Preserve exact captured bytes and driver digests across Windows checkouts.
+* -text whitespace=cr-at-eol
+# Raw command logs include blank WebServer lines with trailing spaces.
+*.log whitespace=cr-at-eol,-blank-at-eol

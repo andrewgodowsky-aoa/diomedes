@@ -1,0 +1,252 @@
+{
+  "project": {
+    "id": "dfb1cc528e15",
+    "name": "Harbor Street restaurants",
+    "folder": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\projects\\Harbor Street restaurants df9f32",
+    "createdAt": "2026-09-23T02:42:16.514Z",
+    "lastOpenedAt": "2026-09-23T02:42:16.514Z",
+    "plans": [
+      "Reopening plan.md"
+    ],
+    "references": [],
+    "repository": {
+      "present": false
+    },
+    "leftOff": null,
+    "counts": {
+      "running": 0,
+      "changesWaiting": 0,
+      "waitingForYou": 0,
+      "historyToday": 2
+    },
+    "status": {
+      "needsYou": 0,
+      "working": 0,
+      "tasksDone": 0,
+      "tasksTotal": 2
+    },
+    "missing": false
+  },
+  "settings": {
+    "detail": "technical",
+    "surface": "console",
+    "openProjects": [
+      "dfb1cc528e15"
+    ],
+    "lastPage": {
+      "dfb1cc528e15": "tasks"
+    },
+    "onboarding": {
+      "setupVersion": 2,
+      "discoveryConsentAt": null,
+      "aiSkipped": false,
+      "work": "business",
+      "detail": "technical",
+      "familiarity": "some",
+      "resumeAt": "done",
+      "completedAt": "2026-09-23T02:42:16.722Z"
+    },
+    "appearance": {
+      "package": "field",
+      "motion": "normal"
+    },
+    "permissions": {
+      "changingFiles": true,
+      "deleting": true,
+      "sending": false,
+      "workingOutside": true,
+      "spending": true
+    }
+  },
+  "state": {
+    "project": {
+      "id": "dfb1cc528e15",
+      "name": "Harbor Street restaurants",
+      "folder": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\projects\\Harbor Street restaurants df9f32",
+      "createdAt": "2026-09-23T02:42:16.514Z",
+      "lastOpenedAt": "2026-09-23T02:42:16.514Z",
+      "plans": [
+        "Reopening plan.md"
+      ],
+      "references": [],
+      "repository": {
+        "present": false
+      },
+      "leftOff": null,
+      "counts": {
+        "running": 0,
+        "changesWaiting": 0,
+        "waitingForYou": 0,
+        "historyToday": 2
+      },
+      "status": {
+        "needsYou": 0,
+        "working": 0,
+        "tasksDone": 0,
+        "tasksTotal": 2
+      },
+      "missing": false
+    },
+    "documents": [],
+    "tasks": [
+      {
+        "id": "T1",
+        "name": "Review the fall menu and update the descriptions",
+        "description": "",
+        "from": {
+          "plan": "Reopening plan.md",
+          "step": 1
+        },
+        "owner": "diomedes-with-ok",
+        "state": "todo",
+        "reason": null,
+        "needId": null,
+        "sessionIds": [],
+        "changeIds": [],
+        "createdBy": "you",
+        "createdAt": "2026-09-23T02:42:16.673Z",
+        "moves": []
+      },
+      {
+        "id": "T2",
+        "name": "Prepare a reopening announcement",
+        "description": "",
+        "from": {
+          "plan": "Reopening plan.md",
+          "step": 2
+        },
+        "owner": "diomedes-with-ok",
+        "state": "todo",
+        "reason": null,
+        "needId": null,
+        "sessionIds": [],
+        "changeIds": [],
+        "createdBy": "you",
+        "createdAt": "2026-09-23T02:42:16.673Z",
+        "moves": []
+      }
+    ],
+    "needs": [],
+    "sessions": [],
+    "history": [
+      {
+        "origin": {
+          "protocolVersion": 1,
+          "mode": "application",
+          "engine": null,
+          "model": {
+            "requested": null,
+            "reported": null,
+            "source": "not-recorded"
+          },
+          "executorId": "diomedes:recorded-writer"
+        },
+        "id": "Ea0e42667191c",
+        "time": "2026-09-23T02:42:16.582Z",
+        "actor": "you",
+        "kind": "edited",
+        "sentence": "You created the Harbor Street sample project",
+        "sessionId": null,
+        "taskId": null,
+        "sample": true,
+        "files": [
+          {
+            "path": "Reopening plan.md",
+            "before": null,
+            "after": "0deb789527a7b6a35468a6103e47145e3a8639202c7fe74de8058795080a8221",
+            "op": "created",
+            "recorded": true,
+            "reason": null
+          },
+          {
+            "path": "Fall menu.md",
+            "before": null,
+            "after": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be",
+            "op": "created",
+            "recorded": true,
+            "reason": null
+          },
+          {
+            "path": "Opening notes.txt",
+            "before": null,
+            "after": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec",
+            "op": "created",
+            "recorded": true,
+            "reason": null
+          }
+        ],
+        "label": null,
+        "restoreOf": null,
+        "replaced": null,
+        "versionId": "v0001",
+        "commit": null
+      },
+      {
+        "origin": {
+          "protocolVersion": 1,
+          "mode": "application",
+          "engine": null,
+          "model": {
+            "requested": null,
+            "reported": null,
+            "source": "not-recorded"
+          },
+          "executorId": "diomedes:recorded-writer"
+        },
+        "id": "E2a359b782154",
+        "time": "2026-09-23T02:42:16.690Z",
+        "actor": "you",
+        "kind": "tasks-made",
+        "sentence": "You made 2 tasks from Reopening plan.md",
+        "sessionId": null,
+        "taskId": null,
+        "sample": false,
+        "files": [
+          {
+            "path": "Reopening plan.md",
+            "before": "0deb789527a7b6a35468a6103e47145e3a8639202c7fe74de8058795080a8221",
+            "after": "73143f3f7c52a54cf6aa73e62e7398c6e85f909c60ad145e2f3df50045ecb5e8",
+            "op": "modified",
+            "recorded": true,
+            "reason": null
+          }
+        ],
+        "label": null,
+        "restoreOf": null,
+        "replaced": null,
+        "versionId": "v0002",
+        "commit": null
+      }
+    ],
+    "changes": [],
+    "conversations": [],
+    "autoUpdate": false,
+    "team": {
+      "members": [],
+      "messages": [],
+      "runs": []
+    }
+  },
+  "files": [
+    {
+      "path": "customer-upgrade-sentinel.txt",
+      "bytes": 98,
+      "sha256": "4429c2c61c3f68c4410dc8ab31e1c27b3a18e980eef90d9a3f3b158832e70159"
+    },
+    {
+      "path": "Fall menu.md",
+      "bytes": 175,
+      "sha256": "acf8c893ef678d1c6eb91c582349368d348180385eef36f34d37548bb2ce38be"
+    },
+    {
+      "path": "Opening notes.txt",
+      "bytes": 142,
+      "sha256": "d15ffd680cf2d3834c77bdb29d813ed80a9fd9cfec3ac21bb5f47d3347761dec"
+    },
+    {
+      "path": "Reopening plan.md",
+      "bytes": 273,
+      "sha256": "73143f3f7c52a54cf6aa73e62e7398c6e85f909c60ad145e2f3df50045ecb5e8"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "at": "2026-09-23T02:44:18.663Z",
+  "installTarget": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\installation",
+  "observedSuccess": true,
+  "observedDestination": true,
+  "installerWindowClosed": true,
+  "method": "Computer Use on public updater-launched NSIS wizard",
+  "finishRefresh": "Closing-window refresh returned foreground window did not report a process id; fresh window enumeration confirms closure",
+  "observations": "native-observations.json"
+}

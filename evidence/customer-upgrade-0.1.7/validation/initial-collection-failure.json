@@ -1,0 +1,13 @@
+{
+  "passed": 23,
+  "failedAssertions": 0,
+  "failedSuites": 1,
+  "failures": [
+    {
+      "name": "F:/Diomedes/diomedes-wt/customer-upgrade-evidence/tests/app-updates.test.ts",
+      "message": "Cannot find package '@ai-sdk/openai' imported from 'F:/Diomedes/diomedes-wt/customer-upgrade-evidence/server/engines/aws-bedrock.ts'"
+    }
+  ],
+  "reportSha256": "39411cc17afcc5e6eb96aa65f9f668bb5a89a93afe19df501db8e2dd7b089706",
+  "disposition": "Dependency junction initially pointed at the older main checkout install. Replaced with pre-existing core-agent-release dependencies after matching both lockfile hashes; final full gates passed."
+}

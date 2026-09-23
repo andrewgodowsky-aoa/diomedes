@@ -1,0 +1,5 @@
+{
+  "command": "vitest run tests/app-updates.test.ts tests/desktop-app-updates.test.ts tests/windows-installer-registration.test.ts",
+  "exitCode": 1,
+  "finishedAt": "2026-09-23T02:34:25.6822646Z"
+}

@@ -1,0 +1,6 @@
+{
+  "command": "playwright test tests/ui.spec.ts tests/native-ui.spec.ts tests/field.spec.ts --reporter=list,json",
+  "headless": true,
+  "exitCode": 0,
+  "finishedAt": "2026-09-23T02:46:25.9257577Z"
+}

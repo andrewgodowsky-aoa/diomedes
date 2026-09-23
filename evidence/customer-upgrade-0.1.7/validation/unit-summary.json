@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "files": 252,
+  "passed": 4682,
+  "failed": 0,
+  "skipped": 4,
+  "reportSha256": "fa130c5fa487a0465c1f7ad183e2e15d4eaf13bf2601793e57968a96bae50bba",
+  "sourceReport": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\unit-final.json"
+}

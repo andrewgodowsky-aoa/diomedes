@@ -1,0 +1,282 @@
+{
+  "startedAt": "2026-09-23T02:42:13.893Z",
+  "root": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06",
+  "executablePath": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\installation\\app\\Diomedes.exe",
+  "checks": [
+    {
+      "at": "2026-09-23T02:42:18.778Z",
+      "check": "Published 0.1.6 installed, launched, populated and relaunched with persistent synthetic project/tasks/history/settings/files",
+      "passed": true
+    },
+    {
+      "at": "2026-09-23T02:42:33.781Z",
+      "check": "Installed 0.1.6 Settings updater discovered and downloaded real public 0.1.7; staged bytes match published SHA-256 and size",
+      "passed": true
+    },
+    {
+      "at": "2026-09-23T02:42:38.697Z",
+      "check": "Close and install accepted exact artifact; old app closed and its unmodified helper launched the native installer",
+      "passed": true
+    },
+    {
+      "at": "2026-09-23T02:44:21.493Z",
+      "check": "Same installation launches exact published 0.1.7 EXE/ASAR; project, all project-state records, selected preferences and every project file are identical",
+      "passed": true
+    },
+    {
+      "at": "2026-09-23T02:44:24.204Z",
+      "check": "Upgraded app reports current on public channel and survives a second launch with all witnessed local state intact",
+      "passed": true
+    }
+  ],
+  "launches": [
+    {
+      "pid": 12852,
+      "launcherPid": 37548,
+      "origin": "http://127.0.0.1:56908",
+      "version": "0.1.6",
+      "readyMs": 2201,
+      "applicationPath": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\installation\\app\\resources\\app.asar",
+      "executableSha256": "12cf91a3dc75b89f6dcbc55dca34a19844ffb7dd4af1f5d9c675cc4fb529ad84",
+      "asarSha256": "12d24fe63b4c8ed12fe73cef5fc20b59ce676c8d467bbcfda5bf8fb27568f66d"
+    },
+    {
+      "pid": 28272,
+      "launcherPid": 38204,
+      "origin": "http://127.0.0.1:63968",
+      "version": "0.1.6",
+      "readyMs": 1738,
+      "applicationPath": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\installation\\app\\resources\\app.asar",
+      "executableSha256": "12cf91a3dc75b89f6dcbc55dca34a19844ffb7dd4af1f5d9c675cc4fb529ad84",
+      "asarSha256": "12d24fe63b4c8ed12fe73cef5fc20b59ce676c8d467bbcfda5bf8fb27568f66d"
+    },
+    {
+      "pid": 4696,
+      "launcherPid": 35808,
+      "origin": "http://127.0.0.1:63778",
+      "version": "0.1.7",
+      "readyMs": 2207,
+      "applicationPath": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\installation\\app\\resources\\app.asar",
+      "executableSha256": "df6e7afddf718aa86a7f6b0b40758ae0eebd5cdc5ef80c6dd926ad7905f9ac2a",
+      "asarSha256": "46a60af5d91ce23637a4e6794fea04d9e97d5dfb896a9d70a7818ba5fa99f6e7"
+    },
+    {
+      "pid": 33084,
+      "launcherPid": 36688,
+      "origin": "http://127.0.0.1:54015",
+      "version": "0.1.7",
+      "readyMs": 1809,
+      "applicationPath": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\installation\\app\\resources\\app.asar",
+      "executableSha256": "df6e7afddf718aa86a7f6b0b40758ae0eebd5cdc5ef80c6dd926ad7905f9ac2a",
+      "asarSha256": "46a60af5d91ce23637a4e6794fea04d9e97d5dfb896a9d70a7818ba5fa99f6e7"
+    }
+  ],
+  "errors": [],
+  "passed": true,
+  "isolation": {
+    "environmentKeys": [
+      "APPDATA",
+      "CODEX_HOME",
+      "ComSpec",
+      "DIOMEDES_DATA_DIR",
+      "DIOMEDES_DESKTOP_PROFILE",
+      "DIOMEDES_PROJECTS_DIR",
+      "HOME",
+      "LOCALAPPDATA",
+      "NUMBER_OF_PROCESSORS",
+      "PATH",
+      "PATHEXT",
+      "SystemRoot",
+      "TEMP",
+      "TMP",
+      "USERPROFILE",
+      "WINDIR"
+    ],
+    "testMode": false,
+    "providerCredentials": false,
+    "accountFilesCopied": false
+  },
+  "initialUpdaterStatus": {
+    "installedVersion": "0.1.6",
+    "channel": "stable Windows per-user installer",
+    "owner": "andrewgodowsky-aoa",
+    "repo": "diomedes",
+    "releasesUrl": "https://github.com/andrewgodowsky-aoa/diomedes/releases",
+    "platform": "win32",
+    "packaged": true,
+    "installed": true,
+    "supported": true,
+    "supportReason": "Installed Windows copy.",
+    "workActive": false,
+    "check": {
+      "phase": "idle",
+      "at": null,
+      "outcome": null,
+      "latestVersion": null,
+      "notesUrl": null,
+      "detail": null
+    },
+    "download": {
+      "ready": false,
+      "version": null,
+      "assetName": null,
+      "bytes": null,
+      "sha256": null,
+      "verified": null
+    },
+    "install": {
+      "phase": "idle",
+      "version": null
+    }
+  },
+  "checkedUpdaterStatus": {
+    "installedVersion": "0.1.6",
+    "channel": "stable Windows per-user installer",
+    "owner": "andrewgodowsky-aoa",
+    "repo": "diomedes",
+    "releasesUrl": "https://github.com/andrewgodowsky-aoa/diomedes/releases",
+    "platform": "win32",
+    "packaged": true,
+    "installed": true,
+    "supported": true,
+    "supportReason": "Installed Windows copy.",
+    "workActive": false,
+    "check": {
+      "phase": "done",
+      "at": "2026-09-23T02:42:20.577Z",
+      "outcome": "available",
+      "latestVersion": "0.1.7",
+      "notesUrl": "https://github.com/andrewgodowsky-aoa/diomedes/releases/tag/v0.1.7",
+      "detail": "Version 0.1.7 is available. Download it to verify the installer."
+    },
+    "download": {
+      "ready": false,
+      "version": "0.1.7",
+      "assetName": "Diomedes-Experimental-0.1.7-unsigned-setup.exe",
+      "bytes": null,
+      "sha256": null,
+      "verified": null
+    },
+    "install": {
+      "phase": "idle",
+      "version": null
+    }
+  },
+  "downloadedUpdaterStatus": {
+    "installedVersion": "0.1.6",
+    "channel": "stable Windows per-user installer",
+    "owner": "andrewgodowsky-aoa",
+    "repo": "diomedes",
+    "releasesUrl": "https://github.com/andrewgodowsky-aoa/diomedes/releases",
+    "platform": "win32",
+    "packaged": true,
+    "installed": true,
+    "supported": true,
+    "supportReason": "Installed Windows copy.",
+    "workActive": false,
+    "check": {
+      "phase": "done",
+      "at": "2026-09-23T02:42:20.577Z",
+      "outcome": "available",
+      "latestVersion": "0.1.7",
+      "notesUrl": "https://github.com/andrewgodowsky-aoa/diomedes/releases/tag/v0.1.7",
+      "detail": "Version 0.1.7 is available. Download it to verify the installer."
+    },
+    "download": {
+      "ready": true,
+      "version": "0.1.7",
+      "assetName": "Diomedes-Experimental-0.1.7-unsigned-setup.exe",
+      "bytes": 266655455,
+      "sha256": "ae024d7912957323d23012c3ee88299f2554d074362de3d07a3cf2d815790fbe",
+      "verified": "size-origin-digest"
+    },
+    "install": {
+      "phase": "idle",
+      "version": null
+    }
+  },
+  "installClick": "returned",
+  "installRequest": {
+    "method": "POST",
+    "body": {
+      "assetName": "Diomedes-Experimental-0.1.7-unsigned-setup.exe",
+      "sha256": "ae024d7912957323d23012c3ee88299f2554d074362de3d07a3cf2d815790fbe"
+    }
+  },
+  "handoffResult": {
+    "schema": 1,
+    "status": "launched",
+    "parentPid": 28272,
+    "artifact": {
+      "path": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\data\\updates\\Diomedes-Experimental-0.1.7-unsigned-setup.exe",
+      "name": "Diomedes-Experimental-0.1.7-unsigned-setup.exe",
+      "sha256": "ae024d7912957323d23012c3ee88299f2554d074362de3d07a3cf2d815790fbe",
+      "size": 266655455,
+      "version": "0.1.7"
+    },
+    "at": "2026-09-23T02:42:37.745Z"
+  },
+  "oldProcessExited": true,
+  "nativeInstaller": {
+    "at": "2026-09-23T02:44:18.663Z",
+    "installTarget": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\installation",
+    "observedSuccess": true,
+    "observedDestination": true,
+    "installerWindowClosed": true,
+    "method": "Computer Use on public updater-launched NSIS wizard",
+    "finishRefresh": "Closing-window refresh returned foreground window did not report a process id; fresh window enumeration confirms closure",
+    "observations": "native-observations.json"
+  },
+  "currentUpdaterStatus": {
+    "installedVersion": "0.1.7",
+    "channel": "stable Windows per-user installer",
+    "owner": "andrewgodowsky-aoa",
+    "repo": "diomedes",
+    "releasesUrl": "https://github.com/andrewgodowsky-aoa/diomedes/releases",
+    "platform": "win32",
+    "packaged": true,
+    "installed": true,
+    "supported": true,
+    "supportReason": "Installed Windows copy.",
+    "workActive": false,
+    "check": {
+      "phase": "done",
+      "at": "2026-09-23T02:44:21.998Z",
+      "outcome": "current",
+      "latestVersion": null,
+      "notesUrl": null,
+      "detail": "Version 0.1.7 is current. Latest stable is 0.1.7."
+    },
+    "download": {
+      "ready": false,
+      "version": null,
+      "assetName": null,
+      "bytes": null,
+      "sha256": null,
+      "verified": null
+    },
+    "install": {
+      "phase": "idle",
+      "version": null
+    }
+  },
+  "cleanup": [
+    {
+      "origin": "http://127.0.0.1:56908",
+      "closed": true
+    },
+    {
+      "origin": "http://127.0.0.1:63968",
+      "closed": true
+    },
+    {
+      "origin": "http://127.0.0.1:63778",
+      "closed": true
+    },
+    {
+      "origin": "http://127.0.0.1:54015",
+      "closed": true
+    }
+  ],
+  "finishedAt": "2026-09-23T02:44:24.296Z"
+}

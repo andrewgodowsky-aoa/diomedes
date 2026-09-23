@@ -1,0 +1,63 @@
+{
+  "startedAt": "2026-09-23T02:29:23.395Z",
+  "root": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-02",
+  "executablePath": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-02\\installation\\app\\Diomedes.exe",
+  "checks": [],
+  "launches": [
+    {
+      "pid": 35652,
+      "origin": "http://127.0.0.1:52755",
+      "version": "0.1.6",
+      "readyMs": 1861,
+      "applicationPath": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-02\\installation\\app\\resources\\app.asar",
+      "executableSha256": "12cf91a3dc75b89f6dcbc55dca34a19844ffb7dd4af1f5d9c675cc4fb529ad84",
+      "asarSha256": "12d24fe63b4c8ed12fe73cef5fc20b59ce676c8d467bbcfda5bf8fb27568f66d"
+    },
+    {
+      "pid": 35888,
+      "origin": "http://127.0.0.1:59143",
+      "version": "0.1.6",
+      "readyMs": 1774,
+      "applicationPath": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-02\\installation\\app\\resources\\app.asar",
+      "executableSha256": "12cf91a3dc75b89f6dcbc55dca34a19844ffb7dd4af1f5d9c675cc4fb529ad84",
+      "asarSha256": "12d24fe63b4c8ed12fe73cef5fc20b59ce676c8d467bbcfda5bf8fb27568f66d"
+    }
+  ],
+  "errors": [],
+  "passed": false,
+  "isolation": {
+    "environmentKeys": [
+      "APPDATA",
+      "CODEX_HOME",
+      "ComSpec",
+      "DIOMEDES_DATA_DIR",
+      "DIOMEDES_DESKTOP_PROFILE",
+      "DIOMEDES_PROJECTS_DIR",
+      "HOME",
+      "LOCALAPPDATA",
+      "NUMBER_OF_PROCESSORS",
+      "PATH",
+      "PATHEXT",
+      "SystemRoot",
+      "TEMP",
+      "TMP",
+      "USERPROFILE",
+      "WINDIR"
+    ],
+    "testMode": false,
+    "providerCredentials": false,
+    "accountFilesCopied": false
+  },
+  "error": "TypeError: (intermediate value).find is not a function\n    at state (file:///F:/Diomedes/diomedes-wt/customer-upgrade-evidence/evidence/customer-upgrade-0.1.7/runtime-proof.mjs:68:46)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async file:///F:/Diomedes/diomedes-wt/customer-upgrade-evidence/evidence/customer-upgrade-0.1.7/runtime-proof.mjs:90:18",
+  "cleanup": [
+    {
+      "origin": "http://127.0.0.1:52755",
+      "closed": true
+    },
+    {
+      "origin": "http://127.0.0.1:59143",
+      "closed": true
+    }
+  ],
+  "finishedAt": "2026-09-23T02:29:28.032Z"
+}

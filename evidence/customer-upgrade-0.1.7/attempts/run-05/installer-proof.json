@@ -1,0 +1,34 @@
+{
+  "startedAt": "2026-09-23T02:39:09.9704113Z",
+  "runRoot": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-05",
+  "installTarget": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-05\\installation",
+  "originalInstall": "C:\\Users\\andre\\AppData\\Local\\Programs\\Diomedes Experimental 20260909",
+  "host": {
+    "os": "Microsoft Windows NT 10.0.26200.0",
+    "architecture": "X64"
+  },
+  "priorInstaller": {
+    "sha256": "b63007a600872316949bf8cdc2b2cf757a7d75c0fd728b2da2c13486f30a351d",
+    "bytes": 266387557,
+    "url": "https://github.com/andrewgodowsky-aoa/diomedes/releases/download/v0.1.6/Diomedes-Experimental-0.1.6-unsigned-setup.exe",
+    "exitCode": 0
+  },
+  "priorRegistration": {
+    "installDir": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-05\\installation",
+    "productId": "Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001",
+    "displayVersion": "0.1.6",
+    "shortcutTarget": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-05\\installation\\app\\Diomedes.exe"
+  },
+  "upgradedRegistration": null,
+  "runtimeExit": 1,
+  "registrationRestored": true,
+  "originalInstallUnchanged": true,
+  "taskbarPinsUnchanged": true,
+  "taskbandUnchanged": true,
+  "pendingRestoreCleared": true,
+  "passed": false,
+  "error": "Installed updater/runtime proof failed; see runtime-proof.json",
+  "registrationRestoreResult": "restored",
+  "originalInstallFileCount": 78,
+  "finishedAt": "2026-09-23T02:41:36.9759099Z"
+}

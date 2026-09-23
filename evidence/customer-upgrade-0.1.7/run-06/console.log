@@ -1,0 +1,46 @@
+Published 0.1.6 installed, launched, populated and relaunched with persistent synthetic project/tasks/history/settings/files
+Installed 0.1.6 Settings updater discovered and downloaded real public 0.1.7; staged bytes match published SHA-256 and size
+Close and install accepted exact artifact; old app closed and its unmodified helper launched the native installer
+AWAITING_NATIVE_INSTALLER F:\Diomedes\diomedes-wt\customer-upgrade-evidence\test-results\customer-upgrade-0.1.7\run-06
+Same installation launches exact published 0.1.7 EXE/ASAR; project, all project-state records, selected preferences and every project file are identical
+Upgraded app reports current on public channel and survives a second launch with all witnessed local state intact
+{"passed":true,"checks":5}
+{
+  "startedAt": "2026-09-23T02:42:08.2228456Z",
+  "runRoot": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06",
+  "installTarget": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\installation",
+  "originalInstall": "C:\\Users\\andre\\AppData\\Local\\Programs\\Diomedes Experimental 20260909",
+  "host": {
+    "os": "Microsoft Windows NT 10.0.26200.0",
+    "architecture": "X64"
+  },
+  "priorInstaller": {
+    "sha256": "b63007a600872316949bf8cdc2b2cf757a7d75c0fd728b2da2c13486f30a351d",
+    "bytes": 266387557,
+    "url": "https://github.com/andrewgodowsky-aoa/diomedes/releases/download/v0.1.6/Diomedes-Experimental-0.1.6-unsigned-setup.exe",
+    "exitCode": 0
+  },
+  "priorRegistration": {
+    "installDir": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\installation",
+    "productId": "Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001",
+    "displayVersion": "0.1.6",
+    "shortcutTarget": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\installation\\app\\Diomedes.exe"
+  },
+  "upgradedRegistration": {
+    "installDir": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\installation",
+    "productId": "Diomedes.Experimental.8c27d61a-1919-4b12-9df7-20260909e001",
+    "displayVersion": "0.1.7",
+    "shortcutTarget": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\test-results\\customer-upgrade-0.1.7\\run-06\\installation\\app\\Diomedes.exe"
+  },
+  "runtimeExit": 0,
+  "registrationRestored": true,
+  "originalInstallUnchanged": true,
+  "taskbarPinsUnchanged": true,
+  "taskbandUnchanged": true,
+  "pendingRestoreCleared": true,
+  "passed": true,
+  "error": null,
+  "registrationRestoreResult": "restored",
+  "originalInstallFileCount": 78,
+  "finishedAt": "2026-09-23T02:44:25.4799954Z"
+}

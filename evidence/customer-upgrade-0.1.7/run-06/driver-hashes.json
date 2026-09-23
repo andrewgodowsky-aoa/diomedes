@@ -1,0 +1,10 @@
+[
+  {
+    "Path": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\evidence\\customer-upgrade-0.1.7\\run-proof.ps1",
+    "Hash": "07179BD2525C7B2EB273E3D6175699AF2F4F723E063A77ECE93989EED679C058"
+  },
+  {
+    "Path": "F:\\Diomedes\\diomedes-wt\\customer-upgrade-evidence\\evidence\\customer-upgrade-0.1.7\\runtime-proof.mjs",
+    "Hash": "D585EEBB84EB4A213CF549D0CE6FD6092D770F98B3FB9D1CA37794F096ECD995"
+  }
+]

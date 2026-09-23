@@ -1,0 +1,6 @@
+services/control-plane/scripts/migrate.ts(3,16): error TS2307: Cannot find module 'pg' or its corresponding type declarations.
+services/control-plane/scripts/migrate.ts(4,38): error TS2307: Cannot find module '@neondatabase/serverless' or its corresponding type declarations.
+services/control-plane/src/postgres.ts(1,24): error TS2307: Cannot find module '@neondatabase/serverless' or its corresponding type declarations.
+services/control-plane/tests/postgres-role-independent.test.ts(3,24): error TS2307: Cannot find module '@neondatabase/serverless' or its corresponding type declarations.
+services/control-plane/tests/postgres.integration.test.ts(3,16): error TS2307: Cannot find module 'pg' or its corresponding type declarations.
+services/control-plane/tests/postgres.integration.test.ts(4,38): error TS2307: Cannot find module '@neondatabase/serverless' or its corresponding type declarations.

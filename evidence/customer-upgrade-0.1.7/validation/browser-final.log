@@ -1,0 +1,57 @@
+dev-server guard: ports 5174, 47632 already free
+[WebServer] Diomedes: http://127.0.0.1:5174. Press Ctrl+C to stop both local processes.
+[WebServer] (node:26372) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 10:45:16 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+[WebServer] 
+[WebServer]   VITE v7.3.6  ready in 447 ms
+[WebServer] 
+[WebServer]   ➜  Local:   http://127.0.0.1:5174/
+[WebServer] (node:4032) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Diomedes local service ready: http://127.0.0.1:47632
+[WebServer] App data: F:\Diomedes\diomedes-wt\customer-upgrade-evidence\test-results\app-data-1790131515563-15196\data
+[WebServer] Project root: F:\Diomedes\diomedes-wt\customer-upgrade-evidence\test-results\app-data-1790131515563-15196\projects
+
+Running 36 tests using 1 worker
+
+(node:29592) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  1 tests\field.spec.ts:98:1 › C01: the rail lists threads, carries New, marks the selection, and offers the three views (2.8s)
+  ok  2 tests\field.spec.ts:118:1 › C02: the view switch swaps Thread, Board, and Team (852ms)
+  ok  3 tests\field.spec.ts:133:1 › C03: the Board shows the Ready task, and Show-me-first confirms instead of starting (1.1s)
+  ok  4 tests\field.spec.ts:163:1 › C04: the palette finds and filters, Escape closes, and the Workbook keeps its own search (1.3s)
+  ok  5 tests\field.spec.ts:199:1 › C05: the wake is skipped under automation (641ms)
+  ok  6 tests\field.spec.ts:206:1 › C06: the Ember scheme applies its package and token, then Field is restored (1.2s)
+  ok  7 tests\field.spec.ts:231:1 › C07: the thread head states the exact-OK rule while an approval is open (1.0s)
+  ok  8 tests\field.spec.ts:276:1 › C08: a mode chosen on the Projects page arrives with the ask (1.2s)
+  ok  9 tests\native-ui.spec.ts:116:1 › Native UI: consent, exact proposal preview, approval, Review and History with an injected generator (1.9s)
+  ok 10 tests\native-ui.spec.ts:213:1 › Console task Start recovers both lost responses from state without duplicating Work (1.8s)
+  ok 11 tests\native-ui.spec.ts:280:1 › Console exact approval recovers both lost responses from durable state even with task permission (1.6s)
+  ok 12 tests\native-ui.spec.ts:344:1 › Console New task makes a task, Ready shows it, and Start admits one run (1.1s)
+  ok 13 tests\native-ui.spec.ts:388:1 › Console retries a lost task creation response after reload and shows the durable receipt (1.4s)
+  ok 14 tests\native-ui.spec.ts:448:1 › Console closes a confirmed creation even if refreshing the Board fails (986ms)
+  ok 15 tests\native-ui.spec.ts:473:1 › Console Start again restarts a faulted task through the same admission (989ms)
+  ok 16 tests\native-ui.spec.ts:513:3 › Console document selection at creation proposes the exact file and retains History attribution (2.4s)
+  ok 17 tests\native-ui.spec.ts:513:3 › Console document selection at start proposes the exact file and retains History attribution (1.8s)
+  ok 18 tests\native-ui.spec.ts:600:1 › Console document selection blocks stale paths and listing failures without admitting work (1.1s)
+  ok 19 tests\native-ui.spec.ts:636:1 › Workbook Tasks header keeps every view label on one line (535ms)
+  ok 20 tests\ui.spec.ts:79:1 › F01-F02: first run preserves detail and approvals, supports AI skip, and resumes (3.2s)
+  ok 21 tests\ui.spec.ts:199:1 › F04, F06: sample project opens and a plan edit survives reload with History (1.2s)
+  ok 22 tests\ui.spec.ts:259:1 › F10: plan steps become real tasks with provenance and a History entry (1.2s)
+  ok 23 tests\ui.spec.ts:300:1 › F11-F13: work asks twice, decline skips creation, and the remaining change is recorded (5.3s)
+  ok 24 tests\ui.spec.ts:395:1 › F15-F16: Review keeps the changed file and History exposes the recorded change (995ms)
+  ok 25 tests\ui.spec.ts:429:1 › F07-F08: restore and Undo recover both versions; newer edits expose conflict choices (2.3s)
+  ok 26 tests\ui.spec.ts:495:1 › F14: Stop settles a started sample promptly and expires its approval (1.2s)
+  ok 27 tests\ui.spec.ts:523:1 › F17, F20-F22: surface switches preserve data; visible pages meet copy and layout checks (3.4s)
+  ok 28 tests\ui.spec.ts:723:1 › Draft recovery: Settings, reload and same-named files in separate projects preserve writing and stale-save conflicts (2.8s)
+  ok 29 tests\ui.spec.ts:863:1 › Services roster: every reported engine listed with switch discipline; Guided hides non-ready adapters; Console has no Connections (5.2s)
+  ok 30 tests\ui.spec.ts:939:1 › Usage: chip, signal bar and Settings bars from the test-mode snapshot (3.9s)
+  ok 31 tests\ui.spec.ts:1013:1 › Landing: ask box carries a draft into the chosen project (796ms)
+  ok 32 tests\ui.spec.ts:1072:1 › Unavailable helper: the application notice has no invented runtime caption (718ms)
+  ok 33 tests\ui.spec.ts:1087:1 › Engine choices: the list comes from the engine, and the levels follow the choice (840ms)
+  ok 34 tests\ui.spec.ts:1170:1 › Modes: the Workbook composer shows four modes and Fix needs what is failing (803ms)
+  ok 35 tests\ui.spec.ts:1240:1 › Enter sends from the Workbook composer and Shift+Enter adds a line (722ms)
+  ok 36 tests\ui.spec.ts:1268:1 › Usage: navigation preserves a concurrent engine setting while refresh is delayed (658ms)
+
+  36 passed (1.2m)
