@@ -202,10 +202,11 @@ export class DevinAdapter implements TextEngineAdapter {
       maxBytes: 4096,
     });
     const version = versionResult.stdout.trim().match(/\bdevin\s+(\d+\.\d+\.\d+)\b/i)?.[1];
-    if (versionResult.code !== 0 || version !== DEVIN_VERSION)
+    // Any version Devin reports is accepted; only an unreadable one stops here.
+    if (versionResult.code !== 0 || !version)
       throw new EngineError(
-        'UNSUPPORTED_VERSION',
-        'Devin changed version. Review compatibility before sending.',
+        'VERSION_UNKNOWN',
+        'Devin did not report its version. Reinstall or update it.',
         false,
         'runtime-verification',
       );

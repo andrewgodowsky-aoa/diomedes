@@ -154,14 +154,14 @@ describe('AI setup readiness and dispatch', () => {
     await service.check('claude-code');
     expect(() => service.selection('claude-code', 'sonnet')).toThrow(/sign-in/i);
   });
-  it('rejects unsupported executables before starting a protocol', async () => {
+  it('accepts whatever version the installed tool reports', async () => {
     const { service, discover, inspect } = fixture();
     discover.mockResolvedValue([{ ...installed, installedVersion: '1.0.0' }]);
     await service.discover(true);
-    await expect(service.check('claude-code')).rejects.toMatchObject({
-      code: 'UNSUPPORTED_VERSION',
+    await expect(service.check('claude-code')).resolves.toMatchObject({
+      compatibility: 'supported',
     });
-    expect(inspect).not.toHaveBeenCalled();
+    expect(inspect).toHaveBeenCalled();
   });
   it('keeps installation, readiness and user enablement separate', async () => {
     const { service } = fixture();
@@ -406,7 +406,7 @@ describe('a reported account-route mismatch', () => {
     reported = '1.0.0';
     await service.discover(true);
     expect(connection().routeIssue).toBeNull();
-    expect(connection().compatibility).toBe('unsupported');
+    expect(connection().compatibility).toBe('supported');
   });
 
   it('refuses a selection without telling a signed-in person to sign in', async () => {
