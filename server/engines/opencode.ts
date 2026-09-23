@@ -26,6 +26,19 @@ import {
 } from './process.js';
 import { SseLimitError, SseParser, type SseEvent } from './sse.js';
 import { killOwnedProcess } from '../integrations.js';
+import {
+  approvedMcpTool,
+  displayPath,
+  emitActivity,
+  insideRoot,
+  isWebUrl,
+  readDetail,
+  readScopeNote,
+  readSummary,
+  serverEnvironment,
+  type ReadKind,
+  type ReadScope,
+} from './read-scope.js';
 
 export const OPENCODE_VERSION = '1.18.4';
 export const OPENCODE_ACCOUNT_ROUTE = 'opencode:opencode-go';
@@ -84,36 +97,135 @@ async function cappedText(response: Response, limit: number, stage: SetupStage):
   return new TextDecoder().decode(merged);
 }
 
-function configContent(): string {
+/** OpenCode 1.18.4's read tools (its `hF` built-in list plus `list`); nothing that edits or runs. */
+export const OPENCODE_READ_TOOLS = ['read', 'glob', 'grep', 'list'] as const;
+export const OPENCODE_WEB_TOOLS = ['webfetch', 'websearch'] as const;
+/** Tool steps a read turn may take before OpenCode itself stops the agent. */
+export const OPENCODE_READ_STEPS = 16;
+/** OpenCode names an MCP tool `<server>_<tool>`. */
+const mcpToolName = (server: string, tool: string) => `${server}_${tool}`;
+/** Every tool a scope allows, in OpenCode's vocabulary. */
+export function opencodeAllowedTools(scope: ReadScope): string[] {
+  return [
+    ...OPENCODE_READ_TOOLS,
+    ...(scope.web ? OPENCODE_WEB_TOOLS : []),
+    ...(scope.mcp ?? []).flatMap((server) =>
+      server.readTools.map((tool) => mcpToolName(server.name, tool)),
+    ),
+  ];
+}
+/**
+ * The whole configuration, passed inline. Without a scope it is the text-only
+ * route: every tool off and denied, one step. With one, the read tools (and the
+ * owner's approved MCP read tools) are the only ones on and allowed; edit, bash,
+ * task and everything else stay off and denied, reads outside the project
+ * folder are denied, and a turn may take a bounded number of steps.
+ */
+export function configContent(scope?: ReadScope): string {
+  const allowed = scope ? opencodeAllowedTools(scope) : [];
+  const on = Object.fromEntries(allowed.map((tool) => [tool, true]));
+  const allow = Object.fromEntries(allowed.map((tool) => [tool, 'allow']));
   return JSON.stringify({
     plugin: [],
     instructions: [],
-    mcp: {},
+    mcp: Object.fromEntries(
+      (scope?.mcp ?? []).map((server) => [
+        server.name,
+        {
+          type: 'local',
+          command: [server.command, ...server.args],
+          // `{env:NAME}` is resolved by OpenCode from its own environment.
+          environment: Object.fromEntries(server.envFrom.map((name) => [name, `{env:${name}}`])),
+          enabled: true,
+        },
+      ]),
+    ),
     provider: {},
     enabled_providers: ['opencode-go'],
-    tools: { '*': false },
+    tools: { '*': false, ...on },
     snapshot: false,
     share: 'disabled',
     autoupdate: false,
     compaction: { auto: false, prune: false },
-    permission: { '*': 'deny' },
+    permission: { '*': 'deny', ...allow },
     agent: {
       diomedes: {
         mode: 'primary',
-        description: 'Text-only Diomedes route.',
-        steps: 1,
-        tools: { '*': false },
+        description: scope ? 'Read-only Diomedes route.' : 'Text-only Diomedes route.',
+        steps: scope ? OPENCODE_READ_STEPS : 1,
+        tools: { '*': false, ...on },
         permission: {
           edit: 'deny',
           bash: 'deny',
-          webfetch: 'deny',
+          webfetch: scope?.web ? 'allow' : 'deny',
           doom_loop: 'deny',
           external_directory: 'deny',
+          ...(scope ? { ...allow, task: 'deny', todowrite: 'deny', skill: 'deny', lsp: 'deny' } : {}),
         },
       },
     },
     experimental: { continue_loop_on_deny: false, batch_tool: false },
   });
+}
+const stringField = (value: Json, ...keys: string[]) => {
+  for (const key of keys) if (typeof value[key] === 'string' && value[key]) return value[key] as string;
+  return undefined;
+};
+/**
+ * One OpenCode tool part against a read scope: the activity to show, or a
+ * refusal. A tool outside the allow-list, a path outside the project folder, a
+ * web call without web access or an unapproved MCP tool stops the request.
+ */
+export function opencodeToolCall(
+  scope: ReadScope,
+  tool: string,
+  raw: unknown,
+): { kind: ReadKind; summary: string; detail?: string } {
+  const input = object(raw);
+  const refuse = () =>
+    new EngineError(
+      'POLICY_MISMATCH',
+      'OpenCode went beyond the read-only boundary; the request was stopped.',
+      true,
+      'stream',
+    );
+  const where = stringField(input, 'filePath', 'path');
+  if (where !== undefined && ['read', 'glob', 'grep', 'list'].includes(tool) && !insideRoot(scope.root, where))
+    throw refuse();
+  const detail = readDetail(input);
+  const shown = where ? displayPath(scope.root, where) : undefined;
+  switch (tool) {
+    case 'read':
+      if (!where) throw refuse();
+      return { kind: 'read', summary: readSummary('read', { path: shown }), detail };
+    case 'list':
+      return { kind: 'list', summary: readSummary('list', { path: shown }), detail };
+    case 'glob': {
+      const pattern = stringField(input, 'pattern');
+      return {
+        kind: 'list',
+        summary: pattern ? `Finding files matching ${pattern}` : readSummary('list', { path: shown }),
+        detail,
+      };
+    }
+    case 'grep':
+      return { kind: 'search', summary: readSummary('search', { query: stringField(input, 'pattern') }), detail };
+    case 'websearch':
+      if (!scope.web) throw refuse();
+      return { kind: 'web-search', summary: readSummary('web-search', { query: stringField(input, 'query') }), detail };
+    case 'webfetch': {
+      const url = stringField(input, 'url');
+      if (!scope.web || !isWebUrl(url)) throw refuse();
+      return { kind: 'web-fetch', summary: readSummary('web-fetch', { url }), detail };
+    }
+  }
+  for (const server of scope.mcp ?? [])
+    if (tool.startsWith(`${server.name}_`)) {
+      const name = tool.slice(server.name.length + 1);
+      if (approvedMcpTool(scope, server.name, name))
+        return { kind: 'mcp', summary: readSummary('mcp', { server: server.name, tool: name }), detail };
+    }
+  throw refuse();
 }
 
 async function ephemeralPort(): Promise<number> {
@@ -441,7 +553,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     this.requestTimeout = deps.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
   }
 
-  private async isolatedEnvironment(root: string): Promise<NodeJS.ProcessEnv> {
+  private async isolatedEnvironment(root: string, scope?: ReadScope): Promise<NodeJS.ProcessEnv> {
     const [config, cache, state, home] = await Promise.all(
       ['config', 'cache', 'state', 'home'].map((name) =>
         fs.mkdtemp(path.join(root, `.opencode-${name}-`)),
@@ -458,7 +570,8 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       XDG_CACHE_HOME: cache,
       XDG_STATE_HOME: state,
       XDG_DATA_HOME: nativeData,
-      OPENCODE_CONFIG_CONTENT: configContent(),
+      ...Object.assign({}, ...(scope?.mcp ?? []).map((server) => serverEnvironment(server))),
+      OPENCODE_CONFIG_CONTENT: configContent(scope),
       OPENCODE_DISABLE_PROJECT_CONFIG: '1',
       OPENCODE_DISABLE_EXTERNAL_SKILLS: '1',
       OPENCODE_PURE: '1',
@@ -466,12 +579,16 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     };
   }
 
-  private async start(signal?: AbortSignal): Promise<{
+  private async start(
+    signal?: AbortSignal,
+    scope?: ReadScope,
+  ): Promise<{
     child: ChildProcessWithoutNullStreams;
     base: string;
     auth: string;
     env: NodeJS.ProcessEnv;
     root: string;
+    directory: string;
   }> {
     if (signal?.aborted)
       throw atStage(abortFailure(signal.reason, REQUEST_TIMEOUT_DETAIL), 'launch');
@@ -480,7 +597,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     let port: number;
     let command: ReturnType<typeof launchCommand>;
     try {
-      env = await this.isolatedEnvironment(root);
+      env = await this.isolatedEnvironment(root, scope);
       port = await this.reserve();
       command = launchCommand(this.file, opencodeArguments(port));
     } catch (error) {
@@ -524,6 +641,9 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     });
     const base = `http://127.0.0.1:${port}`;
     const auth = `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}`;
+    // The instance directory: the project folder for a read turn, where
+    // `external_directory: deny` keeps its reads; the engine's own otherwise.
+    const directory = scope ? scope.root : this.cwd;
     const ready = deadline(signal, this.startupTimeout);
     try {
       for (;;) {
@@ -531,7 +651,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
           // Talking to the loopback server Diomedes started, with the password
           // Diomedes generated for it. Nothing here has reached an account yet.
           const response = await this.fetcher(`${base}/provider`, {
-            headers: this.headers(auth),
+            headers: this.headers(auth, directory),
             signal: ready.signal,
           });
           const body = await cappedText(response, MAX_JSON_BYTES, 'local-handshake');
@@ -539,7 +659,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
             throw errorForResponse(response.status, body, 'local-handshake');
           if (response.ok) {
             ready.dispose();
-            return { child, base, auth, env, root };
+            return { child, base, auth, env, root, directory };
           }
         } catch (error) {
           if (error instanceof EngineError) throw error;
@@ -566,8 +686,8 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     }
   }
 
-  private headers(auth: string): Record<string, string> {
-    return { Authorization: auth, Accept: 'application/json', 'x-opencode-directory': this.cwd };
+  private headers(auth: string, directory = this.cwd): Record<string, string> {
+    return { Authorization: auth, Accept: 'application/json', 'x-opencode-directory': directory };
   }
   /**
    * A cleanup failure never replaces the failure that caused it, and it must
@@ -584,7 +704,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     }
   }
   private async request(
-    server: { base: string; auth: string },
+    server: { base: string; auth: string; directory?: string },
     route: string,
     init: RequestInit,
     signal: AbortSignal,
@@ -595,7 +715,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       response = await this.fetcher(`${server.base}${route}`, {
         ...init,
         signal,
-        headers: { ...this.headers(server.auth), ...(init.headers ?? {}) },
+        headers: { ...this.headers(server.auth, server.directory), ...(init.headers ?? {}) },
       });
     } catch (error) {
       if (signal.aborted) throw abortError(signal, this.requestTimeout, 'request', stage);
@@ -615,7 +735,10 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       throw new EngineError('PROTOCOL_ERROR', 'OpenCode returned malformed JSON.', true, stage);
     }
   }
-  private async cleanupRequest(server: { base: string; auth: string }, route: string) {
+  private async cleanupRequest(
+    server: { base: string; auth: string; directory?: string },
+    route: string,
+  ) {
     const control = new AbortController();
     const timer = setTimeout(() => control.abort('cleanup-timeout'), 2_000);
     try {
@@ -694,8 +817,10 @@ export class OpenCodeAdapter implements TextEngineAdapter {
       );
     const selection = parseSelection(input.model);
     const prompt = contextMessage(input);
-    const server = await this.start(input.signal);
+    const scope = input.readScope;
+    const server = await this.start(input.signal, scope);
     const control = deadline(input.signal, this.requestTimeout);
+    const calls = new Map<string, { tool: string; started: boolean }>();
     let sessionId: string | undefined;
     let eventResponse: Response | undefined;
     let completed = false;
@@ -740,7 +865,18 @@ export class OpenCodeAdapter implements TextEngineAdapter {
               title: `Diomedes ${input.requestId}`.slice(0, 120),
               agent: 'diomedes',
               model: { providerID: selection.providerID, id: selection.modelID },
-              permission: [{ permission: '*', pattern: '*', action: 'deny' }],
+              // Last matching rule wins: deny everything, then allow only the reads.
+              permission: [
+                { permission: '*', pattern: '*', action: 'deny' },
+                ...(scope
+                  ? opencodeAllowedTools(scope).map((tool) => ({
+                      permission: tool,
+                      pattern: '*',
+                      action: 'allow',
+                    }))
+                  : []),
+                ...(scope ? [{ permission: 'external_directory', pattern: '*', action: 'deny' }] : []),
+              ],
             }),
           },
           control.signal,
@@ -772,7 +908,7 @@ export class OpenCodeAdapter implements TextEngineAdapter {
           body: JSON.stringify({
             agent: 'diomedes',
             model: { providerID: selection.providerID, modelID: selection.modelID },
-            system: input.instructions,
+            system: scope ? `${input.instructions}\n\n${readScopeNote(scope)}` : input.instructions,
             parts: [{ type: 'text', text: prompt }],
           }),
         },
@@ -841,6 +977,45 @@ export class OpenCodeAdapter implements TextEngineAdapter {
                 'OpenCode started a retry. Diomedes stopped without redispatching.',
                 true,
               );
+            if (scope && kind === 'message.part.updated' && partType === 'tool') {
+              const tool = text(partValue.tool);
+              const callId = text(partValue.callID) || text(partValue.id) || `call-${calls.size + 1}`;
+              const state = object(partValue.state);
+              const status = text(state.status);
+              if (!opencodeAllowedTools(scope).includes(tool))
+                throw new EngineError(
+                  'POLICY_MISMATCH',
+                  'OpenCode went beyond the read-only boundary; the request was stopped.',
+                  true,
+                );
+              // A pending part is still streaming its arguments; judge it once they are set.
+              if (status === 'pending') continue;
+              const call = calls.get(callId) ?? { tool, started: false };
+              calls.set(callId, call);
+              const checked = opencodeToolCall(scope, tool, state.input);
+              if (!call.started) {
+                call.started = true;
+                emitActivity(input.onToolActivity, {
+                  callId,
+                  phase: 'started',
+                  tool,
+                  summary: checked.summary,
+                  ...(checked.detail ? { detail: checked.detail } : {}),
+                });
+              }
+              if (status === 'completed' || status === 'error') {
+                calls.delete(callId);
+                const detail = readDetail(status === 'error' ? state.error : state.output, 300);
+                emitActivity(input.onToolActivity, {
+                  callId,
+                  phase: status === 'error' ? 'failed' : 'finished',
+                  tool,
+                  summary: status === 'error' ? `${tool} did not complete` : `${tool} finished`,
+                  ...(detail ? { detail } : {}),
+                });
+              }
+              continue;
+            }
             if (/permission/i.test(kind) || /tool/i.test(partType))
               throw new EngineError(
                 'POLICY_MISMATCH',
