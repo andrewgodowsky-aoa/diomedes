@@ -2607,7 +2607,28 @@ export async function createApp(options: AppOptions) {
    */
   const routeModels = (engine: string): EngineModel[] => {
     const listed = engineCatalog(engine).models;
-    if (listed.length > 0 || engine !== AWS_BEDROCK_ROUTE) return listed;
+    if (listed.length > 0) return listed;
+    // Azure and OpenRouter offer exactly the models the owner connected: each Azure deployment
+    // (with levels only where the owner declared it a reasoning model) and each allow-listed
+    // OpenRouter model, which this route sends no level for.
+    const levels = ['low', 'medium', 'high'].map((level) => ({ id: level, description: '' }));
+    if (engine === AZURE_OPENAI_ROUTE)
+      return (engines.modelApi?.azure?.connections.peek()?.deployments ?? []).map((entry) => ({
+        slug: entry.model,
+        name: entry.model,
+        description: '',
+        defaultEffort: entry.reasoning ? 'low' : null,
+        efforts: entry.reasoning ? levels : [],
+      }));
+    if (engine === OPENROUTER_ROUTE)
+      return (engines.modelApi?.openrouter?.connections.peek()?.models ?? []).map((entry) => ({
+        slug: entry.id,
+        name: entry.id,
+        description: '',
+        defaultEffort: null,
+        efforts: [],
+      }));
+    if (engine !== AWS_BEDROCK_ROUTE) return listed;
     const saved = store.settings.services?.[`${engine}Model`];
     if (typeof saved !== 'string' || !saved) return [];
     const efforts = ['low', 'medium', 'high'].map((level) => ({ id: level, description: '' }));

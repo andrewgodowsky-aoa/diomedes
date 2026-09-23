@@ -183,6 +183,52 @@ describe('a thread on a connected Azure route', () => {
   });
 });
 
+describe('WorkStyles on Azure and OpenRouter choose from the connected models', () => {
+  type Next = { route: string; resolution: { outcome: string; model: string | null; effort: string | null } };
+  const styled = async (project: Project, thread: Conversation, engine: string, workStyle: string) => {
+    await ok<Conversation>(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine, requested: null });
+    await ok<Conversation>(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { workStyle });
+    return ok<Next>(`/projects/${project.id}/threads/${thread.id}/work-style`);
+  };
+
+  test('Focused takes the Sol deployment and Efficient the Luna one, each with a level', async () => {
+    const parsed = azureConnectBody({
+      resourceName: 'contoso-ai',
+      deployments: [
+        { model: 'gpt-6-luna', deployment: 'luna-prod', reasoning: true, rates: prices },
+        { model: 'gpt-6-sol', deployment: 'sol-prod', reasoning: true, rates: prices },
+      ],
+      apiKey: SECRET,
+      expiresLocal: '',
+      consent: true,
+    });
+    if (!parsed.ok) throw new Error(parsed.message);
+    await ok('/ai/model-api/azure-openai', 'PUT', parsed.body);
+    const project = await ok<Project>('/projects', 'POST', { name: 'Harbor cafe' });
+    const thread = await ok<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
+    const focused = await styled(project, thread, 'azure-openai', 'focused');
+    expect(focused.resolution).toMatchObject({ outcome: 'run', model: 'gpt-6-sol' });
+    expect(focused.resolution.effort).not.toBeNull();
+    const efficient = await styled(project, thread, 'azure-openai', 'efficient');
+    expect(efficient.resolution).toMatchObject({ outcome: 'run', model: 'gpt-6-luna' });
+  });
+
+  test('an OpenRouter model is chosen with no level, since the route sends none', async () => {
+    const parsed = openRouterConnectBody({
+      models: [{ id: 'vendor/gpt-6-luna', upstreams: 'upstream-one', rates: prices }],
+      apiKey: SECRET,
+      expiresLocal: '',
+      consent: true,
+    });
+    if (!parsed.ok) throw new Error(parsed.message);
+    await ok('/ai/model-api/openrouter', 'PUT', parsed.body);
+    const project = await ok<Project>('/projects', 'POST', { name: 'Harbor cafe' });
+    const thread = await ok<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
+    const efficient = await styled(project, thread, 'openrouter', 'efficient');
+    expect(efficient.resolution).toMatchObject({ outcome: 'run', model: 'vendor/gpt-6-luna', effort: null });
+  });
+});
+
 describe('OpenRouter setup, from the card to the host and back', () => {
   test('connect keeps the allow-list, refuses data collection and fallbacks, and never returns the key', async () => {
     const connected = await ok<OpenRouterConnectionView>('/ai/model-api/openrouter', 'PUT', openRouterBody());
