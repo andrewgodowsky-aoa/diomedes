@@ -33,6 +33,7 @@ import { CursorAdapter, cursorCommand, resolveCursorEntry } from './cursor.js';
 import { DevinAdapter } from './devin.js';
 import { managedBinary, verifyManagedBinary } from './install.js';
 import { capture, engineEnvironment, EngineError } from './process.js';
+import { secretFingerprint } from '../connection-secrets.js';
 import {
   activitySink,
   commandGate,
@@ -82,12 +83,25 @@ import {
   type OpenRouterConnection,
   type OpenRouterConnections,
 } from './openrouter.js';
-import { callCeiling, type RespondLimits, type RespondResult, type StreamSinks } from './model-api-core.js';
+import {
+  GOOGLE_VERTEX_ROUTE,
+  GOOGLE_VERTEX_SDK,
+  mintVertexToken,
+  readAdcIdentity,
+  respondVertex,
+  vertexAccountRoute,
+  vertexRateCard,
+  type AccessToken,
+  type VertexConnection,
+  type VertexConnections,
+} from './google-vertex.js';
+import { callCeiling, type CallExposure, type RespondLimits, type RespondResult, type StreamSinks } from './model-api-core.js';
 import { decideJobStep, type JobTier } from '../../shared/job-caps.js';
 import type { MicroUsd } from '../../shared/managed-usage.js';
 import { createAwsModelAdapter } from '../harness/aws-model-adapter.js';
 import { createAzureModelAdapter } from '../harness/azure-model-adapter.js';
 import { createOpenRouterModelAdapter } from '../harness/openrouter-model-adapter.js';
+import { createVertexModelAdapter } from '../harness/vertex-model-adapter.js';
 import type { ModelAdapter } from '../harness/native-agent.js';
 import type { ExposureAttempt, JobScope, ModelRateCard } from '../spend-exposure.js';
 import type { ModelTranscripts } from '../harness/model-transcripts.js';
@@ -1866,8 +1880,8 @@ export class EngineService {
       throw new EngineError('ROUTE_REFUSED', `This ${short} connection serves ${handle.serving}, not ${input.model}.`, true);
     if (handle.expiresAt && Date.parse(handle.expiresAt) <= Date.now() + 60_000)
       throw new EngineError('ROUTE_REFUSED', `The saved ${short} key has expired. Enter a new key in AI setup.`, true);
-    if (!api.secrets.available())
-      throw new EngineError('ROUTE_REFUSED', 'Protected credential storage is not available in this process.', true);
+    const blocked = await handle.credential.check();
+    if (blocked) throw new EngineError('ROUTE_REFUSED', blocked, true);
     if (!api.exposure.allowance(handle.connectionId) || api.exposure.summary(handle.connectionId).availableMicroUsd <= 0)
       throw new EngineError(
         'SPEND_LIMIT',
@@ -1890,7 +1904,7 @@ export class EngineService {
         'ACCOUNT_CHANGED',
         `The ${handle.names.short} connection changed after this message was admitted. Nothing was sent.`,
       );
-    return { handle, secret: await api.secrets.get(handle.connectionId) };
+    return { handle, secret: await handle.credential.open() };
   }
   /** One conversation message on a model-API route, through the model-session driver. */
   async modelSession(route: ModelApiRoute, mode: ModelSessionTurn['mode'], runId: string, input: TextRequest) {
@@ -1927,7 +1941,7 @@ export class EngineService {
           const adapter = handle.adapter({
             model: admission.model,
             secret,
-            exposure: await this.jobLedger(api, input),
+            exposure: handle.exposure(await this.jobLedger(api, input), runId),
             instructions,
             effort: effortOf(input.effort),
             transport: api.transport,
@@ -2002,7 +2016,7 @@ export class EngineService {
             result = await handle.respond({
               model: admission.model,
               secret,
-              exposure,
+              exposure: handle.exposure(exposure, runId),
               attempt: { runId, stepId: TEXT_DISPATCH_STEP, attempt: context.attempt, requestDigest: digest(intent) },
               instructions: input.instructions,
               messages: [{ role: 'user', content: contextMessage(input) }],
@@ -2180,6 +2194,21 @@ export interface ModelApiServices {
   transcripts: ModelTranscripts;
   azure?: { connections: AzureConnections; transcripts: ModelTranscripts };
   openrouter?: { connections: OpenRouterConnections; transcripts: ModelTranscripts };
+  /**
+   * Google Vertex AI. There is no stored key: each turn mints a short-lived token from the
+   * Application Default Credentials file the connection was verified with. `mint`, `env` and
+   * `now` are replaced only by tests. `funding`, when present, makes every call a managed call:
+   * it wraps the local ledger with the customer's parent-job credits and is consulted again
+   * immediately before each dispatch.
+   */
+  vertex?: {
+    connections: VertexConnections;
+    transcripts: ModelTranscripts;
+    env?: NodeJS.ProcessEnv;
+    mint?: (connection: VertexConnection) => Promise<AccessToken>;
+    funding?: (base: SpendExposure, runId: string) => CallExposure;
+    now?: () => Date;
+  };
   /** Tests substitute the network here, below the SDK. Production leaves it unset. */
   transport?: typeof globalThis.fetch;
   /**
@@ -2192,7 +2221,7 @@ export interface ModelApiServices {
 interface RouteCallOptions {
   model: string;
   secret: string;
-  exposure: SpendExposure;
+  exposure: CallExposure;
   instructions: string;
   effort: 'low' | 'medium' | 'high';
   transport?: typeof globalThis.fetch;
@@ -2212,6 +2241,13 @@ type ConnectedRoute = {
   serves(model: string): boolean;
   /** The declared price card calls for this model are reserved under. Throws when there is none. */
   card(model: string): ModelRateCard;
+  /**
+   * The route's credential: `check` refuses, before anything is sent, when it cannot be used;
+   * `open` returns it inside the dispatch step. Keyed routes read protected storage.
+   */
+  credential: { check(): Promise<string | null>; open(): Promise<string> };
+  /** The ledger a call is held on: the local cap, or a managed route's funded ledger over it. */
+  exposure(base: SpendExposure, runId: string): CallExposure;
   adapter(options: RouteCallOptions): ModelAdapter;
   respond(
     options: RouteCallOptions & {
@@ -2229,7 +2265,15 @@ const ROUTE_WORDS: Record<ModelApiRoute, { short: string; long: string }> = {
   'aws-bedrock': { short: 'AWS', long: 'AWS Bedrock' },
   'azure-openai': { short: 'Azure', long: 'Azure OpenAI' },
   openrouter: { short: 'OpenRouter', long: 'OpenRouter' },
+  'google-vertex': { short: 'Google Vertex AI', long: 'Google Vertex AI' },
 };
+
+/** A keyed route's credential: the key in protected storage under its own connection id. */
+const storedKey = (api: ModelApiServices, connectionId: string): ConnectedRoute['credential'] => ({
+  check: async () => (api.secrets.available() ? null : 'Protected credential storage is not available in this process.'),
+  open: () => api.secrets.get(connectionId),
+});
+const localLedger = (base: SpendExposure) => base;
 
 /**
  * One model-API route's saved connection, read fresh, with the calls it can make. Each branch
@@ -2257,12 +2301,15 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute): Promi
         serving: connection.modelId,
         serves: (model) => model === connection.modelId,
         card: () => AWS_LUNA_RATE_CARD,
+        credential: storedKey(api, connection.id),
+        exposure: localLedger,
         adapter: (options) =>
           createAwsModelAdapter({
             connection,
             secret: options.secret,
             card: AWS_LUNA_RATE_CARD,
-            exposure: options.exposure,
+            // Only a managed route is funded; this route always holds on the local ledger.
+            exposure: api.exposure,
             transcripts: api.transcripts,
             instructions: options.instructions,
             effort: options.effort,
@@ -2270,7 +2317,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute): Promi
             ...options.sinks,
           }),
         respond: ({ sinks, model: _model, ...options }) =>
-          respondOnce({ connection, card: AWS_LUNA_RATE_CARD, ...options, ...sinks }),
+          respondOnce({ connection, card: AWS_LUNA_RATE_CARD, ...options, exposure: api.exposure, ...sinks }),
       };
     }
     case AZURE_OPENAI_ROUTE: {
@@ -2292,13 +2339,16 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute): Promi
         serving: models.join(', '),
         serves: (model) => models.includes(model),
         card: (model) => azureRateCard(connection, model),
+        credential: storedKey(api, connection.id),
+        exposure: localLedger,
         adapter: (options) =>
           createAzureModelAdapter({
             connection,
             model: options.model,
             secret: options.secret,
             card: azureRateCard(connection, options.model),
-            exposure: options.exposure,
+            // Only a managed route is funded; this route always holds on the local ledger.
+            exposure: api.exposure,
             transcripts: services.transcripts,
             instructions: options.instructions,
             effort: options.effort,
@@ -2306,7 +2356,7 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute): Promi
             ...options.sinks,
           }),
         respond: ({ sinks, ...options }) =>
-          respondAzure({ connection, card: azureRateCard(connection, options.model), ...options, ...sinks }),
+          respondAzure({ connection, card: azureRateCard(connection, options.model), ...options, exposure: api.exposure, ...sinks }),
       };
     }
     case OPENROUTER_ROUTE: {
@@ -2328,20 +2378,93 @@ async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute): Promi
         serving: models.join(', '),
         serves: (model) => models.includes(model),
         card: (model) => openRouterRateCard(connection, model),
+        credential: storedKey(api, connection.id),
+        exposure: localLedger,
         adapter: (options) =>
           createOpenRouterModelAdapter({
             connection,
             model: options.model,
             secret: options.secret,
             card: openRouterRateCard(connection, options.model),
-            exposure: options.exposure,
+            // Only a managed route is funded; this route always holds on the local ledger.
+            exposure: api.exposure,
             transcripts: services.transcripts,
             instructions: options.instructions,
             transport: options.transport,
             ...options.sinks,
           }),
         respond: ({ sinks, effort: _effort, ...options }) =>
-          respondOpenRouter({ connection, card: openRouterRateCard(connection, options.model), ...options, ...sinks }),
+          respondOpenRouter({ connection, card: openRouterRateCard(connection, options.model), ...options, exposure: api.exposure, ...sinks }),
+      };
+    }
+    case GOOGLE_VERTEX_ROUTE: {
+      const services = api.vertex;
+      if (!services) throw unavailable();
+      const connection: VertexConnection | null = await services.connections.read();
+      if (!connection) return { connected: false, route, names };
+      const now = services.now ?? (() => new Date());
+      const mint = services.mint ?? ((value: VertexConnection) => mintVertexToken(value, services.env));
+      return {
+        connected: true,
+        route,
+        prefix: 'vertex',
+        names,
+        sdk: GOOGLE_VERTEX_SDK,
+        connectionId: connection.id,
+        revision: connection.revision,
+        accountRoute: vertexAccountRoute(connection),
+        expiresAt: null,
+        serving: connection.model,
+        serves: (model) => model === connection.model,
+        credential: {
+          // Offline: a price must be in force, and the credential must be the one verified.
+          check: async () => {
+            try {
+              vertexRateCard(now());
+            } catch (error) {
+              return error instanceof Error ? error.message : 'No current Gemini price is recorded.';
+            }
+            if (connection.credential.kind === 'google-api-key') {
+              if (!api.secrets.available()) return 'Protected credential storage is not available in this process.';
+              try {
+                if (secretFingerprint(await api.secrets.get(connection.id)) === connection.credential.fingerprint) return null;
+              } catch {
+                // Missing or unreadable: said below.
+              }
+              return 'The saved Google Vertex AI key is missing or not the one connected. Connect it again in AI setup. Nothing was sent.';
+            }
+            const identity = await readAdcIdentity(services.env);
+            if (!identity)
+              return 'No Google Application Default Credentials were found on this computer. Run `gcloud auth application-default login`, then verify Google Vertex AI in AI setup. Nothing was sent.';
+            if (identity.fingerprint !== connection.credential.fingerprint)
+              return 'The Google credential on this computer is not the one Google Vertex AI was verified with. Verify it again in AI setup. Nothing was sent.';
+            return null;
+          },
+          open: async () => {
+            if (connection.credential.kind !== 'google-api-key') return (await mint(connection)).token;
+            const key = await api.secrets.get(connection.id);
+            if (secretFingerprint(key) !== connection.credential.fingerprint)
+              throw new EngineError('RUNTIME_UNAVAILABLE', 'The saved Google Vertex AI key is not the one that was connected. Connect it again in AI setup. Nothing was sent.', false);
+            return key;
+          },
+        },
+        card: () => vertexRateCard(now()),
+        exposure: (base, runId) => (services.funding ? services.funding(base, runId) : base),
+        adapter: (options) =>
+          createVertexModelAdapter({
+            connection,
+            secret: options.secret,
+            card: vertexRateCard(now()),
+            exposure: options.exposure,
+            transcripts: services.transcripts,
+            instructions: options.instructions,
+            effort: options.effort,
+            transport: options.transport,
+            now,
+            ...options.sinks,
+          }),
+        respond: ({ sinks, model: _model, ...options }) =>
+          respondVertex({ connection, card: vertexRateCard(now()), now, ...options, ...sinks }),
       };
     }
   }

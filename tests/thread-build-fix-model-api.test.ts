@@ -156,7 +156,9 @@ async function resolveNeed(resolution: 'go-ahead' | 'declined') {
   });
 }
 
-const connect: Record<ModelApiRoute, () => Promise<string>> = {
+// The three routes this lane proved; Google Vertex AI arrived later with its own tests.
+type TestedRoute = Exclude<ModelApiRoute, 'google-vertex'>;
+const connect: Record<TestedRoute, () => Promise<string>> = {
   'aws-bedrock': async () => {
     const view = await api<AwsConnectionView>('/ai/model-api/aws-bedrock', 'PUT', {
       accountId: '123456789012',
@@ -191,25 +193,25 @@ const connect: Record<ModelApiRoute, () => Promise<string>> = {
     return view.connection!.accountRoute;
   },
 };
-const REPORTED: Record<ModelApiRoute, string> = {
+const REPORTED: Record<TestedRoute, string> = {
   'aws-bedrock': AWS_LUNA_MODEL,
   'azure-openai': AZURE_REPORTED,
   openrouter: OR_MODEL,
 };
-const HOSTS: Record<ModelApiRoute, string> = {
+const HOSTS: Record<TestedRoute, string> = {
   'aws-bedrock': 'https://bedrock-runtime.us-east-1.amazonaws.com/',
   'azure-openai': 'https://contoso-ai.openai.azure.com/',
   openrouter: 'https://openrouter.ai/',
 };
 
 /** Connects the route and puts the thread on it through the same save the Console's picker uses. */
-async function onRoute(route: ModelApiRoute) {
+async function onRoute(route: TestedRoute) {
   const accountRoute = await connect[route]();
   const chosen = await api<Conversation>(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: route });
   expect(chosen.engine).toBe(route);
   return accountRoute;
 }
-const ask = (route: ModelApiRoute, body: Record<string, unknown>) =>
+const ask = (route: TestedRoute, body: Record<string, unknown>) =>
   request(`/projects/${project.id}/ask`, 'POST', {
     route,
     threadId: thread.id,
@@ -217,8 +219,8 @@ const ask = (route: ModelApiRoute, body: Record<string, unknown>) =>
     consent: true,
     ...body,
   });
-const build = (route: ModelApiRoute) => ask(route, { mode: 'build', text: 'Draft a lunch plan', sources: [] });
-const fix = (route: ModelApiRoute) =>
+const build = (route: TestedRoute) => ask(route, { mode: 'build', text: 'Draft a lunch plan', sources: [] });
+const fix = (route: TestedRoute) =>
   ask(route, {
     mode: 'fix',
     text: 'The menu lists the soup twice',
@@ -260,7 +262,7 @@ afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
-const ROUTES: ModelApiRoute[] = ['aws-bedrock', 'azure-openai', 'openrouter'];
+const ROUTES: TestedRoute[] = ['aws-bedrock', 'azure-openai', 'openrouter'];
 
 describe.each(ROUTES)('Build and Fix from a thread on %s', (route) => {
   test('Build: one guarded proposal, nothing written until the exact approval, attributed to the reported model', async () => {
@@ -334,7 +336,7 @@ describe('a large proposal', () => {
 
 describe('Fix on a model-API route keeps its limits', () => {
   test('three tries, then the fourth is refused before anything is sent; an approved try writes only the failing file', async () => {
-    const route: ModelApiRoute = 'azure-openai';
+    const route: TestedRoute = 'azure-openai';
     await onRoute(route);
     for (const n of [1, 2, 3]) {
       const sent = await fix(route);

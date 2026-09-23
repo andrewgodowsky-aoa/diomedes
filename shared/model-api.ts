@@ -4,7 +4,7 @@
  * `ExternalEngine`s: nothing is discovered, installed, bound or signed in to,
  * and every place that handles a route must say what it does with these.
  */
-export const MODEL_API_ROUTES = ['aws-bedrock', 'azure-openai', 'openrouter'] as const;
+export const MODEL_API_ROUTES = ['aws-bedrock', 'azure-openai', 'openrouter', 'google-vertex'] as const;
 export type ModelApiRoute = (typeof MODEL_API_ROUTES)[number];
 
 export const isModelApiRoute = (value: unknown): value is ModelApiRoute =>
@@ -14,6 +14,7 @@ export const MODEL_API_NAMES: Record<ModelApiRoute, string> = {
   'aws-bedrock': 'AWS Bedrock (GPT-5.6 Luna)',
   'azure-openai': 'Azure OpenAI',
   openrouter: 'OpenRouter',
+  'google-vertex': 'Google Vertex AI (Gemini 3.8 Flash)',
 };
 
 /** What `GET /api/ai/model-api/aws-bedrock` returns. Identifiers and state only, never a credential. */
@@ -129,6 +130,88 @@ export interface OpenRouterConnectionView {
   } | null;
   spend: ModelApiSpendView | null;
   next: string | null;
+}
+
+/**
+ * What `GET /api/ai/model-api/google-vertex` returns. Identifiers and state only: never a token,
+ * a refresh token, a key or the contents of the Application Default Credentials file.
+ */
+export interface VertexConnectionView {
+  route: 'google-vertex';
+  configured: boolean;
+  enabled: boolean;
+  /** What this computer offers, found without sending anything. Finding it grants nothing. */
+  detected: {
+    adc: boolean;
+    source: string | null;
+    namedBy: string | null;
+    quotaProject: string | null;
+  };
+  connection: {
+    id: string;
+    projectId: string;
+    location: 'global';
+    endpoint: string;
+    model: 'gemini-3.8-flash';
+    processing: string;
+    /** Who Google bills: the project the request names. */
+    payer: { kind: 'google-cloud-project'; projectId: string };
+    credential:
+      | {
+          kind: 'google-adc';
+          source: string;
+          namedBy: string;
+          fingerprint: string;
+          principal: string | null;
+          quotaProject: string | null;
+          savedAt: string;
+          /** False when the ADC file on this computer is no longer the one that was verified. */
+          matches: boolean;
+        }
+      | {
+          /** A key from the billed project, in protected storage. Nothing about it is shown. */
+          kind: 'google-api-key';
+          savedAt: string;
+          /** False when protected storage is not available to use it. */
+          matches: boolean;
+        };
+    rateCard: { version: string; source: string; stale: boolean; message: string | null };
+    revision: number;
+    accountRoute: string;
+    /** The last call Vertex answered on this connection, from the ledger. */
+    lastVerified: { at: string; state: string; providerRequestId: string | null } | null;
+  } | null;
+  spend: ModelApiSpendView | null;
+  /**
+   * Five figures that are never merged. Only the gross estimate comes from this
+   * computer; the others are an expectation, or live in Google's billing account.
+   */
+  accounting: VertexAccountingView | null;
+  next: string | null;
+}
+
+export interface VertexAccountingView {
+  /** Who pays Google for these calls: the owner's own project, not Nectovia credits. */
+  payer: { kind: 'owner-google-cloud-project'; projectId: string };
+  /** Settled calls at Google's standard rate: the conservative provider-cost bound. */
+  grossEstimateMicroUsd: number;
+  /** Calls whose cost is not yet known (pending or uncertain), also at the standard rate. */
+  unresolvedEstimateMicroUsd: number;
+  /** What Google's pricing footnote says may come back later. Never subtracted from anything. */
+  expectedPromotion: {
+    status: 'expected-unconfirmed';
+    percent: number;
+    appliesThrough: string;
+    stacksWithFreeTrial: 'unknown';
+    expectedMicroUsd: number;
+    source: string;
+  };
+  /** Credits Google actually applied. Only the billing account knows; this computer never does. */
+  confirmedCredits: { known: false; where: string };
+  /** Nectovia credits debited for these calls. Zero on the owner route: the owner's project pays. */
+  customerDebitMicroUsd: 0;
+  /** The invoice is Google's, in the billing account; this is where to read it. */
+  invoice: { known: false; where: string };
 }
 
 /**

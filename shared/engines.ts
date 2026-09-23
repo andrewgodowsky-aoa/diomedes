@@ -62,6 +62,7 @@ export const ROUTE_NAMES: Record<Route, string> = {
   'aws-bedrock': 'AWS Bedrock',
   'azure-openai': 'Azure OpenAI',
   openrouter: 'OpenRouter',
+  'google-vertex': 'Google Vertex AI',
 };
 /**
  * A route or engine id as a person reads it. An id outside the registry is

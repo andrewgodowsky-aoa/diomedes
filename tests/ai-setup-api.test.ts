@@ -123,9 +123,9 @@ describe('first-run AI setup and the existing Work pipeline', () => {
     const markup = renderToStaticMarkup(
       createElement(AIConnections, { settings: initial, save: async () => {} }),
     );
-    // One card per installed engine, then the company-account routes: AWS Bedrock, Azure OpenAI
-    // and OpenRouter, then the owner's tier map.
-    expect(markup.match(/<section class="service"/g)).toHaveLength(9);
+    // One card per installed engine, then the company-account routes: AWS Bedrock, Azure OpenAI,
+    // OpenRouter and Google Vertex AI, then the owner's tier map.
+    expect(markup.match(/<section class="service"/g)).toHaveLength(10);
     expect(markup).toContain('aria-label="Tiers"');
     expect(markup).toContain('aria-label="Cursor"');
     expect(markup).toContain('aria-label="Devin"');
