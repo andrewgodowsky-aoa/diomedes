@@ -309,7 +309,7 @@ export function renderSkillPlaybook(skill: PackSkill, packVersion: string): stri
   ];
   if (skill.visual)
     lines.push(
-      `Where a picture helps: ${skill.visual.about}. If this conversation shows inline visuals, add one fenced visual block of kind ${skill.visual.kind} built only from figures in what you were given; otherwise use a short table. Never draw a figure you did not read.`,
+      `Where a picture helps: ${skill.visual.about}. Add one fenced visual block of kind ${skill.visual.kind} built only from figures in what you were given. Never draw a figure you did not read.`,
     );
   if (skill.drafts.length)
     lines.push(
