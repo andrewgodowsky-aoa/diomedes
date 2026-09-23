@@ -727,6 +727,16 @@ test('R-10: a lineage that runs out of budget is replaced once, and the replacem
     [2, null],
   ]);
   expect(next.runId).toBe(lineagesOf()[1].runId);
+  // The replacement starts without the earlier context, and the thread says so, once.
+  const notes = () =>
+    store()
+      .state(project.id)
+      .conversations.find((item) => item.id === thread.id)!
+      .turns.filter((turn) => turn.role === 'diomedes')
+      .map((turn) => turn.text);
+  expect(notes()).toEqual([
+    "Nectovia started this conversation fresh because the earlier conversation reached its length limit. Your earlier messages are still here, but it won't remember them.",
+  ]);
   // The refused turn stays on the old run as evidence, never sent.
   const old = await driver().get(project.id, lineagesOf()[0].runId);
   expect(old.used.modelCalls).toBe(2);
@@ -742,6 +752,8 @@ test('R-10: a lineage that runs out of budget is replaced once, and the replacem
   expect((await send('m-budget-0', 'Hello 0')).answerText).toBe('answer:Hello 0');
   expect(dispatches).toHaveLength(3);
   expect(lineagesOf()).toHaveLength(2);
+  // A retry and a restart read the retirement back; they never write a second note.
+  expect(notes()).toHaveLength(1);
 });
 
 test('R-16: the direct Build route cannot admit Work in the reserved home', async () => {
