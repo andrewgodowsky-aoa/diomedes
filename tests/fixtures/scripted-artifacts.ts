@@ -111,6 +111,20 @@ const LINKED_LOGO = [
 ];
 
 /**
+ * A participant given a picture from a link by a sequence diagram's `properties` line: a local
+ * document read, which Mermaid would ask for from the Console's own document as it laid the
+ * diagram out.
+ */
+const ACTOR_PICTURE = [
+  '%% artifact: id=parcel-handoff title="Parcel handoff"',
+  'sequenceDiagram',
+  '  participant S as Shop',
+  '  participant C as Courier',
+  '  properties S: {"icon": "{{READ}}"}',
+  '  S->>C: Parcel ready',
+];
+
+/**
  * A page that tries every way out of its frame, and writes in its own DOM what it did. No script
  * runs in a design (sandbox=""), so none of its marks may appear: its inline script, its
  * onload and onerror handlers, a javascript: URL and a WebRTC connection to the spec's STUN
@@ -268,6 +282,7 @@ export const ANSWERS: Readonly<Record<string, string>> = {
   MIXED: answer('Here is the area.', fence('mermaid', FORMULA_WITH_MARKUP)),
   PHOTO: answer('Here is the logo.', fence('mermaid', LOGO)),
   REMOTE: answer('Here is the logo from the shared folder.', fence('mermaid', LINKED_LOGO)),
+  ICON: answer('Here is who hands the parcel to whom.', fence('mermaid', ACTOR_PICTURE)),
   // A reply that is the diagram alone: no line of prose before or after the fence.
   FENCE: fence('mermaid', ROUTE),
 };
