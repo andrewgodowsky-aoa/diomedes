@@ -183,6 +183,14 @@ The level is not bound into anything a lineage keeps. It is sent per message
      | Account or other settings | the settings it runs with changed |
      | Run ended | the earlier conversation stopped and could not be picked up again |
      | Budget | the earlier conversation reached its length limit |
+   - **A run this build cannot read.** A run file that is damaged, or that a newer build wrote before a
+     downgrade (`invalid_run_record`, `unsupported_run_version`), is passed over when a message is located
+     instead of failing every message on the thread with a 409. An open lineage on such a run retires
+     (`terminated`) before anything reads it, and the next generation starts. A retired one simply stops
+     being read. Either way the thread gets one note: "Nectovia couldn't read an earlier part of this
+     conversation, so it won't remember that part. Your earlier messages are still here." Its id is
+     SHA-256 of the run alone, because every later message meets the same run again; the thread says it
+     once per run. The file is never deleted or rewritten.
 5. **Metering.** The job estimate prices the text the next message will be sent with
    (`nextModelInstructions`, `server/app.ts:3398`, used at `:4809`). It makes the same choice as `resolve`,
    including the same level check for a lineage from before those fields.
@@ -213,6 +221,7 @@ Each test below was run against the unfixed code and failed there for the reason
 | same, refusal | A refused turn ends that message only. The next message is answered on a new generation, with one note. | No note. |
 | `tests/instruction-digests.test.ts` (9) | The golden list: every fixture reproduces its digest, and today's texts are known, each for its own mode. | Changing one character of the Ask text fails the known-texts check (`ask: expected false to be true`). At `f7d4c47` the fixture-label and own-mode checks fail. |
 | `tests/interaction-seam.test.ts` R-10 | A budget retirement writes one note, and a retry and a restart write no second. | No note. |
+| `tests/unreadable-run-thread.test.ts` (3) | A damaged retired run, a retired run from a newer build, and a damaged open run: the next message is answered with exactly one note, the next adds none, and the file is unchanged. | 409 `invalid_run_record` or `unsupported_run_version` on the message. |
 | `tests/home-luna.spec.ts`, tier change | On the Nectovia page, Default to Efficient shows the note once, between the two exchanges. | 0 notes. |
 
 The review added five tests to `tests/lineage-continuity-aws.test.ts`. The lineage is rewritten to exactly

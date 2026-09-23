@@ -3329,24 +3329,44 @@ export async function createApp(options: AppOptions) {
     if (!driver) throw new ApiError(503, 'The conversation runtime is unavailable.');
     return driver;
   };
-  /** `locate` across a thread's lineages, each on its own driver, newest first. */
+  /**
+   * A conversation run this build cannot read: its file is damaged, or a newer build wrote it
+   * before a downgrade. The file is left exactly as it is.
+   */
+  const unreadableRun = (error: unknown) =>
+    error instanceof HarnessError &&
+    (error.code === 'invalid_run_record' || error.code === 'unsupported_run_version');
+  /**
+   * `locate` across a thread's lineages, each on its own driver, newest first. A run this build
+   * cannot read holds nothing it can find, so it is passed over and named in `unreadable` rather
+   * than failing every message on the thread.
+   */
   const conversationLocator =
-    () => async (projectId: string, runIds: readonly string[], commandId: string) => {
+    (unreadable?: Set<string>) =>
+    async (projectId: string, runIds: readonly string[], commandId: string) => {
       for (const runId of runIds) {
-        const found = await conversationDriver(runId).locate(projectId, [runId], commandId);
+        const found = await conversationDriver(runId)
+          .locate(projectId, [runId], commandId)
+          .catch((error: unknown) => {
+            if (!unreadableRun(error)) throw error;
+            unreadable?.add(runId);
+            return null;
+          });
         if (found) return found;
       }
       return null;
     };
   /**
    * The scope a conversation run recorded when it started (`run.input`): the instructions, model
-   * and account it runs under. Null for a lineage admitted whose run never started.
+   * and account it runs under. Null for a lineage admitted whose run never started, and for one
+   * whose run this build cannot read, which retires before anything is sent on it.
    */
   const recordedScope = async (projectId: string, runId: string): Promise<unknown> => {
     try {
       return (await conversationDriver(runId).get(projectId, runId)).input;
     } catch (error) {
       if (error instanceof HarnessError && error.code === 'unknown_run') return null;
+      if (unreadableRun(error)) return null;
       throw error;
     }
   };
@@ -3488,7 +3508,9 @@ export async function createApp(options: AppOptions) {
       store.locked(async () => {
         const driver = engines.nativeSessions;
         if (!driver) throw new ApiError(503, 'The native conversation runtime is unavailable.');
-        const locateAny = conversationLocator();
+        // The runs of this thread this build could not read, found while the command is located.
+        const unreadable = new Set<string>();
+        const locateAny = conversationLocator(unreadable);
         // Clone first, as the projection does: a failed persist must leave nothing half admitted.
         const state = structuredClone(store.state(projectId));
         const thread = state.conversations.find((item) => item.id === threadId);
@@ -3651,6 +3673,10 @@ export async function createApp(options: AppOptions) {
           current = undefined;
           changed = true;
         };
+        // A lineage whose run this build cannot read cannot continue: nothing it recorded can be
+        // checked or sent. It retires before any other check reads it, and the next generation
+        // starts. Its file stays exactly as it is.
+        if (current && unreadable.has(current.runId)) retire('terminated', 'unreadable');
         // The tier the thread is on now, which names a retirement a tier change causes.
         const tier = tierFor(thread, { mode: command.mode, text: command.text });
         const tierName = tier?.outcome === 'run' ? WORK_STYLE_LABELS[tier.style] : undefined;
@@ -3759,6 +3785,21 @@ export async function createApp(options: AppOptions) {
             at: now(),
           });
           if (!thread.turns.some((turn) => turn.id === note.id)) thread.turns.push(note);
+        }
+        // A lineage this build cannot read no longer stands in the way of this message; the thread
+        // says once, for each such run, that the part it held will not be remembered.
+        for (const runId of unreadable) {
+          const note = lineageNoteTurn({
+            retiredRunId: runId,
+            commandId: command.commandId,
+            cause: 'unreadable',
+            mode: command.mode,
+            route: conversationRoute,
+            at: now(),
+          });
+          if (thread.turns.some((turn) => turn.id === note.id)) continue;
+          thread.turns.push(note);
+          changed = true;
         }
         if (changed) await store.persist(state);
         // A lineage this message did not open is sent with the text it recorded when this build
