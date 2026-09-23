@@ -122,6 +122,7 @@ import {
   isExternalEngine,
   isRoute,
   isConversationRoute,
+  CONVERSATION_ROUTE_LIST,
   ROUTES,
   routeDisplayName,
   type EngineConnection,
@@ -718,10 +719,13 @@ export async function createApp(options: AppOptions) {
               .state(input.projectId)
               .team?.members.find((item) => item.slotId === team.slotId);
             if (!member) throw new ApiError(409, 'This team member was not found.');
+            // The team turn's run has no preview channel; its tool calls are narrated
+            // through onTeamToolCall, so the raw sink is dropped rather than refused.
+            const { onDelta: _unused, ...teamInput } = input;
             return engines.generateModelApiTools(
               input.engine,
               {
-                ...input,
+                ...teamInput,
                 projectId: input.projectId,
                 threadId: input.threadId,
                 requestId: input.requestId,
@@ -735,14 +739,19 @@ export async function createApp(options: AppOptions) {
               ),
             );
           }
+          // The engine service refuses a raw sink, so the "writing began" note rides on its
+          // fenced preview channel, and tool activity reaches the run card as on every route.
+          const { onDelta, ...rest } = input;
           return engines.generateModelApi(input.engine, {
-            ...input,
+            ...rest,
             projectId: input.projectId,
             threadId: input.threadId,
             requestId: input.requestId,
             model: input.model,
             instructions: input.instructions ?? '',
             accountRoute: input.accountRoute,
+            ...(onDelta ? { onPreview: (frame: TransientPreview) => onDelta(frame.text) } : {}),
+            onActivity: (frame) => store.emit('engine-activity', frame),
           });
         }
         if (!isExternalEngine(input.engine))
@@ -2526,7 +2535,7 @@ export async function createApp(options: AppOptions) {
       if (b.engine !== undefined && store.isHomeProject(id(req)) && !isConversationRoute(b.engine))
         throw new ApiError(
           409,
-          'The Diomedes conversation runs on Claude Code or AWS Bedrock. Its engine cannot be changed to that.',
+          `The Diomedes conversation runs on ${CONVERSATION_ROUTE_LIST}. Its engine cannot be changed to that.`,
         );
       if (b.name !== undefined) {
         if (typeof b.name !== 'string' || !b.name.trim() || b.name.trim().length > 120)
@@ -3172,12 +3181,14 @@ export async function createApp(options: AppOptions) {
           return { unfinished: true as const, runId: sent.runId, sourceMessageId };
         // CD-01 Decision 5: a conversation runs on the native Claude session or on a
         // model-API route through its own driver. Any other route is refused here, by
-        // name, through the same predicate the thread update guards with.
+        // name, through the same predicate the thread update guards with. This is about
+        // which driver answers a message; Build and Fix on a thread run on every connected
+        // route through /ask (owner decision 2026-09-23).
         const conversationRoute = selectedEngine(store.settings, state.project, thread);
         if (!isConversationRoute(conversationRoute))
           throw new ApiError(
             409,
-            'Select Claude Code or AWS Bedrock for this conversation before sending.',
+            `${routeDisplayName(conversationRoute) || 'This route'} does not answer conversations. Select ${CONVERSATION_ROUTE_LIST} for this conversation before sending.`,
           );
         const routeName =
           conversationRoute === 'claude-code' ? 'Claude Code' : MODEL_API_NAMES[conversationRoute];
@@ -3755,7 +3766,12 @@ export async function createApp(options: AppOptions) {
                 store.state(projectId).conversations.find((c) => c.id === b.threadId),
               )
             : choice(b.route, ROUTES, 'service');
-      if (isModelApiRoute(serviceRoute))
+      // Build and Fix run on every connected route, the model-API routes included (owner
+      // decision 2026-09-23, reversing CD-01 Decision 5's refusal of them on a thread). They
+      // take the one guarded proposal path below. Ask and Plan on a model-API route still
+      // answer through the conversation, which is where that route's read tools and lineage
+      // live.
+      if (isModelApiRoute(serviceRoute) && b.mode !== 'build' && b.mode !== 'fix')
         throw new ApiError(
           409,
           `${MODEL_API_NAMES[serviceRoute]} answers through the conversation. Send your message there.`,
@@ -3814,6 +3830,9 @@ export async function createApp(options: AppOptions) {
         throw new ApiError(409, 'Turn the selected engine on in Settings before using it.');
       const needsConsent =
         isExternalEngine(serviceRoute) ||
+        // A model-API route reaches /ask only for Build or Fix, and sends the selected
+        // documents to the company's provider account.
+        isModelApiRoute(serviceRoute) ||
         (serviceRoute === 'codex' &&
           (mode === 'build' || mode === 'fix' || store.settings.permissions.sending));
       if (needsConsent && b.consent !== true)

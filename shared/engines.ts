@@ -40,6 +40,8 @@ export const CONVERSATION_DEFAULT_ROUTE: Route = 'aws-bedrock';
 export function isConversationRoute(value: unknown): value is 'claude-code' | ModelApiRoute {
   return value === 'claude-code' || isModelApiRoute(value);
 }
+/** Every route a conversation accepts, in the order a person reads them. */
+export const CONVERSATION_ROUTES = ['claude-code', ...MODEL_API_ROUTES] as const;
 export const ENGINE_NAMES: Record<ExternalEngine, string> = {
   'claude-code': 'Claude Code',
   opencode: 'OpenCode',
@@ -70,6 +72,11 @@ export function routeDisplayName(id: string | null | undefined): string {
   if (!id) return '';
   return (ROUTE_NAMES as Record<string, string>)[id] ?? id;
 }
+/** The conversation routes as one phrase: "Claude Code, AWS Bedrock, Azure OpenAI or OpenRouter". */
+export const CONVERSATION_ROUTE_LIST = (() => {
+  const names = CONVERSATION_ROUTES.map((id) => ROUTE_NAMES[id]);
+  return `${names.slice(0, -1).join(', ')} or ${names.at(-1)}`;
+})();
 /**
  * Where an installation lives. A WSL copy or a desktop application is named as
  * what it is, never presented as a native Windows command-line account.
