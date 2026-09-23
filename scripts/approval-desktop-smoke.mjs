@@ -6,6 +6,14 @@ import { _electron as electron, expect } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {
+  deliverFromWindow,
+  enterLastOpenProject,
+  fulfillDelivered,
+  isSmokeRequest,
+  shareFixtureProject,
+  windowApi,
+} from './smoke-window.mjs';
 
 const root = path.resolve('test-results', `approval-desktop-${Date.now()}`);
 const profileDir = path.join(root, 'profile');
@@ -52,35 +60,31 @@ const proof = {
   limitations: [
     'One real Codex generation only; no retries, no fallback, no sample work.',
     'Reuses the existing local runtime and sign-in; no credentials are copied.',
-    'Only the first approval HTTP response is lost after route.fetch commits.',
+    'Only the first approval HTTP response is lost after its in-window delivery commits.',
     'Writes evidence/approval-desktop-proof.json; never evidence/desktop-proof.json.',
   ],
   pageErrors: errors,
 };
 
 let desktop;
-let url;
-async function api(route, method = 'GET', data) {
-  const response = await fetch(`${url}/api${route}`, {
-    method,
-    headers: { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' },
-    body: data === undefined ? undefined : JSON.stringify(data),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!response.ok) throw new Error(`${route}: ${response.status} ${await response.text()}`);
-  return response.json();
-}
+// The window the smoke is driving. The packaged service answers only the app
+// window's own requests, so `api` asks from inside it (smoke-window.mjs).
+let current;
+const api = (route, method = 'GET', data) => windowApi(current, route, method, data);
 
 try {
   desktop = await electron.launch({ executablePath, env });
   const page = await desktop.firstWindow();
+  current = page;
   page.setDefaultTimeout(15_000);
   page.on('pageerror', (error) => errors.push(error.message));
   await page.waitForURL('http://127.0.0.1:*/');
-  url = new URL(page.url()).origin;
   await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
 
   // Reuse the existing local runtime/sign-in; fail if Codex is unavailable.
+  // Nothing is looked for until the person confirms the disclosed check, so
+  // confirm it the way Check this computer does (client/AISetup.tsx).
+  await api('/ai/discover', 'POST', { consent: true });
   const integrations = await api('/integrations');
   const codex = integrations.integrations.find((item) => item.id === 'codex');
   if (!codex?.available) throw new Error('Codex integration is unavailable; no fallback is allowed.');
@@ -101,6 +105,8 @@ try {
   const project = await api('/projects', 'POST', { name: 'Approval desktop smoke', folder: projectFolder });
   proof.sourcePaths.projectFolder = project.folder;
   await api(`/projects/${project.id}/documents/create`, 'POST', { path: 'Brief.md', text: brief });
+  // The work runs on the Codex route with Brief.md, which the project has to share.
+  await shareFixtureProject(api, project.id);
   const task = await api(`/projects/${project.id}/tasks`, 'POST', {
     name: 'Append one sentence to Brief.md',
     owner: 'diomedes-with-ok',
@@ -163,6 +169,12 @@ try {
     lastPage: { ...settings.lastPage, [project.id]: 'work' },
   });
   await page.reload();
+  // A launch opens on the agent's home and a reload keeps that place, so the
+  // project is entered through the Open projects bar (smoke-window.mjs).
+  await enterLastOpenProject(page);
+  // Entering lands on the project's Home page; the Work page is where the
+  // Workbook shows the session's Approval record once it is decided.
+  await page.locator('.rail-link').filter({ hasText: 'Work' }).click();
   const needsRegion = page.getByRole('region', { name: 'Needs your OK' });
   await expect(needsRegion).toBeVisible();
   await needsRegion.getByRole('button', { name: 'Show me first', exact: true }).click();
@@ -176,20 +188,23 @@ try {
     animations: 'disabled',
   });
 
-  // Lose ONLY the first approval HTTP response AFTER route.fetch commits.
+  // Lose ONLY the first approval HTTP response AFTER its delivery commits. Each
+  // command is delivered from inside the window, the one place that carries this
+  // launch's session; the route lets that delivery itself straight through.
   const approvalEndpoint = `**/api/projects/${project.id}/needs/${need.id}/resolve`;
   const approvalCommands = [];
   let approvalReply;
   let approvalResponses = 0;
   await page.route(approvalEndpoint, async (route) => {
+    if (isSmokeRequest(route)) return route.continue();
     approvalCommands.push(route.request().postDataJSON());
-    const response = await route.fetch();
-    if (response.status() !== 200) throw new Error(`Approval decision HTTP ${response.status()}.`);
+    const response = await deliverFromWindow(page, route);
+    if (response.status !== 200) throw new Error(`Approval decision HTTP ${response.status}.`);
     if (approvalCommands.length === 1) {
-      approvalReply = await response.json();
+      approvalReply = JSON.parse(response.text);
       await route.abort('connectionreset');
     } else {
-      await route.fulfill({ response });
+      await fulfillDelivered(route, response);
     }
     approvalResponses++;
   });
@@ -288,10 +303,10 @@ try {
     .toBe(false);
   desktop = await electron.launch({ executablePath, env });
   const reopened = await desktop.firstWindow();
+  current = reopened;
   reopened.setDefaultTimeout(15_000);
   reopened.on('pageerror', (error) => errors.push(error.message));
   await reopened.waitForURL('http://127.0.0.1:*/');
-  url = new URL(reopened.url()).origin;
   proof.restart.relaunched = true;
   const restarted = await api(`/projects/${project.id}/state`);
   const reread = restarted.needs.find((item) => item.id === need.id);

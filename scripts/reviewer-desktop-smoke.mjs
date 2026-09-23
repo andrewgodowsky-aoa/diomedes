@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { checkPackagedRelease } from './packaged-release-check.mjs';
+import { enterLastOpenProject, shareFixtureProject } from './smoke-window.mjs';
 
 /*
  * Packaged proof for `Approve for me` and the Agent primitive.
@@ -180,6 +181,11 @@ try {
 
     const project = await fixtureApi('/projects/sample', 'POST', {});
     await fs.mkdir(path.join(project.folder, 'Reviewed'), { recursive: true });
+    // The threads below run on the Codex route, which a project has to share,
+    // along with the files their proposals send to the reviewer.
+    await shareFixtureProject(fixtureApi, project.id, {
+      extra: ['Reviewed/A.md', 'Reviewed/B.md', 'Outside-reviewed.md'],
+    });
     const { found } = await fixtureApi(`/projects/${project.id}/plans/find-tasks`, 'POST', {
       path: 'Reopening plan.md',
     });
@@ -210,6 +216,9 @@ try {
 
     await page.goto(fixtureUrl);
     await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
+    // The window opens on the agent's home even with openProjects saved, so the
+    // project is entered through the Open projects bar (smoke-window.mjs).
+    await enterLastOpenProject(page);
     const rail = page.getByRole('navigation', { name: 'Threads and views' });
     const board = page.locator('.board[aria-label="Board"]');
     const startTask = async () => {

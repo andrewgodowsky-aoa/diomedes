@@ -3,6 +3,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import {
+  deliverFromWindow,
+  enterLastOpenProject,
+  fulfillDelivered,
+  isSmokeRequest,
+  windowApi,
+} from './smoke-window.mjs';
 
 // Only an explicitly supplied, separately staged package is eligible for this test.
 const executablePath = path.resolve(process.argv[2]);
@@ -32,14 +39,8 @@ if (process.argv.includes('--source-unavailable')) {
   }
   proof.checks.push('Checkout server, client, fixtures and dist directories unavailable during packaged execution');
 }
-async function api(route, method = 'GET', data) {
-  const response = await fetch(`${url}/api${route}`, {
-    method, headers: { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' },
-    body: data === undefined ? undefined : JSON.stringify(data),
-  });
-  if (!response.ok) throw new Error(`${route}: ${response.status} ${await response.text()}`);
-  return response.json();
-}
+// The packaged service answers only the app window's own requests (smoke-window.mjs).
+const api = (route, method = 'GET', data) => windowApi(page, route, method, data);
 async function open() {
   desktop = await electron.launch({ executablePath, env, cwd: root });
   page = await desktop.firstWindow();
@@ -74,6 +75,9 @@ try {
   expect(proof.startup.packaged).toBe(true);
   expect(path.resolve(proof.startup.executable)).toBe(executablePath);
   await page.reload();
+  // A launch opens on the agent's home and a reload keeps that place, so the
+  // project is entered through the Open projects bar (smoke-window.mjs).
+  await enterLastOpenProject(page);
   await page.screenshot({ path: path.join(root, 'fixture.png'), fullPage: true });
   if (reproduce) {
     expect(proof.session.state).toBe('failed');
@@ -115,6 +119,7 @@ try {
     const cursor = proof.run.lastSeq;
     await desktop.close(); desktop = undefined;
     await open();
+    await enterLastOpenProject(page);
     const resumed = await api(`${base}/harness/runs/${proof.run.id}`);
     expect(resumed.steps.filter(s => s.intent.name === 'read_fixture')).toHaveLength(1);
     expect(resumed.steps.find(s => s.intent.name === 'read_fixture').attempt).toBe(1);
@@ -123,11 +128,15 @@ try {
     expect(await page.getByRole('dialog').locator('pre').textContent()).toBe(need.harness.intent.input.text);
     const decisions = [];
     await page.route(`**/api${base}/needs/${need.id}/resolve`, async route => {
+      // The smoke's own delivery of the decision, below, goes straight through.
+      if (isSmokeRequest(route)) return route.continue();
       decisions.push(route.request().postDataJSON());
-      const response = await route.fetch();
-      expect(response.ok()).toBe(true);
+      // Deliver the Console's decision from inside the window, the one place that
+      // carries this launch's session, then lose the first response it waits for.
+      const response = await deliverFromWindow(page, route);
+      expect(response.ok).toBe(true);
       if (decisions.length === 1) await route.abort('connectionreset');
-      else await route.fulfill({ response });
+      else await fulfillDelivered(route, response);
     });
     await page.getByRole('dialog').getByRole('button', { name: 'Go ahead', exact: true }).click();
     await expect.poll(() => decisions.length).toBe(2);
@@ -189,11 +198,18 @@ try {
     expect(proof.renderer).toEqual({ nodeIntegration: false, contextIsolation: true, sandbox: true });
     // Prove the built client cannot roll back a concurrent engine setting merely by navigating.
     await api('/settings', 'PUT', { services: { codex: false } });
+    // A launch opens every stored surface on the Console (server/store.ts). This
+    // legacy smoke drives the Workbook's navigation, which the settings API still
+    // accepts for one more release, so it opts in again for this window.
+    await api('/settings', 'PUT', { surface: 'workbook' });
     await page.reload();
+    await enterLastOpenProject(page);
     await expect(page.getByRole('navigation', { name: 'Project pages', exact: true })).toBeVisible();
     let releaseRefresh;
     const refreshReleased = new Promise(resolve => { releaseRefresh = resolve; });
     await page.route('**/api/settings', async route => {
+      // Only the page's own refresh is held; the smoke's reads and writes are not.
+      if (isSmokeRequest(route)) return route.continue();
       if (route.request().method() === 'GET') await refreshReleased;
       await route.continue();
     });
