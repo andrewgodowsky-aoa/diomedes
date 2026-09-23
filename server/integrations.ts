@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { teamCarriageToken } from './team/carriage.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -133,33 +134,12 @@ export function nativeEnvironment(source: NodeJS.ProcessEnv = process.env): Node
 }
 
 function teamEnvironment(team: NativeTeamOptions): NodeJS.ProcessEnv {
-  const invalid = () =>
-    new IntegrationError(
+  const token = teamCarriageToken(team);
+  if (!token)
+    throw new IntegrationError(
       'TEAM_CONFIG_INVALID',
       'Team work requires a loopback HTTP endpoint, a helper slot and role, and a populated DIOMEDES_TEAM_ token environment variable.',
     );
-  if (typeof team.url !== 'string' || !URL.canParse(team.url)) throw invalid();
-  const url = new URL(team.url);
-  if (
-    url.protocol !== 'http:' ||
-    !['127.0.0.1', '[::1]'].includes(url.hostname) ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    !/^\/mcp\/team\/[^/]+$/.test(url.pathname) ||
-    !/^DIOMEDES_TEAM_[A-Z0-9_]+$/.test(team.tokenEnv) ||
-    !/^[a-zA-Z0-9_-]{1,128}$/.test(team.slotId) ||
-    team.slotId === 'owner' ||
-    !['lead', 'member'].includes(team.role) ||
-    typeof team.roleInstructions !== 'string' ||
-    !team.roleInstructions.trim()
-  )
-    throw invalid();
-  // A dedicated namespace prevents tokenEnv from reintroducing provider keys,
-  // proxy routing, NODE_OPTIONS, or native task-control variables.
-  const token = process.env[team.tokenEnv];
-  if (!token || !/^[\x21-\x7e]+$/.test(token)) throw invalid();
   return { ...nativeEnvironment(), [team.tokenEnv]: token };
 }
 

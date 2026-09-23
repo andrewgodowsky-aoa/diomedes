@@ -34,6 +34,8 @@ import { NativeAgent, type ModelAdapter } from './native-agent.js';
 import { digest, HarnessError } from './policy.js';
 import { RunService, Suspended, type StepContext, type StepDefinition } from './run-service.js';
 import { ToolRegistry } from './tools.js';
+import { TEAM_TOOL_NAMES } from '../../shared/team-routes.js';
+import { contextMessage } from '../engines/contract.js';
 
 export const MODEL_CONVERSATION_CAPABILITY: CapabilityManifest = {
   id: 'model-api-conversation',
@@ -62,7 +64,35 @@ export const MODEL_TURN_CAPABILITY: CapabilityManifest = {
   supportedPlatforms: ['win32', 'darwin', 'linux'],
 };
 
-export const MODEL_SESSION_CAPABILITIES = [MODEL_CONVERSATION_CAPABILITY.id, MODEL_TURN_CAPABILITY.id] as const;
+/**
+ * One team member's Work turn on a model-API route: model steps on the admitted
+ * route and the Diomedes team tools, which the host runs as that member. No
+ * file tool at all: a file change is still only the proposal the answer carries,
+ * and only the person's exact approval writes it.
+ */
+export const TEAM_WORK_CAPABILITY: CapabilityManifest = {
+  id: 'model-api-team-work',
+  version: '1',
+  label: 'Team member Work turn on a model-API route',
+  description:
+    'One team member’s Work proposal answered by NativeAgent: model steps on the admitted route and the host-run Diomedes team tools for that member. No file tools; no writes.',
+  tools: [...TEAM_TOOL_NAMES],
+  requestedPermissions: [],
+  approvalPolicy: 'show-first',
+  maxTurns: 24,
+  supportedPlatforms: ['win32', 'darwin', 'linux'],
+};
+
+export const MODEL_SESSION_CAPABILITIES = [
+  MODEL_CONVERSATION_CAPABILITY.id,
+  MODEL_TURN_CAPABILITY.id,
+  TEAM_WORK_CAPABILITY.id,
+] as const;
+
+export const teamWorkRunId = (projectId: string, requestId: string) =>
+  `model-work-${digest({ projectId, requestId })}`;
+
+const TEAM_WORK_NOTE = `You are working as a member of a Diomedes team. Use the team tools to read your messages, see the board and report back; the host runs each call for you. You have no file, shell or web tools. Your final answer must still be the file proposal the request asks for.`;
 
 export const modelSessionRunId = (projectId: string, commandId: string) =>
   `model-${digest({ projectId, commandId })}`;
@@ -216,6 +246,8 @@ function toolOutcome(phase: ToolPhase, tool: string, input: unknown, output: unk
 export class ModelSessionRuns {
   private closed = false;
   private readonly owner = `model-session-${randomUUID()}`;
+  /** Stop handles for team Work turns in flight, so a shutdown reaches them too. */
+  private readonly work = new Set<AbortController>();
   private readonly active = new Map<
     string,
     { commandId: string; intent: string; controller: AbortController; promise: Promise<ModelSessionTurnResult> }
@@ -726,9 +758,89 @@ export class ModelSessionRuns {
       await this.runs.recover(run.id, localHarnessPrincipal(run.projectId));
   }
 
+  /**
+   * One team member's Work turn: its own run under TEAM_WORK_CAPABILITY, with no
+   * conversation lineage. Admission is read fresh, then NativeAgent drives model
+   * steps on the admitted route (external, never resent, reconciled when
+   * uncertain) and host tool steps from `registry`, each recorded in the run.
+   * The answer is the proposal text; the model is only what the provider
+   * reported, empty when it reported none, never the requested one standing in.
+   */
+  async workTurn(request: {
+    route: string;
+    input: TextRequest;
+    admit(signal?: AbortSignal): Promise<ModelSessionAdmission>;
+    adapter(admission: ModelSessionAdmission, instructions: string, signal: AbortSignal): Promise<ModelAdapter>;
+    registry: ToolRegistry;
+  }): Promise<{ runId: string; text: string; model: string; version: string }> {
+    if (this.closed) throw new EngineError('SESSION_CLOSED', 'The conversation runtime is shutting down.');
+    const { input, route } = request;
+    const principal = localHarnessPrincipal(input.projectId);
+    const runId = teamWorkRunId(input.projectId, input.requestId);
+    const known = await this.runs.get(runId).catch((error: unknown) => {
+      if (error instanceof HarnessError && error.code === 'unknown_run') return null;
+      throw error;
+    });
+    if (known)
+      throw new EngineError(
+        'REQUEST_ACTIVE',
+        'This Work request was already sent once. It is never sent twice; start the work again for a new proposal.',
+      );
+    const controller = new AbortController();
+    this.work.add(controller);
+    const wall = AbortSignal.timeout(TURN_WALL_MS);
+    const stop = AbortSignal.any([controller.signal, wall, ...(input.signal ? [input.signal] : [])]);
+    try {
+      const admission = await request.admit(stop);
+      if (admission.accountRoute !== input.accountRoute || admission.model !== input.model)
+        throw new EngineError('ACCOUNT_CHANGED', 'The connection changed after this request was admitted. Nothing was sent.');
+      await this.runs.start({
+        id: runId,
+        projectId: input.projectId,
+        tenantId: principal.tenantId,
+        principal,
+        capability: TEAM_WORK_CAPABILITY,
+        tools: request.registry,
+        input: {
+          engine: route,
+          route,
+          accountRoute: input.accountRoute,
+          model: input.model,
+          commandId: input.requestId,
+          sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
+        },
+        budget: { units: 96, modelCalls: 24, toolCalls: 48, wallMs: TURN_WALL_MS },
+      });
+      await this.runs.claim(runId, this.owner, TURN_WALL_MS + 60_000);
+      const adapter = await request.adapter(admission, `${input.instructions}\n\n${TEAM_WORK_NOTE}`, stop);
+      const agent = new NativeAgent(this.runs, adapter, request.registry);
+      let text: string;
+      try {
+        text = await agent.run(runId, this.owner, contextMessage(input), principal, {
+          maxTurns: TEAM_WORK_CAPABILITY.maxTurns,
+        });
+      } catch (error) {
+        if (stop.aborted)
+          throw new EngineError('CANCELLED', 'The request was stopped. No late response was saved.', true);
+        throw error;
+      }
+      const run = await this.runs.get(runId);
+      const lastModel = [...run.steps]
+        .reverse()
+        .find((step) => step.intent.kind === 'model' && step.state === 'succeeded');
+      const reported =
+        (lastModel?.output as { transcript?: { modelId?: string | null } } | null)?.transcript?.modelId ?? null;
+      return { runId, text, model: reported ?? '', version: adapter.version };
+    } finally {
+      this.work.delete(controller);
+      controller.abort();
+    }
+  }
+
   async closeAll() {
     this.closed = true;
     for (const active of this.active.values()) active.controller.abort();
+    for (const controller of this.work) controller.abort();
     await Promise.allSettled([...this.active.values()].map((value) => value.promise));
   }
 }

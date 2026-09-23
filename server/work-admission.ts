@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import { ApiError, relativeName } from './paths.js';
 import type { ProjectState } from '../shared/types.js';
-import { ROUTES } from '../shared/engines.js';
+import { ROUTES, routeDisplayName } from '../shared/engines.js';
+
+/** The route each capability command's driver runs on. */
+const CAPABILITY_ROUTES: Record<'codex-report', 'codex'> = { 'codex-report': 'codex' };
 
 import {
   commandIdSchema as commandId,
@@ -42,10 +45,17 @@ export function parseWorkCommand(body: Record<string, unknown>) {
       code: 'invalid_work_command',
     });
   const request = parsed.data;
-  if (request.capabilityId && request.route !== 'codex')
-    throw new ApiError(400, 'This capability requires the Codex route.', {
-      code: 'invalid_work_command',
-    });
+  // A capability command names a harness driver, and each driver runs on the route it was
+  // built for. The only one today, codex-report, is the Codex report driver
+  // (server/harness/codex-engine.ts), so it stays refused elsewhere. Ordinary Build and Fix
+  // take no capability and run on every route that can return a proposal.
+  const required = request.capabilityId ? CAPABILITY_ROUTES[request.capabilityId] : undefined;
+  if (required && request.route !== required)
+    throw new ApiError(
+      400,
+      `The ${request.capabilityId} capability runs only on ${routeDisplayName(required)} (Codex). Choose that route for it, or start ordinary Work on this route.`,
+      { code: 'invalid_work_command' },
+    );
   if ((request.model || request.effort) && !request.capabilityId)
     throw new ApiError(400, 'Explicit capability selections require a capability command.', {
       code: 'invalid_work_command',

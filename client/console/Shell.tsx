@@ -80,6 +80,7 @@ import { WorkspaceMark, WorkspacePanel, useWorkspace } from './Workspaces';
 import { applyQuery, buildEntries, type PaletteContext } from './paletteEntries';
 import { useTravelOnView } from './motion';
 import type { ShellView } from './types';
+import type { NewTeamMember, TeamRoutesView } from '../../shared/team-routes';
 import './console.css';
 import './palette.css';
 import './motion.css';
@@ -192,6 +193,7 @@ export function Shell({
   } | null>(null);
   const [team, setTeam] = useState<TeamState>(emptyTeam);
   const [teamAvailable, setTeamAvailable] = useState(false);
+  const [teamRoutes, setTeamRoutes] = useState<TeamRoutesView | null>(null);
   const [toast, setToast] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -296,6 +298,22 @@ export function Shell({
       if (currentId.current === projectId) setTeamAvailable(false);
     }
   }, [projectId, report]);
+  // What the add-member form may offer, read when Team opens: routes that can carry the
+  // team tools, whether each is connected, and the models it reported.
+  useEffect(() => {
+    if (view !== 'Team' || !teamAvailable) return;
+    let alive = true;
+    api<TeamRoutesView>(`/projects/${projectId}/team/routes`)
+      .then((value) => {
+        if (alive) setTeamRoutes(value);
+      })
+      .catch(() => {
+        if (alive) setTeamRoutes(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [view, projectId, teamAvailable, team.members.length]);
   const perform = useCallback(
     async (fn: () => Promise<void>) => {
       setBusy(true);
@@ -996,6 +1014,11 @@ export function Shell({
   }
   async function messageMember(member: TeamMember, content: string) {
     await postMessage(member.slotId, content);
+  }
+  // Errors reach the add-member form, which says them in place, so this skips perform().
+  async function addMember(input: NewTeamMember) {
+    await api(`${base}/team/members`, 'POST', input);
+    await load();
   }
   async function stopMember(member: TeamMember) {
     await perform(async () => {
@@ -1922,6 +1945,8 @@ export function Shell({
                   setView('Thread');
                 }
               }}
+              teamRoutes={teamRoutes}
+              onAddMember={teamAvailable ? addMember : undefined}
             />
           </section>
         )}
