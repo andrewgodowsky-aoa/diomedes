@@ -24,6 +24,12 @@ import { CONVERSATION_DEFAULT_ROUTE, isConversationRoute } from '../shared/engin
 import type { AwsConnectionView } from '../shared/model-api';
 import type { MessageResult } from '../shared/conversation';
 import type { Conversation, Project } from '../shared/types';
+import {
+  shareHistory,
+  stopSharingHistory,
+  type HomeSharing,
+  type HomeSharingChange,
+} from '../client/console/home-history';
 import { responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
@@ -568,4 +574,53 @@ test('a fresh Home sends typed messages with no grant, and no document or histor
   await api<MessageResult>(messages(home), 'POST', withDocument('m-doc-granted'));
   expect(seen).toHaveLength(3);
   expect(JSON.stringify(seen[2].body)).toContain('menu.md');
+});
+
+// The 0.1.8 fix: the Nectovia page's own grant and revoke, sent exactly as the page sends them
+// (client/console/home-history.ts), through the existing endpoint. History goes with a follow-up
+// only while this route has the grant, and a grant for another route never brings it back.
+test("Home's earlier messages go with a follow-up only while the page's grant covers this route", async () => {
+  await connect();
+  await approveSpend();
+  const home = await provisionHome();
+  const sharingPath = `/projects/${home.projectId}/cloud-sharing`;
+  const read = () => api<HomeSharing>(sharingPath);
+  const write = (change: HomeSharingChange) => api<HomeSharing>(sharingPath, 'PUT', change);
+  const last = () => JSON.stringify(seen.at(-1)!.body);
+
+  await send(home, 'm-1', 'Good morning');
+  expect(last()).not.toContain('Earlier in this conversation');
+
+  const granted = await write(shareHistory(await read(), 'aws-bedrock'));
+  // The grant names the route and turns history on; it never touches documents or review packets.
+  expect(granted).toEqual({
+    version: 1,
+    routes: ['aws-bedrock'],
+    documents: [],
+    shareConversationHistory: true,
+    shareReviewPackets: false,
+  });
+  await send(home, 'm-2', 'And tomorrow?');
+  expect(last()).toContain('Earlier in this conversation');
+  expect(last()).toContain('Good morning');
+
+  const revoked = await write(stopSharingHistory(await read(), 'aws-bedrock'));
+  expect(revoked).toEqual({
+    version: 2,
+    routes: [],
+    documents: [],
+    shareConversationHistory: false,
+    shareReviewPackets: false,
+  });
+  await send(home, 'm-3', 'And the day after?');
+  expect(last()).not.toContain('Earlier in this conversation');
+  expect(last()).not.toContain('Good morning');
+
+  // Another route's grant turns the one switch back on, and this route stays alone.
+  const elsewhere = await write(shareHistory(await read(), 'claude-code'));
+  expect(elsewhere).toMatchObject({ routes: ['claude-code'], shareConversationHistory: true });
+  await send(home, 'm-4', 'Still alone?');
+  expect(last()).not.toContain('Earlier in this conversation');
+  expect(last()).not.toContain('Good morning');
+  expect(seen).toHaveLength(4);
 });
