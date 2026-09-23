@@ -741,3 +741,38 @@ test('a delivery left behind in an old visit cannot take the new Stop with it', 
     await page.unroute('**/api/home/conversation', holdOldProvision);
   }
 });
+
+test('a tier change that starts the conversation fresh says so in the thread', async ({ page }) => {
+  // Its own scope, so the only lineage this test moves is one it opened itself.
+  await api<Project>('/projects', 'POST', { name: 'Tier change' });
+  await open(page);
+  await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'Tier change' });
+  await say(page, 'Where is the linen order?');
+  await expect(answers(page).last()).toHaveText('You said: Where is the linen order?');
+  const notes = page.locator('.turn.dio').filter({ hasText: 'started this conversation fresh' });
+  await expect(notes).toHaveCount(0);
+
+  // Efficient runs at another level than the conversation was opened at, so the next message
+  // starts it fresh. The choice is saved before anything is sent under it.
+  const saved = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' && /\/threads\/[^/]+$/.test(new URL(response.url()).pathname),
+  );
+  await styleControl(page).selectOption({ label: 'Efficient' });
+  expect((await saved).ok()).toBe(true);
+  await say(page, 'And the invoice?');
+  await expect(answers(page).last()).toHaveText('You said: And the invoice?');
+
+  // One note, in plain words, naming the tier, between the exchange it ended and the next.
+  const note =
+    "Nectovia started this conversation fresh because this conversation moved to the Efficient tier. Your earlier messages are still here, but it won't remember them.";
+  await expect(notes).toHaveCount(1);
+  await expect(notes.locator('.body')).toHaveText(note);
+  await expect(page.locator('.transcript .turn .body')).toHaveText([
+    'Where is the linen order?',
+    'You said: Where is the linen order?',
+    note,
+    'And the invoice?',
+    'You said: And the invoice?',
+  ]);
+});
