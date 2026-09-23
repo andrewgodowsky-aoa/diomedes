@@ -17,7 +17,7 @@ excluded at the owner's request.
 | --- | --- | --- |
 | Desktop renderer to local service | Packaged Electron loads a service bound to `127.0.0.1` on an ephemeral port. This patch adds a 256-bit per-launch token, injected into that window's local requests by Electron and checked before general routes and SSE. | Other local processes can otherwise read projects, account state and settings or invoke writes through the loopback API. |
 | Team helper to local MCP | Each helper has a project/slot bearer token. The MCP route has its own loopback and bearer check; it does not use the desktop session token. This patch denies a stopped helper's bearer token. | A stopped helper previously retained all MCP tool access while appearing stopped. |
-| Local project to AI provider | A cloud model route can receive a message, earlier conversation context and content read from selected source files. The route is explicit, but there is no complete per-field egress policy or real-provider evidence. | Sensitive owner information can be sent to the chosen provider. |
+| Local project to AI provider | Each project now starts with no permitted cloud route, shared document or prior conversation. Its owner can allowlist routes and documents in Cloud sharing; a separate switch controls earlier conversation text. | Sensitive owner information can be sent to the chosen provider after the project permits the route. Native CLI helpers may still read beyond files selected in Diomedes. |
 | Account and update services | Desktop account sign-in uses the configured WorkOS issuer and `api.workos.com`. A person-triggered update check contacts the GitHub release API; installer download follows a bounded, verified release path. | Account sign-in necessarily sends identity/session data to WorkOS; update checks expose network metadata and the app user agent. These routes do not need project document contents. |
 | Local credentials and drafts | Model API credentials and account sessions use the Electron OS storage bridge and reject the `basic_text` backend. This patch seals team tokens through the same bridge in the packaged desktop and migrates their prior plaintext file on first read. Unsaved document and composer drafts still use renderer `localStorage`. | Legacy backup copies can retain old team tokens; a stolen profile can disclose draft content. |
 | Website form to cloud | The website stores form data in Cloudflare D1 and sends a notification through Cloudflare Email or optional Resend. The site PR removes the hardcoded personal recipient and requires a configured destination. | Form data is not local-only. A wrong recipient or copied notification discloses PII. |
@@ -40,6 +40,15 @@ excluded at the owner's request.
   team, connection and native account storage files. This is a defense in depth
   filter, not a content scanner: secrets in ordinary allowed files can still
   enter a selected cloud route.
+- A project's Cloud sharing policy is stored with its local project state. Old
+  or damaged records fail closed. The UI exposes route, document and conversation
+  history choices; saves use an expected version, so stale windows cannot
+  silently replace another choice. The server checks this policy before source
+  reads and cloud starts, and rejects previously admitted Work after a revoke.
+  Instruction files such as `AGENTS.md` and `CLAUDE.md` enter a Work prompt only
+  if their paths are separately allowlisted. Text-route provider callbacks,
+  native session turns and each model-API completion check the live policy again.
+  The AWS conversation excludes prior turns unless the history switch is on.
 - A stopped team's bearer token is refused before MCP tool dispatch, and
   credential comparison uses fixed-length constant-time comparison. MCP also
   applies the Host/Origin boundary, returns the same 401 for an unknown
@@ -53,12 +62,15 @@ excluded at the owner's request.
 
 ## Open security work and acceptance boundaries
 
-1. **Cloud egress control (high).** Build a reviewable per-turn record of the
-   exact route and source scope before model dispatch; add explicit owner
-   controls for sensitive source classes and make the cloud/local distinction
-   visible in the same authority flow. Test with a provider stub first, then
-   verify with a real provider account. The current source guard catches common
-   key filenames but cannot identify credentials embedded in normal documents.
+1. **Cloud egress acceptance (high).** The project allowlist is a source gate,
+   not a content scanner: a person can paste sensitive text into a prompt or
+   allowlist an ordinary file containing credentials. The per-message send
+   confirmation still shows the selected route and files. Existing cloud-work
+   test fixtures need explicit project grants before the default-deny migration
+   can pass the full suite; source checks here do not replace real-provider
+   traffic inspection. A native CLI process may inspect its own workspace and
+   account cache outside the Diomedes document selection. Test that boundary
+   with each real installed engine before promising exact-file egress.
 2. **Existing team token copies and revocation (high).** The packaged desktop
    now seals the active token file, but backups, sync copies and old disk
    sectors can retain pre-migration plaintext. The standalone development

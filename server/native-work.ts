@@ -44,6 +44,8 @@ export type NativeGenerator = (input: {
   accountRoute?: string;
   prompt: string;
   documents: { path: string; text: string }[];
+  /** Additional project instruction files already rendered into the prompt. */
+  sharingPaths?: readonly string[];
   signal?: AbortSignal;
   team?: NativeTeamOptions;
   onTeamToolCall?: (tool: string) => void;
@@ -94,6 +96,7 @@ interface NativeRun {
    * text. Absent when this project delivers no instructions.
    */
   instructionSection?: string;
+  instructionPaths?: string[];
   proposal?: Proposal;
   writes?: WriteInput[];
   /**
@@ -540,6 +543,9 @@ export class NativeWorkService {
         ...(input.requested ? { requested: { ...input.requested } } : {}),
         ...(resolved ? { agent: resolved } : {}),
         ...(instructions.section ? { instructionSection: instructions.section } : {}),
+        instructionPaths: instructions.delivery?.files
+          .filter((file) => file.state === 'sent')
+          .map((file) => file.path) ?? [],
         ...tokenLease,
       };
       this.runs.set(projectId, run);
@@ -640,6 +646,11 @@ export class NativeWorkService {
       // The caller resolves the thread's own choice; the saved default still
       // applies on paths that start a run without passing one.
       const requestedModel = this.requestedModel(run);
+      requireCloudSharing(
+        this.store.state(run.projectId),
+        run.engine,
+        [...run.sources.map((source) => source.path), ...(run.instructionPaths ?? [])],
+      );
       const modeDef = MODES[run.mode] ?? MODES.build;
       // A proposal is strict JSON, so its text is not worth showing as it
       // streams. The first piece is still news: the engine has started and
@@ -686,6 +697,7 @@ export class NativeWorkService {
           `Requested work: ${run.instruction}`,
         ].join('\n'),
         documents: run.sources.map(({ path, text }) => ({ path, text })),
+        sharingPaths: run.instructionPaths,
         signal: run.controller.signal,
         // Only the ChatGPT adapter takes a raw sink. The engine service refuses
         // one from a caller and hands previews through its own contract.

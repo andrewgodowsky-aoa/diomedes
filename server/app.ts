@@ -105,7 +105,7 @@ import {
   routeDisplayName,
   type EngineConnection,
 } from '../shared/engines.js';
-import { EngineService } from './engines/service.js';
+import { EngineService, HOST_TEST_PROJECT } from './engines/service.js';
 import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
 import { mountInteractionRoutes } from './engines/interaction-routes.js';
 import {
@@ -658,7 +658,10 @@ export async function createApp(options: AppOptions) {
     options.nativeGenerator ??
       (async (input) => {
         if (input.projectId && input.engine)
-          requireCloudSharing(store.state(input.projectId), input.engine, input.documents.map((doc) => doc.path));
+          requireCloudSharing(store.state(input.projectId), input.engine, [
+            ...input.documents.map((doc) => doc.path),
+            ...(input.sharingPaths ?? []),
+          ]);
         if (isModelApiRoute(input.engine)) {
           if (!input.projectId || !input.threadId || !input.requestId || !input.model)
             throw new ApiError(409, 'Select a model and thread before requesting work.');
@@ -710,7 +713,26 @@ export async function createApp(options: AppOptions) {
   );
   // External text turns run through the host's RunService: the adapter is only
   // the provider transport inside the fenced dispatch step.
-  engines.dispatch = harness.textRoute.request;
+  engines.dispatch = (request) => {
+    const intent = request.intent as { projectId?: unknown; engine?: unknown; documents?: unknown };
+    if (intent.projectId !== HOST_TEST_PROJECT) {
+      if (
+        typeof intent.projectId !== 'string' || !isRoute(intent.engine) ||
+        !Array.isArray(intent.documents) ||
+        !intent.documents.every((doc) => doc && typeof doc === 'object' && typeof doc.path === 'string')
+      ) throw new ApiError(403, 'This cloud request has no valid project sharing scope.');
+      const names = intent.documents.map((doc: { path: string }) => doc.path);
+      requireCloudSharing(store.state(intent.projectId), intent.engine, names);
+      return harness.textRoute.request({
+        ...request,
+        send: (context, admission) => {
+          requireCloudSharing(store.state(intent.projectId as string), intent.engine as Route, names);
+          return request.send(context, admission);
+        },
+      });
+    }
+    return harness.textRoute.request(request);
+  };
   engines.nativeSessions = harness.claudeSessions;
   engines.modelSessions = harness.modelSessions;
   const exposure = new SpendExposure(store.dataDir);

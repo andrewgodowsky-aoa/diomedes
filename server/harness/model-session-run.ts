@@ -562,10 +562,31 @@ export class ModelSessionRuns {
         // The lease outlives the turn's own wall clock, which aborts the loop first.
         await this.runs.claim(childId, this.owner, TURN_WALL_MS + 60_000);
         const adapter = await request.adapter(admission, `${input.instructions}\n\n${TOOL_NOTE}`, stop);
-        const agent = new NativeAgent(this.runs, adapter, registry);
+        const check = () => this.sharingPolicy(
+          input.projectId,
+          input.documents.map((doc) => doc.path),
+          history.length > 0,
+        );
+        const guarded: ModelAdapter = {
+          id: adapter.id,
+          version: adapter.version,
+          destination: adapter.destination,
+          contract: adapter.contract,
+          capabilities: () => adapter.capabilities(),
+          ...(adapter.prepare ? { prepare: (value, signal) => adapter.prepare!(value, signal) } : {}),
+          ...(adapter.validatePrepared ? { validatePrepared: (value) => adapter.validatePrepared!(value) } : {}),
+          ...(adapter.inspect ? { inspect: (value, answer, signal) => adapter.inspect!(value, answer, signal) } : {}),
+          complete: async (value, signal) => {
+            check();
+            const answer = await adapter.complete(value, signal);
+            check();
+            return answer;
+          },
+        };
+        const agent = new NativeAgent(this.runs, guarded, registry);
         let text: string;
         try {
-          this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), history.length > 0);
+          check();
           text = await agent.run(childId, this.owner, this.compose(input, history), principal, {
             maxTurns: MODEL_TURN_CAPABILITY.maxTurns,
           });

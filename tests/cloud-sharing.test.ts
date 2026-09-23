@@ -2,6 +2,9 @@ import { afterEach, expect, test } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createApp } from '../server/app.js';
+import { Store } from '../server/store.js';
+import { activatePack } from '../server/capability-packs.js';
+import { assembleInstructions } from '../server/harness/instruction-delivery.js';
 import { changeCloudSharing, cloudSharing, requireCloudSharing } from '../server/cloud-sharing.js';
 import type { ProjectState } from '../shared/types.js';
 
@@ -47,6 +50,33 @@ test('private paths and the sample route cannot be allowlisted', () => {
   }
 });
 
+test('project instruction bodies and paths stay out of cloud prompts until allowlisted', async () => {
+  await fs.mkdir(path.join(process.cwd(), 'test-results'), { recursive: true });
+  const root = await fs.mkdtemp(path.join(process.cwd(), 'test-results', 'cloud-instructions-'));
+  try {
+    const folder = path.join(root, 'repo');
+    await fs.mkdir(folder);
+    await fs.writeFile(path.join(folder, 'AGENTS.md'), 'Project-private sentinel 873142.\n');
+    const store = new Store(path.join(root, 'data'), path.join(root, 'projects'));
+    await store.init();
+    const project = await store.createProject('Repo', folder);
+    await activatePack(store, project.id, 'diomedes.software-engineering');
+    const render = (allowedDocuments: string[]) => assembleInstructions({
+      state: store.state(project.id), routeId: 'codex',
+      agentRole: 'Diomedes build file proposal writer', budgetBytes: 32_000, allowedDocuments,
+    });
+    const privateResult = await render([]);
+    expect(privateResult.section).not.toContain('Project-private sentinel');
+    expect(privateResult.section).not.toContain('AGENTS.md');
+    expect(privateResult.delivery).toBeNull();
+    const permitted = await render(['AGENTS.md']);
+    expect(permitted.section).toContain('Project-private sentinel 873142');
+    expect(permitted.delivery?.files[0]).toMatchObject({ path: 'AGENTS.md', state: 'sent' });
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 let close: (() => Promise<void>) | undefined;
 afterEach(async () => {
   await close?.();
@@ -74,6 +104,10 @@ test('cloud sharing API persists an optimistic, project-scoped policy', async ()
   const two = await (await post('/projects', { name: 'Two' })).json() as { id: string };
   const url = `/projects/${one.id}/cloud-sharing`;
   expect(await (await fetch(`${base}${url}`, { headers })).json()).toMatchObject({ version: 0, routes: [] });
+  app.locals.store.settings.services.codex = true;
+  expect((await post(`/projects/${one.id}/ask`, {
+    route: 'codex', mode: 'ask', text: 'Do not send this', sources: [], consent: true,
+  })).status).toBe(403);
   const saved = await post(url, {
     expectedVersion: 0, routes: ['codex'], documents: [], shareConversationHistory: false,
   }, 'PUT');
