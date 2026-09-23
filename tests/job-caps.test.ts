@@ -49,6 +49,9 @@ import { FileRunStore, NativeAgent, RunService } from '../server/harness/index.j
 import { MODEL_TURN_CAPABILITY, modelApiDispatchAuthorizer } from '../server/harness/model-session-run.js';
 import { FileModelTranscripts } from '../server/harness/model-transcripts.js';
 import { responsesAnswer } from './fixtures/model-api-streams.js';
+import { mountInteractionRoutes } from '../server/engines/interaction-routes.js';
+import { EngineError } from '../server/engines/process.js';
+import type { InteractionTurns } from '../server/interaction-service.js';
 
 const credits = (n: number) => creditAmount(n);
 /** A deliberately dear fixture price, in micro-USD per million tokens. */
@@ -616,6 +619,35 @@ describe('the job-cap routes', () => {
       expect((await s.caps.scope('p', 'session-2', 'member-thread')).capMicroUsd).toBe(credits(20));
     } finally {
       await s.close();
+    }
+  });
+});
+
+describe('a stop reaches the Console in one shape', () => {
+  test('the messages route answers a job-cap stop as 402 job_cap_reached, not as a generic refusal', async () => {
+    const app = express();
+    app.use(express.json());
+    const turns = {
+      message: async () => {
+        throw new EngineError('JOB_CAP', 'This job would pass its cap on this step, so it stopped before sending anything.', false);
+      },
+    } as unknown as InteractionTurns;
+    mountInteractionRoutes(app, turns, { authorize: async () => undefined });
+    app.use((error: { status?: number; message: string; details?: object }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      res.status(error.status ?? 500).json({ error: error.message, ...(error.details ?? {}) });
+    });
+    const server = app.listen(0);
+    await new Promise((resolve) => server.once('listening', resolve));
+    try {
+      const response = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/projects/p/threads/t/messages`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ commandId: 'cmd-1', text: 'Hello', mode: 'ask', sources: [], consent: true }),
+      });
+      expect(response.status).toBe(402);
+      expect(await response.json()).toMatchObject({ code: 'job_cap_reached' });
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
     }
   });
 });
