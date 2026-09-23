@@ -412,6 +412,18 @@ function answerFor(
         'invalid_distribution',
         `Question ${question.id} chose ${choice}, which its own distribution does not score.`,
       );
+    // A choice its own distribution ranks below another option is not one
+    // decision but two that disagree. The SDK core refuses the same thing.
+    if (probabilities) {
+      const slack = distributionTolerance(1, places.probabilityDecimals) * 2;
+      const chosen = probabilities[choice];
+      for (const [option, p] of Object.entries(probabilities))
+        if (p > chosen + slack)
+          refuse(
+            'invalid_distribution',
+            `Question ${question.id} chose ${choice}, but its own distribution ranks ${option} higher.`,
+          );
+    }
     return { type: 'choice', questionId: question.id, choice, probabilities };
   }
 
@@ -429,6 +441,24 @@ function answerFor(
       `The distribution for ${question.id}`,
       places.probabilityDecimals,
     );
+    // A score is the distribution's weighted mean; a score that is not has
+    // come from somewhere else. Tolerance is the declared rounding of both.
+    if (probabilities) {
+      const mean = Object.entries(probabilities).reduce(
+        (total, [index, p]) => total + Number(index) * p,
+        0,
+      );
+      const perLevel = distributionTolerance(1, places.probabilityDecimals);
+      const slack =
+        question.levels.reduce((total, _level, index) => total + index * perLevel, 0) +
+        distributionTolerance(1, places.scoreDecimals) +
+        1e-6;
+      if (Math.abs(mean - (score as number)) > slack)
+        refuse(
+          'invalid_score',
+          `Question ${question.id} scores ${String(score)}, but its own distribution averages ${mean}.`,
+        );
+    }
     return { type: 'score', questionId: question.id, score: score as number, probabilities };
   }
 
