@@ -123,11 +123,14 @@ describe('first-run AI setup and the existing Work pipeline', () => {
     const markup = renderToStaticMarkup(
       createElement(AIConnections, { settings: initial, save: async () => {} }),
     );
-    // One card per installed engine, then the company-account AWS Bedrock route.
-    expect(markup.match(/<section class="service"/g)).toHaveLength(6);
+    // One card per installed engine, then the company-account routes: AWS Bedrock, Azure OpenAI
+    // and OpenRouter.
+    expect(markup.match(/<section class="service"/g)).toHaveLength(8);
     expect(markup).toContain('aria-label="Cursor"');
     expect(markup).toContain('aria-label="Devin"');
     expect(markup).toContain('aria-label="AWS Bedrock (GPT-5.6 Luna)"');
+    expect(markup).toContain('aria-label="Azure OpenAI"');
+    expect(markup).toContain('aria-label="OpenRouter"');
     expect(
       (await api('/ai/status')).data.connections.map((c: { engine: string }) => c.engine),
     ).toEqual(['claude-code', 'opencode', 'oh-my-pi', 'cursor', 'devin']);
