@@ -47,7 +47,7 @@ export function NectoviaUsageView({
 }) {
   const model = usageBarModel(state, now);
   return (
-    <section className="ws-section nu" aria-live="polite">
+    <section className="ws-section nu">
       <div className="nu-head">
         <h3>{USAGE_LABEL}</h3>
         {state.state !== 'loading' && (
