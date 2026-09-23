@@ -24,6 +24,7 @@ import {
   type ArtifactEngine,
 } from './fixtures/scripted-artifacts';
 import { AWS_CONNECT_BODY } from './fixtures/scripted-home-luna';
+import { shareAfter } from './fixtures/cloud-sharing-grant';
 
 // Model artifacts in the real Console: the real host, Store, event stream and built bundle, with
 // only the model scripted (tests/fixtures/scripted-artifacts.ts). It serves the built bundle, so
@@ -134,7 +135,9 @@ async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T>
   });
   if (!response.ok)
     throw new Error(`Artifacts fixture request ${route} failed (${response.status}): ${await response.text()}`);
-  return response.json() as Promise<T>;
+  const value = (await response.json()) as T;
+  await shareAfter(api, route, method, value);
+  return value;
 }
 
 async function expectFreshBundle(dist: string): Promise<void> {
