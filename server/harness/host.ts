@@ -440,9 +440,18 @@ export function createHarnessHost({
   runs.afterStep = () => bridge.flush();
   runs.use((context) => bridge.beforeStep(context));
   const refreshSecrets = async () => {
-    for (const project of await store.projects())
-      for (const token of Object.values(await store.readTeamSecrets(project.id)))
-        secrets.add(token);
+    for (const project of await store.projects()) {
+      // A team token file this account cannot open holds nothing this process can know, and so
+      // nothing it could print. It must not stop the app from starting; that project's team
+      // features still refuse when they read it.
+      let tokens: Record<string, string>;
+      try {
+        tokens = await store.readTeamSecrets(project.id);
+      } catch {
+        continue;
+      }
+      for (const token of Object.values(tokens)) secrets.add(token);
+    }
   };
   /**
    * A client reads runs by naming the project they belong to, and the reserved

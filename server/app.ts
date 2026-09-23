@@ -700,11 +700,14 @@ export async function createApp(options: AppOptions) {
     store,
     options.nativeGenerator ??
       (async (input) => {
-        if (input.projectId && input.engine)
-          requireCloudSharing(store.state(input.projectId), input.engine, [
-            ...input.documents.map((doc) => doc.path),
-            ...(input.sharingPaths ?? []),
-          ]);
+        // A request that names no project or route has no sharing scope to check, so it is
+        // refused rather than sent unchecked.
+        if (!input.projectId || !input.engine)
+          throw new ApiError(403, 'This cloud request has no valid project sharing scope.');
+        requireCloudSharing(store.state(input.projectId), input.engine, [
+          ...input.documents.map((doc) => doc.path),
+          ...(input.sharingPaths ?? []),
+        ]);
         if (isModelApiRoute(input.engine)) {
           if (!input.projectId || !input.threadId || !input.requestId || !input.model)
             throw new ApiError(409, 'Select a model and thread before requesting work.');
