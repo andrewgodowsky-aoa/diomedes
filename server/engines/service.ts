@@ -33,7 +33,12 @@ import { CursorAdapter, cursorCommand, resolveCursorEntry } from './cursor.js';
 import { DevinAdapter } from './devin.js';
 import { managedBinary, verifyManagedBinary } from './install.js';
 import { capture, engineEnvironment, EngineError } from './process.js';
-import { commandGate, previewSink, type PreviewRejection } from '../../shared/adapter-contract.js';
+import {
+  activitySink,
+  commandGate,
+  previewSink,
+  type PreviewRejection,
+} from '../../shared/adapter-contract.js';
 import type {
   PersistentTextAdapter,
   TextEngineAdapter,
@@ -1477,10 +1482,10 @@ export class EngineService {
     this.running.set(key, controller);
     const signal = AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]);
     try {
-      if (input.onDelta)
+      if (input.onDelta || input.onToolActivity)
         throw new EngineError(
           'PREVIEW_CONTRACT',
-          'Preview frames reach the caller through onPreview; the raw adapter sink is not caller-facing.',
+          'Preview frames reach the caller through onPreview and onActivity; the raw adapter sinks are not caller-facing.',
           true,
         );
       const runId = textRunId(input.projectId, input.requestId);
@@ -1556,36 +1561,52 @@ export class EngineService {
           let accepting = true;
           let pending = Promise.resolve();
           let publicationFailure: { error: unknown } | undefined;
-          const onDelta = previewSink({
-            identity: {
-              projectId: input.projectId,
-              threadId: input.threadId,
-              requestId: input.requestId,
-              runId,
-              stepId: TEXT_DISPATCH_STEP,
-              attempt: context.attempt,
-              fence: context.fence,
-            },
-            redact: this.deps.redactFor?.(engine),
-            onPreview: (frame) => {
-              if (!accepting || publicationFailure) return;
-              pending = pending
-                .then(async () => {
-                  if (publicationFailure) return;
-                  await context.publishPreview(() => {
-                    if (!attemptSignal.aborted) input.onPreview?.(frame);
-                  });
-                })
-                .catch((error: unknown) => {
-                  publicationFailure = { error };
+          // Text and tool activity share one ordered, fenced publication queue, so
+          // a tool line never overtakes the text written before it.
+          const publish = (deliver: () => void) => {
+            if (!accepting || publicationFailure) return;
+            pending = pending
+              .then(async () => {
+                if (publicationFailure) return;
+                await context.publishPreview(() => {
+                  if (!attemptSignal.aborted) deliver();
                 });
-            },
+              })
+              .catch((error: unknown) => {
+                publicationFailure = { error };
+              });
+          };
+          const identity = {
+            projectId: input.projectId,
+            threadId: input.threadId,
+            requestId: input.requestId,
+            runId,
+            stepId: TEXT_DISPATCH_STEP,
+            attempt: context.attempt,
+            fence: context.fence,
+          };
+          const onDelta = previewSink({
+            identity,
+            redact: this.deps.redactFor?.(engine),
+            onPreview: (frame) => publish(() => input.onPreview?.(frame)),
             onInvalid: (failure) => previewFailures.push(failure),
+            signal: attemptSignal,
+          });
+          const onToolActivity = activitySink({
+            identity,
+            redact: this.deps.redactFor?.(engine),
+            onActivity: (frame) => publish(() => input.onActivity?.(frame)),
             signal: attemptSignal,
           });
           let result: TextResponse;
           try {
-            result = await adapter.generate({ ...input, signal: attemptSignal, onDelta });
+            result = await adapter.generate({
+              ...input,
+              signal: attemptSignal,
+              onDelta,
+              onActivity: undefined,
+              onToolActivity,
+            });
           } finally {
             accepting = false;
             // Drain ordered publications before the step can commit or fail.
@@ -1632,8 +1653,8 @@ export class EngineService {
   ) {
     if (!this.nativeSessions)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'The native session runtime is not attached.');
-    if (input.onDelta)
-      throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview channel.');
+    if (input.onDelta || input.onToolActivity)
+      throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
     const adapterAt = (location: string) => {
       const adapter = this.deps.adapter(
         'claude-code',
@@ -1694,37 +1715,47 @@ export class EngineService {
           let pending = Promise.resolve();
           let failure: { error: unknown } | undefined;
           const signal = AbortSignal.any([context.signal, ...(input.signal ? [input.signal] : [])]);
+          // One ordered, fenced queue for text and tool activity alike.
+          const publish = (deliver: () => void) => {
+            if (!accepting || failure) return;
+            pending = pending
+              .then(async () => {
+                if (failure) return;
+                await context.publishPreview(() => {
+                  if (!signal.aborted) deliver();
+                });
+              })
+              .catch((error: unknown) => {
+                failure = { error };
+              });
+          };
+          const identity = {
+            projectId: input.projectId,
+            threadId: input.threadId,
+            requestId: input.requestId,
+            runId,
+            stepId,
+            attempt: context.attempt,
+            fence: context.fence,
+          };
           const onDelta = previewSink({
-            identity: {
-              projectId: input.projectId,
-              threadId: input.threadId,
-              requestId: input.requestId,
-              runId,
-              stepId,
-              attempt: context.attempt,
-              fence: context.fence,
-            },
+            identity,
             signal,
             redact: this.deps.redactFor?.('claude-code'),
             onInvalid: (invalid) => {
               failure = { error: new EngineError('OUTPUT_LIMIT', invalid.reason, true) };
             },
-            onPreview: (frame) => {
-              if (!accepting || failure) return;
-              pending = pending
-                .then(async () => {
-                  if (failure) return;
-                  await context.publishPreview(() => {
-                    if (!signal.aborted) input.onPreview?.(frame);
-                  });
-                })
-                .catch((error: unknown) => {
-                  failure = { error };
-                });
-            },
+            onPreview: (frame) => publish(() => input.onPreview?.(frame)),
+          });
+          const onToolActivity = activitySink({
+            identity,
+            signal,
+            redact: this.deps.redactFor?.('claude-code'),
+            onActivity: (frame) => publish(() => input.onActivity?.(frame)),
           });
           return {
             onDelta,
+            onToolActivity,
             finish: async () => {
               accepting = false;
               await pending;
