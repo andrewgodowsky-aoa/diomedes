@@ -27,6 +27,7 @@ import { hash } from '../server/store';
 import type { AwsConnectionView } from '../shared/model-api';
 import type { InterruptResponse, MessageResult } from '../shared/conversation';
 import type { Conversation, Project } from '../shared/types';
+import { responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const SECRET = 'test-only-bedrock-key-0123456789abcdef-never-real';
@@ -127,10 +128,7 @@ const aws = (async (input: RequestInfo | URL, init?: RequestInit) => {
       status: 400,
       headers: { 'content-type': 'application/json' },
     });
-  return new Response(JSON.stringify(envelope(output)), {
-    status: 200,
-    headers: { 'content-type': 'application/json', 'x-amzn-requestid': `req-${seen.length}` },
-  });
+  return sseResponse(responsesEvents(envelope(output)), { 'x-amzn-requestid': `req-${seen.length}` });
 }) as typeof globalThis.fetch;
 
 // --- the app ------------------------------------------------------------------------

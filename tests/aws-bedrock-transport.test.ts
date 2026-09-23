@@ -23,6 +23,7 @@ import {
   type AwsConnection,
 } from '../server/engines/aws-bedrock.js';
 import { SpendExposure, usageCost } from '../server/spend-exposure.js';
+import { responsesAnswer } from './fixtures/model-api-streams.js';
 
 const BASE = AWS_RESPONSES_ENDPOINTS['us-east-1'];
 const SECRET = 'test-only-bedrock-key-0123456789abcdef';
@@ -129,11 +130,9 @@ function transport(script: Array<(sent: Sent, signal: AbortSignal | undefined) =
   }) as typeof globalThis.fetch;
   return { fetch, sent };
 }
+/** A Responses object answers as its event stream (the request asks for `stream: true`); an error body stays JSON. */
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json', 'x-amzn-requestid': 'req-aws-1', ...headers },
-  });
+  responsesAnswer(body, status, { 'x-amzn-requestid': 'req-aws-1', ...headers });
 
 let dir: string;
 let exposure: SpendExposure;
@@ -211,7 +210,7 @@ describe('the request the real SDK sends', () => {
     expect(sent.body.max_output_tokens).toBe(CONVERSATION_LIMITS.maxOutputTokens);
     expect(sent.body.parallel_tool_calls).toBe(false);
     expect(sent.body.previous_response_id).toBeUndefined();
-    expect(sent.body.stream).toBeFalsy();
+    expect(sent.body.stream).toBe(true);
     expect(sent.body.background).toBeUndefined();
     const input = sent.body.input as Item[];
     expect(input[0]).toEqual({ role: 'developer', content: 'You are Diomedes. Answer only from admitted sources.' });
