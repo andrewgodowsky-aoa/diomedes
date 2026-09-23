@@ -52,7 +52,13 @@ interface ComposerProps {
    * removable; `starter` fills the box each time `n` changes. The playbook's own text is
    * never put in the box: it travels in the instruction channel.
    */
-  skill?: { name: string; starter: string; n: number } | null;
+  skill?: {
+    name: string;
+    starter: string;
+    n: number;
+    /** What approved read connectors cover for this playbook, and a way to add one. */
+    connectors?: { text: string; onAdd?: () => void } | null;
+  } | null;
   onClearSkill?(): void;
 }
 
@@ -335,6 +341,18 @@ export function Composer({
                 onClick={onClearSkill}
               >
                 Remove
+              </button>
+            )}
+          </div>
+        )}
+        {skill?.connectors && (
+          <div className="aux show">
+            <span className="mono">connectors</span>
+            {/* A sentence, so it wraps rather than truncating like a list of names. */}
+            <span style={{ color: 'var(--t1)', overflowWrap: 'anywhere' }}>{skill.connectors.text}</span>
+            {skill.connectors.onAdd && (
+              <button type="button" className="clear" onClick={skill.connectors.onAdd}>
+                Add a connector
               </button>
             )}
           </div>

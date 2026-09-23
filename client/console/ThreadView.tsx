@@ -108,7 +108,13 @@ interface ThreadViewProps {
   /** Where a refused scoped Stop is reported; without it the refusal is silent. */
   onError?(error: Error): void;
   /** A playbook picked for the next message, passed through to the composer. */
-  skill?: { name: string; starter: string; n: number } | null;
+  skill?: {
+    name: string;
+    starter: string;
+    n: number;
+    /** What approved read connectors cover for this playbook, and a way to add one. */
+    connectors?: { text: string; onAdd?: () => void } | null;
+  } | null;
   onClearSkill?(): void;
 }
 

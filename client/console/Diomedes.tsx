@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Project, Route, Turn } from '../../shared/types';
 import { routeDisplayName } from '../../shared/engines';
+import { MODEL_API_ROUTES, type ModelApiRoute } from '../../shared/model-api';
 import { WORK_STYLES, WORK_STYLE_DESCRIPTIONS, WORK_STYLE_LABELS, isWorkStyle, type WorkStyle } from '../../shared/work-style';
 import type { EverythingItem } from './Everything';
 import { Rail } from './Rail';
@@ -119,14 +120,14 @@ export function routeName(route: Route): string {
 }
 
 /**
- * The entries the Route control offers: Claude Code is always a conversation route, and AWS
- * Bedrock joins it while its availability rule holds, or stays while it is the route the thread
- * is on, offered or not, because the control must keep naming the truth. A route outside the
- * two stays listed as itself.
+ * The entries the Route control offers: Claude Code is always a conversation route, and each
+ * model-API route (AWS Bedrock, Azure OpenAI, OpenRouter) joins it while its availability rule
+ * holds, or stays while it is the route the thread is on, offered or not, because the control
+ * must keep naming the truth. A route outside these stays listed as itself.
  */
-export function routeOptions(current: Route, awsOffered: boolean): Route[] {
+export function routeOptions(current: Route, offered: readonly ModelApiRoute[]): Route[] {
   const entries: Route[] = ['claude-code'];
-  if (awsOffered || current === 'aws-bedrock') entries.push('aws-bedrock');
+  for (const id of MODEL_API_ROUTES) if (offered.includes(id) || current === id) entries.push(id);
   if (!entries.includes(current)) entries.push(current);
   return entries;
 }

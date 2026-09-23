@@ -23,18 +23,24 @@ describe('the route caption', () => {
 });
 
 describe("the Route control's entries", () => {
-  it('offers Claude Code always, and AWS Bedrock only while it is offered', () => {
-    expect(routeOptions('claude-code', true)).toEqual(['claude-code', 'aws-bedrock']);
-    expect(routeOptions('claude-code', false)).toEqual(['claude-code']);
+  it('offers Claude Code always, and each model-API route only while it is offered', () => {
+    expect(routeOptions('claude-code', ['aws-bedrock'])).toEqual(['claude-code', 'aws-bedrock']);
+    expect(routeOptions('claude-code', [])).toEqual(['claude-code']);
+    expect(routeOptions('claude-code', ['openrouter', 'azure-openai'])).toEqual([
+      'claude-code',
+      'azure-openai',
+      'openrouter',
+    ]);
   });
 
-  it('keeps an AWS current route listed when AWS is not offered', () => {
+  it('keeps a model-API current route listed when it is not offered', () => {
     // The thread is on AWS and the control must keep saying so, offered or not.
-    expect(routeOptions('aws-bedrock', false)).toEqual(['claude-code', 'aws-bedrock']);
+    expect(routeOptions('aws-bedrock', [])).toEqual(['claude-code', 'aws-bedrock']);
+    expect(routeOptions('azure-openai', ['aws-bedrock'])).toEqual(['claude-code', 'aws-bedrock', 'azure-openai']);
   });
 
-  it('keeps a route outside the two listed, named as itself', () => {
-    expect(routeOptions('sample', false)).toEqual(['claude-code', 'sample']);
-    expect(routeOptions('sample', true)).toEqual(['claude-code', 'aws-bedrock', 'sample']);
+  it('keeps a route outside these listed, named as itself', () => {
+    expect(routeOptions('sample', [])).toEqual(['claude-code', 'sample']);
+    expect(routeOptions('sample', ['aws-bedrock'])).toEqual(['claude-code', 'aws-bedrock', 'sample']);
   });
 });

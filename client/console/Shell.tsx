@@ -91,6 +91,8 @@ import {
   SMALL_BUSINESS_PACK,
   type PackSkill,
 } from '../../shared/capability-packs';
+import type { ReadConnectorsView } from '../../shared/read-connectors';
+import { skillConnectorNote } from './skill-connectors';
 
 interface ShellProps {
   projectId: string;
@@ -178,6 +180,24 @@ export function Shell({
     threadId: string;
     n: number;
   } | null>(null);
+  // The approved read connectors, read each time a playbook is picked, so its launch can say
+  // which of them cover what it reads. An unreadable answer shows nothing rather than a guess.
+  const [skillConnectors, setSkillConnectors] = useState<ReadConnectorsView | null>(null);
+  useEffect(() => {
+    if (!skillDraft) return;
+    let alive = true;
+    void api<ReadConnectorsView>('/ai/read-connectors').then(
+      (view) => {
+        if (alive) setSkillConnectors(view);
+      },
+      () => {
+        if (alive) setSkillConnectors(null);
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [skillDraft?.n]);
   const [route, setRoute] = useState<Route>(selectedEngine(settings));
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
@@ -1747,7 +1767,15 @@ export function Shell({
               prepareSources={(m, text, doc) => messageSources(selected, m, text, doc)}
               skill={
                 skillDraft?.threadId === selected.id && (mode === 'ask' || mode === 'plan')
-                  ? { name: skillDraft.skill.name, starter: skillDraft.skill.starter, n: skillDraft.n }
+                  ? {
+                      name: skillDraft.skill.name,
+                      starter: skillDraft.skill.starter,
+                      n: skillDraft.n,
+                      connectors: (() => {
+                        const note = skillConnectorNote(skillDraft.skill, skillConnectors);
+                        return note && { text: note.text, onAdd: note.offerAdd ? openEngineSettings : undefined };
+                      })(),
+                    }
                   : null
               }
               onClearSkill={() => setSkillDraft(null)}

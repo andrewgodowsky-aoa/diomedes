@@ -155,6 +155,7 @@ import { AWS_BEDROCK_ROUTE, AwsConnections } from './engines/aws-bedrock.js';
 import { AZURE_OPENAI_ROUTE, AzureConnections } from './engines/azure-openai.js';
 import { OPENROUTER_ROUTE, OpenRouterConnections } from './engines/openrouter.js';
 import { mountModelApiRoutes } from './engines/model-api-routes.js';
+import { mountReadConnectorRoutes } from './engines/read-connector-routes.js';
 import { ConnectionSecrets, type SecretBox } from './connection-secrets.js';
 import { SpendExposure } from './spend-exposure.js';
 import { isModelApiRoute, MODEL_API_NAMES, MODEL_API_ROUTES } from '../shared/model-api.js';
@@ -3483,6 +3484,7 @@ export async function createApp(options: AppOptions) {
     route(async (req) => store.provisionProjectConversation(id(req)), false),
   );
   mountModelApiRoutes(app, { store, engines });
+  mountReadConnectorRoutes(app, { store });
   mountInteractionRoutes(app, new InteractionTurns(engines, interactionHost), {
     authorize: async (req) => {
       store.state(String(req.params.id));
