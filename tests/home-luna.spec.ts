@@ -10,6 +10,7 @@ import type { Store } from '../server/store';
 import type { Project, ProjectState } from '../shared/types';
 import { AWS_CONNECT_BODY, AWS_TEST_KEY, awsTransport, seen } from './fixtures/scripted-home-luna';
 import { AWS_LUNA_MODEL } from '../server/engines/aws-bedrock';
+import { shareAfter } from './fixtures/cloud-sharing-grant';
 
 // The Diomedes page on AWS Bedrock (Luna), end to end in a real browser and with no Claude
 // installed at all: the engine service discovers nothing, so there is no login to fall back
@@ -35,7 +36,9 @@ async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T>
     throw new Error(
       `Luna page fixture request ${route} failed (${response.status}): ${await response.text()}`,
     );
-  return response.json() as Promise<T>;
+  const value = (await response.json()) as T;
+  await shareAfter(api, route, method, value);
+  return value;
 }
 
 async function expectFreshBundle(dist: string): Promise<void> {

@@ -445,6 +445,21 @@ describe('AWS Luna in the actual Diomedes conversation', () => {
       { text: 'And the tablecloths?', mode: 'auto', sources: [] },
     );
     expect(estimate.estimate).toMatchObject({ kind: 'estimate', capMicroUsd: 2_000_000 });
+
+    // A route with no model chosen cannot spend: the estimate does not warn, so the send's own
+    // refusal ("Connect AWS Bedrock and choose its model") is what the person sees.
+    const { services } = await api<{ services: Record<string, boolean | string> }>('/settings');
+    const narrowed = { ...services };
+    delete narrowed['aws-bedrockModel'];
+    await api('/settings', 'PUT', { services: narrowed });
+    const unready = await api<{ estimate: { kind: string; warn: boolean }; warning: unknown }>(
+      `/projects/${project.id}/threads/${thread.id}/job-estimate`,
+      'POST',
+      { text: 'And the tablecloths?', mode: 'auto', sources: [] },
+    );
+    expect(unready.estimate).toMatchObject({ kind: 'not-metered', warn: false });
+    expect(unready.warning ?? null).toBeNull();
+    await api('/settings', 'PUT', { services });
   });
 
   test('request a draft checklist: deny one exact proposal and nothing changes; approve a new one and it is written', async () => {

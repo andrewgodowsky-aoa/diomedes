@@ -17,6 +17,7 @@ import type {
   Task,
 } from '../shared/types';
 import { reopenLastProject } from './fixtures/landing';
+import { shareAfter } from './fixtures/cloud-sharing-grant';
 
 // This is a browser contract fixture. The adapters below never start a native
 // engine, read credentials, or contact a provider; they only exercise the
@@ -72,7 +73,9 @@ async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T>
       `AI engine UI fixture request ${route} failed (${response.status}): ${await response.text()}`,
     );
   }
-  return response.json() as Promise<T>;
+  const value = (await response.json()) as T;
+  await shareAfter(api, route, method, value);
+  return value;
 }
 
 function fixtureAdapter(engine: ExternalEngine): TextEngineAdapter {

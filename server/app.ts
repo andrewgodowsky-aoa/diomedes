@@ -4662,6 +4662,16 @@ export async function createApp(options: AppOptions) {
         text: draft.text,
         stableEffort: true,
       });
+      const model = styled?.model ?? store.settings.services?.[`${route}Model`];
+      // A route that is off or not set up cannot spend: the send refuses it by name, so no cap
+      // warning stands in front of that refusal.
+      if (
+        store.settings.services?.[route] !== true ||
+        typeof store.settings.services?.[`${route}AccountRoute`] !== 'string' ||
+        typeof model !== 'string' ||
+        !model
+      )
+        return { threadId, metering: 'not-metered', rates: null, shape: noMeteredShape };
       let sourceBytes = 0;
       for (const source of draft.sources) {
         const document = await store.readDocument(projectId, relativeName(source.path)).catch(() => null);
@@ -4670,7 +4680,7 @@ export async function createApp(options: AppOptions) {
       const conversationMode = draft.mode === 'plan' || draft.mode === 'auto' ? draft.mode : 'ask';
       const instructions = instructionsFor(conversationMode, MODES[draft.mode].instructions);
       const history = thread.turns.reduce((bytes, turn) => bytes + Buffer.byteLength(turn.text), 0);
-      return meteredPlan(threadId, route, styled?.model ?? store.settings.services?.[`${route}Model`], {
+      return meteredPlan(threadId, route, model, {
         inputBytes: Buffer.byteLength(instructions) + Buffer.byteLength(draft.text) + sourceBytes + history,
         messages: thread.turns.length + 1,
         maxOutputTokensPerStep: CONVERSATION_LIMITS.maxOutputTokens,

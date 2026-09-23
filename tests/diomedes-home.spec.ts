@@ -9,6 +9,7 @@ import { testOnlySecretBox } from '../server/connection-secrets';
 import type { Project, ProjectState } from '../shared/types';
 import { SCRIPTED_MODEL, scriptedEngineService } from './fixtures/scripted-conversation';
 import { AWS_CONNECT_BODY, awsTransport } from './fixtures/scripted-home-luna';
+import { shareAfter } from './fixtures/cloud-sharing-grant';
 
 // The Diomedes page end to end in a real browser: the real Store, Runtime, session driver and
 // both admissions, with only the providers scripted. The conversation runs on AWS Bedrock
@@ -35,7 +36,9 @@ async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T>
     throw new Error(
       `Diomedes page fixture request ${route} failed (${response.status}): ${await response.text()}`,
     );
-  return response.json() as Promise<T>;
+  const value = (await response.json()) as T;
+  await shareAfter(api, route, method, value);
+  return value;
 }
 
 async function expectFreshBundle(dist: string): Promise<void> {

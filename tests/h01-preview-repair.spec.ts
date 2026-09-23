@@ -10,6 +10,7 @@ import { routeContractFor } from '../server/harness/route-contract';
 import type { TextRequest } from '../server/engines/contract';
 import type { Store } from '../server/store';
 import type { Project, Conversation } from '../shared/types';
+import { shareAfter } from './fixtures/cloud-sharing-grant';
 
 // The actual app/host/SSE and built Console; only provider discovery/I/O is scripted.
 let app: Awaited<ReturnType<typeof createApp>>;
@@ -31,7 +32,9 @@ async function api<T>(endpoint: string, method = 'GET', body?: unknown): Promise
     headers: { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' },
     body: body === undefined ? undefined : JSON.stringify(body) });
   expect(response.ok, `${endpoint}: ${response.status}`).toBe(true);
-  return response.json() as Promise<T>;
+  const value = (await response.json()) as T;
+  await shareAfter(api, endpoint, method, value);
+  return value;
 }
 test.beforeEach(async () => {
   await fs.mkdir(path.resolve('test-results'), { recursive: true });
