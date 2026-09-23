@@ -66,12 +66,12 @@ const state = () => api<ProjectState>(`/projects/${project.id}/state`);
 const home = () => api<{ projectId: string; threadId: string } | null>('/home/conversation');
 /** What a person's project list holds. The home Project is never in it. */
 const listed = async () => (await api<{ projects: Project[] }>('/projects')).projects;
-const composer = (page: Page) => page.getByRole('textbox', { name: 'Message Diomedes' });
+const composer = (page: Page) => page.getByRole('textbox', { name: 'Message Nectovia' });
 const answers = (page: Page) => page.locator('.turn.dio .body');
 
 async function open(page: Page) {
   await page.goto(baseURL);
-  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
 }
 async function say(page: Page, text: string) {
   // The box ignores Enter for as long as a delivery runs, as the Send button does. A person
@@ -201,7 +201,7 @@ test('in a project, work is offered and starts only when Start is pressed', asyn
   await page.getByRole('combobox', { name: 'In' }).selectOption({ label: 'Linen service' });
   await say(page, 'ACT tidy the plan');
   const card = page.locator('.dio-card');
-  await expect(card).toContainText('Diomedes can start this in Linen service');
+  await expect(card).toContainText('Nectovia can start this in Linen service');
 
   // Offered, not started: the project is untouched until the person presses Start.
   const offered = await state();
@@ -348,7 +348,7 @@ test('CD05-R-05: a failed transcript read does not return a confirmed send', asy
 test('CD05-R-07: a selection result cannot paint a different scope', async ({ page }) => {
   const p = await reviewProject(page, 'R07 project');
   await say(page, 'ACT R07 work');
-  await expect(page.locator('.dio-card')).toContainText('Diomedes can start this');
+  await expect(page.locator('.dio-card')).toContainText('Nectovia can start this');
   let release!: () => void;
   let reached!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
@@ -380,9 +380,9 @@ test('CD05-R-07: a selection result cannot paint a different scope', async ({ pa
 test('CD05-R-08: a proposal remains selectable after reload', async ({ page }) => {
   const p = await reviewProject(page, 'R08 project');
   await say(page, 'ACT R08 proposal');
-  await expect(page.locator('.dio-card')).toContainText('Diomedes can start this');
+  await expect(page.locator('.dio-card')).toContainText('Nectovia can start this');
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
   const outcomeRead = page.waitForResponse((r) =>
     r.request().method() === 'GET' && /\/messages\/[^/]+$/.test(r.url()));
   await page.getByRole('combobox', { name: 'In' }).selectOption(p.id);
@@ -566,7 +566,7 @@ test('CD05-R-06 closure: another window offers the unconfirmed message and sends
 test('CD05-R-07 closure: a selection result cannot paint a later message', async ({ page }) => {
   const p = await reviewProject(page, 'R07b project');
   await say(page, 'ACT R07b work');
-  await expect(page.locator('.dio-card')).toContainText('Diomedes can start this');
+  await expect(page.locator('.dio-card')).toContainText('Nectovia can start this');
   const select = gate();
   await page.route('**/messages/*/select', async (route) => {
     const response = await route.fetch();
@@ -672,7 +672,7 @@ test('CD05-R-08 closure: started work keeps its card after a reload', async ({ p
   await card.getByRole('button', { name: 'Start', exact: true }).click();
   await expect(card).toContainText('Started in R08b project');
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: 'In' }).selectOption(p.id);
   await expect(card).toContainText('Started in R08b project');
   await expect(card.getByRole('button', { name: 'Open the work', exact: true })).toBeVisible();
@@ -684,12 +684,12 @@ test('CD05-R-08 closure: a newer message retires the card, and a reload does not
 }) => {
   const p = await reviewProject(page, 'R08c project');
   await say(page, 'ACT R08c proposal');
-  await expect(page.locator('.dio-card')).toContainText('Diomedes can start this');
+  await expect(page.locator('.dio-card')).toContainText('Nectovia can start this');
   await say(page, 'Thanks R08c');
   await expect(answers(page).last()).toHaveText('You said: Thanks R08c');
   await expect(page.locator('.dio-card')).toHaveCount(0);
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
   const outcomeRead = page.waitForResponse(
     (r) => r.request().method() === 'GET' && /\/messages\/[^/]+$/.test(r.url()),
   );
@@ -705,9 +705,9 @@ test("CD05-R-08 closure: an outcome is never shown under another command's answe
 }) => {
   const p = await reviewProject(page, 'R08d project');
   await say(page, 'ACT R08d proposal');
-  await expect(page.locator('.dio-card')).toContainText('Diomedes can start this');
+  await expect(page.locator('.dio-card')).toContainText('Nectovia can start this');
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
   const outcome = gate();
   await page.route(/\/messages\/[^/]+$/, async (route) => {
     if (route.request().method() !== 'GET') return route.continue();
@@ -834,7 +834,7 @@ test("CD05-R-10 closure: a first send's lost reply is recovered from the other w
     // The window that lost the reply reads the same conversation, with nothing left to settle.
     await other.unroute('**/api/projects/*/threads/*/messages');
     await other.reload();
-    await expect(other.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+    await expect(other.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
     await other.getByRole('combobox', { name: 'In' }).selectOption(p.id);
     await expect(answers(other).last()).toHaveText('You said: First R10b');
     await expect(strip(other)).toHaveCount(0);
@@ -1028,7 +1028,7 @@ for (const action of ['Discard', 'Send again'] as const) {
       // Its own window, after a reload, sends it again under the command it was claimed with.
       await other.unroute(pattern);
       await other.reload();
-      await expect(other.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+      await expect(other.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
       await other.getByRole('combobox', { name: 'In' }).selectOption(p.id);
       await expect(strip(other)).toContainText(newText);
       await strip(other).getByRole('button', { name: 'Send again', exact: true }).click();

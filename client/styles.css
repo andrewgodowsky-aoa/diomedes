@@ -84,6 +84,23 @@
   --dm-charge-trail: var(--attn);
   --dm-charge-body: color-mix(in oklab, var(--attn) 45%, var(--fail));
 }
+/* Nectovia: the eleven primitives only, like every scheme below. The rest of
+   the scheme (plate, seams, charge, accent face and every device rule) lives in
+   client/console/nectovia.css, anchored so the Design Center preview wears it
+   too. Violet is never --attn: amber keeps meaning "needs you". */
+html[data-package='nectovia'] {
+  --chrome: #08080c;
+  --surface: #0d0d12;
+  --raised: #14141a;
+  --hair: rgba(230, 233, 237, 0.07);
+  --hair-2: rgba(230, 233, 237, 0.14);
+  --t1: #e6e9ed;
+  --t2: #a4acb6;
+  --t3: #838d99;
+  --light: #44d2c9;
+  --attn: #e0a94a;
+  --fail: #e06c6c;
+}
 html {
   font-size: 100%;
   /* Only the explicit persisted preference scales the interface. */

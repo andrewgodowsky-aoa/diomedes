@@ -45,6 +45,7 @@
     "electron-store": "11.0.2",
     "express": "^5.1.0",
     "google-auth-library": "10.9.1",
+    "mermaid": "^11.17.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "zod": "^4.5.4"

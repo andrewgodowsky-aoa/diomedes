@@ -1,0 +1,1413 @@
+/* Nectovia: the scheme's layer over the Console.
+
+   client/styles.css holds the scheme's eleven primitives, like every other
+   scheme. Everything else Nectovia adds lives here and nowhere else: the plate,
+   the seams, the charge, the accent face, and each device rule. Every selector
+   is anchored on `:is(html, .dc-stage)[data-package='nectovia']`, so the
+   Design Center preview wears the scheme too, and choosing any other scheme
+   takes all of it away at once. The few rules whose subjects the preview also
+   draws (its rail, marks and buttons) read `:is(html[data-package='nectovia']
+   .console, .dc-stage[data-package='nectovia'])` instead, so a Nectovia stage
+   inside a Field app wears them, and end in `:not(.dc-stage:not([data-package=
+   'nectovia']) *)`, so a Nectovia app never lends them to a stage previewing
+   another scheme. Nothing below names a machine identifier or
+   changes a control's behaviour: it is presentation only.
+
+   Plates are drawn on a background layer (a pseudo-element behind the content)
+   and never by clipping the element that holds content, so a plate can never
+   clip its own menus, pickers, tooltips or focus rings (contract A1). */
+
+:is(html, .dc-stage)[data-package='nectovia'] {
+  /* raised on raised: the plate's own ground */
+  --plate: #1b1b23;
+  --plate-cut: 14px;
+  /* the seam: the lead is the scheme's live colour, the trail a violet that is
+     never a state, the tab a coral used only on the horizon */
+  --seam-lead: var(--light);
+  --seam-trail: #b569fb;
+  --seam-trail-text: #cfa6fd;
+  --seam-tab: #f97c65;
+  --dm-charge-lead: var(--light);
+  --dm-charge-trail: #b569fb;
+  --dm-charge-body: #f97c65;
+  /* one accent phrase in a heading at most; never body text, never a control */
+  --dm-font-accent: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  /* the fractured-signal ease, for transitions only */
+  --nv-ease: cubic-bezier(0.76, 0, 0.24, 1);
+  --nv-settle: cubic-bezier(0.16, 1, 0.3, 1);
+  /* 1 while motion is on, 0 when the theme sets its motion intensity to 0: every
+     duration below is multiplied by it, so nothing moves then. Reduced motion
+     (the setting and the media query) is styles.css's global kill. */
+  --nv-on: min(1, calc(var(--dm-motion-intensity, 0.5) * 1000));
+}
+
+/* ---- the strip's rule and its registration mark (contract §3, SEAM) ----
+   The charged gradient under the strip becomes the plain hairline. Where the
+   rail meets the work column the rule carries the registration mark on its own
+   pixel: 56 px of lead, a 4 px gap, 14 px of trail. With one column (narrow
+   windows) it stands at the column's inset instead. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .top {
+  --nv-rail: 232px;
+  position: relative;
+  background: none;
+  border-bottom-color: var(--hair);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .top::after {
+  content: '';
+  position: absolute;
+  left: var(--nv-rail);
+  bottom: -1px;
+  width: 74px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    var(--seam-lead) 0 56px,
+    transparent 56px 60px,
+    var(--seam-trail) 60px
+  );
+  pointer-events: none;
+}
+@media (max-width: 1100px) {
+  :is(html, .dc-stage)[data-package='nectovia'] .console .top {
+    --nv-rail: 200px;
+  }
+}
+@media (max-width: 860px) {
+  :is(html, .dc-stage)[data-package='nectovia'] .console .top {
+    --nv-rail: 16px;
+  }
+}
+@container app (max-width: 700px) {
+  :is(html, .dc-stage)[data-package='nectovia'] .console .top {
+    --nv-rail: 16px;
+  }
+}
+
+/* ---- the rail's seam ----
+   The spine is the plain hairline. Beside the selected row it steps out 4 px
+   over a 6 px run in the lead, runs the row's height, and steps back in the
+   trail (Rail.tsx draws the step inside `.gp`, which stays the point motion.ts
+   flies from). The hairline gives way where the step stands, from the
+   `--row-top` and `--row-h` the rail writes on the spine. The step snaps to a
+   new row and draws in, rather than sliding past the rows between. */
+:is(html[data-package='nectovia'] .console, .dc-stage[data-package='nectovia'])
+  .spine:not(.dc-stage:not([data-package='nectovia']) *)::before {
+  background: var(--hair-2);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .spine:has(> .gp)::before {
+  /* The line starts 6 px into the spine, so a row at --row-top stands at
+     --row-top - 6px on it. */
+  -webkit-mask:
+    linear-gradient(#000 0 0) top / 100% max(0px, calc(var(--row-top) - 6px)) no-repeat,
+    linear-gradient(#000 0 0) bottom / 100%
+      max(0px, calc(100% - var(--row-top) - var(--row-h) + 6px)) no-repeat;
+  mask:
+    linear-gradient(#000 0 0) top / 100% max(0px, calc(var(--row-top) - 6px)) no-repeat,
+    linear-gradient(#000 0 0) bottom / 100%
+      max(0px, calc(100% - var(--row-top) - var(--row-h) + 6px)) no-repeat;
+}
+:is(html[data-package='nectovia'] .console, .dc-stage[data-package='nectovia'])
+  .spine
+  .tick:not(.dc-stage:not([data-package='nectovia']) *) {
+  display: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .spine .gp {
+  left: 16px;
+  width: 1px;
+  height: 1px;
+  border-radius: 0;
+  background: none;
+  transition: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .spine .gp .seam {
+  display: block;
+  position: absolute;
+  left: 0;
+  top: -12px;
+  overflow: visible;
+  animation: nv-seam-in calc(200ms * var(--nv-on)) var(--nv-ease) both;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .spine .seam polyline {
+  fill: none;
+  stroke-width: 1.4;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .spine .seam .seam-lead {
+  stroke: var(--seam-lead);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .spine .seam .seam-trail {
+  stroke: var(--seam-trail);
+}
+@keyframes nv-seam-in {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+/* The selected row takes a faint wash of the lead from the seam's side. */
+:is(html[data-package='nectovia'] .console, .dc-stage[data-package='nectovia'])
+  .spine
+  button.on:not(:hover):not(.dc-stage:not([data-package='nectovia']) *) {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--seam-lead) 7%, transparent),
+    transparent 70%
+  );
+}
+/* The rail's head is an instrument label. */
+:is(html[data-package='nectovia'] .console, .dc-stage[data-package='nectovia'])
+  .rail-head
+  h2:not(.dc-stage:not([data-package='nectovia']) *) {
+  font: 500 var(--dm-type-meta) / 1.4 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* ---- the status glyph (contract §3) ----
+   A 10-unit plate with its corner cut, in the state's colour; done is its
+   outline in --t2, and a point with no state yet is the outline in --t3. The
+   filled glyph is a clip-path; the outline is a mask, so it takes whichever
+   colour the state gives it. */
+:is(html, .dc-stage)[data-package='nectovia'] {
+  --nv-glyph: polygon(0 0, 70% 0, 100% 30%, 100% 100%, 0 100%);
+  --nv-glyph-ring: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpolygon points='.75,.75 6.69,.75 9.25,3.31 9.25,9.25 .75,9.25' fill='none' stroke='%23000' stroke-width='1.5'/%3E%3C/svg%3E");
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .pt {
+  width: 8px;
+  height: 8px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--t3);
+  -webkit-mask: var(--nv-glyph-ring) center / 100% 100% no-repeat;
+  mask: var(--nv-glyph-ring) center / 100% 100% no-repeat;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .pt.done {
+  background: var(--t2);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console :is(.pt.live, .pt.attn, .pt.fail) {
+  -webkit-mask: none;
+  mask: none;
+  clip-path: var(--nv-glyph);
+  box-shadow: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .pt.live {
+  background: var(--seam-lead);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .pt.attn {
+  background: var(--attn);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .pt.fail {
+  background: var(--fail);
+}
+/* The gutter mark beside each of Nectovia's turns: graphite at rest, the lead
+   while the turn is still arriving. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .turn.dio::before {
+  top: 6px;
+  width: 9px;
+  height: 9px;
+  border-radius: 0;
+  background: var(--t3);
+  box-shadow: none;
+  clip-path: var(--nv-glyph);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .turn.dio.live::before {
+  background: var(--seam-lead);
+  box-shadow: none;
+}
+
+/* ---- the plate (contract §3 PLATE, A1) ----
+   The host keeps its content, its menus and its focus rings unclipped: the
+   plate is drawn by `::before`, a layer behind the content, cut at the top
+   right by `--nv-cut`. Its rule runs round the straight edges (an inset
+   shadow, clipped with the layer) and down the bevel (a 1 px band on the
+   diagonal). `::after` is the lit edge: a 2 px line on the bevel in the
+   plate's role colour, drawn only where `--nv-lit` names one. A host sets
+   --nv-cut, --nv-fill, --nv-rule and --nv-lit; nothing else. */
+/* The host defaults weigh nothing (`:where`), so each host's own rule below
+   always wins over them; the layers themselves keep `:is` weight, which they
+   need to replace the Console's own gutter points on a record and a need. */
+:is(html, .dc-stage)[data-package='nectovia']
+  :where(
+    .console .composer,
+    .console .record.open,
+    .console .need,
+    .console.diomedes .dio-card,
+    .console .palette,
+    .console .docedit .de-panel,
+    .notice.needs
+  ) {
+  --nv-cut: var(--plate-cut);
+  --nv-fill: var(--raised);
+  --nv-rule: var(--hair-2);
+  --nv-lit: transparent;
+  position: relative;
+  isolation: isolate;
+}
+:is(html, .dc-stage)[data-package='nectovia']
+  :is(
+    .console .composer,
+    .console .record.open,
+    .console .need,
+    .console.diomedes .dio-card,
+    .console .palette,
+    .console .docedit .de-panel,
+    .notice.needs
+  )::before {
+  content: '';
+  position: absolute;
+  /* -1px on a host that keeps its own border box but hides the border */
+  inset: var(--nv-inset, 0);
+  z-index: -1;
+  width: auto;
+  height: auto;
+  border-radius: var(--r);
+  background:
+    linear-gradient(
+        to top right,
+        transparent calc(50% - 1px),
+        var(--nv-rule) calc(50% - 1px) 50%,
+        transparent 50%
+      )
+      right top / var(--nv-cut) var(--nv-cut) no-repeat,
+    var(--nv-fill);
+  box-shadow: inset 0 0 0 1px var(--nv-rule);
+  clip-path: polygon(0 0, calc(100% - var(--nv-cut)) 0, 100% var(--nv-cut), 100% 100%, 0 100%);
+  pointer-events: none;
+}
+:is(html, .dc-stage)[data-package='nectovia']
+  :is(
+    .console .composer,
+    .console .record.open,
+    .console .need,
+    .console.diomedes .dio-card,
+    .console .palette,
+    .console .docedit .de-panel,
+    .notice.needs
+  )::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: var(--nv-cut);
+  height: var(--nv-cut);
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 1px),
+    var(--nv-lit) calc(50% - 1px) calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
+  pointer-events: none;
+}
+
+/* The composer: the person's input, handed over. Its edge lights in the trail
+   while it has the focus and in the lead while a message is on its way; the
+   rule brightens with the focus the way it always has. It is a plate, so it
+   drops the charged shadow the signal layer gave it. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .composer {
+  --nv-cut: 16px;
+  --nv-inset: -1px;
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .composer:focus-within {
+  --nv-rule: color-mix(in srgb, var(--t3) 70%, transparent);
+  --nv-lit: var(--seam-trail);
+  border-color: transparent;
+  box-shadow: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .composer.busy {
+  --nv-lit: var(--seam-lead);
+}
+/* Send: solid silver with a small bevel when there is something to send, the
+   plate's outline while there is not. The bevel is a layer too, so the focus
+   ring stays whole. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .bar .send {
+  position: relative;
+  isolation: isolate;
+  padding: 7px 14px;
+  border-radius: 0;
+  font-weight: 600;
+  color: var(--t3);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .bar .send::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: var(--rb);
+  background: linear-gradient(
+      to top right,
+      transparent calc(50% - 1px),
+      var(--hair-2) calc(50% - 1px) 50%,
+      transparent 50%
+    )
+    right top / 7px 7px no-repeat;
+  box-shadow: inset 0 0 0 1px var(--hair-2);
+  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%);
+  pointer-events: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .bar .send.ready {
+  color: var(--chrome);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .bar .send.ready::before {
+  background: var(--t1);
+  box-shadow: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .bar .send.ready:hover {
+  background: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .bar .send.ready:hover::before {
+  background: color-mix(in oklab, var(--t1) 86%, var(--seam-lead));
+}
+
+/* A run record, opened: a card-sized plate, lit in the lead only while the
+   run is live. The live point moves from the gutter into the card, ahead of
+   the line that says who is running it. A closed record stays one quiet line. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .record.open {
+  --nv-cut: 14px;
+  margin: 10px 0 12px;
+  padding: 11px 16px 12px;
+  border-left: 0;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .record.open.live {
+  --nv-lit: var(--seam-lead);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .record.open .run-origin::before {
+  content: '';
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 10px;
+  vertical-align: -1px;
+  background: var(--t2);
+  -webkit-mask: var(--nv-glyph-ring) center / 100% 100% no-repeat;
+  mask: var(--nv-glyph-ring) center / 100% 100% no-repeat;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .record.open.live .run-origin::before {
+  background: var(--seam-lead);
+  -webkit-mask: none;
+  mask: none;
+  clip-path: var(--nv-glyph);
+}
+
+/* Needs you: an amber plate, lit in the amber, never the trail. Its point
+   stays in the gutter, where every turn's point stands. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .need {
+  --nv-cut: 14px;
+  --nv-fill: color-mix(in oklab, var(--attn) 5%, var(--surface));
+  --nv-rule: color-mix(in oklab, var(--attn) 35%, transparent);
+  --nv-lit: var(--attn);
+  margin: 10px 0;
+  padding: 12px 16px 14px;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .need + .need {
+  border-top: 0;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .need .who::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 18px;
+  width: 9px;
+  height: 9px;
+  background: var(--attn);
+  clip-path: var(--nv-glyph);
+}
+
+/* The agent's outcome card: a plate lit in the colour its state already
+   speaks, in place of the coloured rule down its left edge. */
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .dio-card {
+  --nv-cut: 14px;
+  --nv-fill: var(--surface);
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .dio-card:is(.offer, .attn) {
+  --nv-lit: var(--attn);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .dio-card.live {
+  --nv-lit: var(--seam-lead);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .dio-card.fail {
+  --nv-lit: var(--fail);
+}
+
+/* ---- the ledger: instrument labels and numbered sections ----
+   Headings are mono instruments; each section is numbered 01, 02, ... by a
+   CSS counter whose text is marked presentational, so a screen reader still
+   hears only the heading. The count a heading already carries takes its
+   state's colour. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .ledger {
+  counter-reset: nv-ledger;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .ledger h2 {
+  font: 500 var(--dm-type-meta) / 1.4 var(--mono);
+  letter-spacing: 0.14em;
+  color: var(--t2);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .ledger section {
+  counter-increment: nv-ledger;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .ledger h3 {
+  font: 500 var(--dm-type-meta) / 1.5 var(--mono);
+  letter-spacing: 0.12em;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .ledger section > h3::before {
+  content: counter(nv-ledger, decimal-leading-zero) / '';
+  margin-right: 10px;
+  color: var(--t3);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .ledger #secNeeds h3 .mono {
+  color: var(--attn);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .ledger #secActivity:not(.dim) h3 .mono {
+  color: var(--seam-lead);
+}
+
+/* ---- the agent home (Home.dc.html) ----
+   The one page with art. The bust stands in a column of its own beside the
+   conversation, over the one horizon line, with the registration mark under
+   its fractured shoulder: 88 px of lead, 22 of trail and 6 of coral, the only
+   coral in the product. The column exists only while the window is wide
+   enough to keep the conversation at its measure. Narrower, the art goes and
+   the page is the conversation alone, as in every other scheme. A light
+   custom theme built on Nectovia draws no art: the bust is plaster on ink.
+   HomeArt is mounted only under Nectovia; the first rule keeps it out of the
+   page in the frame a scheme change takes to reach React. */
+.console.diomedes .nv-art {
+  display: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] {
+  /* the signature's clock (tests/home-brief.test.ts reads these): each band
+     takes --nv-sig-band and starts its step's --nv-sig-step late, and A's
+     resolve, the last to finish, is the whole signature */
+  --nv-sig-band: 1100ms;
+  --nv-sig-step: 45ms;
+  --nv-sig-rest: 1300ms;
+}
+@container app (min-width: 1101px) {
+  @media (min-width: 861px) {
+    :is(html, .dc-stage)[data-package='nectovia']:not([data-color-scheme='light'])
+      .console.diomedes
+      .dio-screen:has(> .nv-art) {
+      /* the canvas's split: 40 % for the art, which leaves the conversation
+         the canvas's 640 px measure in a 1440 px window */
+      grid-template-columns: minmax(0, 1fr) clamp(360px, 40%, 540px);
+      background: var(--surface);
+    }
+    :is(html, .dc-stage)[data-package='nectovia']:not([data-color-scheme='light'])
+      .console.diomedes
+      .dio-screen:has(> .nv-art)
+      > .work {
+      grid-column: 1;
+      grid-row: 1;
+    }
+    :is(html, .dc-stage)[data-package='nectovia']:not([data-color-scheme='light'])
+      .console.diomedes
+      .dio-screen
+      > .nv-art {
+      display: block;
+      grid-column: 2;
+      grid-row: 1;
+      position: relative;
+      /* a size container, so the bust fits the column's height as well as
+         its width: it never runs past the bottom of a short window */
+      container: nv-art / size;
+      min-height: 0;
+      overflow: hidden;
+      pointer-events: none;
+      user-select: none;
+      transition: opacity calc(260ms * var(--nv-on)) var(--nv-ease);
+    }
+    /* Recent results, when there are any, stand over the art, which steps
+       back behind them; with none there is no box at all. */
+    :is(html, .dc-stage)[data-package='nectovia']:not([data-color-scheme='light'])
+      .console.diomedes
+      .dio-screen:has(> .nv-art)
+      > .ledger {
+      grid-column: 2;
+      grid-row: 1;
+      z-index: 1;
+      border-left: 0;
+      background: none;
+    }
+    :is(html, .dc-stage)[data-package='nectovia']:not([data-color-scheme='light'])
+      .console.diomedes
+      .dio-screen:has(> .nv-art)
+      > .ledger:empty {
+      display: none;
+    }
+    :is(html, .dc-stage)[data-package='nectovia']:not([data-color-scheme='light'])
+      .console.diomedes
+      .dio-screen:has(> .ledger:not(:empty))
+      > .nv-art {
+      opacity: 0.14;
+    }
+  }
+}
+
+/* The bust: A at rest, right-aligned in its column the way the canvas sets
+   it (28 px in from the right), as wide as the rest of the column up to its
+   drawn 540 px, and never taller than the column leaves room for. Its left
+   edge meets the column's; the conversation's own padding is the gap. */
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-bust {
+  --nv-bust-w: min(100cqw - 28px, 540px, (100cqh - 112px) * 0.9354);
+  position: absolute;
+  top: clamp(24px, 6cqh, 64px);
+  right: 28px;
+  width: var(--nv-bust-w);
+  aspect-ratio: 840 / 898;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-bust img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+}
+/* The horizon: one hairline across the column where the bust's base meets
+   it, drawn once in the product. */
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-horizon {
+  position: absolute;
+  top: 99%;
+  right: -28px;
+  left: calc(var(--nv-bust-w) + 28px - 100cqw);
+  height: 1px;
+  background: var(--hair-2);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-reg {
+  position: absolute;
+  top: 0;
+  right: calc(28px + var(--nv-bust-w) * 0.037);
+  width: 124px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    var(--seam-lead) 0 88px,
+    transparent 88px 92px,
+    var(--seam-trail) 92px 114px,
+    transparent 114px 118px,
+    var(--seam-tab) 118px 124px
+  );
+}
+
+/* ---- the signature: once a session, B arrives and resolves to A ----
+   Five uneven bands of B (HomeArt sets each band's edges, displacement and
+   step), each with a cyan and a violet ghost of the silhouette, land out of
+   order and lock; A resolves over them; the horizon draws from the right;
+   the registration mark lands last, one pixel off for a frame. Transforms,
+   opacity and clip-path only. Every animation's last frame is the resting
+   look, so when HomeArt takes the bands away nothing moves. */
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-band {
+  position: absolute;
+  inset: 0;
+  clip-path: inset(var(--top) 0 var(--bottom) 0);
+  opacity: 0;
+  animation: nv-band-in calc(var(--nv-sig-band) * var(--nv-on)) var(--nv-ease)
+    calc(var(--nv-sig-step) * var(--step) * var(--nv-on)) both;
+  will-change: transform, opacity;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-ghost {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  -webkit-mask: var(--mask) center / 100% 100% no-repeat;
+  mask: var(--mask) center / 100% 100% no-repeat;
+  animation: nv-ghost calc(var(--nv-sig-band) * 0.62 * var(--nv-on)) var(--nv-ease)
+    calc(var(--nv-sig-step) * var(--step) * var(--nv-on)) both;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-ghost.lead {
+  --g: -6px;
+  background: var(--seam-lead);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-ghost.trail {
+  --g: 6px;
+  background: var(--seam-trail);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-art.signature .nv-rest {
+  animation: nv-rest-in calc(var(--nv-sig-rest) * var(--nv-on)) var(--nv-ease) both;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-art.signature .nv-horizon {
+  transform-origin: 100% 50%;
+  animation: nv-horizon-in calc(640ms * var(--nv-on)) var(--nv-ease) calc(360ms * var(--nv-on))
+    both;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-art.signature .nv-reg {
+  animation: nv-reg-in calc(120ms * var(--nv-on)) linear calc(1000ms * var(--nv-on)) both;
+}
+@keyframes nv-band-in {
+  0% {
+    opacity: 0;
+    transform: translateX(var(--shift));
+  }
+  12% {
+    opacity: 1;
+  }
+  40% {
+    transform: translateX(calc(var(--shift) * -0.3));
+  }
+  56% {
+    transform: translateX(0);
+  }
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+}
+@keyframes nv-ghost {
+  0% {
+    opacity: 0.9;
+    transform: translateX(var(--g));
+  }
+  55% {
+    opacity: 0.7;
+    transform: translateX(calc(var(--g) * 0.5));
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+}
+@keyframes nv-rest-in {
+  0%,
+  48% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes nv-horizon-in {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes nv-reg-in {
+  0% {
+    opacity: 0;
+  }
+  1%,
+  50% {
+    opacity: 1;
+    transform: translateX(-1px);
+  }
+  51%,
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+/* Stillness, however it is asked for, shows A and nothing else, even if a
+   band were ever drawn. */
+html[data-motion='reduced'] .console.diomedes .nv-band,
+html[data-motion-preset='none'] .console.diomedes .nv-band {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .console.diomedes .nv-band {
+    display: none;
+  }
+}
+
+/* ---- the report ----
+   The date as an instrument, the greeting as the page's display heading with
+   its one accent phrase in the serif, then a row for each project with
+   something to report: the state's glyph and label, a sentence, a way in, and
+   the project's task tally as a segment bar under the sentence. The page's
+   own title stays for assistive technology; on screen the strip's wordmark
+   already says where you are. */
+:is(html, .dc-stage)[data-package='nectovia']
+  .console.diomedes
+  .dio-screen:has(.nv-brief)
+  .head {
+  padding-top: 16px;
+}
+:is(html, .dc-stage)[data-package='nectovia']
+  .console.diomedes
+  .dio-screen:has(.nv-brief)
+  .head
+  h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-brief {
+  padding: 34px 0 30px;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-date {
+  margin: 0;
+  font: 500 var(--dm-type-meta) / 1.4 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--t3);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-greeting {
+  margin: 16px 0 0;
+  max-width: 16ch;
+  font: 600 clamp(2.125rem, 1rem + 2.6vw, 3.5rem) / 1.02 var(--ui);
+  letter-spacing: -0.025em;
+  color: var(--t1);
+  text-wrap: balance;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-accent {
+  font-family: var(--dm-font-accent);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--t2);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-report {
+  margin-top: 40px;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-report h3 {
+  margin: 0 0 6px;
+  font: 500 var(--dm-type-meta) / 1.4 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-report ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-row {
+  display: grid;
+  grid-template-columns: 16px minmax(88px, 150px) minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: baseline;
+  padding: 10px 0 11px;
+  border-top: 1px solid var(--hair);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-row:last-child {
+  border-bottom: 1px solid var(--hair);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-label {
+  font: 500 var(--dm-type-meta) / 1.4 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--t3);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-row.attn .nv-label {
+  color: var(--attn);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-row.live .nv-label {
+  color: var(--seam-lead);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-what {
+  min-width: 0;
+  color: var(--t2);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-what b {
+  font-weight: 600;
+  color: var(--t1);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-open {
+  /* a 36 px target on a row drawn at the canvas's height: the negative
+     margins keep the row from growing around it */
+  min-height: 36px;
+  margin: -8px -8px -8px 0;
+  padding: 0 8px;
+  border-radius: var(--rb);
+  font-size: var(--dm-type-caption);
+  color: var(--t2);
+  transition:
+    color calc(var(--quick) * var(--nv-on)),
+    background-color calc(var(--quick) * var(--nv-on));
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-row.attn .nv-open {
+  color: var(--attn);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-open:hover {
+  color: var(--t1);
+  background: var(--raised);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-bar {
+  grid-column: 3 / 4;
+  max-width: 320px;
+  margin-top: 9px;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console.diomedes .nv-quiet {
+  margin: 12px 0 0;
+  font-size: var(--dm-type-caption);
+  color: var(--t3);
+}
+
+/* ---- transitions: calm surfaces, loud transitions (contract §4) ----
+   A view arrives as the fractured signal. For 160 ms the screen shears in
+   steps (12, 9, 6 px, alternating) while 1 px cyan and violet tear lines at
+   its two band edges step the other way. Then the strip's seam draws left to
+   right over 260 ms: here when the strip mounts, and on a view change through
+   motion.ts (drawHeaderSeam), because a view change does not remount the
+   strip. Plates settle over 220 ms, and their lit edge draws 60 ms after
+   that, last of all. A completed segment snaps in two frames of brightness. A
+   needs-you plate slides its amber band in and holds a 1 px registration
+   offset for two frames.
+   Content moves by transform and opacity only, never clip-path, so a click
+   is never lost to a transition. No transform is left behind: that would make
+   the screen the containing block for every fixed popover in it. Every
+   duration is x --nv-on. The global reduced-motion rule in styles.css and the
+   stillness group at the end stop all of it. */
+:is(html, .dc-stage)[data-package='nectovia'] {
+  --nv-view: 160ms;
+  --nv-seam-draw: 260ms;
+  --nv-plate: 220ms;
+  --nv-lit-after: 60ms;
+  --nv-lit-draw: 140ms;
+  --nv-snap: 120ms;
+  --nv-need: 180ms;
+}
+
+/* The view shear. The agent home skips it on the visit that plays its
+   signature, which is that visit's arrival. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .screen.on,
+:is(html, .dc-stage)[data-package='nectovia'] .console.home .home-col {
+  animation: nv-view-in calc(var(--nv-view) * var(--nv-on)) linear;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .screen.on::before,
+:is(html, .dc-stage)[data-package='nectovia'] .console .screen.on::after {
+  --nv-ghost: var(--seam-lead);
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  opacity: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent calc(100% / 3 - 1px),
+    var(--nv-ghost) calc(100% / 3 - 1px) calc(100% / 3),
+    transparent calc(100% / 3) calc(200% / 3 - 1px),
+    var(--nv-ghost) calc(200% / 3 - 1px) calc(200% / 3),
+    transparent calc(200% / 3)
+  );
+  /* broken into runs, so the lines read as a tear and their shear shows */
+  -webkit-mask: repeating-linear-gradient(
+    90deg,
+    #000 0 88px,
+    transparent 88px 96px,
+    #000 96px 212px,
+    transparent 212px 218px
+  );
+  mask: repeating-linear-gradient(
+    90deg,
+    #000 0 88px,
+    transparent 88px 96px,
+    #000 96px 212px,
+    transparent 212px 218px
+  );
+  animation: nv-view-ghost calc(var(--nv-view) * var(--nv-on)) linear;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .screen.on::before {
+  --nv-gx1: 14px;
+  --nv-gx2: -8px;
+  --nv-gx3: 4px;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .screen.on::after {
+  --nv-ghost: var(--seam-trail);
+  --nv-gx1: -10px;
+  --nv-gx2: 12px;
+  --nv-gx3: -6px;
+  top: 1px;
+  bottom: -1px;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .screen.on:has(> .nv-art.signed),
+:is(html, .dc-stage)[data-package='nectovia'] .console .screen.on:has(> .nv-art.signed)::before,
+:is(html, .dc-stage)[data-package='nectovia'] .console .screen.on:has(> .nv-art.signed)::after {
+  animation: none;
+}
+@keyframes nv-view-in {
+  0%,
+  24.9% {
+    opacity: 0.3;
+    transform: translateX(-12px);
+  }
+  25%,
+  49.9% {
+    opacity: 0.65;
+    transform: translateX(9px);
+  }
+  50%,
+  74.9% {
+    opacity: 1;
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes nv-view-ghost {
+  0%,
+  24.9% {
+    opacity: 0.9;
+    transform: translateX(var(--nv-gx1));
+  }
+  25%,
+  49.9% {
+    opacity: 0.8;
+    transform: translateX(var(--nv-gx2));
+  }
+  50%,
+  74.9% {
+    opacity: 0.55;
+    transform: translateX(var(--nv-gx3));
+  }
+  75%,
+  100% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+}
+
+/* The strip's seam draws in after the shear. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .top::after {
+  transform-origin: 0 50%;
+  animation: nv-seam-draw calc(var(--nv-seam-draw) * var(--nv-on)) var(--nv-ease)
+    calc(var(--nv-view) * var(--nv-on)) backwards;
+}
+@keyframes nv-seam-draw {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* Plates settle, then light their edge. A needs-you plate's band has its own
+   entrance, below. */
+:is(html, .dc-stage)[data-package='nectovia']
+  :is(
+    .console .composer,
+    .console .record.open,
+    .console.diomedes .dio-card,
+    .console .palette
+  )::before {
+  animation: nv-plate-in calc(var(--nv-plate) * var(--nv-on)) var(--nv-settle) backwards;
+}
+:is(html, .dc-stage)[data-package='nectovia']
+  :is(
+    .console .composer,
+    .console .record.open,
+    .console .need,
+    .console.diomedes .dio-card,
+    .console .palette,
+    .console .docedit .de-panel,
+    .notice.needs
+  )::after {
+  animation: nv-lit-in calc(var(--nv-lit-draw) * var(--nv-on)) var(--nv-ease)
+    calc((var(--nv-plate) + var(--nv-lit-after)) * var(--nv-on)) backwards;
+}
+@keyframes nv-plate-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+}
+/* The lit edge runs from the bevel's lower left to its upper right, so a
+   reveal from the left draws it up the bevel. */
+@keyframes nv-lit-in {
+  /* Both ends are insets: from an inset to the resting `none` would not
+     interpolate, and the edge would pop in halfway instead of drawing. */
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+
+/* Needs you: the amber band slides in under the words as they arrive, and
+   the plate holds one pixel off register for two frames before it settles. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .need {
+  animation: nv-need-in calc(var(--nv-need) * var(--nv-on)) linear;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .need::before {
+  animation: nv-need-band calc(var(--nv-need) * 0.8 * var(--nv-on)) var(--nv-settle) backwards;
+}
+@keyframes nv-need-in {
+  0% {
+    opacity: 0;
+  }
+  80% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  80.1%,
+  99.9% {
+    opacity: 1;
+    transform: translateX(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes nv-need-band {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+}
+
+/* A completed segment snaps: two frames of brightness, then its colour. */
+:is(html, .dc-stage)[data-package='nectovia'] .seg-bar .seg.done {
+  animation: nv-seg-snap calc(var(--nv-snap) * var(--nv-on)) steps(2, jump-end);
+}
+@keyframes nv-seg-snap {
+  from {
+    filter: brightness(2.2);
+  }
+}
+
+/* ---- stillness ----
+   The reduced-motion setting, a theme whose motion preset is none, and the
+   Design Center stage's own reduced preview: nothing of the scheme's moves.
+   (The media query and the page's own setting are also stopped by the
+   global rule in styles.css; the stage and the preset are not, so they are
+   named here.) */
+:is(html, .dc-stage)[data-package='nectovia']:is([data-motion='reduced'], [data-motion-preset='none']) {
+  --nv-on: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(html, .dc-stage)[data-package='nectovia'] {
+    --nv-on: 0;
+  }
+}
+:is(html, .dc-stage)[data-package='nectovia']:is([data-motion='reduced'], [data-motion-preset='none'])
+  .console
+  .screen.on,
+:is(html, .dc-stage)[data-package='nectovia']:is([data-motion='reduced'], [data-motion-preset='none'])
+  .console
+  .screen.on::before,
+:is(html, .dc-stage)[data-package='nectovia']:is([data-motion='reduced'], [data-motion-preset='none'])
+  .console
+  .screen.on::after,
+:is(html, .dc-stage)[data-package='nectovia']:is([data-motion='reduced'], [data-motion-preset='none'])
+  .console.home
+  .home-col,
+:is(html, .dc-stage)[data-package='nectovia']:is([data-motion='reduced'], [data-motion-preset='none'])
+  .console
+  .top::after,
+:is(html, .dc-stage)[data-package='nectovia']:is([data-motion='reduced'], [data-motion-preset='none'])
+  .console
+  .spine
+  .gp
+  .seam,
+:is(html, .dc-stage)[data-package='nectovia']:is([data-motion='reduced'], [data-motion-preset='none'])
+  :is(.console :is(.composer, .record.open, .need, .dio-card, .palette, .de-panel), .notice.needs)::before,
+:is(html, .dc-stage)[data-package='nectovia']:is([data-motion='reduced'], [data-motion-preset='none'])
+  :is(.console :is(.composer, .record.open, .need, .dio-card, .palette, .de-panel), .notice.needs)::after,
+:is(html, .dc-stage)[data-package='nectovia']:is([data-motion='reduced'], [data-motion-preset='none'])
+  .console
+  .need,
+:is(html, .dc-stage)[data-package='nectovia']:is([data-motion='reduced'], [data-motion-preset='none'])
+  .seg-bar
+  .seg.done,
+:is(html, .dc-stage)[data-package='nectovia']:is([data-motion='reduced'], [data-motion-preset='none'])
+  .console.diomedes
+  .nv-art
+  *,
+:is(html, .dc-stage)[data-package='nectovia']:is([data-motion='reduced'], [data-motion-preset='none'])
+  .console.diomedes
+  .nv-art.signature
+  * {
+  animation: none;
+}
+
+/* ---- the screens (brief CP7) ----
+   Devices only where they carry meaning: live work, the person's input, and
+   what needs the person. Everything else on these screens wears Nectovia
+   through its tokens and fonts alone. A panel lit because it could be is the
+   failure this pass avoids, so most screens below get nothing at all. */
+
+/* Palette: the person's input, summoned. A plate cut 16 like the composer,
+   its edge lit in the trail while it is open (its field always has the
+   focus then). The one shadow the Console allows follows the cut. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .palette {
+  --nv-cut: 16px;
+  --nv-inset: -1px;
+  --nv-lit: var(--seam-trail);
+  border-color: transparent;
+  background: none;
+  box-shadow: none;
+  filter: drop-shadow(0 22px 26px rgba(0, 0, 0, 0.55));
+}
+
+/* Documents: the choice that must not be missed (the file changed under the
+   person's edit) is a needs-you plate, in place of the amber rule down its
+   left edge. The ring its focus draws stays whole: the plate is a layer. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .docedit .de-panel {
+  --nv-cut: 14px;
+  --nv-inset: -1px;
+  --nv-fill: color-mix(in oklab, var(--attn) 5%, var(--surface));
+  --nv-rule: color-mix(in oklab, var(--attn) 35%, transparent);
+  --nv-lit: var(--attn);
+  border-color: transparent;
+  background: none;
+}
+
+/* Board: the columns are the work's lifecycle, read as instruments. The
+   field that names a new task is the person's input, so its edge takes the
+   trail while it has the focus, as the composer's does. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .column h3 {
+  font: 500 var(--dm-type-meta) / 1.5 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--t2);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .bhead .newtask input:focus-visible {
+  border-color: var(--seam-trail);
+}
+
+/* Team: a lane's current step is the status glyph (lead while it runs, the
+   outline while it waits to start, amber while it needs the person), and the
+   point that travels between views is the glyph too. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .ev3 li.now::before {
+  top: 5px;
+  width: 8px;
+  height: 8px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--seam-lead);
+  clip-path: var(--nv-glyph);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .lane.waiting .ev3 li.now::before {
+  width: 8px;
+  height: 8px;
+  border: 0;
+  background: var(--t3);
+  clip-path: none;
+  -webkit-mask: var(--nv-glyph-ring) center / 100% 100% no-repeat;
+  mask: var(--nv-glyph-ring) center / 100% 100% no-repeat;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .lane.blocked .ev3 li.now::before {
+  background: var(--attn);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .traveller {
+  border-radius: 0;
+  background: var(--seam-lead);
+  clip-path: var(--nv-glyph);
+}
+
+/* Change review: what is flagged for the person, and a check that failed,
+   are marked with the glyph in their state's colour. */
+:is(html, .dc-stage)[data-package='nectovia']
+  .console
+  :is(.crev-flag, .crev-check:is(.failed, .error))::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 0;
+  clip-path: var(--nv-glyph);
+}
+
+/* Run inspector: the facts of a run are an instrument readout. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .run-inspector :is(dt, h3) {
+  font: 500 var(--dm-type-meta) / 1.6 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Readiness: ready or blocked is a state, so it reads as the brief's rows do,
+   a glyph and a mono label in the state's colour, not a pill. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .ready-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font: 500 var(--dm-type-meta) / 1.4 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .ready-result::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  background: currentColor;
+  clip-path: var(--nv-glyph);
+}
+
+/* ---- the Workbook (contract A6): three device rules, no more ----
+   Settings, Setup, dialogs and the error bar keep the Workbook's own styling
+   and wear Nectovia through its tokens and fonts. These three places carry
+   meaning, so they take the scheme's devices (PROGRESS.md lists them):
+   W1 the status mark is the glyph; W2 the primary action (the person's
+   hand-off) and the consent action (needs you) take the send control's 8 px
+   bevel on a layer; W3 a notice that needs the person is an amber plate.
+   The Design Center's preview draws marks and buttons too, so W1 and W2 use
+   the stage-aware form described at the top of this file. */
+:is(html, .dc-stage)[data-package='nectovia'] .mark:not(.dc-stage:not([data-package='nectovia']) *) {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--dm-text-3);
+  -webkit-mask: var(--nv-glyph-ring) center / 100% 100% no-repeat;
+  mask: var(--nv-glyph-ring) center / 100% 100% no-repeat;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .mark.done:not(.dc-stage:not([data-package='nectovia']) *) {
+  background: var(--dm-text-2);
+}
+:is(html, .dc-stage)[data-package='nectovia']
+  .mark:is(.working, .waiting, .fault):not(.dc-stage:not([data-package='nectovia']) *) {
+  -webkit-mask: none;
+  mask: none;
+  clip-path: var(--nv-glyph);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .mark.working:not(.dc-stage:not([data-package='nectovia']) *) {
+  background: var(--dm-glacier);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .mark.waiting:not(.dc-stage:not([data-package='nectovia']) *) {
+  background: var(--dm-signal);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .mark.fault:not(.dc-stage:not([data-package='nectovia']) *) {
+  background: var(--dm-fault);
+}
+
+:is(html, .dc-stage)[data-package='nectovia']
+  :is(.button.primary, .button.signal):not(.dc-stage:not([data-package='nectovia']) *) {
+  --nv-edge: var(--dm-glacier);
+  position: relative;
+  isolation: isolate;
+  border-color: transparent;
+  border-radius: 0;
+}
+:is(html, .dc-stage)[data-package='nectovia']
+  .button.signal:not(.dc-stage:not([data-package='nectovia']) *) {
+  --nv-edge: var(--dm-signal);
+}
+:is(html, .dc-stage)[data-package='nectovia']
+  :is(.button.primary, .button.signal):not(.dc-stage:not([data-package='nectovia']) *)::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: var(--rb);
+  background: linear-gradient(
+      to top right,
+      transparent calc(50% - 1px),
+      var(--nv-edge) calc(50% - 1px) 50%,
+      transparent 50%
+    )
+    right top / 8px 8px no-repeat;
+  box-shadow: inset 0 0 0 1px var(--nv-edge);
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%);
+  pointer-events: none;
+}
+:is(html, .dc-stage)[data-package='nectovia']
+  :is(.button.primary, .button.signal):hover:not(:disabled):not(.dc-stage:not([data-package='nectovia']) *) {
+  border-color: transparent;
+  background: none;
+}
+:is(html, .dc-stage)[data-package='nectovia']
+  :is(.button.primary, .button.signal):hover:not(:disabled):not(.dc-stage:not([data-package='nectovia']) *)::before {
+  background-color: color-mix(in srgb, var(--nv-edge) 10%, transparent);
+}
+
+:is(html, .dc-stage)[data-package='nectovia'] .notice.needs {
+  --nv-cut: 14px;
+  --nv-inset: -1px;
+  --nv-fill: color-mix(in oklab, var(--attn) 5%, var(--surface));
+  --nv-rule: color-mix(in oklab, var(--attn) 35%, transparent);
+  --nv-lit: var(--attn);
+  border-color: transparent;
+  background: none;
+}
+
+/* ---- visuals, the segment bar and the artifact panel (lane VISUALS) ----
+   Inline visuals and the panel's charts are one renderer (InlineVisual.tsx);
+   here they take the palette. Series run lead cyan, violet trail and bone,
+   then muted tints of the three toward t3, then t3: eight colours, every one
+   3:1 or more on the ink, surface and raised grounds (WCAG 1.4.11). */
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s0 {
+  --iv-c: var(--seam-lead);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s1 {
+  --iv-c: var(--seam-trail);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s2 {
+  --iv-c: var(--t1);
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s3 {
+  --iv-c: color-mix(in oklab, var(--seam-lead) 55%, var(--t3));
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s4 {
+  --iv-c: color-mix(in oklab, var(--seam-trail) 55%, var(--t3));
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s5 {
+  --iv-c: color-mix(in oklab, var(--t1) 55%, var(--t3));
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s6 {
+  --iv-c: color-mix(in oklab, var(--seam-lead) 25%, var(--t3));
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .iv .iv-s7 {
+  --iv-c: var(--t3);
+}
+
+/* The segment bar on the Nectovia grounds (WCAG 1.4.11, 3:1 for a part of a
+   graphic that says where work stands). The rule-2 hairline gave pending
+   1.35:1 on ink, and the lead at 45% over the ground gave active 2.88:1.
+     pending #616872 (t3 into ink): ink 3.55, surface 3.44, raised 3.26, plate 3.04
+     active  #317c79 (lead 62% into ink, oklab): ink 4.08, surface 3.96, raised 3.75
+     done    #44d2c9 (the lead): 10.77 on ink; 3.03:1 against pending, so a
+             finished segment, and a share's fill against its track, stay apart
+   Opaque, so the ratios hold whatever the bar sits on. */
+:is(html, .dc-stage)[data-package='nectovia'] .seg-bar {
+  --seg-ahead: #616872;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .seg-bar .seg.active {
+  background: #317c79;
+}
+
+/* The artifact panel's plate faces the thread, so its cut is top left
+   (contract §3). Here it is drawn on a layer behind the panel's content (A1):
+   the panel and its face hold content, so neither is clipped, and no picker,
+   focus ring or scrolled edge inside the panel is ever cut. The rule runs
+   along the top and left edges and down the bevel, as it did. */
+:is(html, .dc-stage)[data-package='nectovia'] .console .art-plate {
+  position: relative;
+  isolation: isolate;
+  padding: 0;
+  background: none;
+  clip-path: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .art-plate-face {
+  background: none;
+  clip-path: none;
+}
+:is(html, .dc-stage)[data-package='nectovia'] .console .art-plate::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(
+        to top left,
+        transparent calc(50% - 1px),
+        var(--hair-2) calc(50% - 1px) 50%,
+        transparent 50%
+      )
+      left top / var(--art-cut-pane) var(--art-cut-pane) no-repeat,
+    var(--raised);
+  box-shadow: inset 1px 1px 0 0 var(--hair-2);
+  clip-path: polygon(var(--art-cut-pane) 0, 100% 0, 100% 100%, 0 100%, 0 var(--art-cut-pane));
+  pointer-events: none;
+}

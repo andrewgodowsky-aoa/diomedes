@@ -7,7 +7,7 @@ import type {
   Session,
   Task,
 } from '../../shared/types';
-import { formatOrigin, originForSession } from '../../shared/attribution';
+import { formatOrigin, originForSession } from '../attribution-display';
 import { OriginLine, time } from '../components';
 import { taskEvidence, type TaskColumn } from '../workbench/task-evidence';
 

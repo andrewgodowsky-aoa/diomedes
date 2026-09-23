@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Project, Settings } from '../../shared/types';
 import { titleCase } from '../components';
-import { Mark } from './Mark';
+import { NectoviaMark } from './NectoviaMark';
 import { Mark as StateMark } from '../components';
 import './console.css';
+import './nectovia.css';
 
 interface TopStripProps {
   /** The projects open as crumbs, in the order the person opened them. */
@@ -68,10 +69,10 @@ export function TopStrip({
         <button
           type="button"
           className="strip-brand"
-          aria-label="Diomedes projects"
+          aria-label="Nectovia projects"
           onClick={onShowProjects}
         >
-          <Mark />
+          <NectoviaMark />
         </button>
         <nav className="crumb" aria-label="Open projects">
           <button

@@ -152,8 +152,8 @@ export function AgentPicker({
                 <span className="id">{AUTO_AGENT}</span>
                 <small>
                   {autoName
-                    ? `Diomedes picks the worker for the mode. In ${mode} that is ${autoName}.`
-                    : 'Diomedes picks the worker for the mode.'}
+                    ? `Nectovia picks the worker for the mode. In ${mode} that is ${autoName}.`
+                    : 'Nectovia picks the worker for the mode.'}
                 </small>
               </button>
               {fits.length > 0 && (

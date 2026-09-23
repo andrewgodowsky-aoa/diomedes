@@ -1,0 +1,744 @@
+/* Model artifacts: the turn body's blocks, the chips they leave, the panel and
+   what it draws. Every rule is prefixed with `.console`. Colours come from the
+   running scheme through the Nectovia seam tokens when that scheme defines
+   them, and from today's tokens when it does not, so this file reads the same
+   under the Console scheme and the Nectovia one (NECTOVIA_CONTRACT.md sections 2-4). */
+.console {
+  --art-lead: var(--seam-lead, var(--light));
+  --art-cut: var(--plate-cut, 14px);
+  --art-cut-chip: 10px;
+  --art-cut-pane: 22px;
+  --art-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.console .art-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- turn body -------------------------------------------------------------
+   Paragraphs keep console.css's own `.body p`; what follows is only what a
+   turn gained: headings, lists, code, tables. */
+.console .body .art-h {
+  margin: 14px 0 6px;
+  max-width: var(--dm-measure-prose);
+  color: var(--t1);
+  font-family: var(--ui);
+  font-weight: 600;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+.console .body .art-h:first-child {
+  margin-top: 0;
+}
+.console .body .art-h1 {
+  font-size: var(--dm-type-section);
+}
+.console .body .art-h2 {
+  font-size: 1.0625rem;
+}
+.console .body .art-h3,
+.console .body .art-h4 {
+  font-size: var(--dm-type-body);
+}
+.console .body .art-list {
+  margin: 0 0 8px;
+  padding-left: 1.4em;
+}
+.console .body .art-list .art-list {
+  margin: 2px 0 0;
+}
+.console .body .art-list li {
+  margin: 0 0 3px;
+}
+.console .body .art-list li::marker {
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
+}
+.console .art-inline-code {
+  padding: 0.05em 0.35em;
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--chrome) 60%, transparent);
+  font: 400 0.9em / 1 var(--mono);
+  overflow-wrap: anywhere;
+}
+.console .body strong,
+.console .art-pane strong {
+  font-weight: 600;
+}
+
+/* A code block: mono, no wrapping, its own sideways scroll, its own Copy. */
+.console .art-code {
+  margin: 4px 0 10px;
+  max-width: 100%;
+  border: 1px solid var(--hair);
+  border-radius: var(--rb);
+  background: var(--chrome);
+  min-width: 0;
+}
+.console .art-code-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 10px 4px 12px;
+  border-bottom: 1px solid var(--hair);
+}
+.console .art-code-lang {
+  font: 400 var(--dm-type-meta) / 1.4 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.console .art-code-head button {
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .art-code-head button:hover {
+  color: var(--t1);
+}
+.console .body .art-code pre,
+.console .art-code pre {
+  display: block;
+  margin: 0;
+  padding: 10px 12px 12px;
+  overflow-x: auto;
+  white-space: pre;
+  overflow-wrap: normal;
+  font: 400 var(--dm-type-code) / 1.6 var(--mono);
+  color: var(--t1);
+  tab-size: 2;
+}
+.console .art-code pre:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: -2px;
+}
+
+/* A table keeps table semantics (console.css makes a bare `.body table` a
+   block so it can scroll; the wrapper scrolls instead). */
+.console .art-table-wrap {
+  max-width: 100%;
+  margin: 4px 0 10px;
+  overflow-x: auto;
+  min-width: 0;
+}
+.console .art-table-wrap:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 2px;
+}
+.console .body .art-table,
+.console .art-table {
+  display: table;
+  border-collapse: collapse;
+  font-size: var(--dm-type-caption);
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+.console .art-table th,
+.console .art-table td {
+  padding: 6px 14px 6px 0;
+  border-bottom: 1px solid var(--hair);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.console .art-table th {
+  color: var(--t3);
+  font-weight: 500;
+  border-bottom-color: var(--hair-2);
+}
+.console .art-table td {
+  color: var(--t1);
+}
+.console .art-table td.num {
+  font-family: var(--mono);
+  font-size: var(--dm-type-meta);
+}
+.console .art-table th:last-child,
+.console .art-table td:last-child {
+  padding-right: 0;
+}
+
+/* While a turn arrives, an artifact is one quiet line, never the artifact. */
+.console .art-drawing {
+  margin: 0 0 8px;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+
+/* ---- the chip: a small plate, its cut corner lit in the lead colour ------- */
+.console .art-chip-row {
+  margin: 6px 0 10px;
+  min-width: 0;
+}
+.console .art-chip-plate {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  vertical-align: top;
+}
+.console .art-chip {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  padding: 1px;
+  background: var(--hair-2);
+  clip-path: polygon(0 0, calc(100% - var(--art-cut-chip)) 0, 100% var(--art-cut-chip), 100% 100%, 0 100%);
+  transition: background var(--quick);
+}
+.console .art-chip-face {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 18px 7px 12px;
+  background: var(--raised);
+  clip-path: polygon(0 0, calc(100% - var(--art-cut-chip)) 0, 100% var(--art-cut-chip), 100% 100%, 0 100%);
+  font-size: var(--dm-type-caption);
+  line-height: 1.3;
+  transition: background var(--quick);
+}
+.console .art-chip:hover {
+  background: color-mix(in srgb, var(--art-lead) 45%, var(--hair-2));
+}
+.console .art-chip:hover .art-chip-face {
+  background: color-mix(in srgb, var(--raised) 88%, var(--t1));
+}
+/* The plate clips its outline, so focus is drawn inside it. */
+.console .art-chip:focus-visible {
+  outline: none;
+}
+.console .art-chip:focus-visible .art-chip-face {
+  box-shadow: inset 0 0 0 2px var(--light);
+}
+.console .art-chip-lit {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  width: var(--art-cut-chip);
+  height: var(--art-cut-chip);
+  overflow: visible;
+  pointer-events: none;
+}
+.console .art-chip-lit line {
+  stroke: var(--art-lead);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.console .art-chip-kind {
+  flex: none;
+  font: 500 var(--dm-type-meta) / 1.3 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.console .art-chip-dot {
+  flex: none;
+  color: var(--t3);
+}
+.console .art-chip-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t1);
+}
+.console .art-chip-version {
+  flex: none;
+  font: 400 var(--dm-type-meta) / 1.3 var(--mono);
+  color: var(--t2);
+  font-variant-numeric: tabular-nums;
+}
+.console .art-chip-open {
+  flex: none;
+  color: var(--art-lead);
+  font-weight: 500;
+}
+.console .art-chip.on .art-chip-open {
+  color: var(--t2);
+}
+
+/* ---- the panel: a plate whose cut corner is top-left, facing the thread ---- */
+.console .files[hidden],
+.console .art-pane[hidden] {
+  display: none;
+}
+.console .art-pane {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+  background: var(--chrome);
+}
+.console .art-grip {
+  position: absolute;
+  inset: 0 auto 0 -3px;
+  z-index: 3;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.console .art-grip:hover,
+.console .art-grip:focus-visible {
+  background: var(--hair-2);
+  outline: none;
+}
+.console .art-plate {
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+  padding: 1px 0 0 1px;
+  background: var(--hair-2);
+  clip-path: polygon(var(--art-cut-pane) 0, 100% 0, 100% 100%, 0 100%, 0 var(--art-cut-pane));
+}
+.console .art-plate-face {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+  background: var(--raised);
+  clip-path: polygon(var(--art-cut-pane) 0, 100% 0, 100% 100%, 0 100%, 0 var(--art-cut-pane));
+}
+.console .art-pane-lit {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  width: var(--art-cut-pane);
+  height: var(--art-cut-pane);
+  overflow: visible;
+  pointer-events: none;
+}
+.console .art-pane-lit line {
+  stroke: var(--art-lead);
+  stroke-width: 2;
+  stroke-dasharray: 32;
+  stroke-dashoffset: 0;
+}
+.console .art-head {
+  display: grid;
+  gap: 10px;
+  padding: 18px 16px 12px 26px;
+  border-bottom: 1px solid var(--hair);
+  min-width: 0;
+}
+.console .art-head-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+.console .art-kind {
+  display: block;
+  font: 500 var(--dm-type-meta) / 1.3 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.console .art-title {
+  margin: 4px 0 0;
+  min-width: 0;
+  font: 600 var(--dm-type-section) / 1.25 var(--ui);
+  letter-spacing: -0.01em;
+  color: var(--t1);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.console .art-title:focus {
+  outline: none;
+}
+.console .art-title:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 2px;
+}
+.console .art-close,
+.console .art-tool,
+.console .art-back {
+  padding: 4px 9px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+  white-space: nowrap;
+  transition:
+    color var(--quick),
+    background var(--quick),
+    border-color var(--quick);
+}
+.console .art-close:hover,
+.console .art-tool:hover,
+.console .art-back:hover {
+  color: var(--t1);
+  background: color-mix(in srgb, var(--raised) 80%, var(--t1) 6%);
+}
+.console .art-tool[aria-disabled='true'] {
+  color: var(--t3);
+  border-style: dashed;
+  cursor: default;
+}
+.console .art-tool[aria-disabled='true']:hover {
+  background: none;
+  color: var(--t3);
+}
+.console .art-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.console .art-stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+}
+.console .art-stepper button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: var(--t2);
+}
+.console .art-stepper button:hover:not([aria-disabled='true']) {
+  color: var(--t1);
+  background: color-mix(in srgb, var(--raised) 80%, var(--t1) 6%);
+}
+.console .art-stepper button[aria-disabled='true'] {
+  color: var(--t3);
+  opacity: 0.5;
+  cursor: default;
+}
+.console .art-stepper svg {
+  width: 12px;
+  height: 12px;
+}
+.console .art-stepper polyline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+.console .art-version {
+  padding: 0 6px;
+  font: 400 var(--dm-type-meta) / 1 var(--mono);
+  color: var(--t1);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.console .art-seg {
+  display: inline-flex;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  overflow: hidden;
+}
+.console .art-seg button {
+  padding: 3px 9px;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .art-seg button + button {
+  border-left: 1px solid var(--hair-2);
+}
+.console .art-seg button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--t1);
+}
+.console .art-seg button:focus-visible {
+  outline-offset: -2px;
+}
+.console .art-status {
+  margin: 0;
+  min-height: 1.3em;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+  overflow-wrap: anywhere;
+}
+.console .art-status button {
+  margin-left: 8px;
+  color: var(--art-lead);
+  border-bottom: 1px solid var(--hair-2);
+}
+.console .art-body {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 14px 16px 24px 16px;
+}
+.console .art-trail {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+
+/* Files | Artifact, when both views are open in the one column. */
+.console .art-switch {
+  display: inline-flex;
+  justify-self: start;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  overflow: hidden;
+}
+.console .art-switch button {
+  padding: 3px 10px;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .art-switch button + button {
+  border-left: 1px solid var(--hair-2);
+}
+.console .art-switch button[aria-pressed='true'] {
+  background: var(--raised);
+  color: var(--t1);
+}
+.console .art-switch button:focus-visible {
+  outline-offset: -2px;
+}
+.console .files-head .art-switch {
+  margin-right: auto;
+}
+
+/* The one authored moment: a new artifact settles in, then its edge lights. */
+.console .art-pane.arrived .art-body {
+  animation: art-arrive 220ms var(--art-ease);
+}
+.console .art-pane.arrived .art-pane-lit line {
+  animation: art-lit 260ms var(--art-ease) 60ms both;
+}
+@keyframes art-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes art-lit {
+  from {
+    stroke-dashoffset: 32;
+  }
+}
+
+/* ---- what the panel draws -------------------------------------------------- */
+.console .art-frame {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--hair);
+  border-radius: var(--rb);
+  background: var(--chrome);
+  color-scheme: normal;
+}
+/* A diagram or an image is a picture: it takes no clicks, so nothing inside
+   it (a link, a hover target) can move the frame. */
+.console .art-frame.still {
+  pointer-events: none;
+}
+.console .art-frame.image {
+  background: #f4f5f7;
+}
+.console .art-waiting {
+  margin: 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .art-design {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.console .art-design-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.console .art-design-bar .art-waiting {
+  font-family: var(--mono);
+  font-size: var(--dm-type-meta);
+  font-variant-numeric: tabular-nums;
+}
+.console .art-stage {
+  position: relative;
+  height: max(360px, calc(100vh - 320px));
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--hair);
+  border-radius: var(--rb);
+  background: var(--surface);
+}
+.console .art-stage iframe {
+  display: block;
+  border: 0;
+  background: #ffffff;
+  transform-origin: top left;
+}
+.console .art-stage.scaled iframe {
+  margin: 0 auto;
+}
+.console .art-left {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding: 14px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+}
+.console .art-left p {
+  margin: 0;
+}
+.console .art-source {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--hair);
+  border-radius: var(--rb);
+  background: var(--chrome);
+  overflow: auto;
+  max-width: 100%;
+  white-space: pre;
+  font: 400 var(--dm-type-code) / 1.6 var(--mono);
+  color: var(--t1);
+  tab-size: 2;
+}
+.console .art-source:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: -2px;
+}
+
+/* An artifact that could not be drawn says why and shows what it was given. */
+.console .art-error {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--fail) 45%, var(--hair-2));
+  border-radius: var(--rb);
+  background: color-mix(in srgb, var(--fail) 5%, transparent);
+  min-width: 0;
+}
+.console .art-error-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--t1);
+  font-weight: 500;
+  font-size: var(--dm-type-caption);
+}
+.console .art-error-title svg {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  fill: var(--fail);
+}
+.console .art-error-problem {
+  margin: 0;
+  color: var(--t2);
+  font-size: var(--dm-type-caption);
+  overflow-wrap: anywhere;
+}
+.console .art-error .art-source {
+  max-height: 280px;
+  font-size: var(--dm-type-meta);
+}
+
+.console .art-chartable {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
+.console .art-chartable select {
+  min-width: 0;
+  max-width: 24ch;
+  padding: 3px 8px;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--rb);
+  background-color: var(--surface);
+  color: var(--t1);
+  font: inherit;
+  text-overflow: ellipsis;
+}
+
+/* ---- the home page hosts the panel as an overlay column ------------------- */
+.console.diomedes .stage {
+  position: relative;
+}
+/* Where there is room, the page gives the panel its width rather than lying
+   under it: over the page it hid the composer's right end, Send included. The
+   conversation keeps its measure the way this page does in a narrow window
+   (diomedes.css): Recent results moves under it, and goes when it is empty.
+   At 860 px and below the panel covers the page, as the Files pane does. */
+@media (min-width: 861px) {
+  .console.diomedes .stage.art-open {
+    padding-right: min(var(--art-w, 480px), 60vw);
+  }
+  .console.diomedes .stage.art-open .dio-screen {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .console.diomedes .stage.art-open .ledger {
+    display: block;
+    max-height: 176px;
+    padding: 12px 16px;
+    border-left: 0;
+    border-top: 1px solid var(--hair);
+  }
+  .console.diomedes .stage.art-open .ledger:empty {
+    display: none;
+  }
+}
+.console .art-pane.overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  box-shadow: -18px 0 40px -30px rgba(0, 0, 0, 0.9);
+}
+
+@media (max-width: 860px) {
+  /* The stage is one column here, so the panel overlays the screen rather
+     than squeezing the reading measure (the Files pane's rule). */
+  .console .art-pane {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    max-width: 100%;
+    z-index: 4;
+    box-shadow: -18px 0 40px -30px rgba(0, 0, 0, 0.9);
+  }
+}
+
+html[data-motion='reduced'] .console .art-pane.arrived .art-body,
+html[data-motion='reduced'] .console .art-pane.arrived .art-pane-lit line,
+html[data-motion-preset='none'] .console .art-pane.arrived .art-body,
+html[data-motion-preset='none'] .console .art-pane.arrived .art-pane-lit line {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .console .art-pane.arrived .art-body,
+  .console .art-pane.arrived .art-pane-lit line {
+    animation: none;
+  }
+  .console .art-chip,
+  .console .art-chip-face,
+  .console .art-close,
+  .console .art-tool,
+  .console .art-back {
+    transition: none;
+  }
+}

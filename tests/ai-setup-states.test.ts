@@ -166,11 +166,11 @@ describe('the one next action, taken from the host', () => {
       primaryControl({ ...base, nextAction: action }, 'OpenCode');
     expect(label('install')).toMatchObject({
       intent: 'install',
-      label: 'Install compatible copy for Diomedes',
+      label: 'Install compatible copy for Nectovia',
     });
     expect(label('repair')).toMatchObject({
       intent: 'install',
-      label: 'Repair with a compatible copy for Diomedes',
+      label: 'Repair with a compatible copy for Nectovia',
     });
     expect(label('choose-installation')).toMatchObject({ intent: 'choose' });
     expect(label('check-connection')).toMatchObject({
@@ -238,7 +238,7 @@ describe('a binding that broke', () => {
 
   it('says plainly when no installation matches the supported version', () => {
     expect(repairText({ ...base, repair: 'no-reviewed-candidate' })).toBe(
-      'No installation on this computer matches the version Diomedes supports.',
+      'No installation on this computer matches the version Nectovia supports.',
     );
   });
 
@@ -289,14 +289,14 @@ describe('a binding that broke', () => {
 
 describe('how an installation is described', () => {
   it('says whose copy it is', () => {
-    expect(sourceText('managed')).toBe("Diomedes's private copy");
+    expect(sourceText('managed')).toBe("Nectovia's private copy");
     expect(sourceText('system')).toBe('Your own installation');
-    expect(sourceText('manual')).toContain('pointed Diomedes at');
+    expect(sourceText('manual')).toContain('pointed Nectovia at');
   });
 
   it('says plainly that an unverified copy has an unproven publisher', () => {
     expect(provenanceText('unverified')).toBe(
-      'Your own copy; Diomedes did not verify its publisher.',
+      'Your own copy; Nectovia did not verify its publisher.',
     );
     expect(provenanceText('reviewed-release')).toContain('verified these bytes');
   });
@@ -446,7 +446,7 @@ describe('waiting on a native sign-in window', () => {
     const spent = advanceSignIn(settling, stale, opened + 1_000 + SIGN_IN_SETTLE_MS);
     expect(signingIn(spent)).toBe(false);
     expect(signInSentence(spent, 'OpenCode')).toBe(
-      'Diomedes could not confirm the OpenCode sign-in. Check it again.',
+      'Nectovia could not confirm the OpenCode sign-in. Check it again.',
     );
   });
 
@@ -520,7 +520,7 @@ describe('waiting on a native sign-in window', () => {
     );
     const settling = advanceSignIn(watching, { ...ended, checkedAt: CHECKED }, opened + 1_000);
     expect(signInSentence(settling, 'OpenCode')).toBe(
-      'The OpenCode sign-in window closed. Diomedes is checking this service again.',
+      'The OpenCode sign-in window closed. Nectovia is checking this service again.',
     );
     expect(signInSentence(settling, 'OpenCode')).not.toMatch(/signed in|connected|ready/i);
     expect(signInSentence(NOT_SIGNING_IN, 'OpenCode')).toBe('');

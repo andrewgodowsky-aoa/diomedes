@@ -70,6 +70,8 @@ it('preserves the shell security settings and accounts for both auth bundles in 
   expect(main).toContain('setWindowOpenHandler');
   expect(main).toContain("return { action: 'deny' }");
   expect(main).toContain('setPermissionRequestHandler');
+  // CSP does not govern ICE: the window's WebRTC may use UDP only through a proxy.
+  expect(main).toContain("win.webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')");
   expect(main).toContain('app.requestSingleInstanceLock()');
   const packaging = await fs.readFile(path.join(root, 'scripts/package-desktop.mjs'), 'utf8');
   expect(packaging).toContain('await buildDesktopAuth(root, stage)');

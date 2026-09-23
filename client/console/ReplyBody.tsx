@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { Session } from '../../shared/types';
 import { splitVisuals } from '../../shared/visual-spec';
 import { paragraphs } from './diomedes-view';
-import { InlineVisual, VisualNote, VisualPending } from './InlineVisual';
+import { InlineVisual, VisualBoundary, VisualNote, VisualPending } from './InlineVisual';
 
 /**
  * A reply's text as a person reads it: paragraphs, with any `visual` block
@@ -29,7 +29,11 @@ export function ReplyBody({
         if (segment.type === 'text')
           return paragraphs(segment.text).map((p, j) => <p key={`${i}.${j}`}>{p}</p>);
         if (segment.type === 'visual')
-          return <InlineVisual key={i} spec={segment.spec} session={session} />;
+          return (
+            <VisualBoundary key={i}>
+              <InlineVisual spec={segment.spec} session={session} />
+            </VisualBoundary>
+          );
         if (segment.type === 'pending') return <VisualPending key={i} />;
         return <VisualNote key={i} reason={segment.reason} />;
       })}

@@ -6,7 +6,7 @@ import {
   formatOrigin,
   originForNeed,
   originForSession,
-} from '../../shared/attribution';
+} from '../attribution-display';
 import { evidenceRows } from '../../shared/evidence-rows';
 import { loadHarnessEvidence, sessionEvidence, sessionEvidenceView } from './run-evidence';
 import './workbench.css';

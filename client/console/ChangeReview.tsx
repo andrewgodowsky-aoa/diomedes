@@ -105,7 +105,7 @@ function ChangeRow({ entry }: { entry: ChangeEntry }) {
           </span>
         )}
         {entry.attribution === 'observed' && (
-          <span className="crev-observed" title="Changed while the task ran; no recorded Diomedes write">
+          <span className="crev-observed" title="Changed while the task ran; no recorded Nectovia write">
             observed
           </span>
         )}

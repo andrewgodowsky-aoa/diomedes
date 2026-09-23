@@ -18,7 +18,7 @@ import type {
   UsageSnapshot,
 } from '../shared/types';
 import { api, ApiError } from './api';
-import { formatOrigin, originForSession, originForTurn } from '../shared/attribution';
+import { formatOrigin, originForSession, originForTurn } from './attribution-display';
 import { reconcileWorkStarts, startWork } from './work-start';
 import { decideApproval, reconcileApprovals } from './approval-decisions';
 import {
@@ -47,16 +47,16 @@ import {
 
 export const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
 const BOOK_CAPTIONS: Record<Mode, string> = {
-  ask: 'Diomedes answers. Nothing in the project changes.',
-  plan: 'Diomedes writes a plan for you to read before work begins.',
-  auto: 'Diomedes answers, and says when something needs doing.',
-  build: 'Diomedes proposes changes. Nothing is written until you say go ahead.',
-  fix: 'Point at what is wrong. Diomedes changes as little as it can, up to three tries.',
+  ask: 'Nectovia answers. Nothing in the project changes.',
+  plan: 'Nectovia writes a plan for you to read before work begins.',
+  auto: 'Nectovia answers, and says when something needs doing.',
+  build: 'Nectovia proposes changes. Nothing is written until you say go ahead.',
+  fix: 'Point at what is wrong. Nectovia changes as little as it can, up to three tries.',
 };
 const BOOK_PLACEHOLDERS: Record<Mode, string> = {
   ask: 'Ask a question about this project...',
   plan: 'What should the plan cover?...',
-  auto: 'Ask Diomedes...',
+  auto: 'Ask Nectovia...',
   build: 'What should be done?...',
   fix: 'What should be fixed?...',
 };
@@ -651,7 +651,7 @@ export function Workspace({
     page === 'work' && workTask
       ? workTask.name
       : page === 'review' && changes.length
-        ? `${changes.length} ${changes.length === 1 ? 'change' : 'changes'} from ${reviewTask?.name ?? 'Diomedes'}`
+        ? `${changes.length} ${changes.length === 1 ? 'change' : 'changes'} from ${reviewTask?.name ?? 'Nectovia'}`
         : page === 'home'
           ? (state?.project.name ?? 'Home')
           : page === 'history' && historyView
@@ -867,7 +867,7 @@ export function Workspace({
   const descriptors: Partial<Record<Page, string>> = {
     ask: 'Talk something through. Nothing changes.',
     plan: 'Write down what should happen first.',
-    work: 'Diomedes does the task.',
+    work: 'Nectovia does the task.',
     review: 'Look at changes before living with them.',
   };
   const railCounts: Partial<Record<Page, number>> = {
@@ -896,8 +896,8 @@ export function Workspace({
         {task.owner === 'you'
           ? 'You'
           : task.owner === 'diomedes-with-ok'
-            ? 'Diomedes, with your OK'
-            : 'Diomedes'}
+            ? 'Nectovia, with your OK'
+            : 'Nectovia'}
       </p>
       {task.reason && (
         <p className={task.reason === 'needs-ok' ? 'signal-text caption' : 'caption'}>
@@ -1254,7 +1254,7 @@ export function Workspace({
                               [
                                 'work',
                                 'Get something done',
-                                'Give Diomedes a job. It asks before anything that matters.',
+                                'Give Nectovia a job. It asks before anything that matters.',
                               ],
                               [
                                 'plan',
@@ -1402,12 +1402,12 @@ export function Workspace({
                             </>
                           }
                         >
-                          <p>Add files, write a plan, or ask Diomedes where to start.</p>
+                          <p>Add files, write a plan, or ask Nectovia where to start.</p>
                         </Empty>
                       )}
                       {detail !== 'technical' && (
                         <p className="prose capability">
-                          In this project Diomedes can read and change supported text files, write
+                          In this project Nectovia can read and change supported text files, write
                           plans, keep tasks up to date, and restore the changes it recorded.
                         </p>
                       )}
@@ -1453,7 +1453,7 @@ export function Workspace({
                             This is for questions and thinking out loud. Nothing in the project
                             changes here. Your threads stay with this project.
                           </p>
-                          <p>To have Diomedes do something, switch the box below to Build.</p>
+                          <p>To have Nectovia do something, switch the box below to Build.</p>
                         </Empty>
                       ) : (
                         <section key={selectedThread.id} className="conversation">
@@ -1521,7 +1521,7 @@ export function Workspace({
                       {detail === 'guided' && (
                         <p className="prose small muted">
                           A plan is a document that says what should happen. You can edit it. When
-                          you're ready, Diomedes can turn its steps into tasks.
+                          you're ready, Nectovia can turn its steps into tasks.
                         </p>
                       )}
                       {state.project.plans.length > 1 && (
@@ -1616,7 +1616,7 @@ export function Workspace({
                           action={<Button onClick={() => go('tasks')}>Open Tasks</Button>}
                         >
                           <p>
-                            Give Diomedes a job in the box below. It writes down what it will do,
+                            Give Nectovia a job in the box below. It writes down what it will do,
                             does the work, and asks before anything that matters. Or start a task
                             from Tasks.
                           </p>
@@ -1664,7 +1664,7 @@ export function Workspace({
                       {!changes.length ? (
                         waiting.length ? null : (
                           <Empty title="Nothing to review">
-                            <p>Changes appear here after Diomedes works on a task.</p>
+                            <p>Changes appear here after Nectovia works on a task.</p>
                           </Empty>
                         )
                       ) : (
@@ -1736,7 +1736,7 @@ export function Workspace({
                             {[
                               'All',
                               'Saved versions',
-                              ...(detail !== 'guided' ? ['Diomedes', 'You'] : []),
+                              ...(detail !== 'guided' ? ['Nectovia', 'You'] : []),
                             ].map((f) => (
                               <button
                                 key={f}
@@ -1774,7 +1774,7 @@ export function Workspace({
                                         (filter === 'Saved versions' &&
                                           e.kind === 'saved-version') ||
                                         (filter === 'You' && e.actor === 'you') ||
-                                        (filter === 'Diomedes' && e.actor !== 'you')),
+                                        (filter === 'Nectovia' && e.actor !== 'you')),
                                   )
                                   .map(historyRow)}
                               </section>
@@ -1782,7 +1782,7 @@ export function Workspace({
                           ) : (
                             <Empty title="Nothing has changed yet">
                               <p>
-                                Every change Diomedes makes in this project will be listed here,
+                                Every change Nectovia makes in this project will be listed here,
                                 with a way back.
                               </p>
                             </Empty>
@@ -1795,7 +1795,7 @@ export function Workspace({
                 <aside className="margin">
                   {candidates ? (
                     <section className="block task-proposals">
-                      <h3>Diomedes found {candidates.length} tasks in this plan</h3>
+                      <h3>Nectovia found {candidates.length} tasks in this plan</h3>
                       <p className="caption">Choose what to add. Done tasks are never removed.</p>
                       {candidates.map((c, i) => (
                         <div className="candidate" key={i}>
@@ -1824,7 +1824,7 @@ export function Workspace({
                               }
                             />
                             <p className="caption">
-                              {c.owner === 'you' ? 'You' : 'Diomedes, with your OK'}
+                              {c.owner === 'you' ? 'You' : 'Nectovia, with your OK'}
                             </p>
                           </div>
                         </div>
@@ -1858,7 +1858,7 @@ export function Workspace({
                         </p>
                       </section>
                       <section className="block">
-                        <h3>What Diomedes says it did</h3>
+                        <h3>What Nectovia says it did</h3>
                         <p className="prose">
                           {reviewSession?.sample
                             ? 'The example workflow changed the files listed below. These are scripted changes to demonstrate the workflow.'
@@ -1908,7 +1908,7 @@ export function Workspace({
                             : workSession.state === 'working'
                               ? 'Working'
                               : titleCase(workSession.state)}
-                          . {workSession.sample ? 'Scripted example.' : 'Diomedes, with your OK.'}
+                          . {workSession.sample ? 'Scripted example.' : 'Nectovia, with your OK.'}
                         </p>
                         {state.needs
                           .filter(
@@ -1969,8 +1969,8 @@ export function Workspace({
                             {t.owner === 'you'
                               ? 'You'
                               : t.owner === 'diomedes-with-ok'
-                                ? 'Diomedes, with your OK'
-                                : 'Diomedes'}
+                                ? 'Nectovia, with your OK'
+                                : 'Nectovia'}
                           </span>
                         </button>
                       ))}

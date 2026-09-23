@@ -238,7 +238,7 @@ export const defaults = (): Settings => ({
     spending: true,
   },
   explanations: 'persistent',
-  appearance: { package: 'field', motion: 'normal' },
+  appearance: { package: 'nectovia', motion: 'normal' },
   seen: { onlineServiceNotice: false, guidedDescriptors: {}, firstUse: [] },
   openProjects: [],
   lastPage: {},

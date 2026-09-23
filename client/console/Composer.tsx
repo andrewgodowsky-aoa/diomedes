@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Conversation, Mode, Route } from '../../shared/types';
 import type { ReadAccess } from '../../shared/read-access';
+import { AGENT_NAME } from '../../shared/agent-name';
 import { askDraftKey } from '../components';
 import { reducedMotion, spring } from './motion';
 import { SendConfirmation } from './SendConfirmation';
@@ -15,14 +16,14 @@ export const MODE_ORDER: Mode[] = ['ask', 'plan', 'build', 'fix'];
 export const CAPS: Record<Mode, string> = {
   ask: 'Nothing in the project changes.',
   plan: 'A plan you read before work begins.',
-  auto: 'Diomedes answers, and says when something needs doing.',
+  auto: `${AGENT_NAME} answers, and says when something needs doing.`,
   build: 'Applied only on your go-ahead.',
   fix: 'The smallest change that clears the failure.',
 };
 const PLACEHOLDERS: Record<Mode, string> = {
   ask: 'Ask or think out loud',
   plan: 'What should the plan cover?',
-  auto: 'Ask Diomedes',
+  auto: `Ask ${AGENT_NAME}`,
   build: 'What should be done?',
   fix: 'What went wrong?',
 };
@@ -311,7 +312,7 @@ export function Composer({
   return (
     <div className="col compose">
       <form
-        className="composer"
+        className={`composer${busy ? ' busy' : ''}`}
         onSubmit={(e) => {
           e.preventDefault();
           void submit();

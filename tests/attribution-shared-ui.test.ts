@@ -249,14 +249,14 @@ describe('shared attribution presentation', () => {
     expect(html).not.toContain('new-picker-model');
   });
 
-  it('keeps scripted example sessions on Diomedes application copy', () => {
+  it('keeps scripted example sessions on the application copy, under the product name', () => {
     const html = renderToStaticMarkup(
       createElement(SessionStatus, {
         session: baseSession({ sample: true }),
         detail: 'standard',
       }),
     );
-    expect(html).toContain('Diomedes');
+    expect(html).toContain('Nectovia');
     expect(html).toContain('Scripted example.');
   });
 
@@ -344,7 +344,9 @@ describe('shared attribution presentation', () => {
       if (sessionState === 'waiting') {
         const work = html.split('id="secWork"')[1].split('</section>')[0];
         expect(work).toContain('s-model');
+        // A model's run is never credited to the product, under either name.
         expect(work).not.toContain('Diomedes');
+        expect(work).not.toContain('Nectovia');
         expect(html).toContain('>waiting</span>');
       } else expect(html).toContain('0 open');
     },
@@ -403,6 +405,7 @@ describe('shared attribution presentation', () => {
     );
     expect(html).toContain('from You');
     expect(html).not.toContain('from Diomedes');
+    expect(html).not.toContain('from Nectovia');
     expect(html).toContain('model not recorded');
   });
 });

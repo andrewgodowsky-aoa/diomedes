@@ -400,7 +400,7 @@ test('scope confirmation covers the same task; recorded actor survives a picker 
   await expect(inspector.getByRole('term').filter({ hasText: /^Worker$/ })).toBeVisible();
   await expect(inspector.getByText(/^Change Builder 1\.0\.0$/)).toBeVisible();
   await expect(
-    inspector.getByText(/The worker was picked by hand|Diomedes picked the worker/),
+    inspector.getByText(/The worker was picked by hand|Nectovia picked the worker/),
   ).toBeVisible();
   await expect(inspector.getByText(/Nothing records which rules governed it/)).toBeVisible();
   await expect(inspector.getByText(/Nothing records who paid/)).toBeVisible();

@@ -36,7 +36,7 @@ export function Setup({
           <>
             <h1>A place for your work</h1>
             <p className="prose intro">
-              Diomedes is a place for your work: projects, documents, plans, tasks, and a history of
+              Nectovia is a place for your work: projects, documents, plans, tasks, and a history of
               everything that changed.
             </p>
             <div className="actions">
@@ -60,18 +60,18 @@ export function Setup({
               You&apos;ll work in the {settings.surface === 'workbook' ? 'Workbook' : 'Console'}{' '}
               with {titleCase(settings.detail)} detail:{' '}
               {detailDescriptions[settings.detail].toLowerCase()} File proposals require review
-              before Diomedes applies them. Your other approval preferences are saved separately in
+              before Nectovia applies them. Your other approval preferences are saved separately in
               Settings.
             </p>
             {usable ? (
               <p className="prose">
-                {titleCase(engine)} is your selected default. Diomedes checks its connection before
+                {titleCase(engine)} is your selected default. Nectovia checks its connection before
                 sending a request.
               </p>
             ) : (
               <p className="prose">
                 {settings.onboarding.aiSkipped ? 'AI setup was skipped. ' : ''}No usable service is
-                connected, so Diomedes uses sample work on this computer.
+                connected, so Nectovia uses sample work on this computer.
               </p>
             )}
             <div className="actions">
@@ -79,7 +79,7 @@ export function Setup({
                 Back
               </Button>
               <Button tone="primary" disabled={busy} onClick={() => void next()}>
-                Open Diomedes
+                Open Nectovia
               </Button>
             </div>
           </>

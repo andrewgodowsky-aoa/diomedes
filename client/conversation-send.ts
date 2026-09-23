@@ -82,7 +82,7 @@ const stopped = () => new Error('Stopped before anything was sent.');
 /** The request may have been accepted. Sending the same message again checks the original. */
 export class UnconfirmedMessage extends Error {
   constructor() {
-    super('Diomedes could not confirm this message. Send it again to check what happened.');
+    super('Nectovia could not confirm this message. Send it again to check what happened.');
   }
 }
 

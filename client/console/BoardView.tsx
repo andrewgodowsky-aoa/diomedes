@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { pendingTaskCreation } from '../task-create';
 import type { Slot, Task, TeamMember } from '../../shared/types';
-import { formatOrigin, originForSession } from '../../shared/attribution';
+import { formatOrigin, originForSession } from '../attribution-display';
 import type { BoardProps } from './types';
 import { travel } from './motion';
 import {
@@ -11,6 +11,8 @@ import {
 } from '../workbench/task-evidence';
 import './board.css';
 import { TaskDocumentSelect } from './TaskDocumentSelect';
+import { SegmentBar } from './SegmentBar';
+import { planGroups } from './progress-bars';
 import { taskDocumentProblem } from '../../shared/task-sources';
 
 const ORDER: Column[] = ['Ready', 'Queued', 'Working', 'Review', 'Blocked', 'Done'];
@@ -192,6 +194,8 @@ export function BoardView({
   const members = state.team?.members ?? [];
   const changes = state.changes ?? [];
   const slotBusy = state.sessions.some(isActiveSession);
+  // Tasks one plan produced, counted from the same projection the columns show.
+  const plans = planGroups(tasks, evidenceOf);
 
   function pickPolicy(next: 'first' | 'go') {
     if (onPolicyChange) onPolicyChange(next);
@@ -375,6 +379,23 @@ export function BoardView({
             </button>
           </form>
         )}
+        {plans.length > 0 && (
+          <ul className="plans" aria-label="Plans on this board">
+            {plans.map((group) => (
+              <li className="plan" key={group.plan}>
+                <span className="plan-name" title={group.plan}>
+                  {group.name}
+                </span>
+                <SegmentBar
+                  steps={group.steps}
+                  label={`Tasks from ${group.name}`}
+                  noun="tasks done"
+                  size="panel"
+                />
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       <div className={`columns${compact ? ' compact' : ''}`}>
         {ORDER.map((column) => {
@@ -504,7 +525,7 @@ function TaskRow({
   onOpenTeam(task: Task): void;
   onOpenThread(task: Task): void;
 }) {
-  // Working owns the column for its progress bar, and Ready repeats the
+  // Working owns the column for its running bar, and Ready repeats the
   // column caption unless the row has a distinct reason (a stopped run).
   const evidenceLine =
     column === 'Working' || (column === 'Ready' && evidence.detail === WHY.Ready)
@@ -550,10 +571,10 @@ function TaskRow({
           {focus && <span className="mono here">this thread</span>}
         </div>
       )}
+      {/* A run has no known total, so this is the indeterminate bar, and it is
+          decorative: the column already says the task is working. */}
       {column === 'Working' && (
-        <div className="prog" aria-hidden="true">
-          <span className="run" />
-        </div>
+        <SegmentBar className="prog" label={task.name} caption={null} decorative />
       )}
       <span className="acts">
         {canStart && (

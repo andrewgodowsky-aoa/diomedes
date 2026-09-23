@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Component, type ReactNode } from 'react';
 import type { Session } from '../../shared/types';
 import type { UpdateStatusSnapshot } from '../../shared/app-updates';
 import type {
@@ -10,8 +10,12 @@ import type {
   VisualFormat,
   VisualSpec,
 } from '../../shared/visual-spec';
-import { formatOrigin, originForSession } from '../../shared/attribution';
+// The display module, not the recorded one: the product's own actions read as
+// the agent's name here, as they do on every other line of the Console.
+import { formatOrigin, originForSession } from '../attribution-display';
+import { updateBar } from '../update-progress';
 import { useUpdateStatus } from '../use-update-status';
+import { SegmentBar } from './SegmentBar';
 import './inline-visual.css';
 
 /*
@@ -66,13 +70,14 @@ export function chartSummary(spec: ChartSpec): string {
   const fmt = (v: number) => formatValue(v, spec.format, spec.currency);
   if (spec.kind === 'pie') {
     const values = spec.series[0].values;
-    const total = values.reduce((a, b) => a + b, 0);
+    const { total, shares } = pieShares(values);
     let top = 0;
     values.forEach((v, i) => {
       if (v > values[top]) top = i;
     });
-    const share = total > 0 ? Math.round((values[top] / total) * 100) : 0;
-    return `${head} ${values.length} ${values.length === 1 ? 'slice' : 'slices'}, total ${fmt(total)}. Largest: ${spec.labels[top]}, ${share}%.`;
+    const share = Math.round(shares[top] * 100);
+    const count = `${values.length} ${values.length === 1 ? 'slice' : 'slices'}`;
+    return `${head} ${total === null ? `${count}.` : `${count}, total ${fmt(total)}.`} Largest: ${spec.labels[top]}, ${share}%.`;
   }
   const n = spec.labels.length;
   const span = n === 1 ? spec.labels[0] : `${spec.labels[0]} to ${spec.labels[n - 1]}`;
@@ -91,17 +96,61 @@ function niceStep(raw: number): number {
   return 10 * pow;
 }
 
-/** A zero-anchored domain with round ticks. */
-export function niceDomain(values: number[]): { min: number; max: number; ticks: number[] } {
-  let lo = Math.min(0, ...values);
-  let hi = Math.max(0, ...values);
+/** No axis has more ticks than this, whatever the values. */
+const MAX_TICKS = 12;
+
+/**
+ * A zero-anchored domain with round ticks. Every number it returns is finite
+ * and there are never more than MAX_TICKS ticks: a spec's values are each
+ * finite, but a range can still overflow (values near ±1.8e308) or vanish
+ * (values near 5e-324), and a tick loop over an infinite domain never ends.
+ */
+export function niceDomain(values: readonly number[]): { min: number; max: number; ticks: number[] } {
+  const finite = values.filter((value) => Number.isFinite(value));
+  const lo = Math.min(0, ...finite);
+  let hi = Math.max(0, ...finite);
   if (lo === hi) hi = lo + 1;
-  const step = niceStep((hi - lo) / 4);
-  lo = Math.floor(lo / step) * step;
-  hi = Math.ceil(hi / step) * step;
+  // A quarter of each end, so the span of two values near the largest double stays finite.
+  const step = niceStep(hi / 4 - lo / 4);
+  const bottom = Math.floor(lo / step) * step;
+  const top = Math.ceil(hi / step) * step;
+  if (!(step > 0) || !Number.isFinite(step) || !Number.isFinite(bottom) || !Number.isFinite(top) || !(top > bottom))
+    return { min: lo, max: hi, ticks: [lo, hi] };
   const ticks: number[] = [];
-  for (let t = lo; t <= hi + step / 2; t += step) ticks.push(Number(t.toPrecision(12)));
-  return { min: lo, max: hi, ticks };
+  for (let at = 0; at < MAX_TICKS; at += 1) {
+    const tick = bottom + step * at;
+    if (tick > top + step / 2) break;
+    ticks.push(Number(tick.toPrecision(12)));
+  }
+  return { min: bottom, max: top, ticks };
+}
+
+/**
+ * Where a value sits between min and max, from 0 to 1. Halved first, so a
+ * domain from -1e308 to 1e308 does not overflow into Infinity / Infinity.
+ */
+export function shareOfDomain(value: number, min: number, max: number): number {
+  const span = max / 2 - min / 2;
+  if (!(span > 0) || !Number.isFinite(span)) return 0;
+  const share = (value / 2 - min / 2) / span;
+  return Number.isFinite(share) ? Math.min(1, Math.max(0, share)) : 0;
+}
+
+/**
+ * Each slice's share of a pie, and the total only when it is a finite number:
+ * twelve values near the largest double sum to Infinity, and every share of
+ * that would be 0. Shares are taken of the values scaled by the largest.
+ */
+export function pieShares(values: readonly number[]): { total: number | null; shares: number[] } {
+  const largest = Math.max(0, ...values.filter((value) => Number.isFinite(value)));
+  if (!(largest > 0)) return { total: null, shares: values.map(() => 0) };
+  const scaled = values.map((value) => (Number.isFinite(value) && value > 0 ? value / largest : 0));
+  const sum = scaled.reduce((a, b) => a + b, 0);
+  const total = values.reduce((a, b) => a + b, 0);
+  return {
+    total: Number.isFinite(total) ? total : null,
+    shares: scaled.map((value) => (sum > 0 ? value / sum : 0)),
+  };
 }
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -169,16 +218,30 @@ function Frame({
   );
 }
 
-const W = 640;
+/** A turn's chart is drawn 640 wide and scaled to its column. */
+const DRAW_W = 640;
 const H = 240;
 const M = { top: 12, right: 12, bottom: 28, left: 60 };
 
-function CartesianChart({ spec }: { spec: Extract<ChartSpec, { kind: 'bar' | 'line' | 'area' }> }) {
+/** The drawing width: the host's measured width where it gave one, within reason. */
+function drawingWidth(width: number | undefined): number {
+  if (width === undefined || !Number.isFinite(width) || width <= 0) return DRAW_W;
+  return Math.round(Math.min(1600, Math.max(280, width)));
+}
+
+function CartesianChart({
+  spec,
+  width,
+}: {
+  spec: Extract<ChartSpec, { kind: 'bar' | 'line' | 'area' }>;
+  width?: number;
+}) {
+  const W = drawingWidth(width);
   const all = spec.series.flatMap((s) => s.values);
   const { min, max, ticks } = niceDomain(all);
   const plotW = W - M.left - M.right;
   const plotH = H - M.top - M.bottom;
-  const y = (v: number) => r1(M.top + plotH - ((v - min) / (max - min)) * plotH);
+  const y = (v: number) => r1(M.top + plotH - shareOfDomain(v, min, max) * plotH);
   const n = spec.labels.length;
   const band = plotW / n;
   const xCenter = (i: number) =>
@@ -189,7 +252,9 @@ function CartesianChart({ spec }: { spec: Extract<ChartSpec, { kind: 'bar' | 'li
           ? M.left + plotW / 2
           : M.left + (plotW * i) / (n - 1),
     );
-  const labelEvery = Math.max(1, Math.ceil(n / 8));
+  // Eight labels across the 640 drawing; fewer where the drawing is narrower,
+  // so a label never runs into the next one.
+  const labelEvery = Math.max(1, Math.ceil(n / Math.max(2, Math.min(8, Math.floor(plotW / 70)))));
   const zero = y(Math.max(min, Math.min(0, max)));
   const tick = (v: number) => formatValue(v, spec.format, spec.currency, true);
 
@@ -271,7 +336,7 @@ function CartesianChart({ spec }: { spec: Extract<ChartSpec, { kind: 'bar' | 'li
 
 function DonutChart({ spec }: { spec: Extract<ChartSpec, { kind: 'pie' }> }) {
   const values = spec.series[0].values;
-  const total = values.reduce((a, b) => a + b, 0);
+  const { total, shares } = pieShares(values);
   const r = 78;
   const c = 2 * Math.PI * r;
   let offset = 0;
@@ -282,7 +347,7 @@ function DonutChart({ spec }: { spec: Extract<ChartSpec, { kind: 'pie' }> }) {
         <svg className="iv-svg" role="img" aria-label={chartSummary(spec)} viewBox="0 0 240 240">
           <g transform="rotate(-90 120 120)">
             {values.map((v, i) => {
-              const len = total > 0 ? (v / total) * c : 0;
+              const len = shares[i] * c;
               const slice = (
                 <circle
                   key={i}
@@ -298,9 +363,11 @@ function DonutChart({ spec }: { spec: Extract<ChartSpec, { kind: 'pie' }> }) {
               return slice;
             })}
           </g>
-          <text className="iv-total" x={120} y={120} dy="0.32em" textAnchor="middle" aria-hidden="true">
-            {formatValue(total, spec.format, spec.currency, true)}
-          </text>
+          {total !== null && (
+            <text className="iv-total" x={120} y={120} dy="0.32em" textAnchor="middle" aria-hidden="true">
+              {formatValue(total, spec.format, spec.currency, true)}
+            </text>
+          )}
         </svg>
         <ul className="iv-legend iv-legend-col" aria-hidden="true">
           {spec.labels.map((label, i) => (
@@ -308,9 +375,7 @@ function DonutChart({ spec }: { spec: Extract<ChartSpec, { kind: 'pie' }> }) {
               <span className="iv-swatch" />
               <span className="iv-legend-label">{label}</span>
               <span className="iv-num">{fmt(values[i])}</span>
-              <span className="iv-num iv-dim">
-                {total > 0 ? `${Math.round((values[i] / total) * 100)}%` : ''}
-              </span>
+              <span className="iv-num iv-dim">{`${Math.round(shares[i] * 100)}%`}</span>
             </li>
           ))}
         </ul>
@@ -381,49 +446,34 @@ function DataGrid({ spec }: { spec: TableSpec }) {
   );
 }
 
-/** One labelled bar. `value` null is indeterminate: a busy bar with no number. */
-export function ProgressBar({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: number | null;
-  detail?: string;
-}) {
-  const pct = value === null ? null : Math.round(Math.min(1, Math.max(0, value)) * 100);
-  return (
-    <div className="iv-progress">
-      <div className="iv-progress-head">
-        <span>{label}</span>
-        {pct !== null && <span className="iv-num iv-dim">{pct}%</span>}
-      </div>
-      <div
-        className={`iv-track${pct === null ? ' indeterminate' : ''}`}
-        role="progressbar"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        {...(pct === null ? { 'aria-busy': true } : { 'aria-valuenow': pct })}
-      >
-        <span className="iv-fillbar" style={pct === null ? undefined : { width: `${pct}%` }} />
-      </div>
-      {detail && <p className="iv-detail">{detail}</p>}
-    </div>
-  );
-}
-
+/**
+ * A progress visual is the Console's segment bar in fraction mode with the
+ * share the reply gave, in the reply's own words. A `value` of null, or none,
+ * is indeterminate: work with no number. It is marked as the reply's
+ * (`source="reply"`), so it is drawn apart from a bar a record keeps and never
+ * moves as if it tracked live work (contract A15).
+ */
 function Progress({ spec }: { spec: ProgressSpec }) {
   return (
     <Frame kind="progress">
-      <ProgressBar label={spec.label} value={spec.value ?? null} detail={spec.detail} />
+      <SegmentBar
+        size="panel"
+        source="reply"
+        label={spec.label}
+        fraction={spec.value ?? null}
+        detail={spec.detail ?? null}
+      />
     </Frame>
   );
 }
 
 /**
  * What the host's update record says, as one card. Every number and word here
- * comes from the snapshot; the spec that asked for the card supplies none.
+ * comes from the snapshot; the spec that asked for the card supplies none. The
+ * bar follows the rule Settings > App updates draws by (update-progress.ts):
+ * the bytes a running download has received over the size its server declared,
+ * or an indeterminate bar while a phase moves, and no bar at all otherwise, so
+ * an offered or a downloaded update is never drawn as a share of anything.
  */
 export function UpdateProgressView({
   title,
@@ -443,33 +493,28 @@ export function UpdateProgressView({
   else {
     const latest = status.check.latestVersion;
     const installed = `Installed ${status.installedVersion}`;
-    if (status.install.phase === 'launched')
+    const bar = updateBar(status);
+    if (bar)
       body = (
-        <ProgressBar
-          label={`Installer for ${status.install.version ?? latest ?? 'the update'} started`}
-          value={1}
-          detail="The app closes and the installer opens after it exits."
-        />
+        <SegmentBar size="panel" label={bar.label} fraction={bar.fraction} detail={bar.detail ?? installed} />
       );
-    else if (status.install.phase === 'installing')
-      body = <ProgressBar label="Starting the installer" value={null} detail={installed} />;
-    else if (status.check.phase === 'checking')
-      body = <ProgressBar label="Checking for updates" value={null} detail={installed} />;
+    else if (status.install.phase === 'launched')
+      body = (
+        <p className="iv-detail">
+          {`Installer for ${status.install.version ?? latest ?? 'the update'} started. The app closes and the installer opens after it exits.`}
+        </p>
+      );
     else if (status.check.outcome === 'available' && status.download.ready)
       body = (
-        <ProgressBar
-          label={`Version ${status.download.version ?? latest} downloaded and verified`}
-          value={0.75}
-          detail={`${installed}. Install from Settings, App updates.`}
-        />
+        <p className="iv-detail">
+          {`Version ${status.download.version ?? latest} downloaded and verified. ${installed}. Install from Settings, App updates.`}
+        </p>
       );
     else if (status.check.outcome === 'available')
       body = (
-        <ProgressBar
-          label={`Version ${latest} is available`}
-          value={0.25}
-          detail={`${installed}. Download from Settings, App updates.`}
-        />
+        <p className="iv-detail">
+          {`Version ${latest} is available. ${installed}. Download from Settings, App updates.`}
+        </p>
       );
     else
       body = (
@@ -522,15 +567,15 @@ export function RunStatusView({ title, session }: { title?: string; session: Ses
     ? `Started ${clock(session.startedAt)}, ended ${clock(session.endedAt)}`
     : `Started ${clock(session.startedAt)}`;
   const detail = [who, timing, lastLine].filter(Boolean).join(' · ');
+  // A run has no known total, so a moving run is indeterminate. A finished one
+  // is whole; a stopped, failed or waiting one says its state in words.
   return (
     <Frame kind="app" title={title ?? 'Run status'}>
       {moving || session.state === 'done' ? (
-        <ProgressBar label={RUN_WORD[session.state]} value={moving ? null : 1} detail={detail} />
+        <SegmentBar size="panel" label={RUN_WORD[session.state]} fraction={moving ? null : 1} detail={detail} />
       ) : (
-        <div className="iv-progress">
-          <div className="iv-progress-head">
-            <span className={`iv-state ${session.state}`}>{RUN_WORD[session.state]}</span>
-          </div>
+        <div className="iv-run">
+          <p className={`iv-state ${session.state}`}>{RUN_WORD[session.state]}</p>
           <p className="iv-detail">{detail}</p>
         </div>
       )}
@@ -548,6 +593,31 @@ export function VisualNote({ reason }: { reason: string }) {
   return <p className="iv-note">A visual could not be shown: {reason}.</p>;
 }
 
+interface VisualBoundaryProps {
+  children: ReactNode;
+  /** What stands in its place; a VisualNote unless the host says otherwise. */
+  fallback?: ReactNode;
+}
+
+/**
+ * A visual that throws while it draws becomes one plain line, and the reply or
+ * the panel around it still reads: nothing a model writes can blank the
+ * Console. It wraps each inline visual and the artifact panel's drawn view.
+ * The host remounts it (by key) for a different artifact, which tries again.
+ */
+export class VisualBoundary extends Component<VisualBoundaryProps, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  render(): ReactNode {
+    if (!this.state.failed) return this.props.children;
+    return this.props.fallback ?? <VisualNote reason="something in it could not be drawn" />;
+  }
+}
+
 /** Shown while a visual block is still streaming. Its JSON is never shown half-written. */
 export function VisualPending() {
   return (
@@ -557,12 +627,25 @@ export function VisualPending() {
   );
 }
 
-export function InlineVisual({ spec, session = null }: { spec: VisualSpec; session?: Session | null }) {
+export function InlineVisual({
+  spec,
+  session = null,
+  width,
+}: {
+  spec: VisualSpec;
+  session?: Session | null;
+  /**
+   * The width in CSS pixels to draw a chart at, so its 11 px labels stay 11 px
+   * (the artifact panel measures its own). Without it a chart is drawn 640
+   * wide and scaled to the turn's column.
+   */
+  width?: number;
+}) {
   switch (spec.kind) {
     case 'bar':
     case 'line':
     case 'area':
-      return <CartesianChart spec={spec} />;
+      return <CartesianChart spec={spec} width={width} />;
     case 'pie':
       return <DonutChart spec={spec} />;
     case 'stat':

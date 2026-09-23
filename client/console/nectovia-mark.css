@@ -1,0 +1,68 @@
+/* The Nectovia mark (NectoviaMark.tsx). It is the product's name, so it draws
+   in every scheme (contract A2) from that scheme's own tokens: silver and
+   graphite plates, the lead and trail seams. The Nectovia scheme only adds
+   its own seam colours through --seam-lead and --seam-trail. */
+.dm-nmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.dm-nmark svg {
+  flex: none;
+  overflow: visible;
+}
+
+.dm-nmark .dm-nmark-plate {
+  fill: var(--t1);
+}
+
+.dm-nmark .dm-nmark-plate.dim {
+  fill: var(--t3);
+}
+
+.dm-nmark .dm-nmark-seam {
+  fill: none;
+  stroke-width: 1.3;
+}
+
+.dm-nmark .dm-nmark-seam.lead {
+  stroke: var(--seam-lead, var(--light));
+}
+
+.dm-nmark .dm-nmark-seam.trail {
+  stroke: var(--seam-trail, #b569fb);
+}
+
+/* A registration point for the wake, never a visible shape. */
+.dm-nmark .dm-nmark-point {
+  fill: none;
+  stroke: none;
+}
+
+/* Tracked caps; the element holds "Nectovia" so a screen reader says the word. */
+.dm-nmark-word {
+  font: 600 var(--dm-type-caption) / 1 var(--dm-font-brand);
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--t1);
+  white-space: nowrap;
+}
+
+/* Where the Console strip carries the mark, it keeps the old mark's place. */
+.console .top .dm-nmark {
+  padding: 0 16px;
+}
+
+@container app (max-width: 700px) {
+  .console .top .dm-nmark {
+    min-height: 40px;
+  }
+}
+
+/* The same wordmark where the Workbook's strip and Setup spell it out
+   (components.tsx Brand): tracked caps at the mark's weight. */
+span.brand {
+  font-weight: 600;
+  letter-spacing: 0.34em;
+}

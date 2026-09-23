@@ -37,6 +37,9 @@ import type { WorkStyle } from '../../shared/work-style';
 import { Diomedes } from './Diomedes';
 import { JobCapWarning } from './JobCapWarning';
 import { stepLiveReply, type LiveBinding, type LiveEvent, type LiveReply } from './live-reply';
+import { saveArtifact } from './artifact-save';
+import { HomeArt } from './HomeArt';
+import { HomeBrief } from './HomeBrief';
 import type { EverythingItem } from './Everything';
 import {
   diomedesThread,
@@ -68,10 +71,16 @@ export interface DiomedesHomeProps {
   onOpenWork(projectId: string): void;
   /** The person's detail level. Technical also shows each tool call's tool and detail. */
   detail?: 'guided' | 'standard' | 'technical';
+  /**
+   * The appearance scheme the page is painted in. The Nectovia scheme opens the
+   * conversation with its progress report and draws the bust beside it; every
+   * other scheme draws the page as it always has.
+   */
+  scheme?: string;
 }
 
 const words = (error: unknown) =>
-  error instanceof Error ? error.message : 'Diomedes could not complete that.';
+  error instanceof Error ? error.message : 'Nectovia could not complete that.';
 
 /** What an interrupt acknowledgement that cannot confirm a stop is told as. */
 const STOP_UNCONFIRMED =
@@ -660,6 +669,16 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         onDestination={props.onDestination}
         onTogglePin={props.onTogglePin}
         onNewProject={props.onNewProject}
+        artifactScope={binding?.threadId ?? null}
+        onSaveArtifact={
+          scopeId !== null && binding ? (record) => saveArtifact(binding.projectId, record) : undefined
+        }
+        brief={
+          props.scheme === 'nectovia' ? (
+            <HomeBrief projects={projects} onOpen={props.onOpenWork} />
+          ) : undefined
+        }
+        art={props.scheme === 'nectovia' ? <HomeArt /> : undefined}
       />
       {capPrompt && (
         <JobCapWarning

@@ -10,7 +10,7 @@ import type {
 import type { ThemePackV1 } from '../shared/theme-pack/types';
 import { api } from './api';
 import { INTERFACE_SCALES } from '../shared/interface-scale';
-import { AppUpdates } from './AppUpdates';
+import { AppUpdates, useInstalledVersion } from './AppUpdates';
 import { freshnessLine, planLine, shouldShowEmptyDetail } from './usage-presentation';
 import { AIConnections } from './AISetup';
 import { ReadConnectors } from './ReadConnectors';
@@ -254,7 +254,7 @@ export function SettingsPage({
             {section === 'Interface detail' && (
               <>
                 <p className="prose">
-                  Choose how much detail Diomedes shows you about each change.
+                  Choose how much detail Nectovia shows you about each change.
                 </p>
                 {/* Detail stands on its own. It was gated on the Workbook, and
                     choosing a level also wrote `surface: 'workbook'`, so picking
@@ -283,11 +283,11 @@ export function SettingsPage({
               <>
                 {section === 'Engines' ? (
                   <p className="prose">
-                    Diomedes uses AI services to do work. Here is which ones, and what is sent.
+                    Nectovia uses AI services to do work. Here is which ones, and what is sent.
                   </p>
                 ) : (
                   <p className="prose">
-                    Diomedes can use these to do work. Here is which ones it found, and what each
+                    Nectovia can use these to do work. Here is which ones it found, and what each
                     one sends.
                   </p>
                 )}
@@ -472,7 +472,7 @@ export function SettingsPage({
             {section === 'Design Center' && (
               <>
                 <p className="prose">
-                  The Design Center is where you change how Diomedes looks: its colours, its type,
+                  The Design Center is where you change how Nectovia looks: its colours, its type,
                   how round its controls are, how much it moves. It works with no internet
                   connection and no AI engine, and nothing in it asks a model anything.
                 </p>
@@ -575,7 +575,7 @@ export function SettingsPage({
               <>
                 <h2>A way back</h2>
                 <p className="prose">
-                  Diomedes records its changes to supported text files before writing them.
+                  Nectovia records its changes to supported text files before writing them.
                   Restoring a change creates a new entry, so the restore can be undone too.
                 </p>
                 <p className="prose">
@@ -584,7 +584,7 @@ export function SettingsPage({
                 </p>
                 <p className="caption">
                   Files must be valid text and no larger than 8 MB. Edits from other applications
-                  are recorded when Diomedes next reads the file. Intermediate external edits cannot
+                  are recorded when Nectovia next reads the file. Intermediate external edits cannot
                   be recovered.
                 </p>
               </>
@@ -710,8 +710,8 @@ export function SettingsPage({
             )}
             {section === 'About' && (
               <>
-                <h2>Diomedes</h2>
-                <p className="prose">By Diomedes Systems. Version 0.1.</p>
+                <h2>Nectovia</h2>
+                <AboutLine />
                 <p className="prose">
                   A workbook for your projects, documents, plans, tasks, and the history of what
                   changed.
@@ -847,6 +847,16 @@ const supportPreview: CSSProperties = {
   whiteSpace: 'pre-wrap',
   overflowWrap: 'anywhere',
 };
+
+/** Who makes the app, and the version this copy is running when the app can say it. */
+function AboutLine() {
+  const version = useInstalledVersion();
+  return (
+    <p className="prose">
+      Nectovia by Diomedes Systems.{version ? ` Version ${version}.` : ''}
+    </p>
+  );
+}
 
 /**
  * The support bundle, read before it is shared: build identity, host, paths,

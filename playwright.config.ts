@@ -106,6 +106,8 @@ export default defineConfig({
     'independent-h01-final-20260917.spec.ts',
     'allowance-ui.spec.ts',
     'vertex-setup-ui.spec.ts',
+    'artifacts-ui.spec.ts',
+    'nectovia-skin.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,

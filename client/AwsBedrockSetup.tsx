@@ -233,7 +233,7 @@ export function AwsBedrockSetup({
               checked={limitConsent}
               onChange={(event) => setLimitConsent(event.target.checked)}
             />
-            Approve this as the most Diomedes may send to AWS in total, estimated from AWS list prices.
+            Approve this as the most Nectovia may send to AWS in total, estimated from AWS list prices.
           </label>
           <div className="actions">
             <Button type="submit" disabled={disabled}>

@@ -405,13 +405,17 @@ test('a theme exported from the Design Center imports again unchanged', () => {
 // Keys are written with double quotes because selectors are normalized to that
 // form before they are looked up; the stylesheets themselves use single quotes.
 const STAGE_RESTATEMENT_EXEMPT = new Map<string, string>([
-  // The eleven built-in scheme blocks define --chrome, --surface, --t1 and the
+  // The twelve built-in scheme blocks define --chrome, --surface, --t1 and the
   // rest. The resolver writes every one of those custom properties onto the
   // stage as an inline value from the theme's own tokens, which beats a
   // stylesheet rule, so restating them would be dead weight that could only go
-  // stale. See resolve.ts's colour token map.
+  // stale. See resolve.ts's colour token map. Nectovia's block holds only those
+  // primitives too: the rest of its layer is in client/console/nectovia.css,
+  // anchored `:is(html, .dc-stage)[data-package='nectovia']`, so the stage wears
+  // it without a restatement here.
   ...(
     [
+      'nectovia',
       'field',
       'deep-field',
       'graphite',

@@ -8,7 +8,8 @@ import type {
   RestoreConflict,
   Session,
 } from '../../shared/types';
-import { formatOrigin, originForSession } from '../../shared/attribution';
+import { AGENT_NAME } from '../../shared/agent-name';
+import { formatOrigin, originForSession } from '../attribution-display';
 import { api, ApiError } from '../api';
 import { ApprovalStatus, Button, ChangeCard, Modal, date, time } from '../components';
 import './history.css';
@@ -189,7 +190,7 @@ function fileOutcome(file: FileRecord, savedVersion: boolean, cause: string): st
  */
 function actorWord(actor: string): string {
   if (actor === 'you') return 'you';
-  if (actor === 'diomedes' || actor === 'diomedes-with-ok') return 'Diomedes';
+  if (actor === 'diomedes' || actor === 'diomedes-with-ok') return AGENT_NAME;
   return actor;
 }
 
@@ -237,7 +238,7 @@ function failureText(error: unknown): string {
     if (error.status === 413) return 'A file is too large to put back.';
     return `Nothing was put back. ${error.message}`;
   }
-  return 'Nothing was put back. Diomedes could not reach the service on this computer.';
+  return 'Nothing was put back. Nectovia could not reach the service on this computer.';
 }
 
 /**
@@ -335,7 +336,7 @@ export function HistoryView({
       .catch((error: unknown) => {
         if (!live) return;
         setChangesFailure(
-          'Diomedes could not read what changed in this entry. The files below are still listed, and they can still be put back.',
+          'Nectovia could not read what changed in this entry. The files below are still listed, and they can still be put back.',
         );
         onError?.(error);
       });
@@ -583,7 +584,7 @@ export function HistoryView({
         text:
           error instanceof ApiError
             ? `No version was saved. ${error.message}`
-            : 'No version was saved. Diomedes could not reach the service on this computer.',
+            : 'No version was saved. Nectovia could not reach the service on this computer.',
       });
       onError?.(error);
     } finally {
@@ -650,7 +651,7 @@ export function HistoryView({
         <div className="hempty">
           <h2>Nothing has changed yet</h2>
           <p>
-            Every change Diomedes makes in this project is listed here, with a way to put the files
+            Every change Nectovia makes in this project is listed here, with a way to put the files
             back.
           </p>
         </div>
@@ -834,7 +835,7 @@ export function HistoryView({
   }
 
   function dialogTitle(request: Ask): string {
-    if (request.inProgress) return 'Diomedes is working right now';
+    if (request.inProgress) return 'Nectovia is working right now';
     if (request.conflicts?.length) return 'Some files have changed since then';
     if (request.kind === 'undo') return 'Undo the restore?';
     if (request.kind === 'file') return 'Put this file back?';
@@ -851,7 +852,7 @@ export function HistoryView({
           // The server's answer, and where the focus goes when it arrives, so
           // the reason is read rather than left behind a button that vanished.
           <p className="prose" ref={explain} tabIndex={-1}>
-            Diomedes is in the middle of a piece of work in this project. Nothing was put back,
+            Nectovia is in the middle of a piece of work in this project. Nothing was put back,
             because that work could be writing to the same files.
             {onStopWork
               ? ''
@@ -971,7 +972,7 @@ export function HistoryView({
             [
               ['all', 'All'],
               ['saved', 'Saved versions'],
-              ['diomedes', 'Diomedes'],
+              ['diomedes', AGENT_NAME],
               ['you', 'You'],
             ] as [HistoryFilter, string][]
           ).map(([value, text]) => (

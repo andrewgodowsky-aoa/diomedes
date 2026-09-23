@@ -708,7 +708,7 @@ test('Settings offers the private compatible copy for a found but incompatible i
     await expect(stateChip(page, 'installation')).toContainText('Found, unsupported version');
     // The defect this repairs: Install used to appear only when nothing was found.
     const primary = section.getByRole('button', {
-      name: 'Repair with a compatible copy for Diomedes',
+      name: 'Repair with a compatible copy for Nectovia',
       exact: true,
     });
     await expect(primary).toBeVisible();
@@ -718,7 +718,7 @@ test('Settings offers the private compatible copy for a found but incompatible i
     await expect(section.getByText(versions.opencode, { exact: true }).first()).toBeVisible();
     await expect(
       section.getByText(
-        'This copy belongs to Diomedes alone. It does not change, downgrade or remove your own installation, and it does not change PATH.',
+        'This copy belongs to Nectovia alone. It does not change, downgrade or remove your own installation, and it does not change PATH.',
       ),
     ).toBeVisible();
     // Reading the offer sends nothing; only the confirmation does.
@@ -759,7 +759,7 @@ test('Settings names a corrupt installation and a broken binding, and switches t
     await expect(stateChip(page, 'installation')).toContainText('Found, failed its integrity check');
     await expect(
       section.getByRole('button', {
-        name: 'Repair with a compatible copy for Diomedes',
+        name: 'Repair with a compatible copy for Nectovia',
         exact: true,
       }),
     ).toBeVisible();
@@ -798,10 +798,10 @@ test('Settings names a corrupt installation and a broken binding, and switches t
     const own = candidateRow(section, 0, systemCandidate.path);
     const managed = candidateRow(section, 1, managedCandidate.path);
     await expect(own).toContainText('Your own installation');
-    await expect(own).toContainText('Your own copy; Diomedes did not verify its publisher.');
+    await expect(own).toContainText('Your own copy; Nectovia did not verify its publisher.');
     await expect(own).toContainText('Unsupported version');
     await expect(own).toContainText('In use');
-    await expect(managed).toContainText("Diomedes's private copy");
+    await expect(managed).toContainText("Nectovia's private copy");
     await expect(managed.getByRole('button', { name: 'Use this installation', exact: true })).toBeVisible();
     // Nothing moved on its own: a different executable is used only on request.
     expect(binds).toHaveLength(0);
@@ -852,7 +852,7 @@ test('Settings binds the installation a person chooses, and sends only its candi
     await section.getByRole('button', { name: 'Choose an installation', exact: true }).click();
     const managed = candidateRow(section, 1, managedCandidate.path);
     await expect(managed).toContainText('Recommended');
-    await expect(managed).toContainText('Diomedes verified these bytes against the release it pinned.');
+    await expect(managed).toContainText('Nectovia verified these bytes against the release it pinned.');
     expect(binds).toHaveLength(0);
     await managed.getByRole('button', { name: 'Use this installation', exact: true }).click();
     await expect.poll(() => binds.length).toBe(1);
@@ -1129,7 +1129,7 @@ test('Settings waits for the host check when a sign-in window ends, and never ca
     phase = 'ended';
     await expect(
       section.getByText(
-        'The OpenCode sign-in window closed. Diomedes is checking this service again.',
+        'The OpenCode sign-in window closed. Nectovia is checking this service again.',
       ),
     ).toBeVisible();
     // The account still reads as it did before the window opened.
@@ -1145,7 +1145,7 @@ test('Settings waits for the host check when a sign-in window ends, and never ca
     await expect(stateChip(page, 'models')).toContainText('1 listed');
     await expect(section.getByText(/sign-in window/)).toHaveCount(0);
     await expect(
-      section.getByRole('button', { name: 'Turn on for Diomedes', exact: true }),
+      section.getByRole('button', { name: 'Turn on for Nectovia', exact: true }),
     ).toBeVisible();
   } finally {
     await page.unrouteAll({ behavior: 'wait' });
@@ -1247,11 +1247,11 @@ test('Settings sends a changed binding to the installations, not to a sign-in', 
     // The installations opened themselves, both rows in the order sent.
     await expect(section.locator('li.ai-candidate')).toHaveCount(2);
     await expect(candidateRow(section, 1, managedCandidate.path)).toContainText(
-      "Diomedes's private copy",
+      "Nectovia's private copy",
     );
     await expect(
       section.getByRole('button', {
-        name: 'Repair with a compatible copy for Diomedes',
+        name: 'Repair with a compatible copy for Nectovia',
         exact: true,
       }),
     ).toBeVisible();
@@ -1326,7 +1326,7 @@ test('Settings sends a changed binding to the installations when the check is wh
     await expect(section.getByRole('button', { name: /Sign in/ })).toHaveCount(0);
     await expect(
       section.getByRole('button', {
-        name: 'Repair with a compatible copy for Diomedes',
+        name: 'Repair with a compatible copy for Nectovia',
         exact: true,
       }),
     ).toBeVisible();
@@ -1486,7 +1486,7 @@ test('Onboarding says which of the three things continuing actually does', async
     await expect(
       actions.getByRole('button', { name: /Continue without testing|local sample/ }),
     ).toHaveCount(0);
-    await expect(page.getByText('Diomedes will use the service you tested.')).toBeVisible();
+    await expect(page.getByText('Nectovia will use the service you tested.')).toBeVisible();
     await expect(page.getByText(/Sample work is scripted/)).toHaveCount(0);
   } finally {
     await page.unrouteAll({ behavior: 'wait' });
