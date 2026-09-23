@@ -68,7 +68,12 @@ export interface ClaudeSessionTurn {
   preview?(
     context: StepContext,
     stepId: string,
-  ): { onDelta(text: string): void; finish(): Promise<void> };
+  ): {
+    onDelta(text: string): void;
+    /** The adapter-facing tool activity sink, fenced to the same attempt as `onDelta`. */
+    onToolActivity?: TextRequest['onToolActivity'];
+    finish(): Promise<void>;
+  };
 }
 export interface ClaudeSessionTurnResult {
   runId: string;
@@ -767,7 +772,14 @@ export class ClaudeSessionRuns {
             let owned: Connection | undefined;
             const session = await request.open(
               admission,
-              { ...wire, signal: undefined, onDelta: undefined, onPreview: undefined },
+              {
+                ...wire,
+                signal: undefined,
+                onDelta: undefined,
+                onPreview: undefined,
+                onActivity: undefined,
+                onToolActivity: undefined,
+              },
               {
                 observedVersion: admission.version,
                 restore,
@@ -814,6 +826,10 @@ export class ClaudeSessionRuns {
                 ...wire,
                 signal: AbortSignal.any([context.signal, ...(input.signal ? [input.signal] : [])]),
                 onDelta: preview?.onDelta,
+                // Caller-facing frames never reach the adapter; it gets the fenced raw sink.
+                onPreview: undefined,
+                onActivity: undefined,
+                onToolActivity: preview?.onToolActivity,
               });
               if (
                 result.projectId !== input.projectId ||

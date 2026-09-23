@@ -80,7 +80,11 @@ import { createHarnessHost } from './harness/host.js';
 import { mountHarnessRoutes } from './harness/routes.js';
 import { localHarnessPrincipal } from './harness/bridge.js';
 import { TEXT_DISPATCH_STEP, textRunId } from './harness/text-route.js';
-import { previewSink, type TransientPreview } from '../shared/adapter-contract.js';
+import {
+  previewSink,
+  type ToolActivity,
+  type TransientPreview,
+} from '../shared/adapter-contract.js';
 import { FIXTURE_ENGINE } from './harness/approval.js';
 import { CODEX_ENGINE, type ResolveHarnessAuthority } from './harness/codex-engine.js';
 import { roleInstructions } from './team/prompts.js';
@@ -680,6 +684,8 @@ export async function createApp(options: AppOptions) {
           model: input.model,
           instructions: input.instructions ?? '',
           accountRoute,
+          // A work run's requestId is its session id, which is how its run card finds these.
+          onActivity: (frame) => store.emit('engine-activity', frame),
         });
       }),
     reviewer,
@@ -2519,6 +2525,7 @@ export async function createApp(options: AppOptions) {
         ...input,
         signal: req.res ? connectionSignal(req.res) : undefined,
         onPreview: (frame) => progress('delta', frame),
+        onActivity: (frame) => store.emit('engine-activity', frame),
       };
     },
     recordResult: async (_req, command, result, input) => {
@@ -2903,6 +2910,8 @@ export async function createApp(options: AppOptions) {
             signal: options.signal,
             onPreview: (frame: TransientPreview) =>
               progress('delta', { ...frame, text: gate(frame.text) }),
+            // Tool calls are narration beside the answer, bound to the same run identity.
+            onActivity: (frame: ToolActivity) => store.emit('engine-activity', frame),
           },
         };
       }),
@@ -3532,6 +3541,7 @@ export async function createApp(options: AppOptions) {
             accountRoute,
             signal: connectionSignal(res),
             onPreview: (frame) => progress('delta', frame.text, frame),
+            onActivity: (frame) => store.emit('engine-activity', frame),
           });
           answer = result.text;
           helper = {

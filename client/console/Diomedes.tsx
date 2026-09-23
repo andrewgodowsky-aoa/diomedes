@@ -4,6 +4,8 @@ import { routeDisplayName } from '../../shared/engines';
 import type { EverythingItem } from './Everything';
 import { Rail } from './Rail';
 import { useWorkingWord, workingLine } from './working-words';
+import { toolRunning, type ToolLine } from './engine-activity';
+import { ToolActivityList } from './ToolActivity';
 import {
   ALL_PROJECTS,
   RESTRICTIONS,
@@ -33,6 +35,13 @@ export interface DiomedesPageProps {
   onScope(id: string | null): void;
   turns: Turn[];
   pending: boolean;
+  /**
+   * The answer to the message in flight as it streams, with its tool calls. Display only; the
+   * recorded answer replaces it. Null while nothing has started.
+   */
+  live?: { text: string; activity: readonly ToolLine[] } | null;
+  /** The Technical detail level: tool calls also name their tool and open to their detail. */
+  technical?: boolean;
   restriction: Restriction;
   onRestriction(next: Restriction): void;
   /** Resolves false when the message was refused and never sent, so the text is given back. */
@@ -134,6 +143,8 @@ export function Diomedes({
   onScope,
   turns,
   pending,
+  live = null,
+  technical = false,
   restriction,
   onRestriction,
   onSend,
@@ -160,7 +171,11 @@ export function Diomedes({
   onNewProject,
 }: DiomedesPageProps) {
   const [text, setText] = useState('');
-  const pendingWord = useWorkingWord('thinking it over', pending);
+  // Only a message in flight streams, and what streamed is shown under it. The waiting line
+  // stays until text arrives, stepping aside while a tool call is already saying what it does.
+  const streamed = pending ? live : null;
+  const waiting = pending && !streamed?.text && !toolRunning(streamed?.activity);
+  const pendingWord = useWorkingWord('thinking it over', waiting);
   // One unconfirmed message at a time: it is resolved before anything new is sent.
   const blocked = unconfirmed !== null ? 'An earlier message is waiting.' : unavailable;
   const ready = canSend(text, pending, blocked);
@@ -243,8 +258,25 @@ export function Diomedes({
                     )}
                   </div>
                 )}
+                {/* Not a `.turn`: it is a preview of an answer, not a recorded one, and the
+                    transcript's turns stay exactly what the record holds. */}
+                {streamed && (streamed.text || streamed.activity.length > 0) && (
+                  <div className="dio-live">
+                    <div className="who">
+                      <b>Diomedes</b>
+                    </div>
+                    <ToolActivityList lines={streamed.activity} technical={technical} />
+                    {streamed.text && (
+                      <div className="body">
+                        {paragraphs(streamed.text).map((p, i) => (
+                          <p key={i}>{p}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {pending && (
-                  <p className="mono dio-pending" role="status" aria-label="Working">
+                  <p className="mono dio-pending" role="status" aria-label="Working" hidden={!waiting}>
                     <span aria-hidden="true">{workingLine(pendingWord)}</span>
                   </p>
                 )}
