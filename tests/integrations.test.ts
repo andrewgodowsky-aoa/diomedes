@@ -390,7 +390,7 @@ describe('opt-in Diomedes team boundary', () => {
     await expect(integration.askCodex(request)).rejects.toMatchObject({ code: 'UNEXPECTED_TOOL' });
     expect(integration.createClient).toHaveBeenCalledWith();
     expect(nativeWorkDisclosure()).toBe(
-      'Ask and Plan return text. Online Work proposes file changes that Diomedes applies only after your approval. Native filesystem, shell, browser, and MCP tools remain disabled.',
+      "Ask and Plan may read the project folder, search the web and call approved connectors' read tools inside a read-only sandbox; they change nothing. Online Work proposes file changes that Diomedes applies only after your approval.",
     );
     expect(nativeWorkDisclosure(team)).toContain('Diomedes team service and no other MCP service');
   });
