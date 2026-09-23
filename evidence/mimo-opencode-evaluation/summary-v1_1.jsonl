@@ -1,0 +1,9 @@
+{"file":"deepseek-v4-flash.candidate.jsonl","v1_1Accepted":"11/15","changed":[]}
+{"file":"deepseek-v4-flash.steps2.jsonl","v1_1Accepted":"7/7","changed":[]}
+{"file":"gpt-5.6-luna.candidate.jsonl","v1_1Accepted":"13/15","changed":["B1-summary:no invented figures:false->true"]}
+{"file":"gpt-5.6-luna.steps2.jsonl","v1_1Accepted":"6/7","changed":[]}
+{"file":"gpt-5.6-sol.codex-direct.jsonl","v1_1Accepted":"13/15","changed":["B1-summary:no invented figures:false->true"]}
+{"file":"mimo-v2.6-flash.candidate.jsonl","v1_1Accepted":"11/15","changed":["B1-summary:no invented figures:false->true","C2-missing-evidence:no invented dollar figure:false->true"]}
+{"file":"mimo-v2.6-flash.steps2.jsonl","v1_1Accepted":"6/7","changed":[]}
+{"file":"mimo-v2.6-pro.candidate.jsonl","v1_1Accepted":"11/15","changed":[]}
+{"file":"mimo-v2.6-pro.steps2.jsonl","v1_1Accepted":"6/7","changed":[]}
