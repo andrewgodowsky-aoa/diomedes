@@ -2861,12 +2861,16 @@ export async function createApp(options: AppOptions) {
           : style
             ? 'default'
             : 'none';
-      if (engine === 'sample') return { route: engine, style, source, resolution: null };
+      // What the next request would be refused with before anything is sent, in the host's own
+      // words: a tier whose route cannot run. A client refuses by this, never by its own guess.
+      const refusal = tier?.outcome === 'refuse' ? tier.reason : null;
+      if (engine === 'sample') return { route: engine, style, source, refusal, resolution: null };
       if (tier)
         return {
           route: engine,
           style,
           source,
+          refusal,
           ownerPin: tier.ownerPin,
           resolution: {
             outcome: tier.outcome === 'run' ? 'run' : 'ask',
@@ -2899,7 +2903,7 @@ export async function createApp(options: AppOptions) {
         routeDefaultAllowed: engine === 'codex',
         stableEffort: isModelApiRoute(engine),
       });
-      return { route: engine, style, source, resolution };
+      return { route: engine, style, source, refusal, resolution };
     }),
   );
   // A preview of the Jev preflight for a thread's next message, beside the resolution above.

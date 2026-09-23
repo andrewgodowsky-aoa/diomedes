@@ -17,6 +17,8 @@ export interface WorkStyleView {
   route: string;
   style: WorkStyle | null;
   source: 'thread' | 'settings' | 'default' | 'none';
+  /** The host's sentence when the next request would be refused before anything is sent. */
+  refusal?: string | null;
   resolution: WorkStyleResolution | null;
 }
 
