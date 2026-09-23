@@ -1,8 +1,8 @@
 # DIOMEDES CORE PILLARS — BINDING PRODUCT CONSTITUTION
 
-**Version:** 2026-09-19.1  
+**Version:** 2026-09-22.1  
 **Status:** Owner-approved product/business/agent/design authority  
-**Product:** Diomedes  
+**Product:** Nectovia (named Diomedes until 2026-09-22)  
 **Company direction:** Diomedes Systems  
 **Cloud canonical:** https://docs.google.com/document/d/1O0bWr5HEryEQmtOsUput0sgzLhk2c_Ze6MaXoMfKta4/edit
 
@@ -178,3 +178,4 @@ Version changes:
 
 Amendments:
 - **2026-09-19.1 (minor, Andrew's explicit decision):** Pillar 07 no longer says to prefer intelligence the customer already pays for, and its human version no longer opens with the customer's own ChatGPT or Claude subscription. Customers are not expected to bring, buy or share an AI subscription; a customer organization's own provider account and a local model remain valid routes, and a personal subscription is still never company inventory. No other pillar changed. The canonical cloud document could not be written from the session that made this change; a current cloud mirror of this version is recorded in docs/reference/CLOUD_SYNC_2026-09-19.md.
+- **2026-09-22.1 (patch, Andrew's explicit decision):** the product, app and agent are named Nectovia; Diomedes Systems (LLC) remains the company. No pillar's meaning changed. Until a wording pass, "Diomedes" in pillar text means the product now named Nectovia, except where it names the company. Shipped identifiers (app id, installer and update channel, userData, environment variables, repositories, diomedes.net) are unchanged by the rename. Andrew named the product on 2026-09-22 and approved this amendment on 2026-09-23. The canonical cloud document could not be written from the session that made this change; the exact edits are recorded in docs/reference/CLOUD_SYNC_2026-09-23.md.
