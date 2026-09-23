@@ -17,6 +17,27 @@ function megabytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * The version this copy of the app is running, as the update service reports it
+ * (`installedVersion`), or null until it answers or when it cannot be read. A
+ * caller that has no version prints none rather than a guess.
+ */
+export function useInstalledVersion(): string | null {
+  const [version, setVersion] = useState<string | null>(null);
+  useEffect(() => {
+    let current = true;
+    api<UpdateStatusSnapshot>('/updates/status')
+      .then((status) => {
+        if (current && status.installedVersion) setVersion(status.installedVersion);
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, []);
+  return version;
+}
+
 export function AppUpdates() {
   const [status, setStatus] = useState<UpdateStatusSnapshot | null>(null);
   const [phase, setPhase] = useState<Phase>('loading');
@@ -78,7 +99,7 @@ export function AppUpdates() {
     <div className="app-updates">
       <h2>App updates</h2>
       <p className="prose">
-        Diomedes checks the official release page only when you ask. A newer version downloads first
+        Nectovia checks the official release page only when you ask. A newer version downloads first
         for verification; nothing installs without your explicit close-and-install.
       </p>
       <p className="prose version-row">
@@ -125,7 +146,7 @@ export function AppUpdates() {
                       : 'Published digest verification unavailable'}
                   </p>
                   <p className="caption">
-                    Close and install exits Diomedes and opens the verified installer. The existing
+                    Close and install exits Nectovia and opens the verified installer. The existing
                     per-user installer preserves project and profile data.
                   </p>
                 </>
@@ -175,7 +196,7 @@ export function AppUpdates() {
           </div>
           {handedOff && (
             <p className="prose">
-              Update handoff accepted. Diomedes is closing; the installer will open after it exits.
+              Update handoff accepted. Nectovia is closing; the installer will open after it exits.
             </p>
           )}
         </>

@@ -26,6 +26,21 @@
   background: var(--seg-ahead);
 }
 
+/* `.seg` is also the Console's segmented radio control (console.css: an
+   inline-flex box with a border, a radius and `margin-left: auto`, at the
+   same specificity as the rule above). Inside the Console that rule reached
+   these spans too, and `margin-left: auto` in a grid cell shrinks a 3 px
+   segment to nothing. The segment's own box wins here, whatever order the
+   stylesheets load in. */
+.seg-bar > .seg-track > span.seg {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
 .seg-bar .seg.done {
   background: var(--seg-lead);
   animation: seg-snap 240ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -113,6 +128,12 @@ html[data-motion='reduced'] .seg-bar .seg-scan {
 html[data-motion='reduced'] .seg-bar .seg.active::after {
   display: none;
 }
+/* Standing still, a 28% span would read as 28% done. Without motion the
+   indeterminate form is the whole track, evenly and quietly lit. */
+html[data-motion='reduced'] .seg-bar .seg-scan {
+  width: 100%;
+  opacity: 0.45;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .seg-bar .seg,
@@ -122,5 +143,9 @@ html[data-motion='reduced'] .seg-bar .seg.active::after {
   }
   .seg-bar .seg.active::after {
     display: none;
+  }
+  .seg-bar .seg-scan {
+    width: 100%;
+    opacity: 0.45;
   }
 }

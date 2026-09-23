@@ -102,10 +102,10 @@ export class ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
     const leave = this.props.onLeave;
     return (
       <div className="initial-state" role="alert">
-        <h1>{screen ? 'This screen stopped' : 'Diomedes stopped drawing'}</h1>
+        <h1>{screen ? 'This screen stopped' : 'Nectovia stopped drawing'}</h1>
         <p className="prose">
           {screen
-            ? 'Something in this screen failed while it was being drawn, so Diomedes closed it rather than showing you half of it.'
+            ? 'Something in this screen failed while it was being drawn, so Nectovia closed it rather than showing you half of it.'
             : 'Something failed while the window was being drawn, so there is nothing on it.'}{' '}
           Your files and your work were not changed by this, and nothing was sent.
         </p>
@@ -123,7 +123,7 @@ export class ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
               window.location.reload();
             }}
           >
-            Reload Diomedes
+            Reload Nectovia
           </button>
         </div>
       </div>

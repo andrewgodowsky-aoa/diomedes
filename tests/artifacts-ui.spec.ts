@@ -715,11 +715,11 @@ test('live text holds an artifact back until its answer is saved', async ({ page
   await expect(page.locator('.transcript')).not.toContainText('Drawing a diagram…');
 });
 
-test('on the Diomedes page the panel opens beside the conversation, and says why it cannot save there', async ({ page }, testInfo) => {
+test('on the Nectovia page the panel opens beside the conversation, and says why it cannot save there', async ({ page }, testInfo) => {
   await freshProject('Home page');
   await page.goto(url);
-  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
-  const box = page.getByRole('textbox', { name: 'Message Diomedes' });
+  await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
+  const box = page.getByRole('textbox', { name: 'Message Nectovia' });
   await box.fill('CHART of this week');
   await box.press('Enter');
   const chip = page.locator('.turn.dio').getByRole('button', { name: /^Chart\s+Weekly sends\b/ });

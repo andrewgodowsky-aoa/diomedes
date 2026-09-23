@@ -11,7 +11,7 @@ export interface WakeProps {
   onRetry?(): void;
 }
 
-const LETTERS = ['D', 'I', 'O', 'M', 'E', 'D', 'E', 'S'];
+const LETTERS = ['N', 'E', 'C', 'T', 'O', 'V', 'I', 'A'];
 
 function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
@@ -152,7 +152,7 @@ export function Wake({
   return (
     <div
       className={ending ? 'dm-wake gone' : 'dm-wake playing'}
-      aria-label="Diomedes is waking"
+      aria-label="Nectovia is waking"
       onPointerDown={() => endRef.current()}
     >
       <div className="dm-wake-field">

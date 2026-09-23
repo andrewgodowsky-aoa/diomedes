@@ -670,20 +670,9 @@ html[data-package='paper'] .console {
 .console .art-chart-box {
   min-width: 0;
 }
-/* A segments or progress chart is the Console's SegmentBar, whose segments are
-   `span.seg`. Inside the Console, `.console .seg` (the segmented radio
-   control, console.css) matches them too, and its `margin-left: auto` shrinks
-   each grid cell's segment to its own border. In a chart the segment keeps its
-   own box. The skin lane's segment-bar.css carries the same rule for every
-   surface; once that lands, this one is redundant. */
-.console .art-chart .seg-bar > .seg-track > span.seg {
-  display: block;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-}
+/* A segments or progress chart is the Console's SegmentBar; segment-bar.css
+   keeps its `span.seg` segments clear of the Console's segmented radio
+   control (`.console .seg`), on every surface. */
 /* Drawn at the box's own pixel width (Chart.tsx measures it), so 11 px ticks
    stay 11 px; the SVG is never scaled to fit. */
 .console .art-chart-svg {

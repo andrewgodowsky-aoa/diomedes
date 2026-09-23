@@ -13,7 +13,7 @@ import type {
   UsageSnapshot,
   UsageWindow,
 } from '../shared/types';
-import { formatOrigin, originForNeed, originForSession } from '../shared/attribution';
+import { formatOrigin, originForNeed, originForSession } from './attribution-display';
 import './attribution.css';
 
 export const pages = [
@@ -39,7 +39,7 @@ export const detailDescriptions = {
 };
 export const surfaceDescriptions = {
   workbook:
-    'One page at a time. Ask, plan, work and review, and Diomedes asks before anything that matters.',
+    'One page at a time. Ask, plan, work and review, and Nectovia asks before anything that matters.',
   console:
     'Every thread, every helper and every change on one screen. For people who work with these tools every day.',
 };
@@ -70,7 +70,7 @@ export function date(s: string) {
 export function Brand() {
   return (
     <span className="brand">
-      <span>DIOMEDES</span>
+      <span>NECTOVIA</span>
     </span>
   );
 }
@@ -460,7 +460,7 @@ export function Notice({
           Show me first
         </Button>
       </div>
-      <p className="caption">Diomedes is paused until you decide.</p>
+      <p className="caption">Nectovia is paused until you decide.</p>
       <ApprovalStatus need={need} />
     </section>
   );

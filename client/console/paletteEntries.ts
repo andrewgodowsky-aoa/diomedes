@@ -132,7 +132,7 @@ function taskWorker(task: Task, ctx: PaletteContext): string {
     const member = ctx.members.find((m) => m.slotId === task.assignedTo);
     return member ? member.name : task.assignedTo;
   }
-  return task.owner === 'you' ? 'You' : 'Diomedes';
+  return task.owner === 'you' ? 'You' : 'Nectovia';
 }
 
 function ageOf(iso: string | undefined): string {

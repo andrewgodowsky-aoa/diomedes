@@ -265,6 +265,11 @@ html[data-surface='console'] body {
   transition: top var(--move) var(--ease);
   z-index: 1;
 }
+/* The seam's step beside the selected row (Rail.tsx) belongs to the Nectovia
+   scheme (nectovia.css); every other scheme shows the point alone. */
+.console .spine .gp .seam {
+  display: none;
+}
 .console .spine button {
   display: block;
   width: 100%;
@@ -308,6 +313,15 @@ html[data-surface='console'] body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* A project's task count on the spine (Rail `progress`): a short segment bar
+   ahead of the sub line, which still says it in words. */
+.console .spine .rail-progress {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 .console .spine .tick {
   position: absolute;

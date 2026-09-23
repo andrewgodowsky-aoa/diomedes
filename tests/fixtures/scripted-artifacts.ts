@@ -1,6 +1,7 @@
 import { AWS_LUNA_MODEL } from '../../server/engines/aws-bedrock';
 import { EngineService, TESTED_VERSIONS } from '../../server/engines/service';
 import { routeContractFor } from '../../server/harness/route-contract';
+import { responsesAnswer } from './model-api-streams.js';
 
 // A model that answers with artifacts, for tests/artifacts-ui.spec.ts. It sits where
 // tests/h01-preview-repair.spec.ts puts its fixture: behind the Claude Code route's `generate`,
@@ -158,8 +159,9 @@ let lunaCalls = 0;
 
 /**
  * The `modelApiTransport` createApp takes, answering the Diomedes conversation by the same script.
- * It has the envelope tests/fixtures/scripted-home-luna.ts sends (that file's respond() speaks
- * `scripted` and is not parameterised). Nothing here reaches AWS or spends money.
+ * It has the envelope tests/fixtures/scripted-home-luna.ts sends, streamed the same way (that
+ * file's respond() speaks `scripted` and is not parameterised). Nothing here reaches AWS or
+ * spends money.
  */
 export const artifactTransport = (async (_input: RequestInfo | URL, init?: RequestInit) => {
   lunaCalls += 1;
@@ -200,10 +202,8 @@ export const artifactTransport = (async (_input: RequestInfo | URL, init?: Reque
     incomplete_details: null,
     error: null,
   };
-  return new Response(JSON.stringify(envelope), {
-    status: 200,
-    headers: { 'content-type': 'application/json', 'x-amzn-requestid': `req-${lunaCalls}` },
-  });
+  // The model-API core asks for a stream: a Responses object is sent as its event stream.
+  return responsesAnswer(envelope, 200, { 'x-amzn-requestid': `req-${lunaCalls}` });
 }) as typeof globalThis.fetch;
 
 export interface ArtifactEngine {

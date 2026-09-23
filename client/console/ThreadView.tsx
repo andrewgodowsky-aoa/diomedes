@@ -19,7 +19,7 @@ import type { FollowUpCommand } from '../../shared/work-control';
 import { effortFor } from '../../shared/effort';
 import { isExternalEngine } from '../../shared/engines';
 import type { InstructionFileRecord } from '../../shared/capability-packs';
-import { formatOrigin, originForSession, originForTurn } from '../../shared/attribution';
+import { formatOrigin, originForSession, originForTurn } from '../attribution-display';
 import { ApprovalStatus, time } from '../components';
 import { RunInspector } from '../workbench/RunInspector';
 import { taskEvidence } from '../workbench/task-evidence';
@@ -402,7 +402,7 @@ export function ThreadView({
           {title}
         </h1>
         {permissionControl ?? (
-          <div className="seg" role="radiogroup" aria-label="What Diomedes may do">
+          <div className="seg" role="radiogroup" aria-label="What Nectovia may do">
             <button
               type="button"
               role="radio"

@@ -29,6 +29,7 @@ import {
   UsageBar,
   time,
 } from '../../components';
+import { speakerName } from '../../attribution-display';
 import { resolveAppearance } from '../../../shared/theme-pack/resolve';
 import type { ThemePackV1 } from '../../../shared/theme-pack/types';
 import { ArtworkImage, TextureLayer } from '../theme-artwork';
@@ -464,7 +465,7 @@ export function Preview({
           {fixtureTurns.map((turn) => (
             <article key={turn.id} className={`turn ${turn.role}`}>
               <header className="row">
-                <strong>{turn.role === 'you' ? 'You' : 'Diomedes'}</strong>
+                <strong>{speakerName(turn.role)}</strong>
                 <span className="caption push-right">{time(turn.at)}</span>
               </header>
               <p className="prose">{turn.text}</p>
