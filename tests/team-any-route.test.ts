@@ -92,7 +92,7 @@ describe('"Nectovia chooses" resolves each member from the WorkStyle resolver', 
 
   test('a route that cannot carry the team tools is named', () => {
     expect(teamRouteRefusal('cursor')).toBe(
-      'Cursor cannot carry the Diomedes team tools yet: Diomedes does not give its sessions the team service. Choose ChatGPT, Claude Code, AWS Bedrock, Azure OpenAI or OpenRouter.',
+      'Cursor cannot carry the Diomedes team tools yet: Diomedes does not give its sessions the team service. Choose ChatGPT, Claude Code, AWS Bedrock, Azure OpenAI, OpenRouter or Google Vertex AI.',
     );
     for (const route of ['codex', 'claude-code', 'aws-bedrock', 'azure-openai', 'openrouter'])
       expect(teamRouteRefusal(route)).toBeNull();
@@ -534,7 +534,7 @@ describe('Nectovia chooses a member’s route and model from connected routes on
       engine: 'auto',
     });
     expect(refused.status).toBe(409);
-    expect(refused.data.error).toMatch(/Turn on and connect ChatGPT, Claude Code, AWS Bedrock, Azure OpenAI or OpenRouter/);
+    expect(refused.data.error).toMatch(/Turn on and connect ChatGPT, Claude Code, AWS Bedrock, Azure OpenAI, OpenRouter or Google Vertex AI/);
   });
 });
 

@@ -3,16 +3,40 @@
 Status: **implemented and fixture-tested; not live-proven, not merged, not released.**
 Nothing was sent to Google, no Google Cloud resource was created, and no billing was changed.
 
-## Base
+Three milestones, never interchangeable:
 
-- Branch `feature/vertex-managed-inference`, worktree `F:/Diomedes/diomedes-wt/vertex-managed-inference`.
-- Base `74da363` (`feature/nectovia-credits-usage`, the funded parent-job ledger), which sits on
-  `475fb11` = PR #38 `feature/nectovia-routing` (the shared model-API core, Azure and OpenRouter).
-  Neither is on `main` (`cf40cd6`). This branch must land after PR #38 and after the credits lane's
-  commit, or be retargeted onto them; a PR against `main` would carry both.
-- PR #35 (commercial contract) is documentation only and unmerged. Its cumulative-credit and
-  parent-job direction is the owner's intent; the runtime here uses only what the credits lane
-  implemented in source (`shared/managed-usage.ts`, `services/control-plane/src/funding.ts`).
+- **Owner-live proof** (Andrew's own project and ADC, Andrew pays): code ready on
+  `feature/vertex-owner-setup`; not run. Runbook: `docs/runbooks/vertex-owner-live.md`.
+- **Customer-managed inference** (a server-held company credential, customer credits): not ready.
+  The hosted execution boundary does not exist; see
+  `docs/implementation/2026-09-23-vertex-customer-backend-design.md`.
+- **Packaged release**: not built, not run.
+
+## Base and ancestry
+
+Checked 2026-09-23 after `git fetch`: `origin/main` = `1da6917` (PR #38 merged; contains `475fb11`).
+
+```
+origin/main 1da6917
+  └─ feature/nectovia-wave2 a34b66d   (LOCAL, integrator-owned; contains 74da363 credits lane,
+       │                               provider-setup cards and credits-usage UI; not on main)
+       └─ feature/vertex-owner-setup  (LOCAL, this lane; the candidate)
+            1613512  route            (cherry-pick of 9042bbd)
+            8973cd1  funded seam      (cherry-pick of bd76143)
+            bcd67f4  review fixes     (cherry-pick of 45b9cf8)
+            43d65fa  gross card, promotion/credits/raw usage apart, team carriage
+            790fa25  owner setup card (unmounted: AISetup.tsx is held; the integrator mounts it)
+            + runbook and design docs
+```
+
+- `feature/vertex-managed-inference` (`9042bbd`, `bd76143`, `45b9cf8` on `74da363`) is the
+  original lane and is superseded by the stack above. Do not land both.
+- Not in main: `74da363`, anything on wave2, and every commit above.
+- Dependency order for the integrator: wave2 (with its tier-routing, job-caps and thread-build
+  lanes), then this branch rebased onto it. `nectovia-usage/1` (`9a33c0d`, feature/nectovia-job-caps)
+  lands with wave2; this branch's `fundedUsage` conversion is replaced by it once rebased.
+- PR #37 (draft) and PR #35 (commercial contract, documentation) are open and not required by this
+  branch.
 
 ## What the route is
 
@@ -92,26 +116,45 @@ is replayed. Stop closes the HTTP read and does not claim Google stopped process
 - `ConnectedRoute.credential` (`check`/`open`) and `ConnectedRoute.exposure`: keyed routes use
   protected storage and the local ledger exactly as before.
 
-## Rate card
+## Rate card and the five cost figures
 
 Read 2026-09-23 from https://cloud.google.com/vertex-ai/generative-ai/pricing (Gemini 3.8 Flash,
 Global, Standard; ≤200K and >200K columns equal; non-global is 10% more and unused).
 
+Google's page shows $0.75 / $0.075 / $3.75 through 2026-12-31, but its footnote says the
+promotional pricing is "provided through 50% credits back on net spend". So the invoice line is
+at the standard rate, and the credit is applied afterwards on net spend. Net spend is after other
+credits, so the promotion is expected not to stack with Free Trial spend.
+
 | Card | Applies | Input | Cached input | Output (answer + thinking) |
 | --- | --- | --- | --- | --- |
-| `google-vertex:gemini-3.8-flash:global:standard:intro-2026.1` | 2026-09-23 to 2027-01-01T00:00Z | $0.75 | $0.075 | $3.75 per 1M |
-| `google-vertex:gemini-3.8-flash:global:standard:2027.1` | from 2027-01-01T00:00Z; evidence good until 2027-02-01 | $1.50 | $0.15 | $7.50 per 1M |
+| `google-vertex:gemini-3.8-flash:global:standard:gross-2026.1` | from 2026-09-23; evidence good until 2027-02-01 | $1.50 | $0.15 | $7.50 per 1M |
 
-- The introductory card ends at midnight UTC, 8 hours before Google's Pacific-time end, so the
-  last hours of 2026 are priced at the higher rate (overstates only).
-- A call prepared under a card no longer in force is refused; a date past `verifiedUntil` is
-  refused as stale evidence until someone re-reads Google's page. An expired promotional price is
-  never carried forward.
-- Usage mapping: input = `promptTokenCount` (+ `toolUsePromptTokenCount`), cache read =
-  `cachedContentTokenCount` (a subset of the prompt), cache write = 0 (implicit caching has no
-  write charge; no explicit cache is created; cache storage at $1/M token-hours therefore never
-  arises), output = `candidatesTokenCount + thoughtsTokenCount`, reasoning = `thoughtsTokenCount`.
-  A `totalTokenCount` that does not add up is refused, not repaired.
+- The card applies to every date: it is the conservative provider-cost bound. A date past
+  `verifiedUntil` is refused as stale evidence until someone re-reads Google's page.
+- `VERTEX_EXPECTED_PROMOTION` records the credit-back apart from the card: 50%, through
+  2026-12-31, status `expected-unconfirmed`, stacking `unknown`. It is displayed and never
+  subtracted from a hold, a settlement or a debit.
+- The owner view (`VertexConnectionView.accounting`) keeps five figures apart:
+  - the gross estimate (settled, standard rate) and the unresolved estimate (pending plus uncertain);
+  - the expected promotion;
+  - confirmed credits (only the Cloud Billing account knows);
+  - customer debit (0 on the owner route, where the owner's project pays);
+  - the invoice (Google's).
+- Usage is normalized once:
+  - input = `promptTokenCount` + `toolUsePromptTokenCount`;
+  - cache read = `cachedContentTokenCount`, a subset of input;
+  - cache write = 0;
+  - output = `candidatesTokenCount + thoughtsTokenCount`;
+  - reasoning = `thoughtsTokenCount`, a subset of output.
+
+  A `totalTokenCount` that does not add up is refused, not repaired. The raw `usageMetadata` is
+  kept beside the normalization (`ClassifiedEnvelope.rawUsage`, `RespondResult.rawUsage`).
+  `tests/vertex-usage-normalization.test.ts` proves cached input and reasoning are counted once
+  (960 micro-USD at the page's intro figures, 1,920 at the gross card, for 1,000 prompt / 800
+  cached / 150 candidates / 50 thoughts).
+- The ledger does not yet persist `rawUsage` on the hold. That arrives with `nectovia-usage/1`
+  (`NormalizedUsage.raw`) when this branch is rebased onto wave2.
 
 ## Managed credits (the customer route)
 
@@ -153,38 +196,34 @@ model" is a provider-policy statement for this route only; no default engine or 
 ## UI
 
 - Server: `GET/PUT/DELETE /api/ai/model-api/google-vertex`, `POST .../test` (offline; sends
-  nothing), `PUT .../spend-limit`, hold reconcile / write-off. `VertexConnectionView` shows project,
-  location, model, payer, credential source and whether it still matches, rate card and staleness,
-  last verified call, spend (settled/pending/uncertain/available) and the next action. Detection of
-  gcloud credentials grants nothing.
-- Not built here: the Settings card and the model-picker entry. Azure/OpenRouter setup cards and
-  picker entries live on `feature/nectovia-provider-setup`, which is not in this base; the Vertex
-  card belongs beside them. The Nectovia usage bar (`NectoviaUsage.tsx`) is being built,
-  uncommitted, in the credits lane; its projection (`UsageProjection`) already separates granted,
-  settled, pending, uncertain, available, top-up, reset time and observation time, which the
-  funding tests assert. No "External Agent Mode" / "functions limited" warning exists in this base
-  or in any committed or working-tree Nectovia lane (searched 2026-09-23). Whoever adds it must key
-  it to external engines only; `isConversationRoute`/`isModelApiRoute` already classify
-  `google-vertex` as a native model route.
+  nothing), `PUT .../spend-limit`, hold reconcile / write-off.
+- Client: `client/VertexSetup.tsx` (`GoogleVertexSetup`) plus the pure `client/vertex-setup-view.ts`.
+  The card shows:
+  - the ADC source and whether it still matches;
+  - the billed project, model and location;
+  - the price card and its staleness;
+  - the spend limit;
+  - the last answered call;
+  - each hold (with cached-input counts);
+  - the five cost figures;
+  - the next action.
+
+  It shows no secret and has no default-engine button: the tier map owns routing, and Focused
+  maps to `google-vertex`.
+- Deliverable level: **app-UI-supported once mounted.** `client/AISetup.tsx` is held by a
+  2026-09-21 claim (`claim_mub0roly_521e3a96`, SDKR-CONN-02.F01), so the routing integrator adds
+  the one-line mount when integrating. Until then the route is developer-configurable over the
+  HTTP API only.
 - `server/app.ts` is claimed by the security-hardening lane, so the route's record and transcripts
-  are attached in `mountProviderRoutes` when absent. The integrator can move that block into
-  `app.ts` beside Azure and OpenRouter.
+  are attached in `mountProviderRoutes` when absent.
 
-## Founder live proof (needs Andrew)
+## Owner live proof (needs Andrew)
 
-Not run: this machine has no `gcloud` and no ADC file. Steps, in order, each separately recorded:
-
-1. Install the Google Cloud CLI; `gcloud init`; `gcloud config set project <PROJECT_ID>`;
-   enable `aiplatform.googleapis.com`; confirm the project's billing account shows the Free Trial
-   credit. `gcloud auth application-default login`.
-2. In the desktop app: connect Google Vertex AI with `<PROJECT_ID>`, approve a small limit
-   (for example $1), switch it on.
-3. First request: `Reply with exactly DIOMEDES_VERTEX_OK.` Record HTTP status, `modelVersion`,
-   `x-goog-request-id`, usage and the settled hold.
-4. A native conversation over a synthetic project file (read_source round trip).
-5. One Work proposal through the existing writer and Trust approval.
-6. Next day: the project's Billing report for the Vertex AI SKU, and whether the Free Trial credit
-   was applied. A successful request is not evidence that credit paid for it.
+Not run. Follow `docs/runbooks/vertex-owner-live.md`, which covers:
+- project, billing, API, ADC and quota project, completed before connecting;
+- connection and the spend-limit approval;
+- the exact-response, streaming/Stop, synthetic file read and proposal steps;
+- the payer and usage check, including uncertain holds.
 
 ## Tests
 
@@ -217,11 +256,26 @@ Not run: this machine has no `gcloud` and no ADC file. Steps, in order, each sep
 - Base note: PR #38 (`475fb11`) merged into `main` while this work ran, so relative to `main` this
   branch now carries the credits lane's `74da363` plus its own commits.
 
-## AWS "Luna 6" (owner request, 2026-09-23): not changed
+## AWS GPT-6 Luna (owner correction, 2026-09-23): qualification pending
 
-The owner asked to move the AWS route's model from GPT-5.6 Luna to Luna 6. Amazon Bedrock's model
-cards (https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html, read 2026-09-23)
-list GPT-6 only as `gpt-6-astra` (`us.openai.gpt-6-astra`, `global.openai.gpt-6-astra`); there is
-no GPT-6 Luna card. `gpt-6-luna` exists on OpenAI's own API
-(https://developers.openai.com/api/docs/pricing). Switching the Bedrock model id would make every
-AWS call fail as model-not-found, so the AWS route still pins `us.openai.gpt-5.6-luna`.
+Correction: an earlier version of this record said Bedrock offers no GPT-6 Luna. That was wrong.
+AWS announced GPT-6 Sol and GPT-6 Luna generally available on Amazon Bedrock on 2026-09-22
+(https://aws.amazon.com/about-aws/whats-new/2026/09/openai-gpt-6-sol-luna-on-amazon-bedrock/).
+
+What was not yet published where it could be read on 2026-09-23:
+- Bedrock's model-card index lists GPT-6 Astra only. Its URL for a GPT-6 Luna card redirects to
+  the index.
+- The pricing page's GPT-6 Luna tab links to the docs only.
+- The public price-list files contain no frontier OpenAI SKUs.
+
+So the exact model id or inference profile, API (bedrock-runtime vs mantle), regions, usage
+schema and prices are unqualified.
+
+- The AWS route keeps `us.openai.gpt-5.6-luna`. No explicit pin is migrated and no payer changes.
+- `server/engines/aws-bedrock.ts` belongs to the routing lane, which sets the id once Andrew's
+  account confirms it. The lane's Efficient tier defaults to the existing Luna constant, and
+  Thorough (GPT-6 Sol) refuses until an owner-set id exists.
+- Owner qualification is read-only and costs nothing:
+  `aws bedrock list-foundation-models --by-provider openai --region us-east-1`,
+  `aws bedrock list-inference-profiles --region us-east-1` (and `us-west-2`), plus the
+  Bedrock console's model access page and price table. Send the output to the routing lane.
