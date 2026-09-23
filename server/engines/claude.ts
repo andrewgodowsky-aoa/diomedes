@@ -192,6 +192,11 @@ export function claudeToolCall(
     case 'Grep': {
       within(stringField(input, 'path'), true);
       const query = stringField(input, 'pattern');
+      // An absolute pattern names its own folder; judge the part before any wildcard.
+      if (name === 'Glob' && query && path.isAbsolute(query)) {
+        const wild = query.search(/[*?[{]/);
+        within(wild < 0 ? query : query.slice(0, wild) || query, false);
+      }
       return name === 'Glob'
         ? {
             kind: 'list',

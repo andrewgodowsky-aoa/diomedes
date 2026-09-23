@@ -189,6 +189,14 @@ describe('Claude Code read turns', () => {
       adapter.generate({ ...base, readScope: scopeFor(project) }),
     ).rejects.toMatchObject({ code: 'POLICY_MISMATCH' });
   });
+  it('stops an absolute glob pattern that names another folder', async () => {
+    const { adapter, project } = await fixture({
+      calls: [{ name: 'Glob', input: { pattern: path.join(os.homedir(), '**', '*.key') } }],
+    });
+    await expect(
+      adapter.generate({ ...base, readScope: scopeFor(project) }),
+    ).rejects.toMatchObject({ code: 'POLICY_MISMATCH' });
+  });
   it('stops a web call when the scope has no web access', async () => {
     const { adapter, project } = await fixture({
       tools: ['Read', 'Grep', 'Glob', 'LS'],
