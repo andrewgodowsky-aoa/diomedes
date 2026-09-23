@@ -239,7 +239,7 @@ export function ThreadView({
                 {t.role === 'you' ? (
                   paragraphs(t.text).map((p, j) => <p key={j}>{p}</p>)
                 ) : (
-                  <ReplyBody text={t.text} session={live ?? last} />
+                  <ReplyBody text={t.text} session={live} />
                 )}
               </div>
             </div>
@@ -468,7 +468,7 @@ export function ThreadView({
                 </div>
                 <div className="body">
                   {streaming.text ? (
-                    <ReplyBody text={streaming.text} streaming session={live ?? last} />
+                    <ReplyBody text={streaming.text} streaming session={live} />
                   ) : (
                     <p className="caption">{workingLine(streamWord)}</p>
                   )}
