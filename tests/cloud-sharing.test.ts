@@ -132,5 +132,15 @@ test('cloud sharing API persists an optimistic, project-scoped policy', async ()
   expect((await post(url, {
     expectedVersion: 0, routes: [], documents: [], shareConversationHistory: false, shareReviewPackets: false,
   }, 'PUT')).status).toBe(409);
+  const concurrent = await Promise.all([
+    post(url, {
+      expectedVersion: 1, routes: [], documents: [], shareConversationHistory: false, shareReviewPackets: false,
+    }, 'PUT'),
+    post(url, {
+      expectedVersion: 1, routes: ['codex'], documents: [], shareConversationHistory: true, shareReviewPackets: false,
+    }, 'PUT'),
+  ]);
+  expect(concurrent.map((response) => response.status).sort()).toEqual([200, 409]);
+  expect((await (await fetch(`${base}${url}`, { headers })).json() as { version: number }).version).toBe(2);
   expect(await (await fetch(`${base}/projects/${two.id}/cloud-sharing`, { headers })).json()).toMatchObject({ version: 0, routes: [] });
 });

@@ -1468,17 +1468,18 @@ export async function createApp(options: AppOptions) {
   );
   app.put(
     '/api/projects/:id/cloud-sharing',
-    route(async (req) => {
-      const state = store.state(id(req));
+    route(async (req) => store.locked(async () => {
+      const projectId = id(req);
+      const state = store.state(projectId);
       const candidate = structuredClone(state);
       const policy = changeCloudSharing(candidate, body(req));
-      const available = new Set((await store.listDocuments(id(req))).map((doc) => doc.path));
+      const available = new Set((await store.listDocuments(projectId)).map((doc) => doc.path));
       if (policy.documents.some((name) => !available.has(name)))
         throw new ApiError(400, 'Choose documents currently listed in this project.');
       state.cloudSharing = policy;
       await store.persist(state);
       return policy;
-    }),
+    })),
   );
   /**
    * What an engine can be asked to run. Read from the engine's own list on this
