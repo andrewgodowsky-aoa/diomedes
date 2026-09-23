@@ -51,10 +51,12 @@ import type { ReadScope } from './read-scope.js';
 
 /**
  * Cursor's own permission file for a turn. Text-only: every tool denied. A read
- * scope allows reads (relative to the workspace, which is then the project
- * folder) and, with web access, web search and fetch; shell, writes and MCP stay
- * denied. A project's own Cursor file could add allow rules; whatever Cursor
- * then permits, the adapter stops any call whose ACP kind is not a read.
+ * scope allows, with web access, web search and fetch, and nothing else: file
+ * reads are denied (security pass 2026-09-23), because an allowed Cursor read runs
+ * without asking Diomedes first and `Read(**)` was never shown to stop at the
+ * project folder. The documents the person chose travel inline instead, the
+ * workspace is an empty private folder, and a whole-project turn is refused on
+ * this route. Whatever Cursor then permits, the adapter stops any file read.
  */
 export function cursorPermissions(scope?: ReadScope) {
   return {
@@ -64,9 +66,10 @@ export function cursorPermissions(scope?: ReadScope) {
     autoAcceptWebSearch: Boolean(scope?.web),
     permissions: scope
       ? {
-          allow: ['Read(**)', ...(scope.web ? ['WebFetch(*)', 'WebSearch(*)'] : [])],
+          allow: [...(scope.web ? ['WebFetch(*)', 'WebSearch(*)'] : [])],
           deny: [
             'Shell(*)',
+            'Read(**)',
             'Write(**)',
             'Mcp(*:*)',
             ...(scope.web ? [] : ['WebFetch(*)', 'WebSearch(*)']),
@@ -275,12 +278,12 @@ export class CursorAdapter implements TextEngineAdapter {
         rootParent: this.cwd,
         rootPrefix: '.diomedes-cursor-',
         prepare: async (root) => {
-          // The configuration stays in the private root; a read turn's workspace
-          // is the project folder itself, and nothing is written into it.
+          // The configuration and the workspace both stay in the private root: no
+          // turn has a file tool, so none needs to sit in the project folder.
           const config = path.join(root, 'config'),
-            workspace = read ? read.scope.root : path.join(root, 'workspace');
+            workspace = path.join(root, 'workspace');
           await fs.mkdir(config);
-          if (!read) await fs.mkdir(workspace);
+          await fs.mkdir(workspace);
           await fs.writeFile(
             path.join(config, 'cli-config.json'),
             JSON.stringify(cursorPermissions(read?.scope)),
@@ -369,6 +372,13 @@ export class CursorAdapter implements TextEngineAdapter {
         'Select the native Cursor account route before sending.',
         false,
         'provider-auth',
+      );
+    if (input.readScope?.access === 'project')
+      throw new EngineError(
+        'POLICY_MISMATCH',
+        'Cursor cannot read the whole project folder, because its reads cannot be checked before they run. Choose the documents to include instead.',
+        false,
+        'dispatch',
       );
     if (!explicitModel(input.model))
       throw new EngineError(

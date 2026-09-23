@@ -16,6 +16,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Json } from '../shared/harness';
 import type { ApprovedMcpServer, ReadScope } from '../server/engines/read-scope';
+import { closeReadGrant, openReadGrant } from '../server/engines/turn-scope';
 import {
   checkPageUrl,
   fetchPage,
@@ -69,7 +70,20 @@ async function run(tools: ReturnType<typeof readScopeTools>, name: string, input
   } as never)) as Record<string, Json>;
 }
 
-const scope = (extra: Partial<ReadScope> = {}): ReadScope => ({ root, web: false, ...extra });
+/**
+ * A whole-project turn with a live host grant, sharing every ordinary file with the route.
+ * (No model-API route takes a whole-project read today; the tools are checked as if one did.)
+ */
+const SHARED = ['notes/menu.md', 'orders.csv', 'logo.png', 'long.txt'];
+const scope = (extra: Partial<ReadScope> = {}): ReadScope => ({
+  root,
+  web: false,
+  access: 'project',
+  files: [],
+  shared: SHARED,
+  grant: openReadGrant('project-1'),
+  ...extra,
+});
 
 describe('project-folder tools', () => {
   test('list, read and search answer from inside the project; private and binary files are not shown or read', async () => {
@@ -156,6 +170,36 @@ describe('project-folder tools', () => {
     const note = readToolsNote(scope({ web: true }));
     expect(note).toContain('Web search is not available');
     expect(note).not.toContain(root);
+  });
+
+  test('a selected-documents turn gets no file tools: its documents are already attached', () => {
+    const selected = scope({ access: 'selected', web: true });
+    expect(readScopeTools(selected, { stop: new AbortController().signal }).names).toEqual(['fetch_page']);
+    expect(readScopeRecord(selected)).toMatchObject({ files: false });
+    expect(readToolsNote(selected)).toContain('Only the documents chosen for this message can be read');
+    expect(readToolsNote(selected)).not.toContain('list_files');
+  });
+
+  test('only files the project shares with the route are read or searched, and only under a live grant', async () => {
+    await fs.writeFile(path.join(root, 'payroll.txt'), 'Tomato vendor paid 400\n');
+    const tools = readScopeTools(scope(), { stop: new AbortController().signal });
+    // Listing names is allowed; the unshared file's content is not.
+    const listed = await run(tools, 'list_files', {});
+    expect((listed.entries as { path: string }[]).map((entry) => entry.path)).toContain('payroll.txt');
+    expect(await run(tools, 'read_file', { path: 'payroll.txt' })).toMatchObject({
+      refused: true,
+      message: 'That was not read: this project does not share that file with this route.',
+    });
+    const found = await run(tools, 'search_files', { query: 'tomato' });
+    expect(found.matches).toEqual([{ path: 'notes/menu.md', line: 3, text: 'Tomato soup today.' }]);
+
+    // The turn ended or the project's consent changed: its grant is gone and nothing more is read.
+    const ended = scope();
+    const late = readScopeTools(ended, { stop: new AbortController().signal });
+    closeReadGrant(ended.grant);
+    expect(await run(late, 'read_file', { path: 'orders.csv' })).toMatchObject({ refused: true });
+    expect(await run(late, 'list_files', {})).toMatchObject({ refused: true });
+    expect(await run(late, 'search_files', { query: 'soup' })).toMatchObject({ refused: true });
   });
 
   test('each call reads as one plain sentence, started and finished', () => {

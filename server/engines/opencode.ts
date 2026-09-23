@@ -28,10 +28,9 @@ import { SseLimitError, SseParser, type SseEvent } from './sse.js';
 import { killOwnedProcess } from '../integrations.js';
 import {
   approvedMcpTool,
-  displayPath,
   emitActivity,
-  insideRoot,
   isWebUrl,
+  readAccessOf,
   readDetail,
   readScopeNote,
   readSummary,
@@ -104,10 +103,14 @@ export const OPENCODE_WEB_TOOLS = ['webfetch', 'websearch'] as const;
 export const OPENCODE_READ_STEPS = 16;
 /** OpenCode names an MCP tool `<server>_<tool>`. */
 const mcpToolName = (server: string, tool: string) => `${server}_${tool}`;
-/** Every tool a scope allows, in OpenCode's vocabulary. */
+/**
+ * Every tool a scope allows, in OpenCode's vocabulary: web and the approved MCP read tools.
+ * No file tool (security pass 2026-09-23): OpenCode's read permission is not checked by
+ * Diomedes before a read runs, so the documents the person chose travel inline instead,
+ * and a whole-project turn is refused on this route.
+ */
 export function opencodeAllowedTools(scope: ReadScope): string[] {
   return [
-    ...OPENCODE_READ_TOOLS,
     ...(scope.web ? OPENCODE_WEB_TOOLS : []),
     ...(scope.mcp ?? []).flatMap((server) =>
       server.readTools.map((tool) => mcpToolName(server.name, tool)),
@@ -116,10 +119,10 @@ export function opencodeAllowedTools(scope: ReadScope): string[] {
 }
 /**
  * The whole configuration, passed inline. Without a scope it is the text-only
- * route: every tool off and denied, one step. With one, the read tools (and the
- * owner's approved MCP read tools) are the only ones on and allowed; edit, bash,
- * task and everything else stay off and denied, reads outside the project
- * folder are denied, and a turn may take a bounded number of steps.
+ * route: every tool off and denied, one step. With one, the web tools and the
+ * owner's approved MCP read tools are the only ones on and allowed; file reads,
+ * edit, bash, task and everything else stay off and denied, and a turn may take
+ * a bounded number of steps.
  */
 export function configContent(scope?: ReadScope): string {
   const allowed = scope ? opencodeAllowedTools(scope) : [];
@@ -173,8 +176,8 @@ const stringField = (value: Json, ...keys: string[]) => {
 };
 /**
  * One OpenCode tool part against a read scope: the activity to show, or a
- * refusal. A tool outside the allow-list, a path outside the project folder, a
- * web call without web access or an unapproved MCP tool stops the request.
+ * refusal. A file tool, a tool outside the allow-list, a web call without web
+ * access or an unapproved MCP tool stops the request.
  */
 export function opencodeToolCall(
   scope: ReadScope,
@@ -189,27 +192,10 @@ export function opencodeToolCall(
       true,
       'stream',
     );
-  const where = stringField(input, 'filePath', 'path');
-  if (where !== undefined && ['read', 'glob', 'grep', 'list'].includes(tool) && !insideRoot(scope.root, where))
-    throw refuse();
+  // No read turn is given a file tool; one reported anyway is beyond the boundary.
+  if ((OPENCODE_READ_TOOLS as readonly string[]).includes(tool)) throw refuse();
   const detail = readDetail(input);
-  const shown = where ? displayPath(scope.root, where) : undefined;
   switch (tool) {
-    case 'read':
-      if (!where) throw refuse();
-      return { kind: 'read', summary: readSummary('read', { path: shown }), detail };
-    case 'list':
-      return { kind: 'list', summary: readSummary('list', { path: shown }), detail };
-    case 'glob': {
-      const pattern = stringField(input, 'pattern');
-      return {
-        kind: 'list',
-        summary: pattern ? `Finding files matching ${pattern}` : readSummary('list', { path: shown }),
-        detail,
-      };
-    }
-    case 'grep':
-      return { kind: 'search', summary: readSummary('search', { query: stringField(input, 'pattern') }), detail };
     case 'websearch':
       if (!scope.web) throw refuse();
       return { kind: 'web-search', summary: readSummary('web-search', { query: stringField(input, 'query') }), detail };
@@ -641,9 +627,9 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     });
     const base = `http://127.0.0.1:${port}`;
     const auth = `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}`;
-    // The instance directory: the project folder for a read turn, where
-    // `external_directory: deny` keeps its reads; the engine's own otherwise.
-    const directory = scope ? scope.root : this.cwd;
+    // The engine's own folder for every turn: no turn has a file tool, and a project's
+    // own OpenCode configuration must never be loaded into a Diomedes turn.
+    const directory = this.cwd;
     const ready = deadline(signal, this.startupTimeout);
     try {
       for (;;) {
@@ -818,6 +804,13 @@ export class OpenCodeAdapter implements TextEngineAdapter {
     const selection = parseSelection(input.model);
     const prompt = contextMessage(input);
     const scope = input.readScope;
+    if (scope && readAccessOf(scope) === 'project')
+      throw new EngineError(
+        'POLICY_MISMATCH',
+        'OpenCode cannot read the whole project folder, because its reads cannot be checked before they run. Choose the documents to include instead.',
+        false,
+        'dispatch',
+      );
     const server = await this.start(input.signal, scope);
     const control = deadline(input.signal, this.requestTimeout);
     const calls = new Map<string, { tool: string; started: boolean }>();

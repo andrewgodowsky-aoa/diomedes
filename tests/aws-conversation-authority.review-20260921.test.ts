@@ -268,6 +268,11 @@ beforeEach(async () => {
   thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
   const folder = store().state(project.id).project.folder;
   for (const doc of Object.values(DOCS)) await fs.writeFile(path.join(folder, doc.path), doc.text, 'utf8');
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0, routes: ['aws-bedrock'],
+    documents: Object.values(DOCS).map((doc) => doc.path),
+    shareConversationHistory: true, shareReviewPackets: false,
+  });
   // The thread runs on AWS, chosen through the same thread route the Console's picker saves.
   // Work started from this conversation follows the thread's route.
   const chosen = await api<Conversation>(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { engine: 'aws-bedrock' });

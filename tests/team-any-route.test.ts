@@ -42,6 +42,7 @@ import {
   type TeamRouteCandidate,
 } from '../shared/team-routes';
 import { chatEvents, sseResponse } from './fixtures/model-api-streams.js';
+import { ROUTES } from '../shared/engines';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const model = (slug: string, name = slug): EngineModel => ({
@@ -380,6 +381,15 @@ async function open(options: { generator?: NativeGenerator } = {}) {
   });
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   projectId = (await request('/projects', 'POST', { name: 'Lunch service' })).data.id;
+  // Default-deny cloud sharing: this synthetic project grants every cloud route its files
+  // and history, so the behaviour under test is reached.
+  await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0,
+    routes: ROUTES.filter((route) => route !== 'sample'),
+    documents: [],
+    shareConversationHistory: true,
+    shareReviewPackets: true,
+  });
 }
 afterEach(async () => {
   if (!server) return;

@@ -48,7 +48,11 @@ export const TEAM_TOOLS: readonly TeamToolDefinition[] = [
     description: 'List the team roster without tokens.',
     shape: {},
     effect: 'read',
-    run: async ({ service, projectId }) => ({ members: service.teamState(projectId).members }),
+    run: async ({ service, projectId, member }) => {
+      // A stopped helper reads nothing more from the team (security hardening, ce3cfba).
+      service.requireActive(projectId, member.slotId);
+      return { members: service.teamState(projectId).members };
+    },
   },
   {
     name: 'team_send_message',

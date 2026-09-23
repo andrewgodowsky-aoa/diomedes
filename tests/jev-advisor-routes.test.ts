@@ -107,6 +107,18 @@ async function efficientThread() {
   const thread = await request(`/projects/${projectId}/threads`, 'POST', { name: 'Preflight' });
   const threadId = thread.data.id as string;
   await request(`/projects/${projectId}/threads/${threadId}`, 'PUT', { workStyle: 'efficient', engine: 'codex' });
+  // Default-deny cloud sharing: the dispatch test sends a typed message on the codex route.
+  expect(
+    (
+      await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0,
+        routes: ['codex'],
+        documents: [],
+        shareConversationHistory: false,
+        shareReviewPackets: false,
+      })
+    ).status,
+  ).toBe(200);
   return { projectId, threadId };
 }
 

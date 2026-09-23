@@ -314,6 +314,12 @@ describe('the ask route', () => {
     expect((await api(`/ai/check/${engine}`, 'POST', {})).status).toBe(200);
     expect((await api('/ai/select', 'POST', { engine, model: 'sonnet' })).status).toBe(200);
     const created = (await api('/projects', 'POST', { name: 'Cafe' })).data;
+    // Cloud sharing is default-deny: this synthetic project shares typed messages with Claude
+    // Code and no document, which is all these requests send.
+    expect((await api(`/projects/${created.id}/cloud-sharing`, 'PUT', {
+      expectedVersion: 0, routes: ['claude-code'], documents: [],
+      shareConversationHistory: false, shareReviewPackets: false,
+    })).status).toBe(200);
     const thread = (await api(`/projects/${created.id}/threads`, 'POST', {})).data;
     return { api, generate, projectId: created.id as string, threadId: thread.id as string };
   }

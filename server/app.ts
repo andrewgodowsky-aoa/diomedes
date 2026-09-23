@@ -23,6 +23,7 @@ import { directOrigin, applicationOrigin } from '../shared/attribution.js';
 import express, { type ErrorRequestHandler, type Request, type Response } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import type {
   Conversation,
@@ -134,11 +135,17 @@ import {
   routeDisplayName,
   type EngineConnection,
 } from '../shared/engines.js';
-import { EngineService } from './engines/service.js';
+import { EngineService, HOST_TEST_PROJECT } from './engines/service.js';
 import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
 import { mountJevAdvisorRoutes } from './jev-advisor-routes.js';
 import type { JevAdvisor } from './harness/jev-advisor.js';
 import { loadApprovedReadServers, type ReadScope } from './engines/read-scope.js';
+import {
+  buildTurnReadScope,
+  closeReadGrant,
+  parseReadAccess,
+  revokeProjectReadGrants,
+} from './engines/turn-scope.js';
 import { mountInteractionRoutes } from './engines/interaction-routes.js';
 import {
   InteractionTurns,
@@ -184,10 +191,13 @@ import { projectedTurnIds, turnIdentityText } from '../shared/conversation-turn-
 import { AppUpdateService, mountAppUpdateRoutes, type UpdateTransport } from './app-updates.js';
 import { EngineInstaller } from './engines/install.js';
 import { NativeLogin } from './engines/login.js';
+import { changeCloudSharing, cloudSharing, requireCloudSharing } from './cloud-sharing.js';
 import { assembleSkillSection, instructionSectionBudget } from './harness/instruction-delivery.js';
 
 interface AppOptions {
   dataDir: string;
+  /** Fresh per-launch secret held by the desktop main process, never persisted. */
+  loopbackToken?: string;
   projectRoot?: string;
   stepMs?: number;
   port?: number;
@@ -578,7 +588,9 @@ function validateSettings(current: Settings, body: unknown): Settings {
 }
 
 export async function createApp(options: AppOptions) {
-  const store = new Store(path.resolve(options.dataDir), options.projectRoot);
+  if (options.loopbackToken !== undefined && !/^[0-9a-f]{64}$/.test(options.loopbackToken))
+    throw new Error('The desktop local-service token is invalid.');
+  const store = new Store(path.resolve(options.dataDir), options.projectRoot, options.secretBox ?? null);
   await store.init();
   // Automatic Change Review: deterministic per-run evidence. Constructed before
   // the work services so every run can capture its baseline from the start.
@@ -734,6 +746,14 @@ export async function createApp(options: AppOptions) {
     store,
     options.nativeGenerator ??
       (async ({ team, onTeamToolCall, ...input }) => {
+        // A request that names no project or route has no sharing scope to check, so it is
+        // refused rather than sent unchecked.
+        if (!input.projectId || !input.engine)
+          throw new ApiError(403, 'This cloud request has no valid project sharing scope.');
+        requireCloudSharing(store.state(input.projectId), input.engine, [
+          ...input.documents.map((doc) => doc.path),
+          ...(input.sharingPaths ?? []),
+        ]);
         if (isModelApiRoute(input.engine)) {
           if (!input.projectId || !input.threadId || !input.requestId || !input.model)
             throw new ApiError(409, 'Select a model and thread before requesting work.');
@@ -810,7 +830,26 @@ export async function createApp(options: AppOptions) {
   });
   // External text turns run through the host's RunService: the adapter is only
   // the provider transport inside the fenced dispatch step.
-  engines.dispatch = harness.textRoute.request;
+  engines.dispatch = (request) => {
+    const intent = request.intent as { projectId?: unknown; engine?: unknown; documents?: unknown };
+    if (intent.projectId !== HOST_TEST_PROJECT) {
+      if (
+        typeof intent.projectId !== 'string' || !isRoute(intent.engine) ||
+        !Array.isArray(intent.documents) ||
+        !intent.documents.every((doc) => doc && typeof doc === 'object' && typeof doc.path === 'string')
+      ) throw new ApiError(403, 'This cloud request has no valid project sharing scope.');
+      const names = intent.documents.map((doc: { path: string }) => doc.path);
+      requireCloudSharing(store.state(intent.projectId), intent.engine, names);
+      return harness.textRoute.request({
+        ...request,
+        send: (context, admission) => {
+          requireCloudSharing(store.state(intent.projectId as string), intent.engine as Route, names);
+          return request.send(context, admission);
+        },
+      });
+    }
+    return harness.textRoute.request(request);
+  };
   engines.nativeSessions = harness.claudeSessions;
   engines.modelSessions = harness.modelSessions;
   const exposure = new SpendExposure(store.dataDir);
@@ -900,17 +939,32 @@ export async function createApp(options: AppOptions) {
   };
   const port = options.port ?? Number(process.env.DIOMEDES_PORT ?? 47631),
     clientPort = options.clientPort ?? Number(process.env.DIOMEDES_CLIENT_PORT ?? 5173);
+  const loopbackToken = options.loopbackToken
+    ? Buffer.from(options.loopbackToken, 'hex')
+    : null;
   const origins = new Set([`http://127.0.0.1:${port}`, `http://127.0.0.1:${clientPort}`]);
   app.disable('x-powered-by');
   app.use((req, res, next) => {
     if (req.socket.localPort) listeningPort = req.socket.localPort;
-    if (req.path.startsWith('/mcp/team/')) return next();
+    const teamRequest = req.path.startsWith('/mcp/team/');
     const origin = req.headers.origin;
     const host = req.headers.host;
     if (!host || !/^127\.0\.0\.1:\d+$/.test(host))
       return next(new ApiError(403, 'This service accepts connections on 127.0.0.1 only.'));
     if (origin && !origins.has(origin))
       return next(new ApiError(403, 'This page cannot access the local service.'));
+    // Team helpers use their own scoped bearer token, but must still obey the
+    // same loopback Host and browser-Origin boundary as the desktop UI.
+    if (teamRequest) return next();
+    if (loopbackToken) {
+      const supplied = req.headers['x-diomedes-session'];
+      if (
+        typeof supplied !== 'string' ||
+        !/^[0-9a-f]{64}$/.test(supplied) ||
+        !timingSafeEqual(Buffer.from(supplied, 'hex'), loopbackToken)
+      )
+        return next(new ApiError(401, 'This local-service session is not authorized.'));
+    }
     res.setHeader('Vary', 'Origin');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -1603,6 +1657,24 @@ export async function createApp(options: AppOptions) {
     '/api/projects/:id/state',
     route(async (req) => store.projectState(id(req))),
   );
+  app.get(
+    '/api/projects/:id/cloud-sharing',
+    route(async (req) => cloudSharing(store.state(id(req)))),
+  );
+  app.put(
+    '/api/projects/:id/cloud-sharing',
+    route(async (req) => {
+      const projectId = id(req);
+      const state = store.state(projectId);
+      const candidate = structuredClone(state);
+      const policy = changeCloudSharing(candidate, body(req));
+      state.cloudSharing = policy;
+      await store.persist(state);
+      // A turn admitted under the old sharing, even one still queued, reads nothing more.
+      revokeProjectReadGrants(projectId);
+      return policy;
+    }),
+  );
   /**
    * What an engine can be asked to run. Read from the engine's own list on this
    * computer, so the choices follow the account rather than a Diomedes release.
@@ -2125,6 +2197,7 @@ export async function createApp(options: AppOptions) {
           400,
           'Provide the explicitly selected source documents, or an empty list to propose new files.',
         );
+      requireCloudSharing(state, selectedRoute, b.sources.map(relativeName));
     }
     // Recheck the current local scope and service consent before returning a cached
     // receipt. Replay never scans source files or dispatches another adapter call.
@@ -2783,20 +2856,39 @@ export async function createApp(options: AppOptions) {
     };
   };
   /**
-   * The read-only tools an Ask or Plan turn gets (owner decision 2026-09-23):
-   * the project folder through the path trust funnel, web search, and the MCP
-   * read tools the owner approved in `<data>/read-connectors.json`. Only the
-   * host builds it, from its own project record; a missing folder means text.
+   * The read-only tools one Ask or Plan turn gets, bound to that turn and its route
+   * (`server/engines/turn-scope.ts`): web search, the MCP read tools the owner approved in
+   * `<data>/read-connectors.json`, and from the project only what this message may read. By
+   * default that is the documents the person chose, already sent inline; the whole folder only
+   * when the person asked for it on this message, on a route whose reads are answered before
+   * they run, and then only the files Cloud sharing lets that route receive. Only the host
+   * builds it, from its own project record; a missing folder means text.
    */
   const readScopeFor = async (
     projectId: string,
     mode: string,
+    turn: { route: Route; access?: unknown; documents: readonly { path: string }[] },
   ): Promise<{ readScope?: ReadScope }> => {
-    if (mode !== 'ask' && mode !== 'plan') return {};
-    // A folder the path funnel refuses, or one that is gone, leaves the turn text-only.
-    const root = await safeAbsolute(store.state(projectId).project.folder).catch(() => null);
-    if (!root || !(await fs.stat(root).then((entry) => entry.isDirectory(), () => false)))
+    const access = parseReadAccess(turn.access);
+    if (mode !== 'ask' && mode !== 'plan') {
+      if (access === 'project')
+        throw new ApiError(400, 'Only Ask and Plan can look through the project folder.');
       return {};
+    }
+    const state = store.state(projectId);
+    if (access === 'project' && !(cloudSharing(state).routes as string[]).includes(turn.route))
+      // Listing the folder shows every file name to the route, so it needs the route's grant
+      // even where a typed message alone does not (Home).
+      throw new ApiError(403, 'Cloud sharing for this route is off in this project.', {
+        code: 'cloud_sharing_denied',
+      });
+    // A folder the path funnel refuses, or one that is gone, leaves the turn text-only.
+    const root = await safeAbsolute(state.project.folder).catch(() => null);
+    if (!root || !(await fs.stat(root).then((entry) => entry.isDirectory(), () => false))) {
+      if (access === 'project')
+        throw new ApiError(409, 'This project folder is not available. Choose the documents to include instead.');
+      return {};
+    }
     let mcp: ReadScope['mcp'];
     try {
       mcp = loadApprovedReadServers(path.join(store.dataDir, 'read-connectors.json'));
@@ -2806,7 +2898,28 @@ export async function createApp(options: AppOptions) {
         'The approved read connectors file (read-connectors.json) is malformed. Fix or remove it, then send again.',
       );
     }
-    return { readScope: { root, web: true, mcp } };
+    const policy = cloudSharing(state);
+    const readScope = await buildTurnReadScope({
+      projectId,
+      mode,
+      root,
+      route: turn.route,
+      access,
+      documents: turn.documents,
+      web: true,
+      mcp,
+      shared: (policy.routes as string[]).includes(turn.route) ? policy.documents : [],
+    });
+    return readScope ? { readScope } : {};
+  };
+  /** A route with no read scope: a whole-project read asked of it is refused, not dropped. */
+  const refuseWholeProjectRead = (access: unknown): Record<string, never> => {
+    if (parseReadAccess(access) === 'project')
+      throw new ApiError(
+        409,
+        'Reading the whole project folder is not available on this route. Choose the documents to include instead.',
+      );
+    return {};
   };
   const nativeChoice = (
     engine: Exclude<Route, 'sample'>,
@@ -2991,6 +3104,12 @@ export async function createApp(options: AppOptions) {
         });
         if (!selection.model || typeof accountRoute !== 'string')
           throw new ApiError(409, 'Select the Claude account and model in Settings first.');
+        requireCloudSharing(
+          state,
+          'claude-code',
+          command.sources.map((source) => source.path),
+          !!req.params.runId,
+        );
         const paths = new Set<string>();
         const documents = [];
         for (const source of command.sources) {
@@ -3017,7 +3136,11 @@ export async function createApp(options: AppOptions) {
           instructions: MODES[command.mode].instructions,
           model: selection.model,
           accountRoute,
-          ...(await readScopeFor(projectId, command.mode)),
+          ...(await readScopeFor(projectId, command.mode, {
+            route: 'claude-code',
+            access: command.readAccess,
+            documents,
+          })),
         };
       });
       const runId =
@@ -3348,6 +3471,9 @@ export async function createApp(options: AppOptions) {
             : { model: store.settings.services?.[`${conversationRoute}Model`] });
         if (typeof selection.model !== 'string' || !selection.model || typeof accountRoute !== 'string')
           throw new ApiError(409, `Connect ${routeName} and choose its model in AI setup first.`);
+        requireCloudSharing(state, conversationRoute, command.sources.map((source) => source.path), false, {
+          home: store.isHomeProject(projectId),
+        });
         const paths = new Set<string>();
         const documents = [];
         for (const source of command.sources) {
@@ -3439,6 +3565,10 @@ export async function createApp(options: AppOptions) {
             : known.nativeSession
               ? ('resume' as const)
               : ('start' as const);
+        if (conversationRoute === 'claude-code' && action !== 'start')
+          requireCloudSharing(state, conversationRoute, command.sources.map((source) => source.path), true, {
+            home: store.isHomeProject(projectId),
+          });
         // One resolved identity: progress, execution and projection all name the run that ran.
         const progress = (kind: 'started' | 'delta' | 'ended', frame?: TransientPreview) =>
           store.emit('engine-text', {
@@ -3484,10 +3614,16 @@ export async function createApp(options: AppOptions) {
             model: selection.model as string,
             ...(modelRoute && selection.effort ? { effort: selection.effort } : {}),
             accountRoute,
-            // Ask and Plan get the read-only tools on every conversation route; on a model-API
-            // route the host runs them itself (server/harness/capabilities/read-scope-tools.ts).
-            // Automatic, Build and Fix get none: `readScopeFor` answers only for Ask and Plan.
-            ...(await readScopeFor(projectId, command.mode)),
+            // Ask and Plan get the read-only tools on every conversation route, bound to this
+            // message's chosen documents. On a model-API route the host runs them itself
+            // (server/harness/capabilities/read-scope-tools.ts) and a whole-project read is
+            // refused. Automatic, Build and Fix get none: `readScopeFor` answers only for Ask and Plan.
+            ...(modelRoute ? refuseWholeProjectRead(command.readAccess) : {}),
+            ...(await readScopeFor(projectId, command.mode, {
+              route: modelRoute ? conversationRoute : 'claude-code',
+              access: command.readAccess,
+              documents,
+            })),
             signal: options.signal,
             onPreview: (frame: TransientPreview) =>
               progress('delta', { ...frame, text: gate(frame.text) }),
@@ -3767,6 +3903,7 @@ export async function createApp(options: AppOptions) {
     const engine = input.engine ?? 'codex';
     const run = async () => {
       const state = store.state(projectId);
+      requireCloudSharing(state, engine, sources, wake === true);
       if (
         state.sessions.some((session) => ['queued', 'working', 'waiting'].includes(session.state))
       )
@@ -3937,6 +4074,13 @@ export async function createApp(options: AppOptions) {
           'Automatic is a conversation mode. Direct execution does not accept it.',
         );
       const mode = parsedMode;
+      // What this message may read from the project, bound to it alone. Parsed before consent is
+      // asked for or anything is read; only Ask and Plan take a whole-project read.
+      const readAccess = parseReadAccess(b.readAccess);
+      if (readAccess === 'project' && mode !== 'ask' && mode !== 'plan')
+        throw new ApiError(400, 'Only Ask and Plan can look through the project folder.');
+      if (readAccess === 'project' && serviceRoute === 'sample')
+        throw new ApiError(409, 'The sample route reads nothing from the project folder.');
       // Build and Fix run on every connected route, the model-API routes included (owner
       // decision 2026-09-23, reversing CD-01 Decision 5's refusal of them on a thread). They
       // take the one guarded proposal path below. Ask and Plan on a model-API route still
@@ -4006,6 +4150,7 @@ export async function createApp(options: AppOptions) {
       sources = [...new Set(sources)];
       if (sources.length > 8)
         throw new ApiError(400, 'Select no more than eight source documents.');
+      requireCloudSharing(store.state(projectId), serviceRoute, sources);
       // Fix binds to one failing thing: a selected document and/or pasted text.
       let failing: { document?: string; text?: string } | undefined;
       if (mode === 'fix') {
@@ -4048,6 +4193,7 @@ export async function createApp(options: AppOptions) {
         });
       const prepared = await store.locked(async () => {
         const state = store.state(projectId);
+        requireCloudSharing(state, serviceRoute, sources);
         let conversation =
           threadId !== undefined
             ? state.conversations.find((c) => c.id === threadId)!
@@ -4174,8 +4320,16 @@ export async function createApp(options: AppOptions) {
         // The signal exists before Stop is shown, so a Stop during the read-scope lookup still lands.
         const signal = connectionSignal(res);
         progress('started');
+        // The turn's read grant ends with the turn.
+        let grant: string | undefined;
         try {
-          const readScope = await readScopeFor(projectId, mode);
+          requireCloudSharing(store.state(projectId), serviceRoute, prepared.documents.map((doc) => doc.path));
+          const readScope = await readScopeFor(projectId, mode, {
+            route: serviceRoute,
+            access: readAccess,
+            documents: prepared.documents,
+          });
+          grant = readScope.readScope?.grant;
           const result = await engines.generate(serviceRoute, {
             projectId,
             threadId: prepared.conversationId,
@@ -4198,6 +4352,7 @@ export async function createApp(options: AppOptions) {
             verified: true,
           };
         } finally {
+          closeReadGrant(grant);
           progress('ended');
         }
       } else if (serviceRoute === 'codex') {
@@ -4240,6 +4395,7 @@ export async function createApp(options: AppOptions) {
         });
         progress('started');
         try {
+          requireCloudSharing(store.state(projectId), serviceRoute, prepared.documents.map((doc) => doc.path));
           const result = await askCodex({
             prompt: text,
             documents: prepared.documents,
@@ -4251,7 +4407,11 @@ export async function createApp(options: AppOptions) {
             // Stop closes the request, and this ends the ChatGPT turn with it.
             signal,
             onDelta,
-            ...(await readScopeFor(projectId, mode)),
+            ...(await readScopeFor(projectId, mode, {
+              route: 'codex',
+              access: readAccess,
+              documents: prepared.documents,
+            })),
           });
           answer = result.text;
           helper = codexHelper(result);

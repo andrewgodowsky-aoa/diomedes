@@ -22,6 +22,7 @@ import type { TextRequest } from '../server/engines/contract';
 import type { ToolActivity } from '../shared/adapter-contract';
 import type { ModelApiReadiness, VertexConnectionView } from '../shared/model-api';
 import type { Project } from '../shared/types';
+import { ROUTES } from '../shared/engines';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const TOKEN = 'ya29.test-only-vertex-token-never-real';
@@ -128,6 +129,15 @@ beforeEach(async () => {
   });
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   project = await api<Project>('/projects', 'POST', { name: 'Lunch service' });
+  // Default-deny cloud sharing: this synthetic project grants every cloud route its files
+  // and history, so the behaviour under test is reached.
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0,
+    routes: ROUTES.filter((route) => route !== 'sample'),
+    documents: [MENU.path],
+    shareConversationHistory: true,
+    shareReviewPackets: true,
+  });
 });
 afterEach(async () => {
   if (server) {

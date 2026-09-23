@@ -685,14 +685,17 @@ export const acpTurnResponse = (
 
 // --- read turns ---------------------------------------------------------------------------------
 //
-// ACP names what a tool call does with a `kind`. A read turn accepts `read`,
-// `search` and (with web access) `fetch`, and `think`, which touches nothing;
-// `edit`, `delete`, `move`, `execute`, `switch_mode` and `other` stop it. A
-// call's locations and any path in its raw input must be inside the project
-// folder. The same rule answers the agent's permission asks: an allowed read
-// gets `allow_once`, anything else is rejected and stops the turn.
+// ACP names what a tool call does with a `kind`. A read turn accepts `fetch`
+// (with web access) and `think`, which touches nothing; `read`, `search`,
+// `edit`, `delete`, `move`, `execute`, `switch_mode` and `other` stop it. The
+// same rule answers the agent's permission asks: an allowed call gets
+// `allow_once`, anything else is rejected and stops the turn.
 
-const ACP_READ_KINDS = ['read', 'search', 'fetch', 'think'];
+// Security pass 2026-09-23: no ACP route has a way for Diomedes to answer a file read
+// before it runs (Cursor runs allowed reads without asking), so a read turn is given no
+// file tool and a `read` or `search` call stops it like any other kind. The documents
+// the person chose travel inline in the prompt.
+const ACP_READ_KINDS = ['fetch', 'think'];
 const PATH_KEYS = ['path', 'file_path', 'filePath', 'target_file', 'targetFile', 'directory'];
 
 /** The read handler and permission answer for one ACP read turn. */

@@ -145,10 +145,10 @@ describe('Cursor read scope permissions', () => {
     });
     expect(cursorPermissions().autoAcceptWebSearch).toBe(false);
   });
-  it('allows reads and web, never shell, writes or MCP', () => {
+  it('allows web, never file reads, shell, writes or MCP', () => {
     const scoped = cursorPermissions({ root: 'C:\\p', web: true });
-    expect(scoped.permissions.allow).toEqual(['Read(**)', 'WebFetch(*)', 'WebSearch(*)']);
-    expect(scoped.permissions.deny).toEqual(['Shell(*)', 'Write(**)', 'Mcp(*:*)']);
+    expect(scoped.permissions.allow).toEqual(['WebFetch(*)', 'WebSearch(*)']);
+    expect(scoped.permissions.deny).toEqual(['Shell(*)', 'Read(**)', 'Write(**)', 'Mcp(*:*)']);
     expect(cursorPermissions({ root: 'C:\\p', web: false }).permissions.deny).toContain(
       'WebSearch(*)',
     );
@@ -156,18 +156,9 @@ describe('Cursor read scope permissions', () => {
 });
 
 describe('Cursor read turns', () => {
-  it('opens the project folder as the workspace, streams reads and allows read asks', async () => {
-    const { adapter, sent, launches, configs, project } = await fixture((root) => [
-      permission({ toolCallId: 't1', kind: 'read', locations: [{ path: path.join(root, 'menu.md') }] }),
-      {
-        sessionUpdate: 'tool_call',
-        toolCallId: 't1',
-        kind: 'read',
-        title: 'Read menu.md',
-        status: 'in_progress',
-        locations: [{ path: path.join(root, 'menu.md') }],
-      },
-      { sessionUpdate: 'tool_call_update', toolCallId: 't1', status: 'completed' },
+  it('works in a private workspace, streams web activity and allows a web ask', async () => {
+    const { adapter, sent, launches, configs, project, engine } = await fixture(() => [
+      permission({ toolCallId: 't1', kind: 'fetch', rawInput: { url: 'https://example.com/hours' } }),
       { sessionUpdate: 'plan', entries: [{ content: 'Check hours', status: 'pending' }] },
       {
         sessionUpdate: 'tool_call',
@@ -186,25 +177,27 @@ describe('Cursor read turns', () => {
       onToolActivity: (raw) => activity.push(raw),
     });
     expect(result.text).toBe('Opens at 11.');
-    expect(launches[0].cwd).toBe(project);
+    // No turn needs the project folder: its documents travel inline.
+    expect(launches[0].cwd?.startsWith(engine)).toBe(true);
+    expect(launches[0].cwd).not.toBe(project);
     expect(sent.find((frame) => frame.method === 'session/new')?.params).toMatchObject({
-      cwd: project,
+      cwd: launches[0].cwd,
       mcpServers: [],
     });
-    expect(JSON.parse(configs[0]).permissions.deny).toContain('Shell(*)');
-    // The read ask was answered allow_once.
+    expect(JSON.parse(configs[0]).permissions.deny).toEqual(
+      expect.arrayContaining(['Shell(*)', 'Read(**)']),
+    );
+    // The web ask was answered allow_once.
     expect(sent.find((frame) => frame.id === 0)).toMatchObject({
       result: { outcome: { outcome: 'selected', optionId: 'allow-once' } },
     });
     expect(activity.map((a) => [a.phase, a.summary])).toEqual([
-      ['started', 'Reading menu.md'],
-      ['finished', 'Read finished'],
       ['started', 'Searching the web for Harbor Street hours'],
       ['finished', 'Read finished'],
     ]);
     expect(await fs.readdir(project)).toEqual([]);
   });
-  it.each(['edit', 'delete', 'move', 'execute', 'switch_mode', 'other'])(
+  it.each(['read', 'search', 'edit', 'delete', 'move', 'execute', 'switch_mode', 'other'])(
     'stops a %s tool call',
     async (kind) => {
       const { adapter, project } = await fixture(() => [

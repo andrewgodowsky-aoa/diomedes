@@ -146,6 +146,15 @@ describe('B00 independent acceptance: existing host remains authoritative', () =
       await api('/ai/select', 'POST', { engine, model: 'fixture-model' });
       const project = await api('/projects', 'POST', { name: 'Offline Personal review' });
       const thread = await api(`/projects/${project.id}/threads`, 'POST', {});
+      // Default-deny cloud sharing: this synthetic project explicitly grants the
+      // claude-code route with no source documents and no prior history (single ask, sources []).
+      await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0,
+        routes: ['claude-code'],
+        documents: [],
+        shareConversationHistory: false,
+        shareReviewPackets: false,
+      });
       const answer = await api(`/projects/${project.id}/ask`, 'POST', {
         text: 'Fixture question', mode: 'ask', route: engine, threadId: thread.id, consent: true,
       });

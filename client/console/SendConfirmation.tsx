@@ -1,11 +1,18 @@
 import type { ReactNode } from 'react';
 import type { Mode, Route } from '../../shared/types';
 import { routeDisplayName } from '../../shared/engines';
+import {
+  readAccessLabel,
+  readAccessSentence,
+  wholeProjectReadAvailable,
+  type ReadAccess,
+} from '../../shared/read-access';
 import { Button, Modal } from '../components';
 
 /** Sending context and authorizing a later file proposal are separate decisions. */
 export function SendConfirmation({
-  kind, instruction, route, sources, mode, picker, disabled, onClose, onSend,
+  kind, instruction, route, sources, mode, picker, disabled, readAccess = 'selected', onReadAccess,
+  onClose, onSend,
 }: {
   kind: 'task' | 'message';
   instruction: string;
@@ -15,10 +22,20 @@ export function SendConfirmation({
   /** A control that changes `sources` for this send only; the line below states the result. */
   picker?: ReactNode;
   disabled?: boolean;
+  /**
+   * What this one message may read from the project. The choice is offered only for Ask and
+   * Plan on a route whose reads are checked before they run, is never saved, and starts at
+   * the selected documents every time the dialog opens.
+   */
+  readAccess?: ReadAccess;
+  onReadAccess?(access: ReadAccess): void;
   onClose(): void;
   onSend(): void;
 }) {
   const engine = routeDisplayName(route);
+  const offered =
+    onReadAccess !== undefined && (mode === 'ask' || mode === 'plan') && wholeProjectReadAvailable(route);
+  const access: ReadAccess = offered ? readAccess : 'selected';
   return (
     <Modal title={`Send this ${kind}?`} onClose={onClose}>
       <p className="prose" style={{ overflowWrap: 'anywhere', whiteSpace: 'normal' }}>{instruction}</p>
@@ -27,8 +44,18 @@ export function SendConfirmation({
         {' '}Usage is billed under that account's plan.
       </p>
       {picker}
+      {offered && (
+        <label className="prose">
+          <input
+            type="checkbox"
+            checked={access === 'project'}
+            onChange={(event) => onReadAccess?.(event.target.checked ? 'project' : 'selected')}
+          />{' '}
+          {readAccessLabel(engine)}
+        </label>
+      )}
       <p className="prose task-sources" style={{ overflowWrap: 'anywhere', whiteSpace: 'normal' }}>
-        {sources.length ? `Documents included: ${sources.join(', ')}.` : 'No project documents are included.'}
+        {readAccessSentence(engine, sources, access)}
       </p>
       <p className="prose">
         {mode === 'ask'

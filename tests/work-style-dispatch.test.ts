@@ -63,6 +63,13 @@ async function project() {
   const created = await request('/projects/sample', 'POST', {});
   expect(created.status).toBe(200);
   const projectId = created.data.id as string;
+  // Cloud sharing is default-deny: this synthetic project explicitly shares its typed
+  // messages with Codex and no document, which is all these dispatches send.
+  const shared = await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0, routes: ['codex'], documents: [],
+    shareConversationHistory: false, shareReviewPackets: false,
+  });
+  expect(shared.status).toBe(200);
   const thread = await request(`/projects/${projectId}/threads`, 'POST', { name: 'Styles' });
   expect(thread.status).toBe(201);
   return { projectId, threadId: thread.data.id as string };

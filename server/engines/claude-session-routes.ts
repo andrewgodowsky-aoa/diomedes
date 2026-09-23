@@ -23,6 +23,11 @@ export const claudeSessionBody = z.strictObject({
     )
     .max(8),
   consent: z.literal(true),
+  /**
+   * What this Ask or Plan message may read from the project (`shared/read-access.ts`).
+   * Absent means the selected documents only; `project` is the person's per-message choice.
+   */
+  readAccess: z.enum(['selected', 'project']).optional(),
 });
 export type ClaudeSessionBody = z.infer<typeof claudeSessionBody>;
 export interface ClaudeSessionRouteDependencies {

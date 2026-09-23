@@ -45,7 +45,7 @@ describe('planThreadSend', () => {
     expect(planThreadSend(on('claude-code'), 'ask', 'weekly-brief')).toEqual({ kind: 'direct', route: 'claude-code' });
   });
   test('a route this build does not know is refused, never guessed at', () => {
-    expect(planThreadSend(on('google-vertex'), 'build')).toMatchObject({ kind: 'refuse' });
+    expect(planThreadSend(on('mistral-cloud'), 'build')).toMatchObject({ kind: 'refuse' });
   });
 });
 

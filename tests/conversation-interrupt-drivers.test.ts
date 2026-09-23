@@ -186,6 +186,9 @@ async function claudeFixture(): Promise<Fixture> {
       authorize(await runs.get(runId), intent, phase),
   });
   const driver = new ClaudeSessionRuns(runs);
+  // Synthetic test policy for this standalone driver fixture: allow cloud
+  // sharing so the session behaviors under test are exercised.
+  driver.setSharingPolicy(() => {});
   entry.driver = driver;
   let pendingGet: Promise<void> | null = null;
   const realGet = driver.get.bind(driver);
@@ -327,6 +330,12 @@ async function modelFixture(): Promise<Fixture> {
       authorize(await runs.get(runId), intent, phase),
   });
   const driver = new ModelSessionRuns(runs, 'aws-bedrock');
+  // Synthetic test policy for this standalone driver fixture: allow cloud
+  // sharing and prior-history so follow-up session behaviors stay exercised.
+  driver.setSharingPolicy(
+    () => {},
+    () => true,
+  );
   entry.driver = driver;
   let pendingGet: Promise<void> | null = null;
   const realGet = driver.get.bind(driver);

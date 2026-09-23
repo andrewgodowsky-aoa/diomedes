@@ -460,6 +460,13 @@ test('a task create and a Work start aimed at the home Project are refused, and 
 
 test('from home an Automatic proposal naming no project needs a target, and one naming a project is proposed there', async () => {
   const home = await provision();
+  // A Home message needs no grant, but a Claude Code follow-up sends the earlier conversation,
+  // and history from Home stays gated by sharing (owner decision, 2026-09-23). The later
+  // messages below are follow-ups, so this test shares Home's history on that route.
+  await api(`/projects/${home.projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0, routes: ['claude-code'], documents: [],
+    shareConversationHistory: true, shareReviewPackets: false,
+  });
   const mine = await realProject();
   const untargeted = await send(home, 'm-act', 'ACT order the usual');
   expect(untargeted.outcome).toMatchObject({ status: 'not-started', reason: 'needs-target' });
@@ -690,4 +697,26 @@ test('the home update accepts a supported conversation route and records it as t
     'claude-code',
   );
   expect((await send(home, 'm-back', 'Good morning')).outcome).toEqual({ status: 'answered' });
+});
+
+// Owner decision, 2026-09-23: a Home message needs no grant; the earlier conversation does.
+// A Claude Code follow-up resumes the native session, which sends that history, so it is
+// refused until Home shares history on this route. Nothing is dispatched for the refusal.
+test('a Claude Code Home answers with no grant, and a follow-up needs the history grant', async () => {
+  const home = await provision();
+  expect((await api<{ version: number }>(`/projects/${home.projectId}/cloud-sharing`)).version).toBe(0);
+  const first = await send(home, 'm-first', 'hello');
+  expect(first.outcome).toEqual({ status: 'answered' });
+  const before = dispatches.length;
+  const followUp = await request(`/projects/${home.projectId}/threads/${home.threadId}/messages`, 'POST', {
+    commandId: 'm-follow-up', text: 'and then?', mode: 'auto', sources: [], consent: true,
+  });
+  expect(followUp.status).toBe(403);
+  expect(((await followUp.json()) as { code?: string }).code).toBe('cloud_sharing_denied');
+  expect(dispatches.length).toBe(before);
+  await api(`/projects/${home.projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0, routes: ['claude-code'], documents: [],
+    shareConversationHistory: true, shareReviewPackets: false,
+  });
+  expect((await send(home, 'm-follow-up-2', 'and then?')).outcome).toEqual({ status: 'answered' });
 });

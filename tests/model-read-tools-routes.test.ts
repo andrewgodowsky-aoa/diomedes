@@ -26,6 +26,7 @@ import { AzureConnections } from '../server/engines/azure-openai';
 import { OpenRouterConnections } from '../server/engines/openrouter';
 import { AWS_LUNA_MODEL } from '../server/engines/aws-bedrock';
 import type { ReadScope } from '../server/engines/read-scope';
+import { openReadGrant } from '../server/engines/turn-scope';
 import { testOnlySecretBox } from '../server/connection-secrets';
 import { FileModelTranscripts } from '../server/harness/model-transcripts';
 import { modelApiDispatchAuthorizer, modelSessionRunId } from '../server/harness/model-session-run';
@@ -210,6 +211,14 @@ beforeEach(async () => {
   await fs.mkdir(path.join(folder, 'notes'), { recursive: true });
   await fs.writeFile(path.join(folder, 'notes', 'menu.md'), '# Lunch\n\nTomato soup and a grilled cheese sandwich.\n');
   await fs.writeFile(path.join(root, 'outside.txt'), 'a secret outside the project\n');
+  // Default-deny cloud sharing: this project shares the menu, and nothing else, with the three routes.
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0,
+    routes: ['aws-bedrock', 'azure-openai', 'openrouter'],
+    documents: ['notes/menu.md'],
+    shareConversationHistory: false,
+    shareReviewPackets: false,
+  });
 });
 afterEach(async () => {
   if (server) {
@@ -256,7 +265,19 @@ const connectOpenRouter = async () => {
 };
 
 const pos = { name: 'pos', command: 'pos-server', args: [], envFrom: ['POS_TOKEN'], readTools: ['list_orders', 'slow_orders'] };
-const scope = (extra: Partial<ReadScope> = {}): ReadScope => ({ root: folder, web: true, ...extra });
+/**
+ * A whole-project turn with a live host grant. No model-API route takes one today
+ * (`WHOLE_PROJECT_READ_ROUTES`); the file tools are proven as if a route did.
+ */
+const scope = (extra: Partial<ReadScope> = {}): ReadScope => ({
+  root: folder,
+  web: true,
+  access: 'project',
+  files: [],
+  shared: ['notes/menu.md'],
+  grant: openReadGrant(project.id),
+  ...extra,
+});
 
 function turnInput(
   overrides: Partial<TextRequest> & Pick<TextRequest, 'model' | 'accountRoute'>,
@@ -429,7 +450,7 @@ describe('no read tools outside Ask and Plan', () => {
     expect(connectorCalls).toEqual([]);
   });
 
-  test('through the conversation route: Ask carries the project, web and approved-connector tools; Automatic does not', async () => {
+  test('through the conversation route: Ask carries the web and approved-connector tools, not the project folder; Automatic carries neither', async () => {
     await connectAws();
     await fs.writeFile(
       path.join(store().dataDir, 'read-connectors.json'),
@@ -442,7 +463,8 @@ describe('no read tools outside Ask and Plan', () => {
 
     plan = [{ name: 'connector_read', args: { server: 'pos', tool: 'list_orders' } }];
     await send('ask-1', 'ask');
-    expect(toolNames(seen[0].body)).toEqual(['connector_read', 'fetch_page', 'list_files', 'list_sources', 'read_file', 'read_source', 'search_files']);
+    // A model-API Ask reads only the documents chosen for it (security pass 2026-09-23).
+    expect(toolNames(seen[0].body)).toEqual(['connector_read', 'fetch_page', 'list_sources', 'read_source']);
     expect(connectorCalls).toEqual(['list_orders']);
 
     const before = seen.length;

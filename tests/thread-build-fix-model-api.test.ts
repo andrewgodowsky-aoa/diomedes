@@ -27,6 +27,7 @@ import type { Store } from '../server/store';
 import type { AwsConnectionView, AzureConnectionView, ModelApiRoute, OpenRouterConnectionView } from '../shared/model-api';
 import type { Conversation, Project, ProjectState, Session } from '../shared/types';
 import { chatEvents, responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
+import { ROUTES as ALL_ROUTES } from '../shared/engines';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const AZURE_KEY = 'test-only-azure-key-0123456789abcdef-never-real';
@@ -251,6 +252,15 @@ beforeEach(async () => {
   folder = store().state(project.id).project.folder;
   await fs.mkdir(path.join(folder, 'notes'), { recursive: true });
   await fs.writeFile(path.join(folder, MENU), MENU_TEXT);
+  // Default-deny cloud sharing: this synthetic project grants every cloud route its files
+  // and history, so the behaviour under test is reached.
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0,
+    routes: ALL_ROUTES.filter((route) => route !== 'sample'),
+    documents: [MENU],
+    shareConversationHistory: true,
+    shareReviewPackets: true,
+  });
 });
 afterEach(async () => {
   if (server) {

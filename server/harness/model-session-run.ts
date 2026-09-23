@@ -217,6 +217,44 @@ type ToolPhase = 'finished' | 'failed';
  * of it) is identical; only the host's own execution is narrated. A read the host
  * refused is reported as failed, though the model still reads the refusal.
  */
+/**
+ * The adapter with Cloud sharing checked again around every provider call, so a policy
+ * changed mid-turn stops the next call rather than letting the loop run on
+ * (security pass 2026-09-23).
+ */
+function sharingGuarded(adapter: ModelAdapter, check: () => void): ModelAdapter {
+  return {
+    id: adapter.id,
+    version: adapter.version,
+    destination: adapter.destination,
+    contract: adapter.contract,
+    capabilities: () => adapter.capabilities(),
+    ...(adapter.prepare ? { prepare: async (value, signal) => {
+      check();
+      const prepared = await adapter.prepare!(value, signal);
+      check();
+      return prepared;
+    } } : {}),
+    ...(adapter.validatePrepared ? { validatePrepared: async (value) => {
+      check();
+      await adapter.validatePrepared!(value);
+      check();
+    } } : {}),
+    ...(adapter.inspect ? { inspect: async (value, answer, signal) => {
+      check();
+      const inspected = await adapter.inspect!(value, answer, signal);
+      check();
+      return inspected;
+    } } : {}),
+    complete: async (value, signal) => {
+      check();
+      const answer = await adapter.complete(value, signal);
+      check();
+      return answer;
+    },
+  };
+}
+
 function narrated(
   registry: ToolRegistry,
   report: (phase: ToolPhase, summary: string, tool: string) => void,
@@ -271,6 +309,10 @@ function toolOutcome(
 
 export class ModelSessionRuns {
   private closed = false;
+  private sharingPolicy: (projectId: string, documents: readonly string[], history: boolean, route: string) => void = () => {
+    throw new HarnessError('cloud_sharing_unconfigured', 'Project cloud sharing is not configured for this model session.');
+  };
+  private historyPolicy: (projectId: string, route: string) => boolean;
   private readonly owner = `model-session-${randomUUID()}`;
   /** Stop handles for team Work turns in flight, so a shutdown reaches them too. */
   private readonly work = new Set<AbortController>();
@@ -281,7 +323,18 @@ export class ModelSessionRuns {
   constructor(
     private readonly runs: RunService,
     private readonly route: string,
-  ) {}
+    shareHistory: (projectId: string, route: string) => boolean = () => false,
+  ) {
+    this.historyPolicy = shareHistory;
+  }
+
+  setSharingPolicy(
+    check: (projectId: string, documents: readonly string[], history: boolean, route: string) => void,
+    shareHistory: (projectId: string, route: string) => boolean,
+  ) {
+    this.sharingPolicy = check;
+    this.historyPolicy = shareHistory;
+  }
 
   async get(projectId: string, runId: string): Promise<HarnessRun> {
     const run = await this.runs.get(runId);
@@ -651,6 +704,10 @@ export class ModelSessionRuns {
         const wall = AbortSignal.timeout(TURN_WALL_MS);
         const stop = AbortSignal.any([context.signal, wall, ...(input.signal ? [input.signal] : [])]);
         const childId = turnRunId(runId, input.requestId);
+        // The host policy is read for each turn. A saved lineage does not grant
+        // permission to send previous turns to the next model call.
+        const history = this.historyPolicy(input.projectId, route) ? this.history(run!, turnId) : '';
+        this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), history.length > 0, route);
         const preview = request.activity?.(context, turnId);
         // Pairs the host's finished/failed report with the call the model announced as started.
         // One tool call per step and a sequential loop make the last announcement the one running.
@@ -696,6 +753,7 @@ export class ModelSessionRuns {
               model: input.model,
               conversationRunId: runId,
               commandId: input.requestId,
+              historyShared: history.length > 0,
               sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
               // What this turn could read, as evidence. Never a path or a connector's command.
               ...(input.readScope ? { read: readScopeRecord(input.readScope) } : {}),
@@ -707,9 +765,16 @@ export class ModelSessionRuns {
           const note = input.readScope ? `${TOOL_NOTE}\n\n${readToolsNote(input.readScope)}` : TOOL_NOTE;
           const adapter = await request.adapter(admission, `${input.instructions}\n\n${note}`, stop, sinks);
           version = adapter.version;
-          const agent = new NativeAgent(this.runs, adapter, registry);
+          const check = () => this.sharingPolicy(
+            input.projectId,
+            input.documents.map((doc) => doc.path),
+            history.length > 0,
+            route,
+          );
+          const agent = new NativeAgent(this.runs, sharingGuarded(adapter, check), registry);
           try {
-            text = await agent.run(childId, this.owner, this.compose(input, this.history(run!, turnId)), principal, {
+            check();
+            text = await agent.run(childId, this.owner, this.compose(input, history), principal, {
               maxTurns: MODEL_TURN_CAPABILITY.maxTurns,
             });
           } catch (error) {
@@ -855,7 +920,10 @@ export class ModelSessionRuns {
       });
       await this.runs.claim(runId, this.owner, TURN_WALL_MS + 60_000);
       const adapter = await request.adapter(admission, `${input.instructions}\n\n${TEAM_WORK_NOTE}`, stop);
-      const agent = new NativeAgent(this.runs, adapter, request.registry);
+      const check = () =>
+        this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), false, route);
+      check();
+      const agent = new NativeAgent(this.runs, sharingGuarded(adapter, check), request.registry);
       let text: string;
       try {
         text = await agent.run(runId, this.owner, contextMessage(input), principal, {

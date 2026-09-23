@@ -42,15 +42,20 @@ describe('the tier form', () => {
       focusedModel: 'gemini-3.5-flash',
     });
     for (const [key, value] of Object.entries(next)) if (key !== 'azureOld') expect(tierSettingRefusal(key, value)).toBeNull();
-    // A route this build does not know yet is never written: Focused keeps its default route.
+    // A tier's default route is never written: Focused keeps Google Vertex AI by default.
     expect(Object.values(next)).not.toContain('google-vertex');
     expect(tierMapFrom(next).focused).toEqual({ route: 'google-vertex', model: 'gemini-3.5-flash' });
     // Returning a tier to its default removes what was saved for it.
     expect(withTierDraft(next, tierDraftFrom({}))).toEqual({ azureOld: true });
   });
 
-  it('lists this build’s company accounts, and keeps a tier’s own route listed even before it lands', () => {
-    expect(tierRouteChoices('aws-bedrock').map((c) => c.name)).toEqual(['AWS Bedrock', 'Azure OpenAI', 'OpenRouter']);
+  it('lists this build’s company accounts, Google Vertex AI among them', () => {
+    expect(tierRouteChoices('aws-bedrock').map((c) => c.name)).toEqual([
+      'AWS Bedrock',
+      'Azure OpenAI',
+      'OpenRouter',
+      'Google Vertex AI',
+    ]);
     expect(tierRouteChoices('google-vertex').map((c) => c.name)).toEqual([
       'AWS Bedrock',
       'Azure OpenAI',

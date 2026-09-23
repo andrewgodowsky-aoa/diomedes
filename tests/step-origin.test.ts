@@ -15,6 +15,7 @@ import {
 import { routeContractFor } from '../server/harness/route-contract.js';
 import { needFromWaitingStep, sessionOriginFromRun } from '../server/harness/present.js';
 import { Store } from '../server/store.js';
+import { changeCloudSharing } from '../server/cloud-sharing.js';
 import { createHarnessHost, type HarnessHost } from '../server/harness/host.js';
 import { codexContextHash } from '../server/integrations.js';
 import type { Capability } from '../server/harness/trust-port.js';
@@ -478,6 +479,19 @@ describe('codex host origin', () => {
     const project = await store.locked(() => store.createProject('Synthetic Codex'));
     projectId = project.id;
     await fs.writeFile(path.join(project.folder, 'Synthetic.txt'), 'Three synthetic locations.\n');
+    // Default-deny cloud sharing: this synthetic project explicitly grants the
+    // codex route, the Synthetic.txt source this run sends, and no prior history.
+    await store.locked(async () => {
+      const state = store.state(projectId);
+      changeCloudSharing(state, {
+        expectedVersion: 0,
+        routes: ['codex'],
+        documents: ['Synthetic.txt'],
+        shareConversationHistory: false,
+        shareReviewPackets: false,
+      });
+      await store.persist(state);
+    });
     store.settings.services = { codex: true };
     store.settings.permissions.sending = true;
     await store.saveSettings(store.settings);

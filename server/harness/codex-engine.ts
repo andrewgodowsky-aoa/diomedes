@@ -17,6 +17,7 @@ import { applicationOrigin, directOrigin } from '../../shared/attribution.js';
 import { parseProposal } from '../native-work.js';
 import { ApiError } from '../paths.js';
 import { hash, type Store } from '../store.js';
+import { requireCloudSharing } from '../cloud-sharing.js';
 import { refOf } from '../trust/index.js';
 import { ADAPTER_CAPABILITIES } from './adapters.js';
 import { CODEX_ENGINE, REPORT_PATH } from './approval.js';
@@ -213,6 +214,7 @@ export class CodexEngineAdapter {
       effort: string;
     },
   ): Promise<CodexRunInput> {
+    requireCloudSharing(this.store.state(projectId), 'codex', request.sources);
     if (
       request.consent !== true ||
       !this.store.settings.services?.codex ||
@@ -296,6 +298,11 @@ export class CodexEngineAdapter {
         'No outbound grant is available for this capability.',
       );
     const input = inputSchema.parse(run.input);
+    requireCloudSharing(
+      this.store.state(run.projectId),
+      'codex',
+      input.context.documents.map((document) => document.path),
+    );
     const cached = run.steps.some(
       (s) => s.state === 'succeeded' && s.intentHash === digest(intent),
     );

@@ -39,6 +39,7 @@ import { acceptActivity, activityTarget, toolSentence, type ActivityState } from
 import type { AwsConnectionView } from '../shared/model-api';
 import type { Conversation, Mode, Project, ProjectState } from '../shared/types';
 import { responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
+import { ROUTES } from '../shared/engines';
 
 const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
 const SECRET = 'test-only-bedrock-key-0123456789abcdef-never-real';
@@ -104,8 +105,9 @@ function respond(body: { input: Item[]; tools?: Item[] }): Item[] | 'hang' {
           type: 'function_call',
           id: `fc_${seen.length}`,
           call_id: 'call_linen_1',
-          // A host-run read tool, the kind that narrates itself as tool activity.
-          name: 'read_file',
+          // A host-run tool, the kind that narrates itself as tool activity. A model-API Ask
+          // reads the documents chosen for it (security pass 2026-09-23), not the folder.
+          name: 'read_source',
           arguments: JSON.stringify({ path: DELIVERY.path }),
           status: 'completed',
         },
@@ -259,6 +261,15 @@ beforeEach(async () => {
   thread = await api<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
   folder = store().state(project.id).project.folder;
   for (const doc of [ORDER, DELIVERY]) await fs.writeFile(path.join(folder, doc.path), doc.text, 'utf8');
+  // Default-deny cloud sharing: this synthetic project grants every cloud route its files
+  // and history, so the behaviour under test is reached.
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0,
+    routes: ROUTES.filter((route) => route !== 'sample'),
+    documents: [ORDER.path, DELIVERY.path],
+    shareConversationHistory: true,
+    shareReviewPackets: true,
+  });
 });
 afterEach(async () => {
   vi.unstubAllGlobals();

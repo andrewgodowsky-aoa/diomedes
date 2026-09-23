@@ -8,6 +8,7 @@ import { isRoute } from '../../shared/engines';
 import { isModelApiRoute, MODEL_API_NAMES, type ModelApiRoute } from '../../shared/model-api';
 import type { ConversationMode, MessageResult } from '../../shared/conversation';
 import type { Conversation, Mode, Route } from '../../shared/types';
+import type { ReadAccess } from '../../shared/read-access';
 
 /**
  * Which path one project-thread message takes, decided from the host's own answer.
@@ -86,6 +87,7 @@ export function directAskBody(input: {
   failing?: { document?: string; text?: string };
   sources?: string[];
   skill?: string;
+  readAccess?: ReadAccess;
 }) {
   return {
     mode: input.mode,
@@ -97,6 +99,8 @@ export function directAskBody(input: {
     ...(input.sources ? { sources: input.sources } : {}),
     ...(input.mode === 'fix' && input.failing ? { failing: input.failing } : {}),
     ...(input.skill ? { skill: input.skill } : {}),
+    // Sent only when the person chose it for this message; absent means the selection.
+    ...(input.readAccess === 'project' ? { readAccess: input.readAccess } : {}),
   };
 }
 

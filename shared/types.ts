@@ -509,7 +509,30 @@ export interface EngineCatalog {
   models: EngineModel[]; // empty when the engine reports no choices
   detail: string; // one plain sentence for where the list came from, or why it is empty
 }
+/** Project-owned outbound consent. Absent or malformed records deny cloud sends. */
+export interface CloudSharingPolicy {
+  version: number;
+  routes: Exclude<Route, 'sample'>[];
+  documents: string[];
+  shareConversationHistory: boolean;
+  /** Separately permits proposal excerpts, task metadata and scope in model review. */
+  shareReviewPackets: boolean;
+  /**
+   * Present when this policy was first derived, once, from what the project had already sent
+   * before default-deny sharing (`server/cloud-sharing.ts`, `upgradeCloudSharing`). It records
+   * what the upgrade kept; it is provenance, never authority, and an owner's change keeps it.
+   */
+  upgrade?: CloudSharingUpgrade;
+}
+export interface CloudSharingUpgrade {
+  at: string;
+  from: 'recorded-history';
+  routes: Exclude<Route, 'sample'>[];
+  documents: string[];
+  shareConversationHistory: boolean;
+}
 export interface ProjectState {
+  cloudSharing?: CloudSharingPolicy;
   /** Absent in v1 projects. Persisted grants alone never restore active authority. */
   scopeGrants?: ScopeGrantRecord[];
   project: Project;

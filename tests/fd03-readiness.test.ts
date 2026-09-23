@@ -21,6 +21,7 @@ import {
 import { loadProductKnowledge } from '../server/readiness/product-knowledge.js';
 import { projectReadiness } from '../server/readiness/projection.js';
 import { mountReadinessRoutes } from '../server/readiness/routes.js';
+import { changeCloudSharing } from '../server/cloud-sharing.js';
 
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 const at = '2026-09-19T12:00:00.000Z';
@@ -552,6 +553,17 @@ describe('FD03 read-only HTTP and instruction delivery', () => {
         })
       ).data.id;
       await call('/settings', 'PUT', { services: { codex: true } });
+      // Default-deny cloud sharing: this synthetic project explicitly grants the
+      // codex route with no source documents and no prior history (sources []).
+      expect(
+        (await call(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+          expectedVersion: 0,
+          routes: ['codex'],
+          documents: [],
+          shareConversationHistory: false,
+          shareReviewPackets: false,
+        })).status,
+      ).toBe(200);
       expect(
         (
           await call(`/projects/${projectId}/work/start`, 'POST', {
@@ -603,6 +615,15 @@ describe('FD03 read-only HTTP and instruction delivery', () => {
     try {
       const project = await app.locals.store.createProject('FD03 failure fixture');
       const state = app.locals.store.state(project.id);
+      // Default-deny cloud sharing: this synthetic project explicitly grants the
+      // codex route with no source documents and no prior history (sources []).
+      changeCloudSharing(state, {
+        expectedVersion: 0,
+        routes: ['codex'],
+        documents: [],
+        shareConversationHistory: false,
+        shareReviewPackets: false,
+      });
       const task = app.locals.store.createTask(state, {
         name: 'Draft',
         description: 'Draft a note',

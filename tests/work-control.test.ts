@@ -131,6 +131,19 @@ beforeEach(async () => {
     })
   ).data.id;
   await request('/settings', 'PUT', { services: { codex: true } });
+  // Default-deny cloud sharing: grant the codex route and the sample source
+  // this suite starts from (sources ['Fall menu.md']).
+  expect(
+    (
+      await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+        expectedVersion: 0,
+        routes: ['codex'],
+        documents: ['Fall menu.md'],
+        shareConversationHistory: false,
+        shareReviewPackets: false,
+      })
+    ).status,
+  ).toBe(200);
 });
 afterEach(async () => {
   // Held before the first await: a hook that outlives its timeout keeps running,

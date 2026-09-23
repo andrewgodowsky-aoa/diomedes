@@ -78,6 +78,7 @@ import { SendConfirmation } from './SendConfirmation';
 import { JobCapWarning } from './JobCapWarning';
 import { beforeWake, estimateWake, setThreadTier, wakeOverCap, type CapChoice, type CapPrompt } from '../job-cap-gate';
 import { PermissionPanel } from './PermissionPanel';
+import { CloudSharing } from './CloudSharing';
 import { Ledger } from './Ledger';
 import { ThreadModelControls } from './WorkStylePicker';
 import type { WorkStyle } from '../../shared/work-style';
@@ -223,6 +224,7 @@ export function Shell({
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [previewNeed, setPreviewNeed] = useState<Need | null>(null);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
+  const [cloudSharingOpen, setCloudSharingOpen] = useState(false);
   const [scopeGrants, setScopeGrants] = useState<ScopeGrantView[]>([]);
   const [sendTask, setSendTask] = useState<{
     task: Task;
@@ -1252,6 +1254,7 @@ export function Shell({
     failing?: { document?: string; text?: string },
     sources?: string[],
     skill?: string,
+    readAccess?: import('../../shared/read-access').ReadAccess,
   ) {
     await deliver(
       thread,
@@ -1287,7 +1290,7 @@ export function Shell({
         await api(
           `${base}/ask`,
           'POST',
-          directAskBody({ thread, mode, text, route: plan.route, failing, sources, skill }),
+          directAskBody({ thread, mode, text, route: plan.route, failing, sources, skill, readAccess }),
           control.signal,
         );
         return null;
@@ -1712,6 +1715,9 @@ export function Shell({
           <button type="button" onClick={onOpenSettings}>
             Settings
           </button>
+          <button type="button" onClick={() => setCloudSharingOpen(true)}>
+            Cloud sharing
+          </button>
           <div className="surface-menu">
             <button
               type="button"
@@ -1892,7 +1898,7 @@ export function Shell({
                   : null
               }
               onClearSkill={() => setSkillDraft(null)}
-              onSend={(m, text, r, failing, sources) =>
+              onSend={(m, text, r, failing, sources, readAccess) =>
                 void send(
                   selected,
                   m,
@@ -1903,6 +1909,7 @@ export function Shell({
                   skillDraft?.threadId === selected.id && (m === 'ask' || m === 'plan')
                     ? skillDraft.skill.id
                     : undefined,
+                  readAccess,
                 )
               }
               onResolve={(n, res, allow) => void resolveNeed(n, res, allow)}
@@ -2206,6 +2213,18 @@ export function Shell({
             }}
           />
         </Modal>
+      )}
+      {cloudSharingOpen && (
+        <CloudSharing
+          key={projectId}
+          projectId={projectId}
+          projectName={project.name}
+          onClose={() => setCloudSharingOpen(false)}
+          onSaved={() => {
+            void load().catch(report);
+            setCloudSharingOpen(false);
+          }}
+        />
       )}
       {previewNeed && (
         <Modal

@@ -101,26 +101,23 @@ describe('OpenCode read scope configuration', () => {
     expect(config.agent.diomedes.steps).toBe(1);
     expect(config.mcp).toEqual({});
   });
-  it('turns on only the read tools and denies edits, shell and outside reads', () => {
+  it('turns on only web and approved MCP read tools, and denies file reads, edits and shell', () => {
     const config = JSON.parse(configContent({ root: 'C:\\p', web: true, mcp: [pos] }));
     expect(config.tools).toEqual({
       '*': false,
-      read: true,
-      glob: true,
-      grep: true,
-      list: true,
       webfetch: true,
       websearch: true,
       pos_list_orders: true,
     });
     expect(config.permission['*']).toBe('deny');
+    expect(config.permission.read).toBeUndefined();
     expect(config.agent.diomedes.permission).toMatchObject({
       edit: 'deny',
       bash: 'deny',
       task: 'deny',
       external_directory: 'deny',
-      read: 'allow',
     });
+    expect(config.agent.diomedes.permission.read).toBeUndefined();
     expect(config.agent.diomedes.steps).toBeGreaterThan(1);
     expect(config.mcp.pos).toEqual({
       type: 'local',
@@ -138,9 +135,8 @@ describe('OpenCode read scope configuration', () => {
 });
 
 describe('OpenCode read turns', () => {
-  it('reads in the project folder and streams activity once per call', async () => {
-    const { adapter, project, seen, engine } = await fixture((root) => [
-      { tool: 'read', input: { filePath: path.join(root, 'menu.md') } },
+  it('works in its own folder and streams web activity once per call', async () => {
+    const { adapter, project, seen, engine } = await fixture(() => [
       { tool: 'websearch', input: { query: 'Harbor Street hours' } },
     ]);
     const activity: RawToolActivity[] = [];
@@ -151,7 +147,8 @@ describe('OpenCode read turns', () => {
     });
     expect(result.text).toBe('Opens at 11.');
     const requests = await seen();
-    expect(requests.every((entry) => entry.directory === project)).toBe(true);
+    // A project's own OpenCode configuration is never loaded into a Diomedes turn.
+    expect(requests.every((entry) => entry.directory !== project)).toBe(true);
     const session = JSON.parse(requests.find((entry) => entry.url === '/session')!.body);
     expect(session.permission[0]).toEqual({ permission: '*', pattern: '*', action: 'deny' });
     expect(session.permission.at(-1)).toEqual({
@@ -163,8 +160,6 @@ describe('OpenCode read turns', () => {
       'bash',
     );
     expect(activity.map((a) => [a.phase, a.summary])).toEqual([
-      ['started', 'Reading menu.md'],
-      ['finished', 'read finished'],
       ['started', 'Searching the web for Harbor Street hours'],
       ['finished', 'websearch finished'],
     ]);
@@ -177,6 +172,8 @@ describe('OpenCode read turns', () => {
     ['edit', { filePath: 'menu.md', oldString: 'a', newString: 'b' }],
     ['write', { filePath: 'menu.md', content: 'x' }],
     ['task', { prompt: 'go' }],
+    ['read', { filePath: 'menu.md' }],
+    ['grep', { pattern: 'pay' }],
   ])('stops the request when the model calls %s', async (tool, input) => {
     const { adapter, project } = await fixture(() => [{ tool, input }]);
     await expect(

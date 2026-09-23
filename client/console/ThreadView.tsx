@@ -96,6 +96,7 @@ interface ThreadViewProps {
     route: Route,
     failing?: { document?: string; text?: string },
     sources?: string[],
+    readAccess?: import('../../shared/read-access').ReadAccess,
   ): void;
   onResolve(need: Need, resolution: 'go-ahead' | 'declined', allow?: boolean): void;
   onPreview(need: Need): void;
@@ -372,7 +373,13 @@ export function ThreadView({
   });
   items.sort((a, b) => a.at.localeCompare(b.at) || a.seq - b.seq);
 
-  function submit(text: string, failingDocument: string, failingText: string, sources: string[]) {
+  function submit(
+    text: string,
+    failingDocument: string,
+    failingText: string,
+    sources: string[],
+    readAccess: import('../../shared/read-access').ReadAccess,
+  ) {
     if (mode === 'fix') {
       const doc = failingDocument.trim();
       const txt = failingText.trim();
@@ -385,7 +392,7 @@ export function ThreadView({
       );
       return;
     }
-    onSend(mode, text, sendRoute, undefined, sources);
+    onSend(mode, text, sendRoute, undefined, sources, readAccess);
   }
 
   return (

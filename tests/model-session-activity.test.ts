@@ -141,6 +141,12 @@ beforeEach(async () => {
   });
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   project = await api<Project>('/projects', 'POST', { name: 'Lunch service' });
+  // Cloud sharing is default-deny: this synthetic project shares its menu with the three
+  // model-API routes, so each refusal below is the route's own and never a sharing one.
+  await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0, routes: ['aws-bedrock', 'azure-openai', 'openrouter'], documents: [MENU.path],
+    shareConversationHistory: false, shareReviewPackets: false,
+  });
 });
 afterEach(async () => {
   if (server) {
