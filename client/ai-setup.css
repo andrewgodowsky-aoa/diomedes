@@ -261,3 +261,29 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* Approved read connectors: one ruled block per connector. A name, command or
+   tool list is a machine string and wraps inside its row. */
+.read-connectors .read-connector {
+  border-top: 1px solid var(--dm-rule-2);
+  padding-top: 8px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.read-connectors .read-connector-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.read-connectors .read-connectors-ignored {
+  margin: 8px 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+
+.read-connectors .ai-provider-model {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
