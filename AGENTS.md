@@ -315,3 +315,4 @@ After a meaningful slice:
 | [`docs/implementation/`](docs/implementation/) | Per-slice implementation records |
 | [`docs/product/`](docs/product/) | Product direction and design investigations |
 | [`docs/harness/RUNTIME_VERIFICATION.md`](docs/harness/RUNTIME_VERIFICATION.md) | What the runtime has actually been proven to do |
+| [`docs/handoff/NEW_CLAUDE_JOINERS.md`](docs/handoff/NEW_CLAUDE_JOINERS.md) | Setup and standards for a new teammate's Claude, including how this file applies on a second machine |
