@@ -7,13 +7,14 @@
  * calls, absent usage — is about what happens when the provider misbehaves.
  * Those paths have to be reachable without a network.
  *
- * Two ports ship. `scriptedEvaluationPort` is a fixed script and declares
+ * Three ports ship. `scriptedEvaluationPort` is a fixed script and declares
  * itself `scripted`, so the loop attributes its work to the application rather
  * than to a model — the same rule `isScriptedAdapter` already enforces for
  * model adapters. `gatewayEvaluationPort` reaches the real service through the
- * Vercel AI SDK, loaded dynamically so that a build without the dependency
- * still compiles, runs and tests, and fails honestly at the one point where the
- * dependency is actually required.
+ * Vercel AI SDK, and `openRouterEvaluationPort` through OpenRouter's provider
+ * for it, both loaded dynamically so that a build without the dependency still
+ * compiles, runs and tests, and fails honestly at the one point where the
+ * dependency is actually required. Neither real port has made a live call.
  *
  * Three provider behaviours are handled here because they cost money to
  * discover elsewhere:

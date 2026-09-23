@@ -27,6 +27,7 @@ import {
   TYPESAFE_DOCUMENTED_LIMITS,
   UNPROVEN_ROUTE_LIMITS,
 } from '../server/harness/evaluation-adapter.js';
+import { evaluationCost, priceFor } from '../server/harness/evaluation-price.js';
 import {
   booleanQuestion,
   choiceQuestion,
@@ -289,6 +290,34 @@ describe('the OpenRouter port on the installed provider', () => {
     expect(review).toEqual({ type: 'boolean', questionId: 'needs-review', probability: 0.2 });
     // The provider's per-answer "confidence" never reaches the observation.
     expect(JSON.stringify(observed)).not.toMatch(/confidence/);
+  });
+
+  test('prices from the model it reports, where the gateway cannot be priced at all', async () => {
+    const { fetch } = fakeFetch([{ body: reply }]);
+    const port = openRouterEvaluationPort({ apiKey: 'k', modelId: 'typesafe/jev-1.13', fetch });
+    const observed = await runEvaluation({
+      port,
+      profile: profile(),
+      state: 's',
+      signal: new AbortController().signal,
+      observedAt: AT,
+    });
+    // 80 input tokens at $0.042 per million is 3.36 micro-USD, rounded up once.
+    expect(evaluationCost(priceFor(observed.actualModel), observed.usage)).toMatchObject({
+      known: true,
+      microUsd: 4,
+      priceVersion: 'evaluation-price-2026-09-22.openrouter.1',
+    });
+
+    const gateway = fakeFetch([{ body: gatewayReply }]);
+    const viaGateway = await runEvaluation({
+      port: gatewayEvaluationPort({ apiKey: 'k', modelId: 'typesafe-ai/jev', fetch: gateway.fetch }),
+      profile: profile(),
+      state: 's',
+      signal: new AbortController().signal,
+      observedAt: AT,
+    });
+    expect(evaluationCost(priceFor(viaGateway.actualModel), viaGateway.usage).known).toBe(false);
   });
 
   test('refuses before I/O the two shapes the installed provider would throw on', async () => {

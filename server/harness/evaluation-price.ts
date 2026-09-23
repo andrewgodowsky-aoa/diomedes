@@ -59,9 +59,30 @@ export const EVALUATION_PRICE_JEV_113: EvaluationPriceCard = Object.freeze({
   source: 'https://docs.typesafe.ai/models, read 2026-09-19',
 });
 
-/** Every price this build knows, by the model id a provider actually reports. */
+/**
+ * Jev 1.13 as OpenRouter reports it answering (`typesafe/jev-1.13`), at the
+ * rate OpenRouter listed on 2026-09-22: the same $0.042 per million input,
+ * output free. A separate card because it is a separate route's reported
+ * identity and terms; any fee OpenRouter takes on buying credit sits outside
+ * the per-call price. A public list price, not an account entitlement.
+ */
+export const EVALUATION_PRICE_JEV_113_OPENROUTER: EvaluationPriceCard = Object.freeze({
+  version: 'evaluation-price-2026-09-22.openrouter.1',
+  effectiveFrom: '2026-09-22T00:00:00.000Z',
+  modelId: 'typesafe/jev-1.13',
+  inputMicroUsdPerMillion: 42_000,
+  outputMicroUsdPerMillion: 0,
+  source: 'https://openrouter.ai/typesafe/jev-1.13, read 2026-09-22 (NC-2026-09-22.1 sources)',
+});
+
+/**
+ * Every price this build knows, by the model id a provider actually reports.
+ * The Vercel gateway reports no answering model, so nothing here can price a
+ * gateway call; its cost stays unknown and is held, never settled at zero.
+ */
 export const EVALUATION_PRICES: readonly EvaluationPriceCard[] = Object.freeze([
   EVALUATION_PRICE_JEV_113,
+  EVALUATION_PRICE_JEV_113_OPENROUTER,
 ]);
 
 /**
