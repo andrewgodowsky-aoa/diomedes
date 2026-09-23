@@ -32,7 +32,7 @@ import { DiomedesHome } from './console/DiomedesHome';
 import type { EverythingItem } from './console/Everything';
 import { TopStrip } from './console/TopStrip';
 import { DesignCenter } from './console/DesignCenter';
-import { MarkGlyph } from './console/Mark';
+import { NectoviaGlyph } from './console/NectoviaMark';
 import { Setup } from './Setup';
 import { SettingsPage } from './Settings';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -134,6 +134,10 @@ export function App() {
    */
   const [themeApplies, setThemeApplies] = useState(false);
   const [appearanceNotice, setAppearanceNotice] = useState('');
+  // The scheme the document is actually painted in, read back after painting: a
+  // custom theme paints its base scheme, and a theme that fails to apply falls
+  // back to the saved one. Screens with scheme-only art follow this, not the setting.
+  const [paintedScheme, setPaintedScheme] = useState('');
   const themeKey = useRef<string | null>(null);
   const settingsRef = useRef(settings);
   const scaleWrites = useRef<Promise<void>>(Promise.resolve());
@@ -375,6 +379,7 @@ export function App() {
         // is theirs whatever a theme asked for, so it is re-asserted here.
         for (const [name, value] of Object.entries(scales))
           root.style.setProperty(`--dm-${name}`, String(value));
+        setPaintedScheme(root.dataset.package ?? '');
         return;
       }
       clearResolvedAppearance();
@@ -389,6 +394,7 @@ export function App() {
     }
     root.dataset.package = settings.appearance.package;
     root.dataset.motion = settings.appearance.motion;
+    setPaintedScheme(settings.appearance.package);
     // Surface changes never resize the interface. Explicit size preferences win.
     for (const [name, value] of Object.entries(scales))
       root.style.setProperty(`--dm-${name}`, String(value));
@@ -569,7 +575,7 @@ export function App() {
     : needs
       ? `Something needs your OK${current ? ` in ${current.name}` : ''}.`
       : running
-        ? `Diomedes is working on ${running} ${running === 1 ? 'task' : 'tasks'}.`
+        ? `Nectovia is working on ${running} ${running === 1 ? 'task' : 'tasks'}.`
         : settings?.detail === 'guided'
           ? ''
           : 'Ready when you are.';
@@ -634,7 +640,7 @@ export function App() {
     {
       id: 'permissions',
       label: 'Permissions',
-      hint: 'What Diomedes may do on its own, and what always asks first.',
+      hint: 'What Nectovia may do on its own, and what always asks first.',
     },
     { id: 'detail', label: 'Interface detail', hint: 'How much each change spells out.' },
     { id: 'updates', label: 'App updates', hint: 'The version you run, and what is newer.' },
@@ -643,7 +649,7 @@ export function App() {
   const diomedesGroups = [
     { heading: 'Projects', ids: ['projects', 'new-project', 'open-folder', 'find'] },
     {
-      heading: 'Diomedes',
+      heading: 'Nectovia',
       ids: ['engines', 'appearance', 'design-center', 'permissions', 'detail', 'updates', 'about'],
     },
     { heading: 'Not ready yet', ids: ['automations'] },
@@ -709,9 +715,9 @@ export function App() {
                     setShowSettings(false);
                     setLanding('diomedes');
                   }}
-                  aria-label="Diomedes"
+                  aria-label="Nectovia"
                 >
-                  <MarkGlyph size={18} />
+                  <NectoviaGlyph size={18} />
                   <Brand />
                 </button>
                 <nav className="project-tabs" aria-label="Open projects">
@@ -953,6 +959,7 @@ export function App() {
                     const target = projects.find((p) => p.id === projectId);
                     if (target) openProject(target);
                   }}
+                  scheme={paintedScheme}
                 />
               ) : (
                 <Home
@@ -1042,7 +1049,7 @@ export function App() {
               </div>
             </label>
             <p className="prose small">
-              Diomedes keeps a history of every change it makes inside this folder.
+              Nectovia keeps a history of every change it makes inside this folder.
             </p>
             {browse && (
               <div className="folder-browser">

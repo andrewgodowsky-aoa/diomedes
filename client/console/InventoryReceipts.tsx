@@ -124,7 +124,7 @@ export function InventoryReceipts({ client = defaultClient }: { client?: Invento
   return (
     <main className="inventory-receipts">
       <header>
-        <p className="inventory-eyebrow">Diomedes / Inventory</p>
+        <p className="inventory-eyebrow">Nectovia / Inventory</p>
         <h1>Stock receipts</h1>
         <p>
           Record stock already received and inspect its History. No orders, supplier messages or

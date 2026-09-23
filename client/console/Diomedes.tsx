@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { ExternalEngine, Project, Route, Turn } from '../../shared/types';
 import { ENGINE_NAMES } from '../../shared/engines';
+import { speakerName } from '../attribution-display';
 import type { EverythingItem } from './Everything';
 import { Rail } from './Rail';
 import {
@@ -19,6 +20,7 @@ import {
   type Restriction,
 } from './diomedes-view';
 import './console.css';
+import './nectovia.css';
 import './everything.css';
 import './diomedes.css';
 
@@ -71,13 +73,17 @@ export interface DiomedesPageProps {
   onDestination(id: string): void;
   onTogglePin(id: string): void;
   onNewProject(): void;
+  /** The progress report that opens the conversation, when the scheme draws one. */
+  brief?: ReactNode;
+  /** The page's art, beside the conversation, when the scheme draws it. */
+  art?: ReactNode;
 }
 
 /** What the chosen restriction promises, in the composer's own caption line
  *  (the pattern `client/console/Composer.tsx`'s CAPS already uses). Never
  *  exported: it is wording, not a decision the view-model owns. */
 const CAPS: Record<Restriction, string> = {
-  automatic: 'Diomedes decides whether to answer, plan or start work. It starts only what you have allowed.',
+  automatic: 'Nectovia decides whether to answer, plan or start work. It starts only what you have allowed.',
   'answer-only': 'Answers only. Nothing is planned or started.',
   'plan-only': 'Answers and writes a plan for you to read. Nothing is started.',
 };
@@ -159,6 +165,8 @@ export function Diomedes({
   onDestination,
   onTogglePin,
   onNewProject,
+  brief,
+  art,
 }: DiomedesPageProps) {
   const [text, setText] = useState('');
   // One unconfirmed message at a time: it is resolved before anything new is sent.
@@ -202,9 +210,10 @@ export function Diomedes({
             region and the main inside it answering to the same name reads as
             two places to a screen reader. */}
         <section className="screen on dio-screen">
-          <main className="work" aria-label="Diomedes">
+          {art}
+          <main className="work" aria-label="Nectovia">
             <div className="col head">
-              <h1>Diomedes</h1>
+              <h1>Nectovia</h1>
             </div>
             <div className="col instr" aria-label="This conversation">
               <span>{instrumentLine(scopeId, projects, restriction)}</span>
@@ -213,10 +222,11 @@ export function Diomedes({
 
             <div className="transcript">
               <div className="col">
+                {brief}
                 {turns.map((turn) => (
                   <div className={`turn ${turn.role === 'you' ? 'you' : 'dio'}`} key={turn.id}>
                     <div className="who">
-                      <b>{turn.role === 'you' ? 'You' : 'Diomedes'}</b>
+                      <b>{speakerName(turn.role)}</b>
                     </div>
                     <div className="body">
                       {paragraphs(turn.text).map((p, i) => (
@@ -267,7 +277,7 @@ export function Diomedes({
               {unconfirmed !== null && !pending && (
                 <div className="dio-unconfirmed" role="group" aria-label="A message that was not confirmed">
                   <p>
-                    Diomedes could not confirm your last message. Sending it again checks what
+                    Nectovia could not confirm your last message. Sending it again checks what
                     happened and never asks twice.
                   </p>
                   <p className="dio-quote" title={unconfirmed}>
@@ -286,11 +296,11 @@ export function Diomedes({
               {unavailable !== null ? (
                 <p className="composer dio-unavailable">{unavailable}</p>
               ) : (
-                <div className={`composer${turns.length === 0 ? ' quiet' : ''}`}>
+                <div className={`composer${turns.length === 0 ? ' quiet' : ''}${pending ? ' busy' : ''}`}>
                   <textarea
                     rows={turns.length === 0 ? 3 : 1}
-                    aria-label="Message Diomedes"
-                    placeholder="Ask a question or give Diomedes something to do."
+                    aria-label="Message Nectovia"
+                    placeholder="Ask a question or give Nectovia something to do."
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                     onKeyDown={(e) => {

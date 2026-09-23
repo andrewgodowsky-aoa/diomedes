@@ -358,7 +358,7 @@ function Viewer({
       {!readable && (
         <p className="caption files-external">
           Open in the app that owns it — this window has no hand-off to the desktop shell, so
-          Diomedes cannot start it for you.
+          Nectovia cannot start it for you.
         </p>
       )}
       {readable && failure && (

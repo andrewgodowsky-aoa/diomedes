@@ -306,7 +306,7 @@ function OneDocument({
       setBackupWarning(null);
     } catch {
       setBackupWarning(
-        'This computer would not keep a spare copy of your unsaved writing. Save before you close Diomedes.',
+        'This computer would not keep a spare copy of your unsaved writing. Save before you close Nectovia.',
       );
     }
   }, [base, buffer, path, projectId]);
@@ -604,7 +604,7 @@ function OneDocument({
       {readOnlyReason && <p className="de-note">{readOnlyReason}</p>}
       {outside && (
         <p className="de-note">
-          This file was changed outside Diomedes. You are looking at the newest version.
+          This file was changed outside Nectovia. You are looking at the newest version.
         </p>
       )}
       {backupWarning && <p className="de-note de-warn">{backupWarning}</p>}
@@ -690,7 +690,7 @@ function OneDocument({
           </div>
           {theirs && (
             <>
-              <p className="de-note">Diomedes keeps a record of the version you replace.</p>
+              <p className="de-note">Nectovia keeps a record of the version you replace.</p>
               <div
                 className="de-theirs"
                 tabIndex={0}

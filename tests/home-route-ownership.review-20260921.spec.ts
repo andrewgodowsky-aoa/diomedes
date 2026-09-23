@@ -42,7 +42,7 @@ async function savedThread(): Promise<Conversation> {
 }
 async function open(page: Page) {
   await page.goto(baseURL);
-  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Route' })).toBeVisible();
 }
 
@@ -180,7 +180,7 @@ test('HLR-02: a migrated conversation names the route serving its pending messag
   await open(page);
   await expect(page.locator('.instr')).toContainText('Claude Code');
   const callsBefore = seen.length;
-  const composer = page.getByRole('textbox', { name: 'Message Diomedes' });
+  const composer = page.getByRole('textbox', { name: 'Message Nectovia' });
   try {
     await composer.fill('SLOW migration route review');
     await composer.press('Enter');

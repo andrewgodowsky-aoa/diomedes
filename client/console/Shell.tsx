@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { selectedEngine } from '../../shared/ai-selection';
-import { formatOrigin, originForNeed, originForSession } from '../../shared/attribution';
+import { formatOrigin, originForNeed, originForSession } from '../attribution-display';
 import type { ScopeGrantView } from '../../shared/permissions';
 import { isRoute, isExternalEngine } from '../../shared/engines';
 import type { EngineConnection } from '../../shared/engines';
@@ -47,7 +47,7 @@ import {
   askDraftKey,
   askModeKey,
 } from '../components';
-import { Mark } from './Mark';
+import { NectoviaMark } from './NectoviaMark';
 import { Rail, type RailItem } from './Rail';
 import { ThreadView } from './ThreadView';
 import { acceptPreview, type PreviewPosition } from './engine-text-preview';
@@ -73,6 +73,7 @@ import { applyQuery, buildEntries, type PaletteContext } from './paletteEntries'
 import { useTravelOnView } from './motion';
 import type { ShellView } from './types';
 import './console.css';
+import './nectovia.css';
 import './palette.css';
 import './motion.css';
 import './files.css';
@@ -760,7 +761,7 @@ export function Shell({
       // that changed in the moment between the decision and the call.
       const applied = pick({ model: decision.model, effort: decision.effort }, decision.route, thread, live);
       if (!applied) {
-        say('This thread changed while Diomedes was checking it, so nothing was selected.');
+        say('This thread changed while Nectovia was checking it, so nothing was selected.');
         onFirstTaskTaken?.();
         return;
       }
@@ -1238,7 +1239,7 @@ export function Shell({
     {
       id: 'settings',
       label: 'Settings',
-      hint: 'How much Diomedes explains, what it may do on its own, and how it looks.',
+      hint: 'How much Nectovia explains, what it may do on its own, and how it looks.',
     },
     {
       id: 'projects',
@@ -1248,7 +1249,7 @@ export function Shell({
   ];
   const destinationGroups = [
     { heading: 'In this project', ids: ['thread', 'board', 'team', 'history', 'files'] },
-    { heading: 'Diomedes', ids: ['engines', 'settings', 'projects'] },
+    { heading: 'Nectovia', ids: ['engines', 'settings', 'projects'] },
     { heading: 'Not ready yet', ids: ['automations', 'connections'] },
   ];
   // Which destination the rail and the flyout mark as the one showing. The
@@ -1371,7 +1372,7 @@ export function Shell({
   return (
     <div ref={rootRef} className={`console ${!online ? 'disconnected' : ''}`}>
       <header className="top">
-        <Mark />
+        <NectoviaMark />
         <nav className="crumb" aria-label="Open projects">
           <button type="button" onClick={onShowProjects}>
             Projects

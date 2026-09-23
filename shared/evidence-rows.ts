@@ -58,12 +58,12 @@ const plainChoice = (
   model: EvidenceView['choice']['model'],
 ): string => {
   const worker =
-    agent === 'manual' ? 'The worker was picked by hand' : 'Diomedes picked the worker';
+    agent === 'manual' ? 'The worker was picked by hand' : 'Nectovia picked the worker';
   const runtime =
     model === 'manual'
       ? 'the model was picked by hand'
       : model === 'automatic'
-        ? 'Diomedes picked the model'
+        ? 'Nectovia picked the model'
         : 'the model was whatever the route runs by default';
   return `${worker}; ${runtime}.`;
 };

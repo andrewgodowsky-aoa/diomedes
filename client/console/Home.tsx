@@ -17,7 +17,10 @@ import {
 import { CAPS, MODE_ORDER } from './Composer';
 import type { EverythingItem } from './Everything';
 import { Rail, type RailItem } from './Rail';
+import { SegmentBar } from './SegmentBar';
+import { projectProgress } from './progress-bars';
 import './console.css';
+import './nectovia.css';
 import './everything.css';
 import './home.css';
 
@@ -101,7 +104,7 @@ function projectLine(p: Project): { text: string; tone?: 'attn' | 'live' } {
   if (p.status?.working)
     return { text: `Working on ${plural(p.status.working, 'task')}`, tone: 'live' };
   if (p.status?.tasksTotal)
-    return { text: `${p.status.tasksDone} of ${p.status.tasksTotal} tasks done` };
+    return { text: `${p.status.tasksDone} of ${p.status.tasksTotal} ${p.status.tasksTotal === 1 ? 'task' : 'tasks'} done` };
   return { text: 'Ready to begin' };
 }
 
@@ -175,11 +178,12 @@ export function Home({
       time: date(p.lastOpenedAt || p.createdAt),
       sub: line.text,
       tone: line.tone,
+      progress: projectProgress(p),
     };
   });
 
   const destinations: EverythingItem[] = [
-    { id: 'diomedes', label: 'Diomedes', hint: 'Talk to Diomedes about any project, or all of them.' },
+    { id: 'diomedes', label: 'Nectovia', hint: 'Talk to Nectovia about any project, or all of them.' },
     { id: 'new-project', label: 'New project', hint: 'Start from an empty folder.' },
     {
       id: 'open-folder',
@@ -210,7 +214,7 @@ export function Home({
     {
       id: 'permissions',
       label: 'Permissions',
-      hint: 'What Diomedes may do on its own, and what always asks first.',
+      hint: 'What Nectovia may do on its own, and what always asks first.',
     },
     { id: 'detail', label: 'Interface detail', hint: 'How much each change spells out.' },
     { id: 'updates', label: 'App updates', hint: 'The version you run, and what is newer.' },
@@ -219,7 +223,7 @@ export function Home({
   const groups = [
     { heading: 'Projects', ids: ['new-project', 'open-folder', 'sample', 'find'] },
     {
-      heading: 'Diomedes',
+      heading: 'Nectovia',
       ids: ['diomedes', 'engines', 'appearance', 'design-center', 'permissions', 'detail', 'updates', 'about'],
     },
   ];
@@ -370,8 +374,10 @@ export function Home({
                     <ul className="home-list">
                       {listed.map((p) => {
                         const line = projectLine(p);
-                        const total = p.status?.tasksTotal ?? 0;
-                        const done = p.status?.tasksDone ?? 0;
+                        // The project's own task count, drawn as a bar in the Tasks cell with
+                        // the count in words beneath it. The name's sub line then says only
+                        // what the bar does not: that the project waits on the person, or runs.
+                        const progress = projectProgress(p);
                         return (
                           <li key={p.id}>
                             <button
@@ -387,9 +393,11 @@ export function Home({
                                   />
                                   <strong>{p.name}</strong>
                                 </span>
-                                <span className={`home-sub${line.tone ? ` ${line.tone}` : ''}`}>
-                                  {line.text}
-                                </span>
+                                {(line.tone || !progress) && (
+                                  <span className={`home-sub${line.tone ? ` ${line.tone}` : ''}`}>
+                                    {line.text}
+                                  </span>
+                                )}
                                 {settings.detail === 'technical' && (
                                   <span className="mono lc home-path" title={p.folder}>
                                     {p.folder}
@@ -397,12 +405,14 @@ export function Home({
                                 )}
                               </span>
                               <span className="home-cell home-tasks">
-                                <span className="home-meter" aria-hidden="true">
-                                  <i style={{ width: total ? `${(done / total) * 100}%` : '0%' }} />
-                                </span>
-                                <span className="mono lc">
-                                  {done}/{total}
-                                </span>
+                                {/* Inside the row's button the bar is drawn for the eye; its
+                                    caption is ordinary text, so the count is in the button's
+                                    name exactly once. */}
+                                {progress ? (
+                                  <SegmentBar {...progress} label={`${p.name} tasks`} decorative />
+                                ) : (
+                                  <span className="home-none">No tasks</span>
+                                )}
                               </span>
                               <span
                                 className={`home-cell mono lc${p.status?.needsYou ? ' attn' : ''}`}

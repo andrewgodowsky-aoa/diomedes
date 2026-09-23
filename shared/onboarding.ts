@@ -49,7 +49,7 @@ export function continueLabel(choice: ContinueChoice): string {
 
 /** The one sentence beside that control. Never a claim the sample verified anything. */
 export function continueNote(choice: ContinueChoice): string {
-  if (choice === 'verified') return 'Diomedes will use the service you tested.';
+  if (choice === 'verified') return 'Nectovia will use the service you tested.';
   return choice === 'untested'
     ? 'This connection has not answered a real request yet.'
     : 'Sample work is scripted on this computer. It is not proof that a provider answered.';

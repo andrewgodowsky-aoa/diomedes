@@ -70,7 +70,7 @@ const homeThread = async () => {
   if (!bound || !state) return null;
   return state.conversations.find((item) => item.id === bound.threadId) ?? null;
 };
-const composer = (page: Page) => page.getByRole('textbox', { name: 'Message Diomedes' });
+const composer = (page: Page) => page.getByRole('textbox', { name: 'Message Nectovia' });
 const answers = (page: Page) => page.locator('.turn.dio .body');
 const routeControl = (page: Page) => page.getByRole('combobox', { name: 'Route' });
 const strip = (page: Page) =>
@@ -106,7 +106,7 @@ function gate() {
 
 async function open(page: Page) {
   await page.goto(baseURL);
-  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
 }
 async function say(page: Page, text: string) {
   await expect(page.locator('.dio-pending')).toHaveCount(0);

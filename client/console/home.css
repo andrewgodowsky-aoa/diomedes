@@ -140,7 +140,7 @@
 .console .home-reg-head,
 .console .home-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 92px 64px 64px 52px 60px;
+  grid-template-columns: minmax(0, 1fr) 136px 64px 64px 52px 60px;
   gap: 4px 16px;
 }
 .console .home-reg-head {
@@ -231,24 +231,26 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+/* The project's task count: one segment a task, lit as tasks finish, with the
+   count in words under it (SegmentBar). The cell keeps the register's right
+   edge, so the bar ends where the figures in the other columns end. */
 .console .home-tasks {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
+  display: grid;
+  justify-items: stretch;
+  align-self: center;
+  min-width: 0;
 }
-/* Done over total, as a measure beside the figure it measures. */
-.console .home-meter {
-  width: 36px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--hair-2);
-  overflow: hidden;
+.console .home-tasks .seg-bar {
+  gap: 5px;
 }
-.console .home-meter i {
-  display: block;
-  height: 100%;
-  background: var(--t2);
+.console .home-tasks .seg-caption {
+  text-align: right;
+  font-size: var(--dm-type-meta);
+  color: var(--t3);
+}
+.console .home-tasks .home-none {
+  color: var(--t3);
+  font-size: var(--dm-type-meta);
 }
 .console .home-note {
   margin: 14px 0 0;
@@ -311,7 +313,7 @@
 @media (max-width: 1100px) {
   .console .home-reg-head,
   .console .home-row {
-    grid-template-columns: minmax(0, 1fr) 92px 64px 60px;
+    grid-template-columns: minmax(0, 1fr) 136px 64px 60px;
   }
   /* Running and Today give way first; Waiting is the one a person acts on. */
   .console .home-reg-head > span:nth-child(4),
@@ -331,7 +333,7 @@
     display: none;
   }
   .console .home-row {
-    grid-template-columns: minmax(0, 1fr) max-content;
+    grid-template-columns: minmax(0, 1fr) 112px;
   }
   .console .home-row > .home-cell:not(.home-tasks) {
     display: none;

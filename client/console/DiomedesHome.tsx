@@ -20,6 +20,8 @@ import type { MessageResult } from '../../shared/conversation';
 import { CONVERSATION_DEFAULT_ROUTE } from '../../shared/engines';
 import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
 import { Diomedes, routeOptions } from './Diomedes';
+import { HomeArt } from './HomeArt';
+import { HomeBrief } from './HomeBrief';
 import type { EverythingItem } from './Everything';
 import {
   diomedesThread,
@@ -49,10 +51,16 @@ export interface DiomedesHomeProps {
   onNewProject(): void;
   /** Go to the project where work that started is running. */
   onOpenWork(projectId: string): void;
+  /**
+   * The appearance scheme the page is painted in. The Nectovia scheme opens the
+   * conversation with its progress report and draws the bust beside it; every
+   * other scheme draws the page as it always has.
+   */
+  scheme?: string;
 }
 
 const words = (error: unknown) =>
-  error instanceof Error ? error.message : 'Diomedes could not complete that.';
+  error instanceof Error ? error.message : 'Nectovia could not complete that.';
 
 /** What an interrupt acknowledgement that cannot confirm a stop is told as. */
 const STOP_UNCONFIRMED =
@@ -532,6 +540,12 @@ export function DiomedesHome(props: DiomedesHomeProps) {
       onDestination={props.onDestination}
       onTogglePin={props.onTogglePin}
       onNewProject={props.onNewProject}
+      brief={
+        props.scheme === 'nectovia' ? (
+          <HomeBrief projects={projects} onOpen={props.onOpenWork} />
+        ) : undefined
+      }
+      art={props.scheme === 'nectovia' ? <HomeArt /> : undefined}
     />
   );
 }

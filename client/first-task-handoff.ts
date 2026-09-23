@@ -75,7 +75,7 @@ const SENTENCES: Record<DropReason, string> = {
   'route-changed':
     'That route changed since you chose it, so nothing was selected for this thread.',
   unreadable:
-    'Diomedes could not check that route just now, so nothing was selected for this thread.',
+    'Nectovia could not check that route just now, so nothing was selected for this thread.',
 };
 
 const drop = (reason: DropReason): FirstTaskDecision => ({

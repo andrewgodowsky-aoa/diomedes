@@ -105,9 +105,9 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await page.getByRole('button', { name: 'Skip AI setup' }).click();
   await expect(page.getByRole('heading', { name: 'Your workspace is ready' })).toBeVisible();
   await expect(page.getByText(/AI setup was skipped/)).toBeVisible();
-  await page.getByRole('button', { name: 'Open Diomedes' }).click();
+  await page.getByRole('button', { name: 'Open Nectovia' }).click();
   // The app opens to Diomedes. The Projects page is where it always was, one click away.
-  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
   await showProjects(page);
   // The shared data folder is not guaranteed empty by the time this file runs
   // (field.spec.ts sorts first and leaves a project behind), so the empty state
@@ -134,7 +134,7 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   expect(emptyListServed).toBe(true);
   await page.unroute('**/api/projects');
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Diomedes', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nectovia', exact: true })).toBeVisible();
   await showProjects(page);
   const settings: Settings = await (await page.request.get('/api/settings')).json();
   expect(settings.detail).toBe('guided');
@@ -162,7 +162,7 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await expect(
     page.getByRole('heading', { name: 'Your workspace is ready', exact: true }),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Open Diomedes' }).click();
+  await page.getByRole('button', { name: 'Open Nectovia' }).click();
   // First run now ends on the Diomedes page too; the Projects page is one click away.
   await showProjects(page);
   await page.getByRole('button', { name: /^Try the sample project/ }).click();
@@ -264,7 +264,7 @@ test('F10: plan steps become real tasks with provenance and a History entry', as
   await page.getByRole('button', { name: 'Make tasks from this plan', exact: true }).click();
   const sheet = page.locator('.task-proposals');
   await expect(
-    sheet.getByRole('heading', { name: /Diomedes found \d+ tasks in this plan/ }),
+    sheet.getByRole('heading', { name: /Nectovia found \d+ tasks in this plan/ }),
   ).toBeVisible();
   const add = sheet.getByRole('button', { name: /^Add \d+ tasks$/ });
   const label = await add.innerText();
@@ -1079,7 +1079,7 @@ test('Unavailable helper: the application notice has no invented runtime caption
   await askBox.getByRole('button', { name: 'Send', exact: true }).click();
   const helperTurn = page.locator('.turn.assistant').last();
   await expect(helperTurn).toContainText('No service is connected for this request');
-  await expect(helperTurn.locator('.turn-meta')).toContainText('Diomedes');
+  await expect(helperTurn.locator('.turn-meta')).toContainText('Nectovia');
   await expect(helperTurn.locator('.helper-caption')).toHaveCount(0);
   await expect(helperTurn).not.toContainText('Sample work');
 });

@@ -1,5 +1,14 @@
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { Everything, type EverythingItem } from './Everything';
+import { SegmentBar } from './SegmentBar';
+import type { SegmentInput } from './segment-bar-model';
 
 export interface RailItem {
   id: string;
@@ -8,6 +17,12 @@ export interface RailItem {
   sub: string;
   /** Colours the sub line when it carries a state: waiting on the person, or running. */
   tone?: 'attn' | 'live';
+  /**
+   * A count the item's own record keeps (a project's tasks), drawn as a small
+   * segment bar ahead of the sub line. The sub line stays the words: the bar is
+   * inside the row's button, so it is drawn for the eye only.
+   */
+  progress?: SegmentInput | null;
 }
 
 interface RailProps {
@@ -59,10 +74,13 @@ export function Rail({
   navLabel,
 }: RailProps) {
   const buttons = useRef(new Map<string, HTMLButtonElement>());
-  const [pointTop, setPointTop] = useState<number | null>(null);
+  // The selected row's place on the spine. Its `li` is positioned, so the
+  // button's own offsetTop is always 0 and the point used to sit on the first
+  // row whatever was selected; the row's offset in the spine is the li's.
+  const [row, setRow] = useState<{ top: number; height: number } | null>(null);
   useLayoutEffect(() => {
-    const el = selectedId ? buttons.current.get(selectedId) : undefined;
-    setPointTop(el ? el.offsetTop + 12 : null);
+    const li = selectedId ? buttons.current.get(selectedId)?.parentElement : undefined;
+    setRow(li ? { top: li.offsetTop, height: li.offsetHeight } : null);
   }, [selectedId, items.length]);
   const byId = new Map(destinations.map((item) => [item.id, item]));
   // A pinned id that names nothing is skipped rather than drawn empty: pins
@@ -81,8 +99,35 @@ export function Rail({
           New
         </button>
       </div>
-      <ul className="spine console-threads">
-        {pointTop !== null && <span className="gp" style={{ top: pointTop }} />}
+      <ul
+        className="spine console-threads"
+        style={
+          row
+            ? ({ '--row-top': `${row.top}px`, '--row-h': `${row.height}px` } as CSSProperties)
+            : undefined
+        }
+      >
+        {row && (
+          <span className="gp" style={{ top: row.top + 12 }}>
+            {/* The seam's step beside the selected row. Only the Nectovia scheme
+                draws it (nectovia.css); every other scheme shows the point. */}
+            <svg
+              key={selectedId}
+              className="seam"
+              aria-hidden="true"
+              focusable="false"
+              width="6"
+              height={row.height + 10}
+              viewBox={`0 0 6 ${row.height + 10}`}
+            >
+              <polyline className="seam-lead" points={`0.5,0 4.5,6 4.5,${row.height - 6}`} />
+              <polyline
+                className="seam-trail"
+                points={`4.5,${row.height - 6} 0.5,${row.height} 0.5,${row.height + 10}`}
+              />
+            </svg>
+          </span>
+        )}
         {items.map((item) => (
           <li key={item.id}>
             <button
@@ -99,7 +144,14 @@ export function Rail({
                 <span className="nm">{item.name}</span>
                 <span className="mono lc when">{item.time}</span>
               </span>
-              <small className={item.tone}>{item.sub}</small>
+              {item.progress ? (
+                <span className="rail-progress">
+                  <SegmentBar {...item.progress} label={item.name} caption={null} decorative />
+                  <small className={item.tone}>{item.sub}</small>
+                </span>
+              ) : (
+                <small className={item.tone}>{item.sub}</small>
+              )}
             </button>
           </li>
         ))}

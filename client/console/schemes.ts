@@ -16,6 +16,23 @@ export interface FieldScheme {
 }
 
 export const SCHEMES: FieldScheme[] = [
+  // Nectovia: ink ground, silver type and the bust's cyan, with plates, seams
+  // and the fractured-signal motion laid over the Console (console/nectovia.css).
+  {
+    id: 'nectovia',
+    name: 'Nectovia',
+    chrome: '#08080c',
+    surface: '#0d0d12',
+    raised: '#14141a',
+    hair: 'rgba(230,233,237,.07)',
+    hair2: 'rgba(230,233,237,.14)',
+    t1: '#e6e9ed',
+    t2: '#a4acb6',
+    t3: '#838d99',
+    light: '#44d2c9',
+    attn: '#e0a94a',
+    fail: '#e06c6c',
+  },
   {
     id: 'field',
     name: 'Field',
@@ -169,7 +186,10 @@ export const SCHEMES: FieldScheme[] = [
   },
 ];
 
-export const DEFAULT_SCHEME = 'field';
+// New installs start on Nectovia (server/store.ts writes the same default).
+// `schemeId` still reads an unknown id as Field, because an unknown
+// `data-package` matches no scheme block and paints :root, which is Field.
+export const DEFAULT_SCHEME = 'nectovia';
 
 export function schemeId(id: string | undefined): string {
   if (id === 'cobalt') return 'harbor';

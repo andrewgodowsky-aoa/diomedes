@@ -163,7 +163,10 @@ test('D01: a saved theme applies without remounting the app or losing a draft', 
   expect(saved.ok(), await saved.text()).toBe(true);
 
   await openConsole(page);
-  await expect(page.locator('html')).toHaveAttribute('data-package', 'field');
+  // The built-in package a new install starts on (server/store.ts). Nothing
+  // earlier in the suite changes the shared service's package: field.spec.ts,
+  // which does, sorts after this file.
+  await expect(page.locator('html')).toHaveAttribute('data-package', 'nectovia');
 
   // Type a message and leave it unsent; the composer holds it in React state,
   // so a remount is exactly what would lose it.
@@ -244,8 +247,8 @@ test('D02: a person’s own text size survives the theme, and reset restores the
   await expect
     .poll(async () => page.evaluate(() => document.documentElement.dataset.themePack ?? 'absent'))
     .toBe('absent');
-  await expect(page.locator('html')).toHaveAttribute('data-package', 'field');
-  expect(await rootVar(page, '--surface')).toBe('#16191d');
+  await expect(page.locator('html')).toHaveAttribute('data-package', 'nectovia');
+  expect(await rootVar(page, '--surface')).toBe('#0d0d12');
   // The size preference is still the person's after the theme is gone.
   expect(await rootVar(page, '--dm-read-scale')).toBe('1.12');
   const restored = await page.request.put('/api/settings', {
@@ -268,8 +271,8 @@ test('D03: a theme that cannot be read leaves the base scheme showing and says s
   expect(pointed.ok()).toBe(true);
   await expect(page.locator('.console')).toBeVisible();
   await expect(page.locator('.appearance-notice')).toBeVisible();
-  await expect(page.locator('html')).toHaveAttribute('data-package', 'field');
-  expect(await rootVar(page, '--surface')).toBe('#16191d');
+  await expect(page.locator('html')).toHaveAttribute('data-package', 'nectovia');
+  expect(await rootVar(page, '--surface')).toBe('#0d0d12');
   const cleared = await page.request.post('/api/themes/reset', { headers: HEADERS });
   expect(cleared.ok()).toBe(true);
 });

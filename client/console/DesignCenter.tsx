@@ -315,7 +315,7 @@ export function DesignCenter({
       } catch {
         // A file that is not JSON at all. The parser's own words here would be
         // about tokens and offsets, which is not what went wrong for a person.
-        setProblem('That file is not a Diomedes theme this app can read.');
+        setProblem('That file is not a Nectovia theme this app can read.');
         return;
       }
       if (!result.ok) {
