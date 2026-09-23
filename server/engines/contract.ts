@@ -1,4 +1,9 @@
-import type { AdapterRouteContract, TransientPreview } from '../../shared/adapter-contract.js';
+import type {
+  AdapterRouteContract,
+  RawToolActivity,
+  ToolActivity,
+  TransientPreview,
+} from '../../shared/adapter-contract.js';
 import type { EngineModel, ExternalEngine } from '../../shared/types.js';
 import type { AccountRouteIssue } from '../../shared/engines.js';
 import type { NativeSessionRef } from '../../shared/contract-revision.js';
@@ -53,6 +58,18 @@ export interface TextRequest {
    * not let them reach a caller.
    */
   onDelta?: (text: string) => void;
+  /**
+   * Caller-facing tool activity: stamped, redacted frames from `activitySink`
+   * in shared/adapter-contract.ts. Narration only; the durable run record is
+   * what a tool actually did.
+   */
+  onActivity?: (frame: ToolActivity) => void;
+  /**
+   * Adapter-facing raw tool activity sink, set only by EngineService when it
+   * wraps the caller's `onActivity`. An adapter calls it once when a tool call
+   * starts and once when it finishes or fails, with a plain one-line summary.
+   */
+  onToolActivity?: (raw: RawToolActivity) => void;
 }
 export interface TextResponse {
   text: string;
