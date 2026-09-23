@@ -368,30 +368,35 @@ export function Picker({
                   <div key={id}>
                     <h4>
                       {routeDisplayName(id)}
-                      <span title={view.connection.endpoint}>{view.connection.accountRoute}</span>
+                      <span title={view.connection.endpoint}>
+                        {'resource' in view.connection ? view.connection.resource : shortLocation(view.connection.endpoint)}
+                      </span>
                     </h4>
-                    <p className="note">
-                      Your company’s own account, billed there. Only the models set up in Settings.
-                    </p>
-                    {providerModels(view).map((m) => {
-                      const on = route === id && (chosenSlug || savedModel) === m.slug;
+                    <p className="note">Your company’s own account, billed there.</p>
+                    {/* Like AWS, the thread takes the route and its saved default model: the
+                        host checks a pinned model against engine catalogues, which list none
+                        for a company-account route, so a pin here would be refused. */}
+                    {(() => {
+                      const models = providerModels(view);
+                      const saved = settings.services?.[`${id}Model`];
+                      const current = models.find((m) => m.slug === saved) ?? models[0];
+                      if (!current) return null;
                       return (
                         <button
-                          key={m.slug}
                           type="button"
-                          className={`m ${on ? 'on' : ''}`}
+                          className={`m ${route === id ? 'on' : ''}`}
                           role="menuitemradio"
-                          aria-checked={on}
-                          onClick={() => choose({ model: m.slug, effort: null }, id)}
+                          aria-checked={route === id}
+                          onClick={() => choose(null, id)}
                         >
-                          <span>{m.slug}</span>
-                          <span className="id" title={m.where}>
-                            {m.where}
+                          <span>{current.slug}</span>
+                          <span className="id" title={current.where}>
+                            {current.where}
                           </span>
                           <small>Within the spend limit set in Settings</small>
                         </button>
                       );
-                    })}
+                    })()}
                   </div>
                 ) : state.note ? (
                   <p className="note" key={id}>

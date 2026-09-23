@@ -292,8 +292,9 @@ export function readinessLines(readiness: ModelApiReadiness): { id: string; ok: 
 }
 
 /**
- * The models a thread's picker offers on this route: one per Azure deployment or allowed
- * OpenRouter model. `where` is what serves it: the deployment, or the only endpoints it may use.
+ * The models set up on this route: one per Azure deployment or allowed OpenRouter model.
+ * `where` is what serves it: the deployment, or the only endpoints it may use. The picker
+ * shows the one saved as the route's default, which is what a thread on the route runs.
  */
 export function providerModels(view: ProviderView | null): { slug: string; where: string }[] {
   if (!view?.connection) return [];

@@ -15,6 +15,7 @@ import { createApp } from '../server/app';
 import { EngineService } from '../server/engines/service';
 import { testOnlySecretBox, type SecretBox } from '../server/connection-secrets';
 import type { AzureConnectionView, ModelApiReadiness, OpenRouterConnectionView } from '../shared/model-api';
+import type { Conversation, Project } from '../shared/types';
 import { azureConnectBody, openRouterConnectBody } from '../client/provider-setup-view';
 import { awsLimitBody } from '../client/aws-bedrock-view';
 
@@ -64,7 +65,7 @@ async function call(route: string, method = 'GET', body?: unknown, extra: Record
 }
 async function ok<T>(route: string, method = 'GET', body?: unknown): Promise<T> {
   const { status, text } = await call(route, method, body);
-  expect(status, `${route}: ${status} ${text}`).toBe(200);
+  expect([200, 201], `${route}: ${status} ${text}`).toContain(status);
   expect(text).not.toContain(SECRET);
   return JSON.parse(text) as T;
 }
@@ -153,6 +154,32 @@ describe('Azure OpenAI setup, from the card to the host and back', () => {
   test('a write without the client header is refused', async () => {
     const refused = await call('/ai/model-api/azure-openai', 'PUT', azureBody(), { 'Content-Type': 'application/json' });
     expect(refused.status).toBe(403);
+  });
+});
+
+describe('a thread on a connected Azure route', () => {
+  test('takes the route with no pin and runs the saved default model; a pinned model is refused', async () => {
+    await ok('/ai/model-api/azure-openai', 'PUT', azureBody());
+    const project = await ok<Project>('/projects', 'POST', { name: 'Harbor cafe' });
+    const thread = await ok<Conversation>(`/projects/${project.id}/threads`, 'POST', {});
+    // What the picker sends: the route, and no model, exactly as it does for AWS.
+    const moved = await ok<Conversation>(`/projects/${project.id}/threads/${thread.id}`, 'PUT', {
+      engine: 'azure-openai',
+      requested: null,
+    });
+    expect(moved.engine).toBe('azure-openai');
+    const next = await ok<{ route: string; resolution: { outcome: string; model: string | null } }>(
+      `/projects/${project.id}/threads/${thread.id}/work-style`,
+    );
+    expect(next.route).toBe('azure-openai');
+    expect(next.resolution).toMatchObject({ outcome: 'run', model: 'gpt-5.6-luna' });
+    // Why the picker does not pin: the host checks a pin against engine catalogues, which list
+    // nothing for a company-account route.
+    const pinned = await call(`/projects/${project.id}/threads/${thread.id}`, 'PUT', {
+      engine: 'azure-openai',
+      requested: { model: 'gpt-4.1-mini', effort: null },
+    });
+    expect(pinned.status).toBe(400);
   });
 });
 
