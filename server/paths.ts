@@ -219,3 +219,18 @@ export const textKind = (name: string): 'markdown' | 'text' | 'drawing' | 'unsup
 // Files a browser runs code from when they are opened; the rule lives in
 // shared/ so the Console can hide a grant no server would honour.
 export { exactReviewOnly } from '../shared/exact-review.js';
+
+/**
+ * Firefox can sniff markup-first local Markdown/Mermaid as HTML or XML.
+ * Refuse model-written disguises instead of rewriting their reviewed bytes.
+ * Include BOM/whitespace, and conservatively reject any leading markup rather
+ * than tracking a browser's changing list of sniffable tags. Ordinary headings,
+ * fenced examples and Mermaid declarations keep their existing text rules.
+ */
+export function rejectMarkupText(name: string, text: string | null): void {
+  if (/\.(md|markdown|mmd)$/i.test(name) && text !== null && /^\s*</u.test(text))
+    throw new ApiError(
+      422,
+      `${name} starts with markup that a browser can run as code. Start model-written Markdown with a heading or plain text, and Mermaid with a diagram declaration.`,
+    );
+}

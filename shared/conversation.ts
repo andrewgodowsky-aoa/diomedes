@@ -85,3 +85,49 @@ export interface InterruptResponse {
   runId: string | null;
   state: InterruptState;
 }
+
+/**
+ * `POST /api/projects/:id/threads/:threadId/answer-format`: "Update this conversation". The client
+ * mints `commandId` once, when the person confirms, and retries with the same one.
+ */
+export interface ConversationUpdateRequest {
+  commandId: string;
+}
+
+/**
+ * What "Update this conversation" did. `updated` is false when every open conversation in the
+ * thread already runs on the current instructions: nothing was retired and no note was written.
+ * `noteId` names the one note turn the update wrote; a retry of the same command reads it back.
+ */
+export interface ConversationUpdate {
+  updated: boolean;
+  noteId: string | null;
+}
+
+/** Why "Update this conversation" was refused with 409, as the error's `code`. */
+export type ConversationUpdateRefusal = 'conversation_busy' | 'proposal_waiting';
+
+/**
+ * Why an update would not carry the recent messages over. `history-off`: the route the next
+ * message takes does not share history now. `other-route`: they were answered on another route
+ * than the one the next message takes. `other`: that route cannot answer yet, or they were
+ * answered under instructions this build does not know or has withdrawn.
+ */
+export type ConversationUpdateNotCarried = 'history-off' | 'other-route' | 'other';
+
+/**
+ * `GET /api/projects/:id/threads/:threadId/answer-format`: what "Update this conversation" would
+ * do now, decided by the server exactly as the update decides it, so the confirmation words
+ * itself from the server's decision (a WorkStyle tier's route is the server's to resolve). It
+ * changes nothing; the update decides again when the person confirms.
+ */
+export interface ConversationUpdatePreview {
+  /** How many of the thread's open conversations the update would start fresh. Zero: nothing to update. */
+  retiring: number;
+  /** Whether their recent messages would come along to the next message. */
+  carried: boolean;
+  /** The route the next message takes, a tier's included. Null when no route can answer it now. */
+  route: string | null;
+  /** Why nothing would come along, when something would be updated and `carried` is false. */
+  reason?: ConversationUpdateNotCarried;
+}

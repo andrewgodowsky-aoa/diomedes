@@ -11,6 +11,7 @@ import { toolRunning, type ToolLine } from './engine-activity';
 import { ToolActivityList } from './ToolActivity';
 import { TurnBody } from './TurnBody';
 import { ArtifactPane } from './ArtifactPane';
+import { RecordedArtifacts, type RecordedSource } from './RecordedArtifacts';
 import { useArtifactSelection, useArtifactWidth } from './artifact-panel';
 import type { SaveOutcome } from './artifact-save';
 import { turnKeyOf, type ArtifactRecord } from './artifacts';
@@ -81,6 +82,15 @@ export interface DiomedesPageProps {
   onDiscard(): void;
   /** One plain sentence about the last thing that went wrong, or null. */
   notice: string | null;
+  /** True when the notice is a refusal that sharing earlier messages answers: it carries the button. */
+  noticeSharesHistory?: boolean;
+  /**
+   * One plain line near the composer while this conversation's earlier messages are not shared
+   * with the route its next message takes, or null. Information, not a failure.
+   */
+  history?: string | null;
+  /** Opens the control that shares earlier messages, from the line or the refusal. */
+  onShareHistory?(): void;
   /** Reads the conversation again after a read of it failed. Null when no read is owed. */
   onReadAgain: (() => void) | null;
   results: DiomedesResult[];
@@ -99,7 +109,14 @@ export interface DiomedesPageProps {
   brief?: ReactNode;
   /** The page's art, beside the conversation, when the scheme draws it. */
   art?: ReactNode;
+  /** The conversation's "···" menu (ThreadMenu.tsx), at the end of the head, once there is a thread. */
+  menu?: ReactNode;
+  /** Where the conversation's recorded artifacts are read from, for the artifact panel. */
+  recorded?: RecordedSource | null;
 }
+
+/** The one control the history line and a refusal for want of history both carry. */
+const SHARE_HISTORY = 'Share earlier messages';
 
 /** Why Save is not offered on the All projects conversation. */
 export const SAVE_NEEDS_PROJECT =
@@ -169,6 +186,9 @@ export function Diomedes({
   onResend,
   onDiscard,
   notice,
+  noticeSharesHistory = false,
+  history = null,
+  onShareHistory,
   onReadAgain,
   results,
   onOpenResult,
@@ -182,6 +202,8 @@ export function Diomedes({
   onSaveArtifact,
   brief,
   art,
+  menu = null,
+  recorded = null,
 }: DiomedesPageProps) {
   const [text, setText] = useState('');
   // Only a message in flight streams, and what streamed is shown under it. The waiting line
@@ -240,6 +262,7 @@ export function Diomedes({
           <main className="work" aria-label={AGENT_NAME}>
             <div className="col head">
               <h1>{AGENT_NAME}</h1>
+              {menu}
             </div>
             <div className="col instr" aria-label="This conversation">
               <span>{instrumentLine(scopeId, projects, restriction)}</span>
@@ -315,7 +338,24 @@ export function Diomedes({
               {notice !== null && (
                 <p className="dio-notice" role="alert">
                   {notice}
+                  {noticeSharesHistory && onShareHistory && (
+                    <button type="button" className="send" onClick={onShareHistory}>
+                      {SHARE_HISTORY}
+                    </button>
+                  )}
                 </p>
+              )}
+              {/* A status, not an alert: nothing went wrong, and the person may never ask a
+                  follow-up. Not a `.turn` either: the transcript stays what the record holds. */}
+              {history !== null && (
+                <div className="dio-history" role="status">
+                  <p>{history}</p>
+                  {onShareHistory && (
+                    <button type="button" className="send" onClick={onShareHistory}>
+                      {SHARE_HISTORY}
+                    </button>
+                  )}
+                </div>
               )}
               {onReadAgain !== null && (
                 <div className="dio-reread">
@@ -483,6 +523,17 @@ export function Diomedes({
             onClose={artifacts.close}
             onSave={onSaveArtifact}
             saveUnavailable={SAVE_NEEDS_PROJECT}
+            recorded={
+              recorded ? (
+                <RecordedArtifacts
+                  source={recorded}
+                  index={artifacts.index}
+                  turns={turns}
+                  current={artifacts.record.key}
+                  onOpen={(next) => artifacts.open(next)}
+                />
+              ) : null
+            }
           />
         )}
       </div>

@@ -1,0 +1,88 @@
+/* The recorded-artifact list under the artifact panel's head (RecordedArtifacts.tsx). Read-only:
+   one hairline above it, the panel's caption type, and "changed since recorded" and "no longer in
+   the conversation" in the attention colour, each counted in the summary as well as said on its
+   row, so neither is ever folded out of sight. */
+.console .art-recorded {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--hair);
+  font-size: var(--dm-type-caption);
+}
+.console .art-recorded summary {
+  cursor: pointer;
+  color: var(--t3);
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.console .art-recorded summary:hover {
+  color: var(--t2);
+}
+.console .art-recorded-count {
+  font-family: var(--mono);
+  color: var(--t2);
+}
+.console .art-recorded summary b {
+  font-weight: 500;
+  color: var(--attn);
+}
+.console .art-recorded summary b:first-of-type {
+  margin-left: auto;
+}
+.console .art-recorded ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  max-height: 184px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.console .art-recorded li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.console .art-recorded li button,
+.console .art-recorded-gone {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 6px;
+  border-radius: var(--rb);
+  text-align: left;
+  color: var(--t1);
+}
+.console .art-recorded li button:hover,
+.console .art-recorded li button[aria-current='true'] {
+  background: var(--surface);
+}
+.console .art-recorded-gone {
+  color: var(--t3);
+}
+.console .art-recorded-kind {
+  flex: none;
+  color: var(--t3);
+}
+.console .art-recorded-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console .art-recorded-state {
+  flex: none;
+  color: var(--t3);
+}
+.console .art-recorded li.changed .art-recorded-state,
+.console .art-recorded li.missing .art-recorded-state {
+  color: var(--attn);
+}
+.console .art-recorded-note {
+  margin: 8px 0 0;
+  color: var(--t3);
+  font-size: var(--dm-type-caption);
+}
