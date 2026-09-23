@@ -218,7 +218,7 @@ export class ModelSessionRuns {
   private sharingPolicy: (projectId: string, documents: readonly string[], history: boolean, route: string) => void = () => {
     throw new HarnessError('cloud_sharing_unconfigured', 'Project cloud sharing is not configured for this model session.');
   };
-  private historyPolicy: (projectId: string) => boolean;
+  private historyPolicy: (projectId: string, route: string) => boolean;
   private readonly owner = `model-session-${randomUUID()}`;
   private readonly active = new Map<
     string,
@@ -227,14 +227,14 @@ export class ModelSessionRuns {
   constructor(
     private readonly runs: RunService,
     private readonly route: string,
-    shareHistory: (projectId: string) => boolean = () => false,
+    shareHistory: (projectId: string, route: string) => boolean = () => false,
   ) {
     this.historyPolicy = shareHistory;
   }
 
   setSharingPolicy(
     check: (projectId: string, documents: readonly string[], history: boolean, route: string) => void,
-    shareHistory: (projectId: string) => boolean,
+    shareHistory: (projectId: string, route: string) => boolean,
   ) {
     this.sharingPolicy = check;
     this.historyPolicy = shareHistory;
@@ -610,7 +610,7 @@ export class ModelSessionRuns {
         const childId = turnRunId(runId, input.requestId);
         // The host policy is read for each turn. A saved lineage does not grant
         // permission to send previous turns to the next model call.
-        const history = this.historyPolicy(input.projectId) ? this.history(run!, turnId) : '';
+        const history = this.historyPolicy(input.projectId, route) ? this.history(run!, turnId) : '';
         this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), history.length > 0, route);
         const preview = request.activity?.(context, turnId);
         // Pairs the host's finished/failed report with the call the model announced as started.

@@ -3093,7 +3093,9 @@ export async function createApp(options: AppOptions) {
             : { model: store.settings.services?.[`${conversationRoute}Model`] });
         if (typeof selection.model !== 'string' || !selection.model || typeof accountRoute !== 'string')
           throw new ApiError(409, `Connect ${routeName} and choose its model in AI setup first.`);
-        requireCloudSharing(state, conversationRoute, command.sources.map((source) => source.path));
+        requireCloudSharing(state, conversationRoute, command.sources.map((source) => source.path), false, {
+          home: store.isHomeProject(projectId),
+        });
         const paths = new Set<string>();
         const documents = [];
         for (const source of command.sources) {
@@ -3170,7 +3172,9 @@ export async function createApp(options: AppOptions) {
               ? ('resume' as const)
               : ('start' as const);
         if (conversationRoute === 'claude-code' && action !== 'start')
-          requireCloudSharing(state, conversationRoute, command.sources.map((source) => source.path), true);
+          requireCloudSharing(state, conversationRoute, command.sources.map((source) => source.path), true, {
+            home: store.isHomeProject(projectId),
+          });
         // One resolved identity: progress, execution and projection all name the run that ran.
         const progress = (kind: 'started' | 'delta' | 'ended', frame?: TransientPreview) =>
           store.emit('engine-text', {

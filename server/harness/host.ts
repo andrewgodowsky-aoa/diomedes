@@ -409,15 +409,23 @@ export function createHarnessHost({
   const claudeSessions = new ClaudeSessionRuns(runs);
   const modelSessions = new ModelSessionRuns(runs, AWS_BEDROCK_ROUTE);
   claudeSessions.setSharingPolicy((projectId, documents, prior) =>
-    requireCloudSharing(store.state(projectId), 'claude-code', documents, prior),
+    requireCloudSharing(store.state(projectId), 'claude-code', documents, prior, {
+      home: store.isHomeProject(projectId),
+    }),
   );
   modelSessions.setSharingPolicy(
     (projectId, documents, history, route) => {
       if (!isModelApiRoute(route))
         throw new ApiError(403, 'This model API route has no project sharing grant.');
-      requireCloudSharing(store.state(projectId), route, documents, history);
+      requireCloudSharing(store.state(projectId), route, documents, history, {
+        home: store.isHomeProject(projectId),
+      });
     },
-    (projectId) => cloudSharing(store.state(projectId)).shareConversationHistory,
+    // History is shared per route: a grant for one route's history never sends it on another.
+    (projectId, route) => {
+      const policy = cloudSharing(store.state(projectId));
+      return policy.shareConversationHistory && (policy.routes as string[]).includes(route);
+    },
   );
   const bridge = new HarnessBridge(store, runs, tools, adapter, redact, HOST_TEST_PROJECT, codex);
   const observers = new Set<{ runId: string; changed: () => void; closed: () => void }>();

@@ -66,15 +66,18 @@ afterEach(async () => {
 
 test('the page names a command\'s answer exactly as the server projected it', async () => {
   const home = await api<{ projectId: string; threadId: string }>('/home/conversation', 'POST', {});
-  await api(`/projects/${home.projectId}/cloud-sharing`, 'PUT', {
-    expectedVersion: 0, routes: ['claude-code'], documents: [],
-    shareConversationHistory: true, shareReviewPackets: false,
-  });
   // A newly provisioned Home thread defaults to AWS under the Home contract; this fixture's
   // only scripted provider is Claude Code, so its route is chosen explicitly, the same way
   // the Route control writes it.
   await api(`/projects/${home.projectId}/threads/${home.threadId}`, 'PUT', {
     engine: 'claude-code',
+  });
+  // A Home message needs no grant, but a Claude Code follow-up sends the earlier conversation,
+  // and history from Home stays gated by sharing (owner decision, 2026-09-23). The later
+  // messages below are follow-ups, so this test shares Home's history on that route.
+  await api(`/projects/${home.projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0, routes: ['claude-code'], documents: [],
+    shareConversationHistory: true, shareReviewPackets: false,
   });
   const messages = `/projects/${home.projectId}/threads/${home.threadId}/messages`;
   const say = (commandId: string, text: string) =>

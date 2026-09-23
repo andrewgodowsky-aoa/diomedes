@@ -477,10 +477,6 @@ test('a send on the provisioned default reaches the model driver with no Claude 
   await connect();
   await approveSpend();
   const home = await provisionHome();
-  await api(`/projects/${home.projectId}/cloud-sharing`, 'PUT', {
-    expectedVersion: 0, routes: ['aws-bedrock'], documents: [],
-    shareConversationHistory: true, shareReviewPackets: false,
-  });
   const sent = await send(home, 'm-hello', 'Good morning');
   expect(sent.answerText).toBe('answer:Good morning');
   expect(sent.outcome).toEqual({ status: 'answered' });
@@ -503,10 +499,6 @@ test('a consequential proposal from home still needs an explicit target, and hom
   await connect();
   await approveSpend();
   const home = await provisionHome();
-  await api(`/projects/${home.projectId}/cloud-sharing`, 'PUT', {
-    expectedVersion: 0, routes: ['aws-bedrock'], documents: [],
-    shareConversationHistory: true, shareReviewPackets: false,
-  });
   const untargeted = await send(home, 'm-act', 'ACT order the usual');
   expect(untargeted.outcome).toMatchObject({ status: 'not-started', reason: 'needs-target' });
   const athome = await send(home, 'm-home', `TARGET ${home.projectId} order the usual`);
@@ -535,4 +527,45 @@ test('a project conversation answers on the default independent of the project W
   expect(sent.runId.startsWith('model-')).toBe(true);
   // The project's own route was never the conversation's to move.
   expect(store().state(mine.id).project.ai).toEqual({ engine: 'sample', model: null });
+});
+
+// Owner decision, 2026-09-23: Home is the person's own landing-page agent. Their typed message,
+// with no document, goes to Home's route with no sharing grant. A document or the earlier
+// conversation from Home still needs one.
+test('a fresh Home sends typed messages with no grant, and no document or history without one', async () => {
+  await connect();
+  await approveSpend();
+  const home = await provisionHome();
+  expect((await api<{ version: number }>(`/projects/${home.projectId}/cloud-sharing`)).version).toBe(0);
+  const first = await send(home, 'm-first', 'Good morning');
+  expect(first.answerText).toBe('answer:Good morning');
+  // The next message answers too, and carries no earlier turn: history is not shared.
+  const second = await send(home, 'm-second', 'And tomorrow?');
+  expect(second.answerText).toBe('answer:And tomorrow?');
+  expect(seen).toHaveLength(2);
+  expect(JSON.stringify(seen[1].body)).not.toContain('Good morning');
+
+  // A document from Home is refused before it is read or anything is sent.
+  await fs.writeFile(path.join(store().homeFolder(), 'menu.md'), 'Tomato soup and bread.\n');
+  const document = await store().readDocument(home.projectId, 'menu.md');
+  const withDocument = (commandId: string) => ({
+    commandId,
+    text: 'What is on the menu?',
+    mode: 'auto',
+    sources: [{ path: 'menu.md', sha: document.sha }],
+    consent: true,
+  });
+  const refused = await request(messages(home), 'POST', withDocument('m-doc-refused'));
+  expect(refused.status).toBe(403);
+  expect(((await refused.json()) as { code?: string }).code).toBe('cloud_sharing_denied');
+  expect(seen).toHaveLength(2);
+
+  // Once Home's sharing names the document for this route, the same message goes with it.
+  await api(`/projects/${home.projectId}/cloud-sharing`, 'PUT', {
+    expectedVersion: 0, routes: ['aws-bedrock'], documents: ['menu.md'],
+    shareConversationHistory: false, shareReviewPackets: false,
+  });
+  await api<MessageResult>(messages(home), 'POST', withDocument('m-doc-granted'));
+  expect(seen).toHaveLength(3);
+  expect(JSON.stringify(seen[2].body)).toContain('menu.md');
 });

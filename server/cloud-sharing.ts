@@ -1,5 +1,5 @@
 import type { CloudSharingPolicy, ProjectState, Route } from '../shared/types.js';
-import { ROUTES } from '../shared/engines.js';
+import { isConversationRoute, ROUTES } from '../shared/engines.js';
 import { ApiError, relativeName } from './paths.js';
 
 const empty = (): CloudSharingPolicy => ({
@@ -74,15 +74,25 @@ export function requireCloudReview(state: ProjectState, documents: readonly stri
   requireCloudSharing(state, 'codex', documents);
 }
 
-/** Check before any file read or provider dispatch. The sample route stays local. */
+/**
+ * Check before any file read or provider dispatch. The sample route stays local.
+ *
+ * `home` is set only by the conversation-message checks, from the store's folder-based Home
+ * identity. Home is the person's own landing-page agent: their typed message, with no document
+ * and no earlier conversation, may go to a conversation route without a sharing grant. Any
+ * document or history from Home still needs one, exactly as in a project.
+ */
 export function requireCloudSharing(
   state: ProjectState,
   route: Route,
   documents: readonly string[],
   priorConversation = false,
+  context: { home?: boolean } = {},
 ): CloudSharingPolicy {
   const policy = cloudSharing(state);
   if (route === 'sample') return policy;
+  if (context.home === true && isConversationRoute(route) && documents.length === 0 && !priorConversation)
+    return policy;
   const allowed = new Set(policy.documents);
   if (
     !policy.routes.includes(route) ||
