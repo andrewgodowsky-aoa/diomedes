@@ -4,7 +4,13 @@ import { routeDisplayName } from '../shared/engines.js';
 import { isModelApiRoute } from '../shared/model-api.js';
 import { AGENT_NAME } from '../shared/agent-name.js';
 import { diffLines } from 'diff';
-import type { Change, Need, Session, ThreadPermission } from '../shared/types.js';
+import type { Change, Need, NeedCheck, Session, ThreadPermission } from '../shared/types.js';
+import {
+  SVG_CHECK_PASSED,
+  SVG_CHECK_VERSION,
+  svgCheckApplies,
+  svgProblem,
+} from '../shared/svg-check.js';
 import type { WorkAdmission } from './work-admission.js';
 import { askCodex, nativeWorkDisclosure, type NativeTeamOptions } from './integrations.js';
 import {
@@ -22,7 +28,14 @@ function teamWorkDisclosure(route: TeamRoute): string {
 }
 import { MODES } from './modes.js';
 import { effortFor } from '../shared/effort.js';
-import { absent, ApiError, projectFile, relativeName, textKind } from './paths.js';
+import {
+  absent,
+  ApiError,
+  exactReviewOnly,
+  projectFile,
+  relativeName,
+  textKind,
+} from './paths.js';
 import { hash, identifier, now, Store, type WriteInput } from './store.js';
 import { describeScopePolicy, scopeGrantDigest } from './trust/scope-grants.js';
 import { TeamService } from './team/service.js';
@@ -253,6 +266,39 @@ export function parseProposal(text: string, source = 'The engine'): Proposal {
   return { summary: parsed.summary, changes };
 }
 
+/** What the review says about a page or XML file that no content check reads. */
+export const UNCHECKED_SENTENCE =
+  'No content check: this file can run code when it is opened in a browser. Read it before you say go ahead.';
+
+/**
+ * The content check one proposed file must pass before the proposal can become
+ * a Need, and the line the review shows for it. Every `.svg`, and every `.xml`
+ * that is SVG, must pass svg-check (shared/svg-check.ts): a failure throws the
+ * check's reason and refuses the whole proposal. Another `.html` or `.xml` has
+ * no content check, and its line says so. Anything else carries no line.
+ *
+ * The draft put this at parseProposal (`:232` at dd895af). It runs in
+ * prepare() instead, on the text that is actually written: redaction rewrites
+ * a change after parsing, and an unchanged echo of a selected source writes
+ * nothing, so it is not checked.
+ */
+export function contentCheck(path: string, text: string): NeedCheck | null {
+  if (svgCheckApplies(path, text)) {
+    const problem = svgProblem(text);
+    if (problem) throw new ApiError(422, `The SVG check refused ${path}: ${problem}.`);
+    return {
+      path,
+      check: 'svg',
+      version: SVG_CHECK_VERSION,
+      outcome: 'passed',
+      sentence: SVG_CHECK_PASSED,
+    };
+  }
+  if (exactReviewOnly(path))
+    return { path, check: 'none', outcome: 'unchecked', sentence: UNCHECKED_SENTENCE };
+  return null;
+}
+
 /** Codex proposes text. This controller alone applies an approved, fixed batch. */
 export class NativeWorkService {
   private runs = new Map<string, NativeRun>();
@@ -412,6 +458,12 @@ export class NativeWorkService {
     const sources: Source[] = [];
     let bytes = 0;
     for (const name of names) {
+      // A drawing (.svg or .mmd) the person selected is a source like any text
+      // file, so a proposal can edit one. This reverses the v2 contract draft,
+      // which refused drawings here (Andrew, 2026-09-23, frozen decision 7).
+      // Cloud sharing still gates each selected document, and automatic task
+      // selection still never picks a drawing. What a proposal writes back is
+      // checked in prepare() (contentCheck).
       if (textKind(name) === 'unsupported')
         throw new ApiError(415, 'Select supported text documents for this proposal.');
       const document = await this.store.readDocument(projectId, name);
@@ -833,7 +885,8 @@ export class NativeWorkService {
           }
         }
         const writes: WriteInput[] = [],
-          previews: Change[] = [];
+          previews: Change[] = [],
+          checks: NeedCheck[] = [];
         const needId = identifier('N');
         for (const proposed of proposal.changes) {
           const selected = run.sources.find(
@@ -859,6 +912,22 @@ export class NativeWorkService {
           }
           const before = selected?.text ?? null;
           if (before === proposed.text) continue;
+          // Checked here, on the redacted text this proposal would write.
+          if (proposed.text !== null) {
+            let check: NeedCheck | null;
+            try {
+              check = contentCheck(proposed.path, proposed.text);
+            } catch (error) {
+              // Kept as evidence for fail(), as a parse refusal is.
+              run.faultReply = {
+                ...keepRawReply(result.text, run.redact),
+                parseError:
+                  error instanceof Error ? error.message : 'The proposal failed a content check.',
+              };
+              throw error;
+            }
+            if (check) checks.push(check);
+          }
           const current = selected ? await this.store.current(run.projectId, selected.path) : null;
           writes.push({
             path: proposed.path,
@@ -914,6 +983,7 @@ export class NativeWorkService {
           decidedFrom: 'desktop',
           allowForTask: false,
           preview: previews,
+          ...(checks.length ? { checks } : {}),
         };
         need.approval = identifyApproval(run.projectId, need, run.sources);
         state.needs.push(need);

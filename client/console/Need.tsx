@@ -1,4 +1,5 @@
 import type { Need, Session } from '../../shared/types';
+import { exactReviewOnly } from '../../shared/exact-review';
 import { ApprovalStatus } from '../components';
 import { formatOrigin, originForNeed } from '../attribution-display';
 
@@ -54,10 +55,12 @@ export function NeedBlock({
             Go ahead for this whole task
           </button>
         )}
+        {/* A grant covers creates and updates only, and never an .svg, .html
+            or .xml: the server refuses those, so the offer is not made. */}
         {onScope &&
           need.origin?.engine?.id === 'codex' &&
           !need.harness &&
-          need.preview?.every((change) => change.after !== null) && (
+          need.preview?.every((change) => change.after !== null && !exactReviewOnly(change.path)) && (
             <button type="button" className="verb" onClick={onScope}>
               Allow creates and updates for this task
             </button>

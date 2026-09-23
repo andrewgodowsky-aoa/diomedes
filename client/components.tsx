@@ -320,7 +320,37 @@ export function ReviewerRecord({ need }: { need: Need }) {
     </details>
   );
 }
+/**
+ * What the server's content checks found in a proposal's files, one line per
+ * file, above the decision record: svg-check's verdict for an SVG, or that no
+ * check read a web page or XML file. It shows while the Need is open, where
+ * the person decides, and stays with the record after. The client never runs
+ * a check itself; only the server's verdict is shown.
+ */
+function NeedChecks({ need }: { need: Need }) {
+  if (!need.checks?.length) return null;
+  return (
+    <div className="approval-status need-checks" aria-label="Content checks">
+      {need.checks.map((check) => (
+        <p key={check.path} className="approval-outcome">
+          <Mark state={check.outcome === 'passed' ? 'done' : 'waiting'} />
+          <span>
+            <code>{check.path}</code> {check.sentence}
+          </span>
+        </p>
+      ))}
+    </div>
+  );
+}
 export function ApprovalStatus({ need }: { need: Need }) {
+  return (
+    <>
+      <NeedChecks need={need} />
+      <ApprovalRecord need={need} />
+    </>
+  );
+}
+function ApprovalRecord({ need }: { need: Need }) {
   if (!need.approval) return null;
   const receipt = need.approvalReceipt;
   const grant = need.authorization;

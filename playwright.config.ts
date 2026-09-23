@@ -108,6 +108,7 @@ export default defineConfig({
     'vertex-setup-ui.spec.ts',
     'artifacts-ui.spec.ts',
     'nectovia-skin.spec.ts',
+    'drawings-ui.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,
