@@ -1,2 +1,5 @@
 # Product knowledge is indexed by the exact shipped bytes on every platform.
 resources/product-knowledge/*.json text eol=lf
+
+# Pinned upstream notice bytes; the collector verifies them by SHA-256.
+licenses/codex-*.txt -text

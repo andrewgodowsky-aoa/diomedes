@@ -16,6 +16,14 @@ const env = {
 };
 delete env.ELECTRON_RUN_AS_NODE;
 const errors = [];
+// The built document runs under a <meta> Content-Security-Policy (scripts/app-csp.ts).
+// A refusal is a console message, not a page error, so it is collected on its own.
+const cspViolations = [];
+function watchCsp(target) {
+  target.on('console', (message) => {
+    if (/Content Security Policy/i.test(message.text())) cspViolations.push(message.text());
+  });
+}
 const admissionProof = [];
 let desktop;
 let url;
@@ -59,8 +67,10 @@ try {
   const page = await desktop.firstWindow();
   page.setDefaultTimeout(15_000);
   page.on('pageerror', (error) => errors.push(error.message));
+  watchCsp(page);
   await page.waitForURL('http://127.0.0.1:*/');
   url = new URL(page.url()).origin;
+  await expect(page.locator('meta[http-equiv="Content-Security-Policy"]')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
   const project = await api('/projects/sample', 'POST', {});
   const { found } = await api(`/projects/${project.id}/plans/find-tasks`, 'POST', {
@@ -252,6 +262,7 @@ try {
   );
   expect(startup.packaged).toBe(true);
   expect(errors).toEqual([]);
+  expect(cspViolations).toEqual([]);
   await desktop.close();
   desktop = undefined;
   await expect
@@ -277,6 +288,7 @@ try {
     .toBe(false);
   desktop = await electron.launch({ executablePath, env });
   const reopened = await desktop.firstWindow();
+  watchCsp(reopened);
   await reopened.waitForURL('http://127.0.0.1:*/');
   // The restarted service listens on a new port, so this window's origin must be
   // recorded before the settings calls below and the receipt reads after them.
@@ -303,6 +315,8 @@ try {
     expect(saved.receipt).toEqual(proof.receipt);
     expect(saved.state).toBe('stopped');
   }
+  // Both windows, the first launch and the restart, ran under the app CSP with no refusal.
+  expect(cspViolations).toEqual([]);
   // `passed` is written here because this line is only reached by the passing
   // path; a run that fails writes no proof at all.
   await fs.writeFile(
@@ -322,6 +336,7 @@ try {
         persistedOnRestart: true,
         workAdmission: { lostResponsesRecovered: true, receiptsRetainedOnRestart: true, runs: admissionProof },
         pageErrors: errors,
+        cspViolations,
       },
       null,
       2,
