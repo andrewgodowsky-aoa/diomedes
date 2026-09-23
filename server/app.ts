@@ -31,7 +31,6 @@ import type {
   EngineModel,
   Mode,
   Owner,
-  Page,
   ProjectState,
   Session,
   Settings,
@@ -251,17 +250,13 @@ interface AppOptions {
     transport?: Partial<UpdateTransport>;
   };
 }
-const pages: Page[] = [
-  'home',
-  'ask',
-  'plan',
-  'work',
-  'review',
-  'tasks',
-  'documents',
-  'history',
-  'connections',
-];
+/**
+ * Settings keys the Workbook read, retired with it (Andrew, 2026-09-23). A
+ * client or fixture from before still sends them, so for one release they are
+ * accepted and dropped rather than refused as unknown. The store drops any
+ * stored copy at load. Delete this carve-out in the release after 0.1.8.
+ */
+const retiredSettings = ['surface', 'lastPage', 'tasksView'];
 const owners: Owner[] = ['you', 'diomedes', 'diomedes-with-ok'];
 const states: TaskState[] = ['todo', 'working', 'waiting', 'done'];
 const asString = (value: unknown, name: string, max = 10000): string => {
@@ -352,7 +347,8 @@ function plain(value: unknown): Record<string, unknown> {
 }
 
 function validateSettings(current: Settings, body: unknown): Settings {
-  const supplied = plain(body);
+  const supplied = { ...plain(body) };
+  for (const key of retiredSettings) delete supplied[key];
   const result = structuredClone(current);
   for (const key of Object.keys(supplied))
     if (!Object.hasOwn(defaults(), key)) throw new ApiError(400, `Unknown setting: ${key}`);
@@ -367,16 +363,6 @@ function validateSettings(current: Settings, body: unknown): Settings {
     throw new ApiError(400, 'This settings version is unsupported.');
   if (supplied.detail !== undefined)
     result.detail = choice(supplied.detail, ['guided', 'standard', 'technical'], 'detail level');
-  if (supplied.surface !== undefined) {
-    // A client from before the rename still says book or desk; accept those and
-    // store the current name, so only one spelling is ever written.
-    const named = choice(
-      supplied.surface,
-      ['workbook', 'console', 'book', 'desk', 'technical'],
-      'surface',
-    );
-    result.surface = named === 'book' ? 'workbook' : named === 'workbook' ? 'workbook' : 'console';
-  }
   if (supplied.explanations !== undefined)
     result.explanations = choice(
       supplied.explanations,
@@ -554,22 +540,6 @@ function validateSettings(current: Settings, body: unknown): Settings {
       throw new ApiError(400, 'Provide valid project identifiers.');
     result.openProjects = supplied.openProjects;
   }
-  if (supplied.lastPage) {
-    const value = plain(supplied.lastPage);
-    result.lastPage = {};
-    for (const [key, page] of Object.entries(value)) {
-      if (!/^[a-f0-9]{12}$/.test(key)) throw new ApiError(400, 'Invalid project identifier.');
-      result.lastPage[key] = choice(page, pages, 'page');
-    }
-  }
-  if (supplied.tasksView) {
-    const value = plain(supplied.tasksView);
-    result.tasksView = {};
-    for (const [key, view] of Object.entries(value)) {
-      if (!/^[a-f0-9]{12}$/.test(key)) throw new ApiError(400, 'Invalid project identifier.');
-      result.tasksView[key] = choice(view, ['board', 'list'], 'tasks view');
-    }
-  }
   if (supplied.seen) {
     const value = plain(supplied.seen);
     if (value.onlineServiceNotice !== undefined) {
@@ -590,7 +560,7 @@ function validateSettings(current: Settings, body: unknown): Settings {
       result.seen.guidedDescriptors = {};
       for (const [key, count] of Object.entries(entries)) {
         if (
-          !pages.includes(key as Page) ||
+          !/^[a-z][a-z-]{0,39}$/.test(key) ||
           typeof count !== 'number' ||
           !Number.isSafeInteger(count) ||
           count < 0
@@ -1735,22 +1705,6 @@ export async function createApp(options: AppOptions) {
         });
       });
       return { opened: true };
-    }),
-  );
-  app.put(
-    '/api/projects/:id/left-off',
-    route(async (req) => {
-      const b = body(req),
-        state = store.state(id(req));
-      const page = choice(b.page, pages, 'page');
-      const document =
-        b.document === null || b.document === undefined ? null : relativeName(b.document);
-      const scroll = b.scroll ?? 0;
-      if (typeof scroll !== 'number' || !Number.isFinite(scroll) || scroll < 0)
-        throw new ApiError(400, 'Provide a valid scroll position.');
-      state.project.leftOff = { page, document, scroll, at: now() };
-      await store.persist(state);
-      return state.project;
     }),
   );
   app.get(
@@ -4760,11 +4714,7 @@ export async function createApp(options: AppOptions) {
         helper = sampleHelper();
         answer =
           mode === 'ask'
-            ? `No service is connected for this request, so Diomedes cannot answer yet.${prepared.skill ? ` It would follow the ${prepared.skill.name} playbook.` : ''}${sources.length ? ` It would read ${sources.slice(0, 3).join(', ')} to answer.` : ''} ${
-                store.settings.surface === 'console'
-                  ? 'Turn an engine on in Settings > Engines.'
-                  : 'Turn a helper on in Settings > Helpers on this computer.'
-              }`
+            ? `No service is connected for this request, so Diomedes cannot answer yet.${prepared.skill ? ` It would follow the ${prepared.skill.name} playbook.` : ''}${sources.length ? ` It would read ${sources.slice(0, 3).join(', ')} to answer.` : ''} Turn an engine on in Settings > Engines.`
             : mode === 'plan'
               ? `# ${text.split('\n')[0].slice(0, 120)}\n\nSample plan written without a service on ${now()}. Edit it freely.\n\n1. ${text.replaceAll('\n', ' ').slice(0, 240)}\n2. Review what changed\n3. Call anyone who needs to know\n`
               : mode === 'fix'

@@ -102,7 +102,6 @@ test.beforeAll(async () => {
 
   const project = await api<Project>('/projects/sample', 'POST', {});
   await api('/settings', 'PUT', {
-    surface: 'console',
     detail: 'technical',
     // Onboarding is marked finished so the app opens on the Console rather
     // than on the first-run questions, which have their own proof elsewhere.

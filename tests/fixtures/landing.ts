@@ -6,15 +6,12 @@ import { expect, type Page } from '@playwright/test';
  * itself. A spec that works inside a project picks it up here after its first `page.goto`.
  *
  * The bar's markup is drawn by whichever component owns the moment: the pre-entry strip
- * (`TopStrip`) before a project is picked, the Console's own header (`Shell`) once inside one, or
- * the retired Workbook's legacy header for that surface. Only the legacy header uses a
- * `.project-tab`/`active` class; the other two render plain buttons and mark the current project
- * with an `on` class instead. This matches on the accessible role, which all three share, and by
- * position rather than by name (a legacy tab can carry a status icon ahead of its name, which
- * would make the accessible name unstable across the click). It re-reads the nav after the click
- * since entering a project can swap it for a different component's copy of the same landmark, but
- * the last button stays the same project's in every one of the three layouts because clicking
- * never reorders the list.
+ * (`TopStrip`) before a project is picked, or the Console's own header (`Shell`) once inside one.
+ * Both render plain buttons and mark the current project with an `on` class. This matches on the
+ * accessible role, which both share, and by position rather than by name. It re-reads the nav
+ * after the click since entering a project swaps it for the other component's copy of the same
+ * landmark, but the last button stays the same project's in both layouts because clicking never
+ * reorders the list.
  *
  * "Projects" is always the first button in the bar, so with nothing open besides it this would
  * silently click through to the Projects page instead of a project; that is treated as a fixture
@@ -35,7 +32,5 @@ export async function reopenLastProject(page: Page) {
     );
   }
   await buttons.last().click();
-  await expect(openProjects().getByRole('button').last()).toHaveClass(
-    /(?:^|\s)(?:on|active)(?:\s|$)/,
-  );
+  await expect(openProjects().getByRole('button').last()).toHaveClass(/(?:^|\s)on(?:\s|$)/);
 }

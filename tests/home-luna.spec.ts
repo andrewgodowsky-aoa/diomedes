@@ -180,7 +180,6 @@ test.beforeAll(async () => {
   await api('/ai/model-api/aws-bedrock', 'PUT', AWS_CONNECT_BODY);
   await api('/ai/model-api/aws-bedrock/spend-limit', 'PUT', { capUsd: 1, consent: true });
   await api('/settings', 'PUT', {
-    surface: 'console',
     onboarding: {
       work: 'business',
       detail: 'guided',

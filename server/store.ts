@@ -37,6 +37,7 @@ import {
   projectFile,
   readTextOrNull,
   relativeName,
+  rejectMarkupText,
   safeAbsolute,
   textKind,
 } from './paths.js';
@@ -141,16 +142,20 @@ export function migrateConversation(
 }
 
 /**
- * Settings written by an earlier build. The two surfaces were renamed - the
- * Book became the Workbook and the Desk the Console - and 'technical' detail
- * had already been retired into the second surface before that. Old values are
- * read forever. Since the Workbook left a person's reach they all resolve to
- * the one surface there is, so nobody is stranded on one they cannot leave.
+ * Settings written by an earlier build. The Workbook is gone (Andrew,
+ * 2026-09-23), and with it the keys only it read: `surface` (which of the two
+ * surfaces opened), `lastPage` and `tasksView`. A file that still holds them
+ * loses them here, and the next write stores the settings without them.
  */
-export function migrateSettings(
-  settings: Settings,
-  { atLaunch = true }: { atLaunch?: boolean } = {},
-): void {
+/**
+ * Where the Workbook left off in a project: the Workbook is gone, so the
+ * record is dropped on load and the next persist stores the project without it.
+ */
+function dropLeftOff(state: StoredState, entry?: Project): void {
+  delete (state.project as { leftOff?: unknown }).leftOff;
+  if (entry) delete (entry as { leftOff?: unknown }).leftOff;
+}
+export function migrateSettings(settings: Settings): void {
   // Settings written before workspaces existed mean Personal, which is also
   // what a malformed value means: a stored reference is honoured only when the
   // membership behind it is still active, and this is not where that is decided.
@@ -168,20 +173,10 @@ export function migrateSettings(
   settings.onboarding.setupVersion = 2;
   settings.onboarding.discoveryConsentAt ??= null;
   settings.onboarding.aiSkipped ??= false;
-  // The Workbook is retired from a person's reach (Andrew, 2026-09-19 and
-  // 2026-09-20): no control switches into it any more, so a stored choice of it
-  // would strand the person on a surface with no way out. Every stored value,
-  // old spelling or new, opens on the Console. The key itself is still accepted
-  // by the API for one more release, which is what keeps the legacy acceptance
-  // specs runnable until they are ported; nothing a person can click writes it.
-  //
-  // At launch only. The recovery reload further down re-reads this file in the
-  // middle of a session, and a running session's surface is not something a
-  // recovered transaction should move; there, only a missing value is filled.
-  if (atLaunch || settings.surface === undefined) settings.surface = 'console';
-  else if ((settings.surface as string) === 'book') settings.surface = 'workbook';
-  else if ((settings.surface as string) === 'desk' || (settings.surface as string) === 'technical')
-    settings.surface = 'console';
+  const retired = settings as { surface?: unknown; lastPage?: unknown; tasksView?: unknown };
+  delete retired.surface;
+  delete retired.lastPage;
+  delete retired.tasksView;
   // The home binding points at two records, and this runs before either of them
   // is loaded, so only its shape can be judged here: anything that is not the
   // one shape the server writes becomes no binding at all. Whether the records
@@ -219,7 +214,6 @@ export const emptyTeamMeta = (): TeamMeta => ({ idempotency: {}, blockedBy: {} }
 export const defaults = (): Settings => ({
   version: 1,
   detail: 'guided',
-  surface: 'console',
   onboarding: {
     setupVersion: 2,
     discoveryConsentAt: null,
@@ -241,8 +235,6 @@ export const defaults = (): Settings => ({
   appearance: { package: 'nectovia', motion: 'normal' },
   seen: { onlineServiceNotice: false, guidedDescriptors: {}, firstUse: [] },
   openProjects: [],
-  lastPage: {},
-  tasksView: {},
   // Personal until an explicit switch through the workspace service, which is
   // the only writer: `validateSettings` keeps the stored value on every PUT.
   activeWorkspace: { kind: 'personal' },
@@ -433,6 +425,7 @@ export class Store extends EventEmitter {
         throw new Error(`Project state is missing for ${project.id}.`);
       });
       const loadTime = now();
+      dropLeftOff(state, project);
       for (const conversation of state.conversations ?? [])
         migrateConversation(conversation, state.tasks ?? [], loadTime);
       migrateTeam(state);
@@ -493,6 +486,7 @@ export class Store extends EventEmitter {
         throw new Error(`Project state is missing for ${id}.`);
       });
       const loadTime = now();
+      dropLeftOff(fresh);
       for (const conversation of fresh.conversations ?? [])
         migrateConversation(conversation, fresh.tasks ?? [], loadTime);
       migrateTeam(fresh);
@@ -507,7 +501,7 @@ export class Store extends EventEmitter {
     }
     await this.interruptUnpreparedApprovals();
     this.settings = await readJson(path.join(this.dataDir, 'settings.json'), defaults);
-    migrateSettings(this.settings, { atLaunch: false });
+    migrateSettings(this.settings);
     this.recoveryRequired = false;
   }
   async locked<T>(action: () => Promise<T>): Promise<T> {
@@ -836,7 +830,6 @@ export class Store extends EventEmitter {
       plans: [],
       references: [],
       repository: { present: false },
-      leftOff: null,
       counts: { running: 0, changesWaiting: 0, waitingForYou: 0, historyToday: 0 },
       status: { needsYou: 0, working: 0, tasksDone: 0, tasksTotal: 0 },
     };
@@ -1243,6 +1236,9 @@ export class Store extends EventEmitter {
         (Buffer.byteLength(input.text) > MAX_TEXT_BYTES || input.text.includes('\0'))
       )
         throw new ApiError(413, 'Write UTF-8 text of no more than 8 MB.');
+      // Also covers Plan and model writes outside NativeWork proposals. The
+      // person's editor/Save to Files writes retain their existing contract.
+      if ((options.actor ?? 'you') !== 'you') rejectMarkupText(name, input.text);
       const beforeText = await this.current(id, name);
       const before = hash(beforeText);
       if (before !== input.expected)

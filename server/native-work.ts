@@ -34,6 +34,7 @@ import {
   exactReviewOnly,
   projectFile,
   relativeName,
+  rejectMarkupText,
   textKind,
 } from './paths.js';
 import { hash, identifier, now, Store, type WriteInput } from './store.js';
@@ -275,7 +276,8 @@ export const UNCHECKED_SENTENCE =
  * a Need, and the line the review shows for it. Every `.svg`, and every `.xml`
  * that is SVG, must pass svg-check (shared/svg-check.ts): a failure throws the
  * check's reason and refuses the whole proposal. Another `.html` or `.xml` has
- * no content check, and its line says so. Anything else carries no line.
+ * no content check, and its line says so. Markdown/Mermaid starting with markup
+ * is refused because a browser can sniff it as code. Other text carries no line.
  *
  * The draft put this at parseProposal (`:232` at dd895af). It runs in
  * prepare() instead, on the text that is actually written: redaction rewrites
@@ -283,6 +285,7 @@ export const UNCHECKED_SENTENCE =
  * nothing, so it is not checked.
  */
 export function contentCheck(path: string, text: string): NeedCheck | null {
+  rejectMarkupText(path, text);
   if (svgCheckApplies(path, text)) {
     const problem = svgProblem(text);
     if (problem) throw new ApiError(422, `The SVG check refused ${path}: ${problem}.`);

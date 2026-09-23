@@ -113,10 +113,9 @@ test.beforeAll(async () => {
   original = await fs.readFile(path.join(project.folder, 'Reopening plan.md'), 'utf8');
   await api('/settings', 'PUT', {
     detail: 'guided',
-    surface: 'workbook',
     services: { codex: true },
+    openProjects: [project.id],
     onboarding: { work: 'business', detail: 'guided', familiarity: 'new', resumeAt: 'done', completedAt: new Date().toISOString() },
-    lastPage: { [project.id]: 'tasks' },
   });
 });
 
@@ -131,16 +130,18 @@ test.afterAll(async () => {
 test('Native UI: consent, exact proposal preview, approval, Review and History with an injected generator', async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
+  // The service this task goes to; the Workbook asked for it in its task dialog.
+  await api('/settings', 'PUT', { services: { codex: true, defaultEngine: 'codex' } });
   await page.goto(baseURL);
   await reopenLastProject(page);
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
+  await expect(page.locator('.console')).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'guided');
-  // Opening a project (the tab click above) always lands on its Home page; the
-  // fixture's `lastPage: 'tasks'` is no longer read on entry (only the retired
-  // auto-reopen-on-launch code did that), so this reaches Tasks explicitly.
-  await page.getByRole('navigation', { name: 'Project pages' }).getByRole('button', { name: /^Tasks/ }).click();
-  await page.locator('.task-card').first().locator('.task-title').click();
-  await page.getByRole('dialog').getByRole('combobox', { name: 'Work service' }).selectOption('codex');
+  const rail = page.getByRole('navigation', { name: 'Threads and views' });
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  const board = page.locator('.board[aria-label="Board"]');
+  const row = board.locator('.column[aria-label="Ready"] .crow').first();
+  const taskName = (await api<ProjectState>(`/projects/${project.id}/state`)).tasks[0].name;
+  await expect(row).toContainText(taskName);
   const commands: string[] = [];
   let admitted: Session | undefined;
   await page.route(`**/api/projects/${project.id}/work/start`, async route => {
@@ -156,10 +157,17 @@ test('Native UI: consent, exact proposal preview, approval, Review and History w
     }
   });
   expect(generationCount).toBe(0);
-  await page.getByRole('dialog').getByRole('button', { name: 'Do this for me', exact: true }).click();
+  await row.getByRole('button', { name: 'Start', exact: true }).click();
+  await row.locator('.confirm').getByRole('button', { name: 'Start', exact: true }).click();
+  // Consent: nothing leaves for the service until the person sends it, with the document named.
+  const send = page.getByRole('dialog', { name: 'Send this task?', exact: true });
+  await expect(send).toBeVisible();
+  const picker = send.getByLabel('Project document', { exact: true });
+  await picker.selectOption('Reopening plan.md');
+  await expect(send.locator('.task-sources')).toContainText('Reopening plan.md');
+  expect(generationCount).toBe(0);
+  await send.getByRole('button', { name: 'Send task', exact: true }).click();
   expect(await fs.readFile(path.join(project.folder, 'Reopening plan.md'), 'utf8')).toBe(original);
-  const need = page.getByRole('region', { name: 'Needs your OK' });
-  await expect(need).toBeVisible();
   await expect.poll(() => commands.length).toBe(2);
   expect(commands[0]).toBeTruthy();
   expect(commands[1]).toBe(commands[0]);
@@ -168,19 +176,22 @@ test('Native UI: consent, exact proposal preview, approval, Review and History w
   expect((await api<ProjectState>(`/projects/${project.id}/state`)).sessions).toHaveLength(1);
   await expect.poll(() => page.evaluate(() => Object.keys(sessionStorage)
     .filter(key => key.startsWith('diomedes.work-start.pending.')).length)).toBe(0);
+  await expect.poll(async () => (await api<ProjectState>(`/projects/${project.id}/state`)).needs.length).toBe(1);
   await page.reload();
+  await rail.getByRole('button', { name: /^Board/ }).click();
+  await board.locator('.column[aria-label="Review"] .crow').filter({ hasText: taskName })
+    .getByRole('button', { name: 'Review', exact: true }).click();
+  const need = page.getByRole('region', { name: 'Needs your OK' });
   await expect(need).toBeVisible();
   expect(generationCount).toBe(1);
   expect(generatedInput?.documents).toEqual([{ path: 'Reopening plan.md', text: original }]);
   expect(await fs.readFile(path.join(project.folder, 'Reopening plan.md'), 'utf8')).toBe(original);
   await need.getByRole('button', { name: 'Show me first', exact: true }).click();
-  const preview = page.getByRole('dialog', { name: 'Proposed changes', exact: true });
+  const preview = page.getByRole('dialog', { name: /proposes to apply the proposed changes to 1 file/ });
   await expect(preview).toBeVisible();
   await expect(preview.getByText(/Validation-only approved revision\./)).toBeVisible();
   expect(await fs.readFile(path.join(project.folder, 'Reopening plan.md'), 'utf8')).toBe(original);
   await page.screenshot({ path: testInfo.outputPath('native-proposal-preview.png'), animations: 'disabled', fullPage: true });
-  await page.screenshot({ path: 'evidence/screenshots/work-admission-workbook.png', animations: 'disabled', fullPage: true });
-  await expect(preview.getByText(/Expires /)).toBeVisible();
   await expect(preview.getByRole('button', { name: 'Go ahead for this whole task', exact: true })).toHaveCount(0);
   const approvalCommands: ApprovalCommand[] = [];
   let approvalReceipt: Need['approvalReceipt'];
@@ -193,7 +204,6 @@ test('Native UI: consent, exact proposal preview, approval, Review and History w
       await route.abort('connectionreset');
     } else await route.fulfill({ response });
   });
-  await page.screenshot({ path: 'evidence/screenshots/approval-workbook-preview.png', animations: 'disabled', fullPage: true });
   await preview.getByRole('button', { name: 'Go ahead', exact: true }).click();
   await expect(preview).not.toBeVisible();
   await expect.poll(() => approvalCommands.length).toBe(2);
@@ -206,11 +216,10 @@ test('Native UI: consent, exact proposal preview, approval, Review and History w
   await expect.poll(() => page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith('diomedes.approval.pending.')).length)).toBe(0);
   await expect.poll(async () => (await api<ProjectState>(`/projects/${project.id}/state`)).sessions[0]?.state).toBe('done');
   expect(await fs.readFile(path.join(project.folder, 'Reopening plan.md'), 'utf8')).toBe(proposed);
-  const rail = page.getByRole('navigation', { name: 'Project pages' });
-  await rail.getByRole('button', { name: /^Review\b/ }).click();
-  await expect(page.locator('.change-card').getByText(/Validation-only approved revision\./)).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('native-review.png'), animations: 'disabled', fullPage: true });
-  await page.getByRole('button', { name: 'Keep all', exact: true }).click();
+  // Keeping a finished change has no Console control yet (the Workbook's Review page had
+  // "Keep all"); the route it called is what is exercised here.
+  const session = (await api<ProjectState>(`/projects/${project.id}/state`)).sessions[0];
+  await api(`/projects/${project.id}/review/all`, 'POST', { action: 'keep', sessionId: session.id });
   await expect.poll(async () => (await api<ProjectState>(`/projects/${project.id}/state`)).tasks[0]?.state).toBe('done');
   await rail.getByRole('button', { name: /^History\b/ }).click();
   const state = await api<ProjectState>(`/projects/${project.id}/state`);
@@ -220,9 +229,11 @@ test('Native UI: consent, exact proposal preview, approval, Review and History w
   expect(changed?.files[0].before).not.toBe(changed?.files[0].after);
   expect(state.needs[0].state).toBe('go-ahead');
   expect(state.history.some(entry => entry.kind === 'decision' && entry.sessionId === state.sessions[0].id)).toBe(true);
-  await expect(page.locator('.history-entry').filter({ hasText: changed!.sentence })).toBeVisible();
+  await expect(page.locator('.hist .hrow').filter({ hasText: changed!.sentence })).toBeVisible();
   expect(generationCount).toBe(1);
   expect(errors).toEqual([]);
+  // Back to the fixture's own services: codex on, no default chosen.
+  await api('/settings', 'PUT', { services: { codex: true } });
 });
 
 test('Console task Start recovers both lost responses from state without duplicating Work', async ({ page }, testInfo) => {
@@ -232,7 +243,7 @@ test('Console task Start recovers both lost responses from state without duplica
   const { found } = await api<{ found: TaskCandidate[] }>(`/projects/${sample.id}/plans/find-tasks`, 'POST', { path: 'Reopening plan.md' });
   await api(`/projects/${sample.id}/plans/add-tasks`, 'POST', { path: 'Reopening plan.md', items: found.slice(0, 1) });
   const before = await fs.readFile(path.join(sample.folder, 'Reopening plan.md'));
-  await api('/settings', 'PUT', { surface: 'console', openProjects: [sample.id] });
+  await api('/settings', 'PUT', { openProjects: [sample.id] });
   const commands: string[] = [];
   let admitted: Session | undefined;
   await page.route(`**/api/projects/${sample.id}/work/start`, async route => {
@@ -306,7 +317,7 @@ test('Console exact approval recovers both lost responses from durable state eve
   await expect.poll(async () => (await api<ProjectState>(`/projects/${fixture.id}/state`)).needs.length).toBe(1);
   const ready = (await api<ProjectState>(`/projects/${fixture.id}/state`)).needs[0];
   const expected = ready.preview![0].after;
-  await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id] });
+  await api('/settings', 'PUT', { openProjects: [fixture.id] });
   await page.goto(baseURL);
   await reopenLastProject(page);
   const rail = page.getByRole('navigation', { name: 'Threads and views' });
@@ -360,7 +371,7 @@ test('Console New task makes a task, Ready shows it, and Start admits one run', 
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const fresh = await api<Project>('/projects/sample', 'POST', {});
-  await api('/settings', 'PUT', { surface: 'console', openProjects: [fresh.id] });
+  await api('/settings', 'PUT', { openProjects: [fresh.id] });
   await page.goto(baseURL);
   await reopenLastProject(page);
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
@@ -402,7 +413,7 @@ test('Console New task makes a task, Ready shows it, and Start admits one run', 
 
 test('Console retries a lost task creation response after reload and shows the durable receipt', async ({ page }, testInfo) => {
   const fresh = await api<Project>('/projects/sample', 'POST', {});
-  await api('/settings', 'PUT', { surface: 'console', openProjects: [fresh.id] });
+  await api('/settings', 'PUT', { openProjects: [fresh.id] });
   const commands: string[] = [];
   const endpoint = `**/api/projects/${fresh.id}/tasks`;
   await page.route(endpoint, async (route) => {
@@ -462,7 +473,7 @@ test('Console retries a lost task creation response after reload and shows the d
 
 test('Console closes a confirmed creation even if refreshing the Board fails', async ({ page }) => {
   const fresh = await api<Project>('/projects/sample', 'POST', {});
-  await api('/settings', 'PUT', { surface: 'console', openProjects: [fresh.id] });
+  await api('/settings', 'PUT', { openProjects: [fresh.id] });
   await page.goto(baseURL);
   await reopenLastProject(page);
   const rail = page.getByRole('navigation', { name: 'Threads and views' });
@@ -496,7 +507,7 @@ test('Console Start again restarts a faulted task through the same admission', a
   });
   await expect.poll(async () => (await api<ProjectState>(`/projects/${faulted.id}/state`)).sessions[0]?.state).toBe('failed');
   expect(generationCount).toBe(generationsBefore + 1);
-  await api('/settings', 'PUT', { surface: 'console', openProjects: [faulted.id] });
+  await api('/settings', 'PUT', { openProjects: [faulted.id] });
   await page.goto(baseURL);
   await reopenLastProject(page);
   const rail = page.getByRole('navigation', { name: 'Threads and views' });
@@ -535,7 +546,7 @@ for (const selectAt of ['creation', 'start'] as const) {
     const longPath = `notes/${'long-document-name-'.repeat(8)}brief.md`;
     await fs.mkdir(path.join(fixture.folder, 'notes'), { recursive: true });
     await fs.writeFile(path.join(fixture.folder, longPath), 'Unselected fixture');
-    await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id], services: { codex: true, defaultEngine: 'codex' } });
+    await api('/settings', 'PUT', { openProjects: [fixture.id], services: { codex: true, defaultEngine: 'codex' } });
     if (selectAt === 'start')
       await api(`/projects/${fixture.id}/tasks`, 'POST', { name: 'Append a short validation section', owner: 'you' });
     await page.goto(baseURL);
@@ -618,7 +629,7 @@ test('Console document selection blocks stale paths and listing failures without
     name: 'Update the introduction', sourceDocument: 'Reopening plan.md', owner: 'you',
   });
   await fs.rename(path.join(fixture.folder, 'Reopening plan.md'), path.join(fixture.folder, 'Moved plan.md'));
-  await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id], services: { codex: true, defaultEngine: 'codex' } });
+  await api('/settings', 'PUT', { openProjects: [fixture.id], services: { codex: true, defaultEngine: 'codex' } });
   await page.goto(baseURL);
   await reopenLastProject(page);
   await page.getByRole('navigation', { name: 'Threads and views' }).getByRole('button', { name: /^Board/ }).click();
@@ -648,47 +659,9 @@ test('Console document selection blocks stale paths and listing failures without
   await api('/settings', 'PUT', { services: { defaultEngine: 'sample' } });
 });
 
-test('Workbook Tasks header keeps every view label on one line', async ({ page }) => {
-  const fixture = await api<Project>('/projects/sample', 'POST', {});
-  await api('/settings', 'PUT', { surface: 'workbook', detail: 'guided', openProjects: [fixture.id] });
-  await page.goto(baseURL);
-  await reopenLastProject(page);
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'workbook');
-  await page.getByRole('navigation', { name: 'Project pages' }).getByRole('button', { name: /^Tasks/ }).click();
-  const toggle = page.locator('.segmented.compact');
-  await expect(toggle.getByRole('button', { name: 'Board', exact: true })).toBeVisible();
-  await page.evaluate(() => document.fonts.ready);
-  // A label that wraps leaves scrollWidth equal to clientWidth, so the
-  // width-based overflow checks elsewhere cannot see it: "Board" once broke
-  // after "Boar" and every such check still passed. Count the line boxes the
-  // text actually painted, and confirm it still fits the segment it was given.
-  const segments = await toggle.evaluate((strip: HTMLElement) =>
-    [...strip.querySelectorAll('button')].map(button => {
-      const range = document.createRange();
-      range.selectNodeContents(button);
-      return {
-        label: button.textContent ?? '',
-        lines: range.getClientRects().length,
-        textWidth: range.getBoundingClientRect().width,
-        innerWidth: button.clientWidth,
-        width: button.getBoundingClientRect().width,
-      };
-    }),
-  );
-  expect(segments.map(segment => segment.label)).toEqual(['Board', 'List']);
-  for (const segment of segments) {
-    expect(segment.lines, `${segment.label} painted on ${segment.lines} lines`).toBe(1);
-    expect(segment.textWidth, `${segment.label} is wider than its own segment`)
-      .toBeLessThanOrEqual(segment.innerWidth);
-  }
-  // The columns are sized together, so the segments stay equal to each other.
-  expect(Math.abs(segments[0].width - segments[1].width)).toBeLessThan(1);
-  await api('/settings', 'PUT', { surface: 'console' });
-});
-
 test('Cloud sharing selects an exact future path before AI review can send it', async ({ page }) => {
   const fixture = await api<Project>('/projects/sample', 'POST', {});
-  await api('/settings', 'PUT', { surface: 'console', openProjects: [fixture.id] });
+  await api('/settings', 'PUT', { openProjects: [fixture.id] });
   await page.goto(baseURL);
   await reopenLastProject(page);
   await page.getByRole('button', { name: 'Cloud sharing' }).click();
