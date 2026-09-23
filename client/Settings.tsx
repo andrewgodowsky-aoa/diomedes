@@ -226,7 +226,6 @@ export function SettingsPage({
     'Interface detail',
     'Helpers on this computer',
     'Permissions',
-    'History',
     'Appearance',
     'About',
     ...(isDesk ? ['Design Center', 'Engines', 'App updates', 'Rules', 'Developer'] : []),
@@ -568,24 +567,6 @@ export function SettingsPage({
                 <p className="caption">
                   Working outside a project and purchases are unavailable in this build. Switching
                   these off does not grant access to either.
-                </p>
-              </>
-            )}
-            {section === 'History' && (
-              <>
-                <h2>A way back</h2>
-                <p className="prose">
-                  Nectovia records its changes to supported text files before writing them.
-                  Restoring a change creates a new entry, so the restore can be undone too.
-                </p>
-                <p className="prose">
-                  History stays on this computer. Automatic cleanup is not active in this build; no
-                  entries are removed on a schedule.
-                </p>
-                <p className="caption">
-                  Files must be valid text and no larger than 8 MB. Edits from other applications
-                  are recorded when Nectovia next reads the file. Intermediate external edits cannot
-                  be recovered.
                 </p>
               </>
             )}

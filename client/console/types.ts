@@ -24,7 +24,6 @@ export type ShellView =
   | 'Thread'
   | 'Board'
   | 'Team'
-  | 'History'
   | 'Discovery'
   | 'Readiness';
 export type BoardProps = { project: Project; state: ProjectState; tasks: Task[]; policy: 'first' | 'go'; focusTaskId?: string; busy: boolean; onPolicyChange?(policy: 'first' | 'go'): void;

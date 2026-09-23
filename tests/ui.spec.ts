@@ -185,7 +185,18 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   await page.getByRole('button', { name: 'Open Nectovia' }).click();
   // First run now ends on the Diomedes page too; the Projects page is one click away.
   await showProjects(page);
-  await page.getByRole('button', { name: /^Try the sample project/ }).click();
+  // The Projects page offers no sample project any more (Andrew, 2026-09-23).
+  // The server route stays as a test fixture, so the project is made there and
+  // opened from the list the way any other project is.
+  await expect(page.getByRole('button', { name: /sample project/i })).toHaveCount(0);
+  const made = await page.request.post('/api/projects/sample', {
+    headers: { 'X-Diomedes-Client': '1' },
+    data: {},
+  });
+  expect(made.ok()).toBe(true);
+  await page.reload();
+  await showProjects(page);
+  await page.getByRole('button', { name: /^Harbor Street restaurants/ }).first().click();
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'console');
   await expect(page.locator('html')).toHaveAttribute('data-detail', 'technical');
   await expect(
@@ -231,8 +242,16 @@ test('F04, F06: sample project opens and a plan edit survives reload with Histor
   // The first-run test already opened the sample project; reuse it rather than creating a second one.
   await showProjects(page);
   const existing = page.getByRole('button', { name: /^Harbor Street restaurants/ }).first();
-  if (await existing.count()) await existing.click();
-  else await page.getByRole('button', { name: /^Try the sample project/ }).click();
+  if (!(await existing.count())) {
+    const made = await page.request.post('/api/projects/sample', {
+      headers: { 'X-Diomedes-Client': '1' },
+      data: {},
+    });
+    expect(made.ok()).toBe(true);
+    await page.reload();
+    await showProjects(page);
+  }
+  await page.getByRole('button', { name: /^Harbor Street restaurants/ }).first().click();
   await expect(
     page.getByRole('heading', { name: 'Harbor Street restaurants', exact: true }),
   ).toBeVisible();
