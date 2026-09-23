@@ -1402,7 +1402,9 @@ describe('state reads stay fast with a cached documents listing', () => {
     const listed = await request(`/projects/${id}/documents`);
     const documents = (listed.data?.documents ?? []) as DocumentInfo[];
     expect(documents.map((d) => d.path)).not.toContain('inside.md');
-    expect(listed.status === 403 || documents.length === 0).toBe(true);
+    // checkFolder's safeAbsolute(root) refuses the linked root before any read.
+    expect(listed.status).toBe(403);
+    expect(documents).toEqual([]);
   });
   test('(b) SKIPPED_FOLDERS are never listed', async () => {
     expect(SKIPPED_FOLDERS.has('artifacts')).toBe(true);
