@@ -1,8 +1,9 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, firefox, test, type Page } from '@playwright/test';
 import express from 'express';
 import fs from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app';
@@ -10,6 +11,7 @@ import type { NativeGenerator } from '../server/native-work';
 import type { Conversation, Project, ProjectState, Task } from '../shared/types';
 import { SVG_CHECK_PASSED } from '../shared/svg-check';
 import { reopenLastProject } from './fixtures/landing';
+import { MARKUP_TEXT } from './fixtures/markup-text';
 
 // Drawings in Files and the SVG check on proposals (artifacts v2, lane 3),
 // against the built Console and real guarded routes. The model is an injected
@@ -189,6 +191,56 @@ test.afterAll(async () => {
   await app?.locals.close();
   server?.closeAllConnections();
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+test('Firefox file sniffing cannot turn a model Markdown or Mermaid write into executable HTML', async ({}, testInfo) => {
+  // A real file:// navigation, with Firefox's default sniffing preferences and
+  // a fresh, headless profile. These payloads only set a title; all network is refused.
+  // The suite normally overrides the executable with Edge; select Firefox
+  // explicitly instead of inheriting that executable with Firefox arguments.
+  const browser = await firefox.launch({ executablePath: firefox.executablePath() });
+  try {
+    const context = await browser.newContext();
+    const requests: string[] = [];
+    await context.route(/^https?:/, async (route) => {
+      requests.push(route.request().url());
+      await route.abort();
+    });
+    const page = await context.newPage();
+    for (const extension of ['md', 'mmd']) {
+      const payload = MARKUP_TEXT[2][1];
+      const raw = testInfo.outputPath(`raw.${extension}`);
+      await fs.mkdir(path.dirname(raw), { recursive: true });
+      await fs.writeFile(raw, payload);
+      await page.goto(pathToFileURL(raw).href);
+      expect(await page.evaluate(() => document.contentType)).toBe('text/html');
+      await expect(page).toHaveTitle('markup-executed');
+
+      const name = `sniffed.${extension}`;
+      next = { path: name, text: payload };
+      const { session, needs } = await work(`Sniffed ${extension}`);
+      expect(session.state).toBe('failed');
+      expect(session.parseError).toContain('starts with markup');
+      expect(needs).toEqual([]);
+      await expect(fs.stat(path.join(project.folder, name))).rejects.toMatchObject({ code: 'ENOENT' });
+
+      // Benign starts retain the model writer's byte-for-byte text contract,
+      // even with a script example later in the text. Open those actual bytes.
+      const safeName = `safe-sniff.${extension}`;
+      const safe = extension === 'md' ? `# Notes\n\n${payload}` : `${FLOW}%% ${payload}`;
+      const store = app.locals.store;
+      await store.locked(() => store.writeRecorded(project.id, [{ path: safeName, text: safe, expected: null }], { actor: 'diomedes' }));
+      const saved = path.join(project.folder, safeName);
+      expect(await fs.readFile(saved, 'utf8')).toBe(safe);
+      await page.goto(pathToFileURL(saved).href);
+      expect(await page.evaluate(() => document.contentType)).toBe('text/plain');
+      expect(await page.title()).not.toBe('markup-executed');
+      await expect(page.locator('body')).toContainText(payload);
+    }
+    expect(requests).toEqual([]);
+  } finally {
+    await browser.close();
+  }
 });
 
 test('Files previews an .svg and an .mmd only inside the sandboxed artifact frame', async ({ page }) => {
