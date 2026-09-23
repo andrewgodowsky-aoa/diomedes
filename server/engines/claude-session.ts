@@ -4,6 +4,8 @@ import { z } from 'zod';
 import type { NativeSessionRef } from '../../shared/contract-revision.js';
 import { contextMessage, type TextRequest, type TextResponse } from './contract.js';
 import { EngineError, record, stopped, type EngineProcess } from './process.js';
+import { claudeInitAllowed, claudeObserveTools, claudeWebHelperModel } from './claude.js';
+import { readScopeDigest } from './read-scope.js';
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 export function claudeFailure(value: unknown): EngineError {
@@ -45,6 +47,11 @@ export const claudeCheckpointSchema = z.strictObject({
   requestedModel: z.string().min(1).max(200),
   reportedModel: z.string().min(1).max(200).nullable(),
   instructionDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  /**
+   * The read scope the session was opened with (`readScopeDigest`). Absent on
+   * checkpoints written before read tools existed, which read as text-only.
+   */
+  scopeDigest: z.string().min(1).max(80).optional(),
   state: z.enum(['idle', 'busy', 'uncertain']),
   requests: z
     .array(
@@ -108,6 +115,7 @@ export function prepareClaudeSession(
     requestedModel: input.model,
     reportedModel: null,
     instructionDigest,
+    scopeDigest: readScopeDigest(input.readScope),
     state: 'idle',
     requests: [],
     results: [],
@@ -130,7 +138,8 @@ export function prepareClaudeSession(
       saved.cwd !== checkpoint.cwd ||
       saved.cliVersion !== version ||
       saved.requestedModel !== input.model ||
-      saved.instructionDigest !== instructionDigest
+      saved.instructionDigest !== instructionDigest ||
+      (saved.scopeDigest ?? 'text-only') !== readScopeDigest(input.readScope)
     )
       throw new EngineError(
         'SESSION_MISMATCH',
@@ -212,6 +221,7 @@ export class ClaudeNativeSession {
       input.threadId !== this.saved.threadId ||
       input.model !== this.saved.requestedModel ||
       digest(input.instructions) !== this.saved.instructionDigest ||
+      (this.saved.scopeDigest ?? 'text-only') !== readScopeDigest(input.readScope) ||
       input.accountRoute !== 'claude-code:claude.ai'
     )
       throw new EngineError(
@@ -267,6 +277,8 @@ export class ClaudeNativeSession {
     };
     input.signal?.addEventListener('abort', abort, { once: true });
     let dispatched = false;
+    const openCalls = new Map<string, string>();
+    let webUsed = false;
     try {
       if (input.signal?.aborted) throw stopped();
       await this.recheckAccount(
@@ -297,7 +309,7 @@ export class ClaudeNativeSession {
                 request_id: frame.request_id,
                 response: {
                   behavior: 'deny',
-                  message: 'Tools and callbacks are disabled on this route.',
+                  message: 'Permission prompts and callbacks are disabled on this route.',
                   interrupt: true,
                 },
               },
@@ -328,10 +340,7 @@ export class ClaudeNativeSession {
         if (frame.type === 'system' && frame.subtype === 'init') {
           if (typeof frame.model === 'string') this.saved.reportedModel = frame.model;
           if (
-            !Array.isArray(frame.tools) ||
-            frame.tools.length ||
-            !Array.isArray(frame.mcp_servers) ||
-            frame.mcp_servers.length ||
+            !claudeInitAllowed(input.readScope, frame) ||
             typeof frame.model !== 'string' ||
             !sameClaudeModel(input.model, frame.model) ||
             typeof frame.session_id !== 'string' ||
@@ -356,11 +365,15 @@ export class ClaudeNativeSession {
             throw new EngineError('POLICY_MISMATCH', 'Claude reported a model reroute.', true);
           }
           if (
+            !input.readScope &&
             Array.isArray(message.content) &&
             message.content.some((part) => record(part).type === 'tool_use')
           )
             throw new EngineError('POLICY_MISMATCH', 'Claude attempted a disabled tool.', true);
         }
+        if (frame.type === 'assistant' || frame.type === 'user')
+          if (claudeObserveTools(input.readScope, frame, input.onToolActivity, openCalls))
+            webUsed = true;
         if (frame.type === 'stream_event' && this.initialized && !this.interrupted) {
           if (frame.session_id !== undefined && frame.session_id !== this.saved.nativeSessionId)
             throw new EngineError(
@@ -400,7 +413,9 @@ export class ClaudeNativeSession {
           throw claudeFailure(frame.errors ?? frame);
         if (
           Object.keys(record(frame.modelUsage)).some(
-            (model) => !sameClaudeModel(input.model, model),
+            (model) =>
+              !sameClaudeModel(input.model, model) &&
+              !(input.readScope && webUsed && claudeWebHelperModel(model)),
           )
         )
           throw new EngineError(
