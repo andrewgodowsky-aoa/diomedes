@@ -295,10 +295,16 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
   expect(comfortableSettings.detail).toBe('technical');
   expect(comfortableSettings.permissions.changingFiles).toBe(true);
 
-  // The menu offers detail levels and nothing that leaves the Console.
+  // The menu offers the Console's two views and the detail levels, and nothing that leaves the Console.
   await page.getByRole('button', { name: 'Interface detail menu' }).click();
   const menu = page.getByRole('menu');
-  await expect(menu.getByRole('menuitemradio')).toHaveText(['Guided', 'Standard', 'Technical']);
+  await expect(menu.getByRole('menuitemradio')).toHaveText([
+    'Conversation',
+    'Architect',
+    'Guided',
+    'Standard',
+    'Technical',
+  ]);
   await expect(page.getByText('The Workbook', { exact: true })).toHaveCount(0);
   await page.keyboard.press('Escape');
   // A settings file from an earlier build can still ask for the Workbook. The
@@ -329,10 +335,11 @@ test('F01-F02: first run preserves detail and approvals, supports AI skip, and r
 test('F04, F06: sample project opens and a plan edit survives reload with History', async ({
   page,
 }, testInfo) => {
-  // The remaining scenarios use explicit guided preferences.
+  // The remaining scenarios use explicit guided preferences, in the full Console
+  // (Architect): F01 left the new person in the Conversation view.
   const guided = await page.request.put('/api/settings', {
     headers: HEADERS,
-    data: { detail: 'guided', permissions: { changingFiles: true } },
+    data: { detail: 'guided', view: 'architect', permissions: { changingFiles: true } },
   });
   expect(guided.ok()).toBe(true);
   await page.goto('/');

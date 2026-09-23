@@ -248,7 +248,8 @@ interface AppOptions {
  * Settings keys the Workbook read, retired with it (Andrew, 2026-09-23). A
  * client or fixture from before still sends them, so for one release they are
  * accepted and dropped rather than refused as unknown. The store drops any
- * stored copy at load. Delete this carve-out in the release after 0.1.8.
+ * stored copy at load. 0.1.9 is the first release without the Workbook, so keep
+ * this through 0.1.9 and delete it in the release after.
  */
 const retiredSettings = ['surface', 'lastPage', 'tasksView'];
 const owners: Owner[] = ['you', 'diomedes', 'diomedes-with-ok'];
