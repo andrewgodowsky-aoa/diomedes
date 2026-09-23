@@ -26,6 +26,7 @@ import {
 import { ENGINE_TEXT_TURN, TextRouteRuntime, textDispatchAuthorizer } from './text-route.js';
 import { MODEL_SESSION_CAPABILITIES, ModelSessionRuns, modelApiDispatchAuthorizer } from './model-session-run.js';
 import { AWS_BEDROCK_ROUTE } from '../engines/aws-bedrock.js';
+import { isModelApiRoute } from '../../shared/model-api.js';
 import { cloudSharing, requireCloudSharing } from '../cloud-sharing.js';
 
 export const HARNESS_POLICY_VERSION = 'diomedes-host-policy-v1';
@@ -411,8 +412,11 @@ export function createHarnessHost({
     requireCloudSharing(store.state(projectId), 'claude-code', documents, prior),
   );
   modelSessions.setSharingPolicy(
-    (projectId, documents, history) =>
-      requireCloudSharing(store.state(projectId), AWS_BEDROCK_ROUTE, documents, history),
+    (projectId, documents, history, route) => {
+      if (!isModelApiRoute(route))
+        throw new ApiError(403, 'This model API route has no project sharing grant.');
+      requireCloudSharing(store.state(projectId), route, documents, history);
+    },
     (projectId) => cloudSharing(store.state(projectId)).shareConversationHistory,
   );
   const bridge = new HarnessBridge(store, runs, tools, adapter, redact, HOST_TEST_PROJECT, codex);

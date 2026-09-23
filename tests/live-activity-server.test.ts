@@ -175,6 +175,12 @@ describe('thread Ask on an external engine', () => {
       'claude-codeAccountRoute': ACCOUNT,
     };
     await store().saveSettings(store().settings);
+    // Cloud sharing is default-deny: this synthetic project shares its typed messages with
+    // Claude Code and no document, which is all this Ask sends.
+    await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
+      expectedVersion: 0, routes: ['claude-code'], documents: [],
+      shareConversationHistory: false, shareReviewPackets: false,
+    });
     await api(`/projects/${project.id}/ask`, 'POST', {
       text: 'What is on the menu?',
       route: ENGINE,

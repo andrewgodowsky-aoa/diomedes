@@ -215,7 +215,7 @@ function toolOutcome(phase: ToolPhase, tool: string, input: unknown, output: unk
 
 export class ModelSessionRuns {
   private closed = false;
-  private sharingPolicy: (projectId: string, documents: readonly string[], history: boolean) => void = () => {
+  private sharingPolicy: (projectId: string, documents: readonly string[], history: boolean, route: string) => void = () => {
     throw new HarnessError('cloud_sharing_unconfigured', 'Project cloud sharing is not configured for this model session.');
   };
   private historyPolicy: (projectId: string) => boolean;
@@ -233,7 +233,7 @@ export class ModelSessionRuns {
   }
 
   setSharingPolicy(
-    check: (projectId: string, documents: readonly string[], history: boolean) => void,
+    check: (projectId: string, documents: readonly string[], history: boolean, route: string) => void,
     shareHistory: (projectId: string) => boolean,
   ) {
     this.sharingPolicy = check;
@@ -611,7 +611,7 @@ export class ModelSessionRuns {
         // The host policy is read for each turn. A saved lineage does not grant
         // permission to send previous turns to the next model call.
         const history = this.historyPolicy(input.projectId) ? this.history(run!, turnId) : '';
-        this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), history.length > 0);
+        this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), history.length > 0, route);
         const preview = request.activity?.(context, turnId);
         // Pairs the host's finished/failed report with the call the model announced as started.
         // One tool call per step and a sequential loop make the last announcement the one running.
@@ -660,6 +660,7 @@ export class ModelSessionRuns {
           input.projectId,
           input.documents.map((doc) => doc.path),
           history.length > 0,
+          route,
         );
         const guarded: ModelAdapter = {
           id: adapter.id,
