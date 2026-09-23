@@ -235,10 +235,13 @@ Not run. Follow `docs/runbooks/vertex-owner-live.md`, which covers:
 
 | File | What it proves |
 | --- | --- |
-| `tests/google-vertex-model-api.test.ts` (35) | route identity, binding, real SDK request shape, ambient keys ignored, tool round trip with thought signature, prose not a tool, multiple/unoffered calls refused, destination refusals, ADC missing/changed, rate-card expiry and staleness, finish reasons, malformed/incomplete/blocked, model mismatch, usage arithmetic, 401/403/404/429/503, timeout, Stop |
+| `tests/google-vertex-model-api.test.ts` (36) | route identity, binding, real SDK request shape, ambient keys ignored, tool round trip with thought signature, prose not a tool, multiple/unoffered calls refused, destination refusals, ADC missing/changed, gross card and staleness, promotion kept apart, finish reasons, malformed/incomplete/blocked, model mismatch, usage arithmetic, 401/403/404/429/503, timeout, Stop |
 | `tests/google-vertex-conversation.test.ts` (10) | setup over HTTP (no secret in views, detection grants nothing, nothing sent), native NativeAgent+RunService conversation with read_source, attribution and spend, Ask cannot write, Work offers no tools, Work proposal as text, ADC change, reconnect generation, cross-route account, no spend room |
 | `tests/vertex-managed-funding.test.ts` (10) | real `FundingService` (memory repository): reserve/settle with cache pricing, parent-job children, job cap, concurrent jobs vs the month, entitlement missing, revocation before dispatch, 429 at zero, Stop uncertain across restart, crash after dispatch commit, BYO/local/personal payer |
 | `tests/managed-client-bundle.test.ts` (3) | client imports no Vertex/Google auth, no Google key or token tracked, connection schema holds no secret field |
+| `tests/vertex-usage-normalization.test.ts` (7) | one normalization; cached input and reasoning counted once (960 at page-intro figures, 1,920 gross); tool-use prompt; missing/malformed usage unknown or refused; raw usageMetadata kept beside the counts |
+| `tests/vertex-setup-view.test.ts` (6) | the card's state rows, connect body and consent, five cost figures, no credential contents |
+| `tests/vertex-setup-ui.spec.ts` (3, Playwright) | the card in Settings › Engines against served host views: exact connect body, consent, payer and cost figures, host refusal shown, blocked states, no fingerprint on screen. Needs the AI setup mount |
 
 ## Known unverified points and limits
 
@@ -257,8 +260,9 @@ Not run. Follow `docs/runbooks/vertex-owner-live.md`, which covers:
   an `unsent_` receipt: nothing left, nothing is charged.
 - `licenses/DEPENDENCIES.txt` records the lock hash of Windows working-copy bytes; an LF checkout
   computes a different hash. Nothing validates it.
-- Browser (Playwright) suites were not run: no client file changed on this branch. The client
-  build passes.
+- Browser: the Vertex card spec and the full Playwright suite were run on a verification copy of
+  the candidate with the two-line AI setup mount the integrator will add. Vertex streaming, Stop
+  and route errors are proven by fixture transports server-side, not in a browser against Google.
 - Base note: PR #38 (`475fb11`) merged into `main` while this work ran, so relative to `main` this
   branch now carries the credits lane's `74da363` plus its own commits.
 
