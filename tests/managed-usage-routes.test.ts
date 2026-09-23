@@ -110,6 +110,40 @@ describe('the allowance view', () => {
   });
 });
 
+describe('Nectovia usage on this host (NC-2026-09-22.1)', () => {
+  test('says not connected, with no figures, because this host has no control-plane session', async () => {
+    const organizationId = await makeOrganization('Fernbrook Joinery');
+    const usage = await request<Record<string, unknown>>(`/workspace/organizations/${organizationId}/usage`);
+    expect(usage.status).toBe(200);
+    expect(usage.data).toEqual({
+      state: 'not-connected',
+      organizationId,
+      reason: expect.stringMatching(/not signed in to a Nectovia account/),
+    });
+    expect(JSON.stringify(usage.data)).not.toMatch(/MicroUsd|percent/i);
+  });
+
+  test('a non-member reads it as absent, like the allowance', async () => {
+    const organizationId = await makeOrganization('Fernbrook Joinery');
+    await restartAs('outsider');
+    const usage = await request<{ code?: string }>(`/workspace/organizations/${organizationId}/usage`);
+    expect(usage.status).toBe(404);
+    expect(usage.data.code).toBe('organization_not_found');
+  });
+
+  test('there is no route that writes usage or funding state', async () => {
+    const organizationId = await makeOrganization('Fernbrook Joinery');
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+      const response = await fetch(`${url}/api/workspace/organizations/${organizationId}/usage`, {
+        method,
+        headers,
+        body: method === 'DELETE' ? undefined : JSON.stringify({ state: 'ready', usedPercent: 0 }),
+      });
+      expect(response.status).toBe(404);
+    }
+  });
+});
+
 describe('one company cannot read or move another company’s money', () => {
   test('a non-member reads an allowance as absent, not as forbidden', async () => {
     const organizationId = await makeOrganization('Fernbrook Joinery');

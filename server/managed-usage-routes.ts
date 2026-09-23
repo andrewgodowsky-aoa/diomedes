@@ -24,6 +24,7 @@ import {
   periodIdFor,
   type AllowanceView,
   type ChargeKind,
+  type UsageState,
 } from '../shared/managed-usage.js';
 import type { BillingEvent, BillingEventProcessor } from './billing-events.js';
 import type { ManagedGateway } from './managed-gateway.js';
@@ -38,6 +39,9 @@ const body = (req: Request): Record<string, unknown> =>
     : {};
 
 const organizationId = (req: Request) => String(req.params.organizationId ?? '');
+
+export const NOT_CONNECTED_REASON =
+  'This app is not signed in to a Nectovia account, so it cannot read this business’s credit usage. Nothing is estimated in its place.';
 
 const invalid = (message: string, code: string) => new ApiError(400, message, { code });
 
@@ -114,6 +118,26 @@ export function mountManagedUsageRoutes(
         rateCardVersion: RATE_CARD_V1.version,
       };
       return view;
+    }, false),
+  );
+
+  /**
+   * Nectovia usage, as this host can honestly report it. Tenant credit usage
+   * is owned by the control plane and read with an authenticated account
+   * session. This desktop host holds no control-plane session and no client
+   * for one, so it says so rather than drawing numbers. The local allowance
+   * ledger above is not the tenant allowance and is never relabelled as it.
+   */
+  app.get(
+    '/api/workspace/organizations/:organizationId/usage',
+    route(async (req) => {
+      const id = assertMine(req);
+      const state: UsageState = {
+        state: 'not-connected',
+        organizationId: id,
+        reason: NOT_CONNECTED_REASON,
+      };
+      return state;
     }, false),
   );
 
