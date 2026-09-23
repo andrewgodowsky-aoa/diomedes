@@ -52,6 +52,8 @@ export interface ArtifactPaneProps {
    * still moving: the column holds the artifact, so the count stays in sight.
    */
   board?: ReactNode;
+  /** The conversation's recorded artifacts, read-only (RecordedArtifacts.tsx), under the head. */
+  recorded?: ReactNode;
 }
 
 /**
@@ -118,6 +120,7 @@ export function ArtifactPane({
   onShowFile,
   session = null,
   board = null,
+  recorded = null,
 }: ArtifactPaneProps) {
   // Artifacts opened from inside a document, deepest last.
   const [trail, setTrail] = useState<ArtifactRecord[]>([]);
@@ -268,6 +271,7 @@ export function ArtifactPane({
               )}
             </p>
             {board}
+            {recorded}
           </div>
           <div className="art-body" key={shown.key}>
             <ArtifactBody

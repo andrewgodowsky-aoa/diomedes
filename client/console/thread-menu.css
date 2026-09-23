@@ -1,0 +1,13 @@
+/* The conversation's "···" menu (ThreadMenu.tsx): the top strip's `.surface-menu` and `.pmenu`
+   (console.css), at the end of a conversation's head, after its title and controls. */
+.console .head .thread-menu {
+  margin-left: auto;
+  align-self: center;
+}
+
+/* Its confirmation: the Console's dialog, with a refusal said in the attention colour, because
+   it passes (a message finishes, a proposal is answered) and Update can be pressed again. */
+.thread-update-refusal {
+  margin: 12px 0 0;
+  color: var(--attn);
+}

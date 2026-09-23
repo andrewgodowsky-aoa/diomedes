@@ -47,6 +47,14 @@ export interface TextRequest {
   binding?: string;
   interaction?: InteractionRequest;
   /**
+   * The run of the lineage "Update this conversation" retired before this conversation's lineage
+   * (`ConversationLineage.carriedFrom`). Set only by the host, never from a client or a model. A
+   * conversation driver reads that run's recent answered messages as the start of this
+   * conversation's history, only where history sharing allows it for the route at send time; the
+   * native session driver removes it before anything reaches an adapter.
+   */
+  carriedFrom?: string;
+  /**
    * Caller-facing preview channel: stamped, redacted, byte-bounded frames.
    * A caller never receives raw adapter text — see `previewSink` in
    * shared/adapter-contract.ts. Reconnects re-read the durable record;

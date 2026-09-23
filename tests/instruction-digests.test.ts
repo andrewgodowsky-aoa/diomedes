@@ -6,18 +6,17 @@ import {
   REVOKED_INSTRUCTION_DIGESTS,
 } from '../server/instruction-digests';
 import { recordedInstructions, retirementNote } from '../server/lineage-continuity';
-import { instructionsFor } from '../server/interaction-turn';
-import { MODES } from '../server/modes';
+import { answerInstructions } from '../server/answer-format';
 
 // The golden list: every conversation instruction text a shipped build could have recorded in a
 // lineage, each reproducible from its build's own composer output in the fixture. A change to a
-// mode's text fails here until its digest is added deliberately, with its fixture, and the old
-// digests are kept.
+// mode's text, or to the answer format composed after it, fails here until its digest is added
+// deliberately, with its fixture, and the old digests are kept.
 
 type Row = { build: string; source: string; mode: 'ask' | 'plan' | 'auto'; sha256: string; text: string };
 const rows = fixture.texts as Row[];
 const LABEL = { ask: 'Ask', plan: 'Plan', auto: 'Automatic' } as const;
-const today = (mode: 'ask' | 'plan' | 'auto') => instructionsFor(mode, MODES[mode].instructions);
+const today = (mode: 'ask' | 'plan' | 'auto') => answerInstructions(mode);
 
 describe('the known instruction digests', () => {
   test('every fixture text is a known digest, labelled with its mode and build', () => {
@@ -36,11 +35,20 @@ describe('the known instruction digests', () => {
     for (const digest of KNOWN_INSTRUCTION_DIGESTS.keys()) expect(fixed.has(digest), digest).toBe(true);
   });
 
-  test("today's composed Ask, Plan and Automatic texts are known, and are the 0.1.8 fixtures", () => {
+  test("today's composed Ask, Plan and Automatic texts are known, and are the 0.1.9 fixtures", () => {
     for (const mode of ['ask', 'plan', 'auto'] as const) {
       const text = today(mode);
       expect(KNOWN_INSTRUCTION_DIGESTS.get(instructionDigest(text))?.mode, mode).toBe(mode);
-      expect(rows.find((row) => row.build === '0.1.8' && row.mode === mode)?.text, mode).toBe(text);
+      expect(rows.find((row) => row.build === '0.1.9' && row.mode === mode)?.text, mode).toBe(text);
+    }
+  });
+
+  test('the 0.1.8 texts, which conversations opened on main recorded, stay known for their own modes', () => {
+    for (const mode of ['ask', 'plan', 'auto'] as const) {
+      const recorded = rows.find((row) => row.build === '0.1.8' && row.mode === mode)!;
+      expect(recorded.text, mode).not.toBe(today(mode));
+      expect(KNOWN_INSTRUCTION_DIGESTS.get(recorded.sha256)?.mode, mode).toBe(mode);
+      expect(recordedInstructions({ instructions: recorded.text }, mode)).toEqual({ state: 'known', text: recorded.text });
     }
   });
 

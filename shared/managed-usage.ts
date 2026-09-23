@@ -392,9 +392,14 @@ export const MANAGED_PLAN_CANDIDATE: PlanDefinition = Object.freeze({
  * The negatives carry the rest of the weight. Each one names something a
  * reasonable person would otherwise assume, and every one of those assumptions
  * would be a misrepresentation.
+ *
+ * It opens "On a managed plan" because it describes a plan, not the build that
+ * shows it (0.1.8 release review): no build yet sells one, and every route in
+ * this one runs on an account connected on the computer. Where there is no
+ * allowance, the Workspaces panel shows the host's reason first.
  */
 export const ALLOWANCE_MEANING =
-  'Managed model access includes a set number of requests each period, and we pay for them. A request is one thing you ask Diomedes to do, and it counts once however many model calls it takes to finish. It is not withdrawable money, not credit on a provider account, not a fixed number of tokens or words, and not a guaranteed number of jobs. An unusually large request stops and asks before it runs, and extra usage needs your approval.';
+  'On a managed plan, a set number of requests each period is included, and we pay for them. A request is one thing you ask Nectovia to do, and it counts once however many model calls it takes to finish. It is not withdrawable money, not credit on a provider account, not a fixed number of tokens or words, and not a guaranteed number of jobs. An unusually large request stops and asks before it runs, and extra usage needs your approval.';
 
 // --- who pays -----------------------------------------------------------------
 

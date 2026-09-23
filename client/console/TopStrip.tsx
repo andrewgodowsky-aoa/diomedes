@@ -22,6 +22,11 @@ interface TopStripProps {
   /** Only said when it is news: offline, something waiting, or work running. */
   status: { state: 'fault' | 'waiting' | 'working'; text: string } | null;
   chip: ReactNode;
+  /**
+   * Opens the All projects conversation's Cloud sharing, in the place Shell's strip keeps a
+   * project's. Absent unless that conversation is showing and exists.
+   */
+  onCloudSharing?: () => void;
 }
 
 /**
@@ -43,6 +48,7 @@ export function TopStrip({
   onFind,
   status,
   chip,
+  onCloudSharing,
 }: TopStripProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -123,6 +129,11 @@ export function TopStrip({
           >
             Settings
           </button>
+          {onCloudSharing && (
+            <button type="button" onClick={onCloudSharing}>
+              Cloud sharing
+            </button>
+          )}
           <div className="surface-menu" ref={menuRef}>
             <button
               type="button"
