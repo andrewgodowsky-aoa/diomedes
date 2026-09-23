@@ -97,7 +97,6 @@ test.beforeAll(async ({ request }) => {
             detail: 'technical',
             familiarity: 'comfortable',
           },
-          surface: 'console',
           detail: 'technical',
         },
       })
@@ -151,7 +150,7 @@ async function openConsole(page: Page) {
     (
       await page.request.put('/api/settings', {
         headers: HEADERS,
-        data: { surface: 'console', openProjects: [projectId] },
+        data: { openProjects: [projectId] },
       })
     ).ok(),
   ).toBe(true);

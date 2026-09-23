@@ -13,9 +13,8 @@ New decisions are appended.
 
 ## 1. One surface: the Console
 
-The Workbook is frozen and is being ported into the Console page by page, then deleted. **Every new
-feature is Console-only** — no new Workbook screens, and no further re-skin passes on the Workbook's
-half of `client/styles.css`.
+The Workbook was ported into the Console page by page and then removed (Andrew, 2026-09-23).
+**Every feature is Console-only**; do not bring a second surface back.
 
 Two surfaces cost twice to build and more than twice to keep honest, because every invariant has to
 hold in both and every test has to prove it twice. The port is one-directional so the cost stops

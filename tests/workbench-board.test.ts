@@ -7,7 +7,7 @@ import { directOrigin } from '../shared/attribution';
 import { needFixture, sessionFixture } from './workbench-fixtures';
 
 const project: Project = { id: 'project', name: 'Project', folder: 'C:/owned', createdAt: '', lastOpenedAt: '',
-  plans: [], references: [], repository: { present: false }, leftOff: null,
+  plans: [], references: [], repository: { present: false },
   counts: { running: 0, changesWaiting: 0, waitingForYou: 0, historyToday: 0 },
   status: { needsYou: 0, working: 0, tasksDone: 0, tasksTotal: 0 } };
 const task: Task = { id: 'task', name: 'Draft', description: '', from: null, owner: 'you', state: 'todo',

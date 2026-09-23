@@ -13,7 +13,7 @@ test.skip('Connections works through ordinary Console navigation', async ({ page
   const headers = { 'Content-Type': 'application/json', 'X-Diomedes-Client': '1' };
   const projectResponse = await page.request.post('/api/projects/sample', { headers, data: {} });
   expect(projectResponse.ok()).toBeTruthy(); const project = await projectResponse.json();
-  const settings = { detail: 'technical', surface: 'console', openProjects: [project.id],
+  const settings = { detail: 'technical', openProjects: [project.id],
     onboarding: { work: 'business', detail: 'technical', familiarity: 'some', resumeAt: 'done', completedAt: new Date().toISOString() } };
   expect((await page.request.put('/api/settings', { headers, data: settings })).ok()).toBeTruthy();
   await page.goto('/'); await page.getByRole('button', { name: 'Connections', exact: true }).click();
