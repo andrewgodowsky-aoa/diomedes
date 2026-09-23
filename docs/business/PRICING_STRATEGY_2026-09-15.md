@@ -7,7 +7,7 @@ Nectovia is the product. Diomedes is the company. Customer-facing product text s
 
 This document is reconciled against Andrew's decisions of 2026-09-23, which supersede source package NC-2026-09-22.1 and PR #35 where they differ. Rules those decisions replaced are kept, with what replaced them, under "Superseded 2026-09-23" at the end. Nothing in that section is operative. Retired prices are deleted rather than kept, because Git is the archive; no price changed on 2026-09-23. Basis for the offers and grants: Andrew's September 22 directions and `diomedes-site/src/data/pricing.ts` at `8c1dcef76a166df40a6226377b5be2a471c7dbdc`. Do not restore historical decisions as current offers.
 
-Every term here is either **approved** (an owner decision, with its date), **proposed** (not approved; never build or sell it as an entitlement) or **withdrawn**. An approved commercial term is not an implemented or qualified one.
+Every term here is **approved** (an owner decision, with its date), **proposed** (not approved; never build or sell it as an entitlement), **withdrawn** (the owner rejected it) or **superseded** (replaced by a newer approved rule, named beside it). An approved commercial term is not an implemented or qualified one.
 
 ## Status of terms
 
@@ -23,17 +23,17 @@ Every term here is either **approved** (an owner decision, with its date), **pro
 | Efficient: GPT-6 Luna on AWS Bedrock | approved (route not live-qualified) | Owner decision 2026-09-23 |
 | Focused: Gemini 3.8 Flash on Google Cloud Vertex AI, simple API key | approved (route not live-qualified) | Owner decision 2026-09-23 |
 | Thorough: GPT-6 Sol on AWS Bedrock | approved (route not live-qualified) | Owner decision 2026-09-23 |
-| Sol-primary Focused, optional Muse Standard, Opus 5.5-led Thorough | withdrawn | Replaced by owner decision 2026-09-23 |
+| Sol-primary Focused, optional Muse Standard, Opus 5.5-led Thorough | superseded | Replaced by owner decision 2026-09-23 |
 | Parent-job credit caps: Efficient 20, Focused 50, Thorough 100 | approved | Owner decision 2026-09-23 |
 | Pre-send warning when likely use exceeds the cap: move up a tier, or go over for that one job | approved | Owner decision 2026-09-23 |
-| Single suggested 20-credit default job cap | withdrawn | Replaced by owner decision 2026-09-23 |
+| Single suggested 20-credit default job cap | superseded | Replaced by owner decision 2026-09-23 |
 | Jev pathway is OpenRouter | approved (route not live-qualified) | Owner decision 2026-09-23 |
 | Web search uses the subscription engines (Claude Code / Codex); no paid search API | approved | Owner decision 2026-09-23 |
 | Threads allow Build and Fix on the model-API routes | approved | Owner decision 2026-09-23 |
 | Product name Nectovia; company name Diomedes | approved | Owner decision 2026-09-23 |
 | Provider routes exist because each provider gave trial credits; the company's provider-credit dashboard is private and never customer-facing | approved | Owner decision 2026-09-23 |
 | Usage contract `nectovia-usage/1` (token totals, unknown usage, three domains, five separate values) | approved | Owner decision 2026-09-23 |
-| Three-quantity accounting (provider cost / allowance debit / invoice) | withdrawn | Extended by `nectovia-usage/1`, owner decision 2026-09-23 |
+| Three-quantity accounting (provider cost / allowance debit / invoice) | superseded (the three stay distinct inside the five values) | Extended by `nectovia-usage/1`, owner decision 2026-09-23 |
 | Solo at $99/month for one person, not sellable | approved (owner direction; `sellable: false`) | Owner direction 2026-09-22 |
 | Solo monthly grant (published grant null; 250 credits is a working proposal only) | proposed | NC-2026-09-22.1; still open 2026-09-23 |
 | $500 Business Plus / 2,000 credits | proposed | Assistant proposal; still open 2026-09-23 |

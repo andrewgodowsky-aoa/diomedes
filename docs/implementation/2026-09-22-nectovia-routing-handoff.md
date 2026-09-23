@@ -1,6 +1,6 @@
 # Nectovia routing and commercial implementation handoff
 
-NC-2026-09-22.1, reconciled 2026-09-23. Documentation-only integration handoff. Read `../business/PRICING_STRATEGY_2026-09-15.md` first; its "Status of terms" table is authoritative for what is approved, proposed or withdrawn. Andrew's decisions of 2026-09-23 supersede source package NC-2026-09-22.1 and PR #35 where they differ; replaced rules are kept under "Superseded 2026-09-23" at the end and are not operative. This file does not activate runtime entitlements or authorize spending/deployment. Nothing described here is live or funded, and no route has had a live call.
+NC-2026-09-22.1, reconciled 2026-09-23. Documentation-only integration handoff. Read `../business/PRICING_STRATEGY_2026-09-15.md` first; its "Status of terms" table is authoritative for what is approved, proposed, withdrawn or superseded; update both tables together. Andrew's decisions of 2026-09-23 supersede source package NC-2026-09-22.1 and PR #35 where they differ; replaced rules are kept under "Superseded 2026-09-23" at the end and are not operative. This file does not activate runtime entitlements or authorize spending/deployment. Nothing described here is live or funded, and no route has had a live call.
 
 Nectovia is the product. Diomedes is the company.
 
@@ -11,10 +11,10 @@ Nectovia is the product. Diomedes is the company.
 | Tier-only pickers (Efficient / Focused / Thorough); owner maps tiers to routes in AI setup; owner-only override for testing | approved | Owner decision 2026-09-23 |
 | Customer expert model picker, lead-only / all-call pins, no-substitution choice | withdrawn | Owner decision 2026-09-23 |
 | Efficient GPT-6 Luna on AWS Bedrock; Focused Gemini 3.8 Flash on Google Cloud Vertex AI (simple API key); Thorough GPT-6 Sol on AWS Bedrock | approved (not live-qualified) | Owner decision 2026-09-23 |
-| Sol-primary Focused, Muse Standard preference, Opus 5.5 Thorough | withdrawn | Replaced by owner decision 2026-09-23 |
+| Sol-primary Focused, Muse Standard preference, Opus 5.5 Thorough | superseded | Replaced by owner decision 2026-09-23 |
 | Parent-job caps Efficient 20 / Focused 50 / Thorough 100, with pre-send warning dialog | approved | Owner decision 2026-09-23 |
 | Jev through OpenRouter | approved (not live-qualified) | Owner decision 2026-09-23 |
-| Jev through TypeSafe direct as the pathway | withdrawn | Replaced by owner decision 2026-09-23 |
+| Jev through TypeSafe direct as the pathway | superseded | Replaced by owner decision 2026-09-23 |
 | Web search through the subscription engines (Claude Code / Codex); no paid search API | approved | Owner decision 2026-09-23 |
 | Build and Fix in Threads on model-API routes | approved | Owner decision 2026-09-23 |
 | Provider routes exist because of provider trial credits; private provider-credit dashboard never customer-facing | approved | Owner decision 2026-09-23 |
