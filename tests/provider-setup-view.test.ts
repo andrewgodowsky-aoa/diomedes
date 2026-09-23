@@ -231,8 +231,8 @@ describe('Azure OpenAI and OpenRouter setup view', () => {
       note: 'Azure OpenAI is on but not ready: Approve a spend limit for Azure OpenAI before sending.',
     });
     expect(providerPickerState(openrouter())).toEqual({ offered: true, note: null });
-    expect(providerModels(azure())).toEqual([{ slug: 'gpt-5.6-luna', detail: 'Deployment luna-prod' }]);
-    expect(providerModels(openrouter())).toEqual([{ slug: 'vendor/model-a', detail: 'Runs only on upstream-one' }]);
+    expect(providerModels(azure())).toEqual([{ slug: 'gpt-5.6-luna', where: 'luna-prod' }]);
+    expect(providerModels(openrouter())).toEqual([{ slug: 'vendor/model-a', where: 'upstream-one' }]);
   });
 
   test('connecting alone never makes a route the default', () => {

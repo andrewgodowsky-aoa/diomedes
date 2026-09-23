@@ -291,17 +291,20 @@ export function readinessLines(readiness: ModelApiReadiness): { id: string; ok: 
     .map((check) => ({ id: check.id, ok: check.ok, text: check.detail }));
 }
 
-/** The models a thread's picker offers on this route: one per deployment or allowed model. */
-export function providerModels(view: ProviderView | null): { slug: string; detail: string }[] {
+/**
+ * The models a thread's picker offers on this route: one per Azure deployment or allowed
+ * OpenRouter model. `where` is what serves it: the deployment, or the only endpoints it may use.
+ */
+export function providerModels(view: ProviderView | null): { slug: string; where: string }[] {
   if (!view?.connection) return [];
   if (view.route === 'azure-openai')
     return (view as AzureConnectionView).connection!.deployments.map((entry) => ({
       slug: entry.model,
-      detail: `Deployment ${entry.deployment}`,
+      where: entry.deployment,
     }));
   return (view as OpenRouterConnectionView).connection!.models.map((entry) => ({
     slug: entry.id,
-    detail: `Runs only on ${entry.upstreams.join(', ')}`,
+    where: entry.upstreams.join(', '),
   }));
 }
 

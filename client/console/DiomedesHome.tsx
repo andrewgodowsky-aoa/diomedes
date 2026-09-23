@@ -15,7 +15,8 @@ import {
 } from '../conversation-send';
 import { answerTurnId } from '../conversation-turn';
 import { awsPickerState } from '../aws-bedrock-view';
-import type { AwsConnectionView } from '../../shared/model-api';
+import { providerPickerState, type ProviderView } from '../provider-setup-view';
+import type { AwsConnectionView, ModelApiRoute } from '../../shared/model-api';
 import type { MessageResult } from '../../shared/conversation';
 import { CONVERSATION_DEFAULT_ROUTE } from '../../shared/engines';
 import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
@@ -127,6 +128,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   // The scoped thread's own WorkStyle, or null to follow the Settings default.
   const [workStyle, setWorkStyle] = useState<WorkStyle | null>(null);
   const [aws, setAws] = useState<AwsConnectionView | null>(null);
+  const [providers, setProviders] = useState<ProviderView[]>([]);
   const delivery = useRef<ActiveDelivery | null>(null);
   // Whose turn it is to paint. A scope change, a read and a send each take the next number, so
   // an answer for a visit the person has left, or for a message they have since followed with
@@ -249,6 +251,14 @@ export function DiomedesHome(props: DiomedesHomeProps) {
         },
         () => undefined,
       );
+      // Azure OpenAI and OpenRouter, by the same rule, each from its own view.
+      void Promise.all(
+        (['azure-openai', 'openrouter'] as const).map((id) =>
+          api<ProviderView>(`/ai/model-api/${id}`).catch(() => null),
+        ),
+      ).then((views) => {
+        if (owns()) setProviders(views.filter((view): view is ProviderView => view !== null));
+      });
       try {
         let found: Binding | null;
         let conversation: Conversation | null = null;
@@ -579,7 +589,10 @@ export function DiomedesHome(props: DiomedesHomeProps) {
   const effective = route ?? CONVERSATION_DEFAULT_ROUTE;
   const routeChoices =
     scopeId === null && binding !== null
-      ? routeOptions(effective, awsPickerState(aws).offered)
+      ? routeOptions(effective, [
+          ...(awsPickerState(aws).offered ? (['aws-bedrock'] as ModelApiRoute[]) : []),
+          ...providers.filter((view) => providerPickerState(view).offered).map((view) => view.route),
+        ])
       : null;
 
   return (
