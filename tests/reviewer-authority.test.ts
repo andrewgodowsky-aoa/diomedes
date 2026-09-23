@@ -396,6 +396,13 @@ describe('Approve for me never approves what it should not', () => {
     expect(need.authorization).toBeUndefined();
   }, 20_000);
   test('the reviewer budget is spent, not exceeded', async () => {
+    expect((await request(`/projects/${projectId}/cloud-sharing`, 'PUT', {
+      expectedVersion: 1,
+      routes: ['codex'],
+      documents: ['First.md', 'Second.md'],
+      shareConversationHistory: false,
+      shareReviewPackets: true,
+    })).status).toBe(200);
     expect(
       (await grant(grantBody({ reviewer: { requestedModel: null, maxReviews: 1 } }))).status,
     ).toBe(200);
