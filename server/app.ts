@@ -1468,7 +1468,7 @@ export async function createApp(options: AppOptions) {
   );
   app.put(
     '/api/projects/:id/cloud-sharing',
-    route(async (req) => store.locked(async () => {
+    route(async (req) => {
       const projectId = id(req);
       const state = store.state(projectId);
       const candidate = structuredClone(state);
@@ -1479,7 +1479,7 @@ export async function createApp(options: AppOptions) {
       state.cloudSharing = policy;
       await store.persist(state);
       return policy;
-    })),
+    }),
   );
   /**
    * What an engine can be asked to run. Read from the engine's own list on this

@@ -43,7 +43,8 @@ excluded at the owner's request.
 - A project's Cloud sharing policy is stored with its local project state. Old
   or damaged records fail closed. The UI exposes route, document and conversation
   history choices; saves use an expected version, so stale windows cannot
-  silently replace another choice. The server checks this policy before source
+  silently replace another choice. Saves are serialized, so simultaneous windows
+  cannot both commit the same policy version. The server checks this policy before source
   reads and cloud starts, and rejects a new dispatch or Work-command replay
   after a revoke. Completed conversation answers remain in local history.
   Instruction files such as `AGENTS.md` and `CLAUDE.md` enter a Work prompt only
@@ -68,7 +69,8 @@ excluded at the owner's request.
 
 1. **Cloud egress acceptance (high).** The project allowlist is a source gate,
    not a content scanner: a person can paste sensitive text into a prompt or
-   allowlist an ordinary file containing credentials. The per-message send
+   allowlist an ordinary file containing credentials. Work may include task names
+   and descriptions in the instruction sent to the selected provider. The per-message send
    confirmation still shows the selected route and files. Existing cloud-work
    test fixtures need explicit project grants before the default-deny migration
    can pass the full suite; source checks here do not replace real-provider
