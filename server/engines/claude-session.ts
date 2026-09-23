@@ -94,8 +94,6 @@ export function prepareClaudeSession(
   version: string,
   expectedAccount?: string,
 ) {
-  if (options.observedVersion !== version)
-    throw new EngineError('VERSION_MISMATCH', 'Claude Code session compatibility needs review.');
   if (input.accountRoute !== 'claude-code:claude.ai')
     throw new EngineError('ACCOUNT_CHANGED', 'Recheck the selected Claude account route.');
   const identity = typeof account.accountId === 'string' ? account.accountId : account.email;
@@ -142,14 +140,13 @@ export function prepareClaudeSession(
       saved.projectId !== input.projectId ||
       (!options.fork && saved.threadId !== input.threadId) ||
       saved.cwd !== checkpoint.cwd ||
-      saved.cliVersion !== version ||
       saved.requestedModel !== input.model ||
       saved.instructionDigest !== instructionDigest ||
       (saved.scopeDigest ?? 'text-only') !== readScopeDigest(input.readScope)
     )
       throw new EngineError(
         'SESSION_MISMATCH',
-        'The native session account, project, model, version or instructions changed.',
+        'The native session account, project, model or instructions changed.',
       );
     checkpoint = options.fork
       ? {
@@ -158,7 +155,8 @@ export function prepareClaudeSession(
           lineageId: saved.lineageId,
           parentSessionId: saved.nativeSessionId,
         }
-      : saved;
+      : // A session resumes across Claude Code updates; it now runs on this version.
+        { ...saved, cliVersion: version };
   } else if (options.fork)
     throw new EngineError('SESSION_INVALID', 'Fork needs an existing native session.');
   const args = ['--model', input.model];

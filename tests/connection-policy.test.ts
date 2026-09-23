@@ -9,7 +9,7 @@ import {
 } from '../shared/connection-policy.js';
 
 // The 2026-09-20 hostile audit's reference cases, held against the shared helpers.
-const review = { engine: 'opencode', version: '1.18.4' };
+const review = { engine: 'opencode' };
 const candidate = (changes: Partial<Candidate> = {}): Candidate => ({
   id: 'managed',
   engine: 'opencode',
@@ -67,15 +67,21 @@ describe('selectCandidate', () => {
       reason: 'selected-missing',
     });
   });
+  test('selected installation moving to another path requires a new choice', () => {
+    expect(
+      selectCandidate([candidate({ path: '/moved/opencode.exe' })], review, bind(candidate())),
+    ).toEqual({ kind: 'repair', reason: 'selected-changed' });
+  });
   test.each([
     ['sha256', 'b'.repeat(64)],
     ['version', '1.18.5'],
-    ['path', '/moved/opencode.exe'],
-  ] as const)('selected installation changing %s requires new review', (field, value) => {
-    expect(selectCandidate([candidate({ [field]: value })], review, bind(candidate()))).toEqual({
-      kind: 'repair',
-      reason: 'selected-changed',
-    });
+  ] as const)('selected installation updating its %s in place stays selected', (field, value) => {
+    const r = selectCandidate([candidate({ [field]: value })], review, bind(candidate()));
+    expect(r).toMatchObject({ kind: 'candidate', requiresSelection: false });
+    expect(r.kind === 'candidate' && r.candidate[field]).toBe(value);
+  });
+  test.each(['1.18.5', '2.0.0', '0.9.1'])('any reported version %s is usable', (version) => {
+    expect(selectCandidate([candidate({ version })], review).kind).toBe('candidate');
   });
   test.each<Partial<Candidate>>([
     { integrity: 'unknown' },
@@ -84,7 +90,7 @@ describe('selectCandidate', () => {
     { protocol: 'failed' },
     { present: false },
     { sha256: 'not-a-hash' },
-    { version: '1.18.5' },
+    { version: '' },
     { engine: 'other' },
   ])('no reviewed candidate from %j', (delta) => {
     expect(selectCandidate([candidate(delta)], review).kind).toBe('repair');

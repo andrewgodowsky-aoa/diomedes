@@ -89,7 +89,12 @@ async function fixture(mode = 'ok', deps: CursorAdapterDeps = {}) {
     if (options.signal?.aborted) throw Object.assign(new Error('Stopped'), { code: 'CANCELLED' });
     if (options.args.includes('--version'))
       return {
-        stdout: mode === 'version' ? '2026.08.12-new' : '2026.08.11-e8db854',
+        stdout:
+          mode === 'version'
+            ? 'not a version'
+            : mode === 'newer'
+              ? '2026.08.12-new'
+              : '2026.08.11-e8db854',
         code: 0,
       };
     return {
@@ -517,13 +522,17 @@ describe('Cursor ACP text route', () => {
     ['protocol-version', 'PROTOCOL_ERROR'],
     ['wrong-mode', 'POLICY_MISMATCH'],
     ['exit', 'PROTOCOL_ERROR'],
-    ['version', 'UNSUPPORTED_VERSION'],
+    ['version', 'VERSION_UNKNOWN'],
     ['quota', 'USAGE_LIMIT'],
     ['auth-expired', 'AUTH_REQUIRED'],
     ['bad-status', 'AUTH_UNKNOWN'],
   ])('fails %s without accepting output', async (mode, code) => {
     const { adapter } = await fixture(mode);
     await expect(adapter.generate(request)).rejects.toMatchObject({ code });
+  });
+  it('accepts whatever version Cursor reports', async () => {
+    const { adapter } = await fixture('newer');
+    await expect(adapter.generate(request)).resolves.toMatchObject({ text: 'READY' });
   });
   it.each(['startup-hang', 'hang'])('bounds %s independently of cancellation', async (mode) => {
     const { adapter } = await fixture(mode, {
@@ -581,7 +590,7 @@ describe('Cursor ACP text route', () => {
 describe('Cursor failure stages', () => {
   it.each([
     ['bad-status', 'AUTH_UNKNOWN', 'provider-auth'],
-    ['version', 'UNSUPPORTED_VERSION', 'runtime-verification'],
+    ['version', 'VERSION_UNKNOWN', 'runtime-verification'],
     ['protocol-version', 'PROTOCOL_ERROR', 'local-handshake'],
     ['auth-expired', 'AUTH_REQUIRED', 'provider-auth'],
     ['wrong-mode', 'POLICY_MISMATCH', 'local-handshake'],

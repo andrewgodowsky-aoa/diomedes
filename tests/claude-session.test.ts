@@ -136,7 +136,26 @@ describe('Claude persistent native transport', () => {
       await second.close();
     }
   });
-  it.each(['instructions', 'model', 'version', 'account', 'uncertain'])(
+  it('resumes a saved session after Claude Code updates itself', async () => {
+    const f = await fixture();
+    const first = await f.adapter.openSession(request, f.options);
+    await first.turn(request);
+    const checkpoint = first.checkpoint;
+    await first.close();
+    const second = await f.adapter.openSession(request, {
+      ...f.options,
+      observedVersion: '2.9.0',
+      restore: checkpoint,
+    });
+    try {
+      expect(second.checkpoint.nativeSessionId).toBe(checkpoint.nativeSessionId);
+      expect(second.checkpoint.cliVersion).toBe('2.9.0');
+      expect(f.launches[1]).toContain('--resume');
+    } finally {
+      await second.close();
+    }
+  });
+  it.each(['instructions', 'model', 'account', 'uncertain'])(
     'refuses %s drift before starting a restored process',
     async (drift) => {
       const f = await fixture();
@@ -154,7 +173,7 @@ describe('Claude persistent native transport', () => {
           },
           {
             ...f.options,
-            observedVersion: drift === 'version' ? 'other' : CLAUDE_VERSION,
+            observedVersion: CLAUDE_VERSION,
             restore: drift === 'uncertain' ? { ...restore, state: 'uncertain' } : restore,
           },
         ),

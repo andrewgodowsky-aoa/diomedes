@@ -705,7 +705,11 @@ test('Settings offers the private compatible copy for a found but incompatible i
     await openEngines(page);
     const section = setupSection(page);
     // Found is not usable, and the strip says which of the two it is.
-    await expect(stateChip(page, 'installation')).toContainText('Found, unsupported version');
+    await expect(stateChip(page, 'installation')).toContainText('Found, did not answer its check');
+    // Nothing on this computer can run, and the screen says so rather than going quiet.
+    await expect(page.getByTestId('no-engines-found')).toHaveText(
+      'No available engines found. Install a compatible one below.',
+    );
     // The defect this repairs: Install used to appear only when nothing was found.
     const primary = section.getByRole('button', {
       name: 'Repair with a compatible copy for Nectovia',
@@ -799,7 +803,7 @@ test('Settings names a corrupt installation and a broken binding, and switches t
     const managed = candidateRow(section, 1, managedCandidate.path);
     await expect(own).toContainText('Your own installation');
     await expect(own).toContainText('Your own copy; Nectovia did not verify its publisher.');
-    await expect(own).toContainText('Unsupported version');
+    await expect(own).toContainText('Did not answer its check');
     await expect(own).toContainText('In use');
     await expect(managed).toContainText("Nectovia's private copy");
     await expect(managed.getByRole('button', { name: 'Use this installation', exact: true })).toBeVisible();

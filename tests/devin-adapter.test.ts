@@ -111,7 +111,11 @@ async function fixture(mode = 'ok', deps: DevinAdapterDeps = {}) {
     if (options.args.includes('--version'))
       return {
         stdout:
-          mode === 'version' ? 'devin 3000.10.24 (abcd1234)' : 'devin 3000.10.23 (deb81600)',
+          mode === 'version'
+            ? 'devin (unknown build)'
+            : mode === 'newer'
+              ? 'devin 3000.10.24 (abcd1234)'
+              : 'devin 3000.10.23 (deb81600)',
         code: 0,
       };
     return { code: 0, stdout: '' };
@@ -621,12 +625,16 @@ describe('Devin ACP text route', () => {
     ['wrong-mode', 'POLICY_MISMATCH'],
     ['no-ask-mode', 'POLICY_MISMATCH'],
     ['exit', 'PROTOCOL_ERROR'],
-    ['version', 'UNSUPPORTED_VERSION'],
+    ['version', 'VERSION_UNKNOWN'],
     ['quota', 'USAGE_LIMIT'],
     ['auth-fails', 'AUTH_REQUIRED'],
   ])('fails %s without accepting output', async (mode, code) => {
     const { adapter } = await fixture(mode);
     await expect(adapter.generate(request)).rejects.toMatchObject({ code });
+  });
+  it('accepts whatever version Devin reports', async () => {
+    const { adapter } = await fixture('newer');
+    await expect(adapter.generate(request)).resolves.toMatchObject({ text: 'READY' });
   });
   it.each(['startup-hang', 'hang', 'auth-hang'])(
     'bounds %s independently of cancellation',
@@ -687,7 +695,7 @@ describe('Devin ACP text route', () => {
 
 describe('Devin failure stages', () => {
   it.each([
-    ['version', 'UNSUPPORTED_VERSION', 'runtime-verification'],
+    ['version', 'VERSION_UNKNOWN', 'runtime-verification'],
     ['protocol-version', 'PROTOCOL_ERROR', 'local-handshake'],
     ['auth-fails', 'AUTH_REQUIRED', 'provider-auth'],
     ['no-ask-mode', 'POLICY_MISMATCH', 'local-handshake'],

@@ -30,9 +30,14 @@ export interface Candidate {
   readonly integrity: 'verified' | 'failed' | 'unknown';
   readonly protocol: 'passed' | 'failed' | 'unknown';
 }
-export interface ReviewedVersion {
+/**
+ * The route a candidate must belong to. Selection is version-agnostic: any
+ * version the tool reports, with a verified identity and a passed probe, is
+ * usable. Tools such as Claude Code update themselves, so an exact pin would
+ * refuse a working installation the day after it was set up.
+ */
+export interface CandidateRoute {
   readonly engine: string;
-  readonly version: string;
 }
 export type SelectedBinding = Pick<Candidate, 'id' | 'engine' | 'path' | 'version' | 'sha256'>;
 export type RepairReason =
@@ -53,7 +58,7 @@ export type CandidateDecision =
 /** Recommend a candidate without replacing an existing explicit binding. */
 export function selectCandidate(
   inventory: readonly Candidate[],
-  reviewed: ReviewedVersion,
+  route: CandidateRoute,
   selected?: SelectedBinding,
 ): CandidateDecision {
   const ids = new Set<string>();
@@ -62,8 +67,8 @@ export function selectCandidate(
     ids.add(c.id);
   }
   const usable = (c: Candidate) =>
-    c.engine === reviewed.engine &&
-    c.version === reviewed.version &&
+    c.engine === route.engine &&
+    c.version.length > 0 &&
     c.present &&
     c.path.length > 0 &&
     /^[a-f0-9]{64}$/.test(c.sha256) &&
@@ -74,8 +79,10 @@ export function selectCandidate(
       (row) => row.id === selected.id && row.engine === selected.engine && row.present,
     );
     if (!c) return { kind: 'repair', reason: 'selected-missing' };
-    if (c.path !== selected.path || c.version !== selected.version || c.sha256 !== selected.sha256)
-      return { kind: 'repair', reason: 'selected-changed' };
+    // The same installation updating itself is still the one the person chose:
+    // a new version and digest at the same path stays selected once it verifies.
+    // A different file at that identity is not.
+    if (c.path !== selected.path) return { kind: 'repair', reason: 'selected-changed' };
     if (!usable(c)) return { kind: 'repair', reason: 'selected-unverified' };
     return { kind: 'candidate', candidate: { ...c }, requiresSelection: false };
   }

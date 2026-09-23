@@ -17,6 +17,8 @@ import {
   signingIn,
   checkedSentence,
   compatibilityText,
+  discoveryOutcome,
+  NO_ENGINES_FOUND,
   connected,
   contextText,
   placeholderConnection,
@@ -106,7 +108,7 @@ describe('the four states one route shows', () => {
     ]);
   });
 
-  it('says found is not usable when the copy is the wrong version, changed or corrupt', () => {
+  it('says found is not usable when the copy did not answer, changed or is corrupt', () => {
     const state = (patch: Partial<EngineConnection>) => setupStates({ ...base, ...patch })[0];
     expect(state({ installation: 'corrupt' })).toMatchObject({
       value: 'no',
@@ -114,7 +116,7 @@ describe('the four states one route shows', () => {
     });
     expect(state({ compatibility: 'unsupported' })).toMatchObject({
       value: 'no',
-      text: 'Found, unsupported version',
+      text: 'Found, did not answer its check',
     });
     expect(state({ repair: 'selected-changed' })).toMatchObject({
       value: 'no',
@@ -305,7 +307,25 @@ describe('how an installation is described', () => {
     expect(contextText('wsl')).toBe('WSL');
     expect(contextText('desktop-app')).toBe('Desktop application');
     expect(contextText('windows-native')).toBe('Windows command line');
-    expect(compatibilityText('unsupported')).toBe('Unsupported version');
+    expect(compatibilityText('unsupported')).toBe('Did not answer its check');
+  });
+});
+
+describe('a check that finds nothing', () => {
+  it('says so aloud once a check has run and no route has a usable installation', () => {
+    const none = (['claude-code', 'opencode'] as const).map((engine) => ({
+      ...base,
+      engine,
+      installation: 'missing' as const,
+    }));
+    expect(discoveryOutcome(none)).toBe(NO_ENGINES_FOUND);
+    expect(discoveryOutcome([...none, { ...base, repair: 'selected-missing' as const }])).toBe(
+      NO_ENGINES_FOUND,
+    );
+  });
+  it('stays quiet before any check and while one route is usable', () => {
+    expect(discoveryOutcome([{ ...base, installation: 'not-checked' }])).toBeNull();
+    expect(discoveryOutcome([{ ...base, installation: 'missing' }, base])).toBeNull();
   });
 });
 
