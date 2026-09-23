@@ -139,7 +139,7 @@ import { EngineService, HOST_TEST_PROJECT } from './engines/service.js';
 import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
 import { mountJevAdvisorRoutes } from './jev-advisor-routes.js';
 import type { JevAdvisor } from './harness/jev-advisor.js';
-import { loadApprovedReadServers, type ReadScope } from './engines/read-scope.js';
+import { loadApprovedReadServers, readScopeDigest, type ReadScope } from './engines/read-scope.js';
 import {
   buildTurnReadScope,
   closeReadGrant,
@@ -152,7 +152,15 @@ import {
   narrower,
   type AdmissionSource,
   type InteractionHost,
+  type LineageRetirement,
 } from './interaction-service.js';
+import {
+  boundInstructions,
+  lineageNoteTurn,
+  recordedInstructions,
+  type RecordedInstructions,
+  type RetirementCause,
+} from './lineage-continuity.js';
 import { admitInteraction } from './interaction-admission.js';
 import {
   blockedMessage,
@@ -3368,6 +3376,48 @@ export async function createApp(options: AppOptions) {
       }
       return null;
     };
+  /**
+   * The scope a conversation run recorded when it started (`run.input`): the instructions, model
+   * and account it runs under. Null for a lineage admitted whose run never started.
+   */
+  const recordedScope = async (projectId: string, runId: string): Promise<unknown> => {
+    try {
+      return (await conversationDriver(runId).get(projectId, runId)).input;
+    } catch (error) {
+      if (error instanceof HarnessError && error.code === 'unknown_run') return null;
+      throw error;
+    }
+  };
+  /**
+   * The instructions the next message in a conversation mode is sent with on a model-API route,
+   * chosen as `resolve` chooses them: the current lineage's recorded text when that lineage would
+   * continue on this route, model and level and this build knows the text, otherwise today's.
+   * Nothing is admitted or retired here; job metering prices the text this returns.
+   */
+  const nextModelInstructions = async (
+    projectId: string,
+    thread: Conversation,
+    mode: ConversationLineage['mode'],
+    choice: { route: ModelApiRoute; model: string; effort?: string },
+  ): Promise<string> => {
+    const composed = instructionsFor(mode, MODES[mode].instructions);
+    const current = (thread.lineages ?? [])
+      .filter((lineage) => lineage.mode === mode && !lineage.retired)
+      .sort((a, b) => b.generation - a.generation)[0];
+    if (
+      !current ||
+      !current.runId.startsWith('model-') ||
+      current.effort !== choice.effort ||
+      (current.route !== undefined && current.route !== choice.route) ||
+      (current.model !== undefined && current.model !== choice.model)
+    )
+      return composed;
+    return boundInstructions({
+      composed,
+      recorded: recordedInstructions(await recordedScope(projectId, current.runId)),
+      resumable: true,
+    });
+  };
   const interactionHost: InteractionHost = {
     resolve: (projectId, threadId, command, options) =>
       store.locked(async () => {
@@ -3381,12 +3431,15 @@ export async function createApp(options: AppOptions) {
         const sourceMessageId = sourceMessageIdFor(projectId, threadId, command.commandId);
         const restriction = restrictionOf(command.mode);
         const lineages = thread.lineages ?? [];
+        // Today's composed text. A message on a lineage that already exists may be sent with the
+        // text that lineage recorded instead (owner decisions 2026-09-23), so the text is bound
+        // below, once the lineage is chosen.
+        const composed = instructionsFor(command.mode, MODES[command.mode].instructions);
         const request = {
           projectId,
           threadId,
           requestId: command.commandId,
           prompt: promptFor(command.mode, command.text, sourceMessageId),
-          instructions: instructionsFor(command.mode, MODES[command.mode].instructions),
           // From the parsed command alone, before any setting or file is read, so a retry is
           // compared with what was sent even after either has changed.
           binding: commandBinding('message', command),
@@ -3403,7 +3456,10 @@ export async function createApp(options: AppOptions) {
           [...lineages].reverse().map((lineage) => lineage.runId),
           command.commandId,
         );
-        if (located?.answered)
+        if (located?.answered) {
+          // Nothing is sent on a read-back, so the text the answering run recorded is bound as
+          // it stands: its driver compares a turn saved before bindings existed on that text.
+          const replayed = recordedInstructions(await recordedScope(projectId, located.runId));
           return {
             ...resolved,
             restriction,
@@ -3427,8 +3483,15 @@ export async function createApp(options: AppOptions) {
             mode: command.mode,
             // Nothing is generated, so nothing here is sent anywhere: no file is read again
             // and no model is chosen. The driver compares the binding and reads the record.
-            input: { ...request, documents: [], model: '', accountRoute: '' },
+            input: {
+              ...request,
+              instructions: replayed.state === 'absent' ? composed : replayed.text,
+              documents: [],
+              model: '',
+              accountRoute: '',
+            },
           };
+        }
         // A turn a budget refused was written and never sent. Nothing was asked of a model, so
         // it is not an unfinished message, and it never stands in the way of a new lineage.
         const sent = located?.dispatched ? located : null;
@@ -3492,50 +3555,97 @@ export async function createApp(options: AppOptions) {
           128_000
         )
           throw new ApiError(413, 'Choose less than 128 KB of source text for this request.');
+        const modelRoute = isModelApiRoute(conversationRoute);
+        // Ask and Plan get the read-only tools on every conversation route, bound to this
+        // message's chosen documents. On a model-API route the host runs them itself
+        // (server/harness/capabilities/read-scope-tools.ts) and a whole-project read is
+        // refused. Automatic, Build and Fix get none: `readScopeFor` answers only for Ask and Plan.
+        // Decided before the lineage, because a native Claude Code session keeps the read scope
+        // it was opened with, so this scope is part of whether its lineage can continue.
+        const readScope: { readScope?: ReadScope } = {
+          ...(modelRoute ? refuseWholeProjectRead(command.readAccess) : {}),
+          ...(await readScopeFor(projectId, command.mode, {
+            route: modelRoute ? conversationRoute : 'claude-code',
+            access: command.readAccess,
+            documents,
+          })),
+        };
         // One current lineage per mode. Retiring one and admitting its replacement are a single
         // mutation, and the next generation counts every entry the thread ever had.
         let current: ConversationLineage | undefined = lineages
           .filter((lineage) => lineage.mode === command.mode && !lineage.retired)
           .sort((a, b) => b.generation - a.generation)[0];
         let changed = false;
-        // A lineage belongs to one route. Choosing another route starts the next generation;
-        // the earlier run stays as evidence under its own driver.
-        const modelRoute = isModelApiRoute(conversationRoute);
-        if (current && !sent && current.runId.startsWith('model-') !== modelRoute) {
-          current.retired = 'scope-change';
+        // A retired lineage's next generation starts without the earlier context, so every
+        // retirement writes one note in the thread, in the same mutation (owner decision
+        // 2026-09-23). At most one lineage retires per message.
+        let retired = null as { runId: string; cause: RetirementCause } | null;
+        const retire = (reason: LineageRetirement, cause: RetirementCause) => {
+          current!.retired = reason;
+          retired = { runId: current!.runId, cause };
           current = undefined;
           changed = true;
-        }
+        };
+        // The tier the thread is on now, which names a retirement a tier change causes.
+        const tier = tierFor(thread, { mode: command.mode, text: command.text });
+        const tierName = tier?.outcome === 'run' ? WORK_STYLE_LABELS[tier.style] : undefined;
+        // A lineage belongs to one route. Choosing another route starts the next generation;
+        // the earlier run stays as evidence under its own driver.
+        if (current && !sent && current.runId.startsWith('model-') !== modelRoute)
+          retire('scope-change', tierName ? 'tier' : 'route');
         // A model-API lineage keeps the level it was opened with. A style change that moves
         // the level is the safe boundary: the next generation starts, the earlier stays.
         const lineageEffort = modelRoute ? selection.effort : undefined;
-        if (current && !sent && modelRoute && current.effort !== lineageEffort) {
-          current.retired = 'scope-change';
-          current = undefined;
-          changed = true;
-        }
+        if (current && !sent && modelRoute && current.effort !== lineageEffort)
+          retire('scope-change', 'tier');
         // A tier moves the route and the model together (Efficient on AWS, Focused on Google
         // Cloud). The saved context is bound to both, so a change starts the next generation
         // rather than failing the follow-up; a lineage written before either was recorded is
         // left as it is.
-        if (
-          current &&
-          !sent &&
-          modelRoute &&
-          ((current.route !== undefined && current.route !== conversationRoute) ||
-            (current.model !== undefined && current.model !== selection.model))
-        ) {
-          current.retired = 'scope-change';
-          current = undefined;
-          changed = true;
+        if (current && !sent && modelRoute) {
+          const moved = current.route !== undefined && current.route !== conversationRoute;
+          if (moved || (current.model !== undefined && current.model !== selection.model))
+            retire('scope-change', tierName ? 'tier' : moved ? 'route' : 'model');
+        }
+        // The scope the remaining lineage recorded when it started, read once: its instructions
+        // decide both whether it continues and which text this message is sent with.
+        const scope = current ? await recordedScope(projectId, current.runId) : null;
+        const recorded: RecordedInstructions | null = current ? recordedInstructions(scope) : null;
+        // A native Claude Code session resumes only under the read scope it was opened with; any
+        // other scope is refused inside its turn, which fails the message. Its lineage keeps its
+        // recorded text only when this turn's scope is the one the session saved, or none is saved.
+        let resumable = true;
+        if (current && !modelRoute && !current.runId.startsWith('model-')) {
+          const saved = await driver.status(projectId, current.runId).then(
+            (status) => status.scopeDigest,
+            (error: unknown) => {
+              if (error instanceof HarnessError && error.code === 'unknown_run') return null;
+              throw error;
+            },
+          );
+          resumable = saved === null || saved === readScopeDigest(readScope.readScope);
+        }
+        // A revoked text retires even where it equals today's. Any other text this message would
+        // not be sent with would fail the run's scope check, so the lineage retires here, before
+        // anything is sent, exactly as that check would have retired it.
+        if (current && !sent && recorded && recorded.state !== 'absent') {
+          if (recorded.state === 'revoked') retire('scope-change', 'revoked');
+          else if (boundInstructions({ composed, recorded, resumable }) !== recorded.text)
+            retire('scope-change', 'instructions');
         }
         // The lineages are searched newest first, so once the replacement holds this command
         // it is the one a retry or a restart finds, and the refused turn stays as evidence.
-        if (current && options.replace && !sent) {
-          current.retired = options.replace;
-          current = undefined;
-          changed = true;
-        }
+        // Instructions were settled above, so a changed scope here is the model or the account.
+        if (current && options.replace && !sent)
+          retire(
+            options.replace,
+            options.replace !== 'scope-change'
+              ? options.replace
+              : (scope as { model?: unknown } | null)?.model !== selection.model
+                ? 'model'
+                : 'settings',
+          );
+        const opened = !current;
         if (!current) {
           const generation = 1 + Math.max(0, ...lineages.map((lineage) => lineage.generation));
           current = {
@@ -3551,7 +3661,22 @@ export async function createApp(options: AppOptions) {
           thread.lineages = [...lineages, current];
           changed = true;
         }
+        if (retired) {
+          const note = lineageNoteTurn({
+            retiredRunId: retired.runId,
+            commandId: command.commandId,
+            cause: retired.cause,
+            detail: { tier: tierName, route: routeName },
+            mode: command.mode,
+            route: conversationRoute,
+            at: now(),
+          });
+          if (!thread.turns.some((turn) => turn.id === note.id)) thread.turns.push(note);
+        }
         if (changed) await store.persist(state);
+        // A lineage this message did not open is sent with the text it recorded when this build
+        // knows that text and its session can take it. A new generation gets today's text.
+        const instructions = boundInstructions({ composed, recorded: opened ? null : recorded, resumable });
         const runId = current.runId;
         const lineageDriver = runId.startsWith('model-') ? engines.modelSessions : driver;
         if (!lineageDriver) throw new ApiError(503, 'The conversation runtime is unavailable.');
@@ -3611,20 +3736,12 @@ export async function createApp(options: AppOptions) {
           mode: command.mode,
           input: {
             ...request,
+            instructions,
             documents,
             model: selection.model as string,
             ...(modelRoute && selection.effort ? { effort: selection.effort } : {}),
             accountRoute,
-            // Ask and Plan get the read-only tools on every conversation route, bound to this
-            // message's chosen documents. On a model-API route the host runs them itself
-            // (server/harness/capabilities/read-scope-tools.ts) and a whole-project read is
-            // refused. Automatic, Build and Fix get none: `readScopeFor` answers only for Ask and Plan.
-            ...(modelRoute ? refuseWholeProjectRead(command.readAccess) : {}),
-            ...(await readScopeFor(projectId, command.mode, {
-              route: modelRoute ? conversationRoute : 'claude-code',
-              access: command.readAccess,
-              documents,
-            })),
+            ...readScope,
             signal: options.signal,
             onPreview: (frame: TransientPreview) =>
               progress('delta', { ...frame, text: gate(frame.text) }),
@@ -4679,7 +4796,12 @@ export async function createApp(options: AppOptions) {
         sourceBytes += document ? Buffer.byteLength(document.text) : 0;
       }
       const conversationMode = draft.mode === 'plan' || draft.mode === 'auto' ? draft.mode : 'ask';
-      const instructions = instructionsFor(conversationMode, MODES[draft.mode].instructions);
+      // A conversation message is priced with the text it will be sent with, which on a lineage
+      // that continues is the text that lineage recorded.
+      const instructions =
+        draft.mode === 'ask' || draft.mode === 'plan' || draft.mode === 'auto'
+          ? await nextModelInstructions(projectId, thread, draft.mode, { route, model, effort: styled?.effort })
+          : instructionsFor(conversationMode, MODES[draft.mode].instructions);
       const history = thread.turns.reduce((bytes, turn) => bytes + Buffer.byteLength(turn.text), 0);
       return meteredPlan(threadId, route, model, {
         inputBytes: Buffer.byteLength(instructions) + Buffer.byteLength(draft.text) + sourceBytes + history,

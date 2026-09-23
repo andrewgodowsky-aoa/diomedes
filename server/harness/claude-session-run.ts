@@ -232,6 +232,9 @@ export class ClaudeSessionRuns {
       connected: this.connections.has(runId),
       requestedModel: checkpoint?.requestedModel ?? null,
       reportedModel: checkpoint?.reportedModel ?? null,
+      // The read scope the saved session was opened with, read as its restore check reads it:
+      // a checkpoint written before read tools existed is text-only. Null with no checkpoint.
+      scopeDigest: checkpoint ? (checkpoint.scopeDigest ?? 'text-only') : null,
       nativeSession:
         checkpoint?.nativeSessionId && checkpoint.reportedModel
           ? {

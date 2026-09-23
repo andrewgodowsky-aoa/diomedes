@@ -1,0 +1,120 @@
+/**
+ * Whether an open conversation keeps its instructions, and what the thread says when it cannot
+ * (owner decisions of 2026-09-23).
+ *
+ * A lineage keeps the text it started with when this build knows that text and has not revoked
+ * it (`instruction-digests.ts`). When a lineage retires for any reason, its next generation starts
+ * without the earlier context, so the thread gets one plain note saying so, written with the
+ * retirement itself.
+ */
+import { createHash } from 'node:crypto';
+import type { Mode, Route, Turn } from '../shared/types.js';
+import { AGENT_NAME } from '../shared/agent-name.js';
+import { applicationOrigin } from '../shared/attribution.js';
+import {
+  instructionDigest,
+  KNOWN_INSTRUCTION_DIGESTS,
+  REVOKED_INSTRUCTION_DIGESTS,
+} from './instruction-digests.js';
+
+/** A lineage run's recorded instruction text, judged against the lists in code. */
+export type RecordedInstructions =
+  | { state: 'known'; text: string }
+  | { state: 'revoked'; text: string }
+  | { state: 'unknown'; text: string }
+  | { state: 'absent' };
+
+/** Reads `instructions` from a lineage run's recorded scope (`run.input`). */
+export function recordedInstructions(runInput: unknown): RecordedInstructions {
+  const text = (runInput as { instructions?: unknown } | null)?.instructions;
+  if (typeof text !== 'string') return { state: 'absent' };
+  const digest = instructionDigest(text);
+  if (REVOKED_INSTRUCTION_DIGESTS.has(digest)) return { state: 'revoked', text };
+  return KNOWN_INSTRUCTION_DIGESTS.has(digest) ? { state: 'known', text } : { state: 'unknown', text };
+}
+
+/**
+ * The text a message on an existing lineage is sent with: the recorded one when it is known and
+ * not revoked, and the session can take it; otherwise today's composed text, which the scope
+ * check then refuses when the two differ, so the lineage retires as it always has.
+ *
+ * `resumable` is false only for a native Claude Code session whose saved read scope differs from
+ * this turn's. That session refuses to resume inside its turn step, which fails the message
+ * instead of retiring the lineage, so it keeps today's composed text and retires cleanly first.
+ */
+export function boundInstructions(input: {
+  composed: string;
+  recorded: RecordedInstructions | null;
+  resumable: boolean;
+}): string {
+  return input.recorded?.state === 'known' && input.resumable ? input.recorded.text : input.composed;
+}
+
+/** Why a lineage retired, in the terms its note uses. */
+export type RetirementCause =
+  | 'instructions'
+  | 'revoked'
+  | 'tier'
+  | 'route'
+  | 'model'
+  | 'settings'
+  | 'terminated'
+  | 'budget';
+
+function because(cause: RetirementCause, detail: { tier?: string; route?: string }): string {
+  switch (cause) {
+    case 'instructions':
+    case 'revoked':
+      return 'its instructions changed';
+    case 'tier':
+      return detail.tier
+        ? `this conversation moved to the ${detail.tier} tier`
+        : 'this conversation moved to another tier';
+    case 'route':
+      return detail.route ? `this conversation moved to ${detail.route}` : 'this conversation moved to another service';
+    case 'model':
+      return 'this conversation now uses a different model';
+    case 'settings':
+      return 'the settings it runs with changed';
+    case 'terminated':
+      return 'the earlier conversation stopped and could not be picked up again';
+    case 'budget':
+      return 'the earlier conversation reached its length limit';
+  }
+}
+
+/** The note's words. Plain, and the same for every route. */
+export function retirementNote(cause: RetirementCause, detail: { tier?: string; route?: string } = {}): string {
+  return `${AGENT_NAME} started this conversation fresh because ${because(cause, detail)}. Your earlier messages are still here, but it won't remember them.`;
+}
+
+/** Names the note for one retirement and the message that caused it, so a retry finds it. */
+export function lineageNoteId(retiredRunId: string, commandId: string): string {
+  return `Nlineage-${createHash('sha256').update(JSON.stringify([retiredRunId, commandId]), 'utf8').digest('hex').slice(0, 32)}`;
+}
+
+/**
+ * The note turn. The application wrote it, so it carries the application's origin and no
+ * model; its route is the one the conversation continues on, so a reader that takes a thread's
+ * route from its last answer (`selectedEngine`) reads the same route with the note in place.
+ */
+export function lineageNoteTurn(input: {
+  retiredRunId: string;
+  commandId: string;
+  cause: RetirementCause;
+  detail?: { tier?: string; route?: string };
+  mode: Mode;
+  route: Route;
+  at: string;
+}): Turn {
+  return {
+    id: lineageNoteId(input.retiredRunId, input.commandId),
+    role: 'diomedes',
+    mode: input.mode,
+    text: retirementNote(input.cause, input.detail),
+    at: input.at,
+    sources: [],
+    route: input.route,
+    origin: applicationOrigin(),
+  };
+}
