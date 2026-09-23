@@ -33,7 +33,7 @@ import { CursorAdapter, cursorCommand, resolveCursorEntry } from './cursor.js';
 import { DevinAdapter } from './devin.js';
 import { managedBinary, verifyManagedBinary } from './install.js';
 import { capture, engineEnvironment, EngineError } from './process.js';
-import { commandGate, previewSink, type PreviewRejection } from '../../shared/adapter-contract.js';
+import { activitySink, commandGate, previewSink, type PreviewRejection } from '../../shared/adapter-contract.js';
 import type {
   PersistentTextAdapter,
   TextEngineAdapter,
@@ -57,7 +57,30 @@ import {
   type AwsConnection,
   type AwsConnections,
 } from './aws-bedrock.js';
+import {
+  AZURE_OPENAI_ROUTE,
+  AZURE_OPENAI_SDK,
+  azureAccountRoute,
+  azureRateCard,
+  respondAzure,
+  type AzureConnection,
+  type AzureConnections,
+} from './azure-openai.js';
+import {
+  OPENROUTER_ROUTE,
+  OPENROUTER_SDK,
+  openRouterAccountRoute,
+  openRouterRateCard,
+  respondOpenRouter,
+  type OpenRouterConnection,
+  type OpenRouterConnections,
+} from './openrouter.js';
+import type { RespondLimits, RespondResult, StreamSinks } from './model-api-core.js';
 import { createAwsModelAdapter } from '../harness/aws-model-adapter.js';
+import { createAzureModelAdapter } from '../harness/azure-model-adapter.js';
+import { createOpenRouterModelAdapter } from '../harness/openrouter-model-adapter.js';
+import type { ModelAdapter } from '../harness/native-agent.js';
+import type { ExposureAttempt } from '../spend-exposure.js';
 import type { ModelTranscripts } from '../harness/model-transcripts.js';
 import type { ModelSessionAdmission, ModelSessionRuns, ModelSessionTurn } from '../harness/model-session-run.js';
 import type { ConnectionSecrets } from '../connection-secrets.js';
@@ -1739,47 +1762,52 @@ export class EngineService {
   }
   /**
    * Admission for a model-API route, read fresh each time: the route is switched on, the saved
-   * connection is the one Settings selects, the requested model is the connection's, the
+   * connection is the one Settings selects, the requested model is one the connection serves, the
    * credential is present and unexpired, and the spend ledger has an approved cap. Nothing here
-   * reads the credential into a record; the adapter opens it inside the dispatch step.
+   * reads the credential into a record; the adapter opens it inside the dispatch step. Each route
+   * is admitted only on its own connection: nothing falls back to another route or payer.
    */
   async admitModelApi(
     route: ModelApiRoute,
     input: Pick<TextRequest, 'model' | 'accountRoute'>,
   ): Promise<ModelSessionAdmission> {
     const api = this.modelApi;
-    if (route !== AWS_BEDROCK_ROUTE || !api)
+    if (!api)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
-    const connection = await api.connections.read();
-    if (!connection) throw new EngineError('ROUTE_REFUSED', 'Connect AWS Bedrock in AI setup before sending.', true);
-    if (awsAccountRoute(connection) !== input.accountRoute)
-      throw new EngineError('ACCOUNT_CHANGED', 'The AWS connection changed. Select it again before sending.');
-    if (connection.modelId !== input.model)
-      throw new EngineError('ROUTE_REFUSED', `This AWS connection serves ${connection.modelId}, not ${input.model}.`, true);
-    if (connection.credential.expiresAt && Date.parse(connection.credential.expiresAt) <= Date.now() + 60_000)
-      throw new EngineError('ROUTE_REFUSED', 'The saved AWS key has expired. Enter a new key in AI setup.', true);
+    const handle = await modelApiRoute(api, route);
+    const { short, long } = handle.names;
+    if (!handle.connected) throw new EngineError('ROUTE_REFUSED', `Connect ${long} in AI setup before sending.`, true);
+    if (handle.accountRoute !== input.accountRoute)
+      throw new EngineError('ACCOUNT_CHANGED', `The ${short} connection changed. Select it again before sending.`);
+    if (!handle.serves(input.model))
+      throw new EngineError('ROUTE_REFUSED', `This ${short} connection serves ${handle.serving}, not ${input.model}.`, true);
+    if (handle.expiresAt && Date.parse(handle.expiresAt) <= Date.now() + 60_000)
+      throw new EngineError('ROUTE_REFUSED', `The saved ${short} key has expired. Enter a new key in AI setup.`, true);
     if (!api.secrets.available())
       throw new EngineError('ROUTE_REFUSED', 'Protected credential storage is not available in this process.', true);
-    if (!api.exposure.allowance(connection.id) || api.exposure.summary(connection.id).availableMicroUsd <= 0)
+    if (!api.exposure.allowance(handle.connectionId) || api.exposure.summary(handle.connectionId).availableMicroUsd <= 0)
       throw new EngineError(
         'SPEND_LIMIT',
-        'The approved AWS spend limit has no room left. Nothing was sent. The owner can review usage and approve more in AI setup.',
+        `The approved ${short} spend limit has no room left. Nothing was sent. The owner can review usage and approve more in AI setup.`,
         true,
       );
     return {
-      route: AWS_BEDROCK_ROUTE,
-      connectionId: connection.id,
-      revision: connection.revision,
-      model: connection.modelId,
-      accountRoute: awsAccountRoute(connection),
+      route,
+      connectionId: handle.connectionId,
+      revision: handle.revision,
+      model: input.model,
+      accountRoute: handle.accountRoute,
     };
   }
-  private async openModelApi(admission: ModelSessionAdmission): Promise<{ connection: AwsConnection; secret: string }> {
+  private async openModelApi(admission: ModelSessionAdmission): Promise<{ handle: ConnectedRoute; secret: string }> {
     const api = this.modelApi!;
-    const connection = await api.connections.read();
-    if (!connection || connection.id !== admission.connectionId || connection.revision !== admission.revision)
-      throw new EngineError('ACCOUNT_CHANGED', 'The AWS connection changed after this message was admitted. Nothing was sent.');
-    return { connection, secret: await api.secrets.get(connection.id) };
+    const handle = await modelApiRoute(api, admission.route as ModelApiRoute);
+    if (!handle.connected || handle.connectionId !== admission.connectionId || handle.revision !== admission.revision)
+      throw new EngineError(
+        'ACCOUNT_CHANGED',
+        `The ${handle.names.short} connection changed after this message was admitted. Nothing was sent.`,
+      );
+    return { handle, secret: await api.secrets.get(handle.connectionId) };
   }
   /** One conversation message on a model-API route, through the model-session driver. */
   async modelSession(route: ModelApiRoute, mode: ModelSessionTurn['mode'], runId: string, input: TextRequest) {
@@ -1787,24 +1815,39 @@ export class EngineService {
     const api = this.modelApi;
     if (!driver || !api)
       throw new EngineError('RUNTIME_UNAVAILABLE', 'The model-API conversation runtime is not attached.', true);
-    if (input.onDelta) throw new EngineError('PREVIEW_CONTRACT', 'This route has no preview channel.');
+    if (input.onDelta || input.onToolActivity)
+      throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
     try {
       return await driver.request({
         mode,
         runId,
+        route,
         input,
         admit: () => this.admitModelApi(route, input),
-        adapter: async (admission, instructions, stop) => {
-          const { connection, secret } = await this.openModelApi(admission);
-          const adapter = createAwsModelAdapter({
-            connection,
+        // The caller's channels, stamped with the turn step's identity and published only while
+        // that exact attempt still owns its lease.
+        activity:
+          input.onPreview || input.onActivity
+            ? (context, stepId) => {
+                const signal = AbortSignal.any([context.signal, ...(input.signal ? [input.signal] : [])]);
+                const sinks = fencedSinks(input, { runId, stepId, attempt: context.attempt, fence: context.fence }, context, signal);
+                return {
+                  onDelta: (text) => sinks.onDelta?.(text),
+                  onToolActivity: (raw) => sinks.onToolActivity?.(raw),
+                  finish: sinks.finish,
+                };
+              }
+            : undefined,
+        adapter: async (admission, instructions, stop, sinks) => {
+          const { handle, secret } = await this.openModelApi(admission);
+          const adapter = handle.adapter({
+            model: admission.model,
             secret,
-            card: AWS_LUNA_RATE_CARD,
             exposure: api.exposure,
-            transcripts: api.transcripts,
             instructions,
             effort: effortOf(input.effort),
             transport: api.transport,
+            sinks,
           });
           return {
             ...adapter,
@@ -1818,13 +1861,15 @@ export class EngineService {
   }
   /**
    * One Work text turn on a model-API route: the same fenced text-route run every external engine
-   * uses (admission step, one external dispatch step, never resent), with the AWS exchange as the
-   * transport. No tools are offered; the result is the text a Work proposal is parsed from.
+   * uses (admission step, one external dispatch step, never resent), with the route's exchange as
+   * the transport. No tools are offered; the result is the text a Work proposal is parsed from.
    */
   async generateModelApi(route: ModelApiRoute, input: TextRequest): Promise<TextResponse & { runId: string }> {
     const key = `${input.projectId}:${input.threadId}`;
     if (this.running.has(key))
       throw new EngineError('REQUEST_ACTIVE', 'This thread already has a request in progress. Wait for it or cancel it.');
+    if (input.onDelta || input.onToolActivity)
+      throw new EngineError('PREVIEW_CONTRACT', 'Use the bounded onPreview and onActivity channels.');
     const dispatch = this.dispatch;
     const api = this.modelApi;
     if (!dispatch || !api)
@@ -1852,27 +1897,47 @@ export class EngineService {
         signal,
         admit: () => this.admitModelApi(route, input),
         send: async (context, admission) => {
-          const { connection, secret } = await this.openModelApi(admission);
-          const result = await respondOnce({
-            connection,
-            secret,
-            card: AWS_LUNA_RATE_CARD,
-            exposure: api.exposure,
-            attempt: { runId, stepId: TEXT_DISPATCH_STEP, attempt: context.attempt, requestDigest: digest(intent) },
-            instructions: input.instructions,
-            messages: [{ role: 'user', content: contextMessage(input) }],
-            tools: [],
-            effort: effortOf(input.effort),
-            limits: WORK_LIMITS,
-            signal: AbortSignal.any([signal, context.signal]),
-            transport: api.transport,
-          });
+          const { handle, secret } = await this.openModelApi(admission);
+          const attemptSignal = AbortSignal.any([signal, context.signal]);
+          const sinks = fencedSinks(
+            input,
+            { runId, stepId: TEXT_DISPATCH_STEP, attempt: context.attempt, fence: context.fence },
+            context,
+            attemptSignal,
+          );
+          let result: RespondResult;
+          try {
+            result = await handle.respond({
+              model: admission.model,
+              secret,
+              exposure: api.exposure,
+              attempt: { runId, stepId: TEXT_DISPATCH_STEP, attempt: context.attempt, requestDigest: digest(intent) },
+              instructions: input.instructions,
+              messages: [{ role: 'user', content: contextMessage(input) }],
+              tools: [],
+              effort: effortOf(input.effort),
+              limits: WORK_LIMITS,
+              signal: attemptSignal,
+              transport: api.transport,
+              sinks: { onDelta: sinks.onDelta, onToolActivity: sinks.onToolActivity },
+            });
+          } catch (error) {
+            // Drain ordered publications before the step can fail; the call's own failure is reported.
+            await sinks.finish().catch(() => undefined);
+            throw error;
+          }
+          // Drain ordered publications before the step can commit.
+          await sinks.finish();
           if (result.outcome.kind !== 'final')
-            throw new ModelApiError('aws_unexpected_tool', 'The model asked for a tool where none was offered.', true);
+            throw new ModelApiError(
+              `${handle.prefix}_unexpected_tool`,
+              'The model asked for a tool where none was offered.',
+              true,
+            );
           context.reportOrigin?.({
             protocolVersion: 1,
             mode: 'direct',
-            engine: { id: route, version: AWS_BEDROCK_SDK },
+            engine: { id: route, version: handle.sdk },
             model: {
               requested: input.model,
               reported: result.reportedModel,
@@ -1883,9 +1948,9 @@ export class EngineService {
           return {
             text: result.outcome.text,
             // Only the provider's own report. Work marks a model verified when this is non-empty,
-            // so the requested model never stands in for one AWS did not report.
+            // so the requested model never stands in for one the provider did not report.
             model: result.reportedModel ?? '',
-            version: AWS_BEDROCK_SDK,
+            version: handle.sdk,
             threadId: input.threadId,
             projectId: input.projectId,
             requestId: input.requestId,
@@ -1906,14 +1971,229 @@ export class EngineService {
 }
 
 
-/** What a model-API route needs from the app: its record, its protected credential, its ledgers. */
+/**
+ * What a model-API route needs from the app: its record, its protected credential, its ledgers.
+ * The top-level record and transcripts are AWS Bedrock's; each later route brings its own record
+ * and its own private transcript store (a store is bound to one provider id). The credential
+ * store and the spend ledger are shared and keyed by connection id, so no route can read another
+ * route's key or spend against another route's cap. A route whose services are absent is
+ * unavailable in this process, never served by another route.
+ */
 export interface ModelApiServices {
   connections: AwsConnections;
   secrets: ConnectionSecrets;
   exposure: SpendExposure;
   transcripts: ModelTranscripts;
+  azure?: { connections: AzureConnections; transcripts: ModelTranscripts };
+  openrouter?: { connections: OpenRouterConnections; transcripts: ModelTranscripts };
   /** Tests substitute the network here, below the SDK. Production leaves it unset. */
   transport?: typeof globalThis.fetch;
+}
+
+interface RouteCallOptions {
+  model: string;
+  secret: string;
+  exposure: SpendExposure;
+  instructions: string;
+  effort: 'low' | 'medium' | 'high';
+  transport?: typeof globalThis.fetch;
+  sinks?: StreamSinks;
+}
+type ConnectedRoute = {
+  connected: true;
+  route: ModelApiRoute;
+  prefix: string;
+  names: { short: string; long: string };
+  sdk: string;
+  connectionId: string;
+  revision: number;
+  accountRoute: string;
+  expiresAt: string | null;
+  serving: string;
+  serves(model: string): boolean;
+  adapter(options: RouteCallOptions): ModelAdapter;
+  respond(
+    options: RouteCallOptions & {
+      attempt: ExposureAttempt;
+      messages: import('ai').ModelMessage[];
+      tools: [];
+      limits: RespondLimits;
+      signal: AbortSignal;
+    },
+  ): Promise<RespondResult>;
+};
+type RouteHandle = ConnectedRoute | { connected: false; route: ModelApiRoute; names: { short: string; long: string } };
+
+const ROUTE_WORDS: Record<ModelApiRoute, { short: string; long: string }> = {
+  'aws-bedrock': { short: 'AWS', long: 'AWS Bedrock' },
+  'azure-openai': { short: 'Azure', long: 'Azure OpenAI' },
+  openrouter: { short: 'OpenRouter', long: 'OpenRouter' },
+};
+
+/**
+ * One model-API route's saved connection, read fresh, with the calls it can make. Each branch
+ * builds only its own route's adapter and exchange from its own record: there is no path from
+ * one route's admission to another route's provider, key or ledger entry.
+ */
+async function modelApiRoute(api: ModelApiServices, route: ModelApiRoute): Promise<RouteHandle> {
+  const names = ROUTE_WORDS[route];
+  const unavailable = () =>
+    new EngineError('RUNTIME_UNAVAILABLE', 'This model-API route is not available in this process.', true);
+  switch (route) {
+    case AWS_BEDROCK_ROUTE: {
+      const connection: AwsConnection | null = await api.connections.read();
+      if (!connection) return { connected: false, route, names };
+      return {
+        connected: true,
+        route,
+        prefix: 'aws',
+        names,
+        sdk: AWS_BEDROCK_SDK,
+        connectionId: connection.id,
+        revision: connection.revision,
+        accountRoute: awsAccountRoute(connection),
+        expiresAt: connection.credential.expiresAt,
+        serving: connection.modelId,
+        serves: (model) => model === connection.modelId,
+        adapter: (options) =>
+          createAwsModelAdapter({
+            connection,
+            secret: options.secret,
+            card: AWS_LUNA_RATE_CARD,
+            exposure: options.exposure,
+            transcripts: api.transcripts,
+            instructions: options.instructions,
+            effort: options.effort,
+            transport: options.transport,
+            ...options.sinks,
+          }),
+        respond: ({ sinks, model: _model, ...options }) =>
+          respondOnce({ connection, card: AWS_LUNA_RATE_CARD, ...options, ...sinks }),
+      };
+    }
+    case AZURE_OPENAI_ROUTE: {
+      const services = api.azure;
+      if (!services) throw unavailable();
+      const connection: AzureConnection | null = await services.connections.read();
+      if (!connection) return { connected: false, route, names };
+      const models = connection.deployments.map((entry) => entry.model);
+      return {
+        connected: true,
+        route,
+        prefix: 'azure',
+        names,
+        sdk: AZURE_OPENAI_SDK,
+        connectionId: connection.id,
+        revision: connection.revision,
+        accountRoute: azureAccountRoute(connection),
+        expiresAt: connection.credential.expiresAt,
+        serving: models.join(', '),
+        serves: (model) => models.includes(model),
+        adapter: (options) =>
+          createAzureModelAdapter({
+            connection,
+            model: options.model,
+            secret: options.secret,
+            card: azureRateCard(connection, options.model),
+            exposure: options.exposure,
+            transcripts: services.transcripts,
+            instructions: options.instructions,
+            effort: options.effort,
+            transport: options.transport,
+            ...options.sinks,
+          }),
+        respond: ({ sinks, ...options }) =>
+          respondAzure({ connection, card: azureRateCard(connection, options.model), ...options, ...sinks }),
+      };
+    }
+    case OPENROUTER_ROUTE: {
+      const services = api.openrouter;
+      if (!services) throw unavailable();
+      const connection: OpenRouterConnection | null = await services.connections.read();
+      if (!connection) return { connected: false, route, names };
+      const models = connection.models.map((entry) => entry.id);
+      return {
+        connected: true,
+        route,
+        prefix: 'openrouter',
+        names,
+        sdk: OPENROUTER_SDK,
+        connectionId: connection.id,
+        revision: connection.revision,
+        accountRoute: openRouterAccountRoute(connection),
+        expiresAt: connection.credential.expiresAt,
+        serving: models.join(', '),
+        serves: (model) => models.includes(model),
+        adapter: (options) =>
+          createOpenRouterModelAdapter({
+            connection,
+            model: options.model,
+            secret: options.secret,
+            card: openRouterRateCard(connection, options.model),
+            exposure: options.exposure,
+            transcripts: services.transcripts,
+            instructions: options.instructions,
+            transport: options.transport,
+            ...options.sinks,
+          }),
+        respond: ({ sinks, effort: _effort, ...options }) =>
+          respondOpenRouter({ connection, card: openRouterRateCard(connection, options.model), ...options, ...sinks }),
+      };
+    }
+  }
+}
+
+/**
+ * A caller's preview and activity channels, stamped with one fenced attempt's identity: text
+ * through `previewSink`, tool activity through `activitySink`, both published in order and only
+ * while that attempt still owns its lease. `finish` stops accepting, drains, and reports a
+ * contract violation or a publication failure.
+ */
+function fencedSinks(
+  input: TextRequest,
+  identity: { runId: string; stepId: string; attempt: number; fence: number },
+  context: { publishPreview: (publish: () => void) => Promise<void> },
+  signal: AbortSignal,
+) {
+  let accepting = true;
+  let pending = Promise.resolve();
+  let failure: { error: unknown } | undefined;
+  const publish = (deliver: () => void) => {
+    if (!accepting || failure) return;
+    pending = pending
+      .then(async () => {
+        if (failure) return;
+        await context.publishPreview(() => {
+          if (!signal.aborted) deliver();
+        });
+      })
+      .catch((error: unknown) => {
+        failure = { error };
+      });
+  };
+  const stamped = { projectId: input.projectId, threadId: input.threadId, requestId: input.requestId, ...identity };
+  const onDelta = input.onPreview
+    ? previewSink({
+        identity: stamped,
+        signal,
+        onInvalid: (invalid) => {
+          failure ??= { error: new EngineError('OUTPUT_LIMIT', invalid.reason, true) };
+        },
+        onPreview: (frame) => publish(() => input.onPreview?.(frame)),
+      })
+    : undefined;
+  const onToolActivity = input.onActivity
+    ? activitySink({ identity: stamped, signal, onActivity: (frame) => publish(() => input.onActivity?.(frame)) })
+    : undefined;
+  return {
+    onDelta,
+    onToolActivity,
+    finish: async () => {
+      accepting = false;
+      await pending;
+      if (failure) throw failure.error;
+    },
+  };
 }
 
 const effortOf = (effort: string | undefined): 'low' | 'medium' | 'high' =>
@@ -1923,7 +2203,7 @@ const effortOf = (effort: string | undefined): 'low' | 'medium' | 'high' =>
 function modelApiError(error: unknown): unknown {
   if (!(error instanceof ModelApiError)) return error;
   if (!error.dispatched)
-    return new EngineError(error.code === 'aws_spend_refused' ? 'SPEND_LIMIT' : 'ROUTE_REFUSED', error.message, true);
+    return new EngineError(/_spend_refused$/.test(error.code) ? 'SPEND_LIMIT' : 'ROUTE_REFUSED', error.message, true);
   if (error.evidence.reservation?.state === 'uncertain')
     return new EngineError('DISPATCH_UNCERTAIN', error.message, true);
   return new EngineError('PROVIDER_ERROR', error.message, true);

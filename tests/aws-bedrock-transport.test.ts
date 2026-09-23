@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { ModelMessage } from 'ai';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import type { RawToolActivity } from '../shared/adapter-contract.js';
 import type { ToolDescriptor } from '../shared/harness.js';
 import { micro } from '../shared/managed-usage.js';
 import {
@@ -283,6 +284,35 @@ describe('the request the real SDK sends', () => {
     expect(JSON.parse(String(output?.output))).toMatchObject({ path: 'delivery.txt' });
     expect(input.some((item) => item.type === 'item_reference')).toBe(false);
     expect(exposure.list(CONNECTION.id).map((hold) => hold.state)).toEqual(['settled', 'settled']);
+  });
+});
+
+describe('the streamed exchange', () => {
+  test('text arrives as raw deltas before the answer is accepted; the accepted answer is the provider’s own text', async () => {
+    const net = transport([() => json(envelope([reasoning(), message('Six napkins were short on Friday.')]))]);
+    const deltas: string[] = [];
+    const result = await call(net.fetch, { onDelta: (text) => deltas.push(text) });
+    expect(deltas.length).toBeGreaterThan(1);
+    expect(deltas.join('')).toBe('Six napkins were short on Friday.');
+    expect(result.outcome).toEqual({ kind: 'final', text: 'Six napkins were short on Friday.' });
+    expect(net.sent).toHaveLength(1);
+  });
+
+  test('a tool call is announced once as started, with a plain summary and the arguments as detail', async () => {
+    const net = transport([() => json(envelope([reasoning(), functionCall('call_1', 'read_source', '{"path":"delivery.txt"}')]))]);
+    const activity: RawToolActivity[] = [];
+    await call(net.fetch, { tools: [READ_SOURCE], onToolActivity: (raw) => activity.push(raw) });
+    expect(activity).toEqual([
+      { callId: 'call_1', phase: 'started', tool: 'read_source', summary: 'Reading delivery.txt', detail: '{"path":"delivery.txt"}' },
+    ]);
+  });
+
+  test('a refused answer after an announced tool call reports that call as not run', async () => {
+    const net = transport([() => json(envelope([functionCall('call_1', 'read_source', '{"path":"a.txt"}')], { usage: null }))]);
+    const activity: RawToolActivity[] = [];
+    const error = await failure(call(net.fetch, { tools: [READ_SOURCE], onToolActivity: (raw) => activity.push(raw) }));
+    expect(error.code).toBe('aws_usage_missing');
+    expect(activity.map((entry) => entry.phase)).toEqual(['started', 'failed']);
   });
 });
 
