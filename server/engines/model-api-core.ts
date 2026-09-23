@@ -511,7 +511,12 @@ export interface StreamSinks {
  * parent-job credits. `beforeDispatch`, when present, is awaited once, after
  * every request check and immediately before the bytes leave.
  */
-export type CallExposure = Pick<SpendExposure, 'reserve' | 'settle' | 'release' | 'markUncertain'> & {
+export type CallExposure = Pick<SpendExposure, 'reserve' | 'release' | 'markUncertain'> & {
+  /** As the local ledger's settle, plus the provider's raw usage as evidence (`nectovia-usage/1` `raw`). */
+  settle(
+    id: string,
+    input: Parameters<SpendExposure['settle']>[1] & { raw?: unknown },
+  ): Promise<ExposureReservation>;
   beforeDispatch?(reservation: ExposureReservation): Promise<void>;
 };
 
@@ -669,12 +674,13 @@ export async function respondStream(input: {
    * the hold uncertain, never pending and never zero; a hold even that cannot
    * record is left for the startup sweep, which parks every pending hold.
    */
-  const settleOrLose = async (usage: ProviderUsage, why: string) => {
+  const settleOrLose = async (usage: ProviderUsage, why: string, raw?: unknown) => {
     try {
       reservation = await input.exposure.settle(reservation.id, {
         usage,
         card: input.card,
         providerRequestId: envelope?.providerRequestId ?? null,
+        ...(raw !== undefined ? { raw } : {}),
       });
       return true;
     } catch {
@@ -930,7 +936,7 @@ export async function respondStream(input: {
       );
     outcome = { kind: 'final', text: classified.text };
   }
-  if (!(await settleOrLose(classified.usage, 'settle refused'))) {
+  if (!(await settleOrLose(classified.usage, 'settle refused', classified.rawUsage))) {
     for (const started_ of started)
       activity({ callId: started_.callId, phase: 'failed', tool: started_.tool, summary: `Not run: ${started_.tool}` });
     // Fail closed: an answer whose cost is not on the ledger is not used.

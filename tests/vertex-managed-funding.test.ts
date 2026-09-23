@@ -15,7 +15,7 @@ import { respondVertex, vertexBaseUrl, vertexRateCard, type VertexConnection } f
 import { CONVERSATION_LIMITS, ModelApiError } from '../server/engines/model-api-core.js';
 import { exposureAttempt } from '../server/engines/aws-bedrock.js';
 import { SpendExposure } from '../server/spend-exposure.js';
-import { fundedExposure, fundedUsage, rateSnapshotOf, type ManagedEntitlement } from '../server/managed-funding.js';
+import { fundedExposure, rateSnapshotOf, type ManagedEntitlement } from '../server/managed-funding.js';
 import { FundingService } from '../services/control-plane/src/funding.js';
 import { FundingMemoryRepository } from '../services/control-plane/tests/support/funding-memory.js';
 
@@ -73,9 +73,9 @@ beforeEach(async () => {
   await local.init();
   await local.setCap(CONNECTION.id, micro(50_000_000), { approvedBy: 'company owner', note: 'company provider cap' });
   repository = new FundingMemoryRepository();
-  funding = new FundingService(repository, { now: () => NOW.getTime(), approvedDefaultJobCapMicroUsd: c(20) });
+  funding = new FundingService(repository, { now: () => NOW.getTime() });
   await funding.allocatePeriod({ tenantId: T, organizationId: O, periodId: '2026-09', planId: 'business', sourceGrantId: 'grant_2026_09' });
-  await funding.openJob({ tenantId: T, organizationId: O, rootJobId: 'job_1', runRef: 'run_job_1', parentRunRef: null, capMicroUsd: c(20) });
+  await funding.openJob({ tenantId: T, organizationId: O, rootJobId: 'job_1', runRef: 'run_job_1', parentRunRef: null, tier: 'focused', capMicroUsd: c(20) });
   sent = [];
   run += 1;
 });
@@ -106,7 +106,7 @@ function managedCall(options: {
       local,
       funding,
       entitlement: options.entitlement ?? allow,
-      job: { tenantId: T, organizationId: O, rootJobId: options.rootJobId ?? 'job_1', parentAttemptId: options.parentAttemptId ?? null, kind: 'generation' },
+      job: { tenantId: T, organizationId: O, rootJobId: options.rootJobId ?? 'job_1', parentAttemptId: options.parentAttemptId ?? null, kind: 'generation', usageClass: 'metered-work' },
     }),
     attempt: exposureAttempt(`run-${run}`, `model@${options.step ?? 'lead'}`, messages),
     instructions: 'You are Nectovia.',
@@ -124,7 +124,7 @@ const usage = async () => {
   if (state.state !== 'ready') throw new Error(`usage is ${state.state}`);
   return state.projection;
 };
-const attempts = () => (repository as unknown as { state: { attempts: { id: string; state: string; rootJobId: string; parentAttemptId: string | null; dispatchedAt: string | null }[] } }).state.attempts;
+const attempts = () => (repository as unknown as { state: { attempts: { id: string; state: string; rootJobId: string; parentAttemptId: string | null; dispatchedAt: string | null; usageClass?: string; usage?: (Record<string, unknown> & { raw?: unknown }) | null }[] } }).state.attempts;
 async function failure(promise: Promise<unknown>) {
   try {
     await promise;
@@ -150,7 +150,12 @@ describe('a managed Gemini call spends the customer’s credits', () => {
     // The company's own provider ledger records the same call at list price, separately.
     const [hold] = local.list(CONNECTION.id);
     expect(hold).toMatchObject({ state: 'settled', settledMicroUsd: cost, rateCardVersion: card.version });
-    expect(fundedUsage(result.usage)).toEqual({ inputTokens: 10_000, cacheReadTokens: 10_000, cacheWriteTokens: 0, outputTokens: 2_000, reasoningTokens: 500 });
+    // One meaning on both ledgers (nectovia-usage/1): input is the total, the cache a part of it.
+    expect(result.usage).toEqual({ inputTokens: 20_000, cacheReadTokens: 10_000, cacheWriteTokens: 0, outputTokens: 2_000, reasoningTokens: 500 });
+    expect(attempts()[0].usageClass).toBe('metered-work');
+    const [settlement] = (repository as unknown as { state: { settlements: { usage: Record<string, unknown> & { raw?: unknown } }[] } }).state.settlements;
+    expect(settlement.usage).toMatchObject({ contract: 'nectovia-usage/1', inputTokens: 20_000, cacheReadTokens: 10_000, outputTokens: 2_000, reasoningTokens: 500 });
+    expect(settlement.usage.raw).toMatchObject({ promptTokenCount: 20_000, cachedContentTokenCount: 10_000, thoughtsTokenCount: 500 });
     expect(rateSnapshotOf(card)).toMatchObject({ version: card.version, inputMicroUsdPerMillion: 1_500_000, cacheReadMicroUsdPerMillion: 150_000, outputMicroUsdPerMillion: 7_500_000 });
   });
 
@@ -166,7 +171,7 @@ describe('a managed Gemini call spends the customer’s credits', () => {
   });
 
   test('a job at its cap refuses the next call before anything is sent; nothing is lost', async () => {
-    await funding.openJob({ tenantId: T, organizationId: O, rootJobId: 'job_tiny', runRef: 'run_job_tiny', parentRunRef: null, capMicroUsd: micro(1_000) as MicroUsd });
+    await funding.openJob({ tenantId: T, organizationId: O, rootJobId: 'job_tiny', runRef: 'run_job_tiny', parentRunRef: null, tier: 'focused', capMicroUsd: micro(1_000) as MicroUsd });
     const error = await failure(managedCall({ fetch: network(() => answer('never')), rootJobId: 'job_tiny' }));
     expect(error).toBeInstanceOf(ModelApiError);
     expect(error.code).toBe('vertex_spend_refused');
@@ -179,7 +184,7 @@ describe('a managed Gemini call spends the customer’s credits', () => {
     const projection = await usage();
     const ceiling = local.list(CONNECTION.id).length; // no holds yet
     expect(ceiling).toBe(0);
-    await funding.openJob({ tenantId: T, organizationId: O, rootJobId: 'job_2', runRef: 'run_job_2', parentRunRef: null, capMicroUsd: c(20) });
+    await funding.openJob({ tenantId: T, organizationId: O, rootJobId: 'job_2', runRef: 'run_job_2', parentRunRef: null, tier: 'focused', capMicroUsd: c(20) });
     // Leave room for one call's ceiling and not two.
     const probe = await managedCall({ fetch: network(() => answer('probe')), step: 'probe' });
     const oneCeiling = probe.reservation.maxMicroUsd;
@@ -269,7 +274,7 @@ describe('failures never refund what may have been spent', () => {
     expect(held.observedAt).toBeTruthy();
 
     // A new host over the same records: the uncertain hold stays, nothing is released.
-    const restarted = new FundingService(repository, { now: () => NOW.getTime() + 60_000, approvedDefaultJobCapMicroUsd: c(20) });
+    const restarted = new FundingService(repository, { now: () => NOW.getTime() + 60_000 });
     const recovered = await restarted.recoverAfterRestart({ tenantId: T, organizationId: O });
     expect(recovered.released).toEqual([]);
     const state = await restarted.projection(T, O);
@@ -278,7 +283,7 @@ describe('failures never refund what may have been spent', () => {
 
   test('a restart after dispatch commit and before an answer parks the hold uncertain, never released', async () => {
     const messages: ModelMessage[] = [{ role: 'user', content: 'x' }];
-    const exposure = fundedExposure({ local, funding, entitlement: allow, job: { tenantId: T, organizationId: O, rootJobId: 'job_1', parentAttemptId: null, kind: 'generation' } });
+    const exposure = fundedExposure({ local, funding, entitlement: allow, job: { tenantId: T, organizationId: O, rootJobId: 'job_1', parentAttemptId: null, kind: 'generation', usageClass: 'metered-work' } });
     const card = vertexRateCard(NOW);
     const reservation = await exposure.reserve({
       connectionId: CONNECTION.id,
@@ -289,7 +294,7 @@ describe('failures never refund what may have been spent', () => {
       maxMicroUsd: micro(10_000),
     });
     await exposure.beforeDispatch!(reservation);
-    const restarted = new FundingService(repository, { now: () => NOW.getTime() + 60_000, approvedDefaultJobCapMicroUsd: c(20) });
+    const restarted = new FundingService(repository, { now: () => NOW.getTime() + 60_000 });
     const recovered = await restarted.recoverAfterRestart({ tenantId: T, organizationId: O });
     expect(recovered.uncertain).toEqual([reservation.id]);
     expect(recovered.released).toEqual([]);

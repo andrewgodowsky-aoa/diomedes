@@ -26,15 +26,20 @@ origin/main 1da6917
             bcd67f4  review fixes     (cherry-pick of 45b9cf8)
             43d65fa  gross card, promotion/credits/raw usage apart, team carriage
             790fa25  owner setup card (unmounted: AISetup.tsx is held; the integrator mounts it)
-            + runbook and design docs
+            4f71a7c  runbook, backend design, corrected record, team sentence
 ```
+
+Candidate: `feature/vertex-owner-setup-usage1`, the same six commits rebased onto
+`9a33c0d` (nectovia-usage/1, on `fe58141` job caps, on a34b66d, all on the local
+feature/nectovia-job-caps branch), plus the commit that adopts the contract.
+`feature/vertex-owner-setup` stays as the pre-contract stack.
 
 - `feature/vertex-managed-inference` (`9042bbd`, `bd76143`, `45b9cf8` on `74da363`) is the
   original lane and is superseded by the stack above. Do not land both.
 - Not in main: `74da363`, anything on wave2, and every commit above.
 - Dependency order for the integrator: wave2 (with its tier-routing, job-caps and thread-build
   lanes), then this branch rebased onto it. `nectovia-usage/1` (`9a33c0d`, feature/nectovia-job-caps)
-  lands with wave2; this branch's `fundedUsage` conversion is replaced by it once rebased.
+  lands with wave2; the usage1 candidate already consumes it.
 - PR #37 (draft) and PR #35 (commercial contract, documentation) are open and not required by this
   branch.
 
@@ -153,8 +158,9 @@ credits, so the promotion is expected not to stack with Free Trial spend.
   `tests/vertex-usage-normalization.test.ts` proves cached input and reasoning are counted once
   (960 micro-USD at the page's intro figures, 1,920 at the gross card, for 1,000 prompt / 800
   cached / 150 candidates / 50 thoughts).
-- The ledger does not yet persist `rawUsage` on the hold. That arrives with `nectovia-usage/1`
-  (`NormalizedUsage.raw`) when this branch is rebased onto wave2.
+- The funded settlement stores the `nectovia-usage/1` record with the raw `usageMetadata` as `raw`
+  (`tests/vertex-managed-funding.test.ts`). The local owner ledger stores the counts only.
+  `fundedUsage` is gone: both ledgers read the same totals.
 
 ## Managed credits (the customer route)
 

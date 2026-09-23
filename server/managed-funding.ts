@@ -31,7 +31,7 @@
  * hosts it. No customer build carries a company Google credential; see
  * docs/implementation/2026-09-23-vertex-managed-inference.md.
  */
-import type { ChargeKind, FundedAttempt, MicroUsd, RateSnapshot } from '../shared/managed-usage.js';
+import type { ChargeKind, FundedAttempt, MicroUsd, RateSnapshot, UsageClass } from '../shared/managed-usage.js';
 import type { CallExposure } from './engines/model-api-core.js';
 import {
   SpendExposureError,
@@ -60,12 +60,13 @@ export interface FundingPort {
     requestDigest: string;
     rateSnapshot: RateSnapshot;
     maxMicroUsd: MicroUsd;
+    usageClass: UsageClass;
   }): Promise<FundedAttempt>;
   markDispatched(ref: FundingAttemptRef): Promise<FundedAttempt>;
   release(ref: FundingAttemptRef): Promise<FundedAttempt>;
   markUncertain(ref: FundingAttemptRef & { reason: string }): Promise<FundedAttempt>;
   settle(
-    ref: FundingAttemptRef & { receiptRef: string; usage: unknown; reconciledFrom: 'response' | 'provider-report' },
+    ref: FundingAttemptRef & { receiptRef: string; usage: unknown; raw?: unknown; reconciledFrom: 'response' | 'provider-report' },
   ): Promise<{ outcome: 'settled' } | { outcome: 'held'; reason: string }>;
 }
 
@@ -85,6 +86,8 @@ export interface ManagedJob {
   /** The attempt this call is a child or retry of, under the same root job. */
   parentAttemptId: string | null;
   kind: ChargeKind;
+  /** What the call is for (included-chat, metered-work, worker, automation); recorded, decides nothing. */
+  usageClass: UsageClass;
 }
 
 export class ManagedFundingError extends SpendExposureError {}
@@ -97,22 +100,6 @@ export function rateSnapshotOf(card: ModelRateCard): RateSnapshot {
     outputMicroUsdPerMillion: Math.max(card.short.output, card.long.output),
     cacheReadMicroUsdPerMillion: Math.max(card.short.cacheRead, card.long.cacheRead),
     cacheWriteMicroUsdPerMillion: Math.max(card.short.cacheWrite, card.long.cacheWrite),
-  };
-}
-
-/**
- * Provider usage in the funded ledger's terms. The local ledger counts cache
- * reads and writes inside `inputTokens`; the funded ledger prices `inputTokens`
- * at the full input rate beside the cache counts, so it receives fresh input
- * only. Charging a cached token twice would be a guess against the customer.
- */
-export function fundedUsage(usage: ProviderUsage) {
-  return {
-    inputTokens: usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens,
-    outputTokens: usage.outputTokens,
-    cacheReadTokens: usage.cacheReadTokens,
-    cacheWriteTokens: usage.cacheWriteTokens,
-    reasoningTokens: usage.reasoningTokens,
   };
 }
 
@@ -151,6 +138,7 @@ export function fundedExposure(options: {
           requestDigest: input.attempt.requestDigest,
           rateSnapshot: rateSnapshotOf(input.card),
           maxMicroUsd: reservation.maxMicroUsd,
+          usageClass: job.usageClass,
         });
       } catch (error) {
         await local.release(reservation.id, 'The customer’s credits refused this call before it was sent.').catch(() => undefined);
@@ -171,11 +159,14 @@ export function fundedExposure(options: {
       const result = await funding.settle({
         ...attemptRef,
         receiptRef: (settlement.providerRequestId ?? reservationId).replace(/[^A-Za-z0-9._:-]/g, '_').slice(0, 128),
-        usage: fundedUsage(settlement.usage),
+        // Both ledgers read the same nectovia-usage/1 counts; the provider's own record travels as `raw`.
+        usage: settlement.usage,
+        ...(settlement.raw !== undefined ? { raw: settlement.raw } : {}),
         reconciledFrom: 'response',
       });
       if (result.outcome !== 'settled') throw refused('funding_held', result.reason, 409);
-      return local.settle(reservationId, settlement);
+      const { raw: _raw, ...localSettlement } = settlement;
+      return local.settle(reservationId, localSettlement);
     },
     async release(reservationId, reason) {
       const attemptRef = ref(reservationId);
