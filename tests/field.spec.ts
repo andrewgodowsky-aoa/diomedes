@@ -61,14 +61,32 @@ test.beforeAll(async ({ request }) => {
   expect(opened.ok()).toBe(true);
 });
 
-test.afterAll(async ({ request }) => {
+test.afterAll(async ({ playwright }) => {
   expect(originalSettings, 'The settings snapshot must exist so onboarding can be restored').toBeTruthy();
-  // JSON round-trip keeps this an untyped payload for the request body.
-  const restore = await request.put('/api/settings', {
-    headers: HEADERS,
-    data: JSON.parse(JSON.stringify(originalSettings)),
-  });
-  expect(restore.ok()).toBe(true);
+  // A failed test can take the hook's `request` fixture down with it ("Target page, context or
+  // browser has been closed"), so restore through a context of our own and read the result back.
+  // An error that interrupts this hook still skips the restore; ui.spec.ts resets the first run
+  // itself for that reason.
+  const context = await playwright.request.newContext({ baseURL: test.info().project.use.baseURL });
+  try {
+    // JSON round-trip keeps this an untyped payload for the request body.
+    const restore = await context.put('/api/settings', {
+      headers: HEADERS,
+      data: JSON.parse(JSON.stringify(originalSettings)),
+    });
+    expect(
+      restore.ok(),
+      `Restoring settings failed (${restore.status()}): ${await restore.text()}`,
+    ).toBe(true);
+    const restored = await context.get('/api/settings');
+    expect(restored.ok()).toBe(true);
+    expect(
+      ((await restored.json()) as Settings).onboarding,
+      'Onboarding must be back as it was, or ui.spec.ts starts past its first run',
+    ).toEqual(originalSettings!.onboarding);
+  } finally {
+    await context.dispose();
+  }
 });
 
 async function projectState(page: Page): Promise<ProjectState> {
@@ -260,14 +278,15 @@ test('C07: the thread head states the exact-OK rule while an approval is open', 
       sources: [],
     },
   };
-  await page.route('**/api/projects/*/state', async (route) => {
-    const response = await route.fetch();
-    const json = (await response.json()) as { needs?: unknown[] };
-    await route.fulfill({
-      response,
-      json: { ...json, needs: [...(json.needs ?? []), approvalNeed] },
-    });
-  });
+  // Without the need the head must say something else, so the check below proves the need.
+  await expect(page.locator('.console .permission-note')).toBeVisible();
+  await expect(page.getByText('Each proposed file change needs its own exact OK.')).toHaveCount(0);
+  // Answer from the state already read rather than route.fetch(): Playwright disposes fetched
+  // bodies when the context closes, so a /state poll still in the handler as the test ends throws
+  // "Response has been disposed" into whatever runs next, the afterAll restore included.
+  await page.route(`**/api/projects/${projectId}/state`, (route) =>
+    route.fulfill({ status: 200, json: { ...state, needs: [...state.needs, approvalNeed] } }),
+  );
   await page.reload();
   await expect(page.locator('.console')).toBeVisible();
   await expect(page.getByText('Each proposed file change needs its own exact OK.')).toBeVisible();

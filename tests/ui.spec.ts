@@ -21,6 +21,26 @@ test.afterEach(() => {
   expect(pageErrors, 'The interface must not throw uncaught browser errors').toEqual([]);
 });
 
+test.beforeAll(async ({ request }) => {
+  // F01-F02 needs the first run unfinished. field.spec.ts sorts first, finishes onboarding and puts
+  // it back in afterAll, but an error that lands while that hook runs interrupts it and the restore
+  // never happens. Start the first run here rather than rely on another file's cleanup.
+  const reset = await request.put('/api/settings', {
+    headers: { 'X-Diomedes-Client': '1' },
+    data: {
+      onboarding: {
+        resumeAt: 'welcome',
+        completedAt: null,
+        work: null,
+        detail: null,
+        familiarity: null,
+        aiSkipped: false,
+      },
+    },
+  });
+  expect(reset.ok(), `Resetting the first run failed (${reset.status()}): ${await reset.text()}`).toBe(true);
+});
+
 async function navigate(page: Page, name: string) {
   await page
     .getByRole('navigation', { name: 'Project pages', exact: true })
