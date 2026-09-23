@@ -34,7 +34,7 @@ import type { MessageResult } from '../../shared/conversation';
 import { CONVERSATION_DEFAULT_ROUTE } from '../../shared/engines';
 import type { Conversation, Project, ProjectState, Route, Turn } from '../../shared/types';
 import type { WorkStyle } from '../../shared/work-style';
-import { Diomedes, routeName } from './Diomedes';
+import { Diomedes } from './Diomedes';
 import { JobCapWarning } from './JobCapWarning';
 import { ThreadMenu } from './ThreadMenu';
 import { readRecordedArtifacts } from './artifact-evidence';
@@ -702,8 +702,7 @@ export function DiomedesHome(props: DiomedesHomeProps) {
             <ThreadMenu
               projectId={binding.projectId}
               threadId={binding.threadId}
-              route={effective}
-              routeLabel={routeName(effective)}
+              revision={turns.length}
               onUpdated={() => void updated(binding)}
             />
           ) : undefined

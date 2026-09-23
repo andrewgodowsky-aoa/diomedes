@@ -382,10 +382,15 @@ describe('"Update this conversation" on Claude Code', () => {
     const run = await sessions().get(project.id, next.runId);
     const turn = run.steps.find((step) => step.intent.stepId.startsWith('turn:'))!;
     expect((turn.intent.input as { prompt: string }).prompt.startsWith('Thanks\n\n[[diomedes')).toBe(true);
+    // And, as evidence, which run it carried from and how many messages, never their text.
+    expect((turn.output as { carried?: unknown }).carried).toEqual({ from: first.runId, messages: 2 });
 
     // The session keeps what it was given, so the next turn carries nothing more.
     await send('m-fourth', 'Bye', 'auto');
     expect(dispatches.at(-1)!.prompt.startsWith('Bye\n\n[[diomedes')).toBe(true);
+    const later = (await sessions().get(project.id, next.runId)).steps.filter((step) => step.intent.stepId.startsWith('turn:'));
+    expect(later).toHaveLength(2);
+    expect(later[1].output).not.toHaveProperty('carried');
   });
 
   test('with history sharing off, nothing is carried and the note says so', async () => {
@@ -404,5 +409,8 @@ describe('"Update this conversation" on Claude Code', () => {
     const next = await send('m-third', 'Thanks', 'auto');
     expect(next.answerText).toBe('answer:Thanks');
     expect(dispatches.at(-1)!.prompt.startsWith('Thanks\n\n[[diomedes')).toBe(true);
+    const turn = (await sessions().get(project.id, next.runId)).steps.find((step) => step.intent.stepId.startsWith('turn:'))!;
+    expect(turn.output).not.toHaveProperty('carried');
+    expect(lineages()[1]).not.toHaveProperty('carriedFrom');
   });
 });

@@ -106,3 +106,28 @@ export interface ConversationUpdate {
 
 /** Why "Update this conversation" was refused with 409, as the error's `code`. */
 export type ConversationUpdateRefusal = 'conversation_busy' | 'proposal_waiting';
+
+/**
+ * Why an update would not carry the recent messages over. `history-off`: the route the next
+ * message takes does not share history now. `other-route`: they were answered on another route
+ * than the one the next message takes. `other`: that route cannot answer yet, or they were
+ * answered under instructions this build does not know or has withdrawn.
+ */
+export type ConversationUpdateNotCarried = 'history-off' | 'other-route' | 'other';
+
+/**
+ * `GET /api/projects/:id/threads/:threadId/answer-format`: what "Update this conversation" would
+ * do now, decided by the server exactly as the update decides it, so the confirmation words
+ * itself from the server's decision (a WorkStyle tier's route is the server's to resolve). It
+ * changes nothing; the update decides again when the person confirms.
+ */
+export interface ConversationUpdatePreview {
+  /** How many of the thread's open conversations the update would start fresh. Zero: nothing to update. */
+  retiring: number;
+  /** Whether their recent messages would come along to the next message. */
+  carried: boolean;
+  /** The route the next message takes, a tier's included. Null when no route can answer it now. */
+  route: string | null;
+  /** Why nothing would come along, when something would be updated and `carried` is false. */
+  reason?: ConversationUpdateNotCarried;
+}

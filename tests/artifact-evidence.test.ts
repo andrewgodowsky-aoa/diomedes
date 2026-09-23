@@ -9,6 +9,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   artifactEvidence,
   EVIDENCE_WORDS,
+  evidenceSummary,
+  evidenceTitle,
   readRecordedArtifacts,
   sha256Hex,
 } from '../client/console/artifact-evidence';
@@ -89,9 +91,53 @@ describe('artifactEvidence', () => {
     expect(EVIDENCE_WORDS.missing).toBe('No longer in the conversation');
   });
 
-  test('a record whose answer the thread does not show yet is left out, not called a change', async () => {
+  test('a record whose answer the thread does not hold is no longer in the conversation, never dropped', async () => {
     const turns = [{ id: 'Uyou-1', role: 'you', text: 'Draw the delivery and the label.' }];
-    expect(await artifactEvidence(recorded, indexArtifacts('t-9', turns), turns)).toEqual([]);
+    const evidence = await artifactEvidence(recorded, indexArtifacts('t-9', turns), turns);
+    expect(evidence.map((item) => [item.state, item.record])).toEqual([
+      ['missing', null],
+      ['missing', null],
+    ]);
+  });
+
+  test('the summary names each state it counts, and nothing it does not', async () => {
+    const edited = ANSWER.replace('Bakery --> Kitchen', 'Bakery --> Freezer').replace('```markdown', '```text');
+    const evidence = await evidenceFor(edited);
+    expect(evidence.map((item) => item.state)).toEqual(['changed', 'missing']);
+    expect(evidenceSummary(evidence)).toEqual(['1 changed since recorded', '1 no longer in the conversation']);
+    expect(evidenceSummary(await evidenceFor(ANSWER))).toEqual([]);
+    const gone = await artifactEvidence(recorded, indexArtifacts('t-9', []), []);
+    expect(evidenceSummary(gone)).toEqual(['2 no longer in the conversation']);
+  });
+
+  test('an artifact with no title of its own is named as the panel names it, never by a number the server made up', async () => {
+    const untitled = (words: string) => ['Here it is.', '', '```mermaid', 'graph LR', `  ${words}`, '```'].join('\n');
+    // The thread's first untitled diagram is in an earlier answer, so this one is its second.
+    const earlier = untitled('Mill --> Bakery');
+    const second = projectedTurnIds(sha(turnIdentityText(RUN, 'm-2'))).assistant;
+    const [entry] = artifactSteps({
+      runId: RUN,
+      threadId: 't-9',
+      commandId: 'm-2',
+      sourceMessageId: 'sm.' + 'f'.repeat(32),
+      turnStepId: 'turn:' + 'a'.repeat(40),
+      answer: untitled('Bakery --> Kitchen'),
+    }).map((step) => recordedArtifactOf(step.input)!);
+    expect(entry.title).toBeNull();
+    const turns = [
+      { id: 'Uyou-1', role: 'you', text: 'Draw the mill.' },
+      { id: 'Aearlier', role: 'assistant', text: earlier },
+      { id: 'Uyou-2', role: 'you', text: 'Now the bakery.' },
+      { id: second, role: 'assistant', text: untitled('Bakery --> Kitchen') },
+    ];
+    const index = indexArtifacts('t-9', turns);
+    const [evidence] = await artifactEvidence([entry], index, turns);
+    expect(evidence.state).toBe('recorded');
+    expect(evidenceTitle(evidence)).toBe(index.forBlock(second, 1)!.title);
+    expect(evidenceTitle(evidence)).toBe('Diagram 2');
+    // Gone from the thread, it keeps no number at all.
+    const [gone] = await artifactEvidence([entry], indexArtifacts('t-9', []), []);
+    expect(evidenceTitle(gone)).toBe('Untitled');
   });
 
   test('a digest that cannot be computed is never read as a match', async () => {

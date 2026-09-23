@@ -1,6 +1,7 @@
 /* The recorded-artifact list under the artifact panel's head (RecordedArtifacts.tsx). Read-only:
-   one hairline above it, the panel's caption type, and "changed since recorded" in the attention
-   colour, in the summary as well as on its row, so it is never folded out of sight. */
+   one hairline above it, the panel's caption type, and "changed since recorded" and "no longer in
+   the conversation" in the attention colour, each counted in the summary as well as said on its
+   row, so neither is ever folded out of sight. */
 .console .art-recorded {
   margin-top: 8px;
   padding-top: 6px;
@@ -22,9 +23,11 @@
   color: var(--t2);
 }
 .console .art-recorded summary b {
-  margin-left: auto;
   font-weight: 500;
   color: var(--attn);
+}
+.console .art-recorded summary b:first-of-type {
+  margin-left: auto;
 }
 .console .art-recorded ul {
   list-style: none;

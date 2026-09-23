@@ -17,7 +17,7 @@ import { EngineError } from '../engines/process.js';
 import { localHarnessPrincipal } from './bridge.js';
 import { digest, HarnessError } from './policy.js';
 import { RunService, Suspended, type StepContext, type StepDefinition } from './run-service.js';
-import { carriedRun, conversationHistory } from './conversation-history.js';
+import { boundedHistory, carriedRun } from './conversation-history.js';
 import { artifactSteps, unrecordedArtifacts } from './artifact-steps.js';
 
 /** A first prompt that carries an earlier conversation, laid out as the model-API driver lays out history. */
@@ -92,6 +92,11 @@ export interface ClaudeSessionTurnResult {
    * answer as evidence.
    */
   answerText?: string;
+  /**
+   * On the first turn of a lineage "Update this conversation" started, as evidence: the run its
+   * prompt carried messages from and how many, never their text. Absent when nothing was carried.
+   */
+  carried?: { from: string; messages: number };
 }
 /**
  * What happened to one conversation message after its answer, in the order it can happen.
@@ -207,14 +212,18 @@ export class ClaudeSessionRuns {
    * The earlier conversation a new lineage's first turn starts with, after "Update this
    * conversation": the retired lineage's recent messages, bounded as any history is (draft a.3).
    * A native session cannot resume under new instructions, so this is a transcript in the first
-   * prompt, and the session keeps it from then on. Empty where history sharing is off for Claude
-   * Code at send time, and on every later turn.
+   * prompt, and the session keeps it from then on. Null where history sharing is off for Claude
+   * Code at send time, where the carried run cannot be read or gives nothing, and on every later
+   * turn. `from` and `messages` are recorded on the turn as evidence; the text never is.
    */
-  private async carried(request: ClaudeSessionTurn): Promise<string> {
+  private async carried(request: ClaudeSessionTurn): Promise<{ text: string; from: string; messages: number } | null> {
     if (request.mode !== 'start' || !request.input.carriedFrom || !this.historyPolicy(request.input.projectId))
-      return '';
+      return null;
     const run = await carriedRun(this.runs, request.input);
-    return run ? conversationHistory([run]) : '';
+    if (!run) return null;
+    const bounded = boundedHistory([run]);
+    const messages = bounded.messages.get(run.id) ?? 0;
+    return messages > 0 ? { text: bounded.text, from: run.id, messages } : null;
   }
   private dispose(runId: string, connection: Connection, reason?: unknown): Promise<void> {
     if (connection.closing) return connection.closing;
@@ -833,7 +842,7 @@ export class ClaudeSessionRuns {
           // Carried messages are an earlier conversation reaching the provider, so the same
           // history grant a follow-up needs is required for them, checked here and again below.
           const carried = await this.carried(request);
-          const prior = request.mode !== 'start' || carried.length > 0;
+          const prior = request.mode !== 'start' || carried !== null;
           this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), prior);
           const save = context.saveNativeCheckpoint;
           if (!save)
@@ -901,7 +910,7 @@ export class ClaudeSessionRuns {
                 ...wire,
                 // The person's message goes last, so the decision format's "last line" is still
                 // this message's own. The turn step keeps the message as sent by the person.
-                ...(carried ? { prompt: carriedPrompt(carried, input.prompt) } : {}),
+                ...(carried ? { prompt: carriedPrompt(carried.text, input.prompt) } : {}),
                 signal: AbortSignal.any([context.signal, ...(input.signal ? [input.signal] : [])]),
                 onDelta: preview?.onDelta,
                 // Caller-facing frames never reach the adapter; it gets the fenced raw sink.
@@ -946,6 +955,8 @@ export class ClaudeSessionRuns {
               response: result,
               interrupted,
               nativeSession: connection.session.nativeSession,
+              // What this first turn carried, as evidence on the run: the run and the count only.
+              ...(carried ? { carried: { from: carried.from, messages: carried.messages } } : {}),
             };
           } catch (error) {
             await this.dispose(runId, connection, error);

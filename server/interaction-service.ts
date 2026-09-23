@@ -14,7 +14,12 @@ import { EngineError } from './engines/process.js';
 import type { EngineService } from './engines/service.js';
 import { isModelApiRoute, type ModelApiRoute } from '../shared/model-api.js';
 import { ApiError } from './paths.js';
-import type { ConversationUpdate, InterruptResponse, MessageResult } from '../shared/conversation.js';
+import type {
+  ConversationUpdate,
+  ConversationUpdatePreview,
+  InterruptResponse,
+  MessageResult,
+} from '../shared/conversation.js';
 import type { InteractionDecision } from '../shared/interaction.js';
 import {
   admitInteraction,
@@ -194,6 +199,12 @@ export interface InteractionHost {
     commandId: string,
     guard: { busy(): boolean },
   ): Promise<ConversationUpdate>;
+  /**
+   * What `answerFormat` would do now, decided the same way and changing nothing: how many open
+   * conversations it would start fresh, the route the next message takes, and whether their recent
+   * messages would come along. The confirmation words itself from this.
+   */
+  answerFormatPreview(projectId: string, threadId: string): Promise<ConversationUpdatePreview>;
   locate(projectId: string, threadId: string, commandId: string): Promise<LocatedMessage | null>;
   /** Idempotent transcript projection of a committed answer. */
   project(
@@ -313,6 +324,11 @@ export class InteractionTurns {
   async answerFormat(projectId: string, threadId: string, commandId: string): Promise<ConversationUpdate> {
     const key = JSON.stringify([projectId, threadId]);
     return this.host.answerFormat(projectId, threadId, commandId, { busy: () => this.handling.has(key) });
+  }
+
+  /** The dry run the confirmation reads: what "Update this conversation" would do now. */
+  answerFormatPreview(projectId: string, threadId: string): Promise<ConversationUpdatePreview> {
+    return this.host.answerFormatPreview(projectId, threadId);
   }
 
   /** The driver that owns a run. Model-API conversation runs are named `model-...`. */

@@ -1,10 +1,18 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useReducer, useRef, useState } from 'react';
 import { AGENT_NAME } from '../../shared/agent-name';
-import type { ConversationUpdate } from '../../shared/conversation';
-import type { CloudSharingPolicy } from '../../shared/types';
-import { api, updateConversation } from '../api';
+import type { ConversationUpdate, ConversationUpdatePreview } from '../../shared/conversation';
+import { ApiError, conversationUpdatePreview, updateConversation } from '../api';
 import { Button, Modal } from '../components';
-import { mintCommandId } from '../work-start';
+import {
+  canUpdate,
+  CHECK_UNANSWERED,
+  memorySentence,
+  UNANSWERED,
+  updateAnswered,
+  updateCommand,
+  updateUnanswered,
+  updateUnconfirmed,
+} from './conversation-update';
 import './thread-menu.css';
 
 /**
@@ -12,26 +20,49 @@ import './thread-menu.css';
  * and on the home page. It holds one item, "Update this conversation" (artifacts v2, frozen item
  * 3), which opens a confirmation and does nothing until the person confirms. The same
  * `.surface-menu` and `.pmenu` as the top strip's menu, closed by a click outside or Escape.
+ *
+ * It shows only where the update can act: where the server's dry run says it would start a
+ * conversation fresh, or where an update was sent whose answer never arrived and can be asked
+ * again. It asks again whenever `revision` changes, which the caller moves with the thread's turns.
  */
 export function ThreadMenu({
   projectId,
   threadId,
-  route,
-  routeLabel,
+  revision,
   onUpdated,
 }: {
   projectId: string;
   threadId: string;
-  /** The route the conversation is on, whose history sharing decides what the update carries. */
-  route: string;
-  /** That route as the person reads it. */
-  routeLabel: string;
+  /** Changes whenever the thread's turns do: a message answered, a note written. Zero asks nothing. */
+  revision: number;
   /** The update happened: the thread now ends with its note. */
   onUpdated(result: ConversationUpdate): void;
 }) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // The last dry run, with the thread it was for, so another thread never shows it and a new
+  // revision keeps it until the next one arrives.
+  const thread = JSON.stringify([projectId, threadId]);
+  const [read, setRead] = useState<{ thread: string; preview: ConversationUpdatePreview } | null>(null);
+  const preview = read?.thread === thread ? read.preview : null;
+  // An unanswered update is kept outside React (conversation-update.ts); this redraws on a change.
+  const [, changed] = useReducer((count: number) => count + 1, 0);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (revision <= 0) return;
+    const controller = new AbortController();
+    const asked = JSON.stringify([projectId, threadId]);
+    conversationUpdatePreview(projectId, threadId, controller.signal).then(
+      (next) => {
+        if (!controller.signal.aborted) setRead({ thread: asked, preview: next });
+      },
+      // Nothing to offer when the dry run cannot be read: the menu stays away.
+      () => undefined,
+    );
+    return () => controller.abort();
+  }, [projectId, threadId, revision]);
+
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent | KeyboardEvent) => {
@@ -49,112 +80,101 @@ export function ThreadMenu({
     };
   }, [open]);
 
+  const visible = canUpdate(preview, updateUnconfirmed(projectId, threadId));
   return (
     <>
-      <div className="surface-menu thread-menu" ref={menuRef}>
-        <button
-          type="button"
-          aria-label="Conversation menu"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
-          ···
-        </button>
-        {open && (
-          <div className="pmenu open" role="menu">
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                setConfirming(true);
-              }}
-            >
-              Update this conversation
-            </button>
-          </div>
-        )}
-      </div>
+      {visible && (
+        <div className="surface-menu thread-menu" ref={menuRef}>
+          <button
+            type="button"
+            aria-label="Conversation menu"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            ···
+          </button>
+          {open && (
+            <div className="pmenu open" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  setConfirming(true);
+                }}
+              >
+                Update this conversation
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {confirming && (
         <UpdateConversation
           projectId={projectId}
           threadId={threadId}
-          route={route}
-          routeLabel={routeLabel}
           onClose={() => setConfirming(false)}
           onUpdated={onUpdated}
+          onChanged={changed}
         />
       )}
     </>
   );
 }
 
-type Sharing = 'on' | 'off' | 'unknown';
-
-/** The sentence about memory, for the sharing setting as it stands now. */
-export function memorySentence(sharing: Sharing | null, routeLabel: string): string {
-  if (sharing === 'on')
-    return `History sharing is on for ${routeLabel}, so ${AGENT_NAME} will carry over your most recent messages.`;
-  if (sharing === 'off')
-    return `History sharing is off for ${routeLabel}, so your earlier messages stay on screen but ${AGENT_NAME} won't remember them. Updating doesn't turn sharing on.`;
-  if (sharing === 'unknown')
-    return `${AGENT_NAME} couldn't read your sharing setting. If history sharing is off, your earlier messages stay on screen but it won't remember them.`;
-  return 'Checking your sharing setting…';
-}
-
 /**
- * The confirmation. One command id per confirmation, so pressing Update again after a lost
- * response reads back what the first press did. A refusal keeps the dialog open with the reason
- * the server gave, and Update can be pressed again once that has passed.
+ * The confirmation. It asks the server what the update would do and says so: whether the recent
+ * messages come along, and to which route, is the server's decision, never worked out here. One
+ * command per thread until the server answers it, so pressing Update again after a lost answer,
+ * here or after opening this again, reads back what the first press did. A refusal keeps the
+ * dialog open with the reason the server gave, and Update can be pressed again once it has passed.
  */
 function UpdateConversation({
   projectId,
   threadId,
-  route,
-  routeLabel,
   onClose,
   onUpdated,
+  onChanged,
 }: {
   projectId: string;
   threadId: string;
-  route: string;
-  routeLabel: string;
   onClose(): void;
   onUpdated(result: ConversationUpdate): void;
+  /** An update was sent or answered: the menu decides again whether it can act. */
+  onChanged(): void;
 }) {
   const bodyId = useId();
-  const command = useRef(mintCommandId());
-  const [sharing, setSharing] = useState<Sharing | null>(null);
+  const [preview, setPreview] = useState<ConversationUpdatePreview | null>(null);
+  const [unread, setUnread] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [current, setCurrent] = useState(false);
+  const [unconfirmed, setUnconfirmed] = useState(() => updateUnconfirmed(projectId, threadId));
 
   useEffect(() => {
     const controller = new AbortController();
-    api<CloudSharingPolicy>(
-      `/projects/${encodeURIComponent(projectId)}/cloud-sharing`,
-      'GET',
-      undefined,
-      controller.signal,
-    ).then(
-      (policy) =>
-        setSharing(
-          policy.shareConversationHistory && (policy.routes as string[]).includes(route) ? 'on' : 'off',
-        ),
+    conversationUpdatePreview(projectId, threadId, controller.signal).then(
+      (next) => {
+        if (!controller.signal.aborted) setPreview(next);
+      },
       () => {
-        if (!controller.signal.aborted) setSharing('unknown');
+        if (!controller.signal.aborted) setUnread(true);
       },
     );
     return () => controller.abort();
-  }, [projectId, route]);
+  }, [projectId, threadId]);
 
   async function update() {
     if (busy) return;
+    const command = updateCommand(projectId, threadId);
     setBusy(true);
     setRefusal(null);
     try {
-      const result = await updateConversation(projectId, threadId, command.current);
+      const result = await updateConversation(projectId, threadId, command);
+      updateAnswered(projectId, threadId, command);
+      setUnconfirmed(false);
+      onChanged();
       if (result.updated) {
         onUpdated(result);
         onClose();
@@ -162,22 +182,57 @@ function UpdateConversation({
       }
       setCurrent(true);
     } catch (error) {
-      setRefusal(error instanceof Error ? error.message : 'The conversation could not be updated.');
+      if (error instanceof ApiError) {
+        // The server answered: nothing was done, and it said why.
+        updateAnswered(projectId, threadId, command);
+        setUnconfirmed(false);
+        setRefusal(error.message);
+      } else {
+        // No answer came back. The same command goes again, and reads back if it was done.
+        updateUnanswered(projectId, threadId, command);
+        setUnconfirmed(true);
+        setRefusal(UNANSWERED);
+      }
+      onChanged();
     } finally {
       setBusy(false);
     }
   }
 
+  const nothing = preview !== null && preview.retiring === 0;
+  // Update needs the server's decision to have been said, except to ask about an unanswered one.
+  const ready = unconfirmed || (preview !== null && !nothing);
+  const close = (
+    <div className="dialog-actions">
+      <Button autoFocus onClick={onClose}>
+        Close
+      </Button>
+    </div>
+  );
   return (
     <Modal title="Update this conversation?" role="alertdialog" describedBy={bodyId} onClose={onClose}>
       <div id={bodyId}>
-        <p className="prose">
-          {AGENT_NAME} will start this conversation fresh on its current instructions, so its answers can
-          include diagrams, pictures and documents you open in the side panel. Your messages stay on screen.
-        </p>
-        <p className="prose thread-update-memory" aria-live="polite">
-          {memorySentence(sharing, routeLabel)}
-        </p>
+        {nothing && unconfirmed ? (
+          <p className="prose">{CHECK_UNANSWERED}</p>
+        ) : nothing ? (
+          <p className="prose" role="status">
+            This conversation already uses the current instructions.
+          </p>
+        ) : (
+          <>
+            <p className="prose">
+              {AGENT_NAME} will start this conversation fresh on its current instructions, so its answers can
+              include diagrams, pictures and documents you open in the side panel. Your messages stay on screen.
+            </p>
+            <p className="prose thread-update-memory" aria-live="polite">
+              {preview
+                ? memorySentence(preview)
+                : unread
+                  ? `${AGENT_NAME} couldn't check what updating would do to its memory of this conversation. Close this and try again.`
+                  : 'Checking what updating would do…'}
+            </p>
+          </>
+        )}
       </div>
       {refusal && (
         <p className="caption thread-update-refusal" role="alert">
@@ -189,18 +244,16 @@ function UpdateConversation({
           <p className="caption" role="status">
             This conversation already uses the current instructions. Nothing changed.
           </p>
-          <div className="dialog-actions">
-            <Button autoFocus onClick={onClose}>
-              Close
-            </Button>
-          </div>
+          {close}
         </>
+      ) : nothing && !unconfirmed ? (
+        close
       ) : (
         <div className="dialog-actions">
           <Button autoFocus disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button tone="primary" disabled={busy || sharing === null} onClick={() => void update()}>
+          <Button tone="primary" disabled={busy || !ready} onClick={() => void update()}>
             {busy ? 'Updating…' : 'Update'}
           </Button>
         </div>

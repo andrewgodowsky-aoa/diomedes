@@ -15,7 +15,8 @@
  */
 import { createHash } from 'node:crypto';
 import { applicationOrigin } from '../../shared/attribution.js';
-import { indexArtifacts } from '../../shared/artifacts.js';
+import { blocksOf, declarationOf, indexArtifacts, nearbyTitle, type ArtifactRecord } from '../../shared/artifacts.js';
+import type { TurnBlock } from '../../shared/turn-blocks.js';
 import { projectedTurnIds, turnIdentityText } from '../../shared/conversation-turn-id.js';
 import type { HarnessRun, Json } from '../../shared/harness.js';
 import { ARTIFACT_STEP_PREFIX, MAX_RECORDED_ARTIFACTS, type RecordedArtifact } from '../../shared/recorded-artifact.js';
@@ -26,6 +27,17 @@ export { ARTIFACT_STEP_PREFIX, MAX_RECORDED_ARTIFACTS, type RecordedArtifact };
 
 /** The lowercase hex SHA-256 of a text's UTF-8 bytes. */
 export const sourceDigest = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
+
+/**
+ * An artifact's own title: the one it declares, the heading or bold line just above it, or a
+ * visual's own (its spec's, else its kind's). Null when it has none: the panel then numbers it
+ * among all its thread's artifacts ("Diagram 3"), a number this one answer, read alone, cannot
+ * know, so none is recorded rather than one that disagrees with the panel.
+ */
+function ownTitle(record: ArtifactRecord, blocks: readonly TurnBlock[]): string | null {
+  if (record.kind === 'visual') return record.title;
+  return declarationOf(record.kind, record.source).title ?? nearbyTitle(blocks, record.blockIndex);
+}
 
 /**
  * The steps that record the artifacts in one answered message, oldest block first. `answer` is
@@ -42,6 +54,7 @@ export function artifactSteps(input: {
 }): StepDefinition[] {
   const turnId = projectedTurnIds(sourceDigest(turnIdentityText(input.runId, input.commandId))).assistant;
   const { list } = indexArtifacts(input.threadId, [{ id: turnId, role: 'assistant', text: input.answer }]);
+  const blocks = blocksOf(input.answer);
   return list.slice(0, MAX_RECORDED_ARTIFACTS).map((record) => {
     const recorded: RecordedArtifact = {
       v: 1,
@@ -49,7 +62,7 @@ export function artifactSteps(input: {
       declaredId: record.declaredId,
       kind: record.kind,
       lang: record.lang,
-      title: record.title,
+      title: ownTitle(record, blocks),
       sha256: sourceDigest(record.source),
       blockIndex: record.blockIndex,
       turnId,

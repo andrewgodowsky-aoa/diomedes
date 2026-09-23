@@ -22,8 +22,8 @@ export interface ArtifactEvidence {
   record: ArtifactRecord | null;
   /**
    * `recorded`: the text at that place is what was recorded. `changed`: it is an artifact, but not
-   * the one recorded (another digest or kind). `missing`: the turn is there, and holds no artifact
-   * at that place.
+   * the one recorded (another digest or kind). `missing`: the thread holds no artifact at that
+   * place, because the turn no longer holds one there or the thread does not hold the turn.
    */
   state: EvidenceState;
 }
@@ -42,9 +42,11 @@ export async function sha256Hex(text: string): Promise<string> {
 }
 
 /**
- * Each recorded artifact beside what the thread's text holds at its place now, oldest first. A
- * record whose turn the thread does not show yet (its answer is still being projected) is left out
- * until it does, so a late projection never reads as a change.
+ * Each recorded artifact beside what the thread's text holds at its place now, oldest first.
+ * Every record is listed: one whose turn the thread does not hold reads as no longer in the
+ * conversation rather than being passed over. (A record is written just before its answer is
+ * added to the thread, so a read in that moment says so until the next read, which the new turn
+ * itself causes.)
  */
 export async function artifactEvidence(
   recorded: readonly RecordedArtifact[],
@@ -52,16 +54,38 @@ export async function artifactEvidence(
   turns: readonly TurnLike[],
   digest: (text: string) => Promise<string> = sha256Hex,
 ): Promise<ArtifactEvidence[]> {
-  const shown = new Set(turns.map((turn) => turn.id).filter((id): id is string => !!id));
-  const listed = recorded.filter((item) => shown.has(item.turnId));
+  const held = new Set(turns.map((turn) => turn.id).filter((id): id is string => !!id));
   return Promise.all(
-    listed.map(async (item): Promise<ArtifactEvidence> => {
-      const record = index.forBlock(item.turnId, item.blockIndex) ?? null;
+    recorded.map(async (item): Promise<ArtifactEvidence> => {
+      const record = held.has(item.turnId) ? (index.forBlock(item.turnId, item.blockIndex) ?? null) : null;
       if (!record) return { recorded: item, record: null, state: 'missing' };
       const same = record.kind === item.kind && (await digest(record.source)) === item.sha256;
       return { recorded: item, record, state: same ? 'recorded' : 'changed' };
     }),
   );
+}
+
+/**
+ * The summary line's counts, each state counted and named on its own: "2 changed since recorded",
+ * "1 no longer in the conversation". Empty when everything is as recorded.
+ */
+export function evidenceSummary(evidence: readonly ArtifactEvidence[]): string[] {
+  const count = (state: EvidenceState) => evidence.filter((item) => item.state === state).length;
+  const changed = count('changed');
+  const missing = count('missing');
+  return [
+    ...(changed ? [`${changed} changed since recorded`] : []),
+    ...(missing ? [`${missing} no longer in the conversation`] : []),
+  ];
+}
+
+/**
+ * What a recorded artifact is called in the list: the panel's own name for the artifact it opens,
+ * so the two never disagree; else the title it recorded; else "Untitled". The server records only
+ * an artifact's own title, never the number the panel gives an untitled one among its thread's.
+ */
+export function evidenceTitle(item: ArtifactEvidence): string {
+  return item.record?.title ?? item.recorded.title ?? 'Untitled';
 }
 
 /**

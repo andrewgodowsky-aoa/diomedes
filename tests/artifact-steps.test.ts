@@ -144,6 +144,15 @@ describe('artifactSteps', () => {
     expect(steps.map((step) => recordedOf(step).blockIndex)).toEqual(indexed(many).list.slice(0, 16).map((r) => r.blockIndex));
   });
 
+  test('a title is recorded only when the artifact has one of its own, never a number only its thread could give it', () => {
+    const drafts = 'Two drafts.\n\n```mermaid\ngraph LR\n  A --> B\n```\n\n```mermaid\ngraph LR\n  B --> C\n```';
+    // Read alone, the answer numbers them; the thread they land in may number them otherwise.
+    expect(indexed(drafts).list.map((record) => record.title)).toEqual(['Diagram 1', 'Diagram 2']);
+    expect(built(drafts).map((step) => recordedOf(step).title)).toEqual([null, null]);
+    // A declared title and a heading above are the artifact's own, and are kept.
+    expect(built(DRAWN).map((step) => recordedOf(step).title)).toEqual(['Linen route', 'Shelf plan']);
+  });
+
   test('an answer without an artifact records nothing, and each message and block has its own id', () => {
     expect(built('The linen order arrives Friday.')).toEqual([]);
     const one = built(DRAWN).map((step) => step.id);

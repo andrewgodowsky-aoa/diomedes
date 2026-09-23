@@ -1934,8 +1934,7 @@ export function Shell({
                 <ThreadMenu
                   projectId={projectId}
                   threadId={selected.id}
-                  route={route}
-                  routeLabel={routeDisplayName(route)}
+                  revision={selected.turns.length}
                   onUpdated={() => void load()}
                 />
               }

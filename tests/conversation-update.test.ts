@@ -18,11 +18,18 @@ import type { Store } from '../server/store';
 import type { MessageResult } from '../server/interaction-service';
 import type { ModelSessionRuns } from '../server/harness/model-session-run';
 import { answerInstructions } from '../server/answer-format';
-import type { ConversationUpdate } from '../shared/conversation';
+import { instructionDigest } from '../server/instruction-digests';
+import type { ConversationUpdate, ConversationUpdatePreview } from '../shared/conversation';
 import type { CloudSharingPolicy, Conversation, ConversationLineage, Project, Turn } from '../shared/types';
 import { responsesEvents, sseResponse } from './fixtures/model-api-streams.js';
 import fixture from './fixtures/instruction-texts.json';
 
+// Revocation is a code change. This stands in for one: empty, as shipped, until a test adds to it.
+const revoked = vi.hoisted(() => new Map<string, string>());
+vi.mock('../server/instruction-digests', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../server/instruction-digests')>()),
+  REVOKED_INSTRUCTION_DIGESTS: revoked,
+}));
 // Main's composer. A mode set here is composed as 0.1.8 composed it; the rest are this build's.
 const composedFor = vi.hoisted(() => new Map<string, string>());
 vi.mock('../server/answer-format', async (importOriginal) => {
@@ -176,6 +183,8 @@ const updated = async (commandId: string) => {
   expect(response.status, reply).toBe(200);
   return JSON.parse(reply) as ConversationUpdate;
 };
+/** The dry run the confirmation words itself from: what the update would do now. */
+const preview = () => api<ConversationUpdatePreview>(`/projects/${project.id}/threads/${thread.id}/answer-format`);
 async function share(history: boolean) {
   const policy = await api<CloudSharingPolicy>(`/projects/${project.id}/cloud-sharing`);
   await api(`/projects/${project.id}/cloud-sharing`, 'PUT', {
@@ -210,6 +219,7 @@ beforeEach(async () => {
 afterEach(async () => {
   gate.release();
   composedFor.clear();
+  revoked.clear();
   await close();
   await fs.rm(root, { recursive: true, force: true });
 });
@@ -221,11 +231,19 @@ describe('"Update this conversation" with history sharing on', () => {
     expect(lineages()).toHaveLength(1);
     const sent = seen.length;
 
+    // The confirmation is told what the update would do, and asking changes nothing.
+    expect(await preview()).toEqual({ retiring: 1, carried: true, route: 'aws-bedrock' });
+    expect(lineages()[0].retired).toBeUndefined();
+    expect(notes()).toEqual([]);
+
     const update = await updated('u-1');
     expect(update).toEqual({ updated: true, noteId: expect.stringMatching(/^Nlineage-[0-9a-f]{32}$/) });
     // Updating sends nothing anywhere: it is a change to the record.
     expect(seen.length).toBe(sent);
-    expect(lineages()).toEqual([expect.objectContaining({ generation: 1, runId: first.runId, retired: 'format-change' })]);
+    // The decision is stored with the lineage, so the next send carries only on the route it names.
+    expect(lineages()).toEqual([
+      expect.objectContaining({ generation: 1, runId: first.runId, retired: 'format-change', carry: { route: 'aws-bedrock' } }),
+    ]);
     expect(notes()).toEqual([
       expect.objectContaining({
         id: update.noteId,
@@ -252,14 +270,35 @@ describe('"Update this conversation" with history sharing on', () => {
     // The note is the application's, not a message: it never reaches the model.
     expect(userText(call)).not.toContain('started this conversation fresh');
     expect(userText(call)).not.toContain(CARRIED);
-    // The turn's own run records that its history came from the retired lineage.
+    // The turn's own run records that its history came from the retired lineage, and how much.
     expect((await sessions().turnRun(project.id, next.runId, 'm-third'))!.input).toMatchObject({
       historyShared: true,
       carriedFrom: first.runId,
+      carriedMessages: 2,
     });
     // The new lineage records today's text, so there is nothing more to update.
+    expect(await preview()).toEqual({ retiring: 0, carried: false, route: 'aws-bedrock' });
     expect(await updated('u-2')).toEqual({ updated: false, noteId: null });
     expect(notes()).toHaveLength(1);
+  });
+
+  test('a turn records the carry only while the carried messages still reach it', async () => {
+    const first = await onMain('ask', 'm-first');
+    await updated('u-1');
+    const carrying = await send('m-2', 'Q02 question', 'ask');
+    expect((await sessions().turnRun(project.id, carrying.runId, 'm-2'))!.input).toMatchObject({
+      carriedFrom: first.runId,
+      carriedMessages: 1,
+    });
+    // Twelve messages of the new lineage's own push the carried one out of the bound.
+    for (let n = 3; n <= 14; n++) await send(`m-${n}`, `Q${String(n).padStart(2, '0')} question`, 'ask');
+    const call = userText(seen.at(-1)!);
+    expect(call).toContain('Earlier in this conversation:');
+    expect(call).not.toContain('linen order');
+    const input = (await sessions().turnRun(project.id, carrying.runId, 'm-14'))!.input;
+    expect(input).toMatchObject({ historyShared: true });
+    expect(input).not.toHaveProperty('carriedFrom');
+    expect(input).not.toHaveProperty('carriedMessages');
   });
 
   test('the carried history is bounded: the last 12 messages, which give way to the new lineage\'s own', async () => {
@@ -305,22 +344,42 @@ describe('"Update this conversation" with history sharing on', () => {
 describe('"Update this conversation" with history sharing off', () => {
   test('carries nothing, says so, and leaves sharing off', async () => {
     await share(false);
-    const first = await onMain('ask', 'm-first');
+    await onMain('ask', 'm-first');
     await send('m-second', 'And the invoice?', 'ask');
     const before = await api<CloudSharingPolicy>(`/projects/${project.id}/cloud-sharing`);
 
+    expect(await preview()).toEqual({ retiring: 1, carried: false, route: 'aws-bedrock', reason: 'history-off' });
     await updated('u-1');
     expect(notes().map((note) => note.text)).toEqual([NOT_CARRIED]);
+    expect(lineages()[0]).not.toHaveProperty('carry');
     expect(await api<CloudSharingPolicy>(`/projects/${project.id}/cloud-sharing`)).toEqual(before);
 
     const next = await send('m-third', 'Thanks', 'ask');
-    // The pointer is recorded; sharing decides at each send, and it is off.
-    expect(lineages()[1]).toMatchObject({ runId: next.runId, carriedFrom: first.runId });
+    // Nothing was promised, so nothing points back: the new lineage starts on its own.
+    expect(lineages()[1]).toMatchObject({ runId: next.runId });
+    expect(lineages()[1]).not.toHaveProperty('carriedFrom');
     const call = userText(seen.at(-1)!);
     expect(call).not.toContain('Earlier in this conversation:');
     expect(call).not.toContain('linen order');
     expect((await sessions().turnRun(project.id, next.runId, 'm-third'))!.input).toMatchObject({ historyShared: false });
     expect((await sessions().turnRun(project.id, next.runId, 'm-third'))!.input).not.toHaveProperty('carriedFrom');
+  });
+
+  test('a grant given after the update carries nothing: the update said it won\'t remember, and that stands', async () => {
+    await share(false);
+    await onMain('ask', 'm-first');
+    await updated('u-1');
+    expect(notes().map((note) => note.text)).toEqual([NOT_CARRIED]);
+    // Later, for another reason, the owner shares history with this route.
+    await share(true);
+    const next = await send('m-second', 'Thanks', 'ask');
+    expect(userText(seen.at(-1)!)).not.toContain('linen order');
+    expect(lineages()[1]).toMatchObject({ runId: next.runId });
+    expect(lineages()[1]).not.toHaveProperty('carriedFrom');
+    // Its own messages are history as usual from here.
+    await send('m-third', 'And the invoice?', 'ask');
+    expect(userText(seen.at(-1)!)).toContain('Person: Thanks');
+    expect(userText(seen.at(-1)!)).not.toContain('linen order');
   });
 
   test('carries nothing when sharing is turned off after the update: each send checks again', async () => {
@@ -374,11 +433,69 @@ describe('"Update this conversation" is refused, with its reason, while', () => 
   });
 });
 
+describe('only a conversation on instructions this build knows is carried', () => {
+  test('a text this build does not know is updated, and carries nothing', async () => {
+    composedFor.set('ask', 'Instructions a later build wrote, which this build has never seen.');
+    try {
+      await send('m-first', 'Where is the linen order?', 'ask');
+    } finally {
+      composedFor.delete('ask');
+    }
+    expect(await preview()).toEqual({ retiring: 1, carried: false, route: 'aws-bedrock', reason: 'other' });
+    await updated('u-1');
+    expect(notes().map((note) => note.text)).toEqual([NOT_CARRIED]);
+    expect(lineages()[0]).not.toHaveProperty('carry');
+    await send('m-second', 'Thanks', 'ask');
+    expect(userText(seen.at(-1)!)).not.toContain('linen order');
+    expect(lineages()[1]).not.toHaveProperty('carriedFrom');
+  });
+
+  test('a revoked text is updated, and carries nothing', async () => {
+    await onMain('ask', 'm-first');
+    revoked.set(instructionDigest(main('ask')), 'test: withdrawn');
+    expect(await preview()).toEqual({ retiring: 1, carried: false, route: 'aws-bedrock', reason: 'other' });
+    await updated('u-1');
+    expect(notes().map((note) => note.text)).toEqual([NOT_CARRIED]);
+    await send('m-second', 'Thanks', 'ask');
+    expect(userText(seen.at(-1)!)).not.toContain('linen order');
+    expect(lineages()[1]).not.toHaveProperty('carriedFrom');
+  });
+
+  test('a text revoked after the update stops the carry at the next send', async () => {
+    const first = await onMain('ask', 'm-first');
+    await updated('u-1');
+    expect(notes().map((note) => note.text)).toEqual([CARRIED]);
+    const carrying = await send('m-second', 'Thanks', 'ask');
+    expect(userText(seen.at(-1)!)).toContain('linen order');
+    expect(lineages()[1]).toMatchObject({ carriedFrom: first.runId });
+
+    revoked.set(instructionDigest(main('ask')), 'test: withdrawn after the update');
+    await send('m-third', 'And the invoice?', 'ask');
+    const call = userText(seen.at(-1)!);
+    expect(call).toContain('Person: Thanks');
+    expect(call).not.toContain('linen order');
+    expect((await sessions().turnRun(project.id, carrying.runId, 'm-third'))!.input).not.toHaveProperty('carriedFrom');
+  });
+});
+
+describe('the dry run', () => {
+  test('names no route, and promises nothing, while the tier\'s route cannot answer; the update still goes ahead', async () => {
+    await onMain('ask', 'm-first');
+    // Focused runs on Google Vertex AI, which is not connected here, so the next message would be refused.
+    await api(`/projects/${project.id}/threads/${thread.id}`, 'PUT', { workStyle: 'focused' });
+    expect(await preview()).toEqual({ retiring: 1, carried: false, route: null, reason: 'other' });
+    expect((await updated('u-1')).updated).toBe(true);
+    expect(notes().map((note) => note.text)).toEqual([NOT_CARRIED]);
+    expect(lineages()[0]).not.toHaveProperty('carry');
+  });
+});
+
 describe('the endpoint', () => {
   test('takes exactly one command, and names a thread that exists', async () => {
     expect((await request(`/projects/${project.id}/threads/${thread.id}/answer-format`, 'POST', {})).status).toBe(400);
     expect((await updateConversation('u-1', { mode: 'ask' })).status).toBe(400);
     expect((await updateConversation(42)).status).toBe(400);
     expect((await request(`/projects/${project.id}/threads/t-missing/answer-format`, 'POST', { commandId: 'u-1' })).status).toBe(404);
+    expect((await request(`/projects/${project.id}/threads/t-missing/answer-format`)).status).toBe(404);
   });
 });

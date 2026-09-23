@@ -127,6 +127,11 @@ export function mountInteractionRoutes(
       return turns.answerFormat(String(req.params.id), String(req.params.threadId), body.data.commandId);
     }),
   );
+  // The dry run the confirmation words itself from. A read: it changes nothing.
+  app.get(
+    '/api/projects/:id/threads/:threadId/answer-format',
+    route((req) => turns.answerFormatPreview(String(req.params.id), String(req.params.threadId))),
+  );
   app.post(
     `${base}/:commandId/interrupt`,
     route(async (req) => {

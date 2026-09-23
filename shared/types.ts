@@ -464,9 +464,17 @@ export interface ConversationLineage {
    */
   retired?: 'scope-change' | 'terminated' | 'budget' | 'format-change';
   /**
-   * The run of the lineage "Update this conversation" retired just before this one, in this mode.
-   * Where history sharing allows it for the route, this lineage's history starts with that run's
-   * recent messages (bounded as any history is), so the update keeps what was said.
+   * What "Update this conversation" promised when it retired this lineage: that its recent
+   * messages come along to the next generation on `route`, the route the next message was taking.
+   * Absent when it promised nothing (history not shared there, another route, or instructions this
+   * build does not know); then nothing ever carries from it, whatever changes later.
+   */
+  carry?: { route: string };
+  /**
+   * The run of the lineage "Update this conversation" retired just before this one, in this mode,
+   * set only when that update promised to carry its messages to the route this lineage opened on.
+   * Each send still checks the route's history grant, so this lineage's history starts with that
+   * run's recent messages (bounded as any history is) only while history sharing allows it.
    */
   carriedFrom?: string;
   /**

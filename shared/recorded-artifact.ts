@@ -21,7 +21,12 @@ export interface RecordedArtifact {
   kind: string;
   /** The fence language as written, lower-cased; '' for a table. */
   lang: string;
-  title: string;
+  /**
+   * The artifact's own title (declared, the heading above it, or a visual's own), or null when it
+   * has none. The panel numbers an untitled artifact among its whole thread's, which one answer
+   * cannot know, so no number is ever recorded; a reader shows the panel's name for it.
+   */
+  title: string | null;
   /**
    * Lowercase hex SHA-256 of the UTF-8 bytes of the artifact's source as the panel shows and
    * copies it (`ArtifactRecord.source`): the fence body as written, or a table's own lines.
@@ -49,7 +54,7 @@ export function recordedArtifactOf(input: unknown): RecordedArtifact | null {
     !(value.declaredId === null || text(value.declaredId, 64)) ||
     !text(value.kind, 32) ||
     !text(value.lang, 64) ||
-    !text(value.title, 512) ||
+    !(value.title === null || text(value.title, 512)) ||
     !text(value.sha256, 64) ||
     !HEX64.test(value.sha256) ||
     !Number.isSafeInteger(value.blockIndex) ||
@@ -65,7 +70,7 @@ export function recordedArtifactOf(input: unknown): RecordedArtifact | null {
     declaredId: value.declaredId as string | null,
     kind: value.kind,
     lang: value.lang,
-    title: value.title,
+    title: value.title as string | null,
     sha256: value.sha256,
     blockIndex: value.blockIndex as number,
     turnId: value.turnId,

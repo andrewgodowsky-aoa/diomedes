@@ -3,6 +3,8 @@ import type { ArtifactIndex, ArtifactRecord, TurnLike } from './artifacts';
 import {
   artifactEvidence,
   EVIDENCE_WORDS,
+  evidenceSummary,
+  evidenceTitle,
   type ArtifactEvidence,
   type RecordedArtifact,
 } from './artifact-evidence';
@@ -21,9 +23,10 @@ const kindLabel = (kind: string) => KIND_LABEL[kind as ArtifactKind] ?? kind;
 /**
  * The artifacts this conversation's runs recorded (artifact-evidence.ts), read-only, under the
  * artifact panel's head. Each one opens from the thread's own text, the only thing the panel
- * draws; one whose text no longer matches its record says "Changed since recorded", and the
- * count of those stays in the summary line while the list is folded. Nothing shows until
- * something was recorded, and nothing is read until an artifact is open.
+ * draws, under the panel's own name for it; one whose text no longer matches its record says
+ * "Changed since recorded", one the thread no longer holds says so, and each of those counts
+ * stays in the summary line, named for what it counts, while the list is folded. Nothing shows
+ * until something was recorded, and nothing is read until an artifact is open.
  */
 export function RecordedArtifacts({
   source,
@@ -81,12 +84,13 @@ export function RecordedArtifacts({
 
   if (trouble) return <p className="art-recorded-note">{trouble}</p>;
   if (evidence.length === 0) return null;
-  const off = evidence.filter((item) => item.state !== 'recorded').length;
   return (
     <details className="art-recorded">
       <summary>
         Recorded in this conversation <span className="art-recorded-count">{evidence.length}</span>
-        {off > 0 && <b>{off} changed since recorded</b>}
+        {evidenceSummary(evidence).map((words) => (
+          <b key={words}>{words}</b>
+        ))}
       </summary>
       <ul>
         {evidence.map((item) => {
@@ -94,7 +98,7 @@ export function RecordedArtifacts({
           const label = (
             <>
               <span className="art-recorded-kind">{kindLabel(entry.kind)}</span>
-              <span className="art-recorded-title">{entry.title}</span>
+              <span className="art-recorded-title">{evidenceTitle(item)}</span>
             </>
           );
           return (

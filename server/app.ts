@@ -41,6 +41,7 @@ import type {
   TeamMember,
   Route,
 } from '../shared/types.js';
+import type { ConversationUpdateNotCarried } from '../shared/conversation.js';
 import { ApiError, absent, relativeName, safeAbsolute } from './paths.js';
 import { activatePack, deactivatePack, discoverInstructionFiles } from './capability-packs.js';
 import {
@@ -205,7 +206,7 @@ import { projectedTurnIds, turnIdentityText } from '../shared/conversation-turn-
 import { AppUpdateService, mountAppUpdateRoutes, type UpdateTransport } from './app-updates.js';
 import { EngineInstaller } from './engines/install.js';
 import { NativeLogin } from './engines/login.js';
-import { changeCloudSharing, cloudSharing, requireCloudSharing } from './cloud-sharing.js';
+import { changeCloudSharing, cloudSharing, requireCloudSharing, sharesHistory } from './cloud-sharing.js';
 import { assembleSkillSection, instructionSectionBudget } from './harness/instruction-delivery.js';
 
 interface AppOptions {
@@ -3441,6 +3442,57 @@ export async function createApp(options: AppOptions) {
           ? thread.engine
           : AWS_BEDROCK_ROUTE;
   /**
+   * The run a lineage may carry history from, or undefined. Only a lineage whose recorded text
+   * this build knows for its mode carries: a lineage on an unknown or withdrawn text retires with
+   * "won't remember", and an update does not bring its messages back. A run that cannot be read
+   * carries nothing. Asked when the lineage opens and again at each send, so a text withdrawn in
+   * between stops the carry at the next message.
+   */
+  const carrySource = async (projectId: string, runId: string, mode: ConversationLineage['mode']) => {
+    const scope = await recordedScope(projectId, runId).catch(() => null);
+    return recordedInstructions(scope, mode).state === 'known' ? runId : undefined;
+  };
+  /**
+   * What "Update this conversation" does to a thread now, decided in one place for the dry run the
+   * confirmation reads and for the update itself (lane 2 review, P1). It retires each open lineage
+   * whose recorded text is not today's. It promises to carry their recent messages only to the
+   * route the next message takes (a WorkStyle tier's included, which only the server resolves),
+   * only when every one of them was answered on that route under a text this build knows, and
+   * only while that route shares history. The promise is stored with the lineages; a message on
+   * any other route carries nothing, and each send checks the history grant again.
+   */
+  const updateDecision = async (projectId: string, state: ProjectState, thread: Conversation) => {
+    const retiring: ConversationLineage[] = [];
+    let known = true;
+    // Only a lineage that recorded a text other than today's has anything to update. One that
+    // never started recorded nothing, and its first message is sent under today's text anyway.
+    for (const lineage of (thread.lineages ?? []).filter((item) => !item.retired)) {
+      const recorded = recordedInstructions(await recordedScope(projectId, lineage.runId), lineage.mode);
+      if (recorded.state === 'absent' || recorded.text === answerInstructions(lineage.mode)) continue;
+      retiring.push(lineage);
+      if (recorded.state !== 'known') known = false;
+    }
+    // The route the next message takes. A tier whose route cannot run refuses that message; the
+    // update itself sends nothing, so it goes ahead and promises nothing.
+    let route: Route | null = null;
+    try {
+      const next = threadRoute(projectId, thread);
+      route = isConversationRoute(next) ? next : null;
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+    }
+    const reason: ConversationUpdateNotCarried | undefined = !retiring.length
+      ? undefined
+      : route === null || !known
+        ? 'other'
+        : retiring.some((lineage) => lineageRoute(lineage, thread) !== route)
+          ? 'other-route'
+          : !sharesHistory(cloudSharing(state), route)
+            ? 'history-off'
+            : undefined;
+    return { retiring, route, carried: retiring.length > 0 && reason === undefined, reason };
+  };
+  /**
    * Whether the thread's last answer holds an Automatic proposal the person has not chosen yet:
    * the outcome the card offers Start on (`status: 'proposed'`), computed from that message's own
    * phases as the outcome read computes it. The card is shown only for the answer at the end of
@@ -3719,12 +3771,21 @@ export async function createApp(options: AppOptions) {
         if (!current) {
           const generation = 1 + Math.max(0, ...lineages.map((lineage) => lineage.generation));
           // After "Update this conversation", this mode's next generation carries from the
-          // lineage the update retired. The driver sends those messages only where history
-          // sharing allows it for the route at send time; any other retirement carries nothing.
+          // lineage the update retired only when the update promised it, and only on the route
+          // it promised: what its note said. The driver still sends those messages only where
+          // history sharing allows it for the route at send time. Any other retirement, and an
+          // update that promised nothing, carries nothing, whatever has changed since.
           const previous = lineages
             .filter((lineage) => lineage.mode === command.mode)
             .sort((a, b) => b.generation - a.generation)[0];
-          const carriedFrom = previous?.retired === 'format-change' ? previous.runId : undefined;
+          let carriedFrom: string | undefined;
+          if (previous?.retired === 'format-change' && previous.carry) {
+            if (previous.carry.route === conversationRoute)
+              carriedFrom = await carrySource(projectId, previous.runId, previous.mode);
+            // The promise was for another route. This one starts fresh, and the thread says so
+            // with the note a route change writes, since no open lineage is left to write it.
+            else retired = { runId: previous.runId, cause: tierName ? 'tier' : 'route' };
+          }
           current = {
             mode: command.mode,
             generation,
@@ -3755,6 +3816,13 @@ export async function createApp(options: AppOptions) {
         // A lineage this message did not open is sent with the text it recorded when this build
         // knows that text and its session can take it. A new generation gets today's text.
         const instructions = boundInstructions({ composed, recorded: opened ? null : recorded, resumable });
+        // The carry is asked again at each send: a text this build has withdrawn since the lineage
+        // opened, or a run that can no longer be read, carries nothing from here on.
+        const carrying = !current.carriedFrom
+          ? undefined
+          : opened
+            ? current.carriedFrom
+            : await carrySource(projectId, current.carriedFrom, current.mode);
         const runId = current.runId;
         const lineageDriver = runId.startsWith('model-') ? engines.modelSessions : driver;
         if (!lineageDriver) throw new ApiError(503, 'The conversation runtime is unavailable.');
@@ -3818,7 +3886,7 @@ export async function createApp(options: AppOptions) {
             documents,
             model: selection.model as string,
             ...(modelRoute && selection.effort ? { effort: selection.effort } : {}),
-            ...(current.carriedFrom ? { carriedFrom: current.carriedFrom } : {}),
+            ...(carrying ? { carriedFrom: carrying } : {}),
             accountRoute,
             ...readScope,
             signal: options.signal,
@@ -3858,23 +3926,15 @@ export async function createApp(options: AppOptions) {
             `${AGENT_NAME} is waiting for your choice on what it proposed. Start it, or send another message, before you update this conversation.`,
             { code: 'proposal_waiting' },
           );
-        // Only a lineage that recorded a text other than today's has anything to update. One that
-        // never started recorded nothing, and its first message is sent under today's text anyway.
-        const retiring: ConversationLineage[] = [];
-        for (const lineage of open) {
-          const recorded = recordedInstructions(await recordedScope(projectId, lineage.runId), lineage.mode);
-          if (recorded.state !== 'absent' && recorded.text !== answerInstructions(lineage.mode)) retiring.push(lineage);
-        }
+        const { retiring, route, carried } = await updateDecision(projectId, state, thread);
         if (!retiring.length) return { updated: false, noteId: null };
-        for (const lineage of retiring) lineage.retired = 'format-change';
-        // The note says the recent messages come along only where every retired lineage's route
-        // may carry history now. Sending checks again, message by message, and this never turns
-        // sharing on.
-        const sharing = cloudSharing(state);
-        const carried = retiring.every(
-          (lineage) =>
-            sharing.shareConversationHistory && (sharing.routes as string[]).includes(lineageRoute(lineage, thread)),
-        );
+        // The note, the stored promise and the next send agree: the promise names the one route
+        // the recent messages may reach, and the note says whether there is one. Sending checks
+        // the history grant again, message by message, and this never turns sharing on.
+        for (const lineage of retiring) {
+          lineage.retired = 'format-change';
+          if (carried && route) lineage.carry = { route };
+        }
         const anchor = retiring[0];
         const note = lineageNoteTurn({
           retiredRunId: anchor.runId,
@@ -3889,6 +3949,15 @@ export async function createApp(options: AppOptions) {
         thread.turns.push(note);
         await store.persist(state);
         return { updated: true, noteId: note.id };
+      }),
+    answerFormatPreview: (projectId, threadId) =>
+      // Under the same lock, so it reads what an update confirmed right now would read.
+      store.locked(async () => {
+        const state = store.state(projectId);
+        const thread = state.conversations.find((item) => item.id === threadId);
+        if (!thread) throw new ApiError(404, 'This thread was not found.');
+        const { retiring, route, carried, reason } = await updateDecision(projectId, state, thread);
+        return { retiring: retiring.length, carried, route, ...(reason ? { reason } : {}) };
       }),
     locate: (projectId, threadId, commandId) =>
       store.locked(async () => {

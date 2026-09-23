@@ -43,7 +43,7 @@ import { RunService, Suspended, type StepContext, type StepDefinition } from './
 import { ToolRegistry } from './tools.js';
 import { TEAM_TOOL_NAMES } from '../../shared/team-routes.js';
 import { contextMessage } from '../engines/contract.js';
-import { carriedRun, conversationHistory } from './conversation-history.js';
+import { boundedHistory, carriedRun } from './conversation-history.js';
 import { artifactSteps, unrecordedArtifacts } from './artifact-steps.js';
 
 export const MODEL_CONVERSATION_CAPABILITY: CapabilityManifest = {
@@ -624,10 +624,13 @@ export class ModelSessionRuns {
    * Earlier answered messages in this lineage, oldest first, bounded. Read from the durable record.
    * A lineage "Update this conversation" started begins with the recent messages of the run it
    * carries from, inside the same bounds, so they give way to this lineage's own as it grows.
+   * `carried` is how many of the carried run's messages are in `text`: none once they have given
+   * way, or when that run cannot be read.
    */
-  private async history(run: HarnessRun, turnId: string, input: TextRequest): Promise<string> {
+  private async history(run: HarnessRun, turnId: string, input: TextRequest): Promise<{ text: string; carried: number }> {
     const carried = await carriedRun(this.runs, input);
-    return conversationHistory(carried ? [carried, run] : [run], turnId);
+    const bounded = boundedHistory(carried ? [carried, run] : [run], turnId);
+    return { text: bounded.text, carried: carried ? (bounded.messages.get(carried.id) ?? 0) : 0 };
   }
 
   /** Whether a message is being answered on this run right now, in this process. */
@@ -739,8 +742,10 @@ export class ModelSessionRuns {
         // The host policy is read for each turn. A saved lineage does not grant
         // permission to send previous turns to the next model call, and neither does a lineage
         // it carries from.
-        const history = this.historyPolicy(input.projectId, route) ? await this.history(run!, turnId, input) : '';
-        this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), history.length > 0, route);
+        const history = this.historyPolicy(input.projectId, route)
+          ? await this.history(run!, turnId, input)
+          : { text: '', carried: 0 };
+        this.sharingPolicy(input.projectId, input.documents.map((doc) => doc.path), history.text.length > 0, route);
         const preview = request.activity?.(context, turnId);
         // Pairs the host's finished/failed report with the call the model announced as started.
         // One tool call per step and a sequential loop make the last announcement the one running.
@@ -786,10 +791,12 @@ export class ModelSessionRuns {
               model: input.model,
               conversationRunId: runId,
               commandId: input.requestId,
-              historyShared: history.length > 0,
-              // The lineage this turn's history may start with, as evidence. Its messages were
-              // sent only when history was shared.
-              ...(input.carriedFrom && history ? { carriedFrom: input.carriedFrom } : {}),
+              historyShared: history.text.length > 0,
+              // The lineage this turn's history started with, as evidence, and how many of its
+              // messages this turn sent: named only when some were.
+              ...(input.carriedFrom && history.carried > 0
+                ? { carriedFrom: input.carriedFrom, carriedMessages: history.carried }
+                : {}),
               sources: input.documents.map((doc) => ({ path: doc.path, sha256: sourceSha(doc.text) })),
               // What this turn could read, as evidence. Never a path or a connector's command.
               ...(input.readScope ? { read: readScopeRecord(input.readScope) } : {}),
@@ -804,13 +811,13 @@ export class ModelSessionRuns {
           const check = () => this.sharingPolicy(
             input.projectId,
             input.documents.map((doc) => doc.path),
-            history.length > 0,
+            history.text.length > 0,
             route,
           );
           const agent = new NativeAgent(this.runs, sharingGuarded(adapter, check), registry);
           try {
             check();
-            text = await agent.run(childId, this.owner, this.compose(input, history), principal, {
+            text = await agent.run(childId, this.owner, this.compose(input, history.text), principal, {
               maxTurns: MODEL_TURN_CAPABILITY.maxTurns,
             });
           } catch (error) {

@@ -9,6 +9,7 @@ import {
   CONVERSATION_CAPABILITY_IDS,
   MAX_HISTORY_CHARS,
   MAX_HISTORY_TURNS,
+  boundedHistory,
   carriedRun,
   conversationHistory,
 } from '../server/harness/conversation-history';
@@ -69,6 +70,41 @@ describe('the history a conversation turn is given', () => {
     );
     expect(history).toBe('Person: answered\n\nDiomedes: here it is\n\nPerson: stopped');
   });
+
+  test('never leaves half a character at the cut, whichever way the bound falls', () => {
+    // An emoji is two UTF-16 units, so the cut, counted from the end, lands between the two
+    // halves of one or the other depending on the answer's length.
+    for (const pad of ['', 'a']) {
+      const history = conversationHistory([run([turn('x', '\u{1F35E}'.repeat(30_000), `ok${pad}`)])]);
+      expect(history.startsWith('…')).toBe(true);
+      const first = history.charCodeAt(1);
+      expect(first >= 0xdc00 && first <= 0xdfff, `pad ${JSON.stringify(pad)}`).toBe(false);
+      expect((history as unknown as { isWellFormed(): boolean }).isWellFormed()).toBe(true);
+      expect(history.length).toBeLessThanOrEqual(MAX_HISTORY_CHARS + 1);
+    }
+  });
+
+  test('says how many messages each run gave, counting one the character bound cut short', () => {
+    const carried = run(numbered('C', 10), { id: 'carried-run' });
+    const own = run(numbered('O', 5), { id: 'own-run' });
+    // Seven of the carried run's ten, then all five of the lineage's own.
+    expect(boundedHistory([carried, own]).messages).toEqual(new Map([['carried-run', 7], ['own-run', 5]]));
+    expect(boundedHistory([carried, run(numbered('O', 12), { id: 'own-run' })]).messages).toEqual(new Map([['own-run', 12]]));
+    expect(boundedHistory([run([], { id: 'carried-run' }), own]).messages.get('carried-run')).toBeUndefined();
+    // A long own message leaves only the tail of the carried one inside the bound: it still counts.
+    // The carried block is 58 characters and the own one 23,970, so the cut falls 30 in, right
+    // after the carried question.
+    const tail = run([turn('c', 'the carried question', 'the carried answer')], { id: 'carried-run' });
+    const long = run([turn('o', `own ${'y'.repeat(MAX_HISTORY_CHARS - 56)}`, 'ok')], { id: 'own-run' });
+    const cut = boundedHistory([tail, long]);
+    expect(cut.text).toContain('answer');
+    expect(cut.text).not.toContain('the carried question');
+    expect(cut.messages).toEqual(new Map([['carried-run', 1], ['own-run', 1]]));
+    // And one cut away entirely does not.
+    const gone = boundedHistory([tail, run([turn('o', `own ${'y'.repeat(MAX_HISTORY_CHARS)}`, 'ok')], { id: 'own-run' })]);
+    expect(gone.text).not.toContain('carried');
+    expect(gone.messages).toEqual(new Map([['own-run', 1]]));
+  });
 });
 
 describe('the run a lineage carries history from', () => {
@@ -95,7 +131,13 @@ describe('the run a lineage carries history from', () => {
     expect(await carriedRun(reader(run([], { projectId: 'p2' })), input)).toBeNull();
     expect(await carriedRun(reader(run([], { input: { projectId: 'p1', threadId: 't2' } })), input)).toBeNull();
     expect(await carriedRun(reader(run([], { capabilityId: 'model-api-turn' })), input)).toBeNull();
-    await expect(carriedRun(reader(new HarnessError('store_failed', 'disk')), input)).rejects.toThrow('disk');
+  });
+
+  test('is nothing when the run cannot be read, so the message is still answered, without it', async () => {
+    // A damaged file, a newer contract written before a downgrade, a locked disk: none fails the send.
+    expect(await carriedRun(reader(new HarnessError('store_failed', 'disk')), input)).toBeNull();
+    expect(await carriedRun(reader(new HarnessError('unsupported_version', 'newer contract')), input)).toBeNull();
+    expect(await carriedRun(reader(new SyntaxError('Unexpected end of JSON input')), input)).toBeNull();
   });
 
   test('names exactly the two conversation drivers', () => {
