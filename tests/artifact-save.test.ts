@@ -118,7 +118,13 @@ describe('Save to Files', () => {
       sentence: `Saved this version over ${SAVED}.`,
     });
     expect(routes()).toEqual(['POST create', 'GET read', 'POST write']);
-    expect(calls[2].body).toEqual({ path: SAVED, text: savedDocument(two, two.title), baseSha: sha(before) });
+    // merge: false keeps this version its own History entry, however soon after the last it comes.
+    expect(calls[2].body).toEqual({
+      path: SAVED,
+      text: savedDocument(two, two.title),
+      baseSha: sha(before),
+      merge: false,
+    });
     expect([...files.keys()]).toEqual([SAVED]);
     expect(files.get(SAVED)).toBe(savedDocument(two, two.title));
   });

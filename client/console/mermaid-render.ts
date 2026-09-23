@@ -9,37 +9,76 @@ import { normalizeNewlines } from './turn-blocks';
 //   - frontmatter and %%{...}%% directives are stripped, with Mermaid's own
 //     grammar, so a diagram cannot change the configuration below;
 //   - the `secure` list keeps those keys fixed even if one got through;
-//   - labels are SVG text (htmlLabels false) and every label Mermaid still
-//     sanitises passes an allowlist that keeps no link, source or style;
-//   - the few features that load files while laying out are refused before
-//     Mermaid sees them: math ($$...$$) and image shapes (@{ img: ... }) load
-//     from the app's origin, and style statements can carry CSS url(). Mermaid
-//     ends a statement at a newline or a semicolon, so both split them here.
+//   - labels are SVG text (htmlLabels false) except in a diagram with math
+//     (below), and every label Mermaid sanitises passes an allowlist that
+//     keeps no link, source or style;
+//   - what would load files while Mermaid lays the diagram out is refused
+//     before Mermaid sees it: a picture shape (@{ img: ... }) whose picture is
+//     not written into the diagram as a data:image URL, and a style statement
+//     with a CSS url(). Mermaid ends a statement at a newline or a semicolon,
+//     so both split them here.
+// Math ($$...$$) is drawn as MathML (KaTeX, bundled with Mermaid, no `trust`,
+// MathML output only), and only on a page that carries the app's
+// Content-Security-Policy: the built index.html does (scripts/app-csp.ts), the
+// development server does not. A diagram with math is refused if it holds any
+// markup of its own beside the math, so its labels, which are HTML when a
+// flowchart draws math, hold only text, Mermaid's own markup and MathML; the
+// MathML passes an allowlist of presentation elements and attributes after
+// Mermaid sanitises it (artifacts v2, E1: docs/product/2026-09-23-artifacts-v2-panel-board.md).
 // What Mermaid returns is scanned before it goes anywhere: every CSS url()
 // that is not a same-document #fragment, and every other function that
 // fetches, is taken out of the drawing's style attributes and <style> text.
-// The app document also carries a Content-Security-Policy (vite.config.ts,
-// scripts/app-csp.ts), so a fetch that got past all of this still goes nowhere.
-// Evidence for each of these is in docs/implementation/2026-09-22-model-artifacts.md
+// The app document's policy means a fetch that got past all of this still goes
+// nowhere. Evidence for each of these is in docs/implementation/2026-09-22-model-artifacts.md
 // and docs/product/2026-09-23-artifact-hardening.md.
 
 /** Mermaid's frontmatter grammar (mermaid 11.17.2, src/diagram-api/regexes.ts). */
 const FRONTMATTER = /^([^\S\n\r]*)-{3}\s*[\n\r](.*?)[\n\r]\1-{3}\s*[\n\r]+/s;
 /** Mermaid's directive grammar: %%{init: ...}%%, %%{wrap}%% and the rest. */
 const DIRECTIVE = /%{2}{\s*(?:(\w+)\s*:|(\w+))\s*(?:(\w+)|((?:(?!}%{2}).|\r?\n)*))?\s*(?:}%{2})?/gi;
-/** Mermaid's math grammar: any $$...$$ on one line turns that label into HTML. */
+/**
+ * Mermaid's math grammar (mermaid 11.17.2 `katexRegex`, matched in each label): $$...$$ within
+ * one line, since `.` never crosses one.
+ */
 const MATH = /\$\$(.*?)\$\$/;
+const MATH_SPANS = /\$\$(.*?)\$\$/g;
+/**
+ * Every spelling of `$` Mermaid may turn back into one before it looks for math. When a label
+ * holds markup, Mermaid's sanitising parses it, and a character reference (`&dollar;`, `&#36`,
+ * `&#x24`, with or without the semicolon) comes back as `$`; Mermaid first writes its own
+ * `#dollar;` and `#36;` as such references. A markdown string reads `\$` as `$`. Not every one of
+ * these reaches Mermaid as a dollar; reading them all as dollars errs towards finding math.
+ */
+const DOLLAR = /&(?:dollar;|#0*36(?![0-9])|#x0*24(?![0-9a-f]));?|#(?:dollar|0*36);|\\\$/gi;
+/**
+ * Label markup in a diagram with math, which has HTML labels: `<` anywhere, since a raw span
+ * can pair its dollars differently from the label it sits in, and `~`, which a class diagram
+ * turns into `<` and `>`.
+ */
+const MARKUP_ANYWHERE = /[<~]/;
+/** Outside the math, `&` starts a character reference and `\` an escape. TeX uses both inside. */
+const MARKUP_OUTSIDE_MATH = /[&\\]/;
 /** Statements whose text becomes CSS. */
 const STYLE_LINE = /^\s*(style|classDef|linkStyle)\b/i;
 /** Mermaid ends a statement at a newline or a semicolon (`graph TD; A-->B; style A ...`). */
 const STATEMENT_END = /[\n;]/;
 /** CSS that fetches, and CSS escapes (`\75 rl(` is `url(` to a CSS parser). */
 const STYLE_FETCH = /url\s*\(|image-set\s*\(|\bimage\s*\(|cross-fade\s*\(|element\s*\(|@import|\\[0-9a-f]/i;
+/** The one picture drawn: a raster image written into the diagram, base64, nothing after it. */
+const DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+/** `img: "..."` as a key of the shape data, double-quoted: the value Mermaid reads as written. */
+const PICTURE_FIELD = /(^|[\s,{])img\s*:\s*"([^"]*)"/g;
 
-export const REFUSED_MATH_OR_IMAGE =
-  'Diagrams with math ($$) or image shapes are not drawn here: drawing them would load files from outside the diagram.';
 export const REFUSED_STYLE =
   'This diagram styles something with a link to a file (url() in a style, classDef or linkStyle line), so it is not drawn here.';
+export const REFUSED_MATH_HERE =
+  'Math ($$) in a diagram is drawn only in the app itself, where the page refuses every outside load. This page does not, so the diagram is not drawn here.';
+export const REFUSED_MATH_MARKUP =
+  'This diagram has math ($$) and also <, ~, or & or \\ outside the math, so it is not drawn here. In math, write < as \\lt.';
+export const REFUSED_IMAGE =
+  'This diagram shows a picture from a link. Only a picture written into the diagram, as a quoted data:image URL (PNG, JPEG, GIF or WebP), is drawn here.';
+export const REFUSED_SHAPE_ESCAPE =
+  'This diagram writes shape data with an escape (\\), which could name a picture from a link, so it is not drawn here.';
 
 /** The diagram text Mermaid is given: no frontmatter, no directives. */
 export function preparedSource(source: string): string {
@@ -67,13 +106,87 @@ export function shapeData(source: string): string[] {
   return blocks;
 }
 
+/** What a page lets a diagram draw. */
+export interface DiagramPolicy {
+  /** Math, as MathML: only on a page that carries the app's Content-Security-Policy. */
+  math: boolean;
+}
+
+/** Just enough of a document's <head> to read its policy from, so a test can hand one in. */
+export interface HeadLike {
+  readonly children: ArrayLike<{ readonly localName: string; getAttribute(name: string): string | null }>;
+}
+
 /**
- * Why a diagram is not drawn, or null when it may be. Shape data that names an
- * image, or that uses an escape (a YAML key can spell `img` as `\x69mg`), is refused.
+ * Whether a page's <head> carries a Content-Security-Policy <meta>. This is the signal math is
+ * drawn on, read from the page itself: the build writes the app's policy (APP_CSP_TAG) first in
+ * the built index.html's head (scripts/app-csp.ts, `apply: 'build'`, into index.html only), and
+ * the development server serves index.html without it. A report-only policy refuses nothing, so
+ * it does not count, and neither does an empty one.
  */
-export function refusal(source: string): string | null {
-  if (source.split('\n').some((line) => MATH.test(line))) return REFUSED_MATH_OR_IMAGE;
-  if (shapeData(source).some((block) => /img/i.test(block) || block.includes('\\'))) return REFUSED_MATH_OR_IMAGE;
+export function carriesPolicy(head: HeadLike | null | undefined): boolean {
+  if (!head) return false;
+  return Array.from(head.children).some(
+    (child) =>
+      child.localName === 'meta' &&
+      (child.getAttribute('http-equiv') ?? '').trim().toLowerCase() === 'content-security-policy' &&
+      (child.getAttribute('content') ?? '').trim() !== '',
+  );
+}
+
+/** The policy of a page: this one's, when there is a document (never in Node). */
+export function diagramPolicy(
+  page: { readonly head: HeadLike | null } | null | undefined = typeof document === 'undefined' ? null : document,
+): DiagramPolicy {
+  return { math: carriesPolicy(page?.head) };
+}
+
+/**
+ * Whether a diagram has math Mermaid would draw: a $$...$$ within one line, however its dollars
+ * are spelt (DOLLAR). Where a diagram still gets math past this, what Mermaid draws passes the
+ * label allowlist all the same, and without the policy that allowlist keeps no MathML at all.
+ */
+export function hasMath(source: string): boolean {
+  return MATH.test(source.replace(DOLLAR, '$'));
+}
+
+/** Whether a diagram with math also holds markup of its own (see MARKUP_ANYWHERE). */
+function markupBesideMath(source: string): boolean {
+  return MARKUP_ANYWHERE.test(source) || MARKUP_OUTSIDE_MATH.test(source.replace(MATH_SPANS, ''));
+}
+
+/**
+ * Whether one block of shape data may be drawn as far as its picture goes: it names no picture,
+ * or exactly one, as `img: "data:image/...;base64,..."`, and mentions `img` nowhere else (not as a
+ * value, a quoted key, an alias or another key's). Mermaid parses shape data as YAML, where only
+ * a double-quoted value is the text between its quotes; escapes are refused before this.
+ */
+function pictureAllowed(block: string): boolean {
+  if (!/img/i.test(block)) return true;
+  const fields = [...block.matchAll(PICTURE_FIELD)];
+  if (fields.length !== 1) return false;
+  const [whole, lead, value] = fields[0];
+  const at = fields[0].index ?? 0;
+  const rest = block.slice(0, at) + lead + block.slice(at + whole.length);
+  return !/img/i.test(rest) && DATA_IMAGE.test(value);
+}
+
+/**
+ * Why a diagram is not drawn on a page with this policy, or null when it may be. Math is refused
+ * on a page without the app's policy, and on any page beside markup of its own. Shape data that
+ * uses an escape (a YAML key can spell `img` as `\x69mg`) is refused, and so is any picture that
+ * is not written into the diagram as a data:image URL. Mermaid's text limit (`maxTextSize`,
+ * fixed by `secure`) bounds how large such a picture can be.
+ */
+export function refusal(source: string, policy: DiagramPolicy = { math: false }): string | null {
+  if (hasMath(source)) {
+    if (!policy.math) return REFUSED_MATH_HERE;
+    if (markupBesideMath(source)) return REFUSED_MATH_MARKUP;
+  }
+  for (const block of shapeData(source)) {
+    if (block.includes('\\')) return REFUSED_SHAPE_ESCAPE;
+    if (!pictureAllowed(block)) return REFUSED_IMAGE;
+  }
   if (source.split(STATEMENT_END).some((statement) => STYLE_LINE.test(statement) && STYLE_FETCH.test(statement)))
     return REFUSED_STYLE;
   return null;
@@ -329,6 +442,29 @@ export const LABEL_TAGS = [
   'br', 'span', 'div', 'p', 'code', 'pre', 'ul', 'ol', 'li', 'hr',
 ];
 
+/**
+ * The MathML KaTeX writes (katex/src/mathMLTree.ts) that a label may keep: presentation elements
+ * only. Not <mglyph> (it names a picture, and KaTeX writes one only for a trusted
+ * \includegraphics), <maction>, <annotation> or <annotation-xml>. DOMPurify drops <semantics>
+ * and keeps what it holds, so it is not listed either.
+ */
+export const MATH_TAGS = [
+  'math', 'mrow', 'mi', 'mn', 'mo', 'mtext', 'mspace', 'msup', 'msub', 'msubsup', 'mover', 'munder',
+  'munderover', 'mfrac', 'mroot', 'msqrt', 'mtable', 'mtr', 'mtd', 'mlabeledtr', 'menclose', 'mstyle',
+  'mpadded', 'mphantom',
+];
+
+/**
+ * The presentation attributes KaTeX sets. None of them names a file; `href` and `src` (written
+ * only for a trusted command) and `style` (a \fcolorbox border) are not among them.
+ */
+export const MATH_ATTRIBUTES = [
+  'display', 'mathvariant', 'mathcolor', 'mathbackground', 'mathsize', 'stretchy', 'fence', 'separator',
+  'lspace', 'rspace', 'minsize', 'maxsize', 'width', 'height', 'depth', 'voffset', 'notation',
+  'scriptlevel', 'displaystyle', 'rowspacing', 'columnspacing', 'columnalign', 'columnlines', 'rowlines',
+  'linethickness', 'accent', 'accentunder', 'largeop', 'linebreak',
+];
+
 /** Configuration a diagram may not change, even through a directive that escaped stripping. */
 export const SECURE_KEYS = [
   'secure', 'securityLevel', 'startOnLoad', 'maxTextSize', 'suppressErrorRendering', 'maxEdges',
@@ -336,18 +472,28 @@ export const SECURE_KEYS = [
   'fontFamily', 'altFontFamily', 'legacyMathML', 'forceLegacyMathML', 'arrowMarkerAbsolute',
 ];
 
-/** Mermaid's configuration for one render, themed from the running scheme. */
-export function mermaidConfig(tokens: FrameTokens): Record<string, unknown> {
+/**
+ * Mermaid's configuration for one render, themed from the running scheme. `drawing.math` is set
+ * only for a diagram with math that `refusal` let through on a page with the app's policy: a
+ * flowchart draws math only in an HTML label (mermaid 11.17.2 labelHelper), so its labels are
+ * HTML, and what Mermaid sanitises may keep MathML as well as the label tags.
+ */
+export function mermaidConfig(tokens: FrameTokens, drawing: { math: boolean } = { math: false }): Record<string, unknown> {
   const dark = isDark(tokens.ground);
   return {
     startOnLoad: false,
     securityLevel: 'strict',
-    htmlLabels: false,
+    htmlLabels: drawing.math,
+    // MathML only: KaTeX's HTML output would need its stylesheet and fonts.
+    legacyMathML: false,
+    forceLegacyMathML: false,
     suppressErrorRendering: true,
     theme: 'base',
     darkMode: dark,
     fontFamily: FRAME_FONT,
-    dompurifyConfig: { ALLOWED_TAGS: LABEL_TAGS, ALLOWED_ATTR: ['class'], ALLOW_DATA_ATTR: false },
+    dompurifyConfig: drawing.math
+      ? { ALLOWED_TAGS: [...LABEL_TAGS, ...MATH_TAGS], ALLOWED_ATTR: ['class', ...MATH_ATTRIBUTES], ALLOW_DATA_ATTR: false }
+      : { ALLOWED_TAGS: LABEL_TAGS, ALLOWED_ATTR: ['class'], ALLOW_DATA_ATTR: false },
     secure: SECURE_KEYS,
     themeVariables: {
       darkMode: dark,
@@ -434,8 +580,11 @@ function describe(error: unknown): string {
 async function draw(source: string, tokens: FrameTokens): Promise<DiagramResult> {
   const text = preparedSource(source);
   if (!text) return { ok: false, problem: 'The diagram is empty.' };
-  const refused = refusal(text);
+  // Read from the page at every draw: it carries the app's policy or it does not.
+  const policy = diagramPolicy();
+  const refused = refusal(text, policy);
   if (refused) return { ok: false, problem: refused };
+  const math = policy.math && hasMath(text);
   let mermaid: MermaidApi;
   try {
     mermaid = await load();
@@ -452,7 +601,7 @@ async function draw(source: string, tokens: FrameTokens): Promise<DiagramResult>
     'position:absolute;left:-10000px;top:0;width:1024px;visibility:hidden;pointer-events:none;contain:layout style;';
   document.body.appendChild(host);
   try {
-    mermaid.initialize(mermaidConfig(tokens));
+    mermaid.initialize(mermaidConfig(tokens, { math }));
     const { svg } = await mermaid.render(id, text, host);
     return { ok: true, svg: withoutFetchingSvg(svg) };
   } catch (error) {

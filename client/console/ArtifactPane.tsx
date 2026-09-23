@@ -47,6 +47,54 @@ export interface ArtifactPaneProps {
    * the panel as it is in the turn. Absent where there is none (the home page).
    */
   session?: Session | null;
+  /**
+   * The thread's progress board, compact (ProgressBoard.tsx), while its work is
+   * still moving: the column holds the artifact, so the count stays in sight.
+   */
+  board?: ReactNode;
+}
+
+/**
+ * The column's resize grip and its lit cut corner, shared by every view the
+ * artifact column holds. Dragging or the arrow keys move the column's one width.
+ */
+export function PaneEdge({ width, onWidth, label }: { width: number; onWidth(width: number): void; label: string }) {
+  const dragFrom = useRef<{ x: number; width: number } | null>(null);
+  const onGripDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragFrom.current = { x: event.clientX, width };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const onGripMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const from = dragFrom.current;
+    if (from) onWidth(clampArtifactWidth(from.width + (from.x - event.clientX), viewportWidth()));
+  };
+  const onGripUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragFrom.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  return (
+    <>
+      <div
+        className="art-grip"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={label}
+        tabIndex={0}
+        onPointerDown={onGripDown}
+        onPointerMove={onGripMove}
+        onPointerUp={onGripUp}
+        onPointerCancel={onGripUp}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowLeft') onWidth(clampArtifactWidth(width + 16, viewportWidth()));
+          if (event.key === 'ArrowRight') onWidth(clampArtifactWidth(width - 16, viewportWidth()));
+        }}
+      />
+      <svg className="art-pane-lit" viewBox="0 0 22 22" aria-hidden="true" focusable="false">
+        <line x1="0" y1="22" x2="22" y2="0" />
+      </svg>
+    </>
+  );
 }
 
 /**
@@ -69,6 +117,7 @@ export function ArtifactPane({
   saveUnavailable,
   onShowFile,
   session = null,
+  board = null,
 }: ArtifactPaneProps) {
   // Artifacts opened from inside a document, deepest last.
   const [trail, setTrail] = useState<ArtifactRecord[]>([]);
@@ -78,7 +127,6 @@ export function ArtifactPane({
   const [played, setPlayed] = useState(false);
   const [copied, copy] = useCopy();
   const title = useRef<HTMLHeadingElement>(null);
-  const dragFrom = useRef<{ x: number; width: number } | null>(null);
   const shown = trail[trail.length - 1] ?? top;
 
   // A different artifact starts at its own top, and says so when it arrived by itself.
@@ -122,20 +170,6 @@ export function ArtifactPane({
     }
   }
 
-  const onGripDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    dragFrom.current = { x: event.clientX, width };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-  const onGripMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const from = dragFrom.current;
-    if (from) onWidth(clampArtifactWidth(from.width + (from.x - event.clientX), viewportWidth()));
-  };
-  const onGripUp = (event: React.PointerEvent<HTMLDivElement>) => {
-    dragFrom.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId))
-      event.currentTarget.releasePointerCapture(event.pointerId);
-  };
-
   const parent = trail.length > 1 ? trail[trail.length - 2] : top;
   return (
     <aside
@@ -154,24 +188,7 @@ export function ArtifactPane({
         onClose();
       }}
     >
-      <div
-        className="art-grip"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize the artifact panel"
-        tabIndex={0}
-        onPointerDown={onGripDown}
-        onPointerMove={onGripMove}
-        onPointerUp={onGripUp}
-        onPointerCancel={onGripUp}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowLeft') onWidth(clampArtifactWidth(width + 16, viewportWidth()));
-          if (event.key === 'ArrowRight') onWidth(clampArtifactWidth(width - 16, viewportWidth()));
-        }}
-      />
-      <svg className="art-pane-lit" viewBox="0 0 22 22" aria-hidden="true" focusable="false">
-        <line x1="0" y1="22" x2="22" y2="0" />
-      </svg>
+      <PaneEdge width={width} onWidth={onWidth} label="Resize the artifact panel" />
       <div className="art-plate">
         <div className="art-plate-face">
           <div className="art-head">
@@ -250,6 +267,7 @@ export function ArtifactPane({
                 </button>
               )}
             </p>
+            {board}
           </div>
           <div className="art-body" key={shown.key}>
             <ArtifactBody
