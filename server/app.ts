@@ -106,6 +106,7 @@ import {
 } from '../shared/engines.js';
 import { EngineService } from './engines/service.js';
 import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
+import { loadApprovedReadServers, type ReadScope } from './engines/read-scope.js';
 import { mountInteractionRoutes } from './engines/interaction-routes.js';
 import {
   InteractionTurns,
@@ -2418,6 +2419,27 @@ export async function createApp(options: AppOptions) {
     if (!model || !isKnownChoice('codex', model, effort ?? null)) return {};
     return { model, ...(effort ? { effort } : {}) };
   };
+  /**
+   * The read-only tools an Ask or Plan turn gets (owner decision 2026-09-23):
+   * the project folder through the path trust funnel, web search, and the MCP
+   * read tools the owner approved in `<data>/read-connectors.json`. Only the
+   * host builds it, from its own project record; a missing folder means text.
+   */
+  const readScopeFor = async (
+    projectId: string,
+    mode: string,
+  ): Promise<{ readScope?: ReadScope }> => {
+    if (mode !== 'ask' && mode !== 'plan') return {};
+    const root = await safeAbsolute(store.state(projectId).project.folder);
+    if (!(await fs.stat(root).then((entry) => entry.isDirectory(), () => false))) return {};
+    return {
+      readScope: {
+        root,
+        web: true,
+        mcp: loadApprovedReadServers(path.join(store.dataDir, 'read-connectors.json')),
+      },
+    };
+  };
   const nativeChoice = (
     engine: Exclude<Route, 'sample'>,
     projectId: string,
@@ -2482,6 +2504,7 @@ export async function createApp(options: AppOptions) {
           instructions: MODES[command.mode].instructions,
           model: selection.model,
           accountRoute,
+          ...(await readScopeFor(projectId, command.mode)),
         };
       });
       const runId =
@@ -2900,6 +2923,7 @@ export async function createApp(options: AppOptions) {
             documents,
             model: selection.model as string,
             accountRoute,
+            ...(modelRoute ? {} : await readScopeFor(projectId, command.mode)),
             signal: options.signal,
             onPreview: (frame: TransientPreview) =>
               progress('delta', { ...frame, text: gate(frame.text) }),
@@ -3530,6 +3554,7 @@ export async function createApp(options: AppOptions) {
             instructions: MODES[mode].instructions,
             model: requestedModel,
             accountRoute,
+            ...(await readScopeFor(projectId, mode)),
             signal: connectionSignal(res),
             onPreview: (frame) => progress('delta', frame.text, frame),
           });
@@ -3594,6 +3619,7 @@ export async function createApp(options: AppOptions) {
             // Stop closes the request, and this ends the ChatGPT turn with it.
             signal,
             onDelta,
+            ...(await readScopeFor(projectId, mode)),
           });
           answer = result.text;
           helper = codexHelper(result);
