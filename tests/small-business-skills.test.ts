@@ -174,6 +174,23 @@ describe('turning the pack on is not an authorization event', () => {
   });
 });
 
+describe('a second pack never erases what the first one found', () => {
+  test('Software Engineering on, then off, then Small Business on keeps the AGENTS.md record', async () => {
+    const { store, id } = await project();
+    await fs.writeFile(path.join(store.state(id).project.folder, 'AGENTS.md'), '# Rules\n', 'utf8');
+    await activatePack(store, id, 'diomedes.software-engineering');
+    const found = structuredClone(store.state(id).instructionFiles);
+    expect(found).toHaveLength(1);
+    await deactivatePack(store, id, 'diomedes.software-engineering');
+    await activatePack(store, id, PACK);
+    expect(await discoverInstructionFiles(store, id)).toEqual(found);
+    expect(store.state(id).instructionFiles).toEqual(found);
+    // With both on, the Software Engineering pack's finding is refreshed, not duplicated.
+    await activatePack(store, id, 'diomedes.software-engineering');
+    expect(store.state(id).instructionFiles).toHaveLength(1);
+  });
+});
+
 describe('the selected skill rides in the host-assembled instruction section', () => {
   test('refused while the pack is off, and delivered whole within budget once it is on', async () => {
     const { store, id } = await project();

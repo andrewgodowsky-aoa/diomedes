@@ -166,6 +166,6 @@ not-professional-advice caution on every accounting, tax, legal and employment p
 
 This section was written before anything was built and is kept as the record of that starting
 point. Since then the pack mechanism, the Software Engineering pack's instruction-file discovery
-and the read-only Files pane landed (`docs/implementation/2026-09-11-*.md`), and the Small Business
+and the Files pane landed (`docs/implementation/2026-09-11-*.md`), and the Small Business
 pack's playbooks landed on a feature branch (section 4b). Nothing beyond what those records prove
 may be described as shipped anywhere, including the website.
