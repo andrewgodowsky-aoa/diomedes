@@ -128,6 +128,8 @@ import {
 } from '../shared/engines.js';
 import { EngineService } from './engines/service.js';
 import { mountClaudeSessionRoutes } from './engines/claude-session-routes.js';
+import { mountJevAdvisorRoutes } from './jev-advisor-routes.js';
+import type { JevAdvisor } from './harness/jev-advisor.js';
 import { loadApprovedReadServers, type ReadScope } from './engines/read-scope.js';
 import { mountInteractionRoutes } from './engines/interaction-routes.js';
 import {
@@ -181,6 +183,12 @@ interface AppOptions {
    * synthetic reviewer to prove authority without a provider call.
    */
   reviewerAdapter?: ReviewerAdapter | null;
+  /**
+   * The Jev preflight (NC-2026-09-22.1, Phase F). Off unless given: omitted or
+   * null mounts no preflight route and no provider is ever asked. Tests inject
+   * a fixture advisor; no build constructs a real one yet.
+   */
+  jevAdvisor?: JevAdvisor | null;
   engineService?: EngineService;
   /** How a native sign-in window is opened; tests pass a fake so none opens. */
   nativeLoginLaunch?: ConstructorParameters<typeof NativeLogin>[1];
@@ -2761,6 +2769,40 @@ export async function createApp(options: AppOptions) {
       return { route: engine, style, source, resolution };
     }),
   );
+  // A preview of the Jev preflight for a thread's next message, beside the resolution above.
+  // The thread is read under the lock; the provider is asked after it is released.
+  if (options.jevAdvisor)
+    mountJevAdvisorRoutes(app, options.jevAdvisor, (projectId, threadId) =>
+      store.locked(async () => {
+        const state = store.state(projectId);
+        const thread = state.conversations.find((c) => c.id === threadId);
+        if (!thread) throw new ApiError(404, 'This thread was not found.');
+        const engine = selectedEngine(store.settings, state.project, thread);
+        const style = styleOf(thread);
+        if (engine === 'sample') return { tenant: 'local', mode: thread.mode, style, workStyle: null };
+        const savedModel =
+          engine === 'codex'
+            ? codexModelSetting()
+            : selectedModel(engine, store.settings, state.project, { ...thread, requested: null });
+        return {
+          tenant: 'local',
+          mode: thread.mode,
+          style,
+          workStyle: {
+            style,
+            mode: thread.mode,
+            route: engine,
+            availableModels: routeModels(engine),
+            pin: thread.requested?.model
+              ? { model: thread.requested.model, effort: thread.requested.effort ?? null }
+              : null,
+            savedModel: savedModel ?? null,
+            routeDefaultAllowed: engine === 'codex',
+            stableEffort: isModelApiRoute(engine),
+          },
+        };
+      }),
+    );
   mountClaudeSessionRoutes(app, engines, {
     authorize: async (req) => {
       store.state(String(req.params.id));
