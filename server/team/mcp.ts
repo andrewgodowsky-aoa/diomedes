@@ -35,6 +35,7 @@ export function buildTeamMcpServer(
 
   server.registerTool('team_members', { description: 'List the team roster without tokens.' }, async () => {
     try {
+      service.requireActive(projectId, member.slotId);
       const team = service.teamState(projectId);
       return textResult({ members: team.members });
     } catch (error) {

@@ -23,6 +23,7 @@ import { directOrigin, applicationOrigin } from '../shared/attribution.js';
 import express, { type ErrorRequestHandler, type Request, type Response } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import type {
   Conversation,
@@ -143,6 +144,8 @@ import { NativeLogin } from './engines/login.js';
 
 interface AppOptions {
   dataDir: string;
+  /** Fresh per-launch secret held by the desktop main process, never persisted. */
+  loopbackToken?: string;
   projectRoot?: string;
   stepMs?: number;
   port?: number;
@@ -498,7 +501,9 @@ function validateSettings(current: Settings, body: unknown): Settings {
 }
 
 export async function createApp(options: AppOptions) {
-  const store = new Store(path.resolve(options.dataDir), options.projectRoot);
+  if (options.loopbackToken !== undefined && !/^[0-9a-f]{64}$/.test(options.loopbackToken))
+    throw new Error('The desktop local-service token is invalid.');
+  const store = new Store(path.resolve(options.dataDir), options.projectRoot, options.secretBox ?? null);
   await store.init();
   // Automatic Change Review: deterministic per-run evidence. Constructed before
   // the work services so every run can capture its baseline from the start.
@@ -751,17 +756,32 @@ export async function createApp(options: AppOptions) {
   };
   const port = options.port ?? Number(process.env.DIOMEDES_PORT ?? 47631),
     clientPort = options.clientPort ?? Number(process.env.DIOMEDES_CLIENT_PORT ?? 5173);
+  const loopbackToken = options.loopbackToken
+    ? Buffer.from(options.loopbackToken, 'hex')
+    : null;
   const origins = new Set([`http://127.0.0.1:${port}`, `http://127.0.0.1:${clientPort}`]);
   app.disable('x-powered-by');
   app.use((req, res, next) => {
     if (req.socket.localPort) listeningPort = req.socket.localPort;
-    if (req.path.startsWith('/mcp/team/')) return next();
+    const teamRequest = req.path.startsWith('/mcp/team/');
     const origin = req.headers.origin;
     const host = req.headers.host;
     if (!host || !/^127\.0\.0\.1:\d+$/.test(host))
       return next(new ApiError(403, 'This service accepts connections on 127.0.0.1 only.'));
     if (origin && !origins.has(origin))
       return next(new ApiError(403, 'This page cannot access the local service.'));
+    // Team helpers use their own scoped bearer token, but must still obey the
+    // same loopback Host and browser-Origin boundary as the desktop UI.
+    if (teamRequest) return next();
+    if (loopbackToken) {
+      const supplied = req.headers['x-diomedes-session'];
+      if (
+        typeof supplied !== 'string' ||
+        !/^[0-9a-f]{64}$/.test(supplied) ||
+        !timingSafeEqual(Buffer.from(supplied, 'hex'), loopbackToken)
+      )
+        return next(new ApiError(401, 'This local-service session is not authorized.'));
+    }
     res.setHeader('Vary', 'Origin');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');

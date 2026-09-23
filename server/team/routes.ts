@@ -44,7 +44,6 @@ export function mountTeamRoutes(app: Express, store: Store, existing?: TeamServi
         return;
       }
       const projectId = String(req.params.projectId);
-      store.state(projectId);
       const authorization = req.headers.authorization ?? '';
       const match = /^Bearer (.+)$/.exec(authorization);
       const token = match ? match[1] : null;
@@ -54,8 +53,9 @@ export function mountTeamRoutes(app: Express, store: Store, existing?: TeamServi
       try {
         member = await service.authenticate(projectId, slotId ?? null, token);
       } catch (error) {
-        if (error instanceof ApiError && error.status === 401) {
-          res.status(401).json({ error: error.message });
+        // A nonexistent project and a bad token are indistinguishable here.
+        if (error instanceof ApiError && [401, 404].includes(error.status)) {
+          res.status(401).json({ error: 'This member token was not recognized.' });
           return;
         }
         throw error;
